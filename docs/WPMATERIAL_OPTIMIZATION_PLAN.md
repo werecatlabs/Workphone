@@ -66,6 +66,8 @@ Do not serialize runtime handles, pointers or process-local layout identities. P
 
 Initially retain `MaterialPassStateData` as the owner of legacy standard-pass values and remove lookup from its consumers. Introduce typed setting IDs over its existing fields and a shared schema describing IDs, names, defaults and normalization rules.
 
+Built-in scalar, enum and flag controls should use their known numeric setting IDs directly. Resolve names only in named editor/serialization adapters, sharing numeric read/write helpers so validation and default behavior cannot diverge. Preserve available authored-pass lookup before a technique is selected and retain virtual pass setters for backend effects. Verify zero named-adapter dispatch from built-in controls, named API compatibility, multi-pass propagation and a same-work/publication benchmark.
+
 The end state is one value owner per material pass: standard surface data has a compact typed representation; custom shader values use the existing contiguous parameter buffer. Built-in shader parameters alias the corresponding standard semantic values rather than maintaining an independently writable second copy. Shared layouts describe these storage locations. Custom parameters without a built-in semantic remain in their layout-owned value block.
 
 Migrate ownership only after the resolved render path works. During transition, make each bridge directional for a specific operation and revision: legacy edit -> canonical values -> render snapshot, or shader edit -> canonical values -> legacy adapter. Record the origin/revision to prevent recursive synchronization and stale writes. Retire the temporary duplicate copy when all reads are adapted.

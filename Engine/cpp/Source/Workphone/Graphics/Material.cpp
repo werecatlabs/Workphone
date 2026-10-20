@@ -95,6 +95,58 @@ namespace workphone::render
 
     namespace
     {
+        template <class Setting> struct MaterialSettingAccess;
+        template <> struct MaterialSettingAccess<MaterialFloatSetting>
+        {
+            using Value = f32;
+            static constexpr auto read = &MaterialPassStateData::getFloatSetting;
+            static constexpr auto write = &MaterialPassStateData::setFloatSetting;
+        };
+        template <> struct MaterialSettingAccess<MaterialUIntSetting>
+        {
+            using Value = u32;
+            static constexpr auto read = &MaterialPassStateData::getUIntSetting;
+            static constexpr auto write = &MaterialPassStateData::setUIntSetting;
+        };
+        template <> struct MaterialSettingAccess<MaterialBoolSetting>
+        {
+            using Value = bool;
+            static constexpr auto read = &MaterialPassStateData::getBoolSetting;
+            static constexpr auto write = &MaterialPassStateData::setBoolSetting;
+        };
+
+        // Built-in controls already know their numeric setting. Named authoring
+        // adapters resolve once and share these paths; no per-material lookup map.
+        template <class Setting>
+        bool setNumericSetting( Material &material, Setting setting,
+                                typename MaterialSettingAccess<Setting>::Value value )
+        {
+            bool handled = false;
+            for( auto technique : material.getTechniques() )
+                if( technique ) for( auto pass : technique->getPasses() )
+                    if( auto context = pass ? pass->getStateContext() : nullptr )
+                        if( auto data = context->invalidateStateDataById<MaterialPassStateData>( pass->getId() ) )
+                            handled = ( ( *data ).*MaterialSettingAccess<Setting>::write )( setting, value ) || handled;
+            return handled;
+        }
+
+        template <class Setting>
+        auto getNumericSetting( const Material &material, Setting setting,
+                                typename MaterialSettingAccess<Setting>::Value fallback )
+            -> typename MaterialSettingAccess<Setting>::Value
+        {
+            // Available authored passes work even before a technique is selected.
+            for( auto technique : material.getTechniques() )
+                if( technique ) for( auto pass : technique->getPasses() )
+                    if( auto context = pass ? pass->getStateContext() : nullptr )
+                        if( auto data = context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
+                        {
+                            auto value = fallback;
+                            if( ( ( *data ).*MaterialSettingAccess<Setting>::read )( setting, value ) ) return value;
+                        }
+            return fallback;
+        }
+
         struct MaterialParameterSyncScope
         {
             bool &flag;
@@ -1915,23 +1967,7 @@ namespace workphone::render
     void Material::setEditorFloat( const String &name, f32 value )
     {
         const auto setting = MaterialPassStateData::resolveFloatSetting( name );
-        auto handled = false;
-        for( auto technique : getTechniques() )
-        {
-            for( auto pass : technique->getPasses() )
-            {
-                if( auto stateContext = pass->getStateContext() )
-                {
-                    if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
-                            pass->getId() ) )
-                    {
-                        handled = state->setFloatSetting( setting, value ) || handled;
-                    }
-                }
-            }
-        }
-
-        if( !handled )
+        if( !setNumericSetting( *this, setting, value ) )
         {
             WP_LOG_WARNING( String( "Material::setEditorFloat ignored unknown setting: " ) + name );
         }
@@ -1940,48 +1976,13 @@ namespace workphone::render
     f32 Material::getEditorFloat( const String &name, f32 defaultValue ) const
     {
         const auto setting = MaterialPassStateData::resolveFloatSetting( name );
-        for( auto technique : getTechniques() )
-        {
-            for( auto pass : technique->getPasses() )
-            {
-                if( auto stateContext = pass->getStateContext() )
-                {
-                    if( auto state =
-                            stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
-                    {
-                        auto value = defaultValue;
-                        if( state->getFloatSetting( setting, value ) )
-                        {
-                            return value;
-                        }
-                    }
-                }
-            }
-        }
-
-        return defaultValue;
+        return getNumericSetting( *this, setting, defaultValue );
     }
 
     void Material::setEditorUInt( const String &name, u32 value )
     {
         const auto setting = MaterialPassStateData::resolveUIntSetting( name );
-        auto handled = false;
-        for( auto technique : getTechniques() )
-        {
-            for( auto pass : technique->getPasses() )
-            {
-                if( auto stateContext = pass->getStateContext() )
-                {
-                    if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
-                            pass->getId() ) )
-                    {
-                        handled = state->setUIntSetting( setting, value ) || handled;
-                    }
-                }
-            }
-        }
-
-        if( !handled )
+        if( !setNumericSetting( *this, setting, value ) )
         {
             WP_LOG_WARNING( String( "Material::setEditorUInt ignored unknown or invalid setting: " ) +
                             name );
@@ -1991,50 +1992,13 @@ namespace workphone::render
     u32 Material::getEditorUInt( const String &name, u32 defaultValue ) const
     {
         const auto setting = MaterialPassStateData::resolveUIntSetting( name );
-        // Authored techniques can exist before a render technique is selected,
-        // and a newly allocated resource can have none. Match the other editor
-        // setting readers rather than dereferencing the selected-technique cache.
-        for( auto technique : getTechniques() )
-        {
-            for( auto pass : technique->getPasses() )
-            {
-                if( auto stateContext = pass->getStateContext() )
-                {
-                    if( auto state = stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
-                    {
-                        auto value = defaultValue;
-                        if( state->getUIntSetting( setting, value ) )
-                        {
-                            return value;
-                        }
-                    }
-                }
-            }
-        }
-
-        return defaultValue;
+        return getNumericSetting( *this, setting, defaultValue );
     }
 
     void Material::setEditorBool( const String &name, bool value )
     {
         const auto setting = MaterialPassStateData::resolveBoolSetting( name );
-        auto handled = false;
-        for( auto technique : getTechniques() )
-        {
-            for( auto pass : technique->getPasses() )
-            {
-                if( auto stateContext = pass->getStateContext() )
-                {
-                    if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
-                            pass->getId() ) )
-                    {
-                        handled = state->setBoolSetting( setting, value ) || handled;
-                    }
-                }
-            }
-        }
-
-        if( !handled )
+        if( !setNumericSetting( *this, setting, value ) )
         {
             WP_LOG_WARNING( String( "Material::setEditorBool ignored unknown setting: " ) + name );
         }
@@ -2043,7 +2007,7 @@ namespace workphone::render
         {
             constexpr auto cullNone = 1u;
             constexpr auto cullClockwise = 2u;
-            const auto mode = value ? cullNone : getEditorUInt( cullModeStr, cullClockwise );
+            const auto mode = value ? cullNone : getNumericSetting( *this, MaterialUIntSetting::cullMode, cullClockwise );
             applyCullModeToPasses( this, mode );
         }
     }
@@ -2051,26 +2015,7 @@ namespace workphone::render
     bool Material::getEditorBool( const String &name, bool defaultValue ) const
     {
         const auto setting = MaterialPassStateData::resolveBoolSetting( name );
-        for( auto technique : getTechniques() )
-        {
-            for( auto pass : technique->getPasses() )
-            {
-                if( auto stateContext = pass->getStateContext() )
-                {
-                    if( auto state =
-                            stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
-                    {
-                        auto value = defaultValue;
-                        if( state->getBoolSetting( setting, value ) )
-                        {
-                            return value;
-                        }
-                    }
-                }
-            }
-        }
-
-        return defaultValue;
+        return getNumericSetting( *this, setting, defaultValue );
     }
 
     void Material::setEditorString( const String &name, const String &value )
@@ -2131,7 +2076,7 @@ namespace workphone::render
         }
 
         batch( [&, mode]( Material & ) {
-            setEditorUInt( renderModeStr, mode );
+            setNumericSetting( *this, MaterialUIntSetting::renderMode, mode );
 
             switch( mode )
             {
@@ -2169,24 +2114,24 @@ namespace workphone::render
     u32 Material::getRenderMode() const
     {
         auto defaultMode = isTransparent() ? 3u : ( isCutout() ? 1u : 0u );
-        return getEditorUInt( renderModeStr, defaultMode );
+        return getNumericSetting( *this, MaterialUIntSetting::renderMode, defaultMode );
     }
 
     void Material::setWorkflow( u32 workflow )
     {
         // Keep this in sync with the material editor's PBR Workflow dropdown.
-        setEditorUInt( workflowStr, workflow <= 3u ? workflow : 0u );
+        setNumericSetting( *this, MaterialUIntSetting::workflow, workflow <= 3u ? workflow : 0u );
     }
 
     u32 Material::getWorkflow() const
     {
-        return getEditorUInt( workflowStr, 0u );
+        return getNumericSetting( *this, MaterialUIntSetting::workflow, 0u );
     }
 
     void Material::setSpecularAmount( f32 value )
     {
         batch( [&, value]( Material & ) {
-            setEditorFloat( specularStr, value );
+            setNumericSetting( *this, MaterialFloatSetting::specular, value );
             setSpecular( ColourF( value, value, value, 1.0f ) );
         } );
     }
@@ -2195,37 +2140,37 @@ namespace workphone::render
     {
         auto specular = getSpecular();
         auto defaultValue = ( specular.r + specular.g + specular.b ) / 3.0f;
-        return getEditorFloat( specularStr, defaultValue );
+        return getNumericSetting( *this, MaterialFloatSetting::specular, defaultValue );
     }
 
     void Material::setNormalStrength( f32 value )
     {
-        setEditorFloat( normalStrengthStr, value );
+        setNumericSetting( *this, MaterialFloatSetting::normalStrength, value );
     }
 
     f32 Material::getNormalStrength() const
     {
-        return getEditorFloat( normalStrengthStr, 1.0f );
+        return getNumericSetting( *this, MaterialFloatSetting::normalStrength, 1.0f );
     }
 
     void Material::setDetailNormalStrength( f32 value )
     {
-        setEditorFloat( detailNormalStrengthStr, value );
+        setNumericSetting( *this, MaterialFloatSetting::detailNormalStrength, value );
     }
 
     f32 Material::getDetailNormalStrength() const
     {
-        return getEditorFloat( detailNormalStrengthStr, 1.0f );
+        return getNumericSetting( *this, MaterialFloatSetting::detailNormalStrength, 1.0f );
     }
 
     void Material::setAlphaClip( f32 value )
     {
-        setEditorFloat( alphaClipStr, value );
+        setNumericSetting( *this, MaterialFloatSetting::alphaClip, value );
     }
 
     f32 Material::getAlphaClip() const
     {
-        return getEditorFloat( alphaClipStr, 0.5f );
+        return getNumericSetting( *this, MaterialFloatSetting::alphaClip, 0.5f );
     }
 
     void Material::batch( const std::function<void( Material & )> &update )
@@ -2291,7 +2236,7 @@ namespace workphone::render
         batch( [&, value]( Material & ) {
             m_hasPendingOpacity = true;
             m_pendingOpacity = value;
-            setEditorFloat( opacityStr, value );
+            setNumericSetting( *this, MaterialFloatSetting::opacity, value );
 
             auto diffuse = getDiffuse();
             diffuse.a = value;
@@ -2314,12 +2259,12 @@ namespace workphone::render
 
     f32 Material::getOpacity() const
     {
-        return getEditorFloat( opacityStr, getDiffuse().a );
+        return getNumericSetting( *this, MaterialFloatSetting::opacity, getDiffuse().a );
     }
 
     void Material::setBlendMode( u32 blendMode )
     {
-        setEditorUInt( blendModeStr, blendMode );
+        setNumericSetting( *this, MaterialUIntSetting::blendMode, blendMode );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2334,12 +2279,12 @@ namespace workphone::render
 
     u32 Material::getBlendMode() const
     {
-        return getEditorUInt( blendModeStr, 0u );
+        return getNumericSetting( *this, MaterialUIntSetting::blendMode, 0u );
     }
 
     void Material::setDepthWrite( bool enabled )
     {
-        setEditorBool( depthWriteStr, enabled );
+        setNumericSetting( *this, MaterialBoolSetting::depthWrite, enabled );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2360,16 +2305,16 @@ namespace workphone::render
             auto passes = technique->getPasses();
             for( auto pass : passes )
             {
-                return getEditorBool( depthWriteStr, pass->isDepthWriteEnabled() );
+                return getNumericSetting( *this, MaterialBoolSetting::depthWrite, pass->isDepthWriteEnabled() );
             }
         }
 
-        return getEditorBool( depthWriteStr, true );
+        return getNumericSetting( *this, MaterialBoolSetting::depthWrite, true );
     }
 
     void Material::setDepthTest( u32 mode )
     {
-        setEditorUInt( depthTestStr, mode );
+        setNumericSetting( *this, MaterialUIntSetting::depthTest, mode );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2384,12 +2329,12 @@ namespace workphone::render
 
     u32 Material::getDepthTest() const
     {
-        return getEditorUInt( depthTestStr, 2u );
+        return getNumericSetting( *this, MaterialUIntSetting::depthTest, 2u );
     }
 
     void Material::setCullMode( u32 mode )
     {
-        setEditorUInt( cullModeStr, mode );
+        setNumericSetting( *this, MaterialUIntSetting::cullMode, mode );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2410,84 +2355,84 @@ namespace workphone::render
             auto passes = technique->getPasses();
             for( auto pass : passes )
             {
-                return getEditorUInt( cullModeStr, pass->getCullingMode() );
+                return getNumericSetting( *this, MaterialUIntSetting::cullMode, pass->getCullingMode() );
             }
         }
 
-        return getEditorUInt( cullModeStr, 2u );
+        return getNumericSetting( *this, MaterialUIntSetting::cullMode, 2u );
     }
 
     void Material::setUVTiling( const Vector2F &tiling )
     {
         batch( [&, tiling]( Material & ) {
-            setEditorFloat( uvTilingXStr, tiling.X() );
-            setEditorFloat( uvTilingYStr, tiling.Y() );
+            setNumericSetting( *this, MaterialFloatSetting::uvTilingX, tiling.X() );
+            setNumericSetting( *this, MaterialFloatSetting::uvTilingY, tiling.Y() );
             setScale( Vector3F( tiling.X(), tiling.Y(), 1.0f ), 0u );
         } );
     }
 
     Vector2F Material::getUVTiling() const
     {
-        return Vector2F( getEditorFloat( uvTilingXStr, 1.0f ),
-                         getEditorFloat( uvTilingYStr, 1.0f ) );
+        return Vector2F( getNumericSetting( *this, MaterialFloatSetting::uvTilingX, 1.0f ),
+                         getNumericSetting( *this, MaterialFloatSetting::uvTilingY, 1.0f ) );
     }
 
     void Material::setUVOffset( const Vector2F &offset )
     {
         batch( [&, offset]( Material & ) {
-            setEditorFloat( uvOffsetXStr, offset.X() );
-            setEditorFloat( uvOffsetYStr, offset.Y() );
+            setNumericSetting( *this, MaterialFloatSetting::uvOffsetX, offset.X() );
+            setNumericSetting( *this, MaterialFloatSetting::uvOffsetY, offset.Y() );
         } );
     }
 
     Vector2F Material::getUVOffset() const
     {
-        return Vector2F( getEditorFloat( uvOffsetXStr, 0.0f ),
-                         getEditorFloat( uvOffsetYStr, 0.0f ) );
+        return Vector2F( getNumericSetting( *this, MaterialFloatSetting::uvOffsetX, 0.0f ),
+                         getNumericSetting( *this, MaterialFloatSetting::uvOffsetY, 0.0f ) );
     }
 
     void Material::setUVRotation( f32 rotation )
     {
-        setEditorFloat( uvRotationStr, rotation );
+        setNumericSetting( *this, MaterialFloatSetting::uvRotation, rotation );
     }
 
     f32 Material::getUVRotation() const
     {
-        return getEditorFloat( uvRotationStr, 0.0f );
+        return getNumericSetting( *this, MaterialFloatSetting::uvRotation, 0.0f );
     }
 
     void Material::setUVProjection( u32 projection )
     {
         // Keep this in sync with the material editor's Projection dropdown.
-        setEditorUInt( uvProjectionStr, projection <= 6u ? projection : 0u );
+        setNumericSetting( *this, MaterialUIntSetting::uvProjection, projection <= 6u ? projection : 0u );
     }
 
     u32 Material::getUVProjection() const
     {
-        const auto projection = getEditorUInt( uvProjectionStr, 0u );
+        const auto projection = getNumericSetting( *this, MaterialUIntSetting::uvProjection, 0u );
         return projection <= 6u ? projection : 0u;
     }
 
     void Material::setUVSet( u32 uvSet )
     {
-        setEditorUInt( uvSetStr, uvSet <= 3u ? uvSet : 0u );
+        setNumericSetting( *this, MaterialUIntSetting::uvSet, uvSet <= 3u ? uvSet : 0u );
     }
 
     u32 Material::getUVSet() const
     {
-        const auto uvSet = getEditorUInt( uvSetStr, 0u );
+        const auto uvSet = getNumericSetting( *this, MaterialUIntSetting::uvSet, 0u );
         return uvSet <= 3u ? uvSet : 0u;
     }
 
     void Material::setTriplanarScale( f32 scale )
     {
         const auto validScale = std::isfinite( scale ) ? Math<real_Num>::max( scale, 0.0001f ) : 1.0f;
-        setEditorFloat( uvTriplanarScaleStr, validScale );
+        setNumericSetting( *this, MaterialFloatSetting::uvTriplanarScale, validScale );
     }
 
     f32 Material::getTriplanarScale() const
     {
-        const auto scale = getEditorFloat( uvTriplanarScaleStr, 1.0f );
+        const auto scale = getNumericSetting( *this, MaterialFloatSetting::uvTriplanarScale, 1.0f );
         return std::isfinite( scale ) ? Math<real_Num>::max( scale, 0.0001f ) : 1.0f;
     }
 

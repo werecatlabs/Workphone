@@ -997,6 +997,143 @@ namespace
         legacy->unload( nullptr ); batched->unload( nullptr );
     }
 
+    class NamedSettingProbeMaterial : public render::ClawMaterial
+    {
+    public:
+        mutable u64 namedCalls = 0;
+        void setEditorFloat( const String &name, f32 value ) override
+        { ++namedCalls; Material::setEditorFloat( name, value ); }
+        f32 getEditorFloat( const String &name, f32 fallback ) const override
+        { ++namedCalls; return Material::getEditorFloat( name, fallback ); }
+        void setEditorUInt( const String &name, u32 value ) override
+        { ++namedCalls; Material::setEditorUInt( name, value ); }
+        u32 getEditorUInt( const String &name, u32 fallback ) const override
+        { ++namedCalls; return Material::getEditorUInt( name, fallback ); }
+        void setEditorBool( const String &name, bool value ) override
+        { ++namedCalls; Material::setEditorBool( name, value ); }
+        bool getEditorBool( const String &name, bool fallback ) const override
+        { ++namedCalls; return Material::getEditorBool( name, fallback ); }
+    };
+
+    void benchmarkNumericControls( Fixture &fixture )
+    {
+        using namespace render;
+        auto named = make_ptr<ClawMaterial>(), numeric = make_ptr<ClawMaterial>();
+        named->load( nullptr ); numeric->load( nullptr );
+        constexpr int samples = 7, updates = 1000;
+        std::array<double, samples> times[2];
+        double sums[2]{}; u64 publications[2]{};
+        const auto measure = [&]( int mode ) {
+            auto material = mode ? numeric : named;
+            const auto write = [&]( f32 value ) {
+                material->batch( [&]( Material &m ) {
+                    if( mode )
+                    {
+                        m.setNormalStrength( value ); m.setDetailNormalStrength( value );
+                        m.setAlphaClip( value ); m.setUVRotation( value ); m.setTriplanarScale( value + 1 );
+                    }
+                    else
+                    {
+                        m.setEditorFloat( Material::normalStrengthStr, value );
+                        m.setEditorFloat( Material::detailNormalStrengthStr, value );
+                        m.setEditorFloat( Material::alphaClipStr, value );
+                        m.setEditorFloat( Material::uvRotationStr, value );
+                        m.setEditorFloat( Material::uvTriplanarScaleStr, value + 1 );
+                    }
+                } );
+            };
+            write( 0.9f );
+            const auto revision = material->getRenderState()->revision;
+            double sum = 0;
+            const auto start = std::chrono::steady_clock::now();
+            for( int update = 0; update < updates; ++update )
+            {
+                write( update % 2 ? 0.6f : 0.2f );
+                if( mode ) sum += material->getNormalStrength() + material->getDetailNormalStrength() +
+                    material->getAlphaClip() + material->getUVRotation() + material->getTriplanarScale();
+                else sum += material->getEditorFloat( Material::normalStrengthStr, 0 ) +
+                    material->getEditorFloat( Material::detailNormalStrengthStr, 0 ) +
+                    material->getEditorFloat( Material::alphaClipStr, 0 ) +
+                    material->getEditorFloat( Material::uvRotationStr, 0 ) +
+                    material->getEditorFloat( Material::uvTriplanarScaleStr, 0 );
+            }
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            sums[mode] = sum; publications[mode] = material->getRenderState()->revision - revision;
+            return std::chrono::duration<double, std::milli>( elapsed ).count();
+        };
+        for( int sample = 0; sample < samples; ++sample )
+        {
+            const auto first = sample % 2;
+            times[first][sample] = measure( first ); times[1-first][sample] = measure( 1-first );
+            const auto a = named->getRenderState(), b = numeric->getRenderState();
+            require( sums[0] == sums[1] && publications[0] == updates && publications[1] == updates &&
+                     a->normalStrength == b->normalStrength && named->getDetailNormalStrength() == numeric->getDetailNormalStrength() &&
+                     a->alphaClip == b->alphaClip && a->uvRotation == b->uvRotation && a->uvTriplanarScale == b->uvTriplanarScale,
+                     "named/numeric control benchmark has equal values, checksum and publication work" );
+        }
+        for( auto &values : times ) std::sort( values.begin(), values.end() );
+        std::cout << "numeric_controls updates=" << updates << " samples=" << samples
+                  << " named_median_ms=" << times[0][samples/2] << " numeric_median_ms=" << times[1][samples/2]
+                  << " publications_per_path=" << publications[0] << " checksum=" << sums[0]
+                  << " named_setting_resolutions=" << updates * 10 << " builtin_setting_resolutions=0\n";
+        named->unload( nullptr ); numeric->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
+    void runNumericControls( Fixture &fixture )
+    {
+        using namespace render;
+        auto material = make_ptr<NamedSettingProbeMaterial>();
+        require( material->getNormalStrength() == 1 && material->getWorkflow() == 0 && material->getDepthWrite() &&
+                 material->namedCalls == 0,
+                 "unloaded numeric controls preserve defaults without a selected technique" );
+        material->load( nullptr );
+        auto technique = material->getTechnique( 0 );
+        for( int pass = 1; pass < 3; ++pass ) technique->createPass()->load( nullptr );
+        material->setTechnique( nullptr );
+        material->namedCalls = 0;
+        material->batch( []( Material &m ) {
+            m.setRenderMode( 3 ); m.setWorkflow( 2 ); m.setSpecularAmount( 0.32f );
+            m.setNormalStrength( 0.7f ); m.setDetailNormalStrength( 0.6f ); m.setAlphaClip( 0.4f );
+            m.setOpacity( 0.8f ); m.setBlendMode( 1 ); m.setDepthWrite( false ); m.setDepthTest( 1 ); m.setCullMode( 1 );
+            m.setUVTiling( Vector2F( 2, 3 ) ); m.setUVOffset( Vector2F( 0.2f, 0.3f ) );
+            m.setUVRotation( 0.5f ); m.setUVProjection( 4 ); m.setUVSet( 2 ); m.setTriplanarScale( 2.5f );
+        } );
+        require( material->getRenderMode() == 3 && material->getWorkflow() == 2 &&
+                 material->getSpecularAmount() == 0.32f && material->getNormalStrength() == 0.7f &&
+                 material->getDetailNormalStrength() == 0.6f && material->getAlphaClip() == 0.4f &&
+                 material->getOpacity() == 0.8f && material->getBlendMode() == 1 && !material->getDepthWrite() &&
+                 material->getDepthTest() == 1 && material->getCullMode() == 1 &&
+                 material->getUVTiling() == Vector2F( 2, 3 ) && material->getUVOffset() == Vector2F( 0.2f, 0.3f ) &&
+                 material->getUVRotation() == 0.5f && material->getUVProjection() == 4 && material->getUVSet() == 2 &&
+                 material->getTriplanarScale() == 2.5f && material->namedCalls == 0,
+                 "all built-in scalar controls read/write numeric IDs without calling named editor adapters" );
+        for( auto pass : technique->getPasses() )
+        {
+            auto state = pass->getStateContext()->getStateDataById<MaterialPassStateData>( pass->getId() );
+            auto snapshot = state->getRenderState();
+            require( snapshot->normalStrength == 0.7f && snapshot->alphaClip == 0.4f && snapshot->opacity == 0.8f &&
+                     snapshot->uvTilingY == 3 && snapshot->uvOffsetX == 0.2f && snapshot->uvProjection == 4 &&
+                     !pass->isDepthWriteEnabled() && pass->isDepthCheckEnabled() && pass->getCullingMode() == 1 &&
+                     snapshot->blendMode == 1, "numeric control edits retain every pass and backend side effect" );
+        }
+        material->setWorkflow( 99 ); material->setUVProjection( 99 ); material->setUVSet( 99 );
+        material->setTriplanarScale( std::numeric_limits<f32>::quiet_NaN() );
+        material->setOpacity( -1 ); material->setRenderMode( 99 );
+        require( material->getWorkflow() == 0 && material->getUVProjection() == 0 && material->getUVSet() == 0 &&
+                 material->getTriplanarScale() == 1 && material->getOpacity() == 0 && material->getRenderMode() == 0 &&
+                 material->namedCalls == 0, "numeric controls preserve normalization without named routing" );
+        material->setEditorFloat( "normalStrength", 0.9f );
+        material->setEditorUInt( "workflow", 1 );
+        material->setEditorBool( "doubleSided", true );
+        require( material->getEditorFloat( "normalStrength", 0 ) == 0.9f &&
+                 material->getEditorUInt( "workflow", 0 ) == 1 && material->getEditorBool( "doubleSided", false ) &&
+                 material->namedCalls == 6 && material->getCullMode() == 1,
+                 "named authoring API remains virtual and preserves double-sided culling behavior" );
+        material->setEditorBool( "doubleSided", false );
+        require( !material->getEditorBool( "doubleSided", true ), "double-sided authoring toggle remains available" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
     void runLegacyBatchScopes( Fixture &fixture )
     {
         using namespace render;
@@ -1409,9 +1546,15 @@ int main( int argc, char **argv )
             benchmarkObservedParameters();
             return 0;
         }
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-controls" )
+        {
+            benchmarkNumericControls( fixture );
+            return 0;
+        }
         runCapturedMaterialRecords( fixture );
         runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
+        runNumericControls( fixture );
         runLegacyBatchScopes( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );

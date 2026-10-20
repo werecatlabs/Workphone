@@ -7,7 +7,7 @@
 - `MaterialShaderParameterLayout` owns immutable parameter metadata, defaults, a sorted stable-ID lookup table and cached built-in bindings. Registered shader instances retain this layout instead of copying names/descriptors. Instance copies retain independent value bytes.
 - Parameter handles carry a unique layout identity and slot. Typed resolution/access distinguishes float, signed/unsigned integer, bool, colour, vector, matrix and resource kinds. Invalid/stale/cross-layout/type/size/offset operations are rejected in every build. Values remain packed CPU bytes accessed through copies, independent of GPU packing.
 - Parameter instances expose effective-write revisions and name-lookup/storage counters. Built-in PBR bridges use cached semantic handles. Serialization iterates slots directly; names remain at the asset/editor boundary.
-- Standard material settings have numeric IDs and table-indexed access. The existing named editor API resolves a setting once before traversing authored passes.
+- Standard material settings have numeric IDs and table-indexed access. Built-in controls now use these IDs directly; the existing named editor API resolves a setting once at the authoring boundary and shares the numeric access implementation.
 - `MaterialPassStateData` publishes a retained immutable `MaterialRenderState` when its outer write lock closes. Nested writes coalesce into one version; unchanged values reuse the current version. Cold authoring changes do not rebuild the runtime record. Existing `SafePtr` mutation paths participate without requiring each caller to maintain a second dirty flag.
 - The five shader-name/path/keyword buffers live in a lazily allocated authoring block. They are absent from render snapshots and consume no text-buffer storage on an unconfigured pass.
 - Materials cache primary-state selection by graph revision. Technique/pass creation, replacement, removal, generic child edits and pass/context lifecycle invalidate selection. New/unselected authored materials preserve their available primary pass behavior.
@@ -149,6 +149,27 @@ RelWithDebInfo on Intel Core i9-9820X, Windows reporting 20 logical processors, 
 Each sample performs 1,000,000 lookups and full draw-block compositions, view-field assignments and an out-of-line checksum reading all submitted bytes. Each median uses seven samples with alternating execution order. Both implementations use identical inputs, produce identical checksums and perform identical numbers of preparations. Counts include prewarming outside the timer. Grouped draws improve about 12% and capacity misses about 30% in this fixture; the four-way warm case is close to the former result. This measures CPU preparation/composition with checksum overhead, excluding graph selection, native texture resolution, GPU submission, complete material/scene allocation, hardware cache counters and whole-frame timing. Fixed storage sizes exclude weak-pointer-retained control/allocation storage, which has the same 128-entry bound.
 
 Reproduction: build `WPMaterialLoadSequenceTests` in `RelWithDebInfo` and run it with `--benchmark-preparation`. Output is in `project_x64/material_cache_compact_benchmark.txt`; final Debug and optimized contracts are in `material_cache_compact_debug_contracts.log`, `material_cache_compact_debug_evidence.log`, `material_cache_compact_rwi_contracts.log` and `material_cache_compact_rwi_evidence.log`. The final 90-case material selection is in `material_cache_compact_unit_tests.log`.
+
+## Numeric built-in controls
+
+Built-in render-mode/workflow, scalar-specular, normal/detail-normal, alpha-clip/opacity, blend/depth/cull and UV controls now access `MaterialFloatSetting`, `MaterialUIntSetting` and `MaterialBoolSetting` directly. Their getters and setters bypass named editor adapters. Shared typed helpers traverse available authored passes, preserve state normalization and existing write/read scopes, and keep getters safe when no render technique is selected. Existing virtual pass setters still perform backend changes for blending, depth, culling and surface values.
+
+Named `setEditor*`/`getEditor*` APIs remain virtual authoring/serialization entry points. They resolve the name once and use the same numeric helpers, preserving unknown-name diagnostics, fallbacks and double-sided culling behavior. Named overrides observe explicit named calls; built-in customizations belong in the existing high-level or pass overrides. No new fields, lookup maps or persistent allocations were added to material instances. The static setting-name metadata and file formats remain in use at the asset boundary. Graph traversal and temporary technique/pass arrays still exist; this is not the persistent resource-record or global publication-scheduling gate.
+
+New contracts use a material subclass that counts named API calls: built-in reads/writes invoke those adapters **zero times**, while explicit authoring calls retain virtual dispatch. Coverage includes three authored passes without a selected technique, unloaded defaults, normalized enum/nonfinite inputs, opacity clamping, per-pass snapshots, virtual depth/cull changes and named double-sided controls. Existing schema, batch/coherence, load/retirement and renderer tests remain active.
+
+Final validation: **4/4 Debug contracts** (parameter layout, load sequence, production rendering and cooked material resources), **3/3 optimized contracts** (layout/load/render), the **90-case/1,890-assertion material selection**, and **3 Editor material cases with 50 assertions** passed. The Editor cases exercise selection, Lua parameter application and real material control events/persistence. The earlier full 66-case Editor aggregate belongs to the preceding batching runtime; it was not repeated for this lookup-only slice. Device evidence confirms Microsoft Basic Render Driver/WARP, feature level `b000`, driver `10.0.19041.7802`.
+
+The optional `WPMaterialLoadSequenceTests --benchmark-controls` compares five floating-point writes inside a material batch and five reads per update. RelWithDebInfo, 1,000 updates, seven alternating-order samples, with the other builds/tests idle:
+
+| Path | Median CPU time | Publications | Setting-name resolutions in timed workload |
+| --- | ---: | ---: | ---: |
+| Named editor adapters using existing constant names | 24.8332 ms | 1,000 | 10,000 |
+| Built-in numeric controls | 20.1753 ms | 1,000 | 0 |
+
+Both paths produce equal values, a checksum of 3,000 and equal publication work. The numeric path takes about **19% less CPU** in this fixture. Resolution counts follow the ten explicit adapter calls per update and the no-named-dispatch contract; they are not system-wide profiling counters. Timing includes graph access, setting mutation/readback and snapshot publication, excluding GPU submission and whole-frame work. No whole-material memory or hardware-cache improvement is inferred from this result.
+
+Evidence: `project_x64/material_numeric_verified_debug_build.log`, `material_numeric_verified_rwi_build.log`, `material_numeric_debug_contracts.log`, `material_numeric_rwi_contracts.log`, `material_numeric_debug_evidence.log`, `material_numeric_rwi_evidence.log`, `material_numeric_unit_tests.log`, `material_numeric_editor_material_tests.log` and `material_numeric_controls_benchmark.txt`.
 
 ## Parameter publication
 
