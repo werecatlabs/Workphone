@@ -4,7 +4,8 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/System/Job.hpp>
-#include <Workphone/Core/Map.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
+#include <Workphone/Core/ConcurrentMap.hpp>
 #include <Workphone/Core/UnorderedMap.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>
 
@@ -279,10 +280,6 @@ namespace workphone
          */
         SmartPtr<ISharedObject> getObjectByFileId( const String &fileId ) const override;
 
-        /** Get a pointer to the internal resource instance array. */
-        SharedPtr<Array<SmartPtr<IResource>>> getInstancesPtr() const;
-        void setInstancesPtr( SharedPtr<Array<SmartPtr<IResource>>> instances );
-
         /** @copydoc IResourceDatabase::getFilePath */
         String getFilePath() const override;
 
@@ -350,13 +347,7 @@ namespace workphone
          *
          * This structure provides fast lookup of resources by type and path.
          */
-        std::unordered_map<hash_type, std::unordered_map<String, WeakPtr<IResource>>> m_resourceMap;
-
-        /** Shared pointer to the array containing all resource instances. */
-        SharedPtr<Array<SmartPtr<IResource>>> m_instances;
-
-        /** In-memory list of shared objects (scene nodes, references, etc.). */
-        Array<SmartPtr<ISharedObject>> m_objects;
+        ConcurrentMap<hash_type, ConcurrentMap<String, WeakPtr<IResource>>> m_resourceMap;
 
         /** Database manager used for persistence and queries. */
         SmartPtr<IDatabaseManager> m_databaseManager;
@@ -364,6 +355,11 @@ namespace workphone
 
         /** File path to the resource database on disk. */
         String m_filePath;
+
+        /** Shared pointer to the array containing all resource instances. */
+        ConcurrentArray<SmartPtr<IResource>> m_instances;
+
+        ConcurrentMap<UUID, SmartPtr<ISharedObject>> m_objects;
 
         /** Recursive mutex protecting internal containers for multi-threaded use. */
         mutable RecursiveMutex m_mutex;

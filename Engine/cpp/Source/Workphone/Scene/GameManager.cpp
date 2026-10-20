@@ -2212,6 +2212,16 @@ namespace workphone::scene
                                         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
                                         SmartPtr<IEvent> event )
     {
+        if( eventValue == IEvent::addActor || eventValue == IEvent::removeActor ||
+            eventValue == IEvent::addChild || eventValue == IEvent::removeChild )
+        {
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            WP_ASSERT( applicationManager );
+
+            auto resourceDatabase = applicationManager->getResourceDatabase();
+            resourceDatabase->refresh();
+        }
+
         if( auto scene = getCurrentScene() )
         {
             return scene->handleEvent( eventType, eventValue, arguments, sender, object, event );
