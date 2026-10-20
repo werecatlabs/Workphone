@@ -14,7 +14,10 @@
 #include "TerrainTileContracts.hpp"
 #include "TerrainIntegrationContracts.hpp"
 #include "WorldStreamingContracts.hpp"
+#include "TerrainPerformanceContracts.hpp"
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <stdexcept>
 
 using namespace workphone;
@@ -157,7 +160,7 @@ static void attachmentContracts()
     std::puts( "Terrain runtime actor placement and reattachment: PASS" );
 }
 
-int main()
+int main( int argc, char **argv )
 {
     TypeManager types;
     types.load();
@@ -173,6 +176,26 @@ int main()
     int result = 0;
     try
     {
+        if( argc > 1 )
+        {
+            if( argc == 2 && std::string( argv[1] ) == "--performance" )
+            {
+                terrain_performance_contracts::representativeErosionMeasurement();
+                terrain_performance_contracts::flythroughTeleportSoak();
+            }
+            else if( argc == 3 && std::string( argv[1] ) == "--soak" )
+            {
+                char *end = nullptr;
+                const auto cycles = std::strtol( argv[2], &end, 10 );
+                if( !end || *end || cycles < 1 || cycles > 10000 )
+                    throw std::runtime_error( "Usage: --soak cycles[1..10000]" );
+                terrain_performance_contracts::regenerationSoak( u32( cycles ) );
+            }
+            else
+                throw std::runtime_error( "Usage: [--performance|--soak cycles[1..10000]]" );
+        }
+        else
+        {
         world_streaming_contracts::run();
         terrain_data_contracts::run();
         terrain_tile_contracts::run();
@@ -180,6 +203,7 @@ int main()
         persistenceContracts();
         attachmentContracts();
         terrain_editing_contracts::run();
+        }
     }
     catch( const std::exception &exception )
     {
