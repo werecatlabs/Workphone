@@ -136,6 +136,12 @@ namespace workphone
         Array<SmartPtr<IVertexBoneAssignment>> getBoneAssignments() const override;
 
         /**
+         * @brief Reserves space for bone assignments to avoid frequent reallocation.
+         * @param count The number of bone assignments to reserve.
+         */
+        void reserveBoneAssignments( size_t count ) override;
+
+        /**
          * @brief Retrieves the current render operation type (e.g., Triangle List).
          * @return The render operation type.
          */

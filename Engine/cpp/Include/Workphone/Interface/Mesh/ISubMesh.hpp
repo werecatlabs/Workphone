@@ -286,6 +286,20 @@ namespace workphone
          */
         virtual Array<SmartPtr<IVertexBoneAssignment>> getBoneAssignments() const = 0;
 
+        /**
+         * @brief Reserves space for bone assignments to avoid frequent reallocation.
+         *
+         * This method pre-allocates storage for bone assignments to improve performance
+         * when adding a large number of bone assignments. It should be called before
+         * adding multiple bone assignments.
+         *
+         * @param count The number of bone assignments to reserve space for.
+         *
+         * @note This is an optimization hint and does not change the semantic behavior.
+         * @note Implementation may ignore this hint if it doesn't support reservation.
+         */
+        virtual void reserveBoneAssignments( size_t count ) = 0;
+
         WP_CLASS_REGISTER_DECL;
     };
 
