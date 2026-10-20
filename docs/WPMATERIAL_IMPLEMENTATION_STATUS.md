@@ -280,6 +280,19 @@ This is an owning-thread boundary, not a global transaction across update thread
 
 The load-sequence contracts exercise the actual base graphics update, mixed retained typed handles and legacy setters, explicit PBR import, nested scopes/batches, no-op/net-zero edits, exception unwind, concurrent readers, an independent writer thread, stack state, unload/reload, temporary owner release and a 5,000-pass collision/burst workload. Production WARP coverage commits independent edits before checking red/green pixels. The `--benchmark-update-publication` fixture compares immediate calls, update scopes and explicit material batches for both one and six fields, with one material over 1,000 frames and 64 materials over 16 frames. Seven samples rotate execution order and check output/publication parity; timing includes setter graph work and queue publication/retirement, excluding GPU/whole-frame work.
 
+RelWithDebInfo medians with other compilation/validation work idle:
+
+| Materials / frames | Fields per material update | Immediate CPU | Update scope CPU | Explicit material batch CPU | Immediate / update publications |
+| --- | --- | --- | --- | --- | --- |
+| 1 / 1,000 | 1 | 3.8996 ms | 4.0790 ms | 5.4484 ms | 1,000 / 1,000 |
+| 1 / 1,000 | 6 | 33.3293 ms | 24.4004 ms | 24.0400 ms | 6,000 / 1,000 |
+| 64 / 16 | 1 | 3.9542 ms | 4.2000 ms | 5.5447 ms | 1,024 / 1,024 |
+| 64 / 16 | 6 | 34.3507 ms | 24.7573 ms | 24.5732 ms | 6,144 / 1,024 |
+
+The six-field workloads use **26.8–27.9% less CPU and 83.3% fewer snapshot publications** than independent immediate calls. Single-field updates add **4.6–6.2% CPU** (about 0.18–0.24 microseconds per material update) for queueing and the extra commit lock. Existing explicit batches remain slightly faster in these six-field fixtures; update scopes extend coalescing to independent callers. Reported retained queue/TLS storage is **2,096 bytes** for one material and **2,840 bytes** for 64, including fixed filter/vector metadata and vector capacity, excluding allocator/OS TLS overhead. There is no per-material storage increase. The 5,000-pass contract verifies burst storage is released after commit. Output: `project_x64/material_update_scope_benchmark.log`. These measurements do not establish hardware-cache, GPU or whole-frame p95 improvements.
+
+Validation: the four native material suites pass **4/4 in Debug (31.92 s)** and **4/4 in RelWithDebInfo (20.79 s)**. After adding the already-queued-pass/remaining-write-lock regression, the final load-sequence binary was rebuilt and passed again in both configurations. The rebuilt Debug UnitTests selection passes **104 cases / 1,890 assertions**. Build and validation logs use the `material_update_scope_` prefix: `final_build.log`, `rwi_build.log`, `debug_contracts.log`, `rwi_contracts.log`, `Debug_final_contract_build.log`, `RelWithDebInfo_final_contract_build.log`, `debug_final_contract.log`, `rwi_final_contract.log` and `unit_tests.log`; corresponding `*_evidence.log` files preserve detailed CTest output. The first stack-state failure and debugger trace are preserved in `initial_contract.log` and `initial_source_stack.log`; the construction/destruction fix is covered by the passing contracts.
+
 ## Remaining plan gates
 
 This is an integrated CPU storage/access and active DX11 consumption change, not completion of all production gates in the plan. Remaining work includes:
