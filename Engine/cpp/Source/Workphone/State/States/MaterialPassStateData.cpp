@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <functional>
 #include <vector>
 #include <cstring>
 #include <Workphone/Interface/System/IStateContext.hpp>
@@ -17,8 +18,12 @@ namespace workphone
 
     namespace
     {
+        struct PublicationQueue;
+        thread_local PublicationQueue *activePublicationQueue = nullptr;
         struct PublicationQueue
         {
+            PublicationQueue() { activePublicationQueue = this; }
+            ~PublicationQueue() { activePublicationQueue = nullptr; }
             u32 depth = 0;
             bool flushing = false;
             std::array<MaterialPassStateData *, 256> recent{};
@@ -158,12 +163,15 @@ namespace workphone
 
     MaterialPassStateData::MaterialPassStateData() : StateData( MaterialPassStateData::typeInfo() )
     {
-        setFlag( receiveShadowsFlag, true );
-        setFlag( castShadowsFlag, true );
+        flags = receiveShadowsFlag | castShadowsFlag;
         publishRenderState();
     }
 
-    MaterialPassStateData::~MaterialPassStateData() = default;
+    MaterialPassStateData::~MaterialPassStateData()
+    {
+        // Stack/explicitly destroyed states can end before their update scope.
+        MaterialPublicationScope::forget(*this);
+    }
 
 
     String MaterialPassStateData::getVertexShaderName() const
@@ -210,13 +218,13 @@ namespace workphone
 
     size_t MaterialPublicationScope::retainedStorageBytes() noexcept
     {
-        return sizeof(PublicationQueue) + publicationQueue.pending.capacity() * sizeof(SmartPtr<MaterialPassStateData>);
+        return sizeof(PublicationQueue) + sizeof(activePublicationQueue) +
+            publicationQueue.pending.capacity() * sizeof(SmartPtr<MaterialPassStateData>);
     }
 
     bool MaterialPublicationScope::defer(MaterialPassStateData &state) noexcept
     {
-        // Detached/stack instances and constructor publication stay immediate.
-        if(!isActive() || state.getReferences() == 0) return false;
+        if(!isActive()) return false;
         const auto address = reinterpret_cast<size_t>(&state);
         const auto slot = ((address >> 4) ^ (address >> 12)) & 255;
         if(publicationQueue.recent[slot] == &state) return true;
@@ -227,6 +235,22 @@ namespace workphone
             return true;
         }
         catch(...) { return false; } // Preserve the existing immediate path on queue allocation failure.
+    }
+
+    void MaterialPublicationScope::forget(MaterialPassStateData &state) noexcept
+    {
+        // Ordinary last-owner destruction cannot be present in the owning queue.
+        // The trivial TLS pointer also guards late factory/TLS teardown.
+        if(state.getReferences() <= 0 || !activePublicationQueue) return;
+        auto &queue = *activePublicationQueue;
+        auto &pending = queue.pending;
+        if(pending.empty()) return;
+        pending.erase(std::remove_if(pending.begin(), pending.end(), [&](const auto &entry) {
+            return entry.get() == &state;
+        }), pending.end());
+        const auto address = reinterpret_cast<size_t>(&state);
+        const auto slot = ((address >> 4) ^ (address >> 12)) & 255;
+        if(queue.recent[slot] == &state) queue.recent[slot] = nullptr;
     }
 
     void MaterialPublicationScope::commit()
@@ -254,7 +278,7 @@ namespace workphone
         pending.erase(std::unique(pending.begin(), pending.end(), [](const auto &a, const auto &b) {
             return a.get() == b.get();
         }), pending.end());
-        for(const auto &state : pending)
+        for(auto &state : pending)
         {
             // Bypass the write-depth override: publication itself must not enqueue
             // another write, and a failed snapshot allocation must still unlock.
@@ -263,7 +287,9 @@ namespace workphone
                 explicit StateLock(StateData &value) : state(value) { state.StateData::lock(); }
                 ~StateLock() { state.StateData::unlock(); }
             } lock{*state};
-            state->publishRenderState();
+            // An enclosing explicit write/batch still owns the final boundary.
+            // Its outer unlock will publish after the remaining edits finish.
+            if(!state->m_writeDepth) state->publishRenderState();
         }
     }
 
@@ -282,7 +308,9 @@ namespace workphone
 
     void MaterialPassStateData::publishRenderState()
     {
-        if( MaterialPublicationScope::defer( *this ) ) return;
+        // Construction always produces a valid initial snapshot. Access to this
+        // member is serialized by the owning write lock (or detached owner).
+        if( m_renderState && MaterialPublicationScope::defer( *this ) ) return;
         auto previous = std::atomic_load( &m_renderState );
         bool changed = !previous;
         changed = changed || !sameMaterialValue( specularColour, previous->specularColour );

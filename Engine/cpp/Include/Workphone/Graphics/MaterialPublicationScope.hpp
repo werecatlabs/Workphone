@@ -12,6 +12,8 @@ namespace workphone
      * Writes retain their usual short locks; readers keep the previous snapshot
      * until the outer scope commits. End update scopes before render capture.
      * Other threads and edits outside a scope retain immediate publication.
+     * An enclosing state write/batch retains its final publication boundary.
+     * Scopes belong to their constructing thread and must be nested normally.
      */
     class WPCore_API MaterialPublicationScope
     {
@@ -27,6 +29,7 @@ namespace workphone
     private:
         friend class MaterialPassStateData;
         static bool defer(MaterialPassStateData &state) noexcept;
+        static void forget(MaterialPassStateData &state) noexcept;
         bool m_active = true;
     };
 }

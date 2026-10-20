@@ -7,6 +7,7 @@
 #include "ClawRTTJobContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Graphics/MaterialShader.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
@@ -311,11 +312,24 @@ namespace
                 parameters.Set( color, red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
                 parameters.Set( opacity, 1.0f );
             }
-            else material->batch( [&]( Material &m ) {
+            else if(edit < 6) material->batch( [&]( Material &m ) {
                 m.setUVOffset( Vector2F( 0.1f, 0.2f ) );
                 parameters.Set( color, red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
                 parameters.Set( opacity, 1.0f );
             } );
+            else
+            {
+                const auto previous = material->getRenderState();
+                MaterialPublicationScope update;
+                material->setUVOffset(Vector2F(0.3f, 0.4f));
+                parameters.Set(color, red ? ColourF(1, 0, 0, 1) : ColourF(0, 1, 0, 1));
+                parameters.Set(opacity, 1.0f);
+                ok &= check(material->getRenderState() == previous,
+                            "update edits retain the previously captured version until commit");
+                update.commit();
+                ok &= check(material->getRenderState()->revision == previous->revision + 1,
+                            "independent update edits publish one version before rendering");
+            }
             renderer.clear( ColourF::Black );
             renderer.renderMesh( &mesh, Matrix4F::identity() );
             const auto pixels = claw_foliage_contracts::pixels( native );

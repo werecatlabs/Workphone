@@ -266,6 +266,7 @@ namespace workphone
         hash_type renderTechnique = 0; /**< Render technique hash. */
 
     private:
+        friend class MaterialPublicationScope;
         struct AuthoringData
         {
             FixedString<WP_MAX_CLASSNAME> vertexShaderName, fragmentShaderName, geometryShaderName;

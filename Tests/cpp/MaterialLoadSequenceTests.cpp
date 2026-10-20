@@ -11,6 +11,9 @@
 #include <WPGraphics/ClawTexture.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Graphics/MaterialShader.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
+#include <Workphone/Graphics/GraphicsScene.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Scene/GameActor.hpp>
@@ -28,6 +31,7 @@
 #include <thread>
 #include <atomic>
 #include <optional>
+#include <functional>
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_camera.h"
@@ -1320,6 +1324,291 @@ namespace
         material->unload( nullptr ); fixture.graphics->pending.clear();
     }
 
+    class UpdatePublicationScene : public render::GraphicsScene
+    {
+    public:
+        std::function<void()> edits;
+        void update() override { if(edits) edits(); }
+    };
+
+    class UpdatePublicationGraphics : public render::GraphicsSystem
+    {
+    public:
+        void add(SmartPtr<render::IGraphicsScene> scene) { m_scenes.push_back(scene); }
+        void clear() { m_scenes.clear(); }
+    };
+
+    void runUpdatePublicationScopes( Fixture &fixture )
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>(); material->load(nullptr);
+        material->setRenderMode(3u);
+        auto technique = material->getTechnique(0);
+        technique->createPass()->load(nullptr);
+        auto schema = observedSchema();
+        material->setShaderParameters(schema.getParameterInfo(), schema.getShaderID());
+        auto &parameters = material->getShaderParameters();
+        const auto opacity = parameters.Resolve<f32>("Opacity");
+        const auto metal = parameters.Resolve<f32>("Metalness");
+        const auto names = parameters.GetNameLookupCount();
+        std::vector<SmartPtr<MaterialPassStateData>> data;
+        for(auto pass : technique->getPasses())
+            data.push_back(static_pointer_cast<MaterialPassStateData>(
+                pass->getStateContext()->getStateById(pass->getId())->getData()));
+        std::vector<MaterialRenderState::Ptr> before;
+        for(auto &state : data) before.push_back(state->getRenderState());
+        auto graphics = make_ptr<UpdatePublicationGraphics>();
+        auto scene = make_ptr<UpdatePublicationScene>(); graphics->add(scene);
+        scene->edits = [&] {
+            require(MaterialPublicationScope::isActive(), "graphics update owns a publication boundary");
+            material->setDiffuse(ColourF(0.2f, 0.4f, 0.6f, 1));
+            material->setMetalness(0.3f);
+            material->setRoughness(0.7f);
+            material->setEmissive(ColourF(0.1f, 0, 0, 1));
+            material->syncPBRToShaderParameters();
+            f32 importedMetal = 0;
+            require(parameters.Get(metal, importedMetal) && importedMetal == 0.3f,
+                    "explicit PBR import reads live values inside update");
+            parameters.Set(opacity, 0.45f);
+            {
+                MaterialPublicationScope nested;
+                parameters.Set(metal, 0.6f);
+                material->batch([](Material &m) { m.setRoughness(0.4f); m.setAlphaClip(0.15f); });
+            }
+            require(material->getMetalness() == 0.6f && material->getOpacity() == 0.45f,
+                    "owning-thread getters see live edits inside update");
+            for(size_t i = 0; i < data.size(); ++i)
+                require(data[i]->getRenderState() == before[i], "readers retain old versions until update closes");
+        };
+        graphics->update();
+        for(size_t i = 0; i < data.size(); ++i)
+        {
+            auto after = data[i]->getRenderState();
+            require(after->revision == before[i]->revision + 1 && after->metalness == 0.6f &&
+                    after->roughness == 0.4f && after->opacity == 0.45f && after->alphaClip == 0.15f &&
+                    after->diffuseColour.r == 0.2f && after->diffuseColour.b == 0.6f,
+                    "independent legacy/typed edits and nested batch publish once on every authored pass");
+        }
+        require(parameters.GetNameLookupCount() == names, "update edits use retained numeric handles");
+        auto snapshot = material->getRenderState();
+        scene->edits = [&] {
+            material->setMetalness(0.2f); material->setMetalness(0.6f);
+            material->setRoughness(0.4f);
+        };
+        graphics->update();
+        require(material->getRenderState() == snapshot, "net-zero update preserves the existing version");
+        scene->edits = [&] { material->setMetalness(0.8f); throw std::runtime_error("update failure"); };
+        bool caught = false;
+        try { graphics->update(); } catch(const std::runtime_error &) { caught = true; }
+        require(caught && material->getRenderState()->metalness == 0.8f &&
+                !MaterialPublicationScope::isActive() && !MaterialPublicationScope::pendingEntryCount(),
+                "exception unwind publishes completed writes and releases the update queue");
+        scene->edits = {};
+        graphics->clear();
+
+        // An update nested inside an existing explicit batch must not expose it early.
+        snapshot = material->getRenderState();
+        material->batch([&](Material &m) {
+            { MaterialPublicationScope inner; m.setMetalness(0.25f); }
+            require(material->getRenderState() == snapshot, "enclosing write batch owns the final boundary");
+            m.setRoughness(0.75f);
+        });
+        require(material->getRenderState()->revision == snapshot->revision + 1 &&
+                material->getRenderState()->roughness == 0.75f, "enclosing batch publishes complete final values");
+        snapshot = material->getRenderState();
+        {
+            MaterialPublicationScope update;
+            material->setMetalness(0.55f); // Already queued before the explicit batch takes its locks.
+            material->batch([&](Material &m) {
+                update.commit();
+                require(material->getRenderState() == snapshot,
+                        "committing a queued pass inside a write batch does not publish partial values");
+                m.setRoughness(0.45f);
+            });
+        }
+        require(material->getRenderState()->revision == snapshot->revision + 1 &&
+                material->getRenderState()->metalness == 0.55f && material->getRenderState()->roughness == 0.45f,
+                "a queued pass publishes once when its remaining write batch closes");
+
+        std::atomic<bool> finished{false}, coherent{true};
+        std::thread reader([&] {
+            while(!finished.load())
+            {
+                auto version = material->getRenderState();
+                if(std::abs(version->metalness + version->roughness - 1) > 0.00001f) coherent.store(false);
+            }
+        });
+        for(int i = 0; i < 128; ++i)
+        {
+            MaterialPublicationScope update;
+            const auto value = i % 2 ? 0.25f : 0.75f;
+            material->setMetalness(value); material->setRoughness(1 - value);
+        }
+        finished.store(true); reader.join();
+        require(coherent.load(), "concurrent readers observe coherent old or new update versions");
+        snapshot = material->getRenderState();
+        auto firstTexture = make_ptr<ClawTexture>(), finalTexture = make_ptr<ClawTexture>();
+        {
+            MaterialPublicationScope update;
+            material->setTexture(firstTexture, 22);
+            material->setTexture(finalTexture, 22);
+            require(material->getRenderState() == snapshot, "texture edits retain the captured resource version");
+        }
+        require(material->getRenderState()->revision == snapshot->revision + 1 &&
+                material->getRenderState()->textures[22] == finalTexture && !snapshot->textures[22],
+                "texture replacement coalesces and preserves the retained old resource version");
+        {
+            MaterialPublicationScope update;
+            auto independent = make_ptr<MaterialPassStateData>();
+            require(bool(independent->getRenderState()), "construction inside update publishes an initial version");
+            std::thread writer([&] { independent->setFloatSetting(MaterialFloatSetting::roughness, 0.23f); });
+            writer.join();
+            require(independent->getRenderState()->roughness == 0.23f,
+                    "another thread without a scope retains immediate publication");
+            {
+                MaterialPassStateData stack;
+                const auto initial = stack.getRenderState();
+                require(bool(initial), "stack construction inside update publishes an initial version");
+                stack.setFloatSetting(MaterialFloatSetting::roughness, 0.34f);
+                require(stack.getRenderState() == initial, "stack edits share the update boundary while alive");
+            }
+            require(!MaterialPublicationScope::pendingEntryCount(), "stack destruction removes its pending entries");
+        }
+        {
+            MaterialPublicationScope update;
+            material->setRoughness(0.37f);
+            material->unload(nullptr);
+            update.commit(); update.commit();
+            require(!material->getRenderState(), "commit never resurrects an unloaded pass graph");
+        }
+        {
+            MaterialPublicationScope update;
+            material->load(nullptr);
+            material->setRoughness(0.61f);
+        }
+        require(material->getRenderState()->roughness == 0.61f,
+                "a replacement pass graph publishes its own pending edits");
+        material->unload(nullptr);
+        fixture.graphics->pending.clear();
+
+        // Colliding queue slots and unusually large updates must remain correct
+        // without permanently retaining the largest update's allocation.
+        std::vector<SmartPtr<MaterialPassStateData>> burst;
+        std::vector<MaterialRenderState::Ptr> versions;
+        for(int i = 0; i < 5000; ++i)
+        {
+            burst.push_back(make_ptr<MaterialPassStateData>());
+            versions.push_back(burst.back()->getRenderState());
+        }
+        {
+            MaterialPublicationScope update;
+            for(auto &state : burst) state->setFloatSetting(MaterialFloatSetting::metalness, 0.3f);
+            for(auto &state : burst) state->setFloatSetting(MaterialFloatSetting::roughness, 0.7f);
+        }
+        for(size_t i = 0; i < burst.size(); ++i)
+            require(burst[i]->getRenderState()->revision == versions[i]->revision + 1 &&
+                    burst[i]->getRenderState()->metalness == 0.3f && burst[i]->getRenderState()->roughness == 0.7f,
+                    "collisions coalesce repeated writes and retain every pass in a large update");
+        require(!MaterialPublicationScope::pendingEntryCount() &&
+                MaterialPublicationScope::retainedStorageBytes() < 4096 * sizeof(void *),
+                "large update releases burst storage instead of retaining peak capacity");
+        auto retired = make_ptr<MaterialPassStateData>();
+        WeakPtr<MaterialPassStateData> weak(retired);
+        {
+            MaterialPublicationScope update;
+            retired->setFloatSetting(MaterialFloatSetting::roughness, 0.29f);
+            retired = nullptr;
+            require(!weak.expired(), "update retains pending state until commit");
+        }
+        require(weak.expired(), "commit releases temporary state owners");
+        std::cout << "PASS: update publication boundaries, nested batches, concurrency, retirement and bounded burst storage\n";
+    }
+
+    void benchmarkUpdatePublication()
+    {
+        using namespace render;
+        constexpr int samples = 7;
+        for(int materialCount : {1, 64})
+        {
+            const int frames = materialCount == 1 ? 1000 : 16;
+            const int updates = materialCount * frames;
+            std::vector<SmartPtr<ClawMaterial>> materials;
+            for(int i = 0; i < materialCount; ++i)
+            {
+                auto material = make_ptr<ClawMaterial>(); material->load(nullptr);
+                material->setRenderMode(3u); materials.push_back(material);
+            }
+            for(int edits : {1, 6})
+            {
+                std::array<std::array<double, samples>, 3> timings{};
+                std::array<u64, 3> publications{};
+                std::array<MaterialRenderState::Ptr, 3> results;
+                auto write = [&](Material &m, f32 value) {
+                    m.setMetalness(value);
+                    if(edits == 1) return;
+                    m.setDiffuse(ColourF(value, 1 - value, value * 0.5f, 1));
+                    m.setRoughness(1 - value); m.setEmissive(ColourF(value * 0.25f, 0, 0, 1));
+                    m.setOpacity(value); m.setAlphaClip(1 - value);
+                };
+                for(int sample = 0; sample < samples; ++sample)
+                    for(int offset = 0; offset < 3; ++offset)
+                    {
+                        const auto mode = (sample + offset) % 3;
+                        u64 before = 0;
+                        for(auto &material : materials)
+                        {
+                            write(*material, 0.75f);
+                            before += material->getRenderState()->revision;
+                        }
+                        const auto start = std::chrono::steady_clock::now();
+                        for(int frame = 0; frame < frames; ++frame)
+                        {
+                            const auto value = frame % 2 ? 0.75f : 0.25f;
+                            auto update = [&] {
+                                for(auto &material : materials)
+                                    if(mode == 2) material->batch([&](Material &m) { write(m, value); });
+                                    else write(*material, value);
+                            };
+                            if(mode == 1) { MaterialPublicationScope scope; update(); }
+                            else update();
+                        }
+                        timings[mode][sample] = std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - start).count();
+                        u64 after = 0;
+                        for(auto &material : materials)
+                        {
+                            const auto result = material->getRenderState();
+                            after += result->revision;
+                            require(result->metalness == 0.75f && (edits == 1 ||
+                                    (result->diffuseColour.r == 0.75f && result->roughness == 0.25f &&
+                                     result->emissiveColour.r == 0.1875f && result->opacity == 0.75f && result->alphaClip == 0.25f)),
+                                    "every benchmark material has the expected output");
+                        }
+                        publications[mode] = after - before;
+                        results[mode] = materials.front()->getRenderState();
+                        require(publications[mode] == u64(updates * (mode == 0 ? edits : 1)),
+                                "update benchmark publication count");
+                    }
+                for(int mode = 1; mode < 3; ++mode)
+                    require(results[mode]->metalness == results[0]->metalness &&
+                            results[mode]->roughness == results[0]->roughness &&
+                            results[mode]->diffuseColour == results[0]->diffuseColour &&
+                            results[mode]->emissiveColour == results[0]->emissiveColour &&
+                            results[mode]->opacity == results[0]->opacity && results[mode]->alphaClip == results[0]->alphaClip,
+                            "update benchmark preserves material output");
+                for(auto &times : timings) std::sort(times.begin(), times.end());
+                std::cout << "update_publication materials=" << materialCount << " frames=" << frames
+                          << " edits=" << edits << " material_updates=" << updates << " samples=" << samples
+                          << " immediate_median_ms=" << timings[0][samples / 2] << " update_median_ms=" << timings[1][samples / 2]
+                          << " explicit_batch_median_ms=" << timings[2][samples / 2]
+                          << " immediate_publications=" << publications[0] << " update_publications=" << publications[1]
+                          << " explicit_batch_publications=" << publications[2]
+                          << " retained_thread_bytes=" << MaterialPublicationScope::retainedStorageBytes() << '\n';
+            }
+            for(auto &material : materials) material->unload(nullptr);
+        }
+    }
+
     void runObservedParameters( Fixture &fixture )
     {
         using namespace render;
@@ -1665,6 +1954,11 @@ int main( int argc, char **argv )
             benchmarkObservedParameters();
             return 0;
         }
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-update-publication" )
+        {
+            benchmarkUpdatePublication();
+            return 0;
+        }
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-controls" )
         {
             benchmarkNumericControls( fixture );
@@ -1681,6 +1975,7 @@ int main( int argc, char **argv )
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );
+        runUpdatePublicationScopes( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );
         run( fixture );

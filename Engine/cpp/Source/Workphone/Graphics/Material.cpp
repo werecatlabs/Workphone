@@ -2707,7 +2707,7 @@ namespace workphone::render
         auto currentOpacity = state ? state->opacity : getOpacity();
         if( m_batchActive || MaterialPublicationScope::isActive() )
         {
-            // The published snapshot intentionally predates this batch. Read
+            // The published snapshot intentionally predates this edit boundary. Read
             // pending owner-side fallbacks once through cached primary selection,
             // so an opacity-only edit preserves new RGB without name resolution
             // or a separate graph traversal for every fallback setting.
