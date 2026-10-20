@@ -1829,9 +1829,12 @@ namespace workphone
         for( auto &[id, object] : m_objects )
         {
             auto resource = workphone::dynamic_pointer_cast<IResource>( object );
-            if( resource->getFilePath() == fileDataPath )
+            if( resource )
             {
-                return resource;
+                if( resource->getFilePath() == fileDataPath )
+                {
+                    return resource;
+                }
             }
         }
 
