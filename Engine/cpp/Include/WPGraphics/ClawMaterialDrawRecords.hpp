@@ -30,7 +30,8 @@ namespace workphone::render
         {
             IMaterial *material = nullptr;
             const MaterialRenderState *state = nullptr;
-            ClawPreparedMaterialDX11 prepared;
+            ClawMaterialRenderCache::Handle handle;
+            const ClawPreparedMaterialDX11 *prepared = nullptr;
         };
 
         ClawMaterialDrawRecords();
@@ -62,6 +63,9 @@ namespace workphone::render
         u64 getStorageAllocationCount() const { return m_storage.allocations; }
         u64 getRetainedStorageBytes() const { return m_storage.bytes; }
         u64 getPeakStorageBytes() const { return m_storage.peak; }
+        // Shared table bytes: deduplicate by table identity when summing views.
+        u64 getPersistentStorageBytes() const { return m_preparedRecords.getStorageBytes(); }
+        u64 getPersistentTableIdentity() const { return m_preparedRecords.getIdentity(); }
 
     private:
         struct Owner
@@ -108,6 +112,7 @@ namespace workphone::render
         std::pmr::unordered_map<const ClawMesh *, Binding> m_meshes{ &m_pool };
         u64 m_publication = 0, m_preparations = 0;
         bool m_sealed = false;
+        ClawMaterialRenderCache::Lease m_preparedRecords;
     };
 }
 #endif

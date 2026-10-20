@@ -268,6 +268,67 @@ namespace
                   << " repeated_draws=20000 preparations=1\n";
     }
 
+    void runPersistentRecordTable()
+    {
+        using namespace render;
+        ClawMaterialRenderCache cache, foreign;
+        std::vector<MaterialRenderState::Ptr> states;
+        std::vector<ClawMaterialRenderCache::Handle> handles;
+        std::vector<const ClawPreparedMaterialDX11 *> addresses;
+        for(u32 i = 0; i < 1024; ++i)
+        {
+            auto state = std::make_shared<MaterialRenderState>(); state->roughness = f32(i) / 1024;
+            states.push_back(state); handles.push_back(cache.resolve(state));
+            addresses.push_back(cache.lookup(handles.back()));
+        }
+        const auto allocations = cache.getStorageAllocationCount();
+        const auto bytes = cache.getStorageBytes();
+        const auto owners = states.front().use_count();
+        for(u32 frame = 0; frame < 8; ++frame)
+            for(u32 view = 0; view < 3; ++view)
+                for(u32 i = 0; i < states.size(); ++i)
+                {
+                    const auto handle = cache.resolve(states[i]);
+                    require(handle.table == handles[i].table && handle.slot == handles[i].slot &&
+                            handle.generation == handles[i].generation && cache.lookup(handle) == addresses[i] &&
+                            cache.lookup(handle)->constants.surface.y == f32(i) / 1024,
+                            "persistent identities and stable records survive frames/views beyond front-cache capacity");
+                }
+        require(cache.getPreparationCount() == states.size() && cache.getStorageAllocationCount() == allocations &&
+                cache.getStorageBytes() == bytes && states.front().use_count() == owners,
+                "unchanged large working set performs no preparation, allocation or strong-owner acquisition");
+        require(!foreign.lookup(handles.front()), "another table rejects a material handle");
+        auto invalid = handles.front(); ++invalid.generation;
+        require(!cache.lookup(invalid), "wrong material slot generation rejects");
+        invalid = handles.front(); invalid.slot = ~u32(0);
+        require(!cache.lookup(invalid), "out-of-range material slot rejects");
+        for(u32 edit = 0; edit < 5000; ++edit)
+        {
+            auto transient = std::make_shared<MaterialRenderState>(); transient->metalness = f32(edit);
+            const auto handle = cache.resolve(transient);
+            require(cache.lookup(handle)->constants.surface.x == f32(edit), "recycled slots contain their current version");
+        }
+        require(cache.getSlotCount() < states.size() + 128, "expired generations reuse slots during sustained churn");
+        const auto retired = handles.back(); states.back().reset(); cache.collectExpired();
+        require(!cache.lookup(retired), "retired snapshot rejects its old handle");
+        auto replacement = std::make_shared<MaterialRenderState>();
+        const auto fresh = cache.resolve(replacement);
+        require(fresh.table == retired.table && (fresh.slot != retired.slot || fresh.generation != retired.generation) &&
+                !cache.lookup(retired), "slot reuse cannot revive a retired generation");
+        auto lease = cache.retain();
+        cache.clear();
+        require(!cache.lookup(handles.front()) && lease.get(handles.front()) == addresses.front(),
+                "clear retires the current epoch while in-flight publications retain their CPU records");
+        const auto newEpoch = cache.resolve(states.front());
+        require(newEpoch.table != handles.front().table && !cache.lookup(handles.front()), "new epoch never aliases old handles");
+        std::weak_ptr<const MaterialRenderState> weak = states.front();
+        states.clear(); cache.collectExpired();
+        require(weak.expired() && !lease.get(handles.front()), "table leases do not retain material snapshots or textures");
+        std::cout << "persistent_records=1024 frames=8 views=3 preparations=1024 warm_allocations=0"
+                  << " accounted_table_bytes=" << bytes << " slot_bytes_per_version="
+                  << double(bytes - sizeof(cache)) / 1024 << '\n';
+    }
+
     class DeferredGraphics : public render::ClawHammerSystem
     {
     public:
@@ -687,7 +748,7 @@ namespace
         for( u32 repeat = 0; repeat < 20000; ++repeat )
         {
             const auto record = captured.get( repeat % 2 ? firstBinding : secondBinding, repeat % 2 );
-            require( record && record->state == snapshot.get() && record->prepared.constants.base_color.x == 1,
+            require( record && record->state == snapshot.get() && record->prepared->constants.base_color.x == 1,
                      "dense records borrow the frozen owner and prepared constants" );
         }
         require( snapshot.use_count() == owners && first.materialQueries == 2 && second.materialQueries == 2,
@@ -719,8 +780,8 @@ namespace
                  "publication retirement releases snapshots and rejects stale bindings" );
         next.clear();
         require( !next.get( nextBinding, 0 ), "slot reuse invalidates the previous publication" );
-        // More distinct materials than the preparation cache can retain. Draws
-        // from the sealed table must not thrash that cache between passes.
+        // More distinct materials than the front cache can retain. Persistent
+        // records must survive all passes, frames and independent views.
         std::vector<SmartPtr<ClawMaterial>> manyMaterials;
         std::vector<std::unique_ptr<CapturedMaterialMesh>> manyMeshes;
         cache.clear();
@@ -741,11 +802,21 @@ namespace
             {
                 const auto binding = captured.find( manyMeshes[index].get() );
                 const auto record = captured.get( *binding, pass % 2 );
-                require( record && record->prepared.constants.surface.y == f32( index ) / 384.0f &&
+                require( record && record->prepared->constants.surface.y == f32( index ) / 384.0f &&
                          manyMeshes[index]->materialQueries == 2,
                          "multiple passes consume every retained dense record without live material resolution" );
             }
         require( cache.getPreparationCount() == 384, "record consumption never re-enters the bounded cache" );
+        const auto stable = *captured.get(*captured.find(manyMeshes.front().get()), 0);
+        ClawMaterialDrawRecords anotherView;
+        for(auto &mesh : manyMeshes) anotherView.capture(mesh.get());
+        anotherView.seal(&cache);
+        const auto shared = anotherView.get(*anotherView.find(manyMeshes.front().get()), 0);
+        require(shared->prepared == stable.prepared && shared->handle.table == stable.handle.table &&
+                shared->handle.slot == stable.handle.slot && shared->handle.generation == stable.handle.generation &&
+                anotherView.getPreparationCount() == 0,
+                "independent views share a persistent prepared record instead of copying its constants");
+        anotherView.clear();
         // Warm/reuse storage without retaining the material owners. Exercise
         // more entries than the preparation cache and changing mesh identities.
         for( int frame = 0; frame < 3; ++frame )
@@ -753,6 +824,8 @@ namespace
             captured.clear();
             for( auto &mesh : manyMeshes ) captured.capture( mesh.get() );
             captured.seal( &cache );
+            require(captured.getPreparationCount() == 0 && cache.getPreparationCount() == 384,
+                    "new frame publications reuse every persistent record without front-cache thrashing");
         }
         const auto warmAllocations = captured.getStorageAllocationCount();
         const auto retainedBytes = captured.getRetainedStorageBytes();
@@ -777,6 +850,8 @@ namespace
             captured.seal( &cache );
             require( retiredMeshes.empty() || !captured.find( retiredMeshes.front().get() ),
                      "storage reuse removes old mesh identity mappings" );
+            require(captured.getPreparationCount() == 0 && cache.getPreparationCount() == 384,
+                    "mesh identity changes across frames do not reprepare unchanged materials");
             if( captured.getStorageAllocationCount() != warmAllocations || captured.getRetainedStorageBytes() != retainedBytes )
                 std::cerr << "storage_reuse frame=" << frame << " allocations=" << captured.getStorageAllocationCount()
                           << " expected=" << warmAllocations << " bytes=" << captured.getRetainedStorageBytes()
@@ -813,7 +888,7 @@ namespace
                 mesh->setMaterial( materials[i % materialCount], 1 );
                 meshes.push_back( std::move( mesh ) );
             }
-            struct Measurement { double ms; u64 checksum, preparations, denseBytes, allocations, retainedBytes; };
+            struct Measurement { double ms; u64 checksum, preparations, denseBytes, allocations, retainedBytes, persistentBytes; };
             const auto measure = [&]( int mode ) {
                 const bool captured = mode != 0;
                 ClawMaterialRenderCache cache;
@@ -852,7 +927,7 @@ namespace
                                 SmartPtr<IMaterial> material;
                                 MaterialRenderState::Ptr state;
                                 const ClawPreparedMaterialDX11 *prepared;
-                                if( captured ) prepared = &records->get( *binding, section )->prepared;
+                                if( captured ) prepared = records->get( *binding, section )->prepared;
                                 else
                                 {
                                     material = mesh->getMaterial( section );
@@ -869,7 +944,8 @@ namespace
                 if( mode == 2 ) allocations = workspace.getStorageAllocationCount() - storageBefore;
                 return Measurement{ std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - start ).count(), checksum,
-                    cache.getPreparationCount() - preparedBefore, denseBytes, allocations, retainedBytes };
+                    cache.getPreparationCount() - preparedBefore, denseBytes, allocations, retainedBytes,
+                    cache.getStorageBytes() };
             };
             std::array<double, samples> oldTimes{}, newTimes{}, reusedTimes{};
             std::array<Measurement, 3> result{};
@@ -890,6 +966,7 @@ namespace
                 << " direct_preparations=" << result[0].preparations << " captured_preparations=" << result[2].preparations
                 << " cold_storage_allocations=" << result[1].allocations << " reused_storage_allocations=" << result[2].allocations
                 << " retained_storage_bytes=" << result[2].retainedBytes << " captured_dense_capacity_bytes=" << result[2].denseBytes
+                << " shared_persistent_accounted_bytes=" << result[2].persistentBytes
                 << " checksum=" << result[2].checksum << '\n';
             meshes.clear();
             for( auto &material : materials ) material->unload( nullptr );
@@ -1867,6 +1944,21 @@ namespace
             require( data && data->getRenderState()->textures[0] == texture,
                      "texture units authored before state creation reach runtime snapshot" );
         }
+        auto concreteUnit = detachedUnit;
+        require(concreteUnit->MaterialTexture::getTexture() == texture,
+                "native and legacy texture adapters share the canonical resource owner");
+        concreteUnit->setScale(Vector3F(2, 3, 4));
+        concreteUnit->setTint(ColourF::Red);
+        concreteUnit->setTextureType(7);
+        require(concreteUnit->MaterialTexture::getTint() == concreteUnit->getTint() &&
+                concreteUnit->MaterialTexture::getTextureType() == concreteUnit->getTextureType(),
+                "texture adapters share tint and type storage");
+        concreteUnit->MaterialTexture::setTexture(nullptr);
+        {
+            auto data = detached->getStateContext()->getStateDataById<MaterialPassStateData>(detached->getId());
+            require(!concreteUnit->getTexture() && !data->getRenderState()->textures[0],
+                    "base-qualified texture edits invalidate the same published binding");
+        }
         detached->unload( nullptr );
         material->setTexture( texture, 22 );
         auto textured = material->getRenderState();
@@ -1943,6 +2035,10 @@ int main( int argc, char **argv )
         }
         material_cache_benchmark::contracts();
         runMaterialPreparation();
+        runPersistentRecordTable();
+        std::cout << "authoring_pass_bytes=" << sizeof(render::ClawMaterialPass)
+                  << " authoring_texture_unit_bytes=" << sizeof(render::ClawMaterialTexture)
+                  << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         Fixture fixture;
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-records" )
         {

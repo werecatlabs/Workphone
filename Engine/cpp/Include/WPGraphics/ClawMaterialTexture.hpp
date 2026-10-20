@@ -89,11 +89,7 @@ namespace workphone::render
 
     protected:
         String m_textureName;          ///< Path or name of the texture resource.
-        SmartPtr<ITexture> m_texture;  ///< Loaded texture resource.
-        Vector3<real_Num> m_scale = Vector3<real_Num>( 1.0f, 1.0f, 1.0f );  ///< UV scaling.
-        ColourF m_tint = ColourF::White;  ///< Color tint applied to the texture.
-        u32 m_textureType = 0;            ///< Type of texture (e.g. Diffuse, Normal, Specular).
-        SmartPtr<IAnimator> m_animator;   ///< Optional animator for UVs or texture frames.
+        // Texture, transform, tint, type and animator have one owner in MaterialTexture.
     };
 }  // namespace workphone::render
 

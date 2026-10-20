@@ -161,6 +161,7 @@ namespace workphone::render
     void ClawRendererDX11::destroyRenderer()
     {
         m_materialRenderCache.reset();
+        m_directMaterialRecords.reset();
         g_skyEnvironmentCaches.erase( this );
         m_environment.reset();
         m_previewEnvironment.reset();
@@ -509,8 +510,11 @@ namespace workphone::render
         const auto oldDepthTest = wp_renderer_get_depth_test_enabled( m_renderer );
         const auto oldDepthFunc = wp_renderer_get_depth_func( m_renderer );
         const auto oldFill = wp_renderer_get_fill_mode( m_renderer );
-        auto blend =
-            material ? ClawUtil::toCBlendMode( material->getBlendMode() ) : WORKPHONE_BLEND_MODE_ALPHA;
+        // Particle geometry uses its own unlit vertex-colour shader. Borrow the
+        // same immutable surface/resource version without applying PBR constants.
+        const auto particleState = getPrimaryMaterialPassState(material);
+        auto blend = material ? ClawUtil::toCBlendMode(particleState ? particleState->blendMode : material->getBlendMode())
+                              : WORKPHONE_BLEND_MODE_ALPHA;
         if( blend == WORKPHONE_BLEND_MODE_NONE )
         {
             blend = WORKPHONE_BLEND_MODE_ALPHA;
@@ -524,7 +528,10 @@ namespace workphone::render
         void *texture = nullptr;
         if( material )
         {
-            if( auto input = material->getTexture( 0 ) )
+            SmartPtr<ITexture> fallback;
+            auto input = particleState ? particleState->textures[0].get() :
+                         (fallback = material->getTexture(0)).get();
+            if( input )
             {
                 input->getTextureFinal( &texture );
             }
@@ -845,17 +852,7 @@ namespace workphone::render
         {
             return 0;
         }
-        // Transparent instances need per-view sorting. This first tier supports
-        // opaque and alpha-tested species through the existing material path.
-        const auto sections = std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) );
-        for( s32 section = 0; section < sections; ++section )
-        {
-            auto material = resolveMeshMaterial( mesh, section );
-            if( !isSupportedFoliageMaterial( material ) )
-            {
-                return 0;
-            }
-        }
+        // Snapshot-based transparency validation shares the captured draw records.
         return renderMeshBatch( mesh, Matrix4F::identity(), instances, count );
     }
 
@@ -864,6 +861,21 @@ namespace workphone::render
         if( records.getRecordCount() && !m_materialRenderCache )
             m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
         records.seal( m_materialRenderCache.get() );
+    }
+
+    ClawRendererDX11::MaterialRecordStatistics ClawRendererDX11::getMaterialRecordStatistics() const
+    {
+        MaterialRecordStatistics result;
+        if(m_materialRenderCache)
+        {
+            result.preparations = m_materialRenderCache->getPreparationCount();
+            result.storageBytes = m_materialRenderCache->getStorageBytes();
+            result.storageAllocations = m_materialRenderCache->getStorageAllocationCount();
+            result.slots = m_materialRenderCache->getSlotCount();
+            result.resident = m_materialRenderCache->getResidentCount();
+        }
+        if(m_directMaterialRecords) result.directStorageAllocations = m_directMaterialRecords->getStorageAllocationCount();
+        return result;
     }
 
     bool ClawRendererDX11::renderMeshRecords( ClawMesh *mesh, const Matrix4F &transform,
@@ -899,6 +911,44 @@ namespace workphone::render
             return 0;
         }
 
+        // Preview/UI/direct/instanced meshes use the same publication and persistent
+        // records as scene jobs. Keep one idle workspace; a reentrant draw borrows
+        // another without modifying the outer draw's immutable publication.
+        auto directRecords = records ? nullptr : std::move(m_directMaterialRecords);
+        struct RetireDirect
+        {
+            std::unique_ptr<ClawMaterialDrawRecords> &active, &idle;
+            ~RetireDirect()
+            {
+                if(active)
+                {
+                    try { active->clear(); if(!idle) idle = std::move(active); }
+                    catch(...) {} // Do not recycle a publication whose clear failed.
+                }
+            }
+        } retireDirect{directRecords, m_directMaterialRecords};
+        if(!records)
+        {
+            if(!directRecords) directRecords = std::make_unique<ClawMaterialDrawRecords>();
+            directRecords->capture(mesh);
+            prepareMaterialRecords(*directRecords);
+            records = directRecords.get(); binding = records->find(mesh);
+            if(!binding) return 0;
+        }
+        if(instances)
+            for(u32 section = 0; section < binding->count; ++section)
+            {
+                const auto record = records->get(*binding, section);
+                if(!record) return 0;
+                if(record->state)
+                {
+                    if(record->state->getFlag(transparentFlag) ||
+                       ClawUtil::toCBlendMode(record->state->blendMode) != WORKPHONE_BLEND_MODE_NONE) return 0;
+                }
+                else if(record->material && (record->material->isTransparent() ||
+                        ClawUtil::toCBlendMode(record->material->getBlendMode()) != WORKPHONE_BLEND_MODE_NONE)) return 0;
+            }
+
         u64 submitted = 0;
         setTransforms( transform, snapshotView, snapshotProjection );
         const auto topology = wp_graphics_mesh_get_primitive_type( nativeMesh );
@@ -929,17 +979,10 @@ namespace workphone::render
                 }
             }
 
-            const auto record = records && binding ? records->get( *binding, submeshIndex ) : nullptr;
-            if( records && !record ) continue;
-            SmartPtr<IMaterial> pMaterial;
-            MaterialRenderState::Ptr ownedState;
-            if( !record )
-            {
-                pMaterial = resolveMeshMaterial( mesh, submeshIndex );
-                ownedState = getPrimaryMaterialPassState( pMaterial );
-            }
-            auto material = record ? record->material : pMaterial.get();
-            const auto state = record ? record->state : ownedState.get();
+            const auto record = records->get(*binding, submeshIndex);
+            if(!record) continue;
+            auto material = record->material;
+            const auto state = record->state;
             // The snapshot retains all texture owners for this draw. Only the
             // third-party fallback needs a temporary owning reference.
             SmartPtr<ITexture> fallbackTexture;
@@ -953,17 +996,7 @@ namespace workphone::render
             if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
                 continue;
 
-            const ClawPreparedMaterialDX11 *prepared = nullptr;
-            if( state )
-            {
-                if( record ) prepared = &record->prepared;
-                else
-                {
-                    if( !m_materialRenderCache )
-                        m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
-                    prepared = &m_materialRenderCache->get( ownedState );
-                }
-            }
+            const auto prepared = record->prepared;
 
             void *nativeTexture = nullptr;
             if( material )

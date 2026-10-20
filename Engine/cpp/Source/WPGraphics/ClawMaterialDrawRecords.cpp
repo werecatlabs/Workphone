@@ -5,6 +5,7 @@
 #include <atomic>
 #include <limits>
 #include <stdexcept>
+#include <optional>
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_object.h"
 
@@ -120,15 +121,17 @@ namespace workphone::render
     void ClawMaterialDrawRecords::seal( ClawMaterialRenderCache *cache )
     {
         if( m_sealed ) return;
-        const auto before = cache ? cache->getPreparationCount() : 0;
+        std::optional<ClawMaterialRenderCache> standalone;
+        if(!cache) { standalone.emplace(); cache = &*standalone; }
+        const auto before = cache->getPreparationCount();
         for( size_t index = 0; index < m_records.size(); ++index )
             if( auto &owner = m_owners[index]; owner.state )
             {
-                m_records[index].prepared = cache ? cache->get( owner.state ) :
-                    ClawMaterialRenderCache::prepare( *owner.state );
-                if( !cache ) ++m_preparations;
+                m_records[index].handle = cache->resolve(owner.state);
+                m_records[index].prepared = cache->lookup(m_records[index].handle);
             }
-        if( cache ) m_preparations = cache->getPreparationCount() - before;
+        m_preparedRecords = cache->retain();
+        m_preparations = cache->getPreparationCount() - before;
         // Release builder entries, retaining buckets and pooled nodes for the
         // next publication. No material/resource owner lives in this map.
         m_materials.clear();
@@ -155,6 +158,7 @@ namespace workphone::render
         const auto publication = newPublication();
         m_records.clear();
         m_owners.clear();
+        m_preparedRecords = {};
         m_bindings.clear();
         m_materials.clear();
         m_meshes.clear();
@@ -239,15 +243,23 @@ namespace workphone::render
 
     bool ClawMaterialDrawRecords::valid( const Binding &binding, const ClawMesh *mesh, u32 sections ) const
     {
-        return m_sealed && binding.publication == m_publication && binding.mesh == mesh &&
+        const auto found = m_meshes.find(mesh);
+        return m_sealed && found != m_meshes.end() && found->second.first == binding.first &&
+            found->second.count == binding.count && binding.publication == m_publication && binding.mesh == mesh &&
             binding.count == sections && binding.first <= m_bindings.size() &&
             binding.count <= m_bindings.size() - binding.first;
     }
 
     const ClawMaterialDrawRecords::Record *ClawMaterialDrawRecords::get( const Binding &binding, u32 section ) const
     {
-        if( !valid( binding, binding.mesh, binding.count ) || section >= binding.count ) return nullptr;
+        // Binding/mesh correspondence is checked once by valid() at submission.
+        // Per-section borrowing uses numeric bounds and identities, without a map lookup.
+        if(!m_sealed || binding.publication != m_publication || section >= binding.count ||
+            binding.first > m_bindings.size() || binding.count > m_bindings.size() - binding.first) return nullptr;
         const auto index = m_bindings[binding.first + section];
-        return index < m_records.size() ? &m_records[index] : nullptr;
+        if(index >= m_records.size()) return nullptr;
+        const auto &record = m_records[index];
+        if(record.state && m_preparedRecords.getPinned(record.handle, record.state) != record.prepared) return nullptr;
+        return &record;
     }
 }

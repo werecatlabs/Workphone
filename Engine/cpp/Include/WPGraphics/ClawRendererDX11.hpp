@@ -171,8 +171,14 @@ namespace workphone
             bool renderMeshRecords( ClawMesh *, const Matrix4F &, const ClawMaterialDrawRecords &,
                                     const ClawMaterialDrawRecords::Binding &,
                                     const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
-            /** Reuse the renderer's bounded CPU preparation cache before publication. */
+            /** Resolve generation-qualified records in the renderer's persistent CPU table. */
             void prepareMaterialRecords( ClawMaterialDrawRecords & );
+            struct MaterialRecordStatistics
+            {
+                u64 preparations = 0, storageBytes = 0, storageAllocations = 0, directStorageAllocations = 0;
+                u32 slots = 0, resident = 0;
+            };
+            MaterialRecordStatistics getMaterialRecordStatistics() const;
             /** Draw fixed-LOD instances through the same material/submesh path.
              * Returns submitted instance-sections; zero means no output. */
             u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances, u32 count );
@@ -267,6 +273,7 @@ namespace workphone
 
             wp_renderer *m_renderer = nullptr;
             std::unique_ptr<ClawMaterialRenderCache> m_materialRenderCache;
+            std::unique_ptr<ClawMaterialDrawRecords> m_directMaterialRecords;
             std::shared_ptr<StreamBudgetLease> m_foliageStreamBudget;
             ClawCubemap m_environment;
             mutable ClawCubemap m_previewEnvironment;

@@ -1,6 +1,7 @@
 #ifndef WP_CLAW_MATERIAL_RENDER_CACHE_HPP
 #define WP_CLAW_MATERIAL_RENDER_CACHE_HPP
 
+#include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/MaterialRenderState.hpp>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <array>
@@ -43,72 +44,66 @@ namespace workphone::render
         }
     };
 
-    /** Bounded, graphics-thread-owned cache. Weak owners neither retain textures nor permit
-     * address reuse to turn an expired snapshot into a hit. Four adjacent lookup tags form a set;
-     * misses replace one entry without allocating. No device pointers are cached here.
+    /** Persistent graphics-thread-owned CPU record table, with a small set-associative
+     * front cache. Stable pages and generation-qualified indices survive frame/view
+     * publications. Weak state identities permit retirement without retaining textures.
+     * No device views, lighting or camera values are stored here.
      */
-    class ClawMaterialRenderCache
+    class WPGraphics_API ClawMaterialRenderCache
     {
+        struct Slot;
+        struct Store;
     public:
         static constexpr size_t Ways = 4;
         static constexpr size_t SetCount = 32;
         static constexpr size_t Capacity = Ways * SetCount;
 
-        const ClawPreparedMaterialDX11 &get( const MaterialRenderState::Ptr &state )
+        // Capacity describes the front cache, not the number of persistent records.
+        struct Handle { u64 table = 0, generation = 0; u32 slot = ~u32(0); };
+        class WPGraphics_API Lease
         {
-            if( !state )
+        public:
+            const ClawPreparedMaterialDX11 *get(Handle) const;
+            u64 getStorageBytes() const;
+            u64 getIdentity() const;
+        private:
+            friend class ClawMaterialRenderCache;
+            friend class ClawMaterialDrawRecords;
+            const ClawPreparedMaterialDX11 *getPinned(Handle, const MaterialRenderState *) const;
+            std::shared_ptr<const Store> m_store;
+        };
+        ClawMaterialRenderCache();
+        ~ClawMaterialRenderCache();
+        ClawMaterialRenderCache(const ClawMaterialRenderCache &);
+        ClawMaterialRenderCache &operator=(const ClawMaterialRenderCache &);
+        ClawMaterialRenderCache(ClawMaterialRenderCache &&) noexcept;
+        ClawMaterialRenderCache &operator=(ClawMaterialRenderCache &&) noexcept;
+        const ClawPreparedMaterialDX11 &get(const MaterialRenderState::Ptr &state)
+        {
+            if(!state) return defaults();
+            if(m_lastIndex < Capacity)
             {
-                static const auto defaults = prepare( MaterialRenderState{} );
-                return defaults;
+                const auto &last = m_sets[m_lastIndex / Ways].tags[m_lastIndex % Ways];
+                if(matches(last, state)) return *last.prepared;
             }
-            if( m_lastIndex < Capacity )
-            {
-                auto &last = m_sets[m_lastIndex / Ways];
-                const auto way = m_lastIndex % Ways;
-                if( matches( last.tags[way], state ) ) return last.prepared[way];
-            }
-            auto hash = std::hash<const MaterialRenderState *>{}( state.get() ) >> 4u;
+            auto hash = std::hash<const MaterialRenderState *>{}(state.get()) >> 4u;
             hash ^= hash >> 11u;
             const auto setIndex = hash % SetCount;
-            auto &set = m_sets[setIndex];
-            for( size_t way = 0; way < Ways; ++way )
-            {
-                if( matches( set.tags[way], state ) )
-                {
-                    m_lastIndex = setIndex * Ways + way;
-                    return set.prepared[way];
-                }
-            }
-            // Strong-count inspection belongs to misses. A warm lookup compares
-            // addresses/control-block identities without touching reference counts.
-            size_t vacant = Ways;
-            for( size_t way = 0; way < Ways; ++way )
-                if( set.tags[way].owner.expired() ) { vacant = way; break; }
-            const auto way = vacant < Ways ? vacant : set.next++ % Ways;
-            auto &entry = set.tags[way];
-            set.prepared[way] = prepare( *state );
-            entry.address = state.get();
-            entry.owner = state;
-            m_lastIndex = setIndex * Ways + way;
-            ++m_preparations;
-            return set.prepared[way];
+            const auto &set = m_sets[setIndex];
+            for(size_t way = 0; way < Ways; ++way)
+                if(matches(set.tags[way], state))
+                { m_lastIndex = setIndex * Ways + way; return *set.tags[way].prepared; }
+            return getSlow(state, setIndex);
         }
-
-        void clear()
-        {
-            for( auto &set : m_sets )
-            {
-                for( auto &entry : set.tags )
-                {
-                    entry.owner.reset();
-                    entry.address = nullptr;
-                }
-                set.next = 0;
-            }
-            m_preparations = 0;
-            m_lastIndex = Capacity;
-        }
-
+        Handle resolve(const MaterialRenderState::Ptr &);
+        const ClawPreparedMaterialDX11 *lookup(Handle) const;
+        Lease retain() const;
+        void clear();
+        void collectExpired();
+        u64 getStorageBytes() const;
+        u64 getStorageAllocationCount() const;
+        u32 getSlotCount() const;
+        u32 getResidentCount() const;
         u64 getPreparationCount() const { return m_preparations; }
 
         // Also used by immutable scene publications, which prepare each distinct
@@ -154,21 +149,25 @@ namespace workphone::render
     private:
         struct Tag
         {
-            std::weak_ptr<const MaterialRenderState> owner;
             const MaterialRenderState *address = nullptr;
+            Slot *slot = nullptr;
+            const ClawPreparedMaterialDX11 *prepared = nullptr;
+            std::weak_ptr<const MaterialRenderState> owner;
         };
-        static bool matches( const Tag &entry, const MaterialRenderState::Ptr &state )
+        static bool matches(const Tag &tag, const MaterialRenderState::Ptr &state)
         {
-            return entry.address == state.get() && !entry.owner.owner_before( state ) &&
-                   !state.owner_before( entry.owner );
+            return tag.address == state.get() && !tag.owner.owner_before(state) &&
+                !state.owner_before(tag.owner);
         }
+        static const ClawPreparedMaterialDX11 &defaults();
+        const ClawPreparedMaterialDX11 &getSlow(const MaterialRenderState::Ptr &, size_t setIndex);
         struct Set
         {
             std::array<Tag, Ways> tags;
-            std::array<ClawPreparedMaterialDX11, Ways> prepared;
             size_t next = 0;
         };
-        std::array<Set, SetCount> m_sets;
+        std::shared_ptr<Store> m_store;
+        std::array<Set, SetCount> m_sets{};
         u64 m_preparations = 0;
         size_t m_lastIndex = Capacity;
     };

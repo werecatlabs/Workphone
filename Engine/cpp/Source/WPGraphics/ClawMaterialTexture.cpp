@@ -7,14 +7,7 @@ namespace workphone::render
 {
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMaterialTexture, MaterialTexture );
 
-    ClawMaterialTexture::ClawMaterialTexture() :
-        m_textureName( "" ),
-        m_texture( nullptr ),
-        m_tint( ColourF::White ),
-        m_textureType( 0 ),
-        m_animator( nullptr )
-    {
-    }
+    ClawMaterialTexture::ClawMaterialTexture() = default;
 
     ClawMaterialTexture::~ClawMaterialTexture()
     {
@@ -28,7 +21,7 @@ namespace workphone::render
     void ClawMaterialTexture::setTextureName( const String &name )
     {
         m_textureName = name;
-        m_texture = nullptr;
+        MaterialTexture::setTexture( nullptr );
         if( StringUtil::isNullOrEmpty( name ) )
         {
             return;
@@ -53,12 +46,12 @@ namespace workphone::render
 
     SmartPtr<ITexture> ClawMaterialTexture::getTexture() const
     {
-        return m_texture;
+        return MaterialTexture::getTexture();
     }
 
     void ClawMaterialTexture::setTexture( SmartPtr<ITexture> texture )
     {
-        m_texture = texture;
+        MaterialTexture::setTexture( texture );
         if( texture )
         {
             m_textureName = texture->getFilePath();
@@ -121,9 +114,9 @@ namespace workphone::render
         props->setProperty( IMaterialTexture::scaleStr, m_scale );
         props->setProperty( IMaterialTexture::tintStr, m_tint );
         props->setProperty( IMaterialTexture::textureTypeStr, m_textureType );
-        if( m_texture )
+        if( auto texture = getTexture() )
         {
-            if( auto handle = m_texture->getHandle() )
+            if( auto handle = texture->getHandle() )
             {
                 props->setProperty( MaterialTexture::textureStr, handle->getUUIDAsString() );
             }

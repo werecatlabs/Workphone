@@ -254,12 +254,7 @@ namespace workphone::render
                             auto stateData = factoryManager->make_ptr<MaterialPassStateData>();
                             if( stateData )
                             {
-                                // Seed the freshly-created state record with the
-                                // MaterialPass member defaults so existing callers see the
-                                // documented default values (metalness 0, roughness 0.5, etc.)
-                                // rather than MaterialPassStateData's raw defaults.
-                                stateData->metalness = m_metalness;
-                                stateData->roughness = m_roughness;
+                                // State data owns the documented surface defaults.
                                 if( auto material = dynamic_pointer_cast<Material>( getMaterial() ) )
                                 {
                                     if( material->m_hasPendingMetalness )
@@ -1341,7 +1336,7 @@ namespace workphone::render
             }
         }
 
-        return m_metalness;
+        return 0.0f;
     }
 
     void MaterialPass::setMetalness( f32 metalness )
@@ -1373,7 +1368,7 @@ namespace workphone::render
             }
         }
 
-        return m_roughness;
+        return 0.5f;
     }
 
     void MaterialPass::setRoughness( f32 roughness )

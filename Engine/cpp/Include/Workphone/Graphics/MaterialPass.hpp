@@ -566,20 +566,8 @@ namespace workphone
              */
             void setTextureUnits( const Array<SmartPtr<IMaterialTexture>> &textures );
 
-            /** @name Material colour and PBR parameters
-             *  These members store per-pass material properties used by the shader.
-             *  They are kept protected to allow derived classes to access/modify them.
-             */
-            //@{
-            ColourF m_tint = ColourF::White;     /**< Multiply tint applied to the pass. */
-            ColourF m_ambient = ColourF::White;  /**< Ambient light colour contribution. */
-            ColourF m_diffuse = ColourF::White;  /**< Diffuse (base) colour. */
-            ColourF m_specular = ColourF::White; /**< Specular highlight colour. */
-            ColourF m_emissive = ColourF::Black; /**< Emissive (self-lit) colour. */
-
-            f32 m_metalness = 0.0f; /**< PBR metalness factor [0,1]; dielectric by default. */
-            f32 m_roughness = 0.5f; /**< PBR roughness factor [0,1]. */
-
+            // Surface values belong to MaterialPassStateData. Derived passes use
+            // the virtual accessors rather than retaining another writable copy.
             /**< Thread-safe container of textures. */
             ConcurrentArray<SmartPtr<IMaterialTexture>> m_textures;
 
@@ -591,7 +579,6 @@ namespace workphone
             SmartPtr<IStateContext> m_createdStateContext;
             SmartPtr<IState> m_createdState;
             SmartPtr<IStateManager> m_createdContextManager;
-            //@}
         };
     }  // end namespace render
 }  // namespace workphone

@@ -103,8 +103,9 @@ namespace material_cache_benchmark
                          a.filter == b.filter && a.anisotropy == b.anisotropy,
                          "compact preparation must preserve every native constant and binding" );
             }
-        require( cache.getPreparationCount() == reference.getPreparationCount(),
-                 "tag separation and last-use lookup must preserve replacement behavior" );
+        require( cache.getPreparationCount() == states.size() &&
+                 cache.getPreparationCount() <= reference.getPreparationCount(),
+                 "persistent records avoid re-preparation beyond the front-cache capacity" );
         // Include the static null/default record and cache copy/move after a hit.
         const auto defaults = cache.get( {} ).compose();
         const auto oldDefaults = reference.get( {} ).compose();
@@ -183,8 +184,8 @@ namespace material_cache_benchmark
                 before = measure( reference, states, groupSize, draws );
                 after = measure( cache, states, groupSize, draws );
             }
-            require( before.checksum == after.checksum && before.preparations == after.preparations,
-                     "cache benchmark requires equal output and replacement counts" );
+            require( before.checksum == after.checksum && after.preparations == states.size(),
+                     "persistent cache benchmark requires equal output and one preparation per live state" );
             oldTimes[sample] = before.ms;
             newTimes[sample] = after.ms;
         }
@@ -194,14 +195,17 @@ namespace material_cache_benchmark
                   << " grouped_draws=" << groupSize << " samples=" << samples
                   << " former_median_ms=" << oldTimes[samples / 2]
                   << " compact_median_ms=" << newTimes[samples / 2]
-                  << " preparations=" << after.preparations << " checksum=" << after.checksum << '\n';
+                  << " former_preparations=" << before.preparations
+                  << " persistent_preparations=" << after.preparations
+                  << " persistent_accounted_bytes=" << cache.getStorageBytes()
+                  << " checksum=" << after.checksum << '\n';
     }
 
     inline void run()
     {
         contracts();
         std::cout << "former_cache_bytes=" << sizeof( Reference )
-                  << " compact_cache_bytes=" << sizeof( ClawMaterialRenderCache )
+                  << " persistent_cache_control_bytes=" << sizeof( ClawMaterialRenderCache )
                   << " former_prepared_bytes=" << sizeof( render::material_cache_reference::PreparedMaterialReference )
                   << " compact_prepared_bytes=" << sizeof( render::ClawPreparedMaterialDX11 ) << '\n';
         compare( "grouped", makeStates( 1 ), 64 );

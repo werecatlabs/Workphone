@@ -196,10 +196,11 @@ namespace
     {
     public:
         mutable u32 requests = 0;
+        void *currentView = nullptr;
         void getTextureFinal( void **view ) const override
         {
             ++requests;
-            *view = nullptr; // A retained texture whose device view is not ready yet.
+            *view = currentView; // Completion/replacement can change this without a material edit.
         }
     };
 
@@ -230,6 +231,7 @@ namespace
         {
             const bool red = edit % 2 == 0;
             material->setDiffuse( red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
+            ClawRendererDX11::MaterialRecordStatistics firstView;
             for( int view = 0; view < 2; ++view )
             {
                 renderer.setSceneLighting( view ? ColourF::Black : ColourF::White,
@@ -237,12 +239,48 @@ namespace
                 renderer.setSceneFog( 0u, ColourF::Black, 0.0f, 0.0f, 1.0f );
                 renderer.clear( ColourF::Black );
                 renderer.renderMesh( &mesh, Matrix4F::identity() );
+                const auto statistics = renderer.getMaterialRecordStatistics();
+                if(view == 0) firstView = statistics;
+                else ok &= check(statistics.preparations == firstView.preparations &&
+                                 statistics.storageAllocations == firstView.storageAllocations &&
+                                 statistics.directStorageAllocations == firstView.directStorageAllocations,
+                                 "unchanged direct/UI views reuse persistent records and warmed publication storage");
                 const auto pixels = claw_foliage_contracts::pixels( native );
                 const auto offset = ( 32u * 64u + 32u ) * 4u;
                 ok &= check( pixels[offset + ( red ? 0u : 1u )] > 200 &&
                              pixels[offset + ( red ? 1u : 0u )] < 10 && pixels[offset + 2] < 10,
                              "prepared UI material must show current edits across repeated draws/views" );
             }
+        }
+        {
+            auto streamed = make_ptr<MaterialRoutingTexture>();
+            const u32 redPixel = 0xff0000ffu, greenPixel = 0xff00ff00u;
+            auto redView = claw_terrain_material_contracts::texture(native, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, &redPixel, 4);
+            auto greenView = claw_terrain_material_contracts::texture(native, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, &greenPixel, 4);
+            material->setDiffuse(ColourF::White);
+            {
+                auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(pass->getId());
+                data->textures[0] = streamed;
+            }
+            const auto version = material->getRenderState();
+            ClawMaterialDrawRecords retained;
+            retained.capture(&mesh); renderer.prepareMaterialRecords(retained);
+            const auto prepared = renderer.getMaterialRecordStatistics().preparations;
+            for(int replacement = 0; replacement < 4; ++replacement)
+            {
+                streamed->currentView = replacement == 1 ? redView.Get() : replacement == 2 ? greenView.Get() : nullptr;
+                renderer.clear(ColourF::Black);
+                ok &= renderer.renderMeshRecords(&mesh, Matrix4F::identity(), retained, *retained.find(&mesh));
+                const auto pixels = claw_foliage_contracts::pixels(native);
+                const auto offset = (32u * 64u + 32u) * 4u;
+                ok &= check((replacement == 2 ? pixels[offset] < 10 : pixels[offset] > 200) &&
+                            (replacement == 1 ? pixels[offset + 1] < 10 : pixels[offset + 1] > 200) &&
+                            material->getRenderState() == version &&
+                            renderer.getMaterialRecordStatistics().preparations == prepared,
+                            "retained records resolve pending, completed, replaced and removed native texture views without stale bindings");
+            }
+            auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(pass->getId());
+            data->textures[0] = nullptr;
         }
         material->setMaterialType( MaterialType::Standard );
         material->setDiffuse( ColourF::White );
@@ -276,12 +314,15 @@ namespace
             material->setEditorUInt( "roughnessSource", mode );
             ClawMaterialDrawRecords records;
             records.capture( &mesh ); renderer.prepareMaterialRecords( records );
+            const auto preparedStatistics = renderer.getMaterialRecordStatistics();
             for( int repeat = 0; repeat < 4; ++repeat )
             {
                 metallic->requests = roughness->requests = packed->requests = 0;
                 renderer.clear( ColourF::Black );
                 if( repeat < 2 ) renderer.renderMesh( &mesh, Matrix4F::identity() );
                 else ok &= renderer.renderMeshRecords( &mesh, Matrix4F::identity(), records, *records.find( &mesh ) );
+                ok &= check(renderer.getMaterialRecordStatistics().preparations == preparedStatistics.preparations,
+                            "direct and scene adapters share the same persistent material preparation");
                 ok &= check( metallic->requests == ( roughnessSlots[mode] == 2u ? 2u : 1u ) &&
                              roughness->requests == ( roughnessSlots[mode] == 3u ? 1u : 0u ) &&
                              packed->requests == ( roughnessSlots[mode] == 25u ? 1u : 0u ),
