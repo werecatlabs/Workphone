@@ -17,6 +17,7 @@
 #include <Workphone/Mesh/VertexBuffer.hpp>
 #include <Workphone/Mesh/IndexBuffer.hpp>
 #include <Workphone/Mesh/VertexDeclaration.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
 #if defined( _MSC_VER ) && defined( _DEBUG )
 #include <crtdbg.h>
 #endif
@@ -59,6 +60,17 @@ BOOST_AUTO_TEST_CASE( mesh_cpu_buffer_replacement_and_destruction_release_storag
 
 namespace
 {
+    class CatalogMeshLoadProbe : public render::GraphicsSystem
+    {
+    public:
+        void loadObject( SmartPtr<ISharedObject>, bool ) override
+        {
+            ++loadRequests;
+        }
+
+        u32 loadRequests = 0;
+    };
+
     SmartPtr<IResourceManager> getMeshManager()
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -856,6 +868,22 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
         auto cachedResource = database->loadResourceByType<IMeshResource>( mesh->getName() );
         BOOST_REQUIRE( cachedResource );
         BOOST_CHECK( cachedResource->getMesh() == mesh );
+        cachedResource->setLoadingState( LoadingState::Loaded );
+        auto originalGraphics = app->getGraphicsSystem();
+        auto loadProbe = workphone::make_ptr<CatalogMeshLoadProbe>();
+        app->setGraphicsSystem( loadProbe );
+        auto reusedResource = database->loadResourceByType<IMeshResource>( mesh->getName() );
+        app->setGraphicsSystem( originalGraphics );
+        BOOST_REQUIRE( reusedResource );
+        BOOST_CHECK( reusedResource == cachedResource );
+        BOOST_CHECK_EQUAL( loadProbe->loadRequests, 0u );
+        cachedResource->setLoadingState( LoadingState::Unloaded );
+        app->setGraphicsSystem( loadProbe );
+        reusedResource = database->loadResourceByType<IMeshResource>( mesh->getName() );
+        app->setGraphicsSystem( originalGraphics );
+        BOOST_REQUIRE( reusedResource );
+        BOOST_CHECK_EQUAL( loadProbe->loadRequests, 1u );
+        cachedResource->setLoadingState( LoadingState::Loaded );
         const auto prefabPath = ( directory / "triangle.prefab" ).generic_string();
         app->getPrefabManager()->savePrefab( prefabPath, actor );
         auto prefab = app->getPrefabManager()->loadPrefab( prefabPath );

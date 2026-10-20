@@ -3268,25 +3268,17 @@ namespace workphone
         //aiVector3D *uv = mesh->mTextureCoords[0];
         aiColor4D *col = mesh->mColors[0];
 
-        Array<Array<Vector3<f32>>> uvs;
-        uvs.reserve( mesh->GetNumUVChannels() );
-
-        for( auto uv : mesh->mTextureCoords )
+        const auto numUVChannels = mesh->GetNumUVChannels();
+        std::vector<const aiVector3D *> uvPointers;
+        uvPointers.reserve( numUVChannels );
+        for( u32 ch = 0; ch < AI_MAX_NUMBER_OF_TEXTURECOORDS; ++ch )
         {
-            if( uv )
+            if( auto uvCh = mesh->mTextureCoords[ch] )
             {
-                Array<Vector3<f32>> uvArray;
-                uvArray.reserve( mesh->mNumVertices );
-
-                for( size_t j = 0; j < mesh->mNumVertices; ++j )
-                {
-                    uvArray.emplace_back( uv->x, uv->y, uv->z );
-                    uv++;
-                }
-
-                uvs.push_back( uvArray );
+                uvPointers.push_back( uvCh );
             }
         }
+        const auto numUVs = static_cast<u32>( uvPointers.size() );
 
         // We must create the vertex data, indicating how many vertices there will be
         // submesh->useSharedVertices = false;
@@ -3347,7 +3339,7 @@ namespace workphone
             offset += bitangentElem->getSize();
         }
 
-        for( u32 i = 0; i < uvs.size(); ++i )
+        for( u32 i = 0; i < uvPointers.size(); ++i )
         {
             auto uvElem =
                 declaration->addElement( source, offset, VertexElementSemantic::VES_TEXTURE_COORDINATES,
@@ -3371,6 +3363,12 @@ namespace workphone
 
         Vector3<f32> pos;
 
+        // Pre-calculate stride values for efficient vertex data writing
+        const bool hasNormals = ( norm != nullptr );
+        const bool hasTangents = ( tangent != nullptr );
+        const bool hasBitangents = ( bitangent != nullptr );
+        const bool hasColors = ( col != nullptr );
+
         for( u32 i = 0; i < mesh->mNumVertices; ++i )
         {
             // Position
@@ -3388,81 +3386,73 @@ namespace workphone
             *vdata++ = pos.x;
             *vdata++ = pos.y;
             *vdata++ = pos.z;
-            vec++;
+            ++vec;
 
             // Normal
-            if( norm )
+            if( hasNormals )
             {
+                *vdata++ = norm->x;
                 if( !swapZY )
                 {
-                    *vdata++ = norm->x;
                     *vdata++ = norm->y;
                     *vdata++ = norm->z;
                 }
                 else
                 {
-                    *vdata++ = norm->x;
                     *vdata++ = norm->z;
                     *vdata++ = norm->y;
                 }
-
-                norm++;
+                ++norm;
             }
 
-            if( tangent )
+            if( hasTangents )
             {
+                *vdata++ = tangent->x;
                 if( !swapZY )
                 {
-                    *vdata++ = tangent->x;
                     *vdata++ = tangent->y;
                     *vdata++ = tangent->z;
                 }
                 else
                 {
-                    *vdata++ = tangent->x;
                     *vdata++ = tangent->z;
                     *vdata++ = tangent->y;
                 }
-
-                tangent++;
+                ++tangent;
             }
 
-            if( bitangent )
+            if( hasBitangents )
             {
+                *vdata++ = bitangent->x;
                 if( !swapZY )
                 {
-                    *vdata++ = bitangent->x;
                     *vdata++ = bitangent->y;
                     *vdata++ = bitangent->z;
                 }
                 else
                 {
-                    *vdata++ = bitangent->x;
                     *vdata++ = bitangent->z;
                     *vdata++ = bitangent->y;
                 }
-
-                bitangent++;
+                ++bitangent;
             }
 
-            if( uvs.size() > 0 )
+            // UV coordinates - fixed pointer-based access
+            for( u32 uvCh = 0; uvCh < numUVs; ++uvCh )
             {
-                for( auto &j : uvs )
-                {
-                    auto uv = j[i];
-                    *vdata++ = uv.x;
-                    *vdata++ = 1.0f - uv.y;
-                    *vdata++ = uv.z;
-                }
+                const auto uv = uvPointers[uvCh] + i;
+                *vdata++ = uv->x;
+                *vdata++ = 1.0f - uv->y;
+                *vdata++ = uv->z;
             }
 
-            if( col )
+            if( hasColors )
             {
                 *vdata++ = col->r;
                 *vdata++ = col->g;
                 *vdata++ = col->b;
                 *vdata++ = col->a;
-                col++;
+                ++col;
             }
         }
 
@@ -3472,63 +3462,113 @@ namespace workphone
         auto indexBuffer = factoryManager->make_ptr<IndexBuffer>();
         submesh->setIndexBuffer( indexBuffer );
 
+        // Check if all faces are triangles for optimization
+        bool allTriangles = true;
+        for( u32 i = 0; i < mesh->mNumFaces; ++i )
+        {
+            if( mesh->mFaces[i].mNumIndices != 3 )
+            {
+                allTriangles = false;
+                break;
+            }
+        }
+
         if( mesh->mNumVertices < std::numeric_limits<u16>::max() )
         {
             indexBuffer->setIndexType( IndexBuffer::Type::IT_16BIT );
 
-            Array<u16> indices;
-            indices.reserve( mesh->mNumFaces * 3 );
-
-            for( u32 i = 0; i < mesh->mNumFaces; ++i )
+            if( allTriangles )
             {
-                auto f = &mesh->mFaces[i];
+                indexBuffer->setNumIndices( mesh->mNumFaces * 3 );
+                auto idata = static_cast<u16 *>( indexBuffer->createIndexData() );
 
-                // Check for triangles
-                if( f->mNumIndices == 3 )
+                u16 *dst = idata;
+                for( u32 i = 0; i < mesh->mNumFaces; ++i )
                 {
-                    for( u32 index = 0; index < f->mNumIndices; ++index )
-                    {
-                        auto faceIndex = f->mIndices[index];
-                        WP_ASSERT( faceIndex < std::numeric_limits<u16>::max() );
-                        indices.push_back( faceIndex );
-                    }
+                    const auto *f = &mesh->mFaces[i];
+                    const auto *faceIndices = f->mIndices;
+                    WP_ASSERT( faceIndices[0] < std::numeric_limits<u16>::max() );
+                    WP_ASSERT( faceIndices[1] < std::numeric_limits<u16>::max() );
+                    WP_ASSERT( faceIndices[2] < std::numeric_limits<u16>::max() );
+                    *dst++ = static_cast<u16>( faceIndices[0] );
+                    *dst++ = static_cast<u16>( faceIndices[1] );
+                    *dst++ = static_cast<u16>( faceIndices[2] );
                 }
             }
+            else
+            {
+                Array<u16> indices;
+                indices.reserve( mesh->mNumFaces * 3 );
 
-            indexBuffer->setNumIndices( static_cast<u32>( indices.size() ) );
-            auto idata = static_cast<u16 *>( indexBuffer->createIndexData() );
-            memcpy( idata, indices.data(), indices.size() * sizeof( u16 ) );
+                for( u32 i = 0; i < mesh->mNumFaces; ++i )
+                {
+                    const auto *f = &mesh->mFaces[i];
+                    // Check for triangles
+                    if( f->mNumIndices == 3 )
+                    {
+                        const auto *faceIndices = f->mIndices;
+                        WP_ASSERT( faceIndices[0] < std::numeric_limits<u16>::max() );
+                        WP_ASSERT( faceIndices[1] < std::numeric_limits<u16>::max() );
+                        WP_ASSERT( faceIndices[2] < std::numeric_limits<u16>::max() );
+                        indices.push_back( static_cast<u16>( faceIndices[0] ) );
+                        indices.push_back( static_cast<u16>( faceIndices[1] ) );
+                        indices.push_back( static_cast<u16>( faceIndices[2] ) );
+                    }
+                }
+
+                indexBuffer->setNumIndices( static_cast<u32>( indices.size() ) );
+                auto idata = static_cast<u16 *>( indexBuffer->createIndexData() );
+                memcpy( idata, indices.data(), indices.size() * sizeof( u16 ) );
+            }
         }
         else
         {
             indexBuffer->setIndexType( IndexBuffer::Type::IT_32BIT );
 
-            Array<u32> indices;
-            indices.reserve( mesh->mNumFaces * 3 );
-
-            for( u32 i = 0; i < mesh->mNumFaces; ++i )
+            if( allTriangles )
             {
-                auto f = &mesh->mFaces[i];
-                // Check for triangles
-                if( f->mNumIndices == 3 )
+                indexBuffer->setNumIndices( mesh->mNumFaces * 3 );
+                auto idata = static_cast<u32 *>( indexBuffer->createIndexData() );
+
+                u32 *dst = idata;
+                for( u32 i = 0; i < mesh->mNumFaces; ++i )
                 {
-                    for( u32 index = 0; index < f->mNumIndices; ++index )
-                    {
-                        auto faceIndex = f->mIndices[index];
-                        indices.push_back( faceIndex );
-                    }
+                    const auto *f = &mesh->mFaces[i];
+                    const auto *faceIndices = f->mIndices;
+                    *dst++ = faceIndices[0];
+                    *dst++ = faceIndices[1];
+                    *dst++ = faceIndices[2];
                 }
             }
+            else
+            {
+                Array<u32> indices;
+                indices.reserve( mesh->mNumFaces * 3 );
 
-            indexBuffer->setNumIndices( static_cast<u32>( indices.size() ) );
-            auto idata = static_cast<u32 *>( indexBuffer->createIndexData() );
-            memcpy( idata, indices.data(), indices.size() * sizeof( u32 ) );
+                for( u32 i = 0; i < mesh->mNumFaces; ++i )
+                {
+                    const auto *f = &mesh->mFaces[i];
+                    // Check for triangles
+                    if( f->mNumIndices == 3 )
+                    {
+                        const auto *faceIndices = f->mIndices;
+                        indices.push_back( faceIndices[0] );
+                        indices.push_back( faceIndices[1] );
+                        indices.push_back( faceIndices[2] );
+                    }
+                }
+
+                indexBuffer->setNumIndices( static_cast<u32>( indices.size() ) );
+                auto idata = static_cast<u32 *>( indexBuffer->createIndexData() );
+                memcpy( idata, indices.data(), indices.size() * sizeof( u32 ) );
+            }
         }
 
         // set bone weights
         if( mesh->HasBones() )
         {
-            for( u32 i = 0; i < mesh->mNumBones; i++ )
+            const auto numBones = mesh->mNumBones;
+            for( u32 i = 0; i < numBones; i++ )
             {
                 aiBone *pAIBone = mesh->mBones[i];
                 if( nullptr != pAIBone )
@@ -3543,9 +3583,13 @@ namespace workphone
                         }
                     }
 
-                    for( u32 weightIdx = 0; weightIdx < pAIBone->mNumWeights; weightIdx++ )
+                    const auto numWeights = pAIBone->mNumWeights;
+                    const auto weights = pAIBone->mWeights;
+                    submesh->reserveBoneAssignments( numWeights );
+
+                    for( u32 weightIdx = 0; weightIdx < numWeights; weightIdx++ )
                     {
-                        aiVertexWeight aiWeight = pAIBone->mWeights[weightIdx];
+                        const aiVertexWeight &aiWeight = weights[weightIdx];
 
                         auto vba = workphone::make_ptr<VertexBoneAssignment>();
                         vba->setVertexIndex( aiWeight.mVertexId );

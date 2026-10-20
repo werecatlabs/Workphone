@@ -544,7 +544,7 @@ namespace workphone
         {
             setLoadingState( LoadingState::Unloading );
 
-            for( auto object : m_objects )
+            for( auto [id, object] : m_objects )
             {
                 object->unload( nullptr );
             }
@@ -635,7 +635,12 @@ namespace workphone
                     }
                 }
 
-                m_objects = objects;
+                for( auto object : objects )
+                {
+                    auto handle = object->getHandle();
+                    auto uuid = handle->getUUID();
+                    m_objects[uuid] = object;
+                }
             }
 
             static const String materialExt = ".mat";
@@ -748,6 +753,8 @@ namespace workphone
 
         assetDatabaseManager->loadFromFile( databasePath );
 
+        m_objects.clear();
+
         auto sceneManager = applicationManager->getGameManager();
         if( sceneManager )
         {
@@ -757,13 +764,10 @@ namespace workphone
             auto objects = getSceneObjects();
             for( auto object : objects )
             {
-                if( !assetDatabaseManager->hasResourceEntry( object ) )
-                {
-                    assetDatabaseManager->addResourceEntry( object );
-                }
+                auto handle = object->getHandle();
+                auto uuid = handle->getUUID();
+                m_objects[uuid] = object;
             }
-
-            m_objects = objects;
         }
     }
 
@@ -1822,7 +1826,7 @@ namespace workphone
         auto fileDataPath = settingsCachePath + StringUtil::toString( filePathHash ) + resourcedataExt;
         auto relativeFileDataPath = Path::getRelativePath( projectPath, fileDataPath );
 
-        for( auto &object : m_objects )
+        for( auto &[id, object] : m_objects )
         {
             auto resource = workphone::dynamic_pointer_cast<IResource>( object );
             if( resource->getFilePath() == fileDataPath )
@@ -1917,21 +1921,19 @@ namespace workphone
         Array<SmartPtr<ISharedObject>> candidates;
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
-            for( const auto &object : m_objects )
+            for( const auto &[id, object] : m_objects )
             {
                 if( object && object->getReferences() == 1 )
                 {
                     candidates.push_back( object );
                 }
             }
-            if( m_instances )
+
+            for( const auto &resource : m_instances )
             {
-                for( const auto &resource : *m_instances )
+                if( resource && resource->getReferences() == 1 )
                 {
-                    if( resource && resource->getReferences() == 1 )
-                    {
-                        candidates.push_back( resource );
-                    }
+                    candidates.push_back( resource );
                 }
             }
         }
@@ -1950,29 +1952,18 @@ namespace workphone
         {
             return;
         }
+
         Array<SmartPtr<ISharedObject>> detached;
+        for( auto &[id, object] : m_objects )
         {
-            RecursiveMutex::ScopedLock lock( m_mutex );
-            auto collect = [&]( auto &objects ) {
-                for( auto it = objects.begin(); it != objects.end(); )
-                {
-                    if( *it && ( *it )->getReferences() == 1 )
-                    {
-                        detached.push_back( *it );
-                        it = objects.erase( it );
-                    }
-                    else
-                    {
-                        ++it;
-                    }
-                }
-            };
-            collect( m_objects );
-            if( m_instances )
-            {
-                collect( *m_instances );
-            }
+            detached.push_back( object );
         }
+
+        for( auto &object : m_instances )
+        {
+            detached.push_back( object );
+        }
+
         // Recheck ownership after detachment: a concurrent acquired reference
         // keeps its live resource rather than having it unloaded underneath it.
         for( auto &object : detached )
@@ -2015,7 +2006,7 @@ namespace workphone
             auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
 
             auto resource = materialResult.first;
-            if( bLoadResource )
+            if( bLoadResource && resource && !resource->isLoaded() )
             {
                 graphicsSystem->loadObject( resource );
             }
@@ -2032,7 +2023,7 @@ namespace workphone
             auto meshResult = meshManager->createOrRetrieve( uuid, path, type );
 
             auto resource = meshResult.first;
-            if( bLoadResource )
+            if( bLoadResource && resource && !resource->isLoaded() )
             {
                 graphicsSystem->loadObject( resource );
             }
@@ -2214,8 +2205,6 @@ namespace workphone
                         // The resource already exists in memory.
                         return Pair<SmartPtr<IResource>, bool>( resource, false );
                     }
-
-                    it->second.erase( resIt );
                 }
             }
 
@@ -2272,9 +2261,6 @@ namespace workphone
                         // The resource already exists in memory.
                         return Pair<SmartPtr<IResource>, bool>( resource, false );
                     }
-
-                    map.erase( resIt );
-                    break;
                 }
             }
 
@@ -2334,14 +2320,10 @@ namespace workphone
             return nullptr;
         }
 
-        auto sceneObjects = getSceneObjects();
-        for( auto &object : sceneObjects )
+        auto it = m_objects.find( id );
+        if( it != m_objects.end() )
         {
-            auto objectHandle = object->getHandle();
-            if( object && objectHandle && objectHandle->getUUID() == id )
-            {
-                return object;
-            }
+            return it->second;
         }
 
         AssetDatabaseManager::EntrySnapshot entry;
@@ -2774,7 +2756,7 @@ namespace workphone
     {
         auto fileUUID = StringUtil::parseUUID( fileId );
 
-        for( auto &object : m_objects )
+        for( auto &[id, object] : m_objects )
         {
             if( auto handle = object->getHandle() )
             {
@@ -2786,18 +2768,6 @@ namespace workphone
         }
 
         return nullptr;
-    }
-
-    auto ResourceDatabase::getInstancesPtr() const -> SharedPtr<Array<SmartPtr<IResource>>>
-    {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-        return m_instances;
-    }
-
-    void ResourceDatabase::setInstancesPtr( SharedPtr<Array<SmartPtr<IResource>>> instances )
-    {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-        m_instances = instances;
     }
 
     String ResourceDatabase::getFilePath() const

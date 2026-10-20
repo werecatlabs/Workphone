@@ -153,6 +153,11 @@ namespace workphone
                                  m_boneAssignments.end() );
     }
 
+    void SubMesh::reserveBoneAssignments( size_t count )
+    {
+        m_boneAssignments.reserve( count );
+    }
+
     Array<SmartPtr<IVertexBoneAssignment>> SubMesh::getBoneAssignments() const
     {
         return m_boneAssignments;
