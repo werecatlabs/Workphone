@@ -1,4 +1,4 @@
-﻿#include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
@@ -25,6 +25,9 @@
 #include <Workphone/State/States/MaterialStateData.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Graphics/GraphicsUtil.hpp>
+#include <functional>
+#include <array>
+#include <vector>
 #include <cmath>
 
 namespace workphone::render
@@ -1786,16 +1789,18 @@ namespace workphone::render
             transparent = false;
         }
 
-        auto techniques = getTechniques();
-        for( auto technique : techniques )
-        {
-            auto passes = technique->getPasses();
-            for( auto pass : passes )
+        batch( [&, transparent, cutout]( Material & ) {
+            auto techniques = getTechniques();
+            for( auto technique : techniques )
             {
-                pass->setTransparent( transparent );
-                pass->setCutout( cutout );
+                auto passes = technique->getPasses();
+                for( auto pass : passes )
+                {
+                    pass->setTransparent( transparent );
+                    pass->setCutout( cutout );
+                }
             }
-        }
+        } );
     }
 
     bool Material::isCutout() const
@@ -2125,38 +2130,40 @@ namespace workphone::render
             mode = 0u;
         }
 
-        setEditorUInt( renderModeStr, mode );
+        batch( [&, mode]( Material & ) {
+            setEditorUInt( renderModeStr, mode );
 
-        switch( mode )
-        {
-        case 0:
-            setSurfaceFlags( false, false );
-            setBlendMode( 0 );
-            break;
-        case 1:
-            setSurfaceFlags( false, true );
-            setBlendMode( 0 );
-            break;
-        case 2:
-        case 3:
-            setSurfaceFlags( true, false );
-            setBlendMode( 1 );
-            break;
-        case 4:
-            setSurfaceFlags( true, false );
-            setBlendMode( 3 );
-            break;
-        case 5:
-            setSurfaceFlags( true, false );
-            setBlendMode( 4 );
-            break;
-        case 6:
-            setSurfaceFlags( true, false );
-            setBlendMode( 2 );
-            break;
-        default:
-            break;
-        }
+            switch( mode )
+            {
+            case 0:
+                setSurfaceFlags( false, false );
+                setBlendMode( 0 );
+                break;
+            case 1:
+                setSurfaceFlags( false, true );
+                setBlendMode( 0 );
+                break;
+            case 2:
+            case 3:
+                setSurfaceFlags( true, false );
+                setBlendMode( 1 );
+                break;
+            case 4:
+                setSurfaceFlags( true, false );
+                setBlendMode( 3 );
+                break;
+            case 5:
+                setSurfaceFlags( true, false );
+                setBlendMode( 4 );
+                break;
+            case 6:
+                setSurfaceFlags( true, false );
+                setBlendMode( 2 );
+                break;
+            default:
+                break;
+            }
+        } );
     }
 
     u32 Material::getRenderMode() const
@@ -2178,8 +2185,10 @@ namespace workphone::render
 
     void Material::setSpecularAmount( f32 value )
     {
-        setEditorFloat( specularStr, value );
-        setSpecular( ColourF( value, value, value, 1.0f ) );
+        batch( [&, value]( Material & ) {
+            setEditorFloat( specularStr, value );
+            setSpecular( ColourF( value, value, value, 1.0f ) );
+        } );
     }
 
     f32 Material::getSpecularAmount() const
@@ -2219,29 +2228,88 @@ namespace workphone::render
         return getEditorFloat( alphaClipStr, 0.5f );
     }
 
+    void Material::batch( const std::function<void( Material & )> &update )
+    {
+        if( !update )
+        {
+            return;
+        }
+
+        if( m_batchActive )
+        {
+            update( *this );
+            return;
+        }
+        // Keep the flag active through deferred application and scope destruction.
+        MaterialParameterSyncScope batching( m_batchActive );
+
+        // Render snapshots publish when a pass state's write-lock scope closes.
+        // Hold each authored pass state's write scope across the whole update so
+        // nested legacy setter edits publish one snapshot per pass when the batch
+        // closes instead of one per setter call. Deferred typed-parameter applies
+        // land inside the held scopes and coalesce into the same publication.
+        // Unchanged values reuse their current version. Passes created inside the
+        // batch keep their existing publication behavior. Owning-thread use,
+        // matching the parameter edit-scope contract.
+        // Write locks, not invalidations: a batch must not clear or set dirty
+        // flags owned by earlier/future edits on the same state.
+        std::array<SafePtr<MaterialPassStateData>, 4> inlineScopes;
+        size_t inlineCount = 0;
+        std::vector<SafePtr<MaterialPassStateData>> overflowScopes;
+        for( auto technique : getTechniques() )
+        {
+            if( !technique )
+            {
+                continue;
+            }
+            for( auto pass : technique->getPasses() )
+            {
+                auto context = pass ? pass->getStateContext() : SmartPtr<IStateContext>{};
+                if( !context ) continue;
+                for( const auto &source : context->getStates() )
+                {
+                    if( !source || source->getId() != pass->getId() ) continue;
+                    auto data = source->getData();
+                    if( !data || !data->isDerived<MaterialPassStateData>() ) continue;
+                    auto pointer = static_cast<MaterialPassStateData *>( data.get() );
+                    if( inlineCount < inlineScopes.size() ) inlineScopes[inlineCount++] = pointer;
+                    else overflowScopes.emplace_back( pointer );
+                    break;
+                }
+            }
+        }
+
+        {
+            auto parameterScope = m_shaderParameters.Edit();
+            update( *this );
+        }
+    }
+
     void Material::setOpacity( f32 value )
     {
         value = Math<real_Num>::clamp( value, 0.0f, 1.0f );
-        m_hasPendingOpacity = true;
-        m_pendingOpacity = value;
-        setEditorFloat( opacityStr, value );
+        batch( [&, value]( Material & ) {
+            m_hasPendingOpacity = true;
+            m_pendingOpacity = value;
+            setEditorFloat( opacityStr, value );
 
-        auto diffuse = getDiffuse();
-        diffuse.a = value;
-        setDiffuse( diffuse );
+            auto diffuse = getDiffuse();
+            diffuse.a = value;
+            setDiffuse( diffuse );
 
-        if( value < 0.999f )
-        {
-            auto renderMode = getRenderMode();
-            if( renderMode < 2u )
+            if( value < 0.999f )
             {
-                setRenderMode( 3u );
+                auto renderMode = getRenderMode();
+                if( renderMode < 2u )
+                {
+                    setRenderMode( 3u );
+                }
+                else
+                {
+                    setTransparent( true );
+                }
             }
-            else
-            {
-                setTransparent( true );
-            }
-        }
+        } );
     }
 
     f32 Material::getOpacity() const
@@ -2351,9 +2419,11 @@ namespace workphone::render
 
     void Material::setUVTiling( const Vector2F &tiling )
     {
-        setEditorFloat( uvTilingXStr, tiling.X() );
-        setEditorFloat( uvTilingYStr, tiling.Y() );
-        setScale( Vector3F( tiling.X(), tiling.Y(), 1.0f ), 0u );
+        batch( [&, tiling]( Material & ) {
+            setEditorFloat( uvTilingXStr, tiling.X() );
+            setEditorFloat( uvTilingYStr, tiling.Y() );
+            setScale( Vector3F( tiling.X(), tiling.Y(), 1.0f ), 0u );
+        } );
     }
 
     Vector2F Material::getUVTiling() const
@@ -2364,8 +2434,10 @@ namespace workphone::render
 
     void Material::setUVOffset( const Vector2F &offset )
     {
-        setEditorFloat( uvOffsetXStr, offset.X() );
-        setEditorFloat( uvOffsetYStr, offset.Y() );
+        batch( [&, offset]( Material & ) {
+            setEditorFloat( uvOffsetXStr, offset.X() );
+            setEditorFloat( uvOffsetYStr, offset.Y() );
+        } );
     }
 
     Vector2F Material::getUVOffset() const
@@ -2681,6 +2753,28 @@ namespace workphone::render
             return;
         }
         const auto state = getRenderState();
+        auto currentDiffuse = state ? state->diffuseColour : getDiffuse();
+        auto currentEmissive = state ? state->emissiveColour : getEmissive();
+        auto currentMetal = state ? state->metalness : getMetalness();
+        auto currentRough = state ? state->roughness : getRoughness();
+        auto currentClip = state ? state->alphaClip : getAlphaClip();
+        auto currentOpacity = state ? state->opacity : getOpacity();
+        if( m_batchActive )
+        {
+            // The published snapshot intentionally predates this batch. Read
+            // pending owner-side fallbacks once through cached primary selection,
+            // so an opacity-only edit preserves new RGB without name resolution
+            // or a separate graph traversal for every fallback setting.
+            const auto selection = std::atomic_load( &m_primaryPassSelection );
+            auto data = selection && selection->state ? selection->state->getData() : nullptr;
+            if( data && data->isDerived<MaterialPassStateData>() )
+            {
+                SafeReadPtr<MaterialPassStateData> live( static_cast<MaterialPassStateData *>( data.get() ) );
+                currentDiffuse = live->diffuseColour; currentEmissive = live->emissiveColour;
+                currentMetal = live->metalness; currentRough = live->roughness;
+                currentClip = live->alphaClip; currentOpacity = live->opacity;
+            }
+        }
         MaterialParameterSyncScope synchronization( m_synchronizingShaderParameters );
         const auto wants = [&]( MaterialBuiltinParameter semantic, MaterialShaderParameterType type, u32 size ) {
             return mask == 0xffu || ( ( mask & ( 1u << static_cast<u32>( semantic ) ) ) &&
@@ -2712,17 +2806,16 @@ namespace workphone::render
         const bool roughChanged = pbr && scalar( MaterialBuiltinParameter::Roughness );
         const bool clipChanged = pbr && scalar( MaterialBuiltinParameter::AlphaClip );
         const bool opacityChanged = diffuseChanged || scalar( MaterialBuiltinParameter::Opacity );
-        const auto currentDiffuse = state ? state->diffuseColour : getDiffuse();
         auto diffuse = diffuseChanged ? getColour( colorOnly ? MaterialBuiltinParameter::Color :
             MaterialBuiltinParameter::Albedo, colorOnly ? ColourF( 0.5f, 0.5f, 0.5f, 1 ) : currentDiffuse ) : currentDiffuse;
         const auto emissive = colorOnly ? getColour( MaterialBuiltinParameter::Color, ColourF( 0.5f, 0.5f, 0.5f, 1 ) ) :
-            getColour( MaterialBuiltinParameter::Emissive, pbr ? ( state ? state->emissiveColour : getEmissive() ) :
+            getColour( MaterialBuiltinParameter::Emissive, pbr ? currentEmissive :
                                                                      ColourF( 0.5f, 0.5f, 0.5f, 1 ) );
-        const auto metal = getScalar( MaterialBuiltinParameter::Metalness, state ? state->metalness : getMetalness() );
-        const auto rough = getScalar( MaterialBuiltinParameter::Roughness, state ? state->roughness : getRoughness() );
-        const auto clip = getScalar( MaterialBuiltinParameter::AlphaClip, state ? state->alphaClip : getAlphaClip() );
+        const auto metal = getScalar( MaterialBuiltinParameter::Metalness, currentMetal );
+        const auto rough = getScalar( MaterialBuiltinParameter::Roughness, currentRough );
+        const auto clip = getScalar( MaterialBuiltinParameter::AlphaClip, currentClip );
         const auto opacity = Math<f32>::clamp( getScalar( MaterialBuiltinParameter::Opacity,
-            pbr ? ( state ? state->opacity : getOpacity() ) : 1.0f ), 0.0f, 1.0f );
+            pbr ? currentOpacity : 1.0f ), 0.0f, 1.0f );
         const bool transparent = opacityChanged && opacity < 0.999f;
         const bool changeRenderMode = transparent && getRenderMode() < 2u;
         if( opacityChanged ) { diffuse.a = opacity; m_hasPendingOpacity = true; m_pendingOpacity = opacity; }

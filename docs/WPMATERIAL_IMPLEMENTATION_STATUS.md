@@ -1,6 +1,6 @@
 # Material optimization implementation status
 
-19 October 2026. Tracks [WPMATERIAL_OPTIMIZATION_PLAN.md](WPMATERIAL_OPTIMIZATION_PLAN.md).
+20 October 2026. Tracks [WPMATERIAL_OPTIMIZATION_PLAN.md](WPMATERIAL_OPTIMIZATION_PLAN.md).
 
 ## Implemented runtime changes
 
@@ -81,10 +81,10 @@ These count ordering opportunities, not actual GPU state transitions or avoided 
 
 - Rebuilt Debug `WorkphoneGraphicsShaderTests`: passed `WorkphoneGraphics.shader_contract`, including new compact-storage, actual texture-name allocation, clone/reset, descriptor round-trip, unchanged-revision and short-descriptor-buffer contracts. Empty native storage is **264 bytes**; the preserved public legacy descriptor alone is **2,172 bytes**.
 - Parameter-layout/snapshot contracts pass in Debug and RelWithDebInfo, including failed-operation checks that do not depend on assertions.
-- Final Debug material selection: **90/90 cases, 1,890/1,890 assertions passed**, covering all four `GraphicsMaterial*` suites and the global material lifecycle/pixel cases. This is the material selection from `UnitTests`, not the complete 1,592-case module.
+- Final Debug material selection: **90/90 cases, 1,890/1,890 assertions passed**, covering all four `GraphicsMaterial*` suites and the global material lifecycle/pixel cases. This is the material selection from `UnitTests`, not the complete 1,593-case module.
 - Rebuilt material load-sequence integration passes, including pre-load values, direct pass/state edits, texture-unit load order, extension slots, primary-pass removal, schema migration/rejection and typed property round-trips.
 - Rebuilt Claw production rendering passes on **Microsoft Basic Render Driver/WARP**, feature level `b000`, driver `10.0.19041.7802`. No representative hardware capture/performance claim is made.
-- The rebuilt Debug `Editor.all` aggregate passed **66/66 cases and 2,210,584 assertions** in 601.06 seconds against the final reusable-storage runtime, including scene material records, owned-parameter publication, nested edit scopes and compact DX11 preparation. Its CRT report retained the known 16-allocation/1,056-byte diagnostic baseline. This is not a GPU/custom-allocator leak certification or an interactive Editor quality/performance certification.
+- The rebuilt Debug `Editor.all` aggregate passed **66/66 cases and 2,804,743 assertions** in 548.23 seconds against the mixed-edit batching runtime. The preceding reusable-storage run passed 2,210,584 assertions in 601.06 seconds and retained the known CRT diagnostic baseline; that earlier allocation census is not a fresh leak measurement for batching. Aggregate success does not certify interactive quality/performance or GPU/custom-allocator leaks.
 
 New coverage is in `MaterialParameterLayoutTests.cpp` and `MaterialLoadSequenceTests.cpp`: shared metadata, independent clones, typed/default resource values, forged/wrong/stale handles, schema replacement, no-op revisions, coherent publication, concurrent readers, direct pass/state edits, extension texture updates, cached graph selection and unload.
 
@@ -152,11 +152,37 @@ Reproduction: build `WPMaterialLoadSequenceTests` in `RelWithDebInfo` and run it
 
 ## Parameter publication
 
+### Legacy and mixed edit batches
+
+`Material::batch(const std::function<void(Material &)> &)` groups independent legacy and typed edits into one immutable snapshot publication per existing authored pass. The opacity, render-mode, surface-flag, scalar-specular, UV-tiling and UV-offset compound setters use this path internally. Nested batches reuse the outer pass scopes and parameter edit scope. Four pass write scopes fit in inline storage; larger graphs use an overflow vector. This removes the batch lock-vector allocation for common small graphs, but technique/pass snapshots and caller callbacks can still allocate.
+
+The outer batch holds pass write scopes through the deferred typed apply. Typed opacity and partial-schema fallbacks read current owner-side values once through the cached primary selection, preserving legacy edits that are absent from the intentionally older published snapshot. This fixes a reproduced failure where a typed opacity edit restored the previous RGB after a legacy colour change in the same batch. The live fallback read resolves no setting names and releases its read scope before writing.
+
+Use the material batch as the outer scope when mixing edit APIs. An enclosing parameter-only edit scope can defer its typed commit until after the material batch closes. Pending typed values apply after the callback's legacy edits. A batch is not a rollback transaction: callback exceptions propagate after completed edits publish during unwinding. Empty/no-op/net-zero batches retain their snapshots; acquiring a batch does not clear preexisting dirty flags or mark clean states dirty. Changed setters retain their existing dirty-state behavior.
+
+This is an owning-thread API. Renderer readers retain coherent immutable versions for each pass; separate passes are not one globally atomic publication. Only pass states present at batch entry are held. New graph states retain their existing publication behavior, and unloaded graphs are not resurrected by editing pending values. There is no global registry or new persistent resource ownership. This does not yet schedule all independent edits into one publication per graphics update.
+
+Coverage includes six authored passes (both inline and overflow scope storage), nested batches, retained snapshots, no-op/net-zero edits, dirty flags, mixed legacy/typed opacity, exception recovery, concurrent per-pass readers and unload/reload. WARP readback also exercises retained typed handles inside material batches alongside legacy UV edits.
+
+Final validation passed: **3/3 focused contracts in both Debug and RelWithDebInfo**, **1/1 Debug cooked-material contract**, the **90-case/1,890-assertion Debug material selection**, and the full **66-case/2,804,743-assertion Editor aggregate**. Production pixels used Microsoft Basic Render Driver/WARP, feature level `b000`, driver `10.0.19041.7802`. Debug Editor and UnitTests were rebuilt against the updated headers. Evidence is in `project_x64/material_batch_final_debug_contracts.log`, `material_batch_final_rwi_contracts.log`, `material_batch_cooked_debug_contracts.log`, `material_batch_verified_unit_tests.log`, `material_batch_editor_all.log`, `material_batch_editor_evidence.log` and `material_batch_renderer_evidence.log`. Successful build logs are `material_batch_verified_debug_build.log`, `material_batch_extra_debug_build.log` and `material_batch_verified_rwi_build.log`.
+
+The updated `--benchmark-publication` fixture compares 1,000 six-field updates over seven rotating-order samples with other builds/tests idle. Each variant finishes with equal colours, scalars, flags and blending:
+
+| Update path | Median CPU time | Snapshot publications |
+| --- | ---: | ---: |
+| Six independent legacy setter calls | 32.9548 ms | 6,000 |
+| The same legacy calls inside `Material::batch` | 23.6117 ms | 1,000 |
+| Cached typed handles inside `parameters.Edit()` | 15.5060 ms | 1,000 |
+
+Explicit legacy batches use about **28% less CPU** and **83.3% fewer publications** in this fixture. The standalone opacity compound setter is already coalesced in this comparison, so the independent baseline now publishes six snapshots per update rather than the older seven below. Typed updates resolve zero parameter names during the timed loop. These measurements cover graph/state/publication work, not whole-frame or GPU performance; legacy named editor-setting adapters remain active. Output is `project_x64/material_batch_final_publication_benchmark.txt`.
+
+Build validation initially exhausted G: disk space. Four generated incremental-link caches were preserved under `C:/Users/casper_music/.codex/build-cache-backups/material-batch-20261020/`, with original paths recorded in `manifest.json`, and final builds used `/p:LinkIncremental=false`. Source files and runtime assets were not removed.
+
 Owned-buffer contracts cover retained references, nested batches, no-op/net-zero/failed writes, concurrent snapshot readers, two-pass publication counts, opacity normalization, independent copies, cross-material moves, schema migration/stale handles, property restoration and unload/reload. A WARP pixel regression edits a retained ColorOnly handle and observes the new red/green output without a manual apply. The existing scene-capture ownership contract also passes after the attachment lock repair.
 
 The optional `WPMaterialLoadSequenceTests --benchmark-publication` fixture compares six separate legacy surface edits with the same values written through cached typed handles in one edit scope. It checks final colours, scalars, flags, blend mode, publication counts and name lookup counts. Timing includes the CPU graph/state/publication work and excludes GPU submission and whole-frame costs. The binding pointer's storage cost is included in the refreshed parameter-storage measurements below.
 
-RelWithDebInfo, seven samples of 1,000 updates, alternating execution order, with other validation workloads idle: separate legacy edits took **46.6856 ms** median and published **7,000** snapshots; typed edit scopes took **23.1012 ms** and published **1,000** snapshots, with **zero parameter-name lookups during updates**. This is about twice as fast and 85.7% fewer publications in this CPU fixture. Publication counts include the additional alpha update performed by the legacy opacity setter. Output is in `project_x64/material_observed_publication_benchmark.txt`.
+Before legacy compound-setter batching, RelWithDebInfo, seven samples of 1,000 updates, alternating execution order, with other validation workloads idle: separate legacy edits took **46.6856 ms** median and published **7,000** snapshots; typed edit scopes took **23.1012 ms** and published **1,000** snapshots, with **zero parameter-name lookups during updates**. This historical fixture measured about twice the speed and 85.7% fewer publications. Counts include the additional alpha update then performed by the legacy opacity setter. Output is in `project_x64/material_observed_publication_benchmark.txt`; use the newer three-path comparison above for the current batching runtime.
 
 ## Parameter storage measurements
 
@@ -180,7 +206,7 @@ This is an integrated CPU storage/access and active DX11 consumption change, not
 
 1. Whole-material/scene allocation and cache profiling, changed-material stress workloads, multiple-view hardware timing and visual/Editor soak certification.
 2. Removing the transitional legacy/data-driven value mirror and extending the new scene-job dense records into the final persistent graphics/resource-generation table across frames/views. Native scene mesh draws now avoid per-draw material/snapshot/resource-owner acquisition; direct and specialized adapters remain to migrate.
-3. Scheduling one material publication per graphics update across independent legacy/high-level setters. Owned parameter edit scopes now coalesce related buffer writes, in addition to the existing state write scopes.
+3. Scheduling one material publication per graphics update across independent legacy/high-level setters. Explicit material batches now coalesce mixed edits and legacy compound setters, in addition to owned parameter edit scopes and state write scopes. Independent calls outside a batch still publish separately.
 4. Backend shader-program binding maps and optional view/material/object constant-buffer separation, guided by upload measurements. Built-in DX11 mesh constants and semantic texture-slot maps now have bounded preparation caching; the combined per-draw submission remains.
 5. A versioned binary cooked material schema and full automatic live shader/program reload coordination. The current file/package formats and their load adapters remain in use.
 

@@ -8,6 +8,8 @@
 #include <Workphone/Graphics/MaterialShaderParameters.hpp>
 #include <Workphone/Graphics/MaterialRenderState.hpp>
 
+#include <functional>
+
 namespace workphone
 {
     namespace render
@@ -1269,6 +1271,21 @@ namespace workphone
              *         Hlms Pbs/Unlit semantic slots (step 3c). */
             virtual void applyDataDrivenTextures();
 
+            /** Run a batch of independent legacy/typed edits as one coherent publication.
+             *
+             * @details Legacy compound setters (setOpacity, setRenderMode, ...) call this
+             * internally to keep multi-write updates atomic with respect to rendering: each
+             * authored pass state stays under its write scope for the whole batch, so its
+             * immutable render snapshot publishes once when the batch closes rather than once
+             * per setter call. Deferred typed-parameter applies also coalesce into the same
+             * publication. Batches nest; an unchanged batch reuses the current snapshot.
+             * Pass states created inside a batch keep their existing publication behavior.
+             * This is a publication scope, not a rollback transaction: if update throws,
+             * completed writes publish during unwinding and the exception propagates.
+             * Typed-parameter applies run at scope exit, after the callback's legacy edits.
+             * Owning-thread use, matching the parameter edit-scope contract. */
+            void batch( const std::function<void( Material & )> &update );
+
             SmartPtr<IStateContext> getStateContext() const override;
             IStateContext *getStateContextPtr() const override;
 
@@ -1349,6 +1366,7 @@ namespace workphone
             bool m_shaderParametersDirty = false;
             bool m_synchronizingShaderParameters = false;
             u8 m_pendingShaderSemantics = 0;
+            bool m_batchActive = false;
             u32 m_shaderParameterEditDepth = 0;
 
             /** @brief A named texture slot and the resource path bound to it. */

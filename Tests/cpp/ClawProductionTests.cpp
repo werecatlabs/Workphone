@@ -298,14 +298,20 @@ namespace
         auto &parameters = material->getShaderParameters();
         const auto color = parameters.Resolve<ColourF>( "Color" );
         const auto opacity = parameters.Resolve<f32>( "Opacity" );
-        for( int edit = 0; edit < 4; ++edit )
+        for( int edit = 0; edit < 8; ++edit )
         {
             const bool red = edit % 2 == 0;
+            if( edit < 4 )
             {
                 auto transaction = parameters.Edit();
                 parameters.Set( color, red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
                 parameters.Set( opacity, 1.0f );
             }
+            else material->batch( [&]( Material &m ) {
+                m.setUVOffset( Vector2F( 0.1f, 0.2f ) );
+                parameters.Set( color, red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
+                parameters.Set( opacity, 1.0f );
+            } );
             renderer.clear( ColourF::Black );
             renderer.renderMesh( &mesh, Matrix4F::identity() );
             const auto pixels = claw_foliage_contracts::pixels( native );

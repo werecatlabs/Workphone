@@ -941,8 +941,15 @@ namespace
                 legacy->setOpacity( value ); legacy->setAlphaClip( 1.0f - value );
             }
         };
-        std::array<double, samples> oldTimes{}, newTimes{};
-        u64 oldPublications = 0, newPublications = 0;
+        std::array<double, samples> oldTimes{}, newTimes{}, batchTimes{};
+        u64 oldPublications = 0, newPublications = 0, batchPublications = 0;
+        auto legacyWrite = [&]( Material &m, f32 value ) {
+            const auto color = ColourF( value, 1.0f - value, value * 0.5f, 1 );
+            const auto emission = ColourF( value * 0.25f, 0, 0, 1 );
+            m.setDiffuse( color ); m.setMetalness( value );
+            m.setRoughness( 1.0f - value ); m.setEmissive( emission );
+            m.setOpacity( value ); m.setAlphaClip( 1.0f - value );
+        };
         const auto measure = [&]( bool useBatch ) {
             write( useBatch, 0.75f );
             auto material = useBatch ? batched : legacy;
@@ -955,24 +962,106 @@ namespace
             if( useBatch ) newPublications = publications; else oldPublications = publications;
             return std::chrono::duration<double, std::milli>( elapsed ).count();
         };
+        const auto measureBatch = [&] {
+            legacy->batch( [&]( Material &m ) { legacyWrite( m, 0.75f ); } );
+            const auto before = legacy->getRenderState()->revision;
+            const auto start = std::chrono::steady_clock::now();
+            for( int update = 0; update < updates; ++update )
+                legacy->batch( [&]( Material &m ) { legacyWrite( m, update % 2 ? 0.75f : 0.25f ); } );
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            batchPublications = legacy->getRenderState()->revision - before;
+            return std::chrono::duration<double, std::milli>( elapsed ).count();
+        };
         for( int sample = 0; sample < samples; ++sample )
         {
-            if( sample % 2 ) { newTimes[sample] = measure( true ); oldTimes[sample] = measure( false ); }
-            else { oldTimes[sample] = measure( false ); newTimes[sample] = measure( true ); }
+            const auto order = sample % 3;
+            if( order == 0 ) { newTimes[sample] = measure( true ); oldTimes[sample] = measure( false ); batchTimes[sample] = measureBatch(); }
+            else if( order == 1 ) { oldTimes[sample] = measure( false ); batchTimes[sample] = measureBatch(); newTimes[sample] = measure( true ); }
+            else { batchTimes[sample] = measureBatch(); newTimes[sample] = measure( true ); oldTimes[sample] = measure( false ); }
             const auto before = legacy->getRenderState(), after = batched->getRenderState();
             require( before->diffuseColour == after->diffuseColour && before->emissiveColour == after->emissiveColour &&
                      before->metalness == after->metalness && before->roughness == after->roughness &&
                      before->opacity == after->opacity && before->alphaClip == after->alphaClip &&
                      before->flags == after->flags && before->blendMode == after->blendMode &&
-                     newPublications == updates && oldPublications == updates * 7 &&
+                     newPublications == updates && oldPublications == updates * 6 && batchPublications == updates &&
                      parameters.GetNameLookupCount() == names, "publication benchmark output/count/name parity" );
         }
         std::sort( oldTimes.begin(), oldTimes.end() ); std::sort( newTimes.begin(), newTimes.end() );
+        std::sort( batchTimes.begin(), batchTimes.end() );
         std::cout << "updates=" << updates << " samples=" << samples
                   << " legacy_median_ms=" << oldTimes[samples / 2] << " batched_median_ms=" << newTimes[samples / 2]
+                  << " legacy_batch_median_ms=" << batchTimes[samples / 2]
                   << " legacy_publications=" << oldPublications << " batched_publications=" << newPublications
+                  << " legacy_batch_publications=" << batchPublications
                   << " name_lookups_during_updates=" << parameters.GetNameLookupCount() - names << '\n';
         legacy->unload( nullptr ); batched->unload( nullptr );
+    }
+
+    void runLegacyBatchScopes( Fixture &fixture )
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>(); material->load( nullptr );
+        auto technique = material->getTechnique( 0 );
+        for( int i = 1; i < 6; ++i ) technique->createPass()->load( nullptr );
+        std::vector<SmartPtr<IState>> states;
+        std::vector<SmartPtr<MaterialPassStateData>> data;
+        std::vector<MaterialRenderState::Ptr> before;
+        for( auto pass : technique->getPasses() )
+        {
+            auto state = pass->getStateContext()->getStateById( pass->getId() );
+            states.push_back( state );
+            data.push_back( static_pointer_cast<MaterialPassStateData>( state->getData() ) );
+            before.push_back( data.back()->getRenderState() );
+        }
+        material->batch( [&]( Material &m ) {
+            m.setMetalness( 0.25f ); m.setRoughness( 0.75f );
+            m.batch( [&]( Material &nested ) { nested.setUVOffset( Vector2F( 0.2f, 0.3f ) ); } );
+            for( size_t i = 0; i < data.size(); ++i )
+                require( data[i]->getRenderState() == before[i], "all six pass versions remain frozen inside nested batch" );
+        } );
+        for( size_t i = 0; i < data.size(); ++i )
+        {
+            const auto snapshot = data[i]->getRenderState();
+            require( snapshot->revision == before[i]->revision + 1 && snapshot->metalness == 0.25f &&
+                     snapshot->roughness == 0.75f && snapshot->uvOffsetY == 0.3f,
+                     "inline and overflow pass scopes each publish one complete version" );
+            before[i] = snapshot;
+            states[i]->setDirty( false );
+        }
+        states[0]->setDirty( true );
+        material->batch( []( Material & ) {} );
+        material->batch( {} );
+        for( size_t i = 0; i < data.size(); ++i )
+            require( data[i]->getRenderState() == before[i] && states[i]->isDirty() == ( i == 0 ),
+                     "empty batches preserve clean and preexisting dirty states without publication" );
+        material->batch( []( Material &m ) {
+            m.setMetalness( 0.5f ); m.setMetalness( 0.25f );
+        } );
+        for( size_t i = 0; i < data.size(); ++i )
+            require( data[i]->getRenderState() == before[i], "net-zero batches retain each existing snapshot" );
+        std::atomic<bool> finished{ false }, coherent{ true };
+        std::thread reader( [&] {
+            while( !finished.load() )
+                for( const auto &value : data )
+                {
+                    auto snapshot = value->getRenderState();
+                    if( std::abs( snapshot->metalness + snapshot->roughness - 1 ) > 0.00001f ) coherent.store( false );
+                }
+        } );
+        for( int i = 0; i < 128; ++i )
+            material->batch( [&]( Material &m ) {
+                const auto value = i % 2 ? 0.25f : 0.75f;
+                m.setMetalness( value ); m.setRoughness( 1 - value );
+            } );
+        finished.store( true ); reader.join();
+        require( coherent.load(), "render readers never observe partial legacy batches on any authored pass" );
+        material->unload( nullptr );
+        material->batch( []( Material &m ) { m.setMetalness( 0.62f ); m.setOpacity( 0.37f ); } );
+        require( !material->getRenderState(), "unloaded batch does not resurrect retired pass graph" );
+        material->load( nullptr );
+        require( material->getRenderState()->metalness == 0.62f && material->getRenderState()->opacity == 0.37f,
+                 "pending legacy batch values survive graph reload" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
     }
 
     void runObservedParameters( Fixture &fixture )
@@ -1107,6 +1196,66 @@ namespace
         otherParameters.Set( nextRough, 0.27f );
         require( other->getRenderState()->roughness == 0.27f,
                  "schema replacement retains observer binding on the physical instance" );
+
+        // Legacy compound setters publish one snapshot per call batch: setOpacity
+        // used to publish once per inner write (opacity float, diffuse alpha, plus
+        // render-mode/blend adjustments at the transparency threshold).
+        other->setRenderMode( 3u );
+        other->setDiffuse( ColourF( 1, 1, 1, 0.4f ) );
+        auto batchBefore = other->getRenderState();
+        other->setOpacity( 0.45f );
+        auto batchAfter = other->getRenderState();
+        require( batchAfter->revision == batchBefore->revision + 1 &&
+                 batchAfter->opacity == 0.45f && batchAfter->diffuseColour.a == 0.45f,
+                 "compound legacy setter publishes one snapshot per pass" );
+        other->batch( []( Material &m ) {
+            m.setDiffuse( ColourF( 0.11f, 0.22f, 0.33f, 1 ) );
+            m.setMetalness( 0.61f ); m.setRoughness( 0.39f );
+        } );
+        auto batchGrouped = other->getRenderState();
+        require( batchGrouped->revision == batchAfter->revision + 1 &&
+                 batchGrouped->metalness == 0.61f && batchGrouped->roughness == 0.39f &&
+                 batchGrouped->diffuseColour == ColourF( 0.11f, 0.22f, 0.33f, 1 ) &&
+                 batchAfter->diffuseColour != batchGrouped->diffuseColour,
+                 "explicit batch coalesces independent legacy setters into one publication" );
+        other->batch( []( Material &m ) {
+            m.setMetalness( 0.61f ); m.setRoughness( 0.39f );
+        } );
+        require( other->getRenderState() == batchGrouped,
+                 "a batch with no net change reuses the current snapshot" );
+
+        const auto mixedOpacity = otherParameters.Resolve<f32>( "Opacity" );
+        other->batch( [&]( Material &m ) {
+            m.setDiffuse( ColourF( 0.7f, 0.3f, 0.2f, 1 ) );
+            m.batch( [&]( Material &nested ) {
+                nested.setUVOffset( Vector2F( 0.1f, 0.2f ) );
+                otherParameters.Set( mixedOpacity, 0.6f );
+            } );
+            require( m.getRenderState() == batchGrouped, "nested mixed edits retain the published version until exit" );
+        } );
+        auto mixed = other->getRenderState();
+        require( mixed->revision == batchGrouped->revision + 1 &&
+                 mixed->diffuseColour == ColourF( 0.7f, 0.3f, 0.2f, 0.6f ) && mixed->opacity == 0.6f &&
+                 mixed->uvOffsetX == 0.1f && mixed->uvOffsetY == 0.2f,
+                 "typed opacity preserves a legacy colour changed inside the same batch" );
+
+        bool threw = false;
+        try
+        {
+            other->batch( [&]( Material &m ) {
+                m.setMetalness( 0.23f );
+                otherParameters.Set( nextRough, 0.77f );
+                throw std::runtime_error( "expected batch callback failure" );
+            } );
+        }
+        catch( const std::runtime_error & ) { threw = true; }
+        require( threw && other->getRenderState()->revision == mixed->revision + 1 &&
+                 other->getRenderState()->metalness == 0.23f && other->getRenderState()->roughness == 0.77f,
+                 "exception unwinding publishes completed writes and propagates the callback failure" );
+        auto afterFailure = other->getRenderState();
+        other->batch( []( Material &m ) { m.setRoughness( 0.41f ); } );
+        require( other->getRenderState()->revision == afterFailure->revision + 1 &&
+                 other->getRenderState()->roughness == 0.41f, "batch scopes are usable after a callback throws" );
 
         material->unload( nullptr );
         {
@@ -1263,6 +1412,7 @@ int main( int argc, char **argv )
         runCapturedMaterialRecords( fixture );
         runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
+        runLegacyBatchScopes( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );
         run( fixture );
