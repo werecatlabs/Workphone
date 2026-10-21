@@ -22,5 +22,10 @@ namespace workphone
             m_object = object;
         }
 
+        FSMReturnType ProceduralComponent::handleComponentEvent( u32 state, FSMEvent eventType )
+        {
+            return FSMReturnType::Ok;
+        }
+
     }  // namespace procedural
 }  // namespace workphone

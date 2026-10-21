@@ -30,6 +30,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            FSMReturnType handleComponentEvent(u32 state, FSMEvent eventType);
+
             SmartPtr<ISharedObject> m_object;
         };
 
