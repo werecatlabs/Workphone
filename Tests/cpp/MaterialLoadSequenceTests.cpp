@@ -1090,10 +1090,12 @@ namespace
             checksum += path.size() + layer;
             if(record) calls.emplace_back(layer, path);
         }
-        u64 bindingLayout() const { return m_shaderTextureBindingLayoutId; }
-        size_t bindingBytes() const { return m_shaderTextureBindings.capacity() * sizeof(ShaderTextureBinding); }
-        size_t bindingControlBytes() const { return sizeof(m_shaderTextureBindings) + sizeof(m_shaderTextureBindingLayoutId); }
-        const void *bindingStorage() const { return m_shaderTextureBindings.data(); }
+        u64 bindingLayout() const { return m_shaderAuthoring ? m_shaderAuthoring->bindingLayoutId : 0; }
+        size_t bindingBytes() const { return m_shaderAuthoring ? m_shaderAuthoring->textureBindings.capacity() * sizeof(ShaderTextureBinding) : 0; }
+        size_t bindingControlBytes() const { return sizeof(m_shaderAuthoring) + (m_shaderAuthoring ? sizeof(ShaderAuthoringData) : 0); }
+        const void *bindingStorage() const { return m_shaderAuthoring ? m_shaderAuthoring->textureBindings.data() : nullptr; }
+        bool hasAuthoring() const { return bool(m_shaderAuthoring); }
+        size_t authoringBytes() const { return sizeof(ShaderAuthoringData); }
         void legacyApply()
         {
             u32 layer = 0;
@@ -1110,6 +1112,23 @@ namespace
     {
         using namespace render;
         auto material = make_ptr<TextureBindingProbe>();
+        require(!material->hasAuthoring(), "legacy materials have no shader authoring allocation");
+        require(material->getShaderID().empty() && !material->isDataDriven() &&
+            material->getShaderTexture("Absent").empty(), "empty authoring reads retain legacy defaults");
+        material->setShaderID(""); material->applyDataDrivenTextures();
+        require(!material->hasAuthoring(), "empty shader writes and texture applies allocate no authoring storage");
+        Array<MaterialShaderParameterInfo> scalarSchema = {{MaterialShaderParameterType::Scalar,"Value"}};
+        material->setShaderParameters(scalarSchema);
+        require(!material->hasAuthoring(), "parameter-only layouts need no named authoring allocation");
+        material->setShaderTexture("Retained", "retained.png");
+        require(material->hasAuthoring(), "texture authoring allocates on demand without a shader ID");
+        material->setShaderID("Temporary"); material->setShaderID("");
+        require(!material->isDataDriven() && material->getShaderTexture("Retained") == "retained.png",
+            "clearing a shader retains unresolved authoring references");
+        std::cout << "shader_authoring pointer_bytes=" << sizeof(void*)
+            << " optional_object_bytes=" << material->authoringBytes()
+            << " legacy_population=10000 avoided_embedded_bytes="
+            << 10000 * (material->authoringBytes() - sizeof(void*)) << '\n';
         Array<MaterialShaderParameterInfo> schema = {
             {MaterialShaderParameterType::Texture,"Missing"}, {MaterialShaderParameterType::Scalar,"Scalar"},
             {MaterialShaderParameterType::Texture,"Second"}, {MaterialShaderParameterType::Buffer,"Buffer"},
@@ -2124,6 +2143,7 @@ int main( int argc, char **argv )
         runMaterialPreparation();
         runPersistentRecordTable();
         std::cout << "authoring_pass_bytes=" << sizeof(render::ClawMaterialPass)
+                  << " authoring_material_bytes=" << sizeof(render::ClawMaterial)
                   << " authoring_texture_unit_bytes=" << sizeof(render::ClawMaterialTexture)
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         Fixture fixture;

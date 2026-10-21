@@ -382,6 +382,22 @@ Contracts additionally cover empty descriptor round-trip, zero-facade runtime re
 
 The rebuilt Debug **Editor aggregate passes 66/66 cases and 2,799,085 assertions in 559.80 s** (`material_m4_slots_editor_all.log`, `material_m4_slots_editor_evidence.log`). `git diff --check` passes. This is automated regression evidence, not interactive visual/soak or representative hardware certification.
 
+## Optional shader authoring metadata (M4 continuation, 21 October)
+
+Shader IDs, named texture paths and sparse binding-array headers now live in optional `Material::ShaderAuthoringData`. Legacy materials and parameter-only instances retain one pointer and allocate no shader authoring object. Nonempty shader selection or named texture authoring allocates it on demand. Empty reads, empty shader assignment and unused texture applies do not allocate it. Shader clearing retains unresolved texture references for later selection, preserving the existing authoring behavior.
+
+The numeric workflow byte remains inline and now distinguishes legacy materials directly, so `isDataDriven()` does not read the cold shader name during typed parameter publication. Repeated texture applies retain the existing numeric schema/reference cache and borrowed paths. Public APIs and serialization remain available; C++ clients and subclasses must rebuild because the material layout and protected authoring fields changed. Ordinary owning-thread/external synchronization requirements still apply.
+
+Windows x64 `ClawMaterial` now measures **1,472 bytes**, versus the preceding 1,632-byte representation: **160 bytes less inline storage per material**. The optional object measures 168 bytes. A population of 10,000 materials that never use named shader authoring therefore avoids 1,600,000 bytes of embedded metadata; this is object-inventory arithmetic, excluding all other graph objects and allocator overhead, not a process/scene memory measurement. Materials that use this metadata account for 1,472 + 168 = 1,640 bytes instead of 1,632, before allocator overhead. The load-sequence contract prints these sizes and checks lazy creation, parameter-only use, empty/default operations, shader clearing/reference retention, binding-cache reuse and schema replacement.
+
+All four native material suites pass in **RelWithDebInfo (22.01 s)** and **Debug (33.56 s)**. Rebuilt Debug material/resource/lifecycle coverage passes **105 cases / 1,899 assertions** (1,523 cases outside the selection are skipped). Logs under `project_x64/` use `material_m4_authoring_`: `debug_build.log`, `debug_final_build.log`, `rwi_build.log`, `rwi_final_build.log`, `debug_contracts.log`, `rwi_contracts.log`, matching `*_evidence.log`, and `unit_tests.log`.
+
+The seven-sample release texture-binding fixture submits the same checksum (56,750,000) through named lookup and cached numeric bindings. At 10,000 applies / 64 parameters / 32 textures it reports 159.526 ms versus 5.0558 ms medians (`material_m4_authoring_bindings_benchmark.log`). This compares the historical name-scanning adapter with the existing numeric cache on the current build; it does not isolate the cost of this storage move from the immediately preceding implementation.
+
+The rebuilt Debug **Editor aggregate passes 66/66 cases / 2,752,384 assertions in 561.11 s** (`material_m4_authoring_editor_all.log`, `material_m4_authoring_editor_evidence.log`). `git diff --check` passes. These are automated regression results; representative hardware profiling and interactive visual/soak certification remain open.
+
+This is a conditional storage reduction: data-driven materials add an allocation and one pointer to the accounted metadata representation, plus allocator overhead. It does not retire the authored-versus-legacy value mirror or demonstrate a hardware cache/frame-time benefit. M4 remains partial.
+
 ## Remaining plan gates
 
 This is an integrated CPU storage/access and active DX11 consumption change, not completion of all production gates in the plan. Remaining work includes:

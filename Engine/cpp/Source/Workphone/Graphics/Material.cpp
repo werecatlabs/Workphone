@@ -1565,7 +1565,7 @@ namespace workphone::render
 
             // Data-driven shader (Esoterica integration, step 5): persist the bound shader id
             // and each editable scalar/colour parameter so the choice survives save/reload.
-            properties->setProperty( shaderIDStr, m_shaderID );
+            properties->setProperty( shaderIDStr, getShaderID() );
             if( isDataDriven() && m_shaderParameters.IsValid() )
             {
                 auto const &paramInfo = m_shaderParameters.GetParameterInfo();
@@ -2809,7 +2809,8 @@ namespace workphone::render
 
     void Material::setShaderTexture( const String &paramName, const String &texturePath )
     {
-        for( auto &ref : m_shaderTextureRefs )
+        if( !m_shaderAuthoring ) m_shaderAuthoring = std::make_unique<ShaderAuthoringData>();
+        for( auto &ref : m_shaderAuthoring->textureRefs )
         {
             if( ref.paramName == paramName )
             {
@@ -2817,13 +2818,14 @@ namespace workphone::render
                 return;
             }
         }
-        m_shaderTextureRefs.push_back( { paramName, texturePath } );
-        m_shaderTextureBindingLayoutId = 0;
+        m_shaderAuthoring->textureRefs.push_back( { paramName, texturePath } );
+        m_shaderAuthoring->bindingLayoutId = 0;
     }
 
     String Material::getShaderTexture( const String &paramName ) const
     {
-        for( auto const &ref : m_shaderTextureRefs )
+        if( !m_shaderAuthoring ) return String();
+        for( auto const &ref : m_shaderAuthoring->textureRefs )
         {
             if( ref.paramName == paramName )
             {
@@ -2835,20 +2837,21 @@ namespace workphone::render
 
     void Material::applyDataDrivenTextures()
     {
-        if( !isDataDriven() || !m_shaderParameters.IsValid() )
+        if( !m_shaderAuthoring || !isDataDriven() || !m_shaderParameters.IsValid() ||
+            m_shaderAuthoring->textureRefs.empty() )
         {
             return;
         }
         const auto &layout = m_shaderParameters.GetLayout();
-        if( m_shaderTextureBindingLayoutId != layout->GetId() )
+        if( m_shaderAuthoring->bindingLayoutId != layout->GetId() )
         {
             Array<ShaderTextureBinding> bindings;
             u32 layer = 0;
             for( const auto &parameter : layout->GetParameterInfo() )
             {
                 if( parameter.m_type != MaterialShaderParameterType::Texture ) continue;
-                for( u32 reference = 0; reference < m_shaderTextureRefs.size(); ++reference )
-                    if( m_shaderTextureRefs[reference].paramName == parameter.m_name )
+                for( u32 reference = 0; reference < m_shaderAuthoring->textureRefs.size(); ++reference )
+                    if( m_shaderAuthoring->textureRefs[reference].paramName == parameter.m_name )
                     {
                         bindings.push_back( { layer, reference } );
                         break;
@@ -2856,14 +2859,14 @@ namespace workphone::render
                 ++layer;
             }
             // Commit after allocation succeeds; failed rebuilds retry next time.
-            m_shaderTextureBindings = std::move( bindings );
-            m_shaderTextureBindingLayoutId = layout->GetId();
+            m_shaderAuthoring->textureBindings = std::move( bindings );
+            m_shaderAuthoring->bindingLayoutId = layout->GetId();
         }
         // Preserve the existing backend's ordinal mapping and resource lifecycle.
         // Paths are borrowed, avoiding the former temporary String per slot.
-        for( const auto &binding : m_shaderTextureBindings )
+        for( const auto &binding : m_shaderAuthoring->textureBindings )
         {
-            const auto &path = m_shaderTextureRefs[binding.reference].texturePath;
+            const auto &path = m_shaderAuthoring->textureRefs[binding.reference].texturePath;
             if( !path.empty() )
             {
                 setTexture( path, binding.layer );
@@ -2874,7 +2877,7 @@ namespace workphone::render
     void Material::setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,
                                         const String &shaderID /*= String() */ )
     {
-        const auto candidateId = shaderID.empty() ? m_shaderID : shaderID;
+        const auto candidateId = shaderID.empty() ? getShaderID() : shaderID;
         auto shader = MaterialShaderRegistry::instance().find( candidateId );
         auto layout = shader ? shader->getLayout() : MaterialShaderParameterLayout::Ptr{};
         bool sameSchema = layout && layout->GetParameterInfo().size() == parameterInfo.size();
@@ -2957,8 +2960,11 @@ namespace workphone::render
 
     void Material::setShaderID( const String &shaderID )
     {
-        m_shaderID = shaderID;
-        m_shaderWorkflow = shaderID == unlitShaderIDStr ? ShaderWorkflow::Unlit :
+        if( !shaderID.empty() && !m_shaderAuthoring )
+            m_shaderAuthoring = std::make_unique<ShaderAuthoringData>();
+        if( m_shaderAuthoring ) m_shaderAuthoring->shaderID = shaderID;
+        m_shaderWorkflow = shaderID.empty() ? ShaderWorkflow::Legacy :
+                           shaderID == unlitShaderIDStr ? ShaderWorkflow::Unlit :
                            shaderID == colorOnlyShaderIDStr ? ShaderWorkflow::ColorOnly :
                                                             ShaderWorkflow::Pbr;
         m_shaderParametersDirty = true;
@@ -2966,12 +2972,12 @@ namespace workphone::render
 
     String Material::getShaderID() const
     {
-        return m_shaderID;
+        return m_shaderAuthoring ? m_shaderAuthoring->shaderID : String();
     }
 
     bool Material::isDataDriven() const
     {
-        return !m_shaderID.empty();
+        return m_shaderWorkflow != ShaderWorkflow::Legacy;
     }
 
     void Material::setPass( SmartPtr<IMaterialPass> pass )
