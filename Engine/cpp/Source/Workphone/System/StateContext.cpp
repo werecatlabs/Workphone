@@ -340,8 +340,7 @@ namespace workphone
             auto task = Thread::getCurrentTask();
 
             // --- Process dirty states ---
-            auto states = getStates();
-            for( auto &state : states )
+            for( auto &state : m_states )
             {
                 if( !state )
                 {
@@ -375,10 +374,10 @@ namespace workphone
 
                 // Clear the dirty flag regardless of whether any listener claimed the
                 // state.  Without this, an unhandled-but-dirty state would spin forever.
-                if( state->getSendCount() > 10000 )
+                if( state->getSendCount() > 1000 )
                 {
                     WP_LOG_ERROR( "StateContext::update: state " + state->getName() +
-                                  " has been dirty for over 10000 updates; forcing clean." );
+                                  " has been dirty for over 1000 updates; forcing clean." );
                     state->setDirty( false );
                     state->setSendCount( 0 );
                 }

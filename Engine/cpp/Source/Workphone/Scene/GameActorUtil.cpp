@@ -1075,7 +1075,7 @@ namespace workphone::scene
             actorData->setProperty( GameActorUtil::uuidStr, uuid );
         }
 
-        if( auto transform = actor->getTransformPtr() )
+        if( auto transform = actor->getTransform() )
         {
             auto localTransform = transform->getLocalTransform();
             auto worldTransform = transform->getWorldTransform();

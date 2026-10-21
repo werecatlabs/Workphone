@@ -42,4 +42,15 @@ namespace workphone
         m_mutex.unlock_shared();
     }
 
+    SmartPtr<IState> StateData::getOwner() const
+    {
+        auto p = m_owner.load();
+        return p.lock();
+    }
+
+    void StateData::setOwner( SmartPtr<IState> owner )
+    {
+        m_owner = owner;
+    }
+
 }  // namespace workphone

@@ -368,23 +368,23 @@ namespace workphone
 
         factoryManager->setPoolSizeByType<WorkerThread>( 8 );
 
-        factoryManager->setPoolSizeByType<SceneNodeStateData>( 32 );
+        factoryManager->setPoolSizeByType<SceneNodeStateData>( 4096 );
         factoryManager->setPoolSizeByType<TextureStateData>( 4096 );
-        factoryManager->setPoolSizeByType<TransformStateData>( 32 );
+        factoryManager->setPoolSizeByType<TransformStateData>( 4096 );
         factoryManager->setPoolSizeByType<RigidbodyState>( 4096 );
 
         factoryManager->setPoolSizeByType<WindowMessageData>( 4 );
 
-        factoryManager->setPoolSizeByType<Properties>( size );
+        factoryManager->setPoolSizeByType<Properties>( 2048 );
 
-        auto meshPoolSize = 128;
+        auto meshPoolSize = 4096;
         factoryManager->setPoolSizeByType<Mesh>( meshPoolSize );
         factoryManager->setPoolSizeByType<SubMesh>( meshPoolSize );
         factoryManager->setPoolSizeByType<IndexBuffer>( meshPoolSize );
         factoryManager->setPoolSizeByType<VertexBuffer>( meshPoolSize );
         factoryManager->setPoolSizeByType<VertexDeclaration>( meshPoolSize );
 
-        auto actorPoolSize = 8;
+        auto actorPoolSize = 4096;
         factoryManager->setPoolSizeByType<scene::GameActor>( actorPoolSize );
         factoryManager->setPoolSizeByType<scene::GameActor::FsmListener>( actorPoolSize );
 
@@ -423,8 +423,11 @@ namespace workphone
         factoryManager->setPoolSizeByType<scene::Material>( size );
         factoryManager->setPoolSizeByType<scene::Material::MaterialStateObjectListener>( size );
         factoryManager->setPoolSizeByType<scene::Material::MaterialStateListener>( size );
-        factoryManager->setPoolSizeByType<scene::Mesh>( size );
-        factoryManager->setPoolSizeByType<scene::MeshRenderer>( size );
+        
+        auto meshRendererPoolSize = 4096;
+        factoryManager->setPoolSizeByType<scene::Mesh>( meshRendererPoolSize );
+        factoryManager->setPoolSizeByType<scene::MeshRenderer>( meshRendererPoolSize );
+        
         factoryManager->setPoolSizeByType<scene::NetworkListener>( size );
         factoryManager->setPoolSizeByType<scene::NetworkPlayer>( size );
         factoryManager->setPoolSizeByType<scene::NetworkStream>( size );

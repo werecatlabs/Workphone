@@ -793,12 +793,6 @@ namespace workphone::scene
         {
             if( auto actor = getActorPtr() )
             {
-                auto root = actor->getSceneRoot();
-                if( root )
-                {
-                    root->updateTransform();
-                }
-
                 auto transform = actor->getTransform();
                 if( !transform )
                 {
@@ -815,6 +809,7 @@ namespace workphone::scene
                         {
                             return;  // First terrain generation waits for its GPU/physics publication gate.
                         }
+
                         WP_ASSERT( shape );
 
                         if( shape && !shape->isAttached() )

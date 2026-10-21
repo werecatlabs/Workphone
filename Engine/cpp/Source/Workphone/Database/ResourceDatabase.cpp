@@ -843,11 +843,16 @@ namespace workphone
             WP_ASSERT( scene );
 
             auto objects = getSceneObjects();
-            for( auto object : objects )
+            for( auto &object : objects )
             {
-                auto handle = object->getHandle();
-                auto uuid = handle->getUUID();
-                m_objects[uuid] = object;
+                if( object )
+                {
+                    if( auto handle = object->getHandle() )
+                    {
+                        auto uuid = handle->getUUID();
+                        m_objects[uuid] = object;
+                    }
+                }
             }
         }
     }
