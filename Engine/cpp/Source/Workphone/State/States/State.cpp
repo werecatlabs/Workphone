@@ -179,7 +179,17 @@ namespace workphone
 
     void State::setData( SmartPtr<ISharedObject> data )
     {
+        if( SmartPtr<StateData> stateData = m_data.load() )
+        {
+            stateData->setOwner( nullptr );
+        }
+
         m_data = data;
+
+        if( SmartPtr<StateData> stateData = m_data.load() )
+        {
+            stateData->setOwner( this );
+        }
     }
 
     void State::makeClone( SmartPtr<State> state ) const

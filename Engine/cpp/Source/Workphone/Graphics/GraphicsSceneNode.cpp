@@ -134,12 +134,9 @@ namespace workphone::render
 
     Transform3<real_Num> GraphicsSceneNode::getTransform() const
     {
-        if( auto stateContext = getStateContext() )
+        if( SafeReadPtr<TransformStateData> transformStateData = m_transformStateData.load() )
         {
-            if( auto stateData = stateContext->getStateDataById<TransformStateData>( getId() ) )
-            {
-                return stateData->localTransform;
-            }
+            return transformStateData->localTransform;
         }
 
         return {};
@@ -147,23 +144,20 @@ namespace workphone::render
 
     void GraphicsSceneNode::setTransform( const Transform3<real_Num> &t )
     {
-        if( auto stateContext = getStateContext() )
+        if( SafePtr<TransformStateData> transformStateData = m_transformStateData.load() )
         {
-            if( auto stateData = stateContext->invalidateStateDataById<TransformStateData>( getId() ) )
-            {
-                stateData->localTransform = t;
-            }
+            transformStateData->localTransform = t;
+
+            auto state = transformStateData->getOwner();
+            state->setDirty( true );
         }
     }
 
     Transform3<real_Num> GraphicsSceneNode::getWorldTransform() const
     {
-        if( auto stateContext = getStateContext() )
+        if( SafeReadPtr<TransformStateData> transformStateData = m_transformStateData.load() )
         {
-            if( auto stateData = stateContext->getStateDataById<TransformStateData>( getId() ) )
-            {
-                return stateData->worldTransform;
-            }
+            return transformStateData->worldTransform;
         }
 
         return {};
@@ -171,14 +165,12 @@ namespace workphone::render
 
     void GraphicsSceneNode::setWorldTransform( const Transform3<real_Num> &t )
     {
-        ScopedLoadLock lock( (ISharedObject *)this );
-        if( lock.isLoaded() )
+        if( SafePtr<TransformStateData> transformStateData = m_transformStateData.load() )
         {
-            if( m_transformStateData )
-            {
-                ScopedLock lock( m_transformStateData.get(), true );
-                m_transformStateData->worldTransform = t;
-            }
+            transformStateData->worldTransform = t;
+
+            auto state = transformStateData->getOwner();
+            state->setDirty( true );
         }
     }
 

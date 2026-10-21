@@ -34,11 +34,17 @@ namespace workphone
         /** @copydoc ISharedObject::unlock_shared */
         void unlock_shared() override;
 
+        SmartPtr<IState> getOwner() const;
+
+        void setOwner( SmartPtr<IState> owner );
+
         WP_CLASS_REGISTER_DECL;
 
     protected:
         /// The state mutex.
         mutable RecursiveSpinMutex m_mutex;
+
+        AtomicWeakPtr<IState> m_owner;
     };
 
 }  // namespace workphone
