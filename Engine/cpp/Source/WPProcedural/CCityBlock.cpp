@@ -100,16 +100,16 @@ namespace workphone
 
         void CCityBlock::updateBounds()
         {
-            m_Polygon = getPolygon();
-            m_Bounds = getBounds();
+            m_polygon = getPolygon();
+            m_bounds = getBounds();
             if( m_nodes.empty() )
             {
-                m_BoundingSphere = Sphere3<real_Num>( Vector3<real_Num>::zero(), 0 );
+                m_boundingSphere = Sphere3<real_Num>( Vector3<real_Num>::zero(), 0 );
             }
             else
             {
-                m_BoundingSphere = Sphere3<real_Num>( m_Bounds.getCenter(),
-                                                      m_Bounds.getExtent().length() * real_Num( 0.5 ) );
+                m_boundingSphere = Sphere3<real_Num>( m_bounds.getCenter(),
+                                                      m_bounds.getExtent().length() * real_Num( 0.5 ) );
             }
         }
 

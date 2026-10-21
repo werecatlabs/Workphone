@@ -195,10 +195,10 @@ namespace workphone
 
                 if( hasMerged )
                 {
-                    m_Bounds = bounds;
-                    auto center = m_Bounds.getCenter();
-                    auto halfExtent = m_Bounds.getExtent().length();
-                    m_BoundingSphere = Sphere3<real_Num>( center, halfExtent );
+                    m_bounds = bounds;
+                    auto center = m_bounds.getCenter();
+                    auto halfExtent = m_bounds.getExtent().length();
+                    m_boundingSphere = Sphere3<real_Num>( center, halfExtent );
                 }
             }
             catch( std::exception &e )
