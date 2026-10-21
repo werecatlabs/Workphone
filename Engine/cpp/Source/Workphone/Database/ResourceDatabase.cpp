@@ -847,9 +847,11 @@ namespace workphone
             {
                 if( object )
                 {
-                    auto handle = object->getHandle();
-                    auto uuid = handle->getUUID();
-                    m_objects[uuid] = object;
+                    if( auto handle = object->getHandle() )
+                    {
+                        auto uuid = handle->getUUID();
+                        m_objects[uuid] = object;
+                    }
                 }
             }
         }
