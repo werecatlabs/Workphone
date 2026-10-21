@@ -1186,6 +1186,11 @@ namespace workphone
              */
             Array<SmartPtr<ITexture>> getCubicTextures() const;
 
+            // Immutable owner retained by render consumers across replacement.
+            // Null represents an empty face list. No native device views are cached.
+            using CubicTextureSnapshot = std::shared_ptr<const Array<SmartPtr<ITexture>>>;
+            CubicTextureSnapshot getCubicTextureSnapshot() const;
+
             /**
              * @brief Assigns a set of cubic textures to this material.
              * @param cubicTextures Array of smart pointers to cubic textures.
@@ -1342,7 +1347,7 @@ namespace workphone
             f32 m_pendingMetalness = 0.0f;
 
             /** Cube texture used for environment mapping or reflections */
-            ConcurrentArray<SmartPtr<ITexture>> m_cubicTextures;
+            CubicTextureSnapshot m_cubicTextures;
 
             /** Static counter for generating unique material names */
             static u32 m_idExt;

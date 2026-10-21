@@ -14,6 +14,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawLight.hpp>
 #include <WPGraphics/ClawCamera.hpp>
+#include <WPGraphics/ClawSky.hpp>
 #include <WPGraphics/Particle/CParticleSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
@@ -203,6 +204,42 @@ namespace
             *view = currentView; // Completion/replacement can change this without a material edit.
         }
     };
+
+    bool testSkyMaterialPublications( ClawRendererDX11 &renderer )
+    {
+        class CubeMaterial : public ClawMaterial
+        {
+        public:
+            mutable u32 copies = 0;
+            Array<SmartPtr<ITexture>> getCubicTextures() const override
+            { ++copies; return Material::getCubicTextures(); }
+        };
+        auto target = make_ptr<ClawRenderTarget>(); target->setSize({64,64});
+        auto camera = make_ptr<ClawCamera>();
+        camera->setNearClipDistance(0.1f); camera->setFarClipDistance(100); camera->setAspectRatio(1);
+        renderer.setRenderTarget(target); renderer.setViewport(nullptr); renderer.setCamera(camera);
+        auto sky = make_ptr<ClawSky>();
+        auto material = make_ptr<CubeMaterial>();
+        auto first = make_ptr<MaterialRoutingTexture>(), second = make_ptr<MaterialRoutingTexture>();
+        material->setCubicTextures(Array<SmartPtr<ITexture>>(6, first)); sky->setMaterial(material);
+        renderer.clear(ColourF::Black); renderer.renderSky(sky);
+        bool ok = check(first->requests > 0 && second->requests == 0 && material->copies == 0,
+            "sky material fallback borrows published faces without the copying getter");
+        auto retained = material->getCubicTextureSnapshot();
+        const auto oldRequests = first->requests;
+        material->setCubicTextures(Array<SmartPtr<ITexture>>(6, second)); renderer.renderSky(sky);
+        ok &= check(first->requests == oldRequests && second->requests > 0 && (*retained)[0] == first,
+            "sky consumes replacement faces while an older publication remains retained");
+        const auto newRequests = second->requests;
+        sky->setTextures(Array<SmartPtr<ITexture>>(1, first)); renderer.renderSky(sky);
+        ok &= check(first->requests > oldRequests && second->requests == newRequests,
+            "explicit sky textures retain precedence over material publications");
+        sky->setTextures({}); material->setCubicTextures({}); renderer.renderSky(sky);
+        ok &= check(second->requests == newRequests && material->copies == 0,
+            "empty material publication makes no stale texture requests");
+        sky->setMaterial(nullptr); renderer.setCamera(nullptr); renderer.setRenderTarget(nullptr);
+        return ok;
+    }
 
     bool testPreparedMaterialEdits( ClawRendererDX11 &renderer )
     {
@@ -882,6 +919,7 @@ int main( int argc, char **argv )
             ok &= testMaterialUploadWork(renderer);
             ok &= testRenderedFeatures(renderer); // Run the same pixel contracts with split constants.
             ok &= testPreparedMaterialEdits(renderer);
+            ok &= testSkyMaterialPublications(renderer);
             ok &= testSortedTransparency(renderer);
             ok &= testMeshShadows(renderer);
             ok &= claw_terrain_contracts::run(renderer);

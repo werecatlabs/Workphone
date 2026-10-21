@@ -398,6 +398,20 @@ The rebuilt Debug **Editor aggregate passes 66/66 cases / 2,752,384 assertions i
 
 This is a conditional storage reduction: data-driven materials add an allocation and one pointer to the accounted metadata representation, plus allocator overhead. It does not retire the authored-versus-legacy value mirror or demonstrate a hardware cache/frame-time benefit. M4 remains partial.
 
+## Immutable cube-face publications and texture-unit storage (M4 continuation, 21 October)
+
+`Material` now publishes cube-face lists as optional immutable arrays instead of embedding a `ConcurrentArray` in every instance. Empty lists have no publication allocation. Changed assignments build before atomic publication; identical assignments reuse the current version. The existing copying `getCubicTextures()` API remains available, while `getCubicTextureSnapshot()` returns a retained const view. Readers can finish with an old version after replacement, clearing or material destruction. The separate `getCubeTexture()` resource remains independent. The unused `MaterialTexture::m_cubeTextures` field had no repository reads or writes and is removed.
+
+DX11 sky rendering borrows the material publication for its face-list fallback. Explicit sky textures retain precedence; other `IMaterial` implementations keep their copying interface fallback. Native texture views are still obtained from the current texture adapter during rendering, rather than cached in the publication. This removes array copies and per-face ownership acquisitions on the material fallback read; `sky->getTextures()` still follows its existing interface. Material subclasses using this path must publish face changes through the material setter. Rebuild C++ clients because material/texture-unit layouts and the protected container representation changed.
+
+Windows x64 measurements: `ClawMaterial` **1,472 -> 1,440 bytes**, base `MaterialTexture` **240 -> 192 bytes**, `ClawMaterialTexture` **320 -> 272 bytes**. The old cube-face container measures 48 bytes; the new nullable publication pointer measures 16. Materials with no cube faces save 32 inline bytes; every materialized texture unit saves 48. Nonempty publications add a 40-byte array object and shared-owner/allocator overhead, and retained old versions remain charged until readers release them. Face edits therefore trade allocation/publication cost for cheaper stable reads. These are object/header measurements, not total-material or process-memory profiling; M4 remains partial.
+
+Contracts cover empty/no-op publication identity, independent input and legacy copies, ordered resource replacement, retained readers across clear/material destruction, final resource release and concurrent complete-version reads/writes. A DX11 routing test confirms that material-fallback sky draws bypass the copying getter, consume replacement resources and respect explicit sky texture precedence. That test uses unresolved native views to observe adapter requests; it is not sky-pixel or representative-device certification.
+
+All four native material suites pass in **RelWithDebInfo (22.64 s)** and **Debug (34.65 s)**. Rebuilt Debug material/resource/lifecycle coverage passes **105 cases / 1,899 assertions**, with 1,523 unrelated cases skipped. Logs under `project_x64/` use `material_m4_cube_`: `debug_build.log`, `debug_final_build.log`, `rwi_build.log`, `debug_contracts.log`, `rwi_contracts.log`, matching `*_evidence.log`, and `unit_tests.log`.
+
+The idle release read fixture alternates modes over seven samples, reading six faces 100,000 times. The current copying getter median is **45.7635 ms**, versus **6.2826 ms** through the retained view, with matching resource/face checksum **700,000** (`material_m4_cube_reads_benchmark.log`). This compares APIs on the same current publication storage; it is not a frozen before/after timing of the old `ConcurrentArray` implementation, a changed-face workload, hardware cache evidence or whole-frame timing.
+
 ## Remaining plan gates
 
 This is an integrated CPU storage/access and active DX11 consumption change, not completion of all production gates in the plan. Remaining work includes:

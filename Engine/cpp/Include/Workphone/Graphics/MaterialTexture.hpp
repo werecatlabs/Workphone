@@ -266,8 +266,6 @@ namespace workphone
              */
             u32 m_textureType = 0;
 
-            /** @brief Cube face textures when the texture type represents a cube (six textures). */
-            ConcurrentArray<SmartPtr<ITexture>> m_cubeTextures;
         };
 
     }  // end namespace render

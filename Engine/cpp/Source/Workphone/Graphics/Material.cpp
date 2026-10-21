@@ -2474,12 +2474,25 @@ namespace workphone::render
 
     Array<SmartPtr<ITexture>> Material::getCubicTextures() const
     {
-        return m_cubicTextures.snapshot();
+        const auto textures = getCubicTextureSnapshot();
+        return textures ? *textures : Array<SmartPtr<ITexture>>{};
+    }
+
+    Material::CubicTextureSnapshot Material::getCubicTextureSnapshot() const
+    {
+        return std::atomic_load( &m_cubicTextures );
     }
 
     void Material::setCubicTextures( const Array<SmartPtr<ITexture>> &cubicTextures )
     {
-        m_cubicTextures = { cubicTextures.begin(), cubicTextures.end() };
+        const auto previous = getCubicTextureSnapshot();
+        if( ( !previous && cubicTextures.empty() ) || ( previous && *previous == cubicTextures ) )
+            return;
+        CubicTextureSnapshot next;
+        if( !cubicTextures.empty() )
+            next = std::make_shared<const Array<SmartPtr<ITexture>>>( cubicTextures );
+        // Build before publication; retained readers keep the complete old list.
+        std::atomic_store( &m_cubicTextures, std::move( next ) );
     }
 
     void Material::MaterialStateListener::unload( SmartPtr<ISharedObject> data )

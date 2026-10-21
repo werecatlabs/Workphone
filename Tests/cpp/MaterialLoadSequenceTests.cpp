@@ -1705,6 +1705,107 @@ namespace
         }
     }
 
+    void runCubicTexturePublications()
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>();
+        require(!material->getCubicTextureSnapshot() && material->getCubicTextures().empty(),
+            "empty materials have no cube-face publication");
+        material->setCubicTextures({});
+        require(!material->getCubicTextureSnapshot(), "empty cube assignments allocate no publication");
+        auto first = make_ptr<ClawTexture>(), second = make_ptr<ClawTexture>();
+        Array<SmartPtr<ITexture>> faces(6, first);
+        material->setCubicTextures(faces);
+        auto retained = material->getCubicTextureSnapshot();
+        require(retained && retained->size() == 6 && (*retained)[0] == first,
+            "cube publication preserves ordered face resources");
+        faces[0] = second;
+        require((*retained)[0] == first, "publication owns its values independently of the input array");
+        auto legacyCopy = material->getCubicTextures(); legacyCopy[1] = second;
+        for(int i = 0; i < 1000; ++i)
+        {
+            require(material->getCubicTextureSnapshot() == retained,
+                "warm cube reads reuse the same immutable publication");
+            material->setCubicTextures(*retained);
+        }
+        require(material->getCubicTextureSnapshot() == retained && (*retained)[1] == first,
+            "legacy copies and no-op setters do not alter or replace the publication");
+        material->setCubicTextures(faces);
+        require(material->getCubicTextureSnapshot() != retained &&
+            (*material->getCubicTextureSnapshot())[0] == second && (*retained)[0] == first,
+            "replacement retains complete previous face lists for queued readers");
+        material->setCubeTexture(second);
+        material->setCubicTextures({});
+        require(!material->getCubicTextureSnapshot() && material->getCubeTexture() == second &&
+            retained->size() == 6, "clearing faces preserves the independent cube resource and retained readers");
+        material->setCubeTexture(nullptr);
+        std::atomic<bool> failed{false};
+        std::thread writer([&] {
+            for(int i = 0; i < 2000; ++i)
+                material->setCubicTextures(Array<SmartPtr<ITexture>>(i % 2 ? 3 : 6, i % 2 ? second : first));
+        });
+        std::thread reader([&] {
+            for(int i = 0; i < 4000; ++i)
+            {
+                const auto snapshot = material->getCubicTextureSnapshot();
+                if(!snapshot) continue;
+                const auto expected = snapshot->size() == 3 ? second : first;
+                if(snapshot->size() != 3 && snapshot->size() != 6) failed = true;
+                for(const auto &face : *snapshot) if(face != expected) failed = true;
+            }
+        });
+        writer.join(); reader.join();
+        require(!failed, "concurrent cube publication readers observe complete versions");
+        material->setCubicTextures({}); material = nullptr; faces.clear(); legacyCopy.clear();
+        WeakPtr<ITexture> weakFirst = first; first = nullptr;
+        require(weakFirst.lock(), "retained publication pins old resources after replacement and clear");
+        retained.reset();
+        require(!weakFirst.lock(), "last publication release retires old cube resources");
+        std::cout << "cube_face_container_reference_bytes=" << sizeof(ConcurrentArray<SmartPtr<ITexture>>)
+            << " publication_pointer_bytes=" << sizeof(Material::CubicTextureSnapshot)
+            << " base_texture_unit_bytes=" << sizeof(MaterialTexture) << '\n';
+    }
+
+    void benchmarkCubicTexturePublications()
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>();
+        auto texture = make_ptr<ClawTexture>();
+        material->setCubicTextures(Array<SmartPtr<ITexture>>(6, texture));
+        constexpr int samples = 7, reads = 100000;
+        std::array<double, samples> times[2];
+        u64 checksums[2]{};
+        for(int sample = 0; sample < samples; ++sample) for(int order = 0; order < 2; ++order)
+        {
+            const auto mode = (sample + order) % 2;
+            u64 sum = 0;
+            const auto start = std::chrono::steady_clock::now();
+            for(int i = 0; i < reads; ++i)
+            {
+                if(mode)
+                {
+                    const auto view = material->getCubicTextureSnapshot();
+                    sum += view->size() + ((*view)[0] == texture);
+                }
+                else
+                {
+                    const auto copy = material->getCubicTextures();
+                    sum += copy.size() + (copy[0] == texture);
+                }
+            }
+            times[mode][sample] = std::chrono::duration<double,std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            checksums[mode] = sum;
+        }
+        require(checksums[0] == checksums[1], "cube read benchmark preserves resource/face checksums");
+        for(auto &values : times) std::sort(values.begin(), values.end());
+        std::cout << "cube_reads=" << reads << " faces=6 samples=" << samples
+            << " copied_getter_median_ms=" << times[0][samples/2]
+            << " shared_view_median_ms=" << times[1][samples/2]
+            << " checksum=" << checksums[1] << '\n';
+        material->setCubicTextures({});
+    }
+
     void runLazyTextureUnits(Fixture &fixture)
     {
         using namespace render;
@@ -2170,6 +2271,12 @@ int main( int argc, char **argv )
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-texture-bindings" )
         {
             benchmarkTextureBindings();
+            return 0;
+        }
+        runCubicTexturePublications();
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-cube-publication" )
+        {
+            benchmarkCubicTexturePublications();
             return 0;
         }
         runLazyTextureUnits(fixture);

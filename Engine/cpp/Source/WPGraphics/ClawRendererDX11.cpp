@@ -1333,14 +1333,19 @@ namespace workphone::render
             return;
         }
 
-        auto textures = sky->getTextures();
-        if( textures.empty() )
+        auto ownedTextures = sky->getTextures();
+        Material::CubicTextureSnapshot materialTextures;
+        if( ownedTextures.empty() )
         {
             if( auto material = sky->getMaterial() )
             {
-                textures = material->getCubicTextures();
+                if( auto concrete = dynamic_pointer_cast<Material>( material ) )
+                    materialTextures = concrete->getCubicTextureSnapshot();
+                else
+                    ownedTextures = material->getCubicTextures();
             }
         }
+        const auto &textures = materialTextures ? *materialTextures : ownedTextures;
         if( textures.empty() )
         {
             return;
