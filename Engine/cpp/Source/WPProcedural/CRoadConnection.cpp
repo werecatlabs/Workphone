@@ -256,7 +256,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropResourceName, m_resourceName );
                 properties->setProperty( kPropConnectionType, m_connectionType );
                 properties->setProperty( kPropType, eTypeToString( m_type ) );
@@ -285,7 +285,7 @@ namespace workphone
             {
                 CProceduralObject<IRoadConnection>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 auto resourceName = m_resourceName;
                 auto connectionType = m_connectionType;
                 auto typeStr = eTypeToString( m_type );
@@ -295,7 +295,7 @@ namespace workphone
                 properties->getPropertyValue( kPropConnectionType, connectionType );
                 properties->getPropertyValue( kPropType, typeStr );
 
-                m_name = name;
+                setName( name );
                 m_resourceName = resourceName;
                 m_connectionType = connectionType;
                 m_type = eTypeFromString( typeStr );

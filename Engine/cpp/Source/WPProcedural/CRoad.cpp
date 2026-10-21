@@ -889,7 +889,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropRoadType, m_roadType );
                 properties->setProperty( kPropRoadLength, getRoadLength() );
                 properties->setProperty( kPropNodeCount, static_cast<s32>( m_roadNodes.size() ) );
@@ -918,13 +918,13 @@ namespace workphone
             {
                 CProceduralObject<IRoad>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 auto roadType = m_roadType;
 
                 properties->getPropertyValue( kPropName, name );
                 properties->getPropertyValue( kPropRoadType, roadType );
 
-                m_name = name;
+                setName( name );
                 m_roadType = roadType;
             }
             catch( std::exception &e )

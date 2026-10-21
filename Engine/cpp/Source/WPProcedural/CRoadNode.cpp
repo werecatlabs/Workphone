@@ -271,7 +271,7 @@ namespace workphone
 
                 auto pos = getPosition();
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropRoadId, m_roadId );
                 properties->setProperty( kPropGraphId, m_graphId );
                 properties->setProperty( kPropUniqueId, m_uniqueId );
@@ -306,7 +306,7 @@ namespace workphone
             {
                 CProceduralNode<IRoadNode>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 auto roadId = m_roadId;
                 auto graphId = m_graphId;
                 auto uniqueId = m_uniqueId;
@@ -322,7 +322,7 @@ namespace workphone
                 properties->getPropertyValue( kPropPositionY, pos.y );
                 properties->getPropertyValue( kPropPositionZ, pos.z );
 
-                m_name = name;
+                setName( name );
                 setRoadId( roadId );  // routes through validated setter
                 m_graphId = graphId;
                 m_uniqueId = uniqueId;

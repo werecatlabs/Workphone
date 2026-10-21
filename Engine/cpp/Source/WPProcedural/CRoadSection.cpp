@@ -526,7 +526,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropElementCount, static_cast<s32>( m_elements.size() ) );
                 properties->setProperty( kPropNodeCount, static_cast<s32>( getRoadNodes().size() ) );
                 properties->setProperty( kPropSidewalkCount, static_cast<s32>( m_sidewalks.size() ) );
@@ -553,9 +553,9 @@ namespace workphone
             {
                 CProceduralObject<IRoadSection>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 properties->getPropertyValue( kPropName, name );
-                m_name = name;
+                setName( name );
 
                 // kPropElementCount, kPropNodeCount, kPropSidewalkCount are read-only
                 // diagnostic fields and are intentionally not written back here.

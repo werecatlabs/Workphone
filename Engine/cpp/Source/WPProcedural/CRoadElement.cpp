@@ -189,10 +189,10 @@ namespace workphone
 
                 if( hasMerge )
                 {
-                    m_Bounds = bounds;
-                    auto center = m_Bounds.getCenter();
-                    auto halfExtent = m_Bounds.getExtent().length();
-                    m_BoundingSphere = Sphere3<real_Num>( center, halfExtent );
+                    m_bounds = bounds;
+                    auto center = m_bounds.getCenter();
+                    auto halfExtent = m_bounds.getExtent().length();
+                    m_boundingSphere = Sphere3<real_Num>( center, halfExtent );
                 }
             }
             catch( std::exception &e )
@@ -434,7 +434,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropRoadType, roadTypeToString( m_roadType ) );
                 properties->setProperty( kPropLaneType, laneTypeToString( m_laneType ) );
                 properties->setProperty( kPropRoadWidth, m_RoadWidth );
@@ -470,7 +470,8 @@ namespace workphone
             {
                 CProceduralObject<IRoadElement>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
+               
                 auto roadTypeStr = roadTypeToString( m_roadType );
                 auto laneTypeStr = laneTypeToString( m_laneType );
                 auto roadWidth = m_RoadWidth;
@@ -494,7 +495,7 @@ namespace workphone
                 properties->getPropertyValue( kPropIsBicycle, isBicycle );
                 properties->getPropertyValue( kPropIsFootway, isFootway );
 
-                m_name = name;
+                setName( name );
 
                 // Route all values through validated setters.
                 setRoadType( roadTypeFromString( roadTypeStr ) );
