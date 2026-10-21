@@ -14,9 +14,20 @@ namespace workphone
         {
         public:
             BlockNode();
-            ~BlockNode();
+            ~BlockNode() override;
 
-            Vector3<real_Num> m_point;
+            Vector3<real_Num> getPosition() const override;
+            void setPosition( const Vector3<real_Num> &point ) override;
+            Transform3<real_Num> getWorldTransform() const override;
+            void setWorldTransform( Transform3<real_Num> transform ) override;
+            String getConnectionType() const override;
+            SmartPtr<ISharedObject> clone() override;
+            void unload( SmartPtr<ISharedObject> data ) override;
+
+            WP_CLASS_REGISTER_DECL;
+
+            /// Legacy editable point; position and transform accessors read this value.
+            Vector3<real_Num> m_point = Vector3<real_Num>::zero();
         };
     }  // end namespace procedural
 }  // namespace workphone

@@ -12,7 +12,7 @@ namespace workphone
     namespace procedural
     {
 
-        class WPProcedural_API CityCenter  //: public CProceduralObject
+        class WPProcedural_API CityCenter  : public CProceduralObject<IProceduralCityCenter>
         {
         public:
             class CityCenterRecord : public ISharedObject

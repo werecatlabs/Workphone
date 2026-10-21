@@ -1,6 +1,8 @@
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <WPProcedural/CBlockGenerator.hpp>
 #include <WPProcedural/CCityBlock.hpp>
+#include <WPProcedural/BlockNode.hpp>
+#include <Workphone/Interface/Procedural/ILot.hpp>
 #include <WPProcedural/CProceduralCity.hpp>
 #include <WPProcedural/CRoadNetwork.hpp>
 #include <WPProcedural/CRoadNode.hpp>
@@ -20,6 +22,71 @@ void check( bool condition, const char *message )
     }
 }
 
+void checkBlockContracts()
+{
+    auto block = make_ptr<CCityBlock>();
+    const Vector3<real_Num> a( 10, 2, 10 ), b( 20, 4, 10 ), c( 20, 6, 20 );
+    block->addPoint( a );
+    block->addPoint( b );
+    block->addPoint( c );
+    check( block->getNodes().size() == 3, "points did not create editable nodes" );
+    auto reversed = make_ptr<CCityBlock>();
+    reversed->addPoint( c );
+    reversed->addPoint( b );
+    reversed->addPoint( a );
+    reversed->addPoint( c );
+    check( block->equals( reversed ) && reversed->equals( block ),
+           "winding or closing point affected equality" );
+    check( !block->equals( nullptr ), "null block compared equal" );
+    auto rotated = make_ptr<CCityBlock>();
+    rotated->addPoint( b );
+    rotated->addPoint( c );
+    rotated->addPoint( a );
+    check( block->equals( rotated ), "boundary rotation affected equality" );
+    check( block->getBounds().getMinimum() == a &&
+               block->getBounds().getMaximum() == Vector3<real_Num>( 20, 6, 20 ),
+           "incorrect block bounds" );
+    auto node = static_pointer_cast<BlockNode>( block->getNodes()[0] );
+    node->m_point = Vector3<real_Num>( 5, 1, 5 );
+    check( block->getPoints()[0] == node->m_point &&
+               node->getWorldTransform().getPosition() == node->m_point,
+           "legacy point editing did not update geometry" );
+    Transform3<real_Num> transform = node->getWorldTransform();
+    transform.setPosition( a );
+    node->setWorldTransform( transform );
+    check( node->m_point == a && node->getPosition() == a, "transform did not update editable point" );
+    node->setPosition( b );
+    check( node->m_point == b, "position did not update editable point" );
+    node->setPosition( a );
+    block->setName( "Block" );
+    block->getProperties()->setProperty( "value", s32( 7 ) );
+    auto copy = static_pointer_cast<CCityBlock>( block->clone() );
+    check( copy->equals( block ) && copy->getName() == block->getName(),
+           "block clone lost geometry or metadata" );
+    check(
+        copy->getNodes()[0] != block->getNodes()[0] && copy->getProperties() != block->getProperties(),
+        "block clone shares mutable geometry or properties" );
+    copy->getNodes()[0]->setPosition( Vector3<real_Num>::zero() );
+    check( !copy->equals( block ) && block->getPoints()[0] == a, "clone edit changed original" );
+    auto nodeCopy = static_pointer_cast<BlockNode>( node->clone() );
+    check( nodeCopy->getPosition() == a && nodeCopy->getConnectedNodes().empty(),
+           "node clone contract failed" );
+    block->addNode( nullptr );
+    block->addNode( node );
+    check( block->getPoints().size() == 3, "duplicate/null child node accepted" );
+    block->removePoint( b );
+    check( block->getNodes().size() == 2, "point removal did not remove node" );
+    block->removeNode( node );
+    check( block->getPoints().size() == 1, "node removal did not remove point" );
+    block->unload( nullptr );
+    block->unload( nullptr );
+    check( block->getPoints().empty() && block->getNodes().empty() && block->getLots().empty(),
+           "unload retained geometry" );
+    check( node->getPosition() == a, "block unload modified an externally retained node" );
+    auto empty = make_ptr<CCityBlock>();
+    check( empty->equals( make_ptr<CCityBlock>() ), "empty boundary equality failed" );
+}
+
 int main()
 {
     TypeManager types;
@@ -28,6 +95,7 @@ int main()
     {
         try
         {
+            checkBlockContracts();
             auto generator = make_ptr<CBlockGenerator>();
             generator->generate();  // No city.
             generator->load( nullptr );
@@ -127,4 +195,3 @@ int main()
     types.unload();
     return result;
 }
-
