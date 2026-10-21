@@ -132,7 +132,20 @@ namespace workphone
 
         void ClawSceneNode::setWorldTransform( const Transform3<real_Num> &worldTransform )
         {
-            setTransform( worldTransform );
+            // Keep state authoritative so a later dirty-state update cannot restore
+            // an old transform, and retain updates made before native-node creation.
+            if( m_node && isThreadSafe() )
+            {
+                m_transformStateData->worldTransform = worldTransform;
+
+                // Equal authored state can still be waiting for render-thread dispatch.
+                // Always synchronize the native node when its owner applies the transform.
+                applyNativeTransform( m_node, worldTransform );
+            }
+            else
+            {
+                GraphicsSceneNode::setTransform( worldTransform );
+            }
         }
 
         void ClawSceneNode::setParent( SmartPtr<IGraphicsSceneNode> parent )
@@ -281,30 +294,47 @@ namespace workphone
                             const auto &transform = transformState->localTransform;
                             applyNativeTransform( m_node, transform );
 
+                            for( auto &graphicsObject : m_graphicsObjects )
+                            {
+                                if( graphicsObject->isDerived<ClawLight>() )
+                                {
+                                    auto light =
+                                        workphone::static_pointer_cast<ClawLight>( graphicsObject );
+                                    auto stateObject = light->getStateContextPtr();
+                                    if( stateObject )
+                                    {
+                                        stateObject->setDirty( true );
+                                    }
+                                }
+                                else if( graphicsObject->isDerived<ClawCamera>() )
+                                {
+                                    auto camera =
+                                        workphone::static_pointer_cast<ClawCamera>( graphicsObject );
+                                    auto stateObject = camera->getStateContextPtr();
+                                    if( stateObject )
+                                    {
+                                        stateObject->setDirty( true );
+                                    }
+                                }
+                            }
+
                             result = true;
                         }
-
-                        for( auto &graphicsObject : m_graphicsObjects )
+                        else if( stateData->isDerived<SceneNodeStateData>() )
                         {
-                            if( graphicsObject->isDerived<ClawLight>() )
-                            {
-                                auto light = workphone::static_pointer_cast<ClawLight>( graphicsObject );
-                                auto stateObject = light->getStateContextPtr();
-                                if( stateObject )
-                                {
-                                    stateObject->setDirty( true );
-                                }
-                            }
-                            else if( graphicsObject->isDerived<ClawCamera>() )
-                            {
-                                auto camera =
-                                    workphone::static_pointer_cast<ClawCamera>( graphicsObject );
-                                auto stateObject = camera->getStateContextPtr();
-                                if( stateObject )
-                                {
-                                    stateObject->setDirty( true );
-                                }
-                            }
+                            result = true;
+                        }
+                        else if( stateData->isDerived<BoundingBoxStateData>() )
+                        {
+                            auto boundingBoxState = SafeReadPtr<BoundingBoxStateData>( stateData );
+                            const auto &aabb = boundingBoxState->localAABB;
+                            setLocalAABB( aabb );
+                            result = true;
+                        }
+                        else
+                        {
+                            WP_ASSERT( false );
+                            result = true;
                         }
 
                         return result;

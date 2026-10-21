@@ -24,11 +24,16 @@ namespace workphone::editor
 
     void AddActorCmd::load( SmartPtr<ISharedObject> data )
     {
+        setLoadingState( LoadingState::Loading );
         setLoadingState( LoadingState::Loaded );
     }
 
     void AddActorCmd::unload( SmartPtr<ISharedObject> data )
     {
+        setLoadingState( LoadingState::Unloading );
+        m_actor = nullptr;
+        m_parent = nullptr;
+        m_expectedScene = nullptr;
         setLoadingState( LoadingState::Unloaded );
     }
 
