@@ -48,13 +48,13 @@ namespace workphone
 
             virtual void updateBounds()
             {
-                m_Polygon = getPolygon();
-                m_Bounds = getBounds();
+                m_polygon = getPolygon();
+                m_bounds = getBounds();
 
-                auto boundsCenter = m_Bounds.getCenter();
-                auto boundsLength = m_Bounds.getExtent().length();
+                auto boundsCenter = m_bounds.getCenter();
+                auto boundsLength = m_bounds.getExtent().length();
 
-                m_BoundingSphere = Sphere3<real_Num>( boundsCenter, boundsLength );
+                m_boundingSphere = Sphere3<real_Num>( boundsCenter, boundsLength );
             }
 
             Polygon2<real_Num> getPolygon() const
@@ -82,16 +82,6 @@ namespace workphone
                 }
 
                 return bounds;
-            }
-
-            virtual String getName() const
-            {
-                return m_name;
-            }
-
-            virtual void setName( const String &name )
-            {
-                m_name = name;
             }
 
             virtual Transform3<real_Num> getWorldTransform() const
@@ -151,7 +141,6 @@ namespace workphone
 
             CProceduralObject &operator=( CProceduralObject &other )
             {
-                m_name = other.m_name;
                 m_worldTransform = other.m_worldTransform;
                 return *this;
             }
@@ -186,12 +175,6 @@ namespace workphone
             }
 
         protected:
-            /// The object id.
-            String m_Id;
-
-            /// The object's name.
-            String m_name;
-
             /// Store the transform data.
             Transform3<real_Num> m_worldTransform;
 
@@ -205,13 +188,13 @@ namespace workphone
             Array<SmartPtr<IProceduralNode>> m_nodes;
 
             /// polygon
-            Polygon2<real_Num> m_Polygon;
+            Polygon2<real_Num> m_polygon;
 
             /// bounds
-            AABB3<real_Num> m_Bounds;
+            AABB3<real_Num> m_bounds;
 
             /// sphere
-            Sphere3<real_Num> m_BoundingSphere;
+            Sphere3<real_Num> m_boundingSphere;
         };
     }  // end namespace procedural
 }  // namespace workphone

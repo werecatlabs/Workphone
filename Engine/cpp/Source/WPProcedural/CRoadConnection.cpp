@@ -54,13 +54,21 @@ namespace workphone
             {
                 using EType = IRoadConnection::EType;
                 if( str == "T_Crossing" )
+                {
                     return EType::T_Crossing;
+                }
                 if( str == "X_Crossing" )
+                {
                     return EType::X_Crossing;
+                }
                 if( str == "L_Connection" )
+                {
                     return EType::L_Connection;
+                }
                 if( str == "RoundingAbout" )
+                {
                     return EType::RoundingAbout;
+                }
                 return EType::None;
             }
         }  // anonymous namespace
@@ -84,18 +92,23 @@ namespace workphone
             {
                 auto previous = getUserData( id );
                 if( previous == userData )
+                {
                     return;
+                }
                 delete static_cast<IntersectionResult *>( previous );
             }
             IObject::setUserData( id, userData );
         }
+
         void CRoadConnection::unload( SmartPtr<ISharedObject> data )
         {
             try
             {
                 const auto resultId = StringUtil::getHash( "WPIntersectionResult" );
                 if( getUserData( resultId ) )
+                {
                     setUserData( resultId, nullptr );
+                }
                 for( auto &connData : m_connectionData )
                 {
                     if( connData )
@@ -256,7 +269,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropResourceName, m_resourceName );
                 properties->setProperty( kPropConnectionType, m_connectionType );
                 properties->setProperty( kPropType, eTypeToString( m_type ) );
@@ -285,7 +298,7 @@ namespace workphone
             {
                 CProceduralObject<IRoadConnection>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 auto resourceName = m_resourceName;
                 auto connectionType = m_connectionType;
                 auto typeStr = eTypeToString( m_type );
@@ -295,7 +308,7 @@ namespace workphone
                 properties->getPropertyValue( kPropConnectionType, connectionType );
                 properties->getPropertyValue( kPropType, typeStr );
 
-                m_name = name;
+                setName( name );
                 m_resourceName = resourceName;
                 m_connectionType = connectionType;
                 m_type = eTypeFromString( typeStr );

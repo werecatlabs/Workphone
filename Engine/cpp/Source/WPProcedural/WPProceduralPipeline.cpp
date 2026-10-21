@@ -20,7 +20,9 @@ namespace workphone
         WPProceduralPipeline::~WPProceduralPipeline()
         {
             if( mInitialized )
+            {
                 shutdown();
+            }
         }
 
         void WPProceduralPipeline::initialize()

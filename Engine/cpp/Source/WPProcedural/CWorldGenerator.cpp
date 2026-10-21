@@ -284,6 +284,7 @@ namespace workphone
             validate();
             onOptionChanged();
         }
+
         int CWorldGenerator::getOctaves() const
         {
             return m_options.octaves;

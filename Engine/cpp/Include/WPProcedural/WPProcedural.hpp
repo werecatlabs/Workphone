@@ -11,7 +11,6 @@
 #include <WPProcedural/CityCenter.hpp>
 #include <WPProcedural/CityGeneratorDefault.hpp>
 #include <WPProcedural/CProceduralCity.hpp>
-#include <WPProcedural/CProceduralCityCenter.hpp>
 #include <WPProcedural/CProceduralGenerator.hpp>
 #include <WPProcedural/CProceduralWorld.hpp>
 #include <WPProcedural/CProceduralScene.hpp>

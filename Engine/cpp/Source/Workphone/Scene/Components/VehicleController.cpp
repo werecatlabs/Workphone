@@ -28,6 +28,7 @@ namespace workphone::scene
 {
     namespace
     {
+
         /**
          * Bridges the callback-driven WPVehiclePhysics aerodynamic model to a
          * scene Rigidbody without exposing a concrete physics-plugin type to

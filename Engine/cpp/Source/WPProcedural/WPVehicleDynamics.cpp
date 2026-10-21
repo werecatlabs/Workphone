@@ -111,7 +111,9 @@ namespace workphone
                 const double omega = std::max( d.idleRpm * RadPerRpm, rpm * RadPerRpm );
                 torque = std::min( torque, d.peakPowerW / omega );
                 if( rpm > d.redlineRpm )
+                {
                     torque *= clamp( 1.0 - ( rpm - d.redlineRpm ) / 600.0, 0.0, 1.0 );
+                }
                 return std::max( 0.0, torque );
             }
 
@@ -128,11 +130,17 @@ namespace workphone
                     !finite( state.smoothedSteering ) ||
                     !finite( state.previousLongitudinalAccelerationMps2 ) ||
                     !finite( state.previousLateralAccelerationMps2 ) )
+                {
                     return false;
+                }
                 for( const auto &wheel : state.wheels )
+                {
                     if( !finite( wheel.angularVelocityRadPerSec ) || !finite( wheel.steerAngleRad ) ||
                         !finite( wheel.suspensionCompressionM ) || !finite( wheel.tireTemperatureC ) )
+                    {
                         return false;
+                    }
+                }
                 return true;
             }
 
@@ -186,7 +194,9 @@ namespace workphone
             VehicleDynamicsValidation result;
             const auto physicsValidation = WPVehiclePhysics::validate( physics );
             for( const auto &error : physicsValidation.errors )
+            {
                 addError( result, std::string( "physics: " ) + error );
+            }
 
             const double values[] = { tuning.steeringRatePerSecond,
                                       tuning.highSpeedSteerFraction,
@@ -200,28 +210,44 @@ namespace workphone
                                       tuning.arcadeYawDamping,
                                       tuning.arcadeLateralDamping };
             for( double value : values )
+            {
                 if( !finite( value ) )
                 {
                     addError( result, "dynamics tuning contains a non-finite value" );
                     break;
                 }
+            }
             if( tuning.steeringRatePerSecond <= 0.0 )
+            {
                 addError( result, "steering rate must be positive" );
+            }
             if( tuning.highSpeedSteerFraction <= 0.0 || tuning.highSpeedSteerFraction > 1.0 )
+            {
                 addError( result, "high-speed steering fraction must be in (0,1]" );
+            }
             if( tuning.highSpeedSteerReferenceMps <= 0.0 )
+            {
                 addError( result, "high-speed steering reference must be positive" );
+            }
             if( tuning.shiftDurationSeconds < 0.0 || tuning.shiftDurationSeconds > 1.0 )
+            {
                 addError( result, "shift duration must be in [0,1]" );
+            }
             if( tuning.downshiftRpmFraction <= 0.0 ||
                 tuning.upshiftRpmFraction <= tuning.downshiftRpmFraction ||
                 tuning.upshiftRpmFraction > 1.1 )
+            {
                 addError( result, "automatic shift fractions are inconsistent" );
+            }
             if( tuning.clutchResponsePerSecond <= 0.0 || tuning.tireRelaxationPerSecond <= 0.0 )
+            {
                 addError( result, "clutch and tire relaxation rates must be positive" );
+            }
             if( tuning.sportYawDamping < 0.0 || tuning.arcadeYawDamping < 0.0 ||
                 tuning.arcadeLateralDamping < 0.0 )
+            {
                 addError( result, "assist damping cannot be negative" );
+            }
             return result;
         }
 
@@ -235,19 +261,27 @@ namespace workphone
                 !finite( state.smoothedSteering ) ||
                 !finite( state.previousLongitudinalAccelerationMps2 ) ||
                 !finite( state.previousLateralAccelerationMps2 ) )
+            {
                 addError( result, "dynamics state contains a non-finite scalar" );
+            }
             if( state.currentGear == 0 ||
                 state.currentGear > physics.drivetrain.forwardGearRatios.size() )
+            {
                 addError( result, "current gear exceeds the configured gearbox" );
+            }
             if( state.engineRpm < 0.0 || state.engineRpm > physics.drivetrain.redlineRpm * 1.25 )
+            {
                 addError( result, "engine speed is outside the permitted range" );
+            }
             for( const auto &wheel : state.wheels )
+            {
                 if( !finite( wheel.angularVelocityRadPerSec ) || !finite( wheel.steerAngleRad ) ||
                     !finite( wheel.suspensionCompressionM ) || !finite( wheel.tireTemperatureC ) )
                 {
                     addError( result, "wheel state contains a non-finite scalar" );
                     break;
                 }
+            }
             return result;
         }
 
@@ -277,13 +311,19 @@ namespace workphone
                 !finite( modifiers.steeringBias ) || modifiers.driveTorqueScale < 0.0 ||
                 modifiers.driveTorqueScale > 2.0 || modifiers.tireGripScale <= 0.0 ||
                 modifiers.tireGripScale > 2.0 )
+            {
                 return false;
+            }
 
             for( const auto &surface : surfaces )
+            {
                 if( !finite( surface.frictionScale ) || !finite( surface.rollingResistanceScale ) ||
                     !finite( surface.wetness ) || !finite( surface.groundHeightM ) ||
                     surface.frictionScale < 0.0 || surface.rollingResistanceScale < 0.0 )
+                {
                     return false;
+                }
+            }
 
             const double throttle =
                 modifiers.controlsLocked ? 0.0 : saturate( input.throttle ) * modifiers.driveTorqueScale;
@@ -306,8 +346,12 @@ namespace workphone
                 smoothToward( state.smoothedSteering, steeringInput, tuning.steeringRatePerSecond, dt );
             double maxSteer = 0.0;
             for( const auto &wheel : physics.wheels )
+            {
                 if( wheel.steerable )
+                {
                     maxSteer = std::max( maxSteer, wheel.maxSteerRad );
+                }
+            }
             const double centreSteer = state.smoothedSteering * maxSteer * speedSteer;
             telemetry.steeringAngleRad = centreSteer;
 
@@ -332,17 +376,21 @@ namespace workphone
             auto &drivetrain = physics.drivetrain;
             const std::size_t gearCount = drivetrain.forwardGearRatios.size();
             if( gearCount == 0 )
+            {
                 return false;
+            }
             state.shiftTimeRemaining = std::max( 0.0, state.shiftTimeRemaining - dt );
 
             double drivenOmega = 0.0;
             std::size_t drivenCount = 0;
             for( std::size_t i = 0; i < 4; ++i )
+            {
                 if( physics.wheels[i].driven )
                 {
                     drivenOmega += std::abs( state.wheels[i].angularVelocityRadPerSec );
                     ++drivenCount;
                 }
+            }
             drivenOmega /= std::max<std::size_t>( 1, drivenCount );
             double ratio =
                 drivetrain.forwardGearRatios[state.currentGear - 1] * drivetrain.finalDriveRatio;
@@ -401,7 +449,9 @@ namespace workphone
 
             std::array<double, 4> loads{};
             for( std::size_t i = 0; i < 4; ++i )
+            {
                 loads[i] = WPVehiclePhysics::staticWheelLoadN( physics, static_cast<WheelCorner>( i ) );
+            }
             loads[0] += downforce * physics.aero.frontDownforceFraction * 0.5;
             loads[1] += downforce * physics.aero.frontDownforceFraction * 0.5;
             loads[2] += downforce * ( 1.0 - physics.aero.frontDownforceFraction ) * 0.5;
@@ -500,18 +550,24 @@ namespace workphone
                     signNonZero( wheelState.angularVelocityRadPerSec, signNonZero( patchLong, 1.0 ) );
                 double netWheelTorque = driveTorque - fx * tire.radiusM - brakeDirection * brakeTorque;
                 if( !surface.grounded )
+                {
                     netWheelTorque = driveTorque - brakeDirection * brakeTorque;
+                }
                 const double oldOmega = wheelState.angularVelocityRadPerSec;
                 wheelState.angularVelocityRadPerSec +=
                     netWheelTorque / std::max( 0.01, tire.wheelInertiaKgM2 ) * dt;
                 if( brakeTorque > 0.0 && oldOmega * wheelState.angularVelocityRadPerSec < 0.0 &&
                     std::abs( driveTorque ) < brakeTorque )
+                {
                     wheelState.angularVelocityRadPerSec = 0.0;
+                }
                 if( surface.grounded && throttle < 0.01 && brake < 0.01 && handbrake < 0.01 &&
                     std::abs( slipRatio ) < 0.25 )
+                {
                     wheelState.angularVelocityRadPerSec = smoothToward(
                         wheelState.angularVelocityRadPerSec, patchLong / std::max( 0.01, tire.radiusM ),
                         tuning.tireRelaxationPerSecond, dt );
+                }
 
                 const double suspensionTarget =
                     clamp( load / std::max( 1.0, tire.verticalStiffnessNPerM ),
@@ -551,7 +607,9 @@ namespace workphone
                                               : tuning.arcadeYawDamping;
                 yawMoment -= state.yawRateRadPerSec * physics.massProperties.inertia.yy * yawDamping;
                 if( tuning.assistMode == VehicleAssistMode::Arcade && handbrake < 0.2 )
+                {
                     totalLatForce -= vLat * mass * tuning.arcadeLateralDamping;
+                }
             }
 
             const double accelLong = totalLongForce / mass;
@@ -563,7 +621,9 @@ namespace workphone
             state.yawRateRadPerSec += yawAccel * dt;
             state.yawRad += state.yawRateRadPerSec * dt;
             if( state.yawRad > Pi || state.yawRad < -Pi )
+            {
                 state.yawRad = std::remainder( state.yawRad, 2.0 * Pi );
+            }
             state.previousLongitudinalAccelerationMps2 = accelLong;
             state.previousLateralAccelerationMps2 = accelLat;
             ++state.simulationTick;

@@ -116,11 +116,17 @@ namespace workphone
             void configureDrivenWheels( VehiclePhysicsConfig &c )
             {
                 for( auto &wheel : c.wheels )
+                {
                     wheel.driven = false;
+                }
                 if( c.drivetrain.drivenAxle != DrivenAxle::Rear )
+                {
                     c.wheels[0].driven = c.wheels[1].driven = true;
+                }
                 if( c.drivetrain.drivenAxle != DrivenAxle::Front )
+                {
                     c.wheels[2].driven = c.wheels[3].driven = true;
+                }
             }
 
             void addError( VehiclePhysicsValidation &result, const std::string &text )
@@ -131,7 +137,9 @@ namespace workphone
             void requirePositive( VehiclePhysicsValidation &result, double value, const char *label )
             {
                 if( !finite( value ) || value <= 0.0 )
+                {
                     addError( result, std::string( label ) + " must be finite and positive" );
+                }
             }
         }  // namespace
 
@@ -149,14 +157,12 @@ namespace workphone
                 // Approximate game-asset mass distribution, not certified aircraft data.
                 c.bodyLengthM = 9.8;
                 c.bodyWidthM = 1.2;
-                c.massElements = {
-                    box( "fuselage and equipment", 1300, 0, 1.9, .35, 1.2, 1.3, 7.9 ),
-                    box( "piston engine", 700, 0, 1.9, -2.9, .9, 1.1, 1.8 ),
-                    box( "wings and fuel", 1000, 0, 1.35, -.1, 9.5, .25, 2.2 ),
-                    box( "pilot and cockpit", 120, 0, 2.1, .25, .65, .9, 1.1 ),
-                    box( "tail assembly", 150, 0, 2.1, 3.7, 3.2, .6, 1.5 ),
-                    box( "landing gear", 130, 0, .7, -.7, 2.6, 1.1, .6 )
-                };
+                c.massElements = { box( "fuselage and equipment", 1300, 0, 1.9, .35, 1.2, 1.3, 7.9 ),
+                                   box( "piston engine", 700, 0, 1.9, -2.9, .9, 1.1, 1.8 ),
+                                   box( "wings and fuel", 1000, 0, 1.35, -.1, 9.5, .25, 2.2 ),
+                                   box( "pilot and cockpit", 120, 0, 2.1, .25, .65, .9, 1.1 ),
+                                   box( "tail assembly", 150, 0, 2.1, 3.7, 3.2, .6, 1.5 ),
+                                   box( "landing gear", 130, 0, .7, -.7, 2.6, 1.1, .6 ) };
                 c.aero.referenceAreaM2 = 22.0;
                 c.aero.dragCoefficient = .035;
                 recomputeDerivedProperties( c );
@@ -167,14 +173,12 @@ namespace workphone
                 // Approximate game-asset mass distribution, not certified flight data.
                 c.bodyLengthM = 7.0;
                 c.bodyWidthM = 1.5;
-                c.massElements = {
-                    box( "cabin and occupants", 440, 0, 1.35, -.90, 1.5, 1.5, 3.2 ),
-                    box( "turbine and transmission", 180, 0, 1.75, .30, .8, .65, 1.2 ),
-                    box( "fuel", 100, 0, 1.0, .05, .65, .5, .7 ),
-                    box( "tail boom and empennage", 65, 0, 1.5, 2.65, .25, .35, 3.5 ),
-                    box( "rotor assembly", 80, 0, 2.65, -.55, 4.0, .15, 4.0 ),
-                    box( "skid gear", 35, 0, .3, -.65, 1.8, .5, 2.9 )
-                };
+                c.massElements = { box( "cabin and occupants", 440, 0, 1.35, -.90, 1.5, 1.5, 3.2 ),
+                                   box( "turbine and transmission", 180, 0, 1.75, .30, .8, .65, 1.2 ),
+                                   box( "fuel", 100, 0, 1.0, .05, .65, .5, .7 ),
+                                   box( "tail boom and empennage", 65, 0, 1.5, 2.65, .25, .35, 3.5 ),
+                                   box( "rotor assembly", 80, 0, 2.65, -.55, 4.0, .15, 4.0 ),
+                                   box( "skid gear", 35, 0, .3, -.65, 1.8, .5, 2.9 ) };
                 c.aero.referenceAreaM2 = 2.2;
                 c.aero.dragCoefficient = .65;
                 recomputeDerivedProperties( c );
@@ -347,8 +351,11 @@ namespace workphone
             mass.frontStaticWeightFraction =
                 axleSpan > 0.0 ? clamp( ( rearZ - mass.centreOfMass.z ) / axleSpan, 0.0, 1.0 ) : 0.5;
             c.massProperties = mass;
-            if( c.preset != VehiclePhysicsPreset::HelicopterLittleBird && c.preset != VehiclePhysicsPreset::Warbird )
+            if( c.preset != VehiclePhysicsPreset::HelicopterLittleBird &&
+                c.preset != VehiclePhysicsPreset::Warbird )
+            {
                 configureDrivenWheels( c );
+            }
         }
 
         VehiclePhysicsValidation WPVehiclePhysics::validate( const VehiclePhysicsConfig &c )
@@ -376,7 +383,9 @@ namespace workphone
                     c.massProperties.inertia.yy ||
                 c.massProperties.inertia.yy + c.massProperties.inertia.zz <=
                     c.massProperties.inertia.xx )
+            {
                 addError( result, "inertia principal-axis triangle inequality is violated" );
+            }
 
             const auto &tensor = c.massProperties.inertia;
             const double tensorDeterminant =
@@ -385,18 +394,24 @@ namespace workphone
                 2.0 * tensor.xy * tensor.xz * tensor.yz;
             if( !finite( tensorDeterminant ) || tensor.xx * tensor.yy - sqr( tensor.xy ) <= 0.0 ||
                 tensorDeterminant <= 0.0 )
+            {
                 addError( result, "inertia tensor must be symmetric positive definite" );
+            }
 
             for( const auto &element : c.massElements )
             {
                 if( element.name.empty() )
+                {
                     result.warnings.push_back( "mass element has no diagnostic name" );
+                }
                 if( !finite( element.massKg ) || element.massKg <= 0.0 || !finite( element.centre.x ) ||
                     !finite( element.centre.y ) || !finite( element.centre.z ) ||
                     element.dimensions.x <= 0.0 || element.dimensions.y <= 0.0 ||
                     element.dimensions.z <= 0.0 )
+                {
                     addError( result, "mass element '" + element.name +
                                           "' has invalid mass, position or dimensions" );
+                }
             }
 
             VehiclePhysicsConfig derived = c;
@@ -409,32 +424,45 @@ namespace workphone
                     1.0e-6 ||
                 std::abs( derived.massProperties.centreOfMass.z - c.massProperties.centreOfMass.z ) >
                     1.0e-6 )
+            {
                 addError( result, "derived mass properties are stale; call recomputeDerivedProperties" );
+            }
 
             if( aircraft )
             {
                 requirePositive( result, c.massProperties.centreOfMass.y, "centre-of-mass height" );
                 requirePositive( result, c.aero.referenceAreaM2, "aero reference area" );
                 if( !finite( c.aero.dragCoefficient ) || c.aero.dragCoefficient < 0 )
+                {
                     addError( result, "drag coefficient must be finite and non-negative" );
-                result.warnings.push_back( "aircraft asset metadata only; flight dynamics are not implemented" );
+                }
+                result.warnings.push_back(
+                    "aircraft asset metadata only; flight dynamics are not implemented" );
                 return result;
             }
             if( c.massProperties.frontStaticWeightFraction < 0.25 ||
                 c.massProperties.frontStaticWeightFraction > 0.75 )
+            {
                 addError( result, "centre of mass lies outside a credible axle load envelope" );
+            }
             if( c.massProperties.centreOfMass.y <= 0.0 || c.massProperties.centreOfMass.y > 1.2 )
+            {
                 addError( result, "centre-of-mass height is outside the supported range" );
+            }
 
             const double frontZ = 0.5 * ( c.wheels[0].hubPosition.z + c.wheels[1].hubPosition.z );
             const double rearZ = 0.5 * ( c.wheels[2].hubPosition.z + c.wheels[3].hubPosition.z );
             if( std::abs( ( rearZ - frontZ ) - c.wheelbaseM ) > 0.002 )
+            {
                 addError( result, "wheel hub positions do not match configured wheelbase" );
+            }
             if( std::abs( ( c.wheels[1].hubPosition.x - c.wheels[0].hubPosition.x ) - c.frontTrackM ) >
                     0.002 ||
                 std::abs( ( c.wheels[3].hubPosition.x - c.wheels[2].hubPosition.x ) - c.rearTrackM ) >
                     0.002 )
+            {
                 addError( result, "wheel hub positions do not match configured track widths" );
+            }
 
             for( std::size_t i = 0; i < c.wheels.size(); ++i )
             {
@@ -442,10 +470,14 @@ namespace workphone
                 const std::string prefix = "wheel " + std::to_string( i ) + ": ";
                 if( !finite( w.hubPosition.x ) || !finite( w.hubPosition.y ) ||
                     !finite( w.hubPosition.z ) )
+                {
                     addError( result, prefix + "hub position must be finite" );
+                }
                 if( w.tire.radiusM <= 0.1 || w.tire.widthM <= 0.05 ||
                     w.tire.unloadedRadiusM < w.tire.radiusM )
+                {
                     addError( result, prefix + "tire dimensions are invalid" );
+                }
                 requirePositive( result, w.tire.wheelMassKg, "wheel mass" );
                 requirePositive( result, w.tire.wheelInertiaKgM2, "wheel inertia" );
                 requirePositive( result, w.tire.verticalStiffnessNPerM, "tire vertical stiffness" );
@@ -453,9 +485,13 @@ namespace workphone
                 requirePositive( result, w.suspension.damperCompressionNPerMps, "compression damping" );
                 requirePositive( result, w.suspension.damperReboundNPerMps, "rebound damping" );
                 if( w.suspension.motionRatio <= 0.0 || w.suspension.motionRatio > 1.5 )
+                {
                     addError( result, prefix + "motion ratio is outside (0, 1.5]" );
+                }
                 if( w.tire.peakLongitudinalFriction < 0.5 || w.tire.peakLongitudinalFriction > 2.5 )
+                {
                     addError( result, prefix + "peak friction is outside supported range" );
+                }
 
                 const double cornerMass =
                     staticWheelLoadN( c, static_cast<WheelCorner>( i ) ) / c.gravityMps2;
@@ -473,24 +509,36 @@ namespace workphone
 
             requirePositive( result, c.aero.referenceAreaM2, "aero reference area" );
             if( !finite( c.aero.dragCoefficient ) || c.aero.dragCoefficient < 0.0 )
+            {
                 addError( result, "drag coefficient must be finite and non-negative" );
+            }
             if( !finite( c.aero.downforceCoefficient ) || c.aero.downforceCoefficient < 0.0 )
+            {
                 addError( result, "downforce coefficient must be finite and non-negative" );
+            }
             if( c.aero.frontDownforceFraction < 0.0 || c.aero.frontDownforceFraction > 1.0 )
+            {
                 addError( result, "front aero balance must lie in [0, 1]" );
+            }
             requirePositive( result, c.aero.airDensityKgPerM3, "air density" );
             requirePositive( result, c.drivetrain.peakPowerW, "peak power" );
             requirePositive( result, c.drivetrain.peakTorqueNm, "peak torque" );
             requirePositive( result, c.drivetrain.redlineRpm, "redline" );
             if( c.drivetrain.idleRpm < 0.0 || c.drivetrain.idleRpm >= c.drivetrain.redlineRpm )
+            {
                 addError( result, "idle speed must be non-negative and below redline" );
+            }
             if( c.drivetrain.transmissionEfficiency <= 0.0 || c.drivetrain.transmissionEfficiency > 1.0 )
+            {
                 addError( result, "transmission efficiency must lie in (0, 1]" );
+            }
             if( c.drivetrain.forwardGearRatios.empty() ||
                 !std::all_of( c.drivetrain.forwardGearRatios.begin(),
                               c.drivetrain.forwardGearRatios.end(),
                               []( double ratio ) { return finite( ratio ) && ratio > 0.0; } ) )
+            {
                 addError( result, "forward gear ratios must be finite, positive and non-empty" );
+            }
             return result;
         }
 
@@ -499,7 +547,9 @@ namespace workphone
             const std::size_t index = static_cast<std::size_t>( corner );
             if( c.preset == VehiclePhysicsPreset::HelicopterLittleBird ||
                 c.preset == VehiclePhysicsPreset::Warbird || index >= c.wheels.size() )
+            {
                 return 0.0;
+            }
             const bool front = index < 2;
             const double axleFraction = front ? c.massProperties.frontStaticWeightFraction
                                               : 1.0 - c.massProperties.frontStaticWeightFraction;

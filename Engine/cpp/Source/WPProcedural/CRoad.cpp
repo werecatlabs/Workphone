@@ -39,18 +39,23 @@ namespace workphone
             {
                 auto previous = getUserData( id );
                 if( previous == userData )
+                {
                     return;
+                }
                 delete static_cast<RoadSegmentResult *>( previous );
             }
             IObject::setUserData( id, userData );
         }
+
         void CRoad::unload( SmartPtr<ISharedObject> data )
         {
             try
             {
                 const auto resultId = StringUtil::getHash( "WPRoadSegmentResult" );
                 if( getUserData( resultId ) )
+                {
                     setUserData( resultId, nullptr );
+                }
                 for( auto &roadNode : m_roadNodes )
                 {
                     if( roadNode )
@@ -195,10 +200,10 @@ namespace workphone
 
                 if( hasMerged )
                 {
-                    m_Bounds = bounds;
-                    auto center = m_Bounds.getCenter();
-                    auto halfExtent = m_Bounds.getExtent().length();
-                    m_BoundingSphere = Sphere3<real_Num>( center, halfExtent );
+                    m_bounds = bounds;
+                    auto center = m_bounds.getCenter();
+                    auto halfExtent = m_bounds.getExtent().length();
+                    m_boundingSphere = Sphere3<real_Num>( center, halfExtent );
                 }
             }
             catch( std::exception &e )
@@ -889,7 +894,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropRoadType, m_roadType );
                 properties->setProperty( kPropRoadLength, getRoadLength() );
                 properties->setProperty( kPropNodeCount, static_cast<s32>( m_roadNodes.size() ) );
@@ -918,13 +923,13 @@ namespace workphone
             {
                 CProceduralObject<IRoad>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 auto roadType = m_roadType;
 
                 properties->getPropertyValue( kPropName, name );
                 properties->getPropertyValue( kPropRoadType, roadType );
 
-                m_name = name;
+                setName( name );
                 m_roadType = roadType;
             }
             catch( std::exception &e )

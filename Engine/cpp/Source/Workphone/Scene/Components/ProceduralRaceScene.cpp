@@ -13,6 +13,7 @@
 
 namespace workphone::scene
 {
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRaceScene, Component );
     ProceduralRaceScene::ProceduralRaceScene() = default;
     ProceduralRaceScene::~ProceduralRaceScene() = default;
@@ -23,11 +24,14 @@ namespace workphone::scene
         {
             return;
         }
+
         Component::load( data );
+
         auto manager = core::IApplicationManager::instance()->getGameManager();
         manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::Update, this );
         manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::PostUpdate, this );
         manager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Update, this );
+
         setLoadingState( LoadingState::Loaded );
     }
 
@@ -37,6 +41,7 @@ namespace workphone::scene
         {
             return;
         }
+
         if( auto app = core::IApplicationManager::instancePtr() )
         {
             if( auto manager = app->getGameManager() )
@@ -44,8 +49,10 @@ namespace workphone::scene
                 manager->unregisterAllComponent( this );
             }
         }
+
         clearGeneratedScene();
         Component::unload( data );
+
         setLoadingState( LoadingState::Unloaded );
     }
 
@@ -57,14 +64,17 @@ namespace workphone::scene
         auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
         auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
         std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
+
         auto actor = getActor();
         if( !actor )
         {
             m_generationError = "Attach ProceduralRaceScene to a vehicle actor before generating.";
             return false;
         }
+
         // Rendering and physics are stopped while replacing the hierarchy.
         clearGeneratedScene();
+
         try
         {
             auto app = core::IApplicationManager::instance();
@@ -73,11 +83,14 @@ namespace workphone::scene
             {
                 throw std::runtime_error( "ProceduralRaceScene requires a physics manager." );
             }
+
             if( !physics->getPhysicsScene() )
             {
                 physics->setPhysicsScene( physics->addScene() );
             }
+
             physics->getPhysicsScene()->setGravity( Vector3F( 0, -9.81f, 0 ) );
+
             if( auto manager = app->getVehicleManager() )
             {
                 manager->load( nullptr );
@@ -87,18 +100,22 @@ namespace workphone::scene
             {
                 actor->addComponent<CollisionBox>();
             }
+
             auto body = actor->getComponent<Rigidbody>();
             if( !body )
             {
                 body = actor->addComponent<Rigidbody>();
             }
+
             body->setAngularDamping( 3 );
             body->setLinearDamping( .05f );
+
             auto car = actor->getComponent<CarController>();
             if( !car )
             {
                 car = actor->addComponent<CarController>();
             }
+
             if( !car->getVehicleController() )
             {
                 throw std::runtime_error( "ProceduralRaceScene requires WPVehiclePhysics." );
@@ -113,21 +130,26 @@ namespace workphone::scene
             ground->addComponent<CollisionBox>()->setExtents( Vector3F( 1100, 1, 1100 ) );
             ground->addComponent<Rigidbody>();
             app->getGameManager()->getCurrentScene()->addActor( ground );
+
             if( m_openCity )
             {
                 m_cityLayout = procedural::OpenCityLayout::generate( m_seed, m_cityBlocks, m_cityRoute );
             }
+
             m_assets.openCity = m_openCity;
             m_assets.useFoliageWorld = m_foliageWorldEnabled;
             m_assets.exportSourceDirectory = m_materialExportDirectory;
             m_assets.cityBlocks = m_cityBlocks;
             m_assets.cityRoute = m_cityRoute;
+
             race::buildScene( m_assets, actor, m_seed, m_quality );
+
             // Render the chassis and attached meshes from the same sampled parent pose.
             actor->setSmoothMotion( true, true );
             actor->getTransform()->setTask( TaskId::Physics );
             car->refreshWheels();
             configurePhysics();
+
             // Scene play can reconstruct the body and controller; configure again after settling.
             m_physicsConfigured = false;
             m_generationError.clear();
@@ -139,6 +161,8 @@ namespace workphone::scene
             clearGeneratedScene();
             return false;
         }
+
+        return false;
     }
 
     void ProceduralRaceScene::clearGeneratedScene()
@@ -149,12 +173,16 @@ namespace workphone::scene
         m_presentationInitialized = false;
         m_presentationResetRequested = false;
         m_presentationAudioClock = 0;
+
         setControls( 0, 0, 0 );
+
         m_resetRequested = false;
         m_physicsConfigured = false;
         m_surfaceGrip = 1;
+
         auto app = core::IApplicationManager::instancePtr();
-        auto manager = app ? app->getGameManager() : nullptr;
+        auto manager = app->getGameManager();
+
         if( m_assets.vehicleLOD )
         {
             if( auto system =
@@ -163,6 +191,7 @@ namespace workphone::scene
                 system->clearViewOverride();
             }
         }
+
         if( m_assets.vehicleLOD )
         {
             if( auto actor = getActor() )
@@ -170,6 +199,7 @@ namespace workphone::scene
                 actor->removeComponentInstance( m_assets.vehicleLOD );
             }
         }
+
         if( manager )
         {
             for( auto it = m_assets.actors.rbegin(); it != m_assets.actors.rend(); ++it )
@@ -177,7 +207,8 @@ namespace workphone::scene
                 manager->destroyActor( *it );
             }
         }
-        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+
+        auto graphics = app->getGraphicsSystem();
         if( graphics )
         {
             auto scene = graphics->getGraphicsScene();
@@ -190,14 +221,17 @@ namespace workphone::scene
                     scene->removeGraphicsObject( m_assets.foliageTerrain );
                 }
             }
+
             if( scene && m_assets.sky )
             {
                 scene->removeGraphicsObject( m_assets.sky );
             }
+
             if( scene && m_assets.sun )
             {
                 scene->removeGraphicsObject( m_assets.sun );
             }
+
             auto materials = graphics->getMaterialManager();
             if( materials )
             {
@@ -206,6 +240,7 @@ namespace workphone::scene
                     materials->destroyResource( material );
                 }
             }
+
             auto textures = graphics->getTextureManager();
             if( textures )
             {
@@ -215,6 +250,7 @@ namespace workphone::scene
                 }
             }
         }
+
         auto meshes = app ? dynamic_pointer_cast<MeshManager>( app->getMeshManager() ) : nullptr;
         if( meshes )
         {
@@ -223,6 +259,7 @@ namespace workphone::scene
                 meshes->removeMeshResource( mesh );
             }
         }
+
         m_assets = {};
     }
 
@@ -260,11 +297,13 @@ namespace workphone::scene
     {
         m_presentationResetRequested = true;
         setControls( 0, 0, 0 );
+
         auto actor = getActor();
         if( !actor )
         {
             return;
         }
+
         if( auto car = getCarController() )
         {
             car->setThrottle( 0 );
@@ -279,6 +318,7 @@ namespace workphone::scene
                 }
             }
         }
+
         const Transform3F spawn( Vector3F( 0, .42f, 0 ), QuaternionF::identity() );
         if( auto rigidbody = actor->getComponent<Rigidbody>() )
         {
@@ -291,6 +331,7 @@ namespace workphone::scene
                 body->setTransform( spawn );
             }
         }
+
         actor->setPosition( spawn.getPosition() );
         actor->setOrientation( spawn.getOrientation() );
         actor->updateTransform();
@@ -309,11 +350,13 @@ namespace workphone::scene
             {
                 return;
             }
+
             getActor()->updateTransform();
             if( m_presentationResetRequested.exchange( false ) )
             {
                 m_vehicleVisualEffects.reset();
             }
+
             if( m_automaticPresentation )
             {
                 initializePresentation();
@@ -331,11 +374,13 @@ namespace workphone::scene
             }
             return;
         }
+
         if( !isGenerated() || !isEnabled() || Thread::getCurrentTask() != TaskId::Physics ||
             !app->isPlaying() || app->isPaused() )
         {
             return;
         }
+
         auto car = getCarController();
         // Play rebuilds the wheel setup. Apply tuning after that transition.
         if( !m_physicsConfigured && car && car->getState() == State::Play &&
@@ -343,14 +388,17 @@ namespace workphone::scene
         {
             configurePhysics();
         }
+
         if( m_resetRequested.exchange( false ) )
         {
             performReset();
         }
+
         if( !car )
         {
             return;
         }
+
         auto lamp =
             m_assets.vehicleMaterials[static_cast<size_t>( procedural::VehicleMaterialSlot::RainLight )];
         const ColourF emissive( car->getBrake() > 0 ? 1.f : .15f, .003f, .001f, 1 );
@@ -375,32 +423,46 @@ namespace workphone::scene
         }
     }
 
+    // todo move
     void ProceduralRaceScene::applyAerodynamics()
     {
-        auto body = getActor()->getComponent<Rigidbody>();
+        auto actor = getActor();
+        auto body = actor->getComponent<Rigidbody>();
         auto velocity = body->getLinearVelocity();
-        velocity.y = 0;
+        velocity.y = real_Num(0.0);
+
         const auto speed = velocity.length();
         const auto &aero = m_assets.vehicle.physics.aero;
-        auto force = -velocity * static_cast<float>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                                     aero.dragCoefficient * speed );
-        force.y = -static_cast<float>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                       aero.downforceCoefficient * speed * speed );
+        auto force =
+            -velocity * static_cast<real_Num>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
+                                               aero.dragCoefficient * speed );
+        force.y = -static_cast<real_Num>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
+                                          aero.downforceCoefficient * speed * speed );
         body->addForce( force );
-        auto vehicle = getCarController()->getVehicleController();
-        const auto acceleration =
-            9.81f - force.y / static_cast<float>( m_assets.vehicle.physics.massProperties.massKg );
-        for( u32 i = 0; i < 4; ++i )
+
+        if( auto carController = getCarController() )
         {
-            auto wheel = vehicle->getWheelController( i );
-            wheel->setContactAcceleration( acceleration );
+            if( auto vehicle = carController->getVehicleController() )
+            {
+                const auto acceleration =
+                    real_Num( 9.81 ) -
+                    force.y / static_cast<real_Num>( m_assets.vehicle.physics.massProperties.massKg );
+                for( u32 i = 0; i < 4; ++i )
+                {
+                    auto wheel = vehicle->getWheelController( i );
+                    wheel->setContactAcceleration( acceleration );
+                }
+            }
         }
     }
 
     void ProceduralRaceScene::updateSurfaceGrip()
     {
-        auto p = getActor()->getPosition();
+        auto actor = getActor();
+        auto p = actor->getPosition();
+
         float roadDistance;
+
         if( m_assets.openCity )
         {
             roadDistance = m_cityLayout.roadDistance( p.x, p.z );
@@ -411,19 +473,27 @@ namespace workphone::scene
             offset.y = 0;
             roadDistance = offset.length();
         }
+
         const auto grip = roadDistance < 6.85f ? 1.f : roadDistance < 11.f ? .55f : .35f;
         if( grip == m_surfaceGrip )
         {
             return;
         }
+
         m_surfaceGrip = grip;
-        auto vehicle = getCarController()->getVehicleController();
-        for( u32 i = 0; i < 4; ++i )
+
+        if( auto carController = getCarController() )
         {
-            auto wheel = vehicle->getWheelController( i );
-            // Preserve the authored tyre multiplier when changing surface; the old
-            // path silently replaced 1.25 with 1.0 on the first physics tick.
-            wheel->setGrip( grip * 1.25f );
+            if( auto vehicle = carController->getVehicleController() )
+            {
+                for( u32 i = 0; i < 4; ++i )
+                {
+                    auto wheel = vehicle->getWheelController( i );
+                    // Preserve the authored tyre multiplier when changing surface; the old
+                    // path silently replaced 1.25 with 1.0 on the first physics tick.
+                    wheel->setGrip( grip * 1.25f );
+                }
+            }
         }
     }
 
@@ -435,6 +505,7 @@ namespace workphone::scene
         {
             return;
         }
+
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheel = vehicle->getWheelController( i );
@@ -442,6 +513,7 @@ namespace workphone::scene
             {
                 continue;
             }
+
             // Reuse the contact solver's raycast result instead of casting four
             // more rays and allocating four hit objects every physics step.
             const auto extension =
@@ -458,6 +530,7 @@ namespace workphone::scene
         {
             return;
         }
+
         auto position = getActor()->getPosition();
         auto forward = getActor()->getWorldTransform().forward();
         auto yaw = std::atan2( -forward.x, -forward.z );
@@ -475,6 +548,7 @@ namespace workphone::scene
         {
             return;
         }
+
         auto system = dynamic_pointer_cast<LODSystem>( m_assets.vehicleLOD->getComponentSystem() );
         if( system )
         {
@@ -555,11 +629,14 @@ namespace workphone::scene
         {
             return;
         }
+
         Component::setProperties( p );
+
         p->getPropertyValue( "Seed", m_seed );
         s32 quality = getQuality();
         p->getPropertyValue( "Appearance Quality", quality );
         setQuality( quality );
+
         bool audio = getAudioEnabled(), effects = getEffectsEnabled();
         p->getPropertyValue( "Audio Enabled", audio );
         p->getPropertyValue( "Effects Enabled", effects );
@@ -571,6 +648,7 @@ namespace workphone::scene
         p->getPropertyValue( "City Route", m_cityRoute );
         m_cityBlocks = std::clamp( m_cityBlocks / 2 * 2, 6, 10 );
         m_cityRoute = std::clamp( m_cityRoute, 0, 2 );
+
         if( p->isButtonPressed( "Regenerate" ) )
         {
             regenerate();
@@ -654,26 +732,32 @@ namespace workphone::scene
         {
             return;
         }
+
         auto app = core::IApplicationManager::instancePtr();
         if( !app )
         {
             return;
         }
+
         const bool audio = m_audioEnabled, effects = m_effectsEnabled;
         if( !m_presentationInitialized || audio != m_appliedAudioEnabled )
         {
             m_vehicleAudio.unload();
+
             if( audio && !m_vehicleAudio.load( app->getSoundManager() ) )
             {
                 WP_LOG_WARNING(
                     "Race vehicle audio unavailable: check the output device and bundled WAV "
                     "files." );
             }
+
             m_appliedAudioEnabled = audio;
         }
+
         if( !m_presentationInitialized || effects != m_appliedEffectsEnabled )
         {
             m_vehicleVisualEffects.unload();
+
             if( effects && !m_vehicleVisualEffects.load( getQuality() == 0   ? 0u
                                                          : getQuality() == 1 ? 1u
                                                                              : 2u,
@@ -682,8 +766,10 @@ namespace workphone::scene
                 WP_LOG_WARNING(
                     "Race vehicle visual effects unavailable in the active graphics backend." );
             }
+
             m_appliedEffectsEnabled = effects;
         }
+
         m_presentationInitialized = true;
     }
 
@@ -752,10 +838,12 @@ namespace workphone::scene
         {
             return false;
         }
+
         if( m_assets.openCity )
         {
             return m_cityLayout.roadDistance( position.x, position.z ) < 6.85f;
         }
+
         auto offset = position - getCircuitPosition( nearestCircuitSample( position ) );
         offset.y = 0;
         return offset.length() < 6.85f;
@@ -770,18 +858,23 @@ namespace workphone::scene
             empty.playing = false;
             return empty;
         }
+
         advanced::VehicleEffectsFrame frame;
         frame.playing = app->isPlaying() && !app->isPaused();
         frame.position = getActor()->getPosition();
+
         auto body = getActor()->getComponent<scene::Rigidbody>();
         auto car = getActor()->getComponent<scene::CarController>();
         auto vehicle = car ? car->getVehicleController() : nullptr;
+
         if( !body || !vehicle || !vehicle->getBody() )
         {
             frame.playing = false;
             return frame;
         }
+
         frame.velocity = body->getLinearVelocity();
+
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheel = vehicle->getWheelController( i );
@@ -789,6 +882,7 @@ namespace workphone::scene
             {
                 continue;
             }
+
             auto properties = wheel->getProperties();
             bool grounded = false;
             double slip = 0;
@@ -796,10 +890,12 @@ namespace workphone::scene
             properties->getPropertyValue( "Slip Velocity", slip );
             frame.slip[i] = float( slip );
             frame.width[i] = float( m_assets.vehicle.physics.wheels[i].tire.widthM * .82 );
+
             if( !grounded )
             {
                 continue;
             }
+
             const auto hub = wheel->getWorldTransform().getPosition();
             SmartPtr<physics::IRaycastHit> hit = make_ptr<physics::RaycastHit>();
             // Reuse the vehicle callback, which excludes its own chassis.
@@ -827,11 +923,13 @@ namespace workphone::scene
             empty.playing = false;
             return empty;
         }
+
         advanced::VehicleAudioInput input;
         const auto &drivetrain = m_assets.vehicle.physics.drivetrain;
         input.idleRpm = float( drivetrain.idleRpm );
         input.redlineRpm = float( drivetrain.redlineRpm );
         input.playing = app->isPlaying() && !app->isPaused();
+
         if( auto car = getActor()->getComponent<scene::CarController>() )
         {
             if( auto vehicle = car->getVehicleController() )
@@ -861,6 +959,7 @@ namespace workphone::scene
                 }
             }
         }
+
         if( auto body = getActor()->getComponent<scene::Rigidbody>() )
         {
             input.speed = float( body->getLinearVelocity().length() );
@@ -869,4 +968,5 @@ namespace workphone::scene
         input.playing = input.playing && isEnabled();
         return input;
     }
+
 }  // namespace workphone::scene

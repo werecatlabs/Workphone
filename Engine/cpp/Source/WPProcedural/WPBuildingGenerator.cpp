@@ -26,17 +26,29 @@ namespace workphone
             // Lower floors more likely to be shopfronts; upper floors have varied states.
             bool upperFloor = floor > 0;
             if( r < 0.07f + damage * 0.25f )
+            {
                 return WindowState::Boarded;
+            }
             if( r < 0.20f + damage * 0.5f )
+            {
                 return WindowState::Open;
+            }
             if( upperFloor && r < 0.42f )
+            {
                 return WindowState::Shuttered;
+            }
             if( upperFloor && r < 0.52f )
+            {
                 return WindowState::Ajar;
+            }
             if( r < 0.60f )
+            {
                 return WindowState::Curtain;
+            }
             if( r < 0.66f )
+            {
                 return WindowState::Lit;
+            }
             return WindowState::Glazed;
         }
 
@@ -118,7 +130,9 @@ namespace workphone
                 Vector3<real_Num> acPos =
                     origin + Vector3<real_Num>( spec.width * 0.25f, totalH + 0.5f, spec.depth * 0.25f );
                 for( auto &v : ac.vertices )
+                {
                     v.position = v.position + acPos;
+                }
                 result.details.push_back( ac );
             }
 
@@ -127,7 +141,9 @@ namespace workphone
             {
                 ProceduralMesh penthouse = buildRoofAccess( spec, seed );
                 for( auto &v : penthouse.vertices )
+                {
                     v.position = v.position + origin + Vector3<real_Num>( 0, totalH, 0 );
+                }
                 result.details.push_back( penthouse );
             }
 
@@ -135,11 +151,15 @@ namespace workphone
             for( const auto &sb : spec.setbacks )
             {
                 if( sb.from < 0 || sb.from >= spec.floors )
+                {
                     continue;
+                }
                 ProceduralMesh terrace = buildTerrace( spec, seed + sb.from );
                 real_Num y = ( sb.from + 1 ) * spec.floorH;
                 for( auto &v : terrace.vertices )
+                {
                     v.position = v.position + origin + Vector3<real_Num>( 0, y, 0 );
+                }
                 result.details.push_back( terrace );
             }
 
@@ -149,7 +169,9 @@ namespace workphone
                 Vector3<real_Num> dp = origin + Vector3<real_Num>( spec.width * 0.5f + 0.04f, 0,
                                                                    spec.depth * 0.5f + 0.04f );
                 for( auto &v : drain.vertices )
+                {
                     v.position = v.position + dp;
+                }
                 result.details.push_back( drain );
             }
 
@@ -160,16 +182,22 @@ namespace workphone
                 {
                     ProceduralMesh interior = buildInterior( spec, f, seed + f );
                     for( auto &v : interior.vertices )
+                    {
                         v.position = v.position + origin + Vector3<real_Num>( 0, f * spec.floorH, 0 );
+                    }
                     result.interiors.push_back( interior );
                 }
             }
 
             // Move main body to origin
             for( auto &v : result.body.vertices )
+            {
                 v.position = v.position + origin;
+            }
             for( auto &v : result.roof.vertices )
+            {
                 v.position = v.position + origin + Vector3<real_Num>( 0, totalH, 0 );
+            }
 
             // Wall key variant for tinting
             result.wallKeyVariant = mNoise.noise3( real_Num( seed ) * 0.01f, 0, 0 ) * 0.5f + 0.5f;
@@ -239,7 +267,9 @@ namespace workphone
                     ProceduralMesh pane = WPGeometryKit::quad( width, height );
                     Vector3<real_Num> pn( width * 0.25f, 0, fD * 0.5f + 0.05f );
                     for( auto &v : pane.vertices )
+                    {
                         v.position = v.position + pn;
+                    }
                     m.append( pane, Vector3<real_Num>( 0, 0, 0 ) );
                 }
                 break;
@@ -418,7 +448,9 @@ namespace workphone
             real_Num d = spec.depth - spec.wallThick * 2.0f;
             real_Num h = spec.floorH;
             if( floor == 0 )
+            {
                 h -= 0.13f;
+            }
 
             // Two simple perpendicular partition walls creating 4 rooms
             // Wall 1: along Z axis, off-center

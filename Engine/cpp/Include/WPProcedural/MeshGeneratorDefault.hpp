@@ -95,6 +95,7 @@ namespace workphone
             real_Num getGenerationProgress() const override;
 
             String getGenerationStatus() const override;
+
         private:
             bool beginGeneration();
             SmartPtr<IMesh> finishGeneration( SmartPtr<IMesh> mesh );

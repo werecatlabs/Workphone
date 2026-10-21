@@ -123,9 +123,13 @@ namespace workphone
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
                     if( startNode )
+                    {
                         startNode->setPosition( start );
+                    }
                     if( endNode )
+                    {
                         endNode->setPosition( end );
+                    }
                     if( startNode && endNode )
                     {
                         startNode->connect( endNode );
@@ -175,9 +179,13 @@ namespace workphone
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
                     if( startNode )
+                    {
                         startNode->setPosition( start );
+                    }
                     if( endNode )
+                    {
                         endNode->setPosition( end );
+                    }
                     if( startNode && endNode )
                     {
                         startNode->connect( endNode );
@@ -230,7 +238,9 @@ namespace workphone
             // --- Add everything to the road network ---
             roadNetwork->addRoads( roads );
             for( auto &conn : connections )
+            {
                 roadNetwork->addRoadConnection( conn );
+            }
 
             // --- Setup the graph ---
             roadNetwork->setupGraph();

@@ -28,7 +28,9 @@ namespace workphone
             if( m_numLodLevels != 1 || m_simplificationThreshold != 0 || m_generateTangents ||
                 m_optimizeMesh || m_mergeDuplicateVertices || m_generateCollision )
             {
-                failGeneration( "Unsupported options: LOD, simplification, tangents, optimization, vertex merging or collision" );
+                failGeneration(
+                    "Unsupported options: LOD, simplification, tangents, optimization, vertex merging "
+                    "or collision" );
                 return false;
             }
             return true;
@@ -44,7 +46,9 @@ namespace workphone
         SmartPtr<IMesh> MeshGeneratorDefault::finishGeneration( SmartPtr<IMesh> mesh )
         {
             if( !mesh || mesh->getNumSubMeshes() == 0 )
+            {
                 return failGeneration( "No geometry" );
+            }
             mesh->updateAABB( true );
             m_generatedMeshes.push_back( mesh );
             m_progress = 1;
@@ -55,12 +59,22 @@ namespace workphone
         SmartPtr<IMesh> MeshGeneratorDefault::generate( SmartPtr<IRoadNetwork> roadNetwork )
         try
         {
-            if( !beginGeneration() ) return nullptr;
-            if( !roadNetwork ) return failGeneration( "Null road network" );
+            if( !beginGeneration() )
+            {
+                return nullptr;
+            }
+            if( !roadNetwork )
+            {
+                return failGeneration( "Null road network" );
+            }
             Array<SmartPtr<IProceduralObject>> objects;
-            for( const auto &road : roadNetwork->getRoads() ) objects.push_back( road );
+            for( const auto &road : roadNetwork->getRoads() )
+            {
+                objects.push_back( road );
+            }
             return generateFromObjects( objects );
-        } catch( const std::exception &e )
+        }
+        catch( const std::exception &e )
         {
             return failGeneration( String( "Generation exception: " ) + e.what() );
         }
@@ -72,49 +86,88 @@ namespace workphone
         SmartPtr<IMesh> MeshGeneratorDefault::generateFromTerrain( SmartPtr<IProceduralTerrain> terrain )
         try
         {
-            if( !beginGeneration() ) return nullptr;
-            if( !terrain ) return failGeneration( "Null terrain" );
+            if( !beginGeneration() )
+            {
+                return nullptr;
+            }
+            if( !terrain )
+            {
+                return failGeneration( "Null terrain" );
+            }
             const auto resolution = terrain->getHeightmapResolution();
             const auto size = terrain->getSize();
             const auto heights = terrain->getHeightData();
             if( resolution.x < 2 || resolution.y < 2 || !std::isfinite( size.x ) ||
                 !std::isfinite( size.y ) || !std::isfinite( size.z ) || size.x <= 0 || size.z <= 0 )
+            {
                 return failGeneration( "Invalid terrain dimensions" );
+            }
             const auto vertexCount = uint64_t( resolution.x ) * uint64_t( resolution.y );
             const auto triangleCount = uint64_t( resolution.x - 1 ) * uint64_t( resolution.y - 1 ) * 2;
-            if( vertexCount != heights.size() || vertexCount > m_maxVertexCount || triangleCount > m_maxTriangleCount )
+            if( vertexCount != heights.size() || vertexCount > m_maxVertexCount ||
+                triangleCount > m_maxTriangleCount )
+            {
                 return failGeneration( "Terrain sample count or geometry budget exceeded" );
+            }
             ProceduralMesh cpu;
             Array<Vector3<real_Num>> positions, normals;
             Array<Vector2<real_Num>> uvs;
             Array<u32> indices;
             const auto transform = terrain->getWorldTransform();
-            for( int z = 0; z < resolution.y; ++z ) for( int x = 0; x < resolution.x; ++x )
+            for( int z = 0; z < resolution.y; ++z )
             {
-                const auto height = heights[size_t( z ) * resolution.x + x];
-                if( !std::isfinite( height ) ) return failGeneration( "Non-finite terrain height" );
-                const real_Num u = real_Num( x ) / ( resolution.x - 1 );
-                const real_Num v = real_Num( z ) / ( resolution.y - 1 );
-                const auto position = transform.transformPoint( Vector3<real_Num>( u * size.x, height * size.y, v * size.z ) );
-                if( !std::isfinite( position.x ) || !std::isfinite( position.y ) || !std::isfinite( position.z ) )
-                    return failGeneration( "Non-finite terrain transform" );
-                positions.push_back( position );
-                cpu.addVertex( Vector3F( position ) );
-                uvs.push_back( m_generateUVs ? Vector2<real_Num>( u * m_uvScale, v * m_uvScale ) : Vector2<real_Num>() );
+                for( int x = 0; x < resolution.x; ++x )
+                {
+                    const auto height = heights[size_t( z ) * resolution.x + x];
+                    if( !std::isfinite( height ) )
+                    {
+                        return failGeneration( "Non-finite terrain height" );
+                    }
+                    const real_Num u = real_Num( x ) / ( resolution.x - 1 );
+                    const real_Num v = real_Num( z ) / ( resolution.y - 1 );
+                    const auto position = transform.transformPoint(
+                        Vector3<real_Num>( u * size.x, height * size.y, v * size.z ) );
+                    if( !std::isfinite( position.x ) || !std::isfinite( position.y ) ||
+                        !std::isfinite( position.z ) )
+                    {
+                        return failGeneration( "Non-finite terrain transform" );
+                    }
+                    positions.push_back( position );
+                    cpu.addVertex( Vector3F( position ) );
+                    uvs.push_back( m_generateUVs ? Vector2<real_Num>( u * m_uvScale, v * m_uvScale )
+                                                 : Vector2<real_Num>() );
+                }
             }
-            for( int z = 0; z + 1 < resolution.y; ++z ) for( int x = 0; x + 1 < resolution.x; ++x )
+            for( int z = 0; z + 1 < resolution.y; ++z )
             {
-                const u32 a = static_cast<u32>( uint64_t( z ) * resolution.x + x ), b = a + resolution.x;
-                cpu.addTriangle( a, b, a + 1 );
-                cpu.addTriangle( a + 1, b, b + 1 );
+                for( int x = 0; x + 1 < resolution.x; ++x )
+                {
+                    const u32 a = static_cast<u32>( uint64_t( z ) * resolution.x + x ),
+                              b = a + resolution.x;
+                    cpu.addTriangle( a, b, a + 1 );
+                    cpu.addTriangle( a + 1, b, b + 1 );
+                }
             }
-            if( m_generateNormals ) cpu.computeNormals();
-            for( const auto &vertex : cpu.vertices ) normals.push_back( Vector3<real_Num>( vertex.normal ) );
-            for( auto index : cpu.indices ) indices.push_back( index );
+            if( m_generateNormals )
+            {
+                cpu.computeNormals();
+            }
+            for( const auto &vertex : cpu.vertices )
+            {
+                normals.push_back( Vector3<real_Num>( vertex.normal ) );
+            }
+            for( auto index : cpu.indices )
+            {
+                indices.push_back( index );
+            }
             auto mesh = MeshUtil::createMesh( positions, normals, uvs, indices );
-            if( mesh && mesh->getNumSubMeshes() ) mesh->getSubMesh( 0 )->setMaterialName( "TerrainDefault" );
+            if( mesh && mesh->getNumSubMeshes() )
+            {
+                mesh->getSubMesh( 0 )->setMaterialName( "TerrainDefault" );
+            }
             return finishGeneration( mesh );
-        } catch( const std::exception &e )
+        }
+        catch( const std::exception &e )
         {
             return failGeneration( String( "Generation exception: " ) + e.what() );
         }
@@ -123,14 +176,25 @@ namespace workphone
             return failGeneration( "Unknown generation exception" );
         }
 
-        SmartPtr<IMesh> MeshGeneratorDefault::generateFromObjects( const Array<SmartPtr<IProceduralObject>> &objects )
+        SmartPtr<IMesh> MeshGeneratorDefault::generateFromObjects(
+            const Array<SmartPtr<IProceduralObject>> &objects )
         try
         {
-            if( !beginGeneration() ) return nullptr;
-            if( objects.empty() ) return failGeneration( "Empty object list" );
+            if( !beginGeneration() )
+            {
+                return nullptr;
+            }
+            if( objects.empty() )
+            {
+                return failGeneration( "Empty object list" );
+            }
             if( objects.size() == 1 )
+            {
                 if( auto terrain = workphone::dynamic_pointer_cast<IProceduralTerrain>( objects[0] ) )
+                {
                     return generateFromTerrain( terrain );
+                }
+            }
             // Object interfaces expose no generic mesh. Roads are explicitly supported;
             // reject other types rather than silently losing their geometry or materials.
             Array<Vector3F> positions;
@@ -138,75 +202,133 @@ namespace workphone
             for( const auto &object : objects )
             {
                 auto road = workphone::dynamic_pointer_cast<CRoad>( object );
-                if( !road ) return failGeneration( "Object has no supported mesh adapter" );
+                if( !road )
+                {
+                    return failGeneration( "Object has no supported mesh adapter" );
+                }
                 auto segments = road->getRoadSegments();
                 if( segments.empty() )
                 {
                     // CRoad::getRoadNodes traverses sections, while addNode stores
                     // the authored spine separately. Accept both existing paths.
                     auto nodes = road->getRoadNodes();
-                    if( nodes.empty() ) nodes = road->getRoadNodeObjects();
+                    if( nodes.empty() )
+                    {
+                        nodes = road->getRoadNodeObjects();
+                    }
                     for( size_t i = 1; i < nodes.size(); ++i )
                     {
-                        if( !nodes[i-1] || !nodes[i] ) return failGeneration( "Null road node" );
-                        const Vector3F a( nodes[i-1]->getPosition() ), b( nodes[i]->getPosition() );
+                        if( !nodes[i - 1] || !nodes[i] )
+                        {
+                            return failGeneration( "Null road node" );
+                        }
+                        const Vector3F a( nodes[i - 1]->getPosition() ), b( nodes[i]->getPosition() );
                         const auto delta = b - a;
                         const Vector3F tangent( -delta.z, 0, delta.x );
-                        auto segment = RoadGeneratorUtil::createRoadSegment( a, b, tangent, tangent, 7, 7 );
-                        if( !segment ) return failGeneration( "Invalid road spine" );
+                        auto segment =
+                            RoadGeneratorUtil::createRoadSegment( a, b, tangent, tangent, 7, 7 );
+                        if( !segment )
+                        {
+                            return failGeneration( "Invalid road spine" );
+                        }
                         segments.push_back( segment );
                     }
                 }
                 for( const auto &segment : segments )
                 {
-                    if( !segment ) return failGeneration( "Null road segment" );
+                    if( !segment )
+                    {
+                        return failGeneration( "Null road segment" );
+                    }
                     const auto nodes = segment->getRoadNodes();
-                    if( nodes.size() < 2 ) return failGeneration( "Road segment needs two nodes" );
+                    if( nodes.size() < 2 )
+                    {
+                        return failGeneration( "Road segment needs two nodes" );
+                    }
                     float width = 3.5f;
-                    if( auto concrete = workphone::dynamic_pointer_cast<CRoadElement>( segment ) ) width = concrete->getRoadWidth() * 0.5f;
-                    if( !std::isfinite( width ) || width <= 0 ) return failGeneration( "Invalid road width" );
+                    if( auto concrete = workphone::dynamic_pointer_cast<CRoadElement>( segment ) )
+                    {
+                        width = concrete->getRoadWidth() * 0.5f;
+                    }
+                    if( !std::isfinite( width ) || width <= 0 )
+                    {
+                        return failGeneration( "Invalid road width" );
+                    }
                     for( size_t i = 1; i < nodes.size(); ++i )
                     {
-                        if( !nodes[i-1] || !nodes[i] ) return failGeneration( "Null road node" );
-                        if( positions.size() + 6 > m_maxVertexCount || positions.size() / 3 + 2 > m_maxTriangleCount )
+                        if( !nodes[i - 1] || !nodes[i] )
+                        {
+                            return failGeneration( "Null road node" );
+                        }
+                        if( positions.size() + 6 > m_maxVertexCount ||
+                            positions.size() / 3 + 2 > m_maxTriangleCount )
+                        {
                             return failGeneration( "Road geometry budget exceeded" );
-                        const Vector3F a( nodes[i-1]->getPosition() ), b( nodes[i]->getPosition() );
+                        }
+                        const Vector3F a( nodes[i - 1]->getPosition() ), b( nodes[i]->getPosition() );
                         const auto delta = b - a;
                         const Vector3F tangent( -delta.z, 0, delta.x );
                         const auto previousCount = positions.size();
-                        RoadGeneratorUtil::createMeshSegment( a, b, tangent, tangent, width, width, positions, uvs );
+                        RoadGeneratorUtil::createMeshSegment( a, b, tangent, tangent, width, width,
+                                                              positions, uvs );
                         if( positions.size() != previousCount + 6 || positions.size() != uvs.size() )
+                        {
                             return failGeneration( "Invalid road segment geometry" );
-                        if( !std::isfinite( delta.x ) || !std::isfinite( delta.y ) || !std::isfinite( delta.z ) ||
+                        }
+                        if( !std::isfinite( delta.x ) || !std::isfinite( delta.y ) ||
+                            !std::isfinite( delta.z ) ||
                             ( std::abs( delta.x ) < 0.000001f && std::abs( delta.z ) < 0.000001f ) )
+                        {
                             return failGeneration( "Road segment has invalid horizontal extent" );
-                        for( size_t vertexIndex = previousCount; vertexIndex < positions.size(); ++vertexIndex )
+                        }
+                        for( size_t vertexIndex = previousCount; vertexIndex < positions.size();
+                             ++vertexIndex )
                         {
                             const auto &p = positions[vertexIndex];
                             if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+                            {
                                 return failGeneration( "Road position is non-finite" );
+                            }
                         }
                     }
                 }
             }
-            if( positions.empty() ) return failGeneration( "No road geometry" );
+            if( positions.empty() )
+            {
+                return failGeneration( "No road geometry" );
+            }
             Array<Vector3<real_Num>> outputPositions( positions.begin(), positions.end() ), normals;
             Array<Vector2<real_Num>> outputUvs;
             Array<u32> indices;
             ProceduralMesh roadCpu;
-            for( const auto &position : positions ) roadCpu.addVertex( position );
-            for( u32 i = 0; i + 2 < positions.size(); i += 3 ) roadCpu.addTriangle( i, i + 1, i + 2 );
-            if( m_generateNormals ) roadCpu.computeNormals();
+            for( const auto &position : positions )
+            {
+                roadCpu.addVertex( position );
+            }
+            for( u32 i = 0; i + 2 < positions.size(); i += 3 )
+            {
+                roadCpu.addTriangle( i, i + 1, i + 2 );
+            }
+            if( m_generateNormals )
+            {
+                roadCpu.computeNormals();
+            }
             for( size_t i = 0; i < positions.size(); ++i )
             {
                 indices.push_back( static_cast<u32>( i ) );
                 normals.push_back( Vector3<real_Num>( roadCpu.vertices[i].normal ) );
-                outputUvs.push_back( m_generateUVs ? Vector2<real_Num>( uvs[i].x * m_uvScale, uvs[i].y * m_uvScale ) : Vector2<real_Num>() );
+                outputUvs.push_back(
+                    m_generateUVs ? Vector2<real_Num>( uvs[i].x * m_uvScale, uvs[i].y * m_uvScale )
+                                  : Vector2<real_Num>() );
             }
             auto mesh = MeshUtil::createMesh( outputPositions, normals, outputUvs, indices );
-            if( mesh && mesh->getNumSubMeshes() ) mesh->getSubMesh( 0 )->setMaterialName( "RoadDefault" );
+            if( mesh && mesh->getNumSubMeshes() )
+            {
+                mesh->getSubMesh( 0 )->setMaterialName( "RoadDefault" );
+            }
             return finishGeneration( mesh );
-        } catch( const std::exception &e )
+        }
+        catch( const std::exception &e )
         {
             return failGeneration( String( "Generation exception: " ) + e.what() );
         }
@@ -398,7 +520,8 @@ namespace workphone
 
         bool MeshGeneratorDefault::isReady() const
         {
-            return m_numLodLevels == 1 && m_simplificationThreshold == 0 && !m_generateTangents && !m_optimizeMesh && !m_mergeDuplicateVertices && !m_generateCollision;
+            return m_numLodLevels == 1 && m_simplificationThreshold == 0 && !m_generateTangents &&
+                   !m_optimizeMesh && !m_mergeDuplicateVertices && !m_generateCollision;
         }
 
         void MeshGeneratorDefault::clear()

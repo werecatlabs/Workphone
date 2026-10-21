@@ -64,8 +64,8 @@ namespace workphone
                 return i == 0 || i == 2;
             }
 
-            bool canAppend( const VehicleEffectConfig &config,
-                            const Array<VehicleEffectEvent> &events, std::size_t startSize )
+            bool canAppend( const VehicleEffectConfig &config, const Array<VehicleEffectEvent> &events,
+                            std::size_t startSize )
             {
                 return events.size() - startSize < config.maximumEventsPerStep;
             }
@@ -86,12 +86,14 @@ namespace workphone
             return state;
         }
 
-        bool WPVehicleEffects::emit(
-            const VehicleEffectConfig &config, const VehiclePhysicsConfig &physics,
-            const VehicleDynamicsState &dynamics, const VehicleDynamicsTelemetry &telemetry,
-            const VehiclePresentationState &presentation, const VehicleDamageTelemetry &damage,
-            const VehicleEffectEnvironment &environment, double dt, VehicleEffectsState &state,
-            Array<VehicleEffectEvent> &events )
+        bool WPVehicleEffects::emit( const VehicleEffectConfig &config,
+                                     const VehiclePhysicsConfig &physics,
+                                     const VehicleDynamicsState &dynamics,
+                                     const VehicleDynamicsTelemetry &telemetry,
+                                     const VehiclePresentationState &presentation,
+                                     const VehicleDamageTelemetry &damage,
+                                     const VehicleEffectEnvironment &environment, double dt,
+                                     VehicleEffectsState &state, Array<VehicleEffectEvent> &events )
         {
             if( !std::isfinite( dt ) || dt <= 0.0 || dt > 0.25 ||
                 !std::isfinite( environment.wetness ) ||
@@ -107,7 +109,9 @@ namespace workphone
                 config.sprayEventsPerSecond < 0.0 || config.exhaustEventsPerSecond < 0.0 ||
                 config.damageSmokeEventsPerSecond < 0.0 || config.skidWidthScale <= 0.0 ||
                 config.maximumEventsPerStep == 0 )
+            {
                 return false;
+            }
 
             const std::size_t startSize = events.size();
             if( !std::isfinite( dynamics.position.x ) || !std::isfinite( dynamics.position.y ) ||
@@ -117,19 +121,27 @@ namespace workphone
                 !std::isfinite( state.exhaustAccumulator ) ||
                 !std::isfinite( state.damageSmokeAccumulator ) || state.exhaustAccumulator < 0.0 ||
                 state.damageSmokeAccumulator < 0.0 )
+            {
                 return false;
+            }
             for( std::size_t i = 0; i < 4; ++i )
+            {
                 if( !std::isfinite( telemetry.wheels[i].longitudinalSlipRatio ) ||
                     !std::isfinite( telemetry.wheels[i].slipAngleRad ) ||
                     !std::isfinite( state.smokeAccumulator[i] ) ||
                     !std::isfinite( state.sprayAccumulator[i] ) || state.smokeAccumulator[i] < 0.0 ||
                     state.sprayAccumulator[i] < 0.0 )
+                {
                     return false;
+                }
                 else if( state.hasPreviousContact[i] &&
                          ( !std::isfinite( state.previousContact[i].x ) ||
                            !std::isfinite( state.previousContact[i].y ) ||
                            !std::isfinite( state.previousContact[i].z ) ) )
+                {
                     return false;
+                }
+            }
             const auto fwd = forward( dynamics );
             const auto rgt = right( dynamics );
             for( std::size_t i = 0; i < 4; ++i )
@@ -182,7 +194,9 @@ namespace workphone
                     events.push_back( event );
                 }
                 if( !canAppend( config, events, startSize ) )
+                {
                     state.smokeAccumulator[i] = std::fmod( state.smokeAccumulator[i], 1.0 );
+                }
 
                 const double spray = saturate( environment.wetness ) *
                                      saturate( ( telemetry.speedMps - 5.0 ) / 30.0 ) *
@@ -206,7 +220,9 @@ namespace workphone
                     events.push_back( event );
                 }
                 if( !canAppend( config, events, startSize ) )
+                {
                     state.sprayAccumulator[i] = std::fmod( state.sprayAccumulator[i], 1.0 );
+                }
 
                 if( telemetry.wheelLock > 0.82 && telemetry.speedMps > 18.0 &&
                     random01( state.randomState ) < dt * 2.5 && canAppend( config, events, startSize ) )
@@ -253,7 +269,9 @@ namespace workphone
                 events.push_back( event );
             }
             if( !canAppend( config, events, startSize ) )
+            {
                 state.exhaustAccumulator = std::fmod( state.exhaustAccumulator, 1.0 );
+            }
 
             state.damageSmokeAccumulator += damage.smoke * config.damageSmokeEventsPerSecond * dt;
             while( state.damageSmokeAccumulator >= 1.0 && canAppend( config, events, startSize ) )
@@ -274,7 +292,9 @@ namespace workphone
                 events.push_back( event );
             }
             if( !canAppend( config, events, startSize ) )
+            {
                 state.damageSmokeAccumulator = std::fmod( state.damageSmokeAccumulator, 1.0 );
+            }
             return true;
         }
     }  // namespace procedural

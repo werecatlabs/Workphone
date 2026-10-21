@@ -27,8 +27,8 @@ namespace workphone
                 return dot( v, v );
             }
 
-            void addIssue( Array<VehicleGenerationIssue> &issues, bool error,
-                           const char *component, const std::string &message )
+            void addIssue( Array<VehicleGenerationIssue> &issues, bool error, const char *component,
+                           const std::string &message )
             {
                 issues.push_back( { error, component, message } );
             }
@@ -67,23 +67,31 @@ namespace workphone
             std::uint64_t fnvFloat( std::uint64_t hash, float value )
             {
                 if( value == 0.0f )
+                {
                     value = 0.0f;
+                }
                 std::uint32_t bits = 0;
                 std::memcpy( &bits, &value, sizeof( bits ) );
                 if( ( bits & 0x7f800000u ) == 0x7f800000u && ( bits & 0x007fffffu ) != 0u )
+                {
                     bits = 0x7fc00000u;
+                }
                 return fnvU32( hash, bits );
             }
 
             std::uint64_t fnvDouble( std::uint64_t hash, double value )
             {
                 if( value == 0.0 )
+                {
                     value = 0.0;
+                }
                 std::uint64_t bits = 0;
                 std::memcpy( &bits, &value, sizeof( bits ) );
                 if( ( bits & 0x7ff0000000000000ull ) == 0x7ff0000000000000ull &&
                     ( bits & 0x000fffffffffffffull ) != 0ull )
+                {
                     bits = 0x7ff8000000000000ull;
+                }
                 return fnvU64( hash, bits );
             }
 
@@ -151,8 +159,11 @@ namespace workphone
                 // nose-to-tail). Appearance publishes the inverse contract:
                 // u=nose-to-tail, v=right/top/left/floor circumference.
                 for( auto &lod : geometry.lods )
+                {
                     for( auto &section : lod.sections )
+                    {
                         if( section.material == VehicleMaterial::Paint )
+                        {
                             for( auto &vertex : section.vertices )
                             {
                                 std::swap( vertex.uv.x, vertex.uv.y );
@@ -163,16 +174,27 @@ namespace workphone
                                 vertex.tangent = oldBitangent;
                                 vertex.tangentSign = -vertex.tangentSign;
                             }
+                        }
+                    }
+                }
             }
 
             void translateGeometryZ( VehicleGeometry &geometry, float offset )
             {
                 if( offset == 0.0f )
+                {
                     return;
+                }
                 for( auto &lod : geometry.lods )
+                {
                     for( auto &section : lod.sections )
+                    {
                         for( auto &vertex : section.vertices )
+                        {
                             vertex.position.z += offset;
+                        }
+                    }
+                }
                 geometry.boundsMin.z += offset;
                 geometry.boundsMax.z += offset;
                 geometry.centreOfMass.z += offset;
@@ -202,12 +224,16 @@ namespace workphone
                      { physics.wheelbaseM, physics.frontTrackM, physics.rearTrackM, physics.bodyLengthM,
                        physics.bodyWidthM, physics.gravityMps2, physics.massProperties.massKg,
                        physics.massProperties.frontStaticWeightFraction } )
+                {
                     hash = fnvDouble( hash, value );
+                }
                 hash = fnvPhysicsVector( hash, physics.massProperties.centreOfMass );
                 const auto &inertia = physics.massProperties.inertia;
                 for( double value :
                      { inertia.xx, inertia.yy, inertia.zz, inertia.xy, inertia.xz, inertia.yz } )
+                {
                     hash = fnvDouble( hash, value );
+                }
                 hash = fnvU64( hash, static_cast<std::uint64_t>( physics.massElements.size() ) );
                 for( const auto &element : physics.massElements )
                 {
@@ -225,7 +251,9 @@ namespace workphone
                          { s.springRateNPerM, s.damperCompressionNPerMps, s.damperReboundNPerMps,
                            s.antiRollRateNmPerRad, s.bumpTravelM, s.reboundTravelM, s.motionRatio,
                            s.staticCamberRad, s.staticToeRad, s.casterRad, s.kingpinInclinationRad } )
+                    {
                         hash = fnvDouble( hash, value );
+                    }
                     const auto &tire = wheel.tire;
                     for( double value :
                          { tire.radiusM, tire.widthM, tire.wheelMassKg, tire.wheelInertiaKgM2,
@@ -235,7 +263,9 @@ namespace workphone
                            tire.rollingResistance, tire.optimalTemperatureC, tire.coldFrictionScale,
                            tire.loadSensitivity, wheel.maxSteerRad, wheel.brakeTorqueNm,
                            wheel.handbrakeTorqueNm } )
+                    {
                         hash = fnvDouble( hash, value );
+                    }
                     hash = fnvU32( hash, wheel.steerable ? 1u : 0u );
                     hash = fnvU32( hash, wheel.driven ? 1u : 0u );
                 }
@@ -244,22 +274,26 @@ namespace workphone
                      { aero.referenceAreaM2, aero.dragCoefficient, aero.downforceCoefficient,
                        aero.frontDownforceFraction, aero.airDensityKgPerM3, aero.yawStabilityCoefficient,
                        aero.groundEffectRideHeightM, aero.groundEffectSensitivity } )
+                {
                     hash = fnvDouble( hash, value );
+                }
                 hash = fnvPhysicsVector( hash, aero.centreOfPressure );
                 const auto &drive = physics.drivetrain;
                 hash = fnvU32( hash, static_cast<std::uint32_t>( drive.drivenAxle ) );
                 for( double value :
                      { drive.peakPowerW, drive.peakTorqueNm, drive.idleRpm, drive.redlineRpm,
                        drive.finalDriveRatio, drive.transmissionEfficiency } )
+                {
                     hash = fnvDouble( hash, value );
+                }
                 hash = fnvU64( hash, static_cast<std::uint64_t>( drive.forwardGearRatios.size() ) );
                 for( double ratio : drive.forwardGearRatios )
+                {
                     hash = fnvDouble( hash, ratio );
+                }
                 return hash;
             }
         }  // namespace
-
-
 
         VehicleMaterialSlot WPVehicleGenerator::materialSlotFor( VehicleMaterial material )
         {
@@ -278,10 +312,12 @@ namespace workphone
             const bool helicopter = config.physicsPreset == VehiclePhysicsPreset::HelicopterLittleBird;
             const bool plane = config.physicsPreset == VehiclePhysicsPreset::Warbird;
             const bool aircraft = helicopter || plane;
-            geometryConfig.bodyStyle = plane ? VehicleBodyStyle::Warbird : helicopter ? VehicleBodyStyle::HelicopterLittleBird
-                : config.physicsPreset == VehiclePhysicsPreset::GT ? VehicleBodyStyle::GT
+            geometryConfig.bodyStyle =
+                plane        ? VehicleBodyStyle::Warbird
+                : helicopter ? VehicleBodyStyle::HelicopterLittleBird
+                : config.physicsPreset == VehiclePhysicsPreset::GT        ? VehicleBodyStyle::GT
                 : config.physicsPreset == VehiclePhysicsPreset::RoadSport ? VehicleBodyStyle::RoadSport
-                                                                         : VehicleBodyStyle::GrandPrix;
+                                                                          : VehicleBodyStyle::GrandPrix;
             if( aircraft )
             {
                 // Aircraft do not use the car wheelbase, tyre, or axle-alignment contract.
@@ -292,15 +328,19 @@ namespace workphone
                 }
             }
             else if( config.synchronizeFromPhysics )
+            {
                 applyPhysicsDimensions( geometryConfig, result.physics );
+            }
             else
+            {
                 applyGeometryDimensions( result.physics, geometryConfig );
+            }
             result.geometry = WPVehicleGeometry::generate( geometryConfig );
             if( !aircraft )
             {
                 const float physicsFrontAxleZ =
                     static_cast<float>( .5 * ( result.physics.wheels[0].hubPosition.z +
-                                              result.physics.wheels[1].hubPosition.z ) );
+                                               result.physics.wheels[1].hubPosition.z ) );
                 translateGeometryZ( result.geometry, physicsFrontAxleZ - result.geometry.frontAxle.z );
             }
             result.geometry.centreOfMass =
@@ -317,15 +357,19 @@ namespace workphone
             result.appearance = WPVehicleAppearance( 0u ).build( appearanceConfig );
             result.issues = validate( result );
             if( !config.synchronizeFromPhysics )
+            {
                 addIssue( result.issues, true, "integration",
                           "synchronizeFromPhysics=false changes dimensions without consistently "
                           "rescaling mass elements, suspension or aerodynamic data; generate "
                           "custom standalone geometry instead" );
+            }
             const VehicleAppearanceValidation requestedAppearance =
                 WPVehicleAppearance::validate( config.appearance );
             for( const auto &issue : requestedAppearance.issues )
+            {
                 addIssue( result.issues, issue.severity == VehicleAppearanceIssueSeverity::Error,
                           "appearance-config", issue.code + ": " + issue.message );
+            }
 
             std::uint64_t hash = 14695981039346656037ull;
             hash = fnvU64( hash, result.appearance.contentHash );
@@ -349,55 +393,76 @@ namespace workphone
                     hash = fnvU64( hash, static_cast<std::uint64_t>( vertexCount ) );
                     hash = fnvU64( hash, static_cast<std::uint64_t>( indexCount ) );
                     for( const auto &vertex : section.vertices )
+                    {
                         hash = hashVehicleVertex( hash, vertex );
+                    }
                     for( const std::uint32_t index : section.indices )
+                    {
                         hash = fnvU32( hash, index );
+                    }
                 }
             }
             result.contentHash = hash;
             return result;
         }
 
-        Array<VehicleGenerationIssue> WPVehicleGenerator::validate(
-            const GeneratedVehicle &vehicle )
+        Array<VehicleGenerationIssue> WPVehicleGenerator::validate( const GeneratedVehicle &vehicle )
         {
             Array<VehicleGenerationIssue> issues;
             const auto appearance = WPVehicleAppearance::validate( vehicle.appearance );
             for( const auto &issue : appearance.issues )
+            {
                 addIssue( issues, issue.severity == VehicleAppearanceIssueSeverity::Error, "appearance",
                           issue.code + ": " + issue.message );
+            }
 
             const auto physics = WPVehiclePhysics::validate( vehicle.physics );
             for( const auto &message : physics.errors )
+            {
                 addIssue( issues, true, "physics", message );
+            }
             for( const auto &message : physics.warnings )
+            {
                 addIssue( issues, false, "physics", message );
+            }
 
             if( vehicle.geometry.lods.empty() || !vehicle.geometry.hasGeometry() )
+            {
                 addIssue( issues, true, "geometry", "no renderable LOD geometry was produced" );
+            }
 
             std::uint32_t expectedLevel = 0;
             float priorCoverage = std::numeric_limits<float>::infinity();
             for( const auto &lod : vehicle.geometry.lods )
             {
                 if( lod.level != expectedLevel++ )
+                {
                     addIssue( issues, true, "geometry", "LOD levels must be contiguous" );
+                }
                 if( lod.suggestedScreenCoverage >= priorCoverage )
+                {
                     addIssue( issues, true, "geometry", "LOD screen coverage must decrease" );
+                }
                 priorCoverage = lod.suggestedScreenCoverage;
 
                 for( const auto &section : lod.sections )
                 {
                     if( static_cast<std::uint32_t>( section.material ) >
                         static_cast<std::uint32_t>( VehicleMaterial::SecondaryPaint ) )
+                    {
                         addIssue( issues, true, "geometry",
                                   section.name + " uses an unknown material identifier" );
+                    }
                     if( !section.hasGeometry() )
+                    {
                         addIssue( issues, true, "geometry",
                                   section.name + " is an empty or non-renderable material section" );
+                    }
                     if( section.indices.size() % 3u != 0u )
+                    {
                         addIssue( issues, true, "geometry",
                                   section.name + " has a non-triangular index tail" );
+                    }
                     for( const auto index : section.indices )
                     {
                         if( index >= section.vertices.size() )
@@ -438,7 +503,9 @@ namespace workphone
                         const std::uint32_t ic = section.indices[i + 2u];
                         if( ia >= section.vertices.size() || ib >= section.vertices.size() ||
                             ic >= section.vertices.size() )
+                        {
                             continue;
+                        }
                         const Vector3F edgeA =
                             section.vertices[ib].position - section.vertices[ia].position;
                         const Vector3F edgeB =
@@ -450,8 +517,10 @@ namespace workphone
                         }
                     }
                     if( degenerateTriangle )
+                    {
                         addIssue( issues, true, "geometry",
                                   section.name + " contains a zero-area triangle" );
+                    }
                 }
             }
 
@@ -460,14 +529,19 @@ namespace workphone
             if( !finite( boundsMin.x ) || !finite( boundsMin.y ) || !finite( boundsMin.z ) ||
                 !finite( boundsMax.x ) || !finite( boundsMax.y ) || !finite( boundsMax.z ) ||
                 boundsMin.x > boundsMax.x || boundsMin.y > boundsMax.y || boundsMin.z > boundsMax.z )
+            {
                 addIssue( issues, true, "geometry", "declared bounds are invalid" );
+            }
             else
             {
                 constexpr float boundsTolerance = 0.002f;
                 bool escapedBounds = false;
                 for( const auto &lod : vehicle.geometry.lods )
+                {
                     for( const auto &section : lod.sections )
+                    {
                         for( const auto &vertex : section.vertices )
+                        {
                             if( vertex.position.x < boundsMin.x - boundsTolerance ||
                                 vertex.position.y < boundsMin.y - boundsTolerance ||
                                 vertex.position.z < boundsMin.z - boundsTolerance ||
@@ -478,52 +552,72 @@ namespace workphone
                                 escapedBounds = true;
                                 break;
                             }
+                        }
+                    }
+                }
                 if( escapedBounds )
+                {
                     addIssue( issues, true, "geometry",
                               "one or more vertices lie outside declared bounds" );
+                }
             }
 
             if( vehicle.physics.preset != VehiclePhysicsPreset::HelicopterLittleBird &&
                 vehicle.physics.preset != VehiclePhysicsPreset::Warbird )
             {
-                const double meshWheelbase = std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
-                                                       vehicle.geometry.frontAxle.z );
+                const double meshWheelbase = std::abs(
+                    static_cast<double>( vehicle.geometry.rearAxle.z ) - vehicle.geometry.frontAxle.z );
                 if( std::abs( meshWheelbase - vehicle.physics.wheelbaseM ) > 0.01 )
+                {
                     addIssue( issues, true, "integration",
                               "render and physics wheelbases differ by more than 10 mm" );
+                }
                 const double hubTolerance = 0.01;
                 if( std::abs( static_cast<double>( vehicle.geometry.frontAxle.z ) -
                               vehicle.physics.wheels[0].hubPosition.z ) > hubTolerance ||
                     std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
                               vehicle.physics.wheels[2].hubPosition.z ) > hubTolerance )
+                {
                     addIssue( issues, true, "integration",
                               "render and physics axle centres differ by more than 10 mm" );
+                }
                 if( std::abs( static_cast<double>( vehicle.geometry.frontAxle.y ) -
                               vehicle.physics.wheels[0].tire.radiusM ) > hubTolerance ||
                     std::abs( static_cast<double>( vehicle.geometry.rearAxle.y ) -
                               vehicle.physics.wheels[2].tire.radiusM ) > hubTolerance )
+                {
                     addIssue( issues, true, "integration",
                               "render wheel radius and physics tyre radius differ by more than 10 mm" );
+                }
                 // The shared tyre profile places its bead edges at 91% of nominal width.
                 const double expectedHalfWidth =
-                    0.5 * std::max( vehicle.physics.frontTrackM + .91 * vehicle.physics.wheels[0].tire.widthM,
-                                    vehicle.physics.rearTrackM + .91 * vehicle.physics.wheels[2].tire.widthM );
+                    0.5 *
+                    std::max( vehicle.physics.frontTrackM + .91 * vehicle.physics.wheels[0].tire.widthM,
+                              vehicle.physics.rearTrackM + .91 * vehicle.physics.wheels[2].tire.widthM );
                 // Enclosed bodywork, mirrors and splitters may extend beyond the tyres.
                 // Compare the tyre sections themselves with the physical wheel envelope.
                 float tyreMinX = std::numeric_limits<float>::max();
                 float tyreMaxX = -std::numeric_limits<float>::max();
                 for( const auto &lod : vehicle.geometry.lods )
+                {
                     for( const auto &section : lod.sections )
+                    {
                         if( section.material == VehicleMaterial::Tyre )
+                        {
                             for( const auto &vertex : section.vertices )
                             {
                                 tyreMinX = std::min( tyreMinX, vertex.position.x );
                                 tyreMaxX = std::max( tyreMaxX, vertex.position.x );
                             }
+                        }
+                    }
+                }
                 if( std::abs( static_cast<double>( tyreMaxX ) - expectedHalfWidth ) > hubTolerance ||
                     std::abs( static_cast<double>( tyreMinX ) + expectedHalfWidth ) > hubTolerance )
+                {
                     addIssue( issues, true, "integration",
                               "render and physics track/tyre envelope differ by more than 10 mm" );
+                }
             }
             const auto &physicalCom = vehicle.physics.massProperties.centreOfMass;
             if( std::abs( static_cast<double>( vehicle.geometry.centreOfMass.x ) - physicalCom.x ) >
@@ -532,8 +626,10 @@ namespace workphone
                     0.001 ||
                 std::abs( static_cast<double>( vehicle.geometry.centreOfMass.z ) - physicalCom.z ) >
                     0.001 )
+            {
                 addIssue( issues, true, "integration",
                           "render and physics centre-of-mass markers differ by more than 1 mm" );
+            }
             return issues;
         }
     }  // namespace procedural

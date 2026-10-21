@@ -529,3 +529,40 @@ if (WP_BUILD_TESTS)
     add_custom_target(WPTerrainValidation DEPENDS ${WP_TERRAIN_VALIDATION_TARGETS})
     set_target_properties(WPTerrainValidation PROPERTIES FOLDER Tests)
 endif()
+if(WP_BUILD_TESTS AND TARGET Workphone)
+    add_executable(WPPlanarGraphTests PlanarGraphTests.cpp)
+    target_include_directories(WPPlanarGraphTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(WPPlanarGraphTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
+    add_dependencies(WPPlanarGraphTests Workphone)
+    set_target_properties(WPPlanarGraphTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPProcedural.planar_graph COMMAND WPPlanarGraphTests)
+endif()
+
+if(WP_BUILD_TESTS AND TARGET WPProcedural)
+    add_executable(WPProceduralCityTests
+        ProceduralCityTestMain.cpp UnitTests/ProceduralCityTests.cpp)
+    target_include_directories(WPProceduralCityTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_compile_definitions(WPProceduralCityTests PRIVATE BOOST_ALL_NO_LIB)
+    target_link_libraries(WPProceduralCityTests PRIVATE
+        $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
+    add_dependencies(WPProceduralCityTests Workphone WPProcedural)
+    set_target_properties(WPProceduralCityTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPProcedural.city_production COMMAND WPProceduralCityTests --report_level=detailed)
+    set_tests_properties(WPProcedural.city_production PROPERTIES
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPProceduralCityTests>"
+        LABELS "procedural;city;headless" TIMEOUT 120)
+
+    add_executable(WPBlockGeneratorTests BlockGeneratorTests.cpp CityGeneratorTests.cpp)
+    target_include_directories(WPBlockGeneratorTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_compile_definitions(WPBlockGeneratorTests PRIVATE BOOST_ALL_NO_LIB)
+    target_link_libraries(WPBlockGeneratorTests PRIVATE
+        $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
+    add_dependencies(WPBlockGeneratorTests Workphone WPProcedural)
+    set_target_properties(WPBlockGeneratorTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPProcedural.block_generator COMMAND WPBlockGeneratorTests)
+    set_tests_properties(WPProcedural.block_generator PROPERTIES
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPBlockGeneratorTests>" TIMEOUT 60)
+endif()

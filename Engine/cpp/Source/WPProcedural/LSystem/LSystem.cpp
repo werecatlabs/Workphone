@@ -28,7 +28,9 @@ namespace workphone
             for( int i = 0; i < variables.size(); i++ )
             {
                 if( variables[i] == var )
+                {
                     variables.erase( variables.begin() + i );
+                }
             }
         }
 
@@ -76,7 +78,9 @@ namespace workphone
             for( int i = 0; i < rules.size(); i++ )
             {
                 if( rules[i] == rule )
+                {
                     rules.erase( rules.begin() + i );
+                }
             }
         }
 

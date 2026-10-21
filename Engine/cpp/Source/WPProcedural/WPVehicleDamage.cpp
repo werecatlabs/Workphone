@@ -49,25 +49,35 @@ namespace workphone
                 c.steeringPullAtFullDamage
             };
             for( double value : values )
+            {
                 if( !finite( value ) )
                 {
                     result.errors.push_back( "damage configuration contains a non-finite value" );
                     return result;
                 }
+            }
             if( c.minimumSeverity < 0.0 || c.minimumSeverity > 1.0 ||
                 c.wreckSeverity <= c.minimumSeverity || c.wreckSeverity > 1.0 )
+            {
                 result.errors.push_back( "damage severity thresholds are inconsistent" );
+            }
             if( c.hitCooldownSeconds < 0.0 || c.damagePerSeverity < 0.0 || c.repairDelaySeconds < 0.0 ||
                 c.repairRatePerSecond < 0.0 || c.engineCutSeconds < 0.0 ||
                 c.wreckControlLockSeconds < 0.0 )
+            {
                 result.errors.push_back( "damage times and rates cannot be negative" );
+            }
             if( c.permanentFraction < 0.0 || c.permanentFraction > 1.0 ||
                 c.maximumPermanentDamage < 0.0 || c.maximumPermanentDamage > 1.0 )
+            {
                 result.errors.push_back( "permanent damage settings must be in [0,1]" );
+            }
             if( c.torquePenaltyAtFullDamage < 0.0 || c.torquePenaltyAtFullDamage > 0.95 ||
                 c.gripPenaltyAtFullDamage < 0.0 || c.gripPenaltyAtFullDamage > 0.95 ||
                 c.steeringPullAtFullDamage < 0.0 || c.steeringPullAtFullDamage > 0.5 )
+            {
                 result.errors.push_back( "damage penalties exceed safe limits" );
+            }
             return result;
         }
 
@@ -85,15 +95,19 @@ namespace workphone
                                       s.steeringPullSign,
                                       s.lastSeverity };
             for( double value : values )
+            {
                 if( !finite( value ) )
                 {
                     result.errors.push_back( "damage state contains a non-finite value" );
                     return result;
                 }
+            }
             if( s.damage < 0.0 || s.damage > 1.0 || s.permanentDamage < 0.0 ||
                 s.permanentDamage > s.damage + 1e-9 || s.hitCooldownRemaining < 0.0 ||
                 s.engineCutRemaining < 0.0 || s.controlLockRemaining < 0.0 )
+            {
                 result.errors.push_back( "damage state is outside its permitted range" );
+            }
             return result;
         }
 
@@ -107,7 +121,9 @@ namespace workphone
                 !finite( impact.closingSpeedMps ) || !finite( impact.impulseNs ) ||
                 !finite( impact.severity ) || impact.closingSpeedMps < 0.0 || impact.impulseNs < 0.0 ||
                 physics.massProperties.massKg <= 0.0 )
+            {
                 return event;
+            }
 
             const double speedSeverity = impact.closingSpeedMps / 52.0;
             const double impulseSeverity =
@@ -117,9 +133,13 @@ namespace workphone
                 0.0, 1.0 );
             event.severity = severity;
             if( severity < config.minimumSeverity )
+            {
                 return event;
+            }
             if( state.hitCooldownRemaining > 0.0 && severity <= state.lastSeverity * 1.20 )
+            {
                 return event;
+            }
 
             event.accepted = true;
             state.hitCooldownRemaining = config.hitCooldownSeconds;
@@ -136,7 +156,9 @@ namespace workphone
 
             double side = impact.localNormal.x;
             if( !finite( side ) || std::abs( side ) < 0.15 )
+            {
                 side = random01( state.randomState ) < 0.5 ? -1.0 : 1.0;
+            }
             state.steeringPullSign = side < 0.0 ? -1.0 : 1.0;
 
             event.wrecked = severity >= config.wreckSeverity || state.damage >= 0.98;
@@ -162,7 +184,9 @@ namespace workphone
         {
             if( !validate( config ).isValid() || !validateState( state ).isValid() || !finite( dt ) ||
                 dt <= 0.0 || dt > 0.25 )
+            {
                 return false;
+            }
             state.hitCooldownRemaining = std::max( 0.0, state.hitCooldownRemaining - dt );
             state.engineCutRemaining = std::max( 0.0, state.engineCutRemaining - dt );
             state.controlLockRemaining = std::max( 0.0, state.controlLockRemaining - dt );
@@ -171,8 +195,10 @@ namespace workphone
             state.smokeBurst = std::max( 0.0, state.smokeBurst - 0.72 * dt );
             if( state.secondsSinceImpact > config.repairDelaySeconds &&
                 state.damage > state.permanentDamage )
+            {
                 state.damage =
                     std::max( state.permanentDamage, state.damage - config.repairRatePerSecond * dt );
+            }
             return validateState( state ).isValid();
         }
 
@@ -181,7 +207,9 @@ namespace workphone
         {
             VehicleDamageTelemetry out;
             if( !validate( config ).isValid() || !validateState( state ).isValid() )
+            {
                 return out;
+            }
             out.damage = state.damage;
             out.permanentDamage = state.permanentDamage;
             out.torqueScale = 1.0 - state.damage * config.torquePenaltyAtFullDamage;
@@ -220,7 +248,9 @@ namespace workphone
             if( !event.accepted || !finite( event.recommendedSpeedScale ) ||
                 !finite( event.recommendedYawImpulseRadPerSec ) || event.recommendedSpeedScale < 0.0 ||
                 event.recommendedSpeedScale > 1.0 )
+            {
                 return false;
+            }
             const VehiclePhysicsVector3 velocity = {
                 dynamics.linearVelocity.x * event.recommendedSpeedScale,
                 dynamics.linearVelocity.y * event.recommendedSpeedScale,
@@ -229,7 +259,9 @@ namespace workphone
             const double yawRate = dynamics.yawRateRadPerSec + event.recommendedYawImpulseRadPerSec;
             if( !finite( velocity.x ) || !finite( velocity.y ) || !finite( velocity.z ) ||
                 !finite( yawRate ) )
+            {
                 return false;
+            }
             dynamics.linearVelocity = velocity;
             dynamics.yawRateRadPerSec = yawRate;
             return true;

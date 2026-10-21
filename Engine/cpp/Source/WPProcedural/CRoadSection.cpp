@@ -118,10 +118,10 @@ namespace workphone
 
                 if( hasMerge )
                 {
-                    m_Bounds = bounds;
-                    auto center = m_Bounds.getCenter();
-                    auto halfExtent = m_Bounds.getExtent().length();
-                    m_BoundingSphere = Sphere3<real_Num>( center, halfExtent );
+                    m_bounds = bounds;
+                    auto center = m_bounds.getCenter();
+                    auto halfExtent = m_bounds.getExtent().length();
+                    m_boundingSphere = Sphere3<real_Num>( center, halfExtent );
                 }
             }
             catch( std::exception &e )
@@ -526,7 +526,7 @@ namespace workphone
                     return nullptr;
                 }
 
-                properties->setProperty( kPropName, m_name );
+                properties->setProperty( kPropName, getName() );
                 properties->setProperty( kPropElementCount, static_cast<s32>( m_elements.size() ) );
                 properties->setProperty( kPropNodeCount, static_cast<s32>( getRoadNodes().size() ) );
                 properties->setProperty( kPropSidewalkCount, static_cast<s32>( m_sidewalks.size() ) );
@@ -553,9 +553,9 @@ namespace workphone
             {
                 CProceduralObject<IRoadSection>::setProperties( properties );
 
-                auto name = m_name;
+                auto name = getName();
                 properties->getPropertyValue( kPropName, name );
-                m_name = name;
+                setName( name );
 
                 // kPropElementCount, kPropNodeCount, kPropSidewalkCount are read-only
                 // diagnostic fields and are intentionally not written back here.

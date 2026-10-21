@@ -32,7 +32,9 @@ namespace workphone
             real_Num smooth( real_Num a, real_Num b, real_Num x )
             {
                 if( std::abs( b - a ) < 1e-8f )
+                {
                     return x >= b ? 1.0f : 0.0f;
+                }
                 const real_Num t = saturate( ( x - a ) / ( b - a ) );
                 return t * t * ( 3.0f - 2.0f * t );
             }
@@ -73,7 +75,9 @@ namespace workphone
             u32 boundedDimension( u32 value, u32 cap )
             {
                 if( cap == 0 )
+                {
                     return value;
+                }
                 return std::max<u32>( 64, std::min( value, cap ) );
             }
 
@@ -116,7 +120,9 @@ namespace workphone
             {
                 normal = TextureBuffer( height.width, height.height );
                 if( height.width == 0 || height.height == 0 )
+                {
                     return;
+                }
                 for( u32 y = 0; y < height.height; ++y )
                 {
                     const u32 ym = y == 0 ? ( wrapV ? height.height - 1 : 0 ) : y - 1;
@@ -161,7 +167,7 @@ namespace workphone
                 {
                     for( u32 px = 0; px < w; ++px )
                     {
-                        VehicleLinearColor accumulated{0,0,0,0};
+                        VehicleLinearColor accumulated{ 0, 0, 0, 0 };
                         const u32 samples = profile.supersample > 1 ? 4 : 1;
                         for( u32 s = 0; s < samples; ++s )
                         {
@@ -207,7 +213,9 @@ namespace workphone
                                 {
                                     u32 divisor = 1;
                                     for( u32 k = d + 1; k < digits; ++k )
+                                    {
                                         divisor *= 10;
+                                    }
                                     const u32 value = ( number / divisor ) % 10;
                                     ink = std::max(
                                         ink, digitCoverage( u, v, value, start + d * ( digitW + gap ),
@@ -315,7 +323,9 @@ namespace workphone
                                          noise.fbm2( u * 34.0f, v * 34.0f, 2 ) * 0.22f;
                         const real_Num cell = noise.worley2( u * 48.0f, v * 48.0f );
                         if( cell < 0.085f )
+                        {
                             value += ( 0.085f - cell ) * 1.8f;
+                        }
                         h.values[y * size + x] = value;
                     }
                 }
@@ -639,7 +649,9 @@ namespace workphone
                     hash = hashBytes( hash, &texture->width, sizeof( texture->width ) );
                     hash = hashBytes( hash, &texture->height, sizeof( texture->height ) );
                     if( !texture->pixels.empty() )
+                    {
                         hash = hashBytes( hash, texture->pixels.data(), texture->pixels.size() );
+                    }
                 }
                 for( const auto &material : bundle.materials )
                 {
@@ -667,7 +679,9 @@ namespace workphone
             bool validBuffer( const TextureBuffer &buffer )
             {
                 if( buffer.width == 0 || buffer.height == 0 )
+                {
                     return false;
+                }
                 const size_t expected = static_cast<size_t>( buffer.width ) * buffer.height * 4u;
                 return expected / 4u / buffer.width == buffer.height && buffer.pixels.size() == expected;
             }
@@ -677,13 +691,11 @@ namespace workphone
             {
                 result.issues.push_back( { severity, code, message } );
                 if( severity == VehicleAppearanceIssueSeverity::Error )
+                {
                     result.valid = false;
+                }
             }
         }  // namespace
-
-
-
-
 
         WPVehicleAppearance::WPVehicleAppearance( u32 seed ) : mSeed( seed )
         {
@@ -797,32 +809,44 @@ namespace workphone
             };
             if( !finiteColor( config.primary ) || !finiteColor( config.secondary ) ||
                 !finiteColor( config.accent ) )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.color.non_finite",
                           "Every authored colour channel must be finite." );
+            }
             const auto inReflectanceRange = []( const VehicleLinearColor &c ) {
                 return c.r >= 0 && c.r <= 1 && c.g >= 0 && c.g <= 1 && c.b >= 0 && c.b <= 1 &&
                        c.a >= 0 && c.a <= 1;
             };
             if( !inReflectanceRange( config.primary ) || !inReflectanceRange( config.secondary ) ||
                 !inReflectanceRange( config.accent ) )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.color.range",
                           "Linear reflectance colours must remain in the inclusive [0,1] range." );
+            }
             if( !std::isfinite( config.wear ) || config.wear < 0 || config.wear > 1 ||
                 !std::isfinite( config.wetness ) || config.wetness < 0 || config.wetness > 1 ||
                 !std::isfinite( config.metallicBasecoat ) || config.metallicBasecoat < 0 ||
                 config.metallicBasecoat > 1 )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.scalar.range",
                           "Wear, wetness, and metallicBasecoat must be finite values in [0,1]." );
+            }
             if( config.vehicleNumber > 999 )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.number.range",
                           "vehicleNumber must fit the supported 0..999 livery range." );
+            }
             if( config.customMaxResolution != 0 && config.customMaxResolution < 64 )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.resolution.minimum",
                           "customMaxResolution must be zero or at least 64 pixels." );
+            }
             if( config.primary.r > 0.82f || config.primary.g > 0.82f || config.primary.b > 0.82f )
+            {
                 addIssue(
                     result, VehicleAppearanceIssueSeverity::Warning, "appearance.paint.headroom",
                     "Base paint reflectance above 0.82 can clip direct light and hide reflections." );
+            }
             return result;
         }
 
@@ -857,8 +881,10 @@ namespace workphone
             for( const auto &material : bundle.materials )
             {
                 if( material.name.empty() )
+                {
                     addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.material.name",
                               "Every material slot must have a stable renderer-facing name." );
+                }
                 const auto colorInRange = []( const VehicleLinearColor &color ) {
                     return std::isfinite( color.r ) && std::isfinite( color.g ) &&
                            std::isfinite( color.b ) && std::isfinite( color.a ) && color.r >= 0.0f &&
@@ -867,9 +893,11 @@ namespace workphone
                 };
                 if( !colorInRange( material.baseColor ) || !colorInRange( material.fallbackBaseColor ) ||
                     !colorInRange( material.emissiveColor ) )
+                {
                     addIssue( result, VehicleAppearanceIssueSeverity::Error,
                               "appearance.material.color_range",
                               "Material colours must be finite linear values in [0,1]." );
+                }
                 const real_Num bounded[] = {
                     material.roughness,  material.metallic,           material.fallbackRoughness,
                     material.clearcoat,  material.clearcoatRoughness, material.anisotropy,
@@ -888,11 +916,15 @@ namespace workphone
                 }
             }
             if( bundle.contentHash == 0 )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Warning, "appearance.hash.missing",
                           "contentHash is zero; deterministic cache identity is unavailable." );
+            }
             else if( bundle.contentHash != bundleHash( bundle ) )
+            {
                 addIssue( result, VehicleAppearanceIssueSeverity::Error, "appearance.hash.mismatch",
                           "contentHash does not match the generated material and texture payload." );
+            }
             return result;
         }
     }  // namespace procedural

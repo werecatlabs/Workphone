@@ -50,8 +50,8 @@ namespace workphone
          */
         struct WPProcedural_API Texture2D
         {
-            int width = 0;               ///< Horizontal resolution in pixels.
-            int height = 0;              ///< Vertical resolution in pixels.
+            int width = 0;         ///< Horizontal resolution in pixels.
+            int height = 0;        ///< Vertical resolution in pixels.
             Array<Color4> pixels;  ///< Flat row-major pixel store.
 
             /**

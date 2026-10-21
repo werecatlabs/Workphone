@@ -358,10 +358,14 @@ namespace workphone
 
             options.defaultCenterRadius = properties->getPropertyAsFloat(
                 "DefaultCenterRadius", static_cast<f32>( options.defaultCenterRadius ) );
-            options.maxCenters = static_cast<u32>(
-                properties->getPropertyAsInt( "MaxCenters", static_cast<s32>( options.maxCenters ) ) );
-            options.maxBlocks = static_cast<u32>(
-                properties->getPropertyAsInt( "MaxBlocks", static_cast<s32>( options.maxBlocks ) ) );
+            // Serialized limits are signed. Clamp before conversion to avoid wrapping negative
+            // values into multi-billion-entry limits.
+            options.maxCenters = static_cast<u32>( std::max(
+                0,
+                properties->getPropertyAsInt( "MaxCenters", static_cast<s32>( options.maxCenters ) ) ) );
+            options.maxBlocks = static_cast<u32>( std::max(
+                0,
+                properties->getPropertyAsInt( "MaxBlocks", static_cast<s32>( options.maxBlocks ) ) ) );
             options.autoBuildNetwork =
                 properties->getPropertyAsBool( "AutoBuildNetwork", options.autoBuildNetwork );
 
