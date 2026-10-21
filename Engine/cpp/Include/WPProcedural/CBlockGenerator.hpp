@@ -44,7 +44,13 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
-            Array<SmartPtr<ICityBlock>> m_generatedBlocks;
+            struct CityBlocks
+            {
+                SmartPtr<IProceduralCity> city;
+                Array<SmartPtr<ICityBlock>> blocks;
+            };
+
+            Array<CityBlocks> m_generatedBlocks;
 
             SmartPtr<IProceduralCity> m_city;
         };

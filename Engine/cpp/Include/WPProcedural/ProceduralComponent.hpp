@@ -23,6 +23,12 @@ namespace workphone
             ProceduralComponent();
             virtual ~ProceduralComponent();
 
+            void load( SmartPtr<ISharedObject> data ) override;
+            void unload( SmartPtr<ISharedObject> data ) override;
+
+            SmartPtr<Properties> getProperties() const override;
+            void setProperties( SmartPtr<Properties> properties ) override;
+
             SmartPtr<ISharedObject> getObject() const;
 
             void setObject( SmartPtr<ISharedObject> object );
@@ -32,7 +38,8 @@ namespace workphone
         protected:
             FSMReturnType handleComponentEvent(u32 state, FSMEvent eventType);
 
-            SmartPtr<ISharedObject> m_object;
+            atomic_s64 m_objectType = 0;
+            AtomicSmartPtr<ISharedObject> m_object;
         };
 
     }  // namespace procedural

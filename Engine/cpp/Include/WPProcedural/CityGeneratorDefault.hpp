@@ -2,7 +2,10 @@
 #define CityGeneratorDefault_h__
 
 #include <Workphone/Interface/Procedural/ICityGenerator.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 #include <WPProcedural/CProceduralGenerator.hpp>
+#include <functional>
+#include <vector>
 #include <Workphone/Thread/RecursiveMutex.hpp>
 
 namespace workphone
@@ -17,9 +20,9 @@ namespace workphone
          * and other urban elements. It coordinates various generators including terrain,
          * blocks, meshes, and roads to create complete city environments.
          *
-         * The generator supports loading configuration from files and can manage multiple
-         * cities within a procedural world. It is thread-safe and can be used in
-         * multi-threaded environments.
+         * The generator forwards structured OSM XML properties to load hooks and manages multiple
+         * cities within a procedural world. Coordinator state is serialized; shared child generators need
+         * external synchronization when used outside this coordinator.
          *
          * @see ICityGenerator
          * @see CProceduralGenerator
@@ -80,7 +83,7 @@ namespace workphone
              *
              * This method orchestrates the city generation process by coordinating
              * all sub-generators (terrain, blocks, roads, meshes) to create a complete
-             * city environment. The generation process may be asynchronous.
+             * city environment. Child generators may be asynchronous; poll isFinished() to advance dependent stages.
              *
              * @note Ensure all required generators are set before calling this method.
              * @see isFinished()
@@ -94,6 +97,7 @@ namespace workphone
              *
              * @see generate()
              */
+            /// Polls child completion and advances queued stages. Exceptions leave the run unfinished.
             bool isFinished() const override;
 
             /**
@@ -224,7 +228,7 @@ namespace workphone
              * @see setFilePath()
              * @see loadFromFile()
              */
-            String getFilePath() const;
+            String getFilePath() const override;
 
             /**
              * @brief Sets the file path for configuration loading.
@@ -234,13 +238,13 @@ namespace workphone
              * @see getFilePath()
              * @see loadFromFile()
              */
-            void setFilePath( const String &filePath );
+            void setFilePath( const String &filePath ) override;
 
             /**
              * @brief Converts the OSM data to properties for serialization.
              *
-             * This method extracts relevant properties from the OSM data
-             * and returns them as a Properties object for further processing.
+             * This method preserves XML element names in the element property, attributes as strings,
+             * and nested elements as ordered child Properties. Throws on unreadable or malformed input.
              *
              * @return Smart pointer to the Properties object containing OSM data.
              */
@@ -254,9 +258,30 @@ namespace workphone
              */
             WP_CLASS_REGISTER_DECL;
 
+            /// Meshes produced by the most recent run, retained by the coordinator.
+            Array<SmartPtr<IMesh>> getGeneratedMeshes() const;
+
+        private:
+            struct Step
+            {
+                SmartPtr<IProceduralGenerator> generator;
+                std::function<void()> run;
+            };
+
+            void advance();
+            void requireIdle() const;
+            Array<SmartPtr<IProceduralCity>> collectCities() const;
+            std::vector<Step> m_steps;
+            size_t m_nextStep = 0;
+            SmartPtr<IProceduralGenerator> m_active;
+            bool m_running = false;
+            bool m_advancing = false;
+            bool m_finished = true;
+            Array<SmartPtr<IMesh>> m_generatedMeshes;
+
         protected:
             /** @brief Path to the configuration file for city generation. */
-            String m_filePath;
+            // File path storage is inherited from CProceduralGenerator.
 
             /** @brief Terrain generator responsible for creating the city's terrain. */
             SmartPtr<ITerrainGenerator> m_terrainGenerator;

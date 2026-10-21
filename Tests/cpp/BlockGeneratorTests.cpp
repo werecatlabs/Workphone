@@ -87,6 +87,8 @@ void checkBlockContracts()
     check( empty->equals( make_ptr<CCityBlock>() ), "empty boundary equality failed" );
 }
 
+void checkCityGeneratorContracts();
+
 int main()
 {
     TypeManager types;
@@ -96,6 +98,7 @@ int main()
         try
         {
             checkBlockContracts();
+            checkCityGeneratorContracts();
             auto generator = make_ptr<CBlockGenerator>();
             generator->generate();  // No city.
             generator->load( nullptr );

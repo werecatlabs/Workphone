@@ -1,10 +1,11 @@
-#include "WPProcedural/WPProceduralPCH.hpp"
-#include "WPProcedural/CityGeneratorDefault.hpp"
-#include "WPProcedural/CRoadGenerator.hpp"
-#include "WPProcedural/CProceduralCity.hpp"
-#include "WPProcedural/CRoadNetwork.hpp"
-#include "WPProcedural/MeshGeneratorDefault.hpp"
+#include <WPProcedural/WPProceduralPCH.hpp>
+#include <WPProcedural/CityGeneratorDefault.hpp>
 #include <Workphone/Workphone.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/xml_parser.hpp>
+#include <sstream>
+#include <stdexcept>
+#include <algorithm>
 
 namespace workphone
 {
@@ -13,354 +14,486 @@ namespace workphone
         WP_CLASS_REGISTER_DERIVED( workphone, CityGeneratorDefault,
                                    CProceduralGenerator<ICityGenerator> );
 
-        CityGeneratorDefault::CityGeneratorDefault()
+        namespace
         {
-        }
+            SmartPtr<Properties> xmlProperties( const String &element,
+                                                const boost::property_tree::ptree &tree )
+            {
+                auto result = workphone::make_ptr<Properties>();
+                result->setProperty( "element", element );
+                if( auto attributes = tree.get_child_optional( "<xmlattr>" ) )
+                {
+                    for( const auto &attribute : *attributes )
+                    {
+                        result->setProperty( String( attribute.first.c_str() ),
+                                             String( attribute.second.data().c_str() ) );
+                    }
+                }
+                if( !tree.data().empty() )
+                {
+                    result->setProperty( "value", String( tree.data().c_str() ) );
+                }
+                for( const auto &child : tree )
+                {
+                    if( child.first != "<xmlattr>" && child.first != "<xmlcomment>" )
+                    {
+                        result->addChild( xmlProperties( String( child.first.c_str() ), child.second ) );
+                    }
+                }
+                return result;
+            }
+        }  // namespace
+
+        CityGeneratorDefault::CityGeneratorDefault() = default;
 
         CityGeneratorDefault::~CityGeneratorDefault()
         {
             unload( nullptr );
         }
 
+        void CityGeneratorDefault::requireIdle() const
+        {
+            if( m_running )
+            {
+                throw std::logic_error( "CityGeneratorDefault: generation is in progress" );
+            }
+        }
+
+        Array<SmartPtr<IProceduralCity>> CityGeneratorDefault::collectCities() const
+        {
+            auto cities = m_cities;
+            auto scenes = m_scenes;
+            if( m_proceduralWorld )
+            {
+                for( auto scene : m_proceduralWorld->getScenes() )
+                {
+                    if( scene && std::find( scenes.begin(), scenes.end(), scene ) == scenes.end() )
+                    {
+                        scenes.push_back( scene );
+                    }
+                }
+            }
+            for( auto scene : scenes )
+            {
+                if( !scene )
+                {
+                    continue;
+                }
+                for( auto city : scene->getCities() )
+                {
+                    if( city && std::find( cities.begin(), cities.end(), city ) == cities.end() )
+                    {
+                        cities.push_back( city );
+                    }
+                }
+            }
+            return cities;
+        }
+
         void CityGeneratorDefault::loadFromFile( const String &filePath )
         {
-            //try
-            //{
-            //    auto applicationManager = core::IApplicationManager::instance();
-            //    WP_ASSERT( applicationManager );
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            auto properties = osmDataToProperties( filePath );
+            const auto cities = collectCities();
+            // Parse successfully before changing the configured path or calling clients.
+            for( auto city : cities )
+            {
+                city->load( properties );
+            }
+            for( auto city : cities )
+            {
+                if( m_roadGenerator )
+                {
+                    m_roadGenerator->setCity( city );
+                    m_roadGenerator->load( properties );
+                }
+                if( m_blockGenerator )
+                {
+                    m_blockGenerator->setCity( city );
+                    m_blockGenerator->load( properties );
+                }
+            }
+            if( m_terrainGenerator )
+            {
+                m_terrainGenerator->load( properties );
+            }
+            if( m_meshGenerator )
+            {
+                m_meshGenerator->load( properties );
+            }
+            m_filePath = filePath;
+            setLoadingState( LoadingState::Loaded );
+        }
 
-            //    auto fileSystem = applicationManager->getFileSystem();
-            //    WP_ASSERT( fileSystem );
-
-            //    auto text = fileSystem->readAllText( filePath );
-            //    if( !StringUtil::isNullOrEmpty( text ) )
-            //    {
-            //        text =
-            //            StringUtil::replaceAll( text, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "" );
-
-            //        auto pData = fb::make_ptr<Data<data::osm>>();
-            //        auto data = pData->getDataAsType<data::osm>();
-            //        DataUtil::parseXML( text, data );
-
-            //        auto jsonData = DataUtil::toString( data );
-            //        auto fileName = Path::getFileNameWithoutExtension( filePath );
-            //        fileSystem->writeAllText( fileName + ".osmjson", jsonData );
-
-            //        for( auto city : m_cities )
-            //        {
-            //            city->load( pData );
-            //        }
-
-            //        auto roadGenerator = getRoadGenerator();
-            //        if( roadGenerator )
-            //        {
-            //            for( auto city : m_cities )
-            //            {
-            //                roadGenerator->setCity( city );
-            //                roadGenerator->load( pData );
-            //            }
-            //        }
-
-            //        auto blockGenerator = getBlockGenerator();
-            //        if( blockGenerator )
-            //        {
-            //            for( auto city : m_cities )
-            //            {
-            //                blockGenerator->setCity( city );
-            //                // blockGenerator->load(data);
-            //            }
-            //        }
-            //    }
-            //}
-            //catch( std::exception &e )
-            //{
-            //    WP_LOG_EXCEPTION( e );
-            //}
+        void CityGeneratorDefault::load( SmartPtr<ISharedObject> data )
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            if( !m_filePath.empty() )
+            {
+                loadFromFile( m_filePath );
+                return;
+            }
+            const auto cities = collectCities();
+            for( auto city : cities )
+            {
+                city->load( data );
+            }
+            if( m_terrainGenerator )
+            {
+                m_terrainGenerator->load( data );
+            }
+            if( m_meshGenerator )
+            {
+                m_meshGenerator->load( data );
+            }
+            for( auto city : cities )
+            {
+                if( m_roadGenerator )
+                {
+                    m_roadGenerator->setCity( city );
+                    m_roadGenerator->load( data );
+                }
+                if( m_blockGenerator )
+                {
+                    m_blockGenerator->setCity( city );
+                    m_blockGenerator->load( data );
+                }
+            }
+            setLoadingState( LoadingState::Loaded );
         }
 
         void CityGeneratorDefault::unload( SmartPtr<ISharedObject> data )
         {
-            try
-            {
-                if( m_terrainGenerator )
-                {
-                    m_terrainGenerator->unload( nullptr );
-                    m_terrainGenerator = nullptr;
-                }
-
-                if( m_proceduralWorld )
-                {
-                    m_proceduralWorld->unload( nullptr );
-                    m_proceduralWorld = nullptr;
-                }
-
-                if( m_blockGenerator )
-                {
-                    m_blockGenerator->unload( nullptr );
-                    m_blockGenerator = nullptr;
-                }
-
-                if( m_meshGenerator )
-                {
-                    m_meshGenerator->unload( nullptr );
-                    m_meshGenerator = nullptr;
-                }
-
-                if( m_roadGenerator )
-                {
-                    m_roadGenerator->unload( nullptr );
-                    m_roadGenerator = nullptr;
-                }
-
-                for( auto scene : m_scenes )
-                {
-                    scene->unload( nullptr );
-                }
-
-                m_scenes.clear();
-
-                for( auto city : m_cities )
-                {
-                    city->unload( nullptr );
-                }
-
-                m_cities.clear();
-
-                CProceduralGenerator<ICityGenerator>::unload( data );
-            }
-            catch( std::exception &e )
-            {
-                WP_LOG_EXCEPTION( e );
-            }
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            // Releasing a coordinator must not unload an externally owned world or child generator.
+            m_steps.clear();
+            m_active = nullptr;
+            m_running = false;
+            m_finished = true;
+            m_nextStep = 0;
+            m_generatedMeshes.clear();
+            m_terrainGenerator = nullptr;
+            m_roadGenerator = nullptr;
+            m_blockGenerator = nullptr;
+            m_meshGenerator = nullptr;
+            m_proceduralWorld = nullptr;
+            m_scenes.clear();
+            m_cities.clear();
+            m_input = nullptr;
+            m_output = nullptr;
+            m_parent = nullptr;
+            setLoadingState( LoadingState::Unloaded );
         }
 
         void CityGeneratorDefault::generate()
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            auto fileSystem = applicationManager->getFileSystem();
-
-            // auto terrainGenerator = getTerrainGenerator();
-            // if (terrainGenerator)
-            //{
-            //	auto scenes = m_proceduralWorld->getScenes();
-            //	for (auto scene : scenes)
-            //	{
-            //		terrainGenerator->setProceduralScene(scene);
-            //		terrainGenerator->generate();
-            //		terrainGenerator->setProceduralScene(nullptr);
-            //	}
-            // }
-
-            // SmartPtr<IProceduralCity> city = new City;
-            // setCity(city);
-
-            // SmartPtr<IRoadNetwork> roadNetwork = new CRoadNetwork;
-            // city->setRoadNetwork(roadNetwork);
-
-            // Array<SmartPtr<IRoadNode>> nodes;
-
-            // for ( u32 i = 0; i < 10; ++i )
-            //{
-            //	SmartPtr<IRoadNode> node = new RoadNode;
-            //	nodes.push_back(node);
-
-            //	Vector3F position = Vector3F::UNIT_Z * 10 * i;
-            //	node->setPosition(position);
-            //}
-
-            // roadNetwork->setNodes(nodes);
-
-            if( m_roadGenerator )
-            {
-                for( auto city : m_cities )
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_steps.clear();
+            m_generatedMeshes.clear();
+            m_nextStep = 0;
+            m_finished = false;
+            auto scenes = m_scenes;
+            auto cities = m_cities;
+            auto appendUnique = []( auto &items, const auto &item ) {
+                if( item && std::find( items.begin(), items.end(), item ) == items.end() )
                 {
-                    m_roadGenerator->setCity( city );
-                    m_roadGenerator->generate();
+                    items.push_back( item );
+                }
+            };
+            if( m_proceduralWorld )
+            {
+                for( auto scene : m_proceduralWorld->getScenes() )
+                {
+                    appendUnique( scenes, scene );
                 }
             }
-
-            auto blockGenerator = getBlockGenerator();
-            if( blockGenerator )
+            for( auto scene : scenes )
             {
-                blockGenerator->generate();
+                for( auto city : scene->getCities() )
+                {
+                    appendUnique( cities, city );
+                }
+                if( auto terrain = m_terrainGenerator )
+                {
+                    m_steps.push_back( { terrain, [terrain, scene]() mutable {
+                                            terrain->setProceduralScene( scene );
+                                            terrain->generate();
+                                        } } );
+                    if( auto mesh = m_meshGenerator )
+                    {
+                        m_steps.push_back(
+                            { mesh, [this, terrain, mesh]() mutable {
+                                 if( auto data = terrain->getTerrain() )
+                                 {
+                                     auto result = mesh->generateFromTerrain( data );
+                                     if( !result )
+                                     {
+                                         throw std::runtime_error(
+                                             "CityGeneratorDefault: terrain mesh generation failed" );
+                                     }
+                                     m_generatedMeshes.push_back( result );
+                                 }
+                             } } );
+                    }
+                }
+            }
+            for( auto city : cities )
+            {
+                if( auto road = m_roadGenerator )
+                {
+                    m_steps.push_back( { road, [road, city]() mutable {
+                                            road->setCity( city );
+                                            road->generate();
+                                        } } );
+                }
+                if( auto block = m_blockGenerator )
+                {
+                    m_steps.push_back( { block, [block, city]() mutable {
+                                            block->setCity( city );
+                                            block->generate();
+                                        } } );
+                }
+                if( auto mesh = m_meshGenerator )
+                {
+                    m_steps.push_back(
+                        { mesh, [this, mesh, city]() mutable {
+                             if( auto network = city->getRoadNetwork() )
+                             {
+                                 if( !network->getRoads().empty() )
+                                 {
+                                     auto result = mesh->generate( network );
+                                     if( !result )
+                                     {
+                                         throw std::runtime_error(
+                                             "CityGeneratorDefault: road mesh generation failed" );
+                                     }
+                                     m_generatedMeshes.push_back( result );
+                                 }
+                             }
+                             Array<SmartPtr<IProceduralObject>> objects;
+                             for( auto block : city->getBlocks() )
+                             {
+                                 if( block )
+                                 {
+                                     objects.push_back( block );
+                                 }
+                             }
+                             if( !objects.empty() )
+                             {
+                                 auto result = mesh->generateFromObjects( objects );
+                                 if( !result )
+                                 {
+                                     throw std::runtime_error(
+                                         "CityGeneratorDefault: block mesh generation failed" );
+                                 }
+                                 m_generatedMeshes.push_back( result );
+                             }
+                         } } );
+                }
+            }
+            m_running = true;
+            advance();
+        }
+
+        void CityGeneratorDefault::advance()
+        {
+            if( m_advancing )
+            {
+                return;
+            }
+            m_advancing = true;
+
+            struct Guard
+            {
+                bool &flag;
+
+                ~Guard()
+                {
+                    flag = false;
+                }
+            } guard{ m_advancing };
+
+            try
+            {
+                while( m_running )
+                {
+                    if( m_active && !m_active->isFinished() )
+                    {
+                        return;
+                    }
+                    m_active = nullptr;
+                    if( m_nextStep == m_steps.size() )
+                    {
+                        m_running = false;
+                        m_finished = true;
+                        m_steps.clear();
+                        return;
+                    }
+                    // Copy the action so reentrant queries cannot invalidate its storage.
+                    auto step = m_steps[m_nextStep++];
+                    m_active = step.generator;
+                    step.run();
+                }
+            }
+            catch( ... )
+            {
+                m_running = false;
+                m_active = nullptr;
+                m_steps.clear();
+                throw;
             }
         }
 
         bool CityGeneratorDefault::isFinished() const
         {
-            return true;
-        }
-
-        SmartPtr<ITerrainGenerator> CityGeneratorDefault::getTerrainGenerator() const
-        {
-            return m_terrainGenerator;
-        }
-
-        void CityGeneratorDefault::setTerrainGenerator( SmartPtr<ITerrainGenerator> terrainGenerator )
-        {
-            m_terrainGenerator = terrainGenerator;
-
-            if( m_terrainGenerator )
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            if( m_running )
             {
-                auto parentGenerator = getSharedFromThis<IProceduralGenerator>();
-                m_terrainGenerator->setParent( parentGenerator );
+                const_cast<CityGeneratorDefault *>( this )->advance();
             }
+            return m_finished;
         }
 
-        SmartPtr<IBlockGenerator> CityGeneratorDefault::getBlockGenerator() const
+        SmartPtr<Properties> CityGeneratorDefault::osmDataToProperties( const String &filePath ) const
         {
-            return m_blockGenerator;
-        }
-
-        void CityGeneratorDefault::setBlockGenerator( SmartPtr<IBlockGenerator> blockGenerator )
-        {
-            m_blockGenerator = blockGenerator;
-        }
-
-        SmartPtr<IProceduralWorld> CityGeneratorDefault::getProceduralWorld() const
-        {
-            return m_proceduralWorld;
-        }
-
-        void CityGeneratorDefault::setProceduralWorld( SmartPtr<IProceduralWorld> proceduralWorld )
-        {
-            m_proceduralWorld = proceduralWorld;
-        }
-
-        // void CityGeneratorDefault::addScene(SmartPtr<IProceduralScene> scene)
-        //{
-        //	m_scenes.push_back(scene);
-        // }
-
-        // void CityGeneratorDefault::removeScene(SmartPtr<IProceduralScene> scene)
-        //{
-        //	auto it = std::find(m_scenes.begin(), m_scenes.end(), scene);
-        //	if (it != m_scenes.end())
-        //	{
-        //		m_scenes.erase(it);
-        //	}
-        // }
-
-        // Array<SmartPtr<IProceduralScene>> CityGeneratorDefault::getScenes() const
-        //{
-        //	return m_scenes;
-        // }
-
-        // void CityGeneratorDefault::setScenes(Array<SmartPtr<IProceduralScene>> scenes)
-        //{
-        //	m_scenes = scenes;
-        // }
-
-        void CityGeneratorDefault::setRoadGenerator( SmartPtr<IRoadGenerator> roadGenerator )
-        {
-            // if (m_roadGenerator)
-            //{
-            //	m_roadGenerator->setCityGenerator(nullptr);
-            // }
-
-            m_roadGenerator = roadGenerator;
-
-            // if (m_roadGenerator)
-            //{
-            //	SmartPtr<ISharedObject> pThis = shared_from_this();
-            //	SmartPtr<ICityGenerator> pThisCityGenerator =
-            // fb::static_pointer_cast<ICityGenerator>(pThis);
-            //	m_roadGenerator->setCityGenerator(pThisCityGenerator);
-            // }
-
-            if( m_roadGenerator )
+            if( filePath.empty() )
             {
-                auto parentGenerator = getSharedFromThis<IProceduralGenerator>();
-                m_roadGenerator->setParent( parentGenerator );
+                throw std::invalid_argument( "CityGeneratorDefault: empty OSM path" );
             }
-        }
-
-        SmartPtr<IRoadGenerator> CityGeneratorDefault::getRoadGenerator() const
-        {
-            return m_roadGenerator;
+            auto app = core::IApplicationManager::instancePtr();
+            if( !app || !app->getFileSystem() )
+            {
+                throw std::runtime_error( "CityGeneratorDefault: file system unavailable" );
+            }
+            auto text = app->getFileSystem()->readAllText( filePath );
+            if( text.empty() )
+            {
+                throw std::runtime_error( "CityGeneratorDefault: empty or missing OSM file" );
+            }
+            std::istringstream stream( text.c_str() );
+            boost::property_tree::ptree document;
+            boost::property_tree::read_xml( stream, document,
+                                            boost::property_tree::xml_parser::trim_whitespace );
+            auto osm = document.get_child_optional( "osm" );
+            if( !osm )
+            {
+                throw std::invalid_argument( "CityGeneratorDefault: expected an osm XML root" );
+            }
+            return xmlProperties( "osm", *osm );
         }
 
         const Array<SmartPtr<IProceduralCity>> CityGeneratorDefault::getCities() const
         {
-            // RecursiveMutex::ScopedLock lock(Mutex);
+            RecursiveMutex::ScopedLock lock( m_mutex );
             return m_cities;
-        }
-
-        void CityGeneratorDefault::removeCity( SmartPtr<IProceduralCity> city )
-        {
         }
 
         void CityGeneratorDefault::addCity( SmartPtr<IProceduralCity> city )
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
-            m_cities.push_back( city );
+            requireIdle();
+            if( city && std::find( m_cities.begin(), m_cities.end(), city ) == m_cities.end() )
+            {
+                m_cities.push_back( city );
+            }
+        }
+
+        void CityGeneratorDefault::removeCity( SmartPtr<IProceduralCity> city )
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            auto it = std::find( m_cities.begin(), m_cities.end(), city );
+            if( it != m_cities.end() )
+            {
+                m_cities.erase( it );
+            }
         }
 
         String CityGeneratorDefault::getFilePath() const
         {
+            RecursiveMutex::ScopedLock lock( m_mutex );
             return m_filePath;
         }
 
-        void CityGeneratorDefault::setFilePath( const String &filePath )
+        void CityGeneratorDefault::setFilePath( const String &path )
         {
-            m_filePath = filePath;
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_filePath = path;
         }
 
-        void CityGeneratorDefault::load( SmartPtr<ISharedObject> data )
+        Array<SmartPtr<IMesh>> CityGeneratorDefault::getGeneratedMeshes() const
         {
-            auto filePath = getFilePath();
-            loadFromFile( filePath );
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            return m_generatedMeshes;
         }
 
-        SmartPtr<Properties> CityGeneratorDefault::osmDataToProperties( const String &filePath ) const
+        SmartPtr<ITerrainGenerator> CityGeneratorDefault::getTerrainGenerator() const
         {
-            try
-            {
-                // Get the application manager instance
-                auto applicationManager = core::IApplicationManager::instance();
-                WP_ASSERT( applicationManager );
-
-                // Get the file system
-                auto fileSystem = applicationManager->getFileSystem();
-                WP_ASSERT( fileSystem );
-
-                // Read the OSM file content
-                auto text = fileSystem->readAllText( filePath );
-                if( StringUtil::isNullOrEmpty( text ) )
-                {
-                    WP_LOG_ERROR( "File is empty or invalid: " + filePath );
-                    return nullptr;
-                }
-
-                // Parse the XML content
-                text = StringUtil::replaceAll( text, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "" );
-                //auto osmData = workphone::make_ptr<Data<data::osm>>();
-                //auto data = osmData->getDataAsType<data::osm>();
-                //DataUtil::parseXML( text, data );
-
-                // Convert the parsed OSM data to a Properties object
-                auto properties = workphone::make_ptr<Properties>();
-                //auto jsonData = DataUtil::toString( data );
-                //properties->fromJSON( jsonData );
-
-                return properties;
-            }
-            catch( const std::exception &e )
-            {
-                WP_LOG_EXCEPTION( e );
-            }
-
-            return nullptr;
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            return m_terrainGenerator;
         }
 
-        void CityGeneratorDefault::setMeshGenerator( SmartPtr<IMeshGenerator> meshGenerator )
+        void CityGeneratorDefault::setTerrainGenerator( SmartPtr<ITerrainGenerator> value )
         {
-            m_meshGenerator = meshGenerator;
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_terrainGenerator = value;
+        }
+
+        SmartPtr<IRoadGenerator> CityGeneratorDefault::getRoadGenerator() const
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            return m_roadGenerator;
+        }
+
+        void CityGeneratorDefault::setRoadGenerator( SmartPtr<IRoadGenerator> value )
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_roadGenerator = value;
+        }
+
+        SmartPtr<IBlockGenerator> CityGeneratorDefault::getBlockGenerator() const
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            return m_blockGenerator;
+        }
+
+        void CityGeneratorDefault::setBlockGenerator( SmartPtr<IBlockGenerator> value )
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_blockGenerator = value;
         }
 
         SmartPtr<IMeshGenerator> CityGeneratorDefault::getMeshGenerator() const
         {
+            RecursiveMutex::ScopedLock lock( m_mutex );
             return m_meshGenerator;
+        }
+
+        void CityGeneratorDefault::setMeshGenerator( SmartPtr<IMeshGenerator> value )
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_meshGenerator = value;
+        }
+
+        SmartPtr<IProceduralWorld> CityGeneratorDefault::getProceduralWorld() const
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            return m_proceduralWorld;
+        }
+
+        void CityGeneratorDefault::setProceduralWorld( SmartPtr<IProceduralWorld> value )
+        {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            requireIdle();
+            m_proceduralWorld = value;
         }
     }  // namespace procedural
 }  // namespace workphone

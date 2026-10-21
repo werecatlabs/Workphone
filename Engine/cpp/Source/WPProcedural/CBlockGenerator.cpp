@@ -281,16 +281,23 @@ namespace workphone
             }
             // Build and validate first so malformed input preserves the previous result.
             auto blocks = buildBlocks( network );
-            m_generatedBlocks.reserve( blocks.size() );
-            for( auto block : m_generatedBlocks )
+            auto previous = std::find_if( m_generatedBlocks.begin(), m_generatedBlocks.end(),
+                                          [&]( const auto &entry ) { return entry.city == m_city; } );
+            if( previous == m_generatedBlocks.end() )
+            {
+                m_generatedBlocks.push_back( CityBlocks{ m_city, {} } );
+                previous = m_generatedBlocks.end() - 1;
+            }
+            previous->blocks.reserve( blocks.size() );
+            for( auto block : previous->blocks )
             {
                 m_city->removeBlock( block );
             }
-            m_generatedBlocks.clear();
+            previous->blocks.clear();
             for( auto block : blocks )
             {
                 m_city->addBlock( block );
-                m_generatedBlocks.push_back( block );
+                previous->blocks.push_back( block );
             }
         }
 
@@ -301,10 +308,6 @@ namespace workphone
 
         void CBlockGenerator::setCity( SmartPtr<IProceduralCity> city )
         {
-            if( city != m_city )
-            {
-                m_generatedBlocks.clear();
-            }
             m_city = city;
         }
 

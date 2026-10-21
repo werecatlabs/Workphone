@@ -426,30 +426,40 @@ namespace workphone::scene
     // todo move
     void ProceduralRaceScene::applyAerodynamics()
     {
-        auto body = getActor()->getComponent<Rigidbody>();
+        auto actor = getActor();
+        auto body = actor->getComponent<Rigidbody>();
         auto velocity = body->getLinearVelocity();
-        velocity.y = 0;
+        velocity.y = real_Num(0.0);
+
         const auto speed = velocity.length();
         const auto &aero = m_assets.vehicle.physics.aero;
-        auto force = -velocity * static_cast<float>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                                     aero.dragCoefficient * speed );
-        force.y = -static_cast<float>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                       aero.downforceCoefficient * speed * speed );
+        auto force =
+            -velocity * static_cast<real_Num>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
+                                               aero.dragCoefficient * speed );
+        force.y = -static_cast<real_Num>( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
+                                          aero.downforceCoefficient * speed * speed );
         body->addForce( force );
 
-        auto vehicle = getCarController()->getVehicleController();
-        const auto acceleration =
-            9.81f - force.y / static_cast<float>( m_assets.vehicle.physics.massProperties.massKg );
-        for( u32 i = 0; i < 4; ++i )
+        if( auto carController = getCarController() )
         {
-            auto wheel = vehicle->getWheelController( i );
-            wheel->setContactAcceleration( acceleration );
+            if( auto vehicle = carController->getVehicleController() )
+            {
+                const auto acceleration =
+                    real_Num( 9.81 ) -
+                    force.y / static_cast<real_Num>( m_assets.vehicle.physics.massProperties.massKg );
+                for( u32 i = 0; i < 4; ++i )
+                {
+                    auto wheel = vehicle->getWheelController( i );
+                    wheel->setContactAcceleration( acceleration );
+                }
+            }
         }
     }
 
     void ProceduralRaceScene::updateSurfaceGrip()
     {
-        auto p = getActor()->getPosition();
+        auto actor = getActor();
+        auto p = actor->getPosition();
 
         float roadDistance;
 
@@ -471,13 +481,19 @@ namespace workphone::scene
         }
 
         m_surfaceGrip = grip;
-        auto vehicle = getCarController()->getVehicleController();
-        for( u32 i = 0; i < 4; ++i )
+
+        if( auto carController = getCarController() )
         {
-            auto wheel = vehicle->getWheelController( i );
-            // Preserve the authored tyre multiplier when changing surface; the old
-            // path silently replaced 1.25 with 1.0 on the first physics tick.
-            wheel->setGrip( grip * 1.25f );
+            if( auto vehicle = carController->getVehicleController() )
+            {
+                for( u32 i = 0; i < 4; ++i )
+                {
+                    auto wheel = vehicle->getWheelController( i );
+                    // Preserve the authored tyre multiplier when changing surface; the old
+                    // path silently replaced 1.25 with 1.0 on the first physics tick.
+                    wheel->setGrip( grip * 1.25f );
+                }
+            }
         }
     }
 
@@ -497,6 +513,7 @@ namespace workphone::scene
             {
                 continue;
             }
+
             // Reuse the contact solver's raycast result instead of casting four
             // more rays and allocating four hit objects every physics step.
             const auto extension =

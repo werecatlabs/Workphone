@@ -540,7 +540,21 @@ if(WP_BUILD_TESTS AND TARGET Workphone)
 endif()
 
 if(WP_BUILD_TESTS AND TARGET WPProcedural)
-    add_executable(WPBlockGeneratorTests BlockGeneratorTests.cpp)
+    add_executable(WPProceduralCityTests
+        ProceduralCityTestMain.cpp UnitTests/ProceduralCityTests.cpp)
+    target_include_directories(WPProceduralCityTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_compile_definitions(WPProceduralCityTests PRIVATE BOOST_ALL_NO_LIB)
+    target_link_libraries(WPProceduralCityTests PRIVATE
+        $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
+    add_dependencies(WPProceduralCityTests Workphone WPProcedural)
+    set_target_properties(WPProceduralCityTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPProcedural.city_production COMMAND WPProceduralCityTests --report_level=detailed)
+    set_tests_properties(WPProcedural.city_production PROPERTIES
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPProceduralCityTests>"
+        LABELS "procedural;city;headless" TIMEOUT 120)
+
+    add_executable(WPBlockGeneratorTests BlockGeneratorTests.cpp CityGeneratorTests.cpp)
     target_include_directories(WPBlockGeneratorTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
     target_compile_definitions(WPBlockGeneratorTests PRIVATE BOOST_ALL_NO_LIB)
@@ -552,4 +566,3 @@ if(WP_BUILD_TESTS AND TARGET WPProcedural)
     set_tests_properties(WPProcedural.block_generator PROPERTIES
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPBlockGeneratorTests>" TIMEOUT 60)
 endif()
-
