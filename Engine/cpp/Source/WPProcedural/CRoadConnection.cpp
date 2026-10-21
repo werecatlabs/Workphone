@@ -54,13 +54,21 @@ namespace workphone
             {
                 using EType = IRoadConnection::EType;
                 if( str == "T_Crossing" )
+                {
                     return EType::T_Crossing;
+                }
                 if( str == "X_Crossing" )
+                {
                     return EType::X_Crossing;
+                }
                 if( str == "L_Connection" )
+                {
                     return EType::L_Connection;
+                }
                 if( str == "RoundingAbout" )
+                {
                     return EType::RoundingAbout;
+                }
                 return EType::None;
             }
         }  // anonymous namespace
@@ -84,18 +92,23 @@ namespace workphone
             {
                 auto previous = getUserData( id );
                 if( previous == userData )
+                {
                     return;
+                }
                 delete static_cast<IntersectionResult *>( previous );
             }
             IObject::setUserData( id, userData );
         }
+
         void CRoadConnection::unload( SmartPtr<ISharedObject> data )
         {
             try
             {
                 const auto resultId = StringUtil::getHash( "WPIntersectionResult" );
                 if( getUserData( resultId ) )
+                {
                     setUserData( resultId, nullptr );
+                }
                 for( auto &connData : m_connectionData )
                 {
                     if( connData )

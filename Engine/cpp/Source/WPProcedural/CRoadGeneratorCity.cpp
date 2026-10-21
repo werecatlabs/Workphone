@@ -77,13 +77,19 @@ namespace workphone
             RoadClass classifyHorizontalRoad( const WPNoise &noise, s32 row, s32 gridY )
             {
                 if( row == gridY / 2 )
+                {
                     return RoadClass::Arterial;
+                }
                 if( row == 0 || row == gridY - 1 )
+                {
                     return RoadClass::Arterial;
+                }
 
                 real_Num r = cellRand( noise, row, 0, 100 );
                 if( r < kAlleyProbability )
+                {
                     return RoadClass::Alley;
+                }
                 return RoadClass::Residential;
             }
 
@@ -93,15 +99,23 @@ namespace workphone
             RoadClass classifyVerticalRoad( const WPNoise &noise, s32 col, s32 gridX )
             {
                 if( col == gridX / 2 )
+                {
                     return RoadClass::Arterial;
+                }
                 if( col == 0 || col == gridX - 1 )
+                {
                     return RoadClass::Arterial;
+                }
 
                 real_Num r = cellRand( noise, 0, col, 200 );
                 if( r < kAlleyProbability * 0.5f )
+                {
                     return RoadClass::Alley;
+                }
                 if( r < kAlleyProbability * 0.5f + 0.08f )
+                {
                     return RoadClass::Footway;
+                }
                 return RoadClass::Residential;
             }
 
@@ -119,6 +133,7 @@ namespace workphone
                 real_Num z = -halfExtentZ + row * kBaseBlockSpacing + rowOffsets[row];
                 return Vector3<real_Num>( x, 0.0f, z );
             }
+
             // -----------------------------------------------------------------
             // Build a single road segment and add it to the roads array.
             // -----------------------------------------------------------------
@@ -155,7 +170,9 @@ namespace workphone
 
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
                 if( !road )
+                {
                     return br;
+                }
 
                 String name = String( namePrefix ) + std::to_string( index );
                 road->setName( name );
@@ -168,9 +185,13 @@ namespace workphone
                 SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                 SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
                 if( startNode )
+                {
                     startNode->setPosition( start );
+                }
                 if( endNode )
+                {
                     endNode->setPosition( end );
+                }
                 if( startNode && endNode )
                 {
                     startNode->connect( endNode );
@@ -189,6 +210,7 @@ namespace workphone
                 br.endNode = endNode;
                 return br;
             }
+
             // -----------------------------------------------------------------
             // Build an intersection at (col, row) and return the CRoadConnection.
             // -----------------------------------------------------------------
@@ -237,13 +259,21 @@ namespace workphone
                 bool hasNorth = ( row < gridY - 1 );
 
                 if( hasWest )
+                {
                     ii.approaches.push_back( Vector3<real_Num>( -1, 0, 0 ) );
+                }
                 if( hasEast )
+                {
                     ii.approaches.push_back( Vector3<real_Num>( 1, 0, 0 ) );
+                }
                 if( hasSouth )
+                {
                     ii.approaches.push_back( Vector3<real_Num>( 0, 0, -1 ) );
+                }
                 if( hasNorth )
+                {
                     ii.approaches.push_back( Vector3<real_Num>( 0, 0, 1 ) );
+                }
 
                 s32 numApproaches = static_cast<s32>( ii.approaches.size() );
 
@@ -287,9 +317,13 @@ namespace workphone
                 ispec.approaches = ii.approaches;
 
                 if( ii.type == IntersectionType::Roundabout )
+                {
                     ispec.radius = 10.0f;
+                }
                 else
+                {
                     ispec.radius = WPRoadSystem::getRoadWidth( ii.roadClass ) * 0.5f + 2.0f;
+                }
 
                 IntersectionResult intResult;
                 switch( ii.type )
@@ -316,17 +350,26 @@ namespace workphone
                 if( approachResult.surface.vertices.size() > 0 )
                 {
                     for( const auto &v : approachResult.surface.vertices )
+                    {
                         intResult.surface.vertices.push_back( v );
+                    }
                     for( u32 idx : approachResult.surface.indices )
+                    {
                         intResult.surface.indices.push_back( idx );
+                    }
                 }
                 for( const auto &v : approachResult.markings.vertices )
+                {
                     intResult.markings.vertices.push_back( v );
+                }
                 for( u32 idx : approachResult.markings.indices )
+                {
                     intResult.markings.indices.push_back( idx );
-                ;
+                };
                 if( !conn )
+                {
                     return nullptr;
+                }
 
                 String name =
                     "Intersection_" + std::to_string( ii.row ) + "_" + std::to_string( ii.col );
@@ -367,6 +410,7 @@ namespace workphone
             }
 
         }  // end anonymous namespace
+
         // ===================================================================
         // Constructor / destructor
         // ===================================================================
@@ -427,9 +471,13 @@ namespace workphone
             colOffsets.resize( kGridSizeX );
             rowOffsets.resize( kGridSizeY );
             for( s32 c = 0; c < kGridSizeX; ++c )
+            {
                 colOffsets[c] = ( layoutNoise.noise3( c * 1.7f, 0, 50 ) - 0.5f ) * 2.0f * kBlockJitter;
+            }
             for( s32 r = 0; r < kGridSizeY; ++r )
+            {
                 rowOffsets[r] = ( layoutNoise.noise3( 0, r * 1.3f, 60 ) - 0.5f ) * 2.0f * kBlockJitter;
+            }
 
             const real_Num halfExtentX = kBaseBlockSpacing * ( kGridSizeX - 1 ) * 0.5f;
             const real_Num halfExtentZ = kBaseBlockSpacing * ( kGridSizeY - 1 ) * 0.5f;
@@ -439,7 +487,9 @@ namespace workphone
             Array<Array<Vector3<real_Num>>> intersections;
             intersections.resize( kGridSizeX );
             for( auto &col : intersections )
+            {
                 col.resize( kGridSizeY );
+            }
 
             for( s32 col = 0; col < kGridSizeX; ++col )
             {
@@ -455,9 +505,13 @@ namespace workphone
             hClasses.resize( kGridSizeY );
             vClasses.resize( kGridSizeX );
             for( s32 r = 0; r < kGridSizeY; ++r )
+            {
                 hClasses[r] = classifyHorizontalRoad( layoutNoise, r, kGridSizeY );
+            }
             for( s32 c = 0; c < kGridSizeX; ++c )
+            {
                 vClasses[c] = classifyVerticalRoad( layoutNoise, c, kGridSizeX );
+            }
 
             // ---------------------------------------------------------------
             // Build the AAA road system.
@@ -513,7 +567,9 @@ namespace workphone
             // Register everything with the road network.
             roadNetwork->addRoads( roads );
             for( auto &conn : connections )
+            {
                 roadNetwork->addRoadConnection( conn );
+            }
 
             roadNetwork->setupGraph();
         }

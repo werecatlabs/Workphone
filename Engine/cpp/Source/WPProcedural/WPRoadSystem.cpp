@@ -154,7 +154,9 @@ namespace workphone
             Vector3<real_Num> delta = spec.end - spec.start;
             real_Num length = delta.length();
             if( length < 0.1f )
+            {
                 return result;
+            }
 
             // Build the road surface
             result.roadSurface = buildRoadSurface( spec, width, length, 12, 32 );
@@ -173,11 +175,15 @@ namespace workphone
 
             // Build markings
             if( spec.generateMarkings )
+            {
                 result.markings = buildMarkings( spec, width, length );
+            }
 
             // Build dressing
             if( spec.generateDressing )
+            {
                 result.dressing = buildDressing( spec, width, length );
+            }
 
             // Build collision
             result.collision = buildCollision( spec, width, length );
@@ -276,7 +282,9 @@ namespace workphone
                     {
                         real_Num p = mNoise->worley2( x * 0.3f, z * 0.3f );
                         if( p < 0.08f )
+                        {
                             pothole = -0.04f * ( 0.08f - p ) / 0.08f;
+                        }
                     }
 
                     real_Num y = camber + rutL + rutR + wear + pothole;
@@ -344,13 +352,17 @@ namespace workphone
                 real_Num slabLen =
                     3.2f + ( mNoise->noise3( slabIndex * 7.3f, 0, spec.seed ) * 0.5f + 0.5f ) * 3.3f;
                 if( z + slabLen > length )
+                {
                     slabLen = length - z;
+                }
 
                 // Gap between slabs (sometimes a larger gap for a driveway)
                 real_Num gap = 0.06f;
                 real_Num gapTest = mNoise->noise3( slabIndex * 11.1f, 0, spec.seed + 1 );
                 if( gapTest < 0.12f )
+                {
                     gap = 0.6f + ( gapTest + 0.12f ) * 4.0f;  // driveway ramp gap
+                }
 
                 // Slab height variation (some slabs are slightly sunken)
                 real_Num slabH =
@@ -374,7 +386,9 @@ namespace workphone
                 real_Num cornerWear = 0.0f;
                 real_Num cornerTest = mNoise->noise3( slabIndex * 5.5f, 0, spec.seed + 3 );
                 if( cornerTest < 0.15f )
+                {
                     cornerWear = 0.8f;
+                }
 
                 Vector3<real_Num> colorMask(
                     0.5f + cornerWear * 0.3f,                         // r: wear
@@ -513,7 +527,9 @@ namespace workphone
 
                 u32 idx[8];
                 for( int j = 0; j < 8; ++j )
+                {
                     idx[j] = mesh.addVertex( v[j] );
+                }
 
                 // Top face
                 mesh.addTriangle( idx[4], idx[5], idx[6] );
@@ -560,7 +576,9 @@ namespace workphone
                     real_Num z0 = i * cycle;
                     real_Num z1 = z0 + dashLen;
                     if( z1 > length )
+                    {
                         break;
+                    }
 
                     // 4 vertices for the dash quad
                     RoadVertex v0;
@@ -727,7 +745,9 @@ namespace workphone
                     real_Num z = ( real_Num( i ) / numDrifts ) * length +
                                  ( mNoise->noise3( i * 3.1f, 0, seedOffset ) * 0.5f + 0.5f ) * 1.5f;
                     if( z > length )
+                    {
                         continue;
+                    }
 
                     // Position: just inside the kerb
                     real_Num x = side * ( hw - 0.3f - mNoise->noise3( i, 0, seedOffset + 1 ) * 0.5f );
@@ -1000,9 +1020,13 @@ namespace workphone
 
             // Offset to center
             for( auto &v : result.surface.vertices )
+            {
                 v.position = v.position + spec.center;
+            }
             for( auto &v : result.markings.vertices )
+            {
                 v.position = v.position + spec.center;
+            }
 
             return result;
         }
@@ -1095,9 +1119,13 @@ namespace workphone
 
             // Offset to center
             for( auto &v : result.surface.vertices )
+            {
                 v.position = v.position + spec.center;
+            }
             for( auto &v : result.centerIsland.vertices )
+            {
                 v.position = v.position + spec.center;
+            }
 
             result.surface.computeNormals();
             result.centerIsland.computeNormals();
@@ -1151,7 +1179,9 @@ namespace workphone
             }
 
             for( auto &v : result.surface.vertices )
+            {
                 v.position = v.position + spec.center;
+            }
 
             result.surface.computeNormals();
             return result;

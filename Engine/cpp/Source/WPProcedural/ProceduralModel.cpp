@@ -31,10 +31,25 @@ namespace workphone
 
         bool ProceduralMesh::hasGeometry() const
         {
-            if( vertices.empty() || indices.empty() || indices.size() % 3 != 0 ) return false;
+            if( vertices.empty() || indices.empty() || indices.size() % 3 != 0 )
+            {
+                return false;
+            }
             for( const auto &v : vertices )
-                if( !std::isfinite( v.position.x ) || !std::isfinite( v.position.y ) || !std::isfinite( v.position.z ) ) return false;
-            for( auto index : indices ) if( index >= vertices.size() ) return false;
+            {
+                if( !std::isfinite( v.position.x ) || !std::isfinite( v.position.y ) ||
+                    !std::isfinite( v.position.z ) )
+                {
+                    return false;
+                }
+            }
+            for( auto index : indices )
+            {
+                if( index >= vertices.size() )
+                {
+                    return false;
+                }
+            }
             return true;
         }
 
@@ -68,14 +83,23 @@ namespace workphone
         {
             boundsValid = false;
             bounds = AABB3F();
-            if( vertices.empty() ) return;
+            if( vertices.empty() )
+            {
+                return;
+            }
             for( const auto &vertex : vertices )
             {
                 const auto &p = vertex.position;
-                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) ) return;
+                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+                {
+                    return;
+                }
             }
             bounds = AABB3F( vertices.front().position );
-            for( const auto &vertex : vertices ) bounds.merge( vertex.position );
+            for( const auto &vertex : vertices )
+            {
+                bounds.merge( vertex.position );
+            }
             boundsValid = true;
         }
 
@@ -127,7 +151,8 @@ namespace workphone
                 }
                 return;
             }
-            if( !std::isfinite( offset.x ) || !std::isfinite( offset.y ) || !std::isfinite( offset.z ) || !other.hasGeometry() )
+            if( !std::isfinite( offset.x ) || !std::isfinite( offset.y ) || !std::isfinite( offset.z ) ||
+                !other.hasGeometry() )
             {
                 WP_LOG_ERROR( "ProceduralMesh::append - invalid source geometry rejected." );
                 return;

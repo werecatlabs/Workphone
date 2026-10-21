@@ -23,7 +23,9 @@ namespace workphone
         {
             u8 p[256];
             for( s32 i = 0; i < 256; ++i )
+            {
                 p[i] = static_cast<u8>( i );
+            }
 
             // Fisher-Yates shuffle using a deterministic LCG driven by mSeed
             u32 s = mSeed;
@@ -38,7 +40,9 @@ namespace workphone
 
             // Duplicate the table for wraparound indexing
             for( s32 i = 0; i < 512; ++i )
+            {
                 mPerm[i] = p[i & 255];
+            }
         }
 
         // -------------------------------------------------------------------
@@ -145,7 +149,9 @@ namespace workphone
                     real_Num ry = static_cast<real_Num>( dy ) + fy;
                     real_Num dist = std::sqrt( ( x - rx ) * ( x - rx ) + ( y - ry ) * ( y - ry ) );
                     if( dist < minDist )
+                    {
                         minDist = dist;
+                    }
                 }
             }
             return minDist;

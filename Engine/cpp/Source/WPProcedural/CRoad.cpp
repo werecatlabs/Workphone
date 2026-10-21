@@ -39,18 +39,23 @@ namespace workphone
             {
                 auto previous = getUserData( id );
                 if( previous == userData )
+                {
                     return;
+                }
                 delete static_cast<RoadSegmentResult *>( previous );
             }
             IObject::setUserData( id, userData );
         }
+
         void CRoad::unload( SmartPtr<ISharedObject> data )
         {
             try
             {
                 const auto resultId = StringUtil::getHash( "WPRoadSegmentResult" );
                 if( getUserData( resultId ) )
+                {
                     setUserData( resultId, nullptr );
+                }
                 for( auto &roadNode : m_roadNodes )
                 {
                     if( roadNode )

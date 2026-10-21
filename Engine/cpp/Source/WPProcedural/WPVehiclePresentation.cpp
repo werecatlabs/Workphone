@@ -27,7 +27,9 @@ namespace workphone
         {
             VehiclePresentationState state;
             for( std::size_t i = 0; i < 4; ++i )
+            {
                 state.wheels[i].hubPosition = physics.wheels[i].hubPosition;
+            }
             return state;
         }
 
@@ -46,15 +48,21 @@ namespace workphone
                 config.wheelBlurStartRadPerSec, config.wheelBlurFullRadPerSec
             };
             for( double value : configValues )
+            {
                 if( !std::isfinite( value ) )
+                {
                     return false;
+                }
+            }
             if( !std::isfinite( dt ) || dt <= 0.0 || dt > 0.25 ||
                 !std::isfinite( config.bodyResponsePerSecond ) ||
                 !std::isfinite( config.lightResponsePerSecond ) || config.bodyResponsePerSecond <= 0.0 ||
                 config.lightResponsePerSecond <= 0.0 || config.maximumPitchRad < 0.0 ||
                 config.maximumRollRad < 0.0 ||
                 config.wheelBlurFullRadPerSec <= config.wheelBlurStartRadPerSec )
+            {
                 return false;
+            }
             const double inputValues[] = { input.throttle,
                                            input.backfire,
                                            telemetry.longitudinalAccelerationMps2,
@@ -70,13 +78,21 @@ namespace workphone
                                            state.exhaustIntensity,
                                            state.damageSmokeIntensity };
             for( double value : inputValues )
+            {
                 if( !std::isfinite( value ) )
+                {
                     return false;
+                }
+            }
             for( const auto &wheel : dynamics.wheels )
+            {
                 if( !std::isfinite( wheel.angularVelocityRadPerSec ) ||
                     !std::isfinite( wheel.steerAngleRad ) ||
                     !std::isfinite( wheel.suspensionCompressionM ) )
+                {
                     return false;
+                }
+            }
 
             const double pitchTarget =
                 clamp( -telemetry.longitudinalAccelerationMps2 * config.pitchRadiansPerMps2,

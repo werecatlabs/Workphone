@@ -29,7 +29,9 @@ namespace workphone
             {
                 linear = linear < 0.0f ? 0.0f : ( linear > 1.0f ? 1.0f : linear );
                 if( linear <= 0.0031308f )
+                {
                     return linear * 12.92f;
+                }
                 return 1.055f * std::pow( linear, 1.0f / 2.4f ) - 0.055f;
             }
 
@@ -113,7 +115,9 @@ namespace workphone
 
             // Apply sRGB encoding to the linear albedo
             if( p.sRGB )
+            {
                 encodeSRGB( out.albedo );
+            }
 
             return out;
         }

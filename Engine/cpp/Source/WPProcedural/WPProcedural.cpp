@@ -46,7 +46,10 @@ namespace workphone
 
         void WPProcedural::load( SmartPtr<ISharedObject> data )
         {
-            if( isLoaded() ) return;
+            if( isLoaded() )
+            {
+                return;
+            }
             CSkyAtmosphere::setupTypeInfo();
             CTextureForge::setupTypeInfo();
             CVehicleAppearance::setupTypeInfo();
@@ -107,13 +110,53 @@ namespace workphone
         void WPProcedural::unload( SmartPtr<ISharedObject> data )
         {
             auto app = core::IApplicationManager::instancePtr();
-            if( !app || !app->getFactoryManager() ) return;
+            if( !app || !app->getFactoryManager() )
+            {
+                return;
+            }
             auto factories = app->getFactoryManager();
-            for( const auto *name :
-                 { "IRoadSystem", "ISkyAtmosphere", "ITextureForge", "IVehicleAppearance", "IVehicleDamage", "IVehicleDynamics", "IVehicleEffects", "IVehicleGenerator", "IVehicleGeometry", "IVehiclePhysics", "IVehiclePresentation", "CityGeneratorDefault", "CRoad", "CRoadElement", "CRoadSection", "CRoadNode", "CRoadNetwork", "CProceduralCity", "CProceduralManager", "CCityBlock", "CRoadConnection", "CRoadConnectionData", "CRoadMeshElement", "CBlockGenerator", "CProceduralScene", "CProceduralTerrain", "CProceduralTexture", "CProceduralWorld", "CRoadGenerator", "CRoadGeneratorCity", "CRoadGeneratorGrid", "CRoadHitPoint", "CTerrainGenerator", "CTerrainGeneratorDefault", "CWorldGenerator", "MeshFace", "MeshGeneratorDefault" } )
+            for( const auto *name : { "IRoadSystem",
+                                      "ISkyAtmosphere",
+                                      "ITextureForge",
+                                      "IVehicleAppearance",
+                                      "IVehicleDamage",
+                                      "IVehicleDynamics",
+                                      "IVehicleEffects",
+                                      "IVehicleGenerator",
+                                      "IVehicleGeometry",
+                                      "IVehiclePhysics",
+                                      "IVehiclePresentation",
+                                      "CityGeneratorDefault",
+                                      "CRoad",
+                                      "CRoadElement",
+                                      "CRoadSection",
+                                      "CRoadNode",
+                                      "CRoadNetwork",
+                                      "CProceduralCity",
+                                      "CProceduralManager",
+                                      "CCityBlock",
+                                      "CRoadConnection",
+                                      "CRoadConnectionData",
+                                      "CRoadMeshElement",
+                                      "CBlockGenerator",
+                                      "CProceduralScene",
+                                      "CProceduralTerrain",
+                                      "CProceduralTexture",
+                                      "CProceduralWorld",
+                                      "CRoadGenerator",
+                                      "CRoadGeneratorCity",
+                                      "CRoadGeneratorGrid",
+                                      "CRoadHitPoint",
+                                      "CTerrainGenerator",
+                                      "CTerrainGeneratorDefault",
+                                      "CWorldGenerator",
+                                      "MeshFace",
+                                      "MeshGeneratorDefault" } )
             {
                 if( auto factory = factories->getFactoryByName( name ) )
+                {
                     factories->removeFactory( factory );
+                }
             }
             setLoadingState( LoadingState::Unloaded );
         }
@@ -131,34 +174,33 @@ namespace workphone
 }  // namespace workphone
 
 #ifndef _WP_STATIC_LIB_
-extern "C"
+extern "C" {
+WP_INTERFACE_EXPORT void WP_INTERFACE_API workphone_get_version( int *major, int *minor, int *patch )
 {
-    WP_INTERFACE_EXPORT void WP_INTERFACE_API workphone_get_version( int *major, int *minor, int *patch )
-    {
-        *major = WP_VERSION_MAJOR;
-        *minor = WP_VERSION_MINOR;
-        *patch = WP_VERSION_PATCH;
-    }
+    *major = WP_VERSION_MAJOR;
+    *minor = WP_VERSION_MINOR;
+    *patch = WP_VERSION_PATCH;
+}
 
-    WP_INTERFACE_EXPORT void WP_INTERFACE_API
-    loadPlugin( workphone::core::IApplicationManager *applicationManager )
-    {
-        using namespace workphone;
-        core::IApplicationManager::setInstance( applicationManager );
-        auto plugin = workphone::make_ptr<procedural::WPProcedural>();
-        plugin->load( nullptr );
-        procedural::WPProcedural::setInstance( plugin );
-    }
+WP_INTERFACE_EXPORT void WP_INTERFACE_API
+loadPlugin( workphone::core::IApplicationManager *applicationManager )
+{
+    using namespace workphone;
+    core::IApplicationManager::setInstance( applicationManager );
+    auto plugin = workphone::make_ptr<procedural::WPProcedural>();
+    plugin->load( nullptr );
+    procedural::WPProcedural::setInstance( plugin );
+}
 
-    WP_INTERFACE_EXPORT void WP_INTERFACE_API
-    unloadPlugin( workphone::core::IApplicationManager *applicationManager )
+WP_INTERFACE_EXPORT void WP_INTERFACE_API
+unloadPlugin( workphone::core::IApplicationManager *applicationManager )
+{
+    using namespace workphone;
+    if( auto plugin = procedural::WPProcedural::instance() )
     {
-        using namespace workphone;
-        if( auto plugin = procedural::WPProcedural::instance() )
-        {
-            plugin->unload( nullptr );
-            procedural::WPProcedural::setInstance( nullptr );
-        }
+        plugin->unload( nullptr );
+        procedural::WPProcedural::setInstance( nullptr );
     }
+}
 }
 #endif

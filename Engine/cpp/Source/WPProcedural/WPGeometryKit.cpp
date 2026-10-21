@@ -88,7 +88,9 @@ namespace workphone
 
             // Apply a subtle warp to give the box a non-perfect surface
             if( bevel > 0.0f )
+            {
                 warpMesh( mesh, bevel, 0.5f, 12345 );
+            }
 
             mesh.computeNormals();
             return mesh;
@@ -220,11 +222,15 @@ namespace workphone
                     pz *= 1.0f - neck * neck * 0.3f;
                     py *= 1.0f - neck * neck * 0.55f;
                     if( neck > 0.55f )
+                    {
                         py += ( uy >= 0 ? 1.0f : -1.0f ) * h * 0.02f * ( neck - 0.55f ) * 2.0f;
+                    }
                     if( uy > 0.15f )
+                    {
                         py += h * 0.05f *
                               std::exp( -( pz / ( d * 0.42f ) ) * ( pz / ( d * 0.42f ) ) * 6.0f ) *
                               ( 1.0f - neck * 0.8f );
+                    }
 
                     if( variant == 0 )
                     {
@@ -237,7 +243,9 @@ namespace workphone
                         pz *= fatter;
                         py *= fatter * ( 1.0f - 0.16f * std::exp( -( t / 0.32f ) * ( t / 0.32f ) ) );
                         if( uy > 0.3f )
+                        {
                             py -= h * 0.05f * std::exp( -( t / 0.45f ) * ( t / 0.45f ) );
+                        }
                     }
                     else
                     {
@@ -359,7 +367,9 @@ namespace workphone
         {
             ProceduralMesh mesh;
             if( polygon.size() < 3 )
+            {
                 return mesh;
+            }
 
             for( size_t i = 0; i < polygon.size(); ++i )
             {
@@ -398,7 +408,9 @@ namespace workphone
                 Vector2<real_Num> n2( -edge.y, edge.x );
                 real_Num l = std::sqrt( n2.x * n2.x + n2.y * n2.y );
                 if( l > 1e-6f )
+                {
                     n2 = n2 / l;
+                }
                 Vector3<real_Num> n3( n2.x, n2.y, 0 );
 
                 ProceduralVertex v0;
@@ -524,7 +536,9 @@ namespace workphone
             Vector3<real_Num> up( 0, 1, 0 );
             Vector3<real_Num> right = dir.crossProduct( up );
             if( right.lengthSquared() < 0.001f )
+            {
                 right = Vector3<real_Num>( 1, 0, 0 );
+            }
             right.normalise();
             Vector3<real_Num> realUp = right.crossProduct( dir );
             realUp.normalise();
@@ -576,7 +590,9 @@ namespace workphone
         {
             ProceduralMesh mesh;
             if( steps < 1 )
+            {
                 return mesh;
+            }
             real_Num stepRise = rise / steps;
             real_Num stepRun = run / steps;
 
@@ -588,26 +604,34 @@ namespace workphone
                 ProceduralMesh tread =
                     chamferedBox( width, stepRise * 0.5f, stepRun * 1.001f, 0.008f, 1, 1, 1 );
                 for( auto &v : tread.vertices )
+                {
                     v.position += Vector3<real_Num>( 0, y + stepRise * 0.25f, z + stepRun * 0.5f );
+                }
                 mesh.append( tread, Vector3<real_Num>( 0, 0, 0 ) );
 
                 ProceduralMesh riser = chamferedBox( width, stepRise * 1.001f, 0.02f, 0.008f, 1, 1, 1 );
                 for( auto &v : riser.vertices )
+                {
                     v.position += Vector3<real_Num>( 0, y + stepRise * 0.5f, z );
+                }
                 mesh.append( riser, Vector3<real_Num>( 0, 0, 0 ) );
 
                 if( sideRails == "right" || sideRails == "both" )
                 {
                     ProceduralMesh rail = chamferedBox( 0.05f, rise + 1.0f, 0.05f, 0.005f, 1, 1, 1 );
                     for( auto &v : rail.vertices )
+                    {
                         v.position += Vector3<real_Num>( width * 0.5f, rise * 0.5f, z + stepRun );
+                    }
                     mesh.append( rail, Vector3<real_Num>( 0, 0, 0 ) );
                 }
                 if( sideRails == "left" || sideRails == "both" )
                 {
                     ProceduralMesh rail = chamferedBox( 0.05f, rise + 1.0f, 0.05f, 0.005f, 1, 1, 1 );
                     for( auto &v : rail.vertices )
+                    {
                         v.position += Vector3<real_Num>( -width * 0.5f, rise * 0.5f, z + stepRun );
+                    }
                     mesh.append( rail, Vector3<real_Num>( 0, 0, 0 ) );
                 }
             }

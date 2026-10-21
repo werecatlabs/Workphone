@@ -58,13 +58,21 @@ namespace workphone
             IRoad::RoadType roadTypeFromString( const String &str )
             {
                 if( str == "Residential" )
+                {
                     return IRoad::RoadType::Residential;
+                }
                 if( str == "Trunk" )
+                {
                     return IRoad::RoadType::Trunk;
+                }
                 if( str == "Footway" )
+                {
                     return IRoad::RoadType::Footway;
+                }
                 if( str == "Steps" )
+                {
                     return IRoad::RoadType::Steps;
+                }
                 return IRoad::RoadType::None;
             }
 
@@ -92,15 +100,25 @@ namespace workphone
             IRoad::LaneType laneTypeFromString( const String &str )
             {
                 if( str == "OneLane" )
+                {
                     return IRoad::LaneType::OneLane;
+                }
                 if( str == "ThreeLane" )
+                {
                     return IRoad::LaneType::ThreeLane;
+                }
                 if( str == "FourLane" )
+                {
                     return IRoad::LaneType::FourLane;
+                }
                 if( str == "FiveLane" )
+                {
                     return IRoad::LaneType::FiveLane;
+                }
                 if( str == "SixLane" )
+                {
                     return IRoad::LaneType::SixLane;
+                }
                 return IRoad::LaneType::TwoLane;
             }
         }  // anonymous namespace
@@ -471,7 +489,7 @@ namespace workphone
                 CProceduralObject<IRoadElement>::setProperties( properties );
 
                 auto name = getName();
-               
+
                 auto roadTypeStr = roadTypeToString( m_roadType );
                 auto laneTypeStr = laneTypeToString( m_laneType );
                 auto roadWidth = m_RoadWidth;

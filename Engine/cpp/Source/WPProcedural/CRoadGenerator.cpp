@@ -82,15 +82,25 @@ namespace workphone
         void CRoadGenerator::validate()
         {
             if( m_options.numMajorRoads < 1 )
+            {
                 m_options.numMajorRoads = 1;
+            }
             if( m_options.roadLength <= 0.0f )
+            {
                 m_options.roadLength = 200.0f;
+            }
             if( m_options.roadDistance <= 0.0f )
+            {
                 m_options.roadDistance = 100.0f;
+            }
             if( m_options.roadOffset < 0.0f )
+            {
                 m_options.roadOffset = 0.0f;
+            }
             if( m_options.connectionSearchRadius < 0.0f )
+            {
                 m_options.connectionSearchRadius = 20.0f;
+            }
         }
 
         void CRoadGenerator::clear()
@@ -169,6 +179,7 @@ namespace workphone
         {
             return m_options.seed;
         }
+
         void CRoadGenerator::setSeed( int seed )
         {
             m_options.seed = seed;
@@ -179,6 +190,7 @@ namespace workphone
         {
             return m_options.numMajorRoads;
         }
+
         void CRoadGenerator::setNumMajorRoads( u32 count )
         {
             m_options.numMajorRoads = count;
@@ -189,6 +201,7 @@ namespace workphone
         {
             return m_options.numMinorRoadsPerMajor;
         }
+
         void CRoadGenerator::setNumMinorRoadsPerMajor( s32 count )
         {
             m_options.numMinorRoadsPerMajor = count;
@@ -199,6 +212,7 @@ namespace workphone
         {
             return m_options.roadOffset;
         }
+
         void CRoadGenerator::setRoadOffset( float offset )
         {
             m_options.roadOffset = offset;
@@ -209,6 +223,7 @@ namespace workphone
         {
             return m_options.roadDistance;
         }
+
         void CRoadGenerator::setRoadDistance( float distance )
         {
             m_options.roadDistance = distance;
@@ -219,6 +234,7 @@ namespace workphone
         {
             return m_options.roadLength;
         }
+
         void CRoadGenerator::setRoadLength( float length )
         {
             m_options.roadLength = length;
@@ -229,6 +245,7 @@ namespace workphone
         {
             return m_options.rotationVariation;
         }
+
         void CRoadGenerator::setRotationVariation( float variation )
         {
             m_options.rotationVariation = variation;
@@ -239,6 +256,7 @@ namespace workphone
         {
             return m_options.connectionSearchRadius;
         }
+
         void CRoadGenerator::setConnectionSearchRadius( float radius )
         {
             m_options.connectionSearchRadius = radius;
@@ -249,6 +267,7 @@ namespace workphone
         {
             return m_options.generateMajorRoads;
         }
+
         void CRoadGenerator::setGenerateMajorRoads( bool generate )
         {
             m_options.generateMajorRoads = generate;
@@ -259,6 +278,7 @@ namespace workphone
         {
             return m_options.generateMinorRoads;
         }
+
         void CRoadGenerator::setGenerateMinorRoads( bool generate )
         {
             m_options.generateMinorRoads = generate;
@@ -269,6 +289,7 @@ namespace workphone
         {
             return m_options.nodeBiasHeight;
         }
+
         void CRoadGenerator::setNodeBiasHeight( float height )
         {
             m_options.nodeBiasHeight = height;
@@ -279,6 +300,7 @@ namespace workphone
         {
             return m_options.generateIntersections;
         }
+
         void CRoadGenerator::setGenerateIntersections( bool generate )
         {
             m_options.generateIntersections = generate;
@@ -289,6 +311,7 @@ namespace workphone
         {
             return m_options.randomizeSeed;
         }
+
         void CRoadGenerator::setRandomizeSeed( bool randomize )
         {
             m_options.randomizeSeed = randomize;
@@ -299,6 +322,7 @@ namespace workphone
         {
             return m_options.autoUpdate;
         }
+
         void CRoadGenerator::setAutoUpdate( bool autoUpdate )
         {
             m_options.autoUpdate = autoUpdate;
@@ -400,9 +424,13 @@ namespace workphone
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
                     if( startNode )
+                    {
                         startNode->setPosition( startPos );
+                    }
                     if( endNode )
+                    {
                         endNode->setPosition( endPos );
+                    }
                     if( startNode && endNode )
                     {
                         startNode->connect( endNode );
@@ -476,9 +504,13 @@ namespace workphone
                         SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                         SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
                         if( startNode )
+                        {
                             startNode->setPosition( startPos );
+                        }
                         if( endNode )
+                        {
                             endNode->setPosition( startPos + startDir * m_options.roadLength * 0.5f );
+                        }
                         if( startNode && endNode )
                         {
                             startNode->connect( endNode );
