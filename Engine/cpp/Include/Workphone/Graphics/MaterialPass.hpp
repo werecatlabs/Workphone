@@ -222,6 +222,9 @@ namespace workphone
              * @return Array of smart pointers to IMaterialTexture.
              */
             Array<SmartPtr<IMaterialTexture>> getTextureUnits() const override;
+            /** Materialize one authoring facade; out-of-range indices return null. */
+            SmartPtr<IMaterialTexture> getTextureUnit( u32 index ) const;
+            size_Num getMaterializedTextureUnitCount() const;
 
             /**
              * @copydoc IMaterialPass::getNumTexturesNodes
@@ -568,8 +571,9 @@ namespace workphone
 
             // Surface values belong to MaterialPassStateData. Derived passes use
             // the virtual accessors rather than retaining another writable copy.
-            /**< Thread-safe container of textures. */
-            ConcurrentArray<SmartPtr<IMaterialTexture>> m_textures;
+            // Logical slots: null entries have no authoring facade. Bindings live
+            // in state data; getTextureUnits() materializes the legacy full view.
+            mutable ConcurrentArray<SmartPtr<IMaterialTexture>> m_textures;
 
             /** Local state context storage.
              *  MaterialNode<T>::setStateContext is a no-op so we keep our own

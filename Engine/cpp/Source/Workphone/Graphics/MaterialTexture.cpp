@@ -160,12 +160,17 @@ namespace workphone::render
 
     auto MaterialTexture::toData() const -> SmartPtr<ISharedObject>
     {
+        return textureToData(getTexture());
+    }
+
+    SmartPtr<Properties> MaterialTexture::textureToData(SmartPtr<ITexture> texture)
+    {
         try
         {
             // A detached texture slot can be serialized before graphics startup.
             auto properties = workphone::make_ptr<Properties>();
 
-            if( auto texture = getTexture() )
+            if( texture )
             {
                 auto handle = texture->getHandle();
                 properties->setProperty( MaterialTexture::textureStr, handle->getUUIDAsString(),

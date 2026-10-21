@@ -68,6 +68,8 @@ namespace workphone
 
             /** @brief Default constructor. Initializes members to default values. */
             MaterialTexture();
+            /** Shared resource descriptor writer for implicit and authored slots. */
+            static SmartPtr<Properties> textureToData(SmartPtr<ITexture> texture);
 
             /** @brief Virtual destructor. Cleans up resources. */
             ~MaterialTexture() override;

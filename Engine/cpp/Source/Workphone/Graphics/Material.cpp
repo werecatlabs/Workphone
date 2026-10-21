@@ -630,8 +630,9 @@ namespace workphone::render
                         {
                             return state->textures[layerIdx];
                         }
-                        // Custom editor slots (AO, opacity, masks, etc.) are stored
-                        // in texture units beyond Ogre's fixed PBS state array.
+                        if(layerIdx < MaterialRenderState::TextureCount)
+                            return state->extendedTextures[layerIdx - state->textures.size()];
+                        // Third-party slots beyond the native record retain their adapter.
                         const auto units = pass->getTextureUnits();
                         if( layerIdx < units.size() && units[layerIdx] )
                         {

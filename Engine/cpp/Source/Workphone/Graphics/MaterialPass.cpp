@@ -288,11 +288,12 @@ namespace workphone::render
 
             for( auto &t : m_textures )
             {
-                t->load( nullptr );
+                if(t) t->load( nullptr );
             }
 
             // Authored texture units may precede the pass's state context.
-            if( !m_textures.empty() ) refreshRenderTextures();
+            for(auto &unit : m_textures)
+                if(unit) updateRenderTexture(unit.get(), unit->getTexture());
 
             setLoadingState( LoadingState::Loaded );
             if( auto material = getMaterial() ) material->setPass( nullptr );
@@ -305,326 +306,49 @@ namespace workphone::render
 
     void MaterialPass::createTextureSlots()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto factoryManager = applicationManager->getFactoryManager();
-        WP_ASSERT( factoryManager );
-
-        auto parent = getParent();
-        if( !parent )
+        if(!getParent() || !getMaterial()) return;
+        auto type = MaterialType::Standard;
+        if(auto context = getStateContextPtr())
+            if(auto state = context->getStateDataById<MaterialPassStateData>(getId())) type = state->materialType;
+        size_t slots = 0;
+        String passName;
+        switch(type)
         {
-            return;
+        case MaterialType::Standard:
+        case MaterialType::StandardSpecular:
+        case MaterialType::StandardTriPlanar:
+            slots = static_cast<size_t>(PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES);
+            passName = GraphicsUtil::getPbsTextureType(static_cast<PbsTextureTypes>(slots - 1)); break;
+        case MaterialType::TerrainStandard:
+        case MaterialType::TerrainSpecular:
+        case MaterialType::TerrainDiffuse:
+            slots = static_cast<size_t>(TerrainTextureTypes::Count);
+            if(type == MaterialType::TerrainDiffuse)
+                passName = GraphicsUtil::getTerrainTextureType(static_cast<TerrainTextureTypes>(slots - 1));
+            break;
+        case MaterialType::Skybox:
+            slots = static_cast<size_t>(SkyboxTextureTypes::Count);
+            passName = GraphicsUtil::getSkyboxTextureType(static_cast<SkyboxTextureTypes>(slots - 1)); break;
+        case MaterialType::SkyboxCubemap:
+            slots = static_cast<size_t>(SkyboxCubeTextureTypes::Count);
+            passName = GraphicsUtil::getSkyboxCubeTextureType(static_cast<SkyboxCubeTextureTypes>(slots - 1)); break;
+        case MaterialType::UI: slots = 1; break;
+        default: return;
         }
-
-        auto technique = workphone::static_pointer_cast<MaterialTechnique>( parent );
-        if( technique )
+        if(slots != getNumTexturesNodes())
         {
-            auto owner = technique->getMaterial();
-            auto material = workphone::static_pointer_cast<Material>( owner );
-            if( material )
-            {
-                auto materialType = MaterialType::Standard;
-                if( auto stateContext = getStateContextPtr() )
-                {
-                    if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
+            // Logical empty slots need no authoring object. Keep authored units
+            // when the schema changes size; texture bindings stay in state data.
+            m_textures.resize(slots);
+            if(auto context = getStateContextPtr())
+                if(auto state = context->invalidateStateDataById<MaterialPassStateData>(getId()))
+                    for(u32 i = static_cast<u32>(slots); i < MaterialRenderState::TextureCount; ++i)
                     {
-                        materialType = state->materialType;
+                        if(i < state->textures.size())
+                        { state->textureDirty[i] = state->textureDirty[i] || bool(state->textures[i]); state->textures[i] = nullptr; }
+                        else state->extendedTextures[i - state->textures.size()] = nullptr;
                     }
-                }
-
-                switch( materialType )
-                {
-                case MaterialType::Standard:
-                {
-                    auto numSlots = static_cast<size_t>( PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<PbsTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getPbsTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::StandardSpecular:
-                {
-                    auto numSlots = static_cast<size_t>( PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<PbsTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getPbsTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::StandardTriPlanar:
-                {
-                    auto numSlots = static_cast<size_t>( PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<PbsTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getPbsTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::TerrainStandard:
-                {
-                    auto numSlots = static_cast<size_t>( TerrainTextureTypes::Count );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<TerrainTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getTerrainTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                texture->setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::TerrainSpecular:
-                {
-                    auto numSlots = static_cast<size_t>( TerrainTextureTypes::Count );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<TerrainTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getTerrainTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                texture->setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::TerrainDiffuse:
-                {
-                    auto numSlots = static_cast<size_t>( TerrainTextureTypes::Count );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<TerrainTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getTerrainTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::Skybox:
-                {
-                    auto numSlots = static_cast<size_t>( SkyboxTextureTypes::Count );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<SkyboxTextureTypes>( i );
-                                auto textureTypeStr = GraphicsUtil::getSkyboxTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::SkyboxCubemap:
-                {
-                    auto numSlots = static_cast<size_t>( SkyboxCubeTextureTypes::Count );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                auto textureType = static_cast<SkyboxCubeTextureTypes>( i );
-                                auto textureTypeStr =
-                                    GraphicsUtil::getSkyboxCubeTextureType( textureType );
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-                                texture->setMaterial( material );
-
-                                setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::UI:
-                {
-                    auto numSlots = static_cast<size_t>( 1 );
-                    if( numSlots != getNumTexturesNodes() )
-                    {
-                        auto textures = Array<SmartPtr<IMaterialTexture>>();
-                        textures.resize( numSlots );
-
-                        for( size_t i = 0; i < textures.size(); ++i )
-                        {
-                            auto &texture = textures[i];
-                            if( !texture )
-                            {
-                                texture = factoryManager->make_ptr<MaterialTexture>();
-                                texture->setParent( this );
-
-                                // auto textureType = (PbsTextureTypes)i;
-                                auto textureTypeStr =
-                                    String( "Base" );  // GraphicsUtil::getPbsTextureType(textureType);
-
-                                texture->setTextureType( static_cast<u32>( i ) );
-
-                                texture->setMaterial( material );
-
-                                texture->setName( textureTypeStr );
-                            }
-                        }
-
-                        setTextureUnits( textures );
-                    }
-                }
-                break;
-                case MaterialType::Custom:
-                {
-                }
-                break;
-                default:
-                {
-                }
-                break;
-                }
-            }
+            if(!passName.empty()) setName(passName);
         }
     }
 
@@ -690,7 +414,7 @@ namespace workphone::render
                 auto textures = m_textures.snapshot();
                 for( auto &t : textures )
                 {
-                    t->unload( nullptr );
+                    if(t) t->unload( nullptr );
                 }
 
                 m_textures.clear();
@@ -837,6 +561,8 @@ namespace workphone::render
 
     void MaterialPass::removeTextureUnit( SmartPtr<IMaterialTexture> textureUnit )
     {
+        // Preserve bindings while compacting the authoring slot sequence.
+        getTextureUnits();
         m_textures.erase( std::remove( m_textures.begin(), m_textures.end(), textureUnit ),
                           m_textures.end() );
         refreshRenderTextures();
@@ -881,7 +607,58 @@ namespace workphone::render
 
     auto MaterialPass::getTextureUnits() const -> Array<SmartPtr<IMaterialTexture>>
     {
+        const auto size = getNumTexturesNodes();
+        for(u32 i = 0; i < size; ++i) getTextureUnit(i);
         return m_textures.snapshot();
+    }
+
+    size_Num MaterialPass::getMaterializedTextureUnitCount() const
+    {
+        const auto units = m_textures.snapshot();
+        return std::count_if(units.begin(), units.end(), [](const auto &unit) { return bool(unit); });
+    }
+
+    SmartPtr<IMaterialTexture> MaterialPass::getTextureUnit(u32 index) const
+    {
+        {
+            ScopedLock<decltype(m_textures)> lock(&m_textures);
+            if(index >= m_textures.size()) return nullptr;
+            if(m_textures[index]) return m_textures[index];
+        }
+        // Read state and run factory/resource callbacks outside the array lock.
+        // State writers may already hold their write lock when accessing units.
+        SmartPtr<ITexture> texture;
+        auto type = MaterialType::Standard;
+        if(auto context = getStateContextPtr())
+            if(auto state = context->getStateDataById<MaterialPassStateData>(getId()))
+            {
+                type = state->materialType;
+                if(index < state->textures.size()) texture = state->textures[index];
+                else if(index < MaterialRenderState::TextureCount)
+                    texture = state->extendedTextures[index - state->textures.size()];
+            }
+        auto app = core::IApplicationManager::instancePtr();
+        auto factory = app ? app->getFactoryManagerPtr() : nullptr;
+        auto unit = factory ? factory->make_ptr<MaterialTexture>() : nullptr;
+        if(!unit) return nullptr;
+        unit->setTextureType(index);
+        unit->setMaterial(getMaterial());
+        if(type == MaterialType::UI && index == 0) unit->setName("Base");
+        else if((type == MaterialType::TerrainStandard || type == MaterialType::TerrainSpecular) &&
+                index < static_cast<u32>(TerrainTextureTypes::Count))
+            unit->setName(GraphicsUtil::getTerrainTextureType(static_cast<TerrainTextureTypes>(index)));
+        unit->setTexture(texture);
+        unit->setParent(const_cast<MaterialPass *>(this));
+        SmartPtr<IMaterialTexture> result;
+        {
+            ScopedLock<decltype(m_textures)> lock(&m_textures);
+            if(index < m_textures.size())
+            {
+                if(!m_textures[index]) m_textures[index] = unit;
+                result = m_textures[index];
+            }
+        }
+        return result;
     }
 
     auto MaterialPass::getNumTexturesNodes() const -> size_Num
@@ -893,149 +670,42 @@ namespace workphone::render
     {
         try
         {
-            if( auto stateContext = getStateContextPtr() )
-            {
-                if( auto state =
-                        stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+            if(auto context = getStateContextPtr())
+                if(auto state = context->invalidateStateDataById<MaterialPassStateData>(getId()))
                 {
-                    if( layerIdx < state->textures.size() )
+                    if(layerIdx < state->textures.size())
                     {
-                        state->textures[layerIdx] = tex;
                         state->textureDirty[layerIdx] = true;
+                        state->textures[layerIdx] = tex;
                     }
-                    else if( layerIdx < MaterialRenderState::TextureCount )
+                    else if(layerIdx < MaterialRenderState::TextureCount)
                         state->extendedTextures[layerIdx - state->textures.size()] = tex;
                 }
-            }
-
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-
-            if( layerIdx >= getNumTexturesNodes() )
+            if(layerIdx >= getNumTexturesNodes()) m_textures.resize(size_t(layerIdx) + 1);
+            // Clearing an implicit slot needs no authoring object or upload job.
+            if(!tex && !m_textures[layerIdx]) return;
+            if(auto unit = getTextureUnit(layerIdx))
             {
-                m_textures.resize( layerIdx + 1 );
-
-                for( auto &texture : m_textures )
-                {
-                    if( !texture )
-                    {
-                        texture = factoryManager->make_ptr<MaterialTexture>();
-                    }
-                }
-
-                auto &texture = m_textures[layerIdx];
-                if( !texture )
-                {
-                    texture = factoryManager->make_ptr<MaterialTexture>();
-                }
-
-                if( texture )
-                {
-                    texture->setParent( this );
-                    texture->setTexture( tex );
-
-                    graphicsSystem->loadObject( texture );
-                }
-            }
-            else
-            {
-                WP_ASSERT( layerIdx < getNumTexturesNodes() );
-
-                if( layerIdx < getNumTexturesNodes() )
-                {
-                    auto &texture = m_textures[layerIdx];
-                    if( !texture )
-                    {
-                        texture = factoryManager->make_ptr<MaterialTexture>();
-                    }
-
-                    if( texture )
-                    {
-                        texture->setParent( this );
-                        texture->setTexture( tex );
-
-                        graphicsSystem->loadObject( texture );
-                    }
-                }
+                unit->setTexture(tex);
+                auto app = core::IApplicationManager::instancePtr();
+                auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
+                if(graphics) graphics->loadObject(unit);
             }
         }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        catch(std::exception &e) { WP_LOG_EXCEPTION(e); }
     }
 
     void MaterialPass::setTexture( const String &fileName, u32 layerIdx /*= 0 */ )
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-
-            if( layerIdx >= getNumTexturesNodes() )
-            {
-                m_textures.clear();
-                m_textures.resize( layerIdx + 1 );
-
-                for( size_t i = 0; i < m_textures.size(); ++i )
-                {
-                    auto &texture = m_textures[i];
-                    if( texture )
-                    {
-                        m_textures[i] = texture;
-                    }
-                }
-
-                for( auto &texture : m_textures )
-                {
-                    if( !texture )
-                    {
-                        texture = factoryManager->make_ptr<MaterialTexture>();
-                    }
-                }
-
-                auto &texture = m_textures[layerIdx];
-                if( !texture )
-                {
-                    texture = factoryManager->make_ptr<MaterialTexture>();
-                }
-
-                if( texture )
-                {
-                    texture->setParent( this );
-                    texture->setTextureName( fileName );
-                }
-            }
-            else
-            {
-                WP_ASSERT( layerIdx < getNumTexturesNodes() );
-
-                if( layerIdx < getNumTexturesNodes() )
-                {
-                    auto &texture = m_textures[layerIdx];
-                    if( !texture )
-                    {
-                        texture = factoryManager->make_ptr<MaterialTexture>();
-                    }
-
-                    if( texture )
-                    {
-                        texture->setParent( this );
-                        texture->setTextureName( fileName );
-                    }
-                }
-            }
+            // Extending a slot must preserve existing authored units/bindings.
+            if(layerIdx >= getNumTexturesNodes()) m_textures.resize(size_t(layerIdx) + 1);
+            if(fileName.empty() && !m_textures[layerIdx])
+            { setTexture(SmartPtr<ITexture>(), layerIdx); return; }
+            if(auto unit = getTextureUnit(layerIdx)) unit->setTextureName(fileName);
         }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        catch(std::exception &e) { WP_LOG_EXCEPTION(e); }
     }
 
     void MaterialPass::setCubicTexture( const String &fileName, bool uvw, u32 layerIdx /*= 0 */ )
@@ -1430,10 +1100,19 @@ namespace workphone::render
         properties->setProperty( enableEmissionStr, enableEmission );
         properties->setProperty( enableRefractionStr, enableRefraction );
 
-        auto textureUnits = getTextureUnits();
-        for( auto textureUnit : textureUnits )
+        const auto textureUnits = m_textures.snapshot();
+        FixedArray<SmartPtr<ITexture>, MaterialRenderState::TextureCount> bindings{};
+        if(auto context = getStateContextPtr())
+            if(auto data = context->getStateDataById<MaterialPassStateData>(getId()))
+                for(u32 i = 0; i < bindings.size(); ++i)
+                    bindings[i] = i < data->textures.size() ? data->textures[i] : data->extendedTextures[i - data->textures.size()];
+        for(u32 index = 0; index < textureUnits.size(); ++index)
         {
-            auto textureData = workphone::static_pointer_cast<Properties>( textureUnit->toData() );
+            const auto &unit = textureUnits[index];
+            SmartPtr<ITexture> texture;
+            if(!unit && index < bindings.size()) texture = bindings[index];
+            auto textureData = unit ? workphone::static_pointer_cast<Properties>(unit->toData()) :
+                                     MaterialTexture::textureToData(texture);
             textureData->setName( "textures" );
             properties->addChild( textureData );
         }
@@ -1528,11 +1207,12 @@ namespace workphone::render
             // Create the unit before restoring it, just as setTexture does.
             if( static_cast<u32>( textureIndex ) >= getNumTexturesNodes() )
                 setTexture( SmartPtr<ITexture>(), static_cast<u32>( textureIndex ) );
-            auto textureUnits = getTextureUnits();
-            if( textureIndex < textureUnits.size() )
+            // Empty legacy descriptors preserve ordinal slots without allocating
+            // facades. Nonempty/custom data still reaches the normal adapter.
+            if(texture->getPropertiesAsArray().empty() && texture->getChildren().empty())
+            { ++textureIndex; continue; }
+            if( auto pTexture = getTextureUnit(static_cast<u32>(textureIndex)) )
             {
-                auto pTexture = textureUnits[textureIndex];
-
                 pTexture->fromData( texture );
 
                 if( auto stateContext = getStateContextPtr() )

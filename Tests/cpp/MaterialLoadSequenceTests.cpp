@@ -1686,6 +1686,89 @@ namespace
         }
     }
 
+    void runLazyTextureUnits(Fixture &fixture)
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>(); material->load(nullptr);
+        auto pass = dynamic_pointer_cast<MaterialPass>(material->getTechnique(0)->getPass(0));
+        // The pass constructor loads before its owner is attached. Exercise the
+        // attached-pass initialization used by authored material load/reload.
+        pass->load(nullptr);
+        const auto slots = pass->getNumTexturesNodes();
+        require(slots == static_cast<size_t>(PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES) &&
+                pass->getMaterializedTextureUnitCount() == 0, "default material keeps logical slots without authoring objects");
+        const auto initial = material->getRenderState();
+        for(int i = 0; i < 100; ++i)
+            require(!material->getTexture(0) && !material->getTexture(31) && material->getRenderState() == initial,
+                    "warm texture/snapshot reads stay on dense state");
+        auto serialized = static_pointer_cast<Properties>(pass->toData());
+        require(serialized->getChildrenByName("textures").size() == slots &&
+                pass->getMaterializedTextureUnitCount() == 0, "serialization preserves ordinal descriptors without materializing empty units");
+        auto restored = make_ptr<ClawMaterial>(); restored->load(nullptr);
+        auto restoredPass = dynamic_pointer_cast<MaterialPass>(restored->getTechnique(0)->getPass(0));
+        restoredPass->fromData(serialized);
+        require(restoredPass->getNumTexturesNodes() == slots && restoredPass->getMaterializedTextureUnitCount() == 0,
+                "empty legacy descriptors reload lazily");
+        pass->setTexture(SmartPtr<ITexture>(), 0);
+        require(pass->getMaterializedTextureUnitCount() == 0, "clearing an implicit slot allocates no facade");
+        auto first = make_ptr<ClawTexture>();
+        auto second = make_ptr<ClawTexture>();
+        pass->setTexture(first, 0);
+        require(pass->getMaterializedTextureUnitCount() == 1 && material->getTexture(0) == first,
+                "binding one texture creates one authoring unit");
+        pass->setTexture(String(), 31);
+        require(material->getTexture(0) == first && pass->getNumTexturesNodes() == 32 &&
+                pass->getMaterializedTextureUnitCount() == 1, "string-based extension preserves earlier bindings and leaves gaps implicit");
+        auto previous = material->getRenderState();
+        auto unit = pass->getTextureUnit(31);
+        require(unit && unit->getParent().get() == pass.get() && unit->getTextureType() == 31 &&
+                pass->getMaterializedTextureUnitCount() == 2 && material->getRenderState() == previous,
+                "single-slot authoring access preserves state identity and ordinal metadata");
+        unit->setTexture(second);
+        require(material->getTexture(31) == second && !previous->textures[31], "extension facade edits publish through canonical state");
+        {
+            auto state = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(pass->getId());
+            state->extendedTextures[25 - state->textures.size()] = second;
+        }
+        auto data = static_pointer_cast<Properties>(pass->toData());
+        const auto descriptors = data->getChildrenByName("textures");
+        require(descriptors.size() == 32 && pass->getMaterializedTextureUnitCount() == 2 &&
+                descriptors[0]->getProperty("texture") == first->getHandle()->getUUIDAsString() &&
+                descriptors[31]->getProperty("texture") == second->getHandle()->getUUIDAsString() &&
+                descriptors[25]->getProperty("texture") == second->getHandle()->getUUIDAsString(),
+                "implicit runtime binding serializes through the shared UUID/path descriptor writer");
+        require(pass->getTextureUnit(25)->getTexture() == second, "authoring facade borrows an existing direct state binding");
+        const auto all = pass->getTextureUnits();
+        require(all.size() == 32 && pass->getMaterializedTextureUnitCount() == 32 && !pass->getTextureUnit(32),
+                "legacy authoring enumeration returns all concrete units with bounds checking");
+        for(u32 i = 0; i < all.size(); ++i)
+            require(all[i] && all[i] == pass->getTextureUnit(i), "materialized facade identities remain stable");
+        pass->removeTextureUnit(all[0]);
+        require(pass->getNumTexturesNodes() == 31 && material->getTexture(24) == second && material->getTexture(30) == second,
+                "authoring removal compacts binding ordinals consistently");
+        material->unload(nullptr); restored->unload(nullptr);
+        fixture.graphics->pending.clear();
+
+        constexpr u32 count = 1000;
+        std::vector<SmartPtr<ClawMaterial>> population;
+        for(u32 i = 0; i < count; ++i)
+        {
+            auto value = make_ptr<ClawMaterial>(); value->load(nullptr);
+            auto p = dynamic_pointer_cast<MaterialPass>(value->getTechnique(0)->getPass(0));
+            p->load(nullptr);
+            require(p->getNumTexturesNodes() == slots && p->getMaterializedTextureUnitCount() == 0,
+                    "default material populations allocate zero texture authoring objects");
+            population.push_back(value);
+        }
+        std::cout << "lazy_texture_units configured_materials=" << count << " slots_per_pass=" << slots
+                  << " eager_unit_count=" << count * slots << " lazy_unit_count=0"
+                  << " avoided_unit_object_bytes=" << count * slots * sizeof(MaterialTexture)
+                  << " texture_unit_bytes=" << sizeof(MaterialTexture)
+                  << " allocator_handles_and_other_graph_storage_excluded=1\n";
+        for(auto &value : population) value->unload(nullptr);
+        fixture.graphics->pending.clear();
+    }
+
     void runObservedParameters( Fixture &fixture )
     {
         using namespace render;
@@ -2069,6 +2152,7 @@ int main( int argc, char **argv )
             benchmarkTextureBindings();
             return 0;
         }
+        runLazyTextureUnits(fixture);
         runCapturedMaterialRecords( fixture );
         runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
