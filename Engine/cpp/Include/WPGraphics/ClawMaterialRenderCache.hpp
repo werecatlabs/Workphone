@@ -100,6 +100,9 @@ namespace workphone::render
         Lease retain() const;
         void clear();
         void collectExpired();
+        // Graphics-thread maintenance, including frames with no insertions.
+        // Inspect at most budget table slots and budget front-cache tags.
+        void maintain(u32 budget = 32);
         u64 getStorageBytes() const;
         u64 getStorageAllocationCount() const;
         u32 getSlotCount() const;
@@ -170,6 +173,7 @@ namespace workphone::render
         std::array<Set, SetCount> m_sets{};
         u64 m_preparations = 0;
         size_t m_lastIndex = Capacity;
+        size_t m_maintenanceIndex = 0;
     };
 }
 #endif

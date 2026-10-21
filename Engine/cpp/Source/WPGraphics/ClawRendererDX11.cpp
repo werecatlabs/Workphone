@@ -181,6 +181,7 @@ namespace workphone::render
         }
 
         m_primitiveCount = 0;
+        if( m_materialRenderCache ) m_materialRenderCache->maintain();
         m_hasSkyEnvironment = false;
         if( auto found = g_skyEnvironmentCaches.find( this ); found != g_skyEnvironmentCaches.end() )
         {

@@ -1,8 +1,10 @@
 #include <Workphone/Graphics/MaterialShader.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -242,10 +244,84 @@ namespace
                  "registry growth/replacement preserves retained versions and rejects stale binding" );
     }
 
+    void numericAuthoringContracts()
+    {
+        MaterialPassStateData state;
+        const auto snapshot = state.getRenderState();
+        require(state.getNumericAuthoringStorageBytes() == 0, "default pass has no numeric authoring allocation");
+        const char *floatNames[] = {"maxTextureSize","renderQueue","sortPriority","stencilRef",
+            "stencilReadMask","stencilWriteMask","layerMaskStrength","previewExposure","previewRotation"};
+        const f32 defaults[] = {2048,2000,0,0,255,255,1,1,0};
+        const char *uintNames[] = {"materialVariant","technique","pcCompression","macCompression",
+            "iosCompression","androidCompression","previewShape","previewEnvironment"};
+        for(u32 i = 0; i < 9; ++i)
+        {
+            f32 value = -1;
+            require(state.getEditorFloat(floatNames[i], value) && value == defaults[i] &&
+                state.setFloatSetting(MaterialPassStateData::resolveFloatSetting(floatNames[i]), defaults[i]),
+                "cold float defaults and numeric writes use the shared schema");
+        }
+        for(const auto *name : uintNames)
+        {
+            u32 value = ~0u;
+            require(state.getEditorUInt(name, value) && value == 0 && state.setEditorUInt(name, 0),
+                "cold uint default reads/writes remain compatible");
+        }
+        Properties floats, uints, bools, strings;
+        state.writeEditorSettings(floats, uints, bools, strings);
+        require(state.getNumericAuthoringStorageBytes() == 0 && state.getRenderState() == snapshot,
+            "default operations and property export allocate no numeric authoring storage or runtime version");
+        state.setEditorFloat("previewExposure", 2.0f);
+        for(u32 i = 0; i < 9; ++i)
+        {
+            f32 value = 0;
+            require(state.getEditorFloat(floatNames[i], value) && value == (i == 7 ? 2.0f : defaults[i]),
+                "first allocation preserves every untouched nonzero schema default");
+        }
+        state.setEditorFloat("previewExposure", 1.0f);
+        require(state.getNumericAuthoringStorageBytes() == 0, "single setting reset releases the authoring block");
+        for(u32 i = 0; i < 9; ++i) state.setEditorFloat(floatNames[i], defaults[i] + 2);
+        for(u32 i = 0; i < 8; ++i) state.setEditorUInt(uintNames[i], i + 1);
+        const auto authoredBytes = state.getNumericAuthoringStorageBytes();
+        require(authoredBytes > 0 && state.getRenderState() == snapshot,
+            "cold writes allocate authoring storage without replacing the runtime record");
+        state.writeEditorSettings(floats, uints, bools, strings);
+        MaterialPassStateData restored;
+        for(u32 i = 0; i < 9; ++i)
+        {
+            f32 value = 0;
+            require(floats.getPropertyValue(floatNames[i], value) && value == defaults[i] + 2 &&
+                restored.setEditorFloat(floatNames[i], value), "cold float properties round trip");
+            state.setEditorFloat(floatNames[i], defaults[i]);
+        }
+        require(state.getNumericAuthoringStorageBytes() == authoredBytes,
+            "resetting floats preserves nondefault uint settings");
+        for(u32 i = 0; i < 8; ++i)
+        {
+            u32 value = 0;
+            require(uints.getPropertyValue(uintNames[i], value) && value == i + 1 &&
+                restored.setEditorUInt(uintNames[i], value), "cold uint properties round trip");
+            state.setEditorUInt(uintNames[i], 0);
+        }
+        require(state.getNumericAuthoringStorageBytes() == 0, "restoring every default releases numeric authoring storage");
+        state.setEditorFloat("previewRotation", -0.0f);
+        f32 signedZero = 1;
+        state.getEditorFloat("previewRotation", signedZero);
+        require(std::signbit(signedZero) && state.getNumericAuthoringStorageBytes() != 0,
+            "cold floats preserve signed zero instead of silently replacing authored bits");
+        state.setEditorFloat("previewRotation", 0.0f);
+        require(state.getNumericAuthoringStorageBytes() == 0 &&
+            !state.setEditorFloat("unknown", 2) && !state.setEditorUInt("unknown", 2),
+            "default reset and rejected settings leave no numeric authoring allocation");
+        std::cout << "pass_state_bytes=" << sizeof(state) << " numeric_authoring_bytes=" << authoredBytes
+            << " moved_numeric_value_bytes=68" << '\n';
+    }
+
     void snapshotContracts()
     {
         TypeManager types;
         types.load(); TypeManager::setInstance( &types );
+        numericAuthoringContracts();
         {
             MaterialPassStateData state;
             const auto original = state.getRenderState();

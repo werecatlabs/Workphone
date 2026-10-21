@@ -169,6 +169,9 @@ namespace workphone
         void setFlag( u32 flag, bool value );
         bool getFlag( u32 flag ) const;
 
+        // Accounted optional numeric authoring object, excluding allocator overhead.
+        size_t getNumericAuthoringStorageBytes() const;
+
         void writeEditorSettings( Properties &floats, Properties &uints, Properties &bools,
                                   Properties &strings ) const;
 
@@ -220,16 +223,6 @@ namespace workphone
         f32 detailStrength = 0.0f;
         f32 detailNormalStrength = 1.0f;
 
-        f32 maxTextureSize = 2048.0f;
-        f32 renderQueue = 2000.0f;
-        f32 sortPriority = 0.0f;
-        f32 stencilRef = 0.0f;
-        f32 stencilReadMask = 255.0f;
-        f32 stencilWriteMask = 255.0f;
-        f32 layerMaskStrength = 1.0f;
-        f32 previewExposure = 1.0f;
-        f32 previewRotation = 0.0f;
-
         u32 preset = 0u;
         u32 renderMode = 0u;
         u32 workflow = 0u;
@@ -250,14 +243,6 @@ namespace workphone
         u32 dstBlend = 0u;
         u32 depthTest = 2u;
         u32 layerBlend = 0u;
-        u32 materialVariant = 0u;
-        u32 technique = 0u;
-        u32 pcCompression = 0u;
-        u32 macCompression = 0u;
-        u32 iosCompression = 0u;
-        u32 androidCompression = 0u;
-        u32 previewShape = 0u;
-        u32 previewEnvironment = 0u;
 
         u32 flags = 0;
 
@@ -272,6 +257,14 @@ namespace workphone
             FixedString<WP_MAX_CLASSNAME> vertexShaderName, fragmentShaderName, geometryShaderName;
             FixedString<WP_MAX_PATH> shaderPath, keywords;
         };
+        struct NumericAuthoringData
+        {
+            FixedArray<f32, 9> floats = {};
+            FixedArray<u32, 8> uints = {};
+        };
+        NumericAuthoringData &ensureNumericAuthoring();
+        void releaseDefaultNumericAuthoring();
+        std::unique_ptr<NumericAuthoringData> m_numericAuthoring;
         std::unique_ptr<AuthoringData> m_authoring;
         MaterialRenderState::Ptr m_renderState;
         u32 m_writeDepth = 0;

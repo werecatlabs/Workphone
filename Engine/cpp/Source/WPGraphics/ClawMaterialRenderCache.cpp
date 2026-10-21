@@ -163,6 +163,7 @@ namespace workphone::render
         {
             m_store = std::move(other.m_store); m_sets = std::exchange(other.m_sets, {});
             m_lastIndex = std::exchange(other.m_lastIndex, Capacity);
+            m_maintenanceIndex = std::exchange(other.m_maintenanceIndex, 0);
             m_preparations = std::exchange(other.m_preparations, 0);
         }
         return *this;
@@ -201,9 +202,23 @@ namespace workphone::render
         Handle handle, const MaterialRenderState *state) const
     { return m_store ? m_store->get(handle, state) : nullptr; }
     void ClawMaterialRenderCache::clear()
-    { m_sets = {}; m_lastIndex = Capacity; m_store.reset(); m_preparations = 0; }
+    { m_sets = {}; m_lastIndex = Capacity; m_maintenanceIndex = 0; m_store.reset(); m_preparations = 0; }
     void ClawMaterialRenderCache::collectExpired()
-    { if(m_store) m_store->collect(m_store->size); }
+    {
+        if(m_store) m_store->collect(m_store->size);
+        for(auto &set : m_sets) for(auto &tag : set.tags)
+            if(tag.owner.expired()) tag = {};
+    }
+    void ClawMaterialRenderCache::maintain(u32 budget)
+    {
+        if(m_store) m_store->collect(budget);
+        for(u32 checked = 0, limit = std::min<u32>(budget, Capacity); checked < limit; ++checked)
+        {
+            auto &tag = m_sets[m_maintenanceIndex / Ways].tags[m_maintenanceIndex % Ways];
+            if(tag.owner.expired()) tag = {};
+            m_maintenanceIndex = (m_maintenanceIndex + 1) % Capacity;
+        }
+    }
     u64 ClawMaterialRenderCache::getStorageBytes() const
     { return sizeof(*this) + (m_store ? sizeof(Store) + m_store->memory.bytes : 0); }
     u64 ClawMaterialRenderCache::getStorageAllocationCount() const

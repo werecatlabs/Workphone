@@ -268,6 +268,60 @@ namespace
                   << " repeated_draws=20000 preparations=1\n";
     }
 
+    template<class T> struct SnapshotAllocationTracker
+    {
+        using value_type = T;
+        u32 *live;
+        explicit SnapshotAllocationTracker(u32 &count) : live(&count) {}
+        template<class U> SnapshotAllocationTracker(const SnapshotAllocationTracker<U> &other) : live(other.live) {}
+        T *allocate(size_t count) { auto result = std::allocator<T>{}.allocate(count); ++*live; return result; }
+        void deallocate(T *pointer, size_t count) { --*live; std::allocator<T>{}.deallocate(pointer, count); }
+        template<class U> bool operator==(const SnapshotAllocationTracker<U> &other) const { return live == other.live; }
+        template<class U> bool operator!=(const SnapshotAllocationTracker<U> &other) const { return !(*this == other); }
+    };
+
+    void runIdleRecordMaintenance()
+    {
+        using namespace render;
+        u32 liveAllocations = 0;
+        ClawMaterialRenderCache cache;
+        std::vector<MaterialRenderState::Ptr> states;
+        for(u32 i = 0; i < 257; ++i)
+        {
+            auto state = std::allocate_shared<MaterialRenderState>(SnapshotAllocationTracker<MaterialRenderState>(liveAllocations));
+            cache.resolve(state); states.push_back(std::move(state));
+        }
+        auto pinned = states.back();
+        const auto handle = cache.resolve(pinned);
+        const auto prepared = cache.lookup(handle);
+        auto lease = cache.retain();
+        states.clear();
+        const auto resident = cache.getResidentCount();
+        cache.maintain(0);
+        require(cache.getResidentCount() == resident && liveAllocations == resident,
+            "zero maintenance budget leaves expired weak metadata untouched");
+        constexpr u32 budget = 8;
+        const auto sweeps = (cache.getSlotCount() + budget - 1) / budget +
+                            (ClawMaterialRenderCache::Capacity + budget - 1) / budget;
+        const auto preparations = cache.getPreparationCount(), allocations = cache.getStorageAllocationCount();
+        for(u32 frame = 0; frame < sweeps; ++frame)
+        {
+            const auto before = cache.getResidentCount(); cache.maintain(budget);
+            require(before - cache.getResidentCount() <= budget && lease.get(handle) == prepared,
+                "budgeted idle collection bounds slots inspected and preserves pinned versions");
+        }
+        require(cache.getResidentCount() == 1 && liveAllocations == 1 &&
+                cache.getPreparationCount() == preparations && cache.getStorageAllocationCount() == allocations,
+            "idle sweeps release table and front-cache weak control blocks without preparation or allocation");
+        pinned.reset();
+        for(u32 frame = 0; frame < sweeps; ++frame) cache.maintain(budget);
+        require(liveAllocations == 0 && !lease.get(handle),
+            "idle collection releases the last coallocated snapshot while table leases remain alive");
+        auto final = std::allocate_shared<MaterialRenderState>(SnapshotAllocationTracker<MaterialRenderState>(liveAllocations));
+        cache.resolve(final); final.reset(); cache.collectExpired();
+        require(liveAllocations == 0, "explicit collection also clears expired front-cache weak owners");
+    }
+
     void runPersistentRecordTable()
     {
         using namespace render;
@@ -2243,6 +2297,7 @@ int main( int argc, char **argv )
         material_cache_benchmark::contracts();
         runMaterialPreparation();
         runPersistentRecordTable();
+        runIdleRecordMaintenance();
         std::cout << "authoring_pass_bytes=" << sizeof(render::ClawMaterialPass)
                   << " authoring_material_bytes=" << sizeof(render::ClawMaterial)
                   << " authoring_texture_unit_bytes=" << sizeof(render::ClawMaterialTexture)

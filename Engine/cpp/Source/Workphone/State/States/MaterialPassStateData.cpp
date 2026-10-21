@@ -10,6 +10,7 @@
 #include <functional>
 #include <vector>
 #include <cstring>
+#include <type_traits>
 #include <Workphone/Interface/System/IStateContext.hpp>
 
 namespace workphone
@@ -44,6 +45,8 @@ namespace workphone
         {
             const char *name;
             T MaterialPassStateData::*member;
+            u32 coldIndex = 0;
+            T defaultValue = {};
         };
 
         struct EditorBoolField
@@ -82,15 +85,15 @@ namespace workphone
             { "detailRotation", &MaterialPassStateData::detailRotation },
             { "detailStrength", &MaterialPassStateData::detailStrength },
             { "detailNormalStrength", &MaterialPassStateData::detailNormalStrength },
-            { "maxTextureSize", &MaterialPassStateData::maxTextureSize },
-            { "renderQueue", &MaterialPassStateData::renderQueue },
-            { "sortPriority", &MaterialPassStateData::sortPriority },
-            { "stencilRef", &MaterialPassStateData::stencilRef },
-            { "stencilReadMask", &MaterialPassStateData::stencilReadMask },
-            { "stencilWriteMask", &MaterialPassStateData::stencilWriteMask },
-            { "layerMaskStrength", &MaterialPassStateData::layerMaskStrength },
-            { "previewExposure", &MaterialPassStateData::previewExposure },
-            { "previewRotation", &MaterialPassStateData::previewRotation },
+            { "maxTextureSize", nullptr, 0u, 2048.0f },
+            { "renderQueue", nullptr, 1u, 2000.0f },
+            { "sortPriority", nullptr, 2u, 0.0f },
+            { "stencilRef", nullptr, 3u, 0.0f },
+            { "stencilReadMask", nullptr, 4u, 255.0f },
+            { "stencilWriteMask", nullptr, 5u, 255.0f },
+            { "layerMaskStrength", nullptr, 6u, 1.0f },
+            { "previewExposure", nullptr, 7u, 1.0f },
+            { "previewRotation", nullptr, 8u, 0.0f },
         };
 
         const EditorField<u32> UIntFields[] = {
@@ -114,14 +117,14 @@ namespace workphone
             { "dstBlend", &MaterialPassStateData::dstBlend },
             { "depthTest", &MaterialPassStateData::depthTest },
             { "layerBlend", &MaterialPassStateData::layerBlend },
-            { "materialVariant", &MaterialPassStateData::materialVariant },
-            { "technique", &MaterialPassStateData::technique },
-            { "pcCompression", &MaterialPassStateData::pcCompression },
-            { "macCompression", &MaterialPassStateData::macCompression },
-            { "iosCompression", &MaterialPassStateData::iosCompression },
-            { "androidCompression", &MaterialPassStateData::androidCompression },
-            { "previewShape", &MaterialPassStateData::previewShape },
-            { "previewEnvironment", &MaterialPassStateData::previewEnvironment },
+            { "materialVariant", nullptr, 0u, 0u },
+            { "technique", nullptr, 1u, 0u },
+            { "pcCompression", nullptr, 2u, 0u },
+            { "macCompression", nullptr, 3u, 0u },
+            { "iosCompression", nullptr, 4u, 0u },
+            { "androidCompression", nullptr, 5u, 0u },
+            { "previewShape", nullptr, 6u, 0u },
+            { "previewEnvironment", nullptr, 7u, 0u },
         };
 
         const EditorBoolField BoolFields[] = {
@@ -152,9 +155,14 @@ namespace workphone
         void writeEditorFields( const MaterialPassStateData &state, Properties &properties,
                                 const EditorField<T> ( &fields )[N] )
         {
-            for( const auto &field : fields )
+            for( u32 i = 0; i < N; ++i )
             {
-                properties.setProperty( field.name, state.*( field.member ) );
+                T value{};
+                if constexpr( std::is_same_v<T, f32> )
+                    state.getFloatSetting( static_cast<MaterialFloatSetting>( i ), value );
+                else
+                    state.getUIntSetting( static_cast<MaterialUIntSetting>( i ), value );
+                properties.setProperty( fields[i].name, value );
             }
         }
     }  // namespace
@@ -408,7 +416,17 @@ namespace workphone
     {
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( FloatFields ) / sizeof( FloatFields[0] ) ) return false;
-        this->*( FloatFields[i].member ) = value;
+        const auto &field = FloatFields[i];
+        if( field.member ) this->*( field.member ) = value;
+        else
+        {
+            const auto current = m_numericAuthoring ? m_numericAuthoring->floats[field.coldIndex] : field.defaultValue;
+            if( !sameMaterialValue( current, value ) )
+            {
+                ensureNumericAuthoring().floats[field.coldIndex] = value;
+                releaseDefaultNumericAuthoring();
+            }
+        }
         if( !m_writeDepth ) publishRenderState();
         return true;
     }
@@ -417,7 +435,9 @@ namespace workphone
     {
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( FloatFields ) / sizeof( FloatFields[0] ) ) return false;
-        value = this->*( FloatFields[i].member );
+        const auto &field = FloatFields[i];
+        value = field.member ? this->*( field.member ) :
+            m_numericAuthoring ? m_numericAuthoring->floats[field.coldIndex] : field.defaultValue;
         return true;
     }
 
@@ -446,7 +466,17 @@ namespace workphone
         }
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( UIntFields ) / sizeof( UIntFields[0] ) ) return false;
-        this->*( UIntFields[i].member ) = value;
+        const auto &field = UIntFields[i];
+        if( field.member ) this->*( field.member ) = value;
+        else
+        {
+            const auto current = m_numericAuthoring ? m_numericAuthoring->uints[field.coldIndex] : field.defaultValue;
+            if( current != value )
+            {
+                ensureNumericAuthoring().uints[field.coldIndex] = value;
+                releaseDefaultNumericAuthoring();
+            }
+        }
         if( !m_writeDepth ) publishRenderState();
         return true;
     }
@@ -457,7 +487,9 @@ namespace workphone
         { value = static_cast<u32>( materialType ); return true; }
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( UIntFields ) / sizeof( UIntFields[0] ) ) return false;
-        value = this->*( UIntFields[i].member );
+        const auto &field = UIntFields[i];
+        value = field.member ? this->*( field.member ) :
+            m_numericAuthoring ? m_numericAuthoring->uints[field.coldIndex] : field.defaultValue;
         return true;
     }
 
@@ -541,6 +573,34 @@ namespace workphone
     {
         return BitUtil::getFlagValue( flags, flag );
     }
+
+    MaterialPassStateData::NumericAuthoringData &MaterialPassStateData::ensureNumericAuthoring()
+    {
+        if( !m_numericAuthoring )
+        {
+            auto next = std::make_unique<NumericAuthoringData>();
+            for( const auto &field : FloatFields )
+                if( !field.member ) next->floats[field.coldIndex] = field.defaultValue;
+            for( const auto &field : UIntFields )
+                if( !field.member ) next->uints[field.coldIndex] = field.defaultValue;
+            m_numericAuthoring = std::move( next );
+        }
+        return *m_numericAuthoring;
+    }
+
+    void MaterialPassStateData::releaseDefaultNumericAuthoring()
+    {
+        if( !m_numericAuthoring ) return;
+        for( const auto &field : FloatFields )
+            if( !field.member && !sameMaterialValue( m_numericAuthoring->floats[field.coldIndex], field.defaultValue ) )
+                return;
+        for( const auto &field : UIntFields )
+            if( !field.member && m_numericAuthoring->uints[field.coldIndex] != field.defaultValue ) return;
+        m_numericAuthoring.reset();
+    }
+
+    size_t MaterialPassStateData::getNumericAuthoringStorageBytes() const
+    { return m_numericAuthoring ? sizeof( NumericAuthoringData ) : 0; }
 
     void MaterialPassStateData::writeEditorSettings( Properties &floats, Properties &uints,
                                                      Properties &bools, Properties &strings ) const

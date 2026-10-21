@@ -241,6 +241,38 @@ namespace
         return ok;
     }
 
+    bool testIdleMaterialRetirement( ClawRendererDX11 &renderer )
+    {
+        claw_foliage_scene_contracts::Fixture fixture;
+        auto target = make_ptr<ClawRenderTarget>(); target->setSize({64,64});
+        renderer.setRenderTarget(target); renderer.setViewport(nullptr);
+        const auto baseline = renderer.getMaterialRecordStatistics();
+        auto material = make_ptr<ClawMaterial>();
+        auto technique = make_ptr<ClawMaterialTechnique>();
+        technique->setMaterial(material.get()); technique->createPass();
+        material->setTechniques({technique});
+        TestMesh mesh; mesh.setMaterial(material);
+        ClawMaterialDrawRecords records;
+        for(u32 edit = 0; edit < 129; ++edit)
+        {
+            material->setRoughness(f32(edit) / 129);
+            records.capture(&mesh); renderer.prepareMaterialRecords(records); records.clear();
+        }
+        mesh.setMaterial(nullptr); material->unload(nullptr); material = nullptr; technique = nullptr;
+        const auto pending = renderer.getMaterialRecordStatistics();
+        const auto frames = (pending.slots + 31) / 32 + 4;
+        for(u32 frame = 0; frame < frames; ++frame)
+        {
+            renderer.beginRender(); renderer.endRender();
+        }
+        const auto retired = renderer.getMaterialRecordStatistics();
+        const bool ok = check(retired.resident <= baseline.resident && retired.resident < pending.resident &&
+            retired.preparations == pending.preparations && retired.storageAllocations == pending.storageAllocations,
+            "idle frame boundaries retire expired material records without new draws, preparation or allocation");
+        renderer.setRenderTarget(nullptr);
+        return ok;
+    }
+
     bool testPreparedMaterialEdits( ClawRendererDX11 &renderer )
     {
         claw_foliage_scene_contracts::Fixture fixture;
@@ -306,8 +338,10 @@ namespace
             for(int replacement = 0; replacement < 4; ++replacement)
             {
                 streamed->currentView = replacement == 1 ? redView.Get() : replacement == 2 ? greenView.Get() : nullptr;
+                renderer.beginRender();
                 renderer.clear(ColourF::Black);
                 ok &= renderer.renderMeshRecords(&mesh, Matrix4F::identity(), retained, *retained.find(&mesh));
+                renderer.endRender();
                 const auto pixels = claw_foliage_contracts::pixels(native);
                 const auto offset = (32u * 64u + 32u) * 4u;
                 ok &= check((replacement == 2 ? pixels[offset] < 10 : pixels[offset] > 200) &&
@@ -920,6 +954,7 @@ int main( int argc, char **argv )
             ok &= testRenderedFeatures(renderer); // Run the same pixel contracts with split constants.
             ok &= testPreparedMaterialEdits(renderer);
             ok &= testSkyMaterialPublications(renderer);
+            ok &= testIdleMaterialRetirement(renderer);
             ok &= testSortedTransparency(renderer);
             ok &= testMeshShadows(renderer);
             ok &= claw_terrain_contracts::run(renderer);
