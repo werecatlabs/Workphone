@@ -2,14 +2,14 @@
 #define BlockNode_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
-#include <WPProcedural/CProceduralObject.hpp>
+#include <WPProcedural/CProceduralNode.hpp>
 
 namespace workphone
 {
     namespace procedural
     {
 
-        class WPProcedural_API BlockNode  //: public CProceduralObject
+        class WPProcedural_API BlockNode : public CProceduralNode<IProceduralNode>
         {
         public:
             BlockNode();

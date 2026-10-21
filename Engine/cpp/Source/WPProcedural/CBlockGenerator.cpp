@@ -2,7 +2,7 @@
 #include "WPProcedural/CBlockGenerator.hpp"
 #include <WPProcedural/CCityBlock.hpp>
 #include <Workphone/Workphone.hpp>
-//#include "Wm5PlanarGraph.hpp"
+#include "PlanarGraph.hpp"
 
 namespace workphone
 {
@@ -459,5 +459,11 @@ namespace workphone
 
             return blockInfo;
         }
+
+        CBlockGenerator::BlockInfo::BlockInfo( bool isClosedBlock /*= false */ ) :
+            IsClosedBlock( isClosedBlock )
+        {
+        }
+
     }  // namespace procedural
 }  // namespace workphone

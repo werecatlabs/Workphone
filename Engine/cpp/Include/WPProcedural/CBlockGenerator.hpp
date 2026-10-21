@@ -15,6 +15,13 @@ namespace workphone
         class WPProcedural_API CBlockGenerator : public CProceduralGenerator<IBlockGenerator>
         {
         public:
+            struct BlockInfo
+            {
+                BlockInfo( bool isClosedBlock = false );
+
+                bool IsClosedBlock;
+            };
+
             CBlockGenerator();
             ~CBlockGenerator() override;
 
@@ -31,15 +38,6 @@ namespace workphone
             void testMemoryUsage();
 
         private:
-            struct BlockInfo
-            {
-                BlockInfo( bool isClosedBlock = false ) : IsClosedBlock( isClosedBlock )
-                {
-                }
-
-                bool IsClosedBlock;
-            };
-
             void generateBlocks();
             void generateBlocks2();
 
@@ -51,9 +49,6 @@ namespace workphone
                                         SmartPtr<scene::IGameActor> originalNode,
                                         SmartPtr<scene::IGameActor> connectedNode,
                                         Set<u32> &visitedNodes );
-
-            Properties m_blockPropGrp;
-            Properties m_blockNodePropGrp;
 
             SmartPtr<scene::IGameActor> m_selectedLayer;
 

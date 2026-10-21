@@ -67,6 +67,7 @@ namespace workphone
                 real_Num depth = 1.5f;  ///< Pull-in distance
                 s32 side = 0;           ///< 0=front, 1=right, 2=back, 3=left
             };
+
             Array<Setback> setbacks;
 
             /// Per-floor room plans (optional). If absent, just wall shell is generated.
