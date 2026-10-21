@@ -28,6 +28,7 @@
 #include <WPProcedural/CWorldGenerator.hpp>
 #include <WPProcedural/MeshFace.hpp>
 #include <WPProcedural/MeshGeneratorDefault.hpp>
+#include <WPProcedural/ProceduralComponent.hpp>
 
 namespace workphone
 {
@@ -57,6 +58,8 @@ namespace workphone
             CVehiclePresentation::setupTypeInfo();
             CVehiclePhysics::setupTypeInfo();
             CRoadSystem::setupTypeInfo();
+
+            FactoryUtil::addFactory<ProceduralComponent>();
 
             FactoryUtil::addFactoryByName<CRoadSystem>( "IRoadSystem" );
             FactoryUtil::addFactoryByName<CSkyAtmosphere>( "ISkyAtmosphere" );
