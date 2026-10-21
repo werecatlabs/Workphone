@@ -538,3 +538,18 @@ if(WP_BUILD_TESTS AND TARGET Workphone)
     set_target_properties(WPPlanarGraphTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPProcedural.planar_graph COMMAND WPPlanarGraphTests)
 endif()
+
+if(WP_BUILD_TESTS AND TARGET WPProcedural)
+    add_executable(WPBlockGeneratorTests BlockGeneratorTests.cpp)
+    target_include_directories(WPBlockGeneratorTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_compile_definitions(WPBlockGeneratorTests PRIVATE BOOST_ALL_NO_LIB)
+    target_link_libraries(WPBlockGeneratorTests PRIVATE
+        $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
+    add_dependencies(WPBlockGeneratorTests Workphone WPProcedural)
+    set_target_properties(WPBlockGeneratorTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPProcedural.block_generator COMMAND WPBlockGeneratorTests)
+    set_tests_properties(WPProcedural.block_generator PROPERTIES
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPBlockGeneratorTests>" TIMEOUT 60)
+endif()
+

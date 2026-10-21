@@ -9,11 +9,14 @@ namespace workphone
     namespace procedural
     {
 
+        /* Used to represent points in the block. Let users control the points. */
         class WPProcedural_API BlockNode : public CProceduralNode<IProceduralNode>
         {
         public:
             BlockNode();
             ~BlockNode();
+
+            Vector3<real_Num> m_point;
         };
     }  // end namespace procedural
 }  // namespace workphone

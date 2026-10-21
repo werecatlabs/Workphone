@@ -30,6 +30,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            Array<SmartPtr<BlockNode>> m_nodes;
             Array<Vector3<real_Num>> m_points;
             Array<SmartPtr<ILot>> m_lots;
         };
