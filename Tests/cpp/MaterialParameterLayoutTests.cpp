@@ -10,6 +10,7 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <unordered_set>
 
 using namespace workphone;
 using namespace workphone::render;
@@ -137,6 +138,9 @@ namespace
         MaterialShaderParametersInstance a, b;
         a.Reset( layout ); b.Reset( layout );
         require( &a.GetParameterInfo() == &b.GetParameterInfo(), "shared metadata" );
+        require(!a.GetValueStorageIdentity() && !b.GetValueStorageIdentity() &&
+                &a.GetParameterMemory() == &layout->GetDefaults() &&
+                &a.GetParameterMemory() == &b.GetParameterMemory(), "default values have one layout owner");
         require( !a.ValidateResourceHandles(), "resources default to invalid" );
         const auto roughness = a.Resolve<f32>( "Roughness" );
         require( roughness.IsValid() && !a.Resolve<s32>( "Roughness" ).IsValid(), "typed resolution" );
@@ -149,8 +153,14 @@ namespace
         require( b.Set( roughness, 0.7f ) && a.GetScalar( roughness.handle ) == 0.35f,
                  "same-layout handles work across independent instances" );
         auto copy = a;
+        require(copy.GetValueStorageIdentity() == a.GetValueStorageIdentity(), "clone initially shares value payload");
+        require(copy.Set(roughness, 0.35f) && copy.GetValueStorageIdentity() == a.GetValueStorageIdentity(),
+                "no-op writes do not detach clone values");
+        require(!copy.SetScalar(roughness.handle, s32(2)) &&
+                copy.GetValueStorageIdentity() == a.GetValueStorageIdentity(), "invalid writes do not detach clones");
         require( copy.GetLayout() == a.GetLayout() && copy.Set( roughness, 0.6f ) &&
                  a.GetScalar( roughness.handle ) == 0.35f, "clone values independent" );
+        require(copy.GetValueStorageIdentity() != a.GetValueStorageIdentity(), "effective clone edit detaches its values");
         const auto before = a.GetParameterMemory();
         require( !a.SetScalar( roughness.handle, s32( 42 ) ), "same-size wrong scalar type rejected" );
         require( !a.SetVector4( a.FindParameter( "Albedo" ), Vector4F{} ), "colour/vector distinction" );
@@ -294,6 +304,67 @@ namespace
             { std::memcpy( bytes.data() + p.m_offsetInBytes, &value, sizeof( value ) ); return; }
         }
     };
+    size_t populationBytes(const std::vector<MaterialShaderParametersInstance> &instances,
+                           const MaterialShaderParameterLayout::Ptr &layout)
+    {
+        size_t bytes = instances.capacity() * sizeof(MaterialShaderParametersInstance) + layout->GetStorageBytes();
+        std::unordered_set<const void *> values;
+        for(const auto &instance : instances)
+            if(auto identity = instance.GetValueStorageIdentity(); identity && values.insert(identity).second)
+                bytes += instance.GetValueStorageBytes();
+        return bytes;
+    }
+    void sharingContracts()
+    {
+        Array<MaterialShaderParameterInfo> info;
+        for(u32 i = 0; i < 128; ++i) info.push_back({MaterialShaderParameterType::Scalar, "Value" + String(std::to_string(i).c_str())});
+        auto layout = MaterialShaderParameterLayout::Create(info);
+        const auto value = layout->FindParameter("Value0");
+        MaterialShaderParametersInstance prototype; prototype.Reset(layout);
+        std::vector<MaterialShaderParametersInstance> instances(10000, prototype);
+        const auto defaults = populationBytes(instances, layout);
+        for(auto &instance : instances)
+        {
+            const auto revision = instance.GetRevision();
+            require(instance.SetScalar(value, 0.0f) && instance.GetRevision() == revision &&
+                    !instance.GetValueStorageIdentity(), "default no-op population stays allocation-free");
+        }
+        prototype.SetScalar(value, 0.75f);
+        instances.assign(10000, prototype);
+        require(instances.front().GetValueStorageIdentity() == instances.back().GetValueStorageIdentity(),
+                "authored clones share one immutable payload");
+        const auto clones = populationBytes(instances, layout);
+        for(size_t i = 0; i < instances.size(); i += 100) instances[i].SetScalar(value, 0.5f);
+        const auto sparse = populationBytes(instances, layout);
+        require(prototype.GetScalar(value) == 0.75f && instances[1].GetScalar(value) == 0.75f &&
+                instances[0].GetScalar(value) == 0.5f, "sparse edits preserve all other clones");
+        const auto identity = instances[0].GetValueStorageIdentity();
+        instances[0].SetScalar(value, 0.25f);
+        require(identity == instances[0].GetValueStorageIdentity(), "unique authored values edit in place");
+        for(auto &instance : instances) instance.SetScalar(value, 0.125f);
+        const auto edited = populationBytes(instances, layout);
+        struct EagerInstanceReference
+        {
+            MaterialShaderParameterLayout::Ptr layout;
+            Array<u8> values;
+            u64 revision, lookups;
+            Material *owner;
+        };
+        const auto eager = layout->GetStorageBytes() + instances.capacity() *
+            (sizeof(EagerInstanceReference) + layout->GetDefaults().size());
+        require(defaults < eager && clones < eager && sparse < eager,
+                "shared/default/sparse populations reduce accounted value storage");
+        for(const auto &instance : instances) require(instance.GetScalar(value) == 0.125f, "all edited values remain independent");
+        MaterialShaderParametersInstance moved(std::move(instances[0]));
+        require(!instances[0].IsValid() && instances[0].GetParameterMemory().empty() && moved.GetScalar(value) == 0.125f,
+                "move leaves an empty source and retains authored values");
+        moved.Reset(layout);
+        require(!moved.GetValueStorageIdentity() && moved.GetScalar(value) == 0.0f, "reset releases authored payload and borrows defaults");
+        std::cout << "value_sharing instances=10000 parameters=128 eager_reference_bytes=" << eager
+                  << " defaults_bytes=" << defaults
+                  << " clone_bytes=" << clones << " one_percent_edited_bytes=" << sparse
+                  << " all_edited_bytes=" << edited << " payload_control_blocks_excluded=1\n";
+    }
     void benchmark()
     {
         std::cout << "legacy_pass_state_bytes=" << sizeof( LegacyPassStateStorage )
@@ -309,11 +380,10 @@ namespace
             const auto layout = MaterialShaderParameterLayout::Create( info );
             std::vector<MaterialShaderParametersInstance> compact( count );
             std::vector<LegacyInstance> legacy( count );
-            size_t compactBytes = layout->GetStorageBytes(), legacyBytes = 0;
+            size_t legacyBytes = 0;
             for( size_t i = 0; i < count; ++i )
             {
                 compact[i].Reset( layout );
-                compactBytes += compact[i].GetInstanceStorageBytes();
                 legacy[i].info = layout->GetParameterInfo();
                 legacy[i].bytes = layout->GetDefaults();
                 legacyBytes += sizeof( LegacyInstance ) + legacy[i].bytes.capacity() +
@@ -337,7 +407,9 @@ namespace
                 }
                 std::sort( samples.begin(), samples.end() ); return samples[3];
             };
+            const auto defaultBytes = populationBytes(compact, layout);
             const auto oldMs = measure( true ), newMs = measure( false );
+            const auto compactBytes = populationBytes(compact, layout);
             double checksum = 0;
             for( size_t i = 0; i < count; ++i )
             {
@@ -349,6 +421,7 @@ namespace
             require( compactBytes * 2 < legacyBytes, "shared-layout storage target" );
             std::cout << "parameters=" << parameterCount << " instances=" << count
                       << " legacy_accounted_bytes=" << legacyBytes << " shared_accounted_bytes=" << compactBytes
+                      << " shared_default_bytes=" << defaultBytes
                       << " legacy_median_ms=" << oldMs << " handles_median_ms=" << newMs
                       << " checksum=" << checksum << '\n';
         }
@@ -361,6 +434,7 @@ int main( int argc, char **argv )
     {
         contracts();
         snapshotContracts();
+        sharingContracts();
         if( argc > 1 && std::strcmp( argv[1], "--benchmark" ) == 0 ) benchmark();
         std::cout << "Material parameter layout contracts passed\n";
         return 0;

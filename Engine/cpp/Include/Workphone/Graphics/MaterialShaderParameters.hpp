@@ -90,9 +90,10 @@ namespace workphone::render
         bool IsValid() const { return handle.IsValid(); }
     };
 
-    /** Owning-thread use or external synchronization required. Copies share schemas,
-     * but own independent bytes. Effective writes (including through retained mutable
-     * references) advance the revision. Raw mutable bytes are never exposed.
+    /** Owning-thread use or external synchronization required. Copies share schemas
+     * and immutable values until an effective write detaches them. Effective writes
+     * (including through retained mutable instance references) advance the revision.
+     * Raw mutable bytes are never exposed.
      */
     class WPCore_API MaterialShaderParametersInstance
     {
@@ -126,12 +127,19 @@ namespace workphone::render
         void Clear();
         bool IsValid() const { return m_layout && !GetParameterInfo().empty(); }
         const Array<MaterialShaderParameterInfo> &GetParameterInfo() const;
-        const Array<u8> &GetParameterMemory() const { return m_parametersMemory; }
-        u32 GetParameterBufferSize() const { return static_cast<u32>( m_parametersMemory.size() ); }
+        // Borrowed bytes: reacquire after an effective write/reset/assignment.
+        const Array<u8> &GetParameterMemory() const;
+        u32 GetParameterBufferSize() const { return static_cast<u32>( GetParameterMemory().size() ); }
         const MaterialShaderParameterLayout::Ptr &GetLayout() const { return m_layout; }
         u64 GetRevision() const { return m_revision; }
         u64 GetNameLookupCount() const { return m_nameLookups; }
+        // Conservative per-instance charge; deduplicate non-null value identities
+        // when accounting a population. Defaults belong to the shared layout;
+        // shared-pointer control blocks and allocator overhead are excluded.
         size_t GetInstanceStorageBytes() const;
+        // Live accounting identities only, not persistent material handles.
+        const void *GetValueStorageIdentity() const { return m_parametersMemory.get(); }
+        size_t GetValueStorageBytes() const;
         MaterialShaderParameterHandle FindParameter( const String &name ) const;
         MaterialShaderParameterHandle GetParameter( u32 index ) const;
         MaterialShaderParameterHandle GetBuiltin( MaterialBuiltinParameter semantic ) const;
@@ -191,7 +199,8 @@ namespace workphone::render
         bool WriteBytes( MaterialShaderParameterHandle h, const void *value, u32 size, MaterialShaderParameterType type );
         bool ReadBytes( MaterialShaderParameterHandle h, void *value, u32 size, MaterialShaderParameterType type ) const;
         MaterialShaderParameterLayout::Ptr m_layout;
-        Array<u8> m_parametersMemory;
+        // Null borrows layout defaults. Only effective writes allocate/detach.
+        std::shared_ptr<Array<u8>> m_parametersMemory;
         u64 m_revision = 0;
         mutable u64 m_nameLookups = 0;
         // Binding belongs to this physical instance, never to copies/moved values.

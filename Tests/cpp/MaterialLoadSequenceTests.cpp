@@ -1776,9 +1776,13 @@ namespace
                  "automatic opacity edits preserve alpha and render-mode normalization" );
 
         auto detached = parameters;
+        require(detached.GetValueStorageIdentity() == parameters.GetValueStorageIdentity(),
+                "copying observed shader parameters shares values without copying their observer");
         detached.Set( rough, 0.8f );
         require( material->getRenderState() == transparent, "copies never inherit a material observer" );
         parameters = detached;
+        require(parameters.GetValueStorageIdentity() == detached.GetValueStorageIdentity(),
+                "assignment shares the authored payload while retaining physical owner identity");
         require( material->getRenderState()->roughness == 0.8f, "assignment retains the destination observer" );
         detached.Set( rough, 0.6f );
         require( material->getRenderState()->roughness == 0.8f, "assigned sources remain independent" );

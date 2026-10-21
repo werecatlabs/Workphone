@@ -1,10 +1,10 @@
 # Material optimization implementation status
 
-20 October 2026. Tracks [WPMATERIAL_OPTIMIZATION_PLAN.md](WPMATERIAL_OPTIMIZATION_PLAN.md).
+21 October 2026. Tracks [WPMATERIAL_OPTIMIZATION_PLAN.md](WPMATERIAL_OPTIMIZATION_PLAN.md).
 
 ## Implemented runtime changes
 
-- `MaterialShaderParameterLayout` owns immutable parameter metadata, defaults, a sorted stable-ID lookup table and cached built-in bindings. Registered shader instances retain this layout instead of copying names/descriptors. Instance copies retain independent value bytes.
+- `MaterialShaderParameterLayout` owns immutable parameter metadata, defaults, a sorted stable-ID lookup table and cached built-in bindings. Registered shader instances retain this layout instead of copying names/descriptors. Instances borrow layout defaults; authored parameter copies share a value payload until an effective write detaches it, preserving independent value behavior.
 - Parameter handles carry a unique layout identity and slot. Typed resolution/access distinguishes float, signed/unsigned integer, bool, colour, vector, matrix and resource kinds. Invalid/stale/cross-layout/type/size/offset operations are rejected in every build. Values remain packed CPU bytes accessed through copies, independent of GPU packing.
 - Parameter instances expose effective-write revisions and name-lookup/storage counters. Built-in PBR bridges use cached semantic handles. Serialization iterates slots directly; names remain at the asset/editor boundary.
 - Standard material settings have numeric IDs and table-indexed access. Built-in controls now use these IDs directly; the existing named editor API resolves a setting once at the authoring boundary and shares the numeric access implementation.
@@ -341,6 +341,32 @@ The scene fixture compares direct section/material/snapshot resolution with reus
 `MaterialPass` no longer retains five unused colour fields and duplicate metalness/roughness defaults; the existing `MaterialPassStateData` remains their owner. `ClawMaterialTexture` no longer shadows the base texture reference, transform, tint, type and animator. Its texture setter now uses the base notification path so direct unit edits publish through the pass. Authored unresolved texture names and property/UUID serialization remain available. Tests cover base/native access coherence and snapshot invalidation.
 
 Measured Windows x64 object sizes fall from 304 to 216 bytes per pass (88 bytes saved) and 368 to 320 bytes per Claw texture unit (48 bytes saved). Baseline debugger evidence is `project_x64/material_m3_m4_baseline_sizes.log`; the load-sequence contract prints current sizes. These changes require rebuilding C++ clients. They do not eliminate the legacy/shader-parameter value mirror or establish the total-material memory target; M4 remains incomplete.
+
+## Shared shader-value ownership (M4 continuation, 21 October)
+
+`MaterialShaderParametersInstance` now borrows immutable layout defaults without allocating a per-instance byte vector. The first effective write allocates authored values. Copies and assignments share that payload; an effective write detaches a shared payload before mutation, and subsequent writes to unique values edit in place. No-op/wrong-type/stale-handle writes do not allocate, detach or advance revisions. Reset/clear releases authored storage and returns to layout defaults. Material observers remain bound to physical instances; copies never inherit an observer and assignments retain the destination observer. Allocation happens before changing bytes/revisions or notifying an owner.
+
+The public typed/legacy accessors and const byte-array API remain available. `GetParameterMemory()` returns a borrowed view: reacquire it after an effective write/reset/assignment, and copy it when an independently retained byte snapshot is required. Repository callers were audited. Sharing does not make one instance concurrently mutable; owning-thread/external synchronization rules still apply. Separate copied instances can detach without mutating each other's values.
+
+This preserves the authored-versus-rendered distinction: existing contracts intentionally allow a legacy pass edit to differ from shader-authored values until an explicit full reapply. Automatically aliasing those fields would change that behavior. This continuation reduces shader-value allocations and clone duplication; it does **not** complete M4's standard/shader value-ownership migration.
+
+The 10,000-instance / 128-scalar contract compares accounted live population storage with a frozen eager-value instance representation using the same shared schema. Shared payloads are deduplicated by identity. Figures include instance objects, schema accounting, value-array objects and capacity; exclude shared-pointer control blocks and allocator overhead, and are not whole-material/scene totals:
+
+| Population | Accounted bytes |
+| --- | ---: |
+| Eager independent values (reference) | 5,939,240 |
+| Shared layout defaults | 579,240 |
+| Copies of one authored value buffer | 579,792 |
+| Authored copies with 1% independently edited | 634,992 |
+| Every instance detached and edited | 6,099,240 |
+
+Defaults/authored copies use about 90.2% less accounted storage and the 1%-edited population 89.3% less. Fully detached values use **2.7% more accounted storage before control-block overhead** than the eager reference. The benefit depends on actual sharing; this is not an unconditional memory or CPU improvement. Windows x64 parameter objects shrink from the reference's 80 bytes to 56; the rebuilt `ClawMaterial` object measures 1,632 bytes versus the prior 1,656. Size evidence: `project_x64/material_m4_values_sizes.log` and the prior `material_m3_m4_baseline_sizes.log`. C++ clients require rebuilding.
+
+The existing seven-sample scalar-update fixture now accounts storage **after** edits, rather than reporting pre-edit defaults as if they were the edited footprint. For 8 / 32 / 128 parameters and 10,000 fully edited instances it reports 1,281,480 / 2,245,032 / 6,105,540 accounted bytes and 16.3638 / 16.4980 / 16.7583 ms per million retained-handle writes on this host. Its frozen copied-metadata/name-scan reference is older than this continuation; timings do not isolate the cost of copy-on-write from the previous typed implementation. `material_m4_values_benchmark.log` records values/checksum parity and default versus edited bytes. No whole-frame/hardware-cache claim follows from this fixture.
+
+Debug and RelWithDebInfo material suites pass **4/4 (29.91 s / 22.66 s)**, including parameter types, shared defaults/clone detachment, 0%/1%/100% edits, revision and resource invariants, live owner publication/assignment/move, explicit reapply, serialization, GPU typed edits and cooked device/replacement behavior. The rebuilt Debug selection passes **105 cases / 1,899 assertions**. Logs: `material_m4_values_debug_build.log`, `material_m4_values_rwi_build.log`, `material_m4_values_rwi_final_build.log`, `material_m4_values_debug_contracts.log`, `material_m4_values_rwi_contracts.log`, matching `*_evidence.log`, and `material_m4_values_unit_tests.log`.
+
+The rebuilt Debug **Editor aggregate passes 66/66 cases and 2,781,544 assertions in 563.75 s** (`material_m4_values_editor_all.log`, `material_m4_values_editor_evidence.log`). This is automated regression evidence; hardware/interactive certification and total-material memory profiling remain open. `git diff --check` passes.
 
 ## Remaining plan gates
 

@@ -114,8 +114,8 @@ namespace workphone::render
         const MaterialShaderParametersInstance &other )
     {
         if( this == &other ) return *this;
-        if( m_layout == other.m_layout && m_parametersMemory == other.m_parametersMemory ) return *this;
-        auto bytes = other.m_parametersMemory; // Preserve the destination on allocation failure.
+        if( m_layout == other.m_layout && GetParameterMemory() == other.GetParameterMemory() ) return *this;
+        auto bytes = other.m_parametersMemory;
         m_layout = other.m_layout;
         m_parametersMemory = std::move( bytes );
         ++m_revision;
@@ -136,7 +136,7 @@ namespace workphone::render
         MaterialShaderParametersInstance &&other ) noexcept
     {
         if( this == &other ) return *this;
-        const bool changed = m_layout != other.m_layout || m_parametersMemory != other.m_parametersMemory;
+        const bool changed = m_layout != other.m_layout || GetParameterMemory() != other.GetParameterMemory();
         m_layout = std::move( other.m_layout );
         m_parametersMemory = std::move( other.m_parametersMemory );
         if( changed ) { ++m_revision; NotifyOwner( 0xffu ); }
@@ -166,8 +166,7 @@ namespace workphone::render
     { Reset( MaterialShaderParameterLayout::Create( info ) ); }
     void MaterialShaderParametersInstance::Reset( MaterialShaderParameterLayout::Ptr layout )
     {
-        if( layout ) m_parametersMemory = layout->GetDefaults();
-        else m_parametersMemory.clear();
+        m_parametersMemory.reset();
         m_layout = std::move( layout );
         ++m_revision;
         NotifyOwner( 0xffu );
@@ -179,7 +178,14 @@ namespace workphone::render
         return m_layout ? m_layout->GetParameterInfo() : empty;
     }
     size_t MaterialShaderParametersInstance::GetInstanceStorageBytes() const
-    { return sizeof( *this ) + m_parametersMemory.capacity(); }
+    { return sizeof( *this ) + GetValueStorageBytes(); }
+    size_t MaterialShaderParametersInstance::GetValueStorageBytes() const
+    { return m_parametersMemory ? sizeof(Array<u8>) + m_parametersMemory->capacity() : 0; }
+    const Array<u8> &MaterialShaderParametersInstance::GetParameterMemory() const
+    {
+        static const Array<u8> empty;
+        return m_parametersMemory ? *m_parametersMemory : m_layout ? m_layout->GetDefaults() : empty;
+    }
     MaterialShaderParameterHandle MaterialShaderParametersInstance::FindParameter( const String &name ) const
     {
         ++m_nameLookups;
@@ -196,17 +202,21 @@ namespace workphone::render
             h.m_parameterIndex >= GetParameterInfo().size() ) return false;
         const auto &p = GetParameterInfo()[h.m_parameterIndex];
         return p.m_type == type && p.m_strideInBytes == size && h.m_strideInBytes == size &&
-               h.m_offsetInBytes == p.m_offsetInBytes && h.m_offsetInBytes <= m_parametersMemory.size() &&
-               size <= m_parametersMemory.size() - h.m_offsetInBytes;
+               h.m_offsetInBytes == p.m_offsetInBytes && h.m_offsetInBytes <= GetParameterBufferSize() &&
+               size <= GetParameterBufferSize() - h.m_offsetInBytes;
     }
     bool MaterialShaderParametersInstance::WriteBytes( MaterialShaderParameterHandle h,
         const void *value, u32 size, MaterialShaderParameterType type )
     {
         if( !value || !IsHandleValid( h, type, size ) ) return false;
-        auto *destination = m_parametersMemory.data() + h.m_offsetInBytes;
-        if( std::memcmp( destination, value, size ) != 0 )
+        const auto &memory = GetParameterMemory();
+        if( std::memcmp( memory.data() + h.m_offsetInBytes, value, size ) != 0 )
         {
-            std::memcpy( destination, value, size );
+            // Allocate before mutation/notification: failure leaves values and
+            // revision intact. No-op and rejected writes never detach.
+            if(!m_parametersMemory || !m_parametersMemory.unique())
+                m_parametersMemory = std::make_shared<Array<u8>>(memory);
+            std::memcpy( m_parametersMemory->data() + h.m_offsetInBytes, value, size );
             ++m_revision;
             if( m_owner )
             {
@@ -228,7 +238,7 @@ namespace workphone::render
         void *value, u32 size, MaterialShaderParameterType type ) const
     {
         if( !value || !IsHandleValid( h, type, size ) ) return false;
-        std::memcpy( value, m_parametersMemory.data() + h.m_offsetInBytes, size );
+        std::memcpy( value, GetParameterMemory().data() + h.m_offsetInBytes, size );
         return true;
     }
 
