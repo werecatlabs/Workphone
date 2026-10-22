@@ -146,16 +146,21 @@ namespace workphone::render
     void MaterialPass::seedShaderSurface( MaterialPassStateData &state ) const
     {
         auto material = dynamic_pointer_cast<Material>( getMaterial() );
-        if( !material || material->m_shaderWorkflow != Material::ShaderWorkflow::Pbr ) return;
+        if( !material ) return;
+        const bool pbr = material->m_shaderWorkflow == Material::ShaderWorkflow::Pbr;
+        if( !pbr && material->m_shaderWorkflow != Material::ShaderWorkflow::Unlit ) return;
         const auto &parameters = material->getShaderParameters();
         const auto seed = [&]( MaterialBuiltinParameter semantic, f32 &value ) {
             const auto handle = parameters.GetBuiltin( semantic );
             if( parameters.IsHandleValid( handle, MaterialShaderParameterType::Scalar, sizeof( f32 ) ) )
                 value = parameters.GetScalar( handle );
         };
-        seed( MaterialBuiltinParameter::Metalness, state.metalness );
-        seed( MaterialBuiltinParameter::Roughness, state.roughness );
-        seed( MaterialBuiltinParameter::AlphaClip, state.alphaClip );
+        if( pbr )
+        {
+            seed( MaterialBuiltinParameter::Metalness, state.metalness );
+            seed( MaterialBuiltinParameter::Roughness, state.roughness );
+            seed( MaterialBuiltinParameter::AlphaClip, state.alphaClip );
+        }
         const auto seedColour = [&]( MaterialBuiltinParameter semantic, ColourF &value ) {
             const auto handle = parameters.GetBuiltin( semantic );
             if( !parameters.IsHandleValid( handle, MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
@@ -163,7 +168,7 @@ namespace workphone::render
             value = parameters.GetColour( handle );
             return true;
         };
-        const auto hasAlbedo = seedColour( MaterialBuiltinParameter::Albedo, state.diffuseColour );
+        const auto hasAlbedo = pbr && seedColour( MaterialBuiltinParameter::Albedo, state.diffuseColour );
         seedColour( MaterialBuiltinParameter::Emissive, state.emissiveColour );
         const auto opacity = parameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
         const auto hasOpacity = parameters.IsHandleValid( opacity, MaterialShaderParameterType::Scalar, sizeof( f32 ) );
@@ -192,7 +197,10 @@ namespace workphone::render
         if( changed && material )
             if( auto context = getStateContextPtr() )
                 if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                {
+                    if( auto owner = dynamic_pointer_cast<Material>( material ) ) owner->seedLegacySurface( *state );
                     seedShaderSurface( *state );
+                }
     }
 
     void MaterialPass::setStateContext( SmartPtr<IStateContext> stateContext )
@@ -308,17 +316,7 @@ namespace workphone::render
                             {
                                 // State data owns the documented surface defaults.
                                 if( auto material = dynamic_pointer_cast<Material>( getMaterial() ) )
-                                {
-                                    if( material->m_hasPendingMetalness )
-                                        stateData->metalness = material->m_pendingMetalness;
-                                    if( material->m_hasPendingRoughness )
-                                        stateData->roughness = material->m_pendingRoughness;
-                                    if( material->m_hasPendingOpacity )
-                                    {
-                                        stateData->opacity = material->m_pendingOpacity;
-                                        stateData->diffuseColour.a = material->m_pendingOpacity;
-                                    }
-                                }
+                                    material->seedLegacySurface( *stateData );
                                 seedShaderSurface( *stateData );
                                 stateData->setFlag( depthWriteFlag, true );
                             }

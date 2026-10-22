@@ -120,8 +120,8 @@ namespace workphone
             const auto setFlag = [&]( wp_u32 flag, bool enabled ) {
                 values.flags = enabled ? values.flags | flag : values.flags & ~flag;
             };
-            setFlag( WORKPHONE_MATERIAL_FLAG_TRANSPARENT, state->getFlag( transparentFlag ) );
-            setFlag( WORKPHONE_MATERIAL_FLAG_CUTOUT, state->getFlag( cutoutFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_TRANSPARENT, state->getFlag( render::transparentFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_CUTOUT, state->getFlag( render::cutoutFlag ) );
             setFlag( WORKPHONE_MATERIAL_FLAG_EMISSION, state->getFlag( emissionEnabledFlag ) );
             setFlag( WORKPHONE_MATERIAL_FLAG_REFRACTION, state->getFlag( refractionEnabledFlag ) );
             setFlag( WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE, state->getFlag( depthWriteFlag ) );
@@ -419,7 +419,10 @@ namespace workphone
                 // present, rather than feeding those mirrors back into its owner.
                 // A partial legacy-only bag remains a material-wide editor edit.
                 const auto authored = [&]( const String &name ) {
-                    return m_shaderWorkflow == ShaderWorkflow::Pbr &&
+                    const bool active = m_shaderWorkflow == ShaderWorkflow::Pbr ||
+                        ( m_shaderWorkflow == ShaderWorkflow::Unlit &&
+                          ( name == shaderEmissiveParamStr || name == shaderOpacityParamStr ) );
+                    return active &&
                            properties->hasProperty( shaderParamPrefixStr + name );
                 };
                 const auto restorePasses = [&]( const auto &update ) {

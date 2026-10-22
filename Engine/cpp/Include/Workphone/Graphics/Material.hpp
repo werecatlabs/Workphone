@@ -10,9 +10,11 @@
 
 #include <functional>
 #include <memory>
+#include <cstddef>
 
 namespace workphone
 {
+    class MaterialPassStateData;
     namespace render
     {
 
@@ -1234,9 +1236,10 @@ namespace workphone
 
             const MaterialShaderParametersInstance &getShaderParameters() const;
 
-            /** @brief (Re)build the parameter buffer from a shader's published parameter list
-             * and
-             * optionally bind the shader by name. */
+            /** Bind the finalized parameter schema and optionally its shader name.
+             * An unchanged layout retains values, sharing and handles. A new
+             * registered layout identity migrates compatible values by name/type
+             * and invalidates old handles, even when its fields match. */
             void setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,
                                       const String &shaderID = String() );
 
@@ -1292,6 +1295,10 @@ namespace workphone
              * Owning-thread use, matching the parameter edit-scope contract. */
             void batch( const std::function<void( Material & )> &update );
 
+            // Optional legacy future-pass values, excluding allocator overhead.
+            // Canonical PBR values stay in the shader owner instead.
+            std::size_t getLegacySurfaceStorageBytes() const;
+
             SmartPtr<IStateContext> getStateContext() const override;
             IStateContext *getStateContextPtr() const override;
 
@@ -1300,10 +1307,14 @@ namespace workphone
         protected:
             friend class MaterialPass; // Seed newly loaded passes from typed pre-load values.
             friend class MaterialShaderParametersInstance;
-            // Material-wide PBR edits share the shader-authored owner.
+            // Active material-wide surface edits share the shader-authored owner.
             // Direct pass setters remain explicit local overrides.
             bool setShaderSurfaceScalar( MaterialBuiltinParameter semantic, f32 value );
             bool setShaderSurfaceColour( MaterialBuiltinParameter semantic, const ColourF &value );
+            void rememberLegacySurface( MaterialBuiltinParameter semantic, f32 value );
+            void forgetLegacySurface( MaterialBuiltinParameter semantic );
+            void applyPendingLegacySurface();
+            void seedLegacySurface( MaterialPassStateData &state ) const;
             void shaderParametersChanged( u8 mask ) noexcept;
             void applyShaderParametersToRenderer( u8 mask );
             /** @brief Initializes the internal state object for the material. */
@@ -1342,13 +1353,16 @@ namespace workphone
             /** Collection of all techniques available for this material */
             ConcurrentArray<SmartPtr<IMaterialTechnique>> m_techniques;
 
-            // Values assigned before the first technique must reach its passes.
-            bool m_hasPendingOpacity = false;
-            bool m_hasPendingRoughness = false;
-            bool m_hasPendingMetalness = false;
-            f32 m_pendingOpacity = 1.0f;
-            f32 m_pendingRoughness = 0.0f;
-            f32 m_pendingMetalness = 0.0f;
+            // Legacy edits must survive graph creation/reload. Declared PBR
+            // semantics seed directly from the shader owner without this mirror.
+            struct LegacySurfaceData
+            {
+                f32 opacity = 1.0f;
+                f32 metalness = 0.0f;
+                f32 roughness = 0.0f;
+                u8 mask = 0;
+            };
+            std::unique_ptr<LegacySurfaceData> m_legacySurface;
 
             /** Cube texture used for environment mapping or reflections */
             CubicTextureSnapshot m_cubicTextures;
