@@ -1715,8 +1715,10 @@ namespace workphone::render
                 auto shader = MaterialShaderRegistry::instance().find( savedShaderID );
                 if( shader )
                 {
+                    const bool initializePbr = shader->getShaderID() == defaultPBRShaderIDStr &&
+                        ( getShaderID() != defaultPBRShaderIDStr || !m_shaderParameters.IsValid() );
                     setShaderParameters( shader->getParameterInfo(), shader->getShaderID() );
-                    if( shader->getShaderID() == defaultPBRShaderIDStr )
+                    if( initializePbr )
                     {
                         syncPBRToShaderParameters();
                     }
@@ -1990,6 +1992,30 @@ namespace workphone::render
     void Material::setEditorFloat( const String &name, f32 value )
     {
         const auto setting = MaterialPassStateData::resolveFloatSetting( name );
+        switch( setting )
+        {
+        case MaterialFloatSetting::metalness:
+            if( setShaderSurfaceScalar( MaterialBuiltinParameter::Metalness, value ) ) return;
+            break;
+        case MaterialFloatSetting::roughness:
+            if( setShaderSurfaceScalar( MaterialBuiltinParameter::Roughness, value ) ) return;
+            break;
+        case MaterialFloatSetting::alphaClip:
+            if( setShaderSurfaceScalar( MaterialBuiltinParameter::AlphaClip, value ) ) return;
+            break;
+        case MaterialFloatSetting::opacity:
+            if( m_shaderWorkflow == ShaderWorkflow::Pbr &&
+                ( m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Opacity ),
+                    MaterialShaderParameterType::Scalar, sizeof( f32 ) ) ||
+                  m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Albedo ),
+                    MaterialShaderParameterType::Colour, sizeof( ColourF ) ) ) )
+            {
+                setOpacity( value );
+                return;
+            }
+            break;
+        default: break;
+        }
         if( !setNumericSetting( *this, setting, value ) )
         {
             WP_LOG_WARNING( String( "Material::setEditorFloat ignored unknown setting: " ) + name );
@@ -2978,18 +3004,32 @@ namespace workphone::render
         const auto candidateId = shaderID.empty() ? getShaderID() : shaderID;
         auto shader = MaterialShaderRegistry::instance().find( candidateId );
         auto layout = shader ? shader->getLayout() : MaterialShaderParameterLayout::Ptr{};
-        bool sameSchema = layout && layout->GetParameterInfo().size() == parameterInfo.size();
-        for( size_t i = 0; sameSchema && i < parameterInfo.size(); ++i )
-        {
-            const auto &registered = layout->GetParameterInfo()[i];
-            sameSchema = registered.m_name == parameterInfo[i].m_name &&
-                         registered.m_type == parameterInfo[i].m_type;
-        }
-        if( !sameSchema ) layout = MaterialShaderParameterLayout::Create( parameterInfo );
+        const auto matches = [&]( const MaterialShaderParameterLayout::Ptr &candidate ) {
+            if( !candidate || candidate->GetParameterInfo().size() != parameterInfo.size() ) return false;
+            for( size_t i = 0; i < parameterInfo.size(); ++i )
+            {
+                const auto &existing = candidate->GetParameterInfo()[i];
+                if( existing.m_name != parameterInfo[i].m_name || existing.m_type != parameterInfo[i].m_type )
+                    return false;
+            }
+            return true;
+        };
+        // Prefer the registry's published identity, including a new generation
+        // with identical fields. Explicit custom schemas can reuse their current
+        // finalized layout rather than rebuilding its names/defaults each time.
+        if( !matches( layout ) )
+            layout = matches( m_shaderParameters.GetLayout() ) ? m_shaderParameters.GetLayout() :
+                     MaterialShaderParameterLayout::Create( parameterInfo );
         if( !layout )
         {
             WP_LOG_WARNING( "Material rejected an invalid shader parameter schema." );
             return; // Keep the last valid shader/layout and values.
+        }
+        if( layout == m_shaderParameters.GetLayout() )
+        {
+            if( !shaderID.empty() ) setShaderID( shaderID );
+            m_shaderParametersDirty = true;
+            return; // Retain value sharing, revision, borrowed bytes and observers.
         }
         MaterialParameterSyncScope synchronization( m_synchronizingShaderParameters );
         auto edit = m_shaderParameters.Edit();

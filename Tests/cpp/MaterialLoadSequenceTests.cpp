@@ -32,6 +32,8 @@
 #include <atomic>
 #include <optional>
 #include <functional>
+#include <chrono>
+#include <unordered_set>
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_camera.h"
@@ -1042,6 +1044,70 @@ namespace
         return schema;
     }
 
+    void benchmarkSchemaRebind()
+    {
+        using namespace render;
+        constexpr size_t count = 1024, parameterCount = 128, sampleCount = 7;
+        MaterialShader schema( "SchemaRebindBenchmark" );
+        for( size_t i = 0; i < parameterCount; ++i )
+            schema.addParameter( MaterialShaderParameterType::Scalar, "Value" + String( std::to_string( i ) ) );
+        MaterialShaderRegistry::instance().registerShader( schema );
+        auto source = make_ptr<ClawMaterial>();
+        source->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        for( u32 i = 0; i < parameterCount; ++i )
+            source->getShaderParameters().SetScalar( source->getShaderParameters().GetParameter( i ), f32( i + 1 ) * 0.125f );
+        std::vector<SmartPtr<ClawMaterial>> population;
+        for( size_t i = 0; i < count; ++i )
+        {
+            auto material = make_ptr<ClawMaterial>();
+            material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+            material->getShaderParameters() = source->getShaderParameters();
+            population.push_back( material );
+        }
+        const auto charge = [&] {
+            std::unordered_set<const void *> owners;
+            size_t bytes = 0;
+            const auto add = [&]( const MaterialShaderParametersInstance &parameters ) {
+                if( auto identity = parameters.GetValueStorageIdentity() )
+                    if( owners.insert( identity ).second ) bytes += parameters.GetValueStorageBytes();
+            };
+            add( source->getShaderParameters() );
+            for( const auto &material : population ) add( material->getShaderParameters() );
+            return std::make_pair( owners.size(), bytes );
+        };
+        const auto before = charge();
+        u64 storageChanges = 0, revisionChanges = 0;
+        std::vector<double> milliseconds;
+        for( size_t sample = 0; sample < sampleCount; ++sample )
+        {
+            const auto start = std::chrono::steady_clock::now();
+            for( auto &material : population )
+            {
+                const auto &parameters = material->getShaderParameters();
+                const auto identity = parameters.GetValueStorageIdentity();
+                const auto revision = parameters.GetRevision();
+                material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+                storageChanges += parameters.GetValueStorageIdentity() != identity;
+                revisionChanges += parameters.GetRevision() != revision;
+            }
+            milliseconds.push_back( std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - start ).count() );
+        }
+        const auto after = charge();
+        std::sort( milliseconds.begin(), milliseconds.end() );
+        require( population.back()->getShaderParameters().GetScalar(
+                     population.back()->getShaderParameters().GetParameter( parameterCount - 1 ) ) == 16.0f,
+                 "schema rebind benchmark preserves authored values" );
+        std::cout << "schema_rebind materials=" << count << " parameters=" << parameterCount
+                  << " samples=" << sampleCount << " cpu_median_ms=" << milliseconds[sampleCount / 2]
+                  << " payloads_before=" << before.first << " payloads_after=" << after.first
+                  << " payload_bytes_before=" << before.second << " payload_bytes_after=" << after.second
+                  << " storage_changes=" << storageChanges << " revision_changes=" << revisionChanges
+                  << " source_payload_included=1 control_blocks_layouts_native_and_graph_storage_excluded=1\n";
+        for( auto &material : population ) material->unload( nullptr );
+        source->unload( nullptr );
+    }
+
     void benchmarkObservedParameters()
     {
         using namespace render;
@@ -1943,6 +2009,167 @@ namespace
         fixture.graphics->pending.clear();
     }
 
+    void runSchemaRebindContracts( Fixture &fixture )
+    {
+        using namespace render;
+        MaterialShader schema( "SchemaRebindContract" );
+        schema.addParameter( MaterialShaderParameterType::Scalar, "Value" )
+              .addParameter( MaterialShaderParameterType::Int, "Signed" )
+              .addParameter( MaterialShaderParameterType::Colour, "Tint" )
+              .addParameter( MaterialShaderParameterType::Texture, "Map" );
+        MaterialShaderRegistry::instance().registerShader( schema );
+        auto material = make_ptr<ClawMaterial>(); material->load( nullptr );
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &parameters = material->getShaderParameters();
+        const auto value = parameters.Resolve<f32>( "Value" );
+        parameters.Set( value, 0.375f );
+        parameters.SetScalar( parameters.GetParameter( 1 ), s32( -17 ) );
+        parameters.SetColour( parameters.GetParameter( 2 ), ColourF( 0.1f, 0.2f, 0.3f, 0.4f ) );
+        parameters.SetTexture( parameters.GetParameter( 3 ), MaterialResourceHandle( 37 ) );
+        auto shared = parameters;
+        auto layout = parameters.GetLayout();
+        auto storage = parameters.GetValueStorageIdentity();
+        auto revision = parameters.GetRevision();
+        const auto *borrowed = &parameters.GetParameterMemory();
+        auto before = material->getRenderState();
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        material->setShaderParameters( schema.getParameterInfo() );
+        require( parameters.GetLayout() == layout && parameters.GetRevision() == revision &&
+                 parameters.GetValueStorageIdentity() == storage && shared.GetValueStorageIdentity() == storage &&
+                 &parameters.GetParameterMemory() == borrowed && material->getRenderState() == before,
+                 "unchanged registered schema rebind preserves shared payload, borrowed bytes, revision and snapshot" );
+        require( parameters.Set( value, 0.75f ) && shared.GetScalar( value.handle ) == 0.375f &&
+                 parameters.GetValueStorageIdentity() != shared.GetValueStorageIdentity(),
+                 "retained handles and physical observer remain usable after schema reuse" );
+
+        // A new registry identity must migrate even if every field is identical.
+        MaterialShader replacement( schema.getShaderID() );
+        for( const auto &info : schema.getParameterInfo() ) replacement.addParameter( info.m_type, info.m_name );
+        MaterialShaderRegistry::instance().registerShader( replacement );
+        material->setShaderParameters( replacement.getParameterInfo(), replacement.getShaderID() );
+        require( parameters.GetLayout() != layout && parameters.GetLayout() == replacement.getLayout() &&
+                 !parameters.Set( value, 1.0f ) && parameters.GetScalar( parameters.GetParameter( 0 ) ) == 0.75f &&
+                 parameters.GetInt( parameters.GetParameter( 1 ) ) == -17 &&
+                 parameters.GetColour( parameters.GetParameter( 2 ) ) == ColourF( 0.1f, 0.2f, 0.3f, 0.4f ) &&
+                 parameters.GetResource( parameters.GetParameter( 3 ) ) == 37,
+                 "identical-field registry generation replaces layout, invalidates handles and migrates all value types" );
+
+        Array<MaterialShaderParameterInfo> custom;
+        custom.emplace_back( MaterialShaderParameterType::Scalar, "Local" );
+        material->setShaderParameters( custom, "UnregisteredSchemaRebind" );
+        parameters.SetScalar( parameters.GetParameter( 0 ), 0.65f );
+        layout = parameters.GetLayout(); storage = parameters.GetValueStorageIdentity(); revision = parameters.GetRevision();
+        material->setShaderParameters( custom );
+        require( parameters.GetLayout() == layout && parameters.GetValueStorageIdentity() == storage &&
+                 parameters.GetRevision() == revision, "identical unregistered schema reuses its finalized layout and values" );
+        auto invalid = custom; invalid.push_back( custom[0] );
+        material->setShaderParameters( invalid, "RejectedRebind" );
+        require( parameters.GetLayout() == layout && parameters.GetValueStorageIdentity() == storage &&
+                 parameters.GetRevision() == revision && material->getShaderID() == "UnregisteredSchemaRebind",
+                 "invalid rebind leaves the prior shader, payload and revision intact" );
+        material->setShaderParameters( Array<MaterialShaderParameterInfo>{} );
+        layout = parameters.GetLayout(); revision = parameters.GetRevision();
+        material->setShaderParameters( Array<MaterialShaderParameterInfo>{} );
+        require( !parameters.IsValid() && parameters.GetLayout() == layout && parameters.GetRevision() == revision &&
+                 !parameters.GetValueStorageIdentity(), "empty custom schemas can be rebound without creating a new identity" );
+        material->unload( nullptr );
+
+        // Full property bags must not defeat copy-on-write sharing on a no-op.
+        auto pbr = observedSchema();
+        material->setShaderParameters( pbr.getParameterInfo(), pbr.getShaderID() ); material->load( nullptr );
+        material->setDiffuse( ColourF( 0.3f, 0.4f, 0.5f, 0.8f ) ); material->setOpacity( 0.6f );
+        material->setMetalness( 0.2f ); material->setRoughness( 0.7f );
+        auto native = material->getNativeMaterial();
+        require( wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_TRANSPARENT ) &&
+                 !wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_CUTOUT ),
+                 "native publication reads pass transparency rather than inherited legacy flag bits" );
+        material->setRenderMode( 1u ); native = material->getNativeMaterial();
+        require( !wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_TRANSPARENT ) &&
+                 wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_CUTOUT ),
+                 "native publication maps cutout independently from transparency" );
+        material->setRenderMode( 3u );
+        auto properties = material->getProperties();
+        shared = parameters; storage = parameters.GetValueStorageIdentity(); revision = parameters.GetRevision();
+        before = material->getRenderState();
+        material->setProperties( properties );
+        require( parameters.GetValueStorageIdentity() == storage && shared.GetValueStorageIdentity() == storage &&
+                 parameters.GetRevision() == revision && material->getRenderState() == before,
+                 "unchanged full property restore retains payload sharing and render version" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
+    void runNamedPbrOwnership( Fixture &fixture )
+    {
+        using namespace render;
+        MaterialShaderRegistry::instance().registerBuiltinShaders();
+        auto material = make_ptr<ClawMaterial>(); material->load( nullptr );
+        const ColourF colour( 0.2f, 0.4f, 0.6f, 1 ), overrideColour( 0.9f, 0.1f, 0.2f, 0.7f );
+        material->setDiffuse( colour ); material->setMetalness( 0.2f ); material->setRoughness( 0.6f );
+        auto properties = make_ptr<Properties>();
+        properties->setProperty( Material::shaderIDStr, Material::defaultPBRShaderIDStr );
+        properties->setProperty( "ShaderParam.Roughness", 0.7f );
+        material->setProperties( properties );
+        auto &parameters = material->getShaderParameters();
+        const auto metal = parameters.Resolve<f32>( "Metalness" ), rough = parameters.Resolve<f32>( "Roughness" );
+        const auto opacity = parameters.Resolve<f32>( "Opacity" ), clip = parameters.Resolve<f32>( "AlphaClip" );
+        const auto albedo = parameters.Resolve<ColourF>( "Albedo" );
+        require( parameters.GetScalar( metal.handle ) == 0.2f && parameters.GetScalar( rough.handle ) == 0.7f &&
+                 parameters.GetColour( albedo.handle ) == colour,
+                 "first DefaultPBR property binding still initializes unspecified values from legacy surface" );
+        auto pass = material->getTechnique( 0 )->getPass( 0 );
+        pass->setMetalness( 0.9f ); pass->setDiffuse( overrideColour );
+        auto oldValues = parameters;
+        properties->setProperty( "ShaderParam.Roughness", 0.5f );
+        material->setProperties( properties );
+        require( parameters.GetScalar( metal.handle ) == 0.2f && parameters.GetColour( albedo.handle ) == colour &&
+                 parameters.GetScalar( rough.handle ) == 0.5f && oldValues.GetScalar( rough.handle ) == 0.7f &&
+                 material->getMetalness() == 0.9f && material->getDiffuse() == overrideColour,
+                 "partial DefaultPBR restore changes only supplied authored values and preserves unrelated pass overrides" );
+        oldValues = parameters;
+        const auto storage = parameters.GetValueStorageIdentity();
+        const auto revision = parameters.GetRevision();
+        auto before = material->getRenderState();
+        material->setProperties( properties );
+        require( parameters.GetValueStorageIdentity() == storage && oldValues.GetValueStorageIdentity() == storage &&
+                 parameters.GetRevision() == revision && material->getRenderState() == before,
+                 "no-op DefaultPBR restore does not re-import overrides or detach authored values" );
+        const auto names = parameters.GetNameLookupCount();
+        material->batch( [&]( Material &m ) {
+            m.setEditorFloat( "metalness", 0.4f ); m.setEditorFloat( "roughness", 0.6f );
+            m.setEditorFloat( "alphaClip", 0.2f ); m.setEditorFloat( "opacity", 0.8f );
+        } );
+        require( parameters.GetScalar( metal.handle ) == 0.4f && parameters.GetScalar( rough.handle ) == 0.6f &&
+                 parameters.GetScalar( clip.handle ) == 0.2f && parameters.GetScalar( opacity.handle ) == 0.8f &&
+                 material->getRenderState()->revision == before->revision + 1 &&
+                 material->getDiffuse() == ColourF( overrideColour.r, overrideColour.g, overrideColour.b, 0.8f ) &&
+                 parameters.GetNameLookupCount() == names, "named PBR scalar adapters share canonical values and publish one batch" );
+        material->setEditorFloat( "opacity", -1.0f );
+        require( parameters.GetScalar( opacity.handle ) == 0.0f && material->getDiffuse().a == 0.0f,
+                 "named canonical opacity uses typed setter normalization" );
+        material->setShaderID( String() ); material->setEditorFloat( "opacity", -0.25f );
+        require( material->getEditorFloat( "opacity", 1 ) == -0.25f && parameters.GetScalar( opacity.handle ) == 0.0f,
+                 "legacy named settings retain their existing raw-value contract" );
+        MaterialShader wrongType( "NamedPbrWrongType" );
+        wrongType.addParameter( MaterialShaderParameterType::Int, "Metalness" );
+        material->setShaderParameters( wrongType.getParameterInfo(), wrongType.getShaderID() );
+        const auto custom = parameters.Resolve<s32>( "Metalness" ); parameters.Set( custom, s32( 23 ) );
+        material->setEditorFloat( "metalness", 0.75f );
+        require( parameters.GetInt( custom.handle ) == 23 && material->getMetalness() == 0.75f,
+                 "wrong-type named semantics keep pass fallback without corrupting custom shader values" );
+        wrongType.addParameter( MaterialShaderParameterType::Colour, "Albedo" )
+                 .addParameter( MaterialShaderParameterType::Int, "Opacity" );
+        material->setShaderParameters( wrongType.getParameterInfo(), wrongType.getShaderID() );
+        const auto customOpacity = parameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
+        parameters.SetScalar( customOpacity, s32( 17 ) );
+        material->setDiffuse( colour ); pass->setDiffuse( overrideColour );
+        material->setEditorFloat( "opacity", 0.3f );
+        require( parameters.GetInt( customOpacity ) == 17 &&
+                 parameters.GetColour( parameters.GetBuiltin( MaterialBuiltinParameter::Albedo ) ).a == 0.3f &&
+                 material->getDiffuse() == ColourF( overrideColour.r, overrideColour.g, overrideColour.b, 0.3f ),
+                 "named Albedo-owned opacity preserves pass RGB and wrong-type custom opacity" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
     void runCanonicalSurfaceColours( Fixture &fixture )
     {
         using namespace render;
@@ -2565,6 +2792,11 @@ int main( int argc, char **argv )
                   << " authoring_texture_unit_bytes=" << sizeof(render::ClawMaterialTexture)
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         Fixture fixture;
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-schema-rebind" )
+        {
+            benchmarkSchemaRebind();
+            return 0;
+        }
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-records" )
         {
             benchmarkCapturedMaterialRecords( fixture );
@@ -2602,6 +2834,8 @@ int main( int argc, char **argv )
         runObservedParameters( fixture );
         runCanonicalSurfaceScalars( fixture );
         runCanonicalSurfaceColours( fixture );
+        runSchemaRebindContracts( fixture );
+        runNamedPbrOwnership( fixture );
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );

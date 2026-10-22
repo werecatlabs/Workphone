@@ -120,8 +120,8 @@ namespace workphone
             const auto setFlag = [&]( wp_u32 flag, bool enabled ) {
                 values.flags = enabled ? values.flags | flag : values.flags & ~flag;
             };
-            setFlag( WORKPHONE_MATERIAL_FLAG_TRANSPARENT, state->getFlag( transparentFlag ) );
-            setFlag( WORKPHONE_MATERIAL_FLAG_CUTOUT, state->getFlag( cutoutFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_TRANSPARENT, state->getFlag( render::transparentFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_CUTOUT, state->getFlag( render::cutoutFlag ) );
             setFlag( WORKPHONE_MATERIAL_FLAG_EMISSION, state->getFlag( emissionEnabledFlag ) );
             setFlag( WORKPHONE_MATERIAL_FLAG_REFRACTION, state->getFlag( refractionEnabledFlag ) );
             setFlag( WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE, state->getFlag( depthWriteFlag ) );

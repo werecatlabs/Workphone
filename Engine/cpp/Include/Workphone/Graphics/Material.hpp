@@ -1234,9 +1234,10 @@ namespace workphone
 
             const MaterialShaderParametersInstance &getShaderParameters() const;
 
-            /** @brief (Re)build the parameter buffer from a shader's published parameter list
-             * and
-             * optionally bind the shader by name. */
+            /** Bind the finalized parameter schema and optionally its shader name.
+             * An unchanged layout retains values, sharing and handles. A new
+             * registered layout identity migrates compatible values by name/type
+             * and invalidates old handles, even when its fields match. */
             void setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,
                                       const String &shaderID = String() );
 
