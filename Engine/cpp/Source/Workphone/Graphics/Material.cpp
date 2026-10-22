@@ -1088,6 +1088,7 @@ namespace workphone::render
 
     void Material::setMetalness( f32 metalness )
     {
+        if( setShaderSurfaceScalar( MaterialBuiltinParameter::Metalness, metalness ) ) return;
         m_hasPendingMetalness = true;
         m_pendingMetalness = metalness;
         auto techniques = getTechniques();
@@ -1118,6 +1119,7 @@ namespace workphone::render
 
     void Material::setRoughness( f32 roughness )
     {
+        if( setShaderSurfaceScalar( MaterialBuiltinParameter::Roughness, roughness ) ) return;
         m_hasPendingRoughness = true;
         m_pendingRoughness = roughness;
         auto techniques = getTechniques();
@@ -2167,6 +2169,7 @@ namespace workphone::render
 
     void Material::setAlphaClip( f32 value )
     {
+        if( setShaderSurfaceScalar( MaterialBuiltinParameter::AlphaClip, value ) ) return;
         setNumericSetting( *this, MaterialFloatSetting::alphaClip, value );
     }
 
@@ -2671,6 +2674,23 @@ namespace workphone::render
         {
             setMaterialType( target );
         }
+    }
+
+    bool Material::setShaderSurfaceScalar( MaterialBuiltinParameter semantic, f32 value )
+    {
+        if( m_synchronizingShaderParameters || m_shaderWorkflow != ShaderWorkflow::Pbr ) return false;
+        const auto handle = m_shaderParameters.GetBuiltin( semantic );
+        if( !m_shaderParameters.IsHandleValid( handle, MaterialShaderParameterType::Scalar, sizeof( f32 ) ) )
+            return false; // Absent/wrong-type slots keep the legacy pass contract.
+
+        const auto revision = m_shaderParameters.GetRevision();
+        m_shaderParameters.SetScalar( handle, value );
+        // A material-wide assignment must also restore a pass-local override when
+        // the authored bytes already equal value. Only reapply this semantic;
+        // unrelated overrides and custom values retain their existing owners.
+        if( m_shaderParameters.GetRevision() == revision )
+            shaderParametersChanged( static_cast<u8>( 1u << static_cast<u32>( semantic ) ) );
+        return true;
     }
 
     void Material::shaderParametersChanged( u8 mask ) noexcept

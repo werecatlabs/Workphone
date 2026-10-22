@@ -444,6 +444,20 @@ The fresh merged-tree Debug **Editor aggregate passes 66/66 cases / 2,787,583 as
 
 This advances M4's hot/cold pass representation. It does not unify authored shader semantics with legacy pass values or retire their transitional mirror, and it does not establish total-material/scene memory or hardware cache gains. M4 remains partial.
 
+## Canonical PBR scalar edits (M4 continuation, 22 October)
+
+Material-wide `setMetalness`, `setRoughness` and `setAlphaClip` now write the existing shader-parameter value owner when the active PBR layout declares a compatible scalar semantic. The existing cached handles, copy-on-write buffer, observer and edit scopes then publish only the changed semantics to all authored passes. No new material/pass member or value allocation policy is introduced. Missing/wrong-type slots, legacy materials and inactive PBR semantics in Unlit/ColorOnly layouts keep the legacy path.
+
+This deliberately changes the previous independent material-wide scalar behavior: a later full shader reapply or shader-property save now retains these material setter edits. Call direct pass setters/state adapters for explicit per-pass overrides. Such overrides remain independent of unrelated shader/material edits; assigning a material-wide scalar again restores that semantic on every pass, even if its authored bytes are unchanged. An already matching assignment retains the shader revision, payload and render snapshot. Mixed material/typed writes to these scalars follow call order within the same edit scope and publish once per pass at close. Pass getters continue to report live pass values; inside a deferred parameter edit they observe the prior applied values until the scope closes, as with typed edits.
+
+Pass ownership attachment and initial state creation seed these three scalars from the current authored buffer, including during a deferred edit. Reattaching the same owner or repeating `load` does not erase local overrides. The existing shader property names and C descriptor format are unchanged. Regression contracts cover pre-load edits, added passes, same-value restoration, no-op storage/revision reuse, mixed write order, property round-trip, full reapply, wrong-type/missing slots and Unlit fallback.
+
+This is an ownership-migration step, not a measured memory reduction: pass/render publications and legacy pre-load scalar storage still exist. An effective material scalar edit can now allocate/detach the shader payload where the previous independent pass edit left it untouched; no-op writes retain sharing. Colour/opacity semantics, remaining authoring adapters, physical transition-copy retirement and whole-material memory profiling remain open. M4 is still partial.
+
+Validation: affected Debug and RelWithDebInfo builds pass, including rebuilt Debug UnitTests and Editor. Native material suites pass **4/4 Debug (37.41 s)** and **4/4 RelWithDebInfo (21.86 s)**; the selected Debug material/resource/lifecycle suite passes **105 cases / 1,899 assertions**. Logs use `project_x64/material_m4_scalar_owner_`: `debug_final_build.log`, `rwi_build.log`, `debug_contracts.log`, `rwi_contracts.log`, matching `*_evidence.log`, and `unit_tests.log`. Device evidence identifies Microsoft Basic Render Driver; these results do not certify representative hardware performance or interactive Editor behavior.
+
+The rebuilt Debug **Editor aggregate passes 66/66 cases / 2,808,490 assertions in 569.70 s** (`material_m4_scalar_owner_editor_all.log`, `material_m4_scalar_owner_editor_evidence.log`). `git diff --check` passes. This completes the automated compatibility gate for this scalar migration slice; it does not complete M4.
+
 ## Remaining plan gates
 
 This is an integrated CPU storage/access and active DX11 consumption change, not completion of all production gates in the plan. Remaining work includes:

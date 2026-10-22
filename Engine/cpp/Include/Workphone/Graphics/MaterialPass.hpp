@@ -10,6 +10,7 @@
 
 namespace workphone
 {
+    class MaterialPassStateData;
     namespace render
     {
         /**
@@ -29,6 +30,7 @@ namespace workphone
             /** Mirror texture-unit edits to the immutable render snapshot at edit time. */
             void updateRenderTexture( IMaterialTexture *unit, SmartPtr<ITexture> texture );
             void refreshRenderTextures();
+            void setMaterial( SmartPtr<IMaterial> material ) override;
             /**
              * @brief Set the state context for this pass.
              *
@@ -543,6 +545,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void seedShaderSurfaceScalars( MaterialPassStateData &state ) const;
             /** Retire only the state/context created by this pass. */
             void releaseLocalStateContext();
 

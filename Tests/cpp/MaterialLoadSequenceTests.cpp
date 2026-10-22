@@ -1943,6 +1943,99 @@ namespace
         fixture.graphics->pending.clear();
     }
 
+    void runCanonicalSurfaceScalars( Fixture &fixture )
+    {
+        using namespace render;
+        auto schema = observedSchema();
+        auto material = make_ptr<ClawMaterial>();
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &parameters = material->getShaderParameters();
+        const auto metal = parameters.Resolve<f32>( "Metalness" );
+        const auto rough = parameters.Resolve<f32>( "Roughness" );
+        const auto clip = parameters.Resolve<f32>( "AlphaClip" );
+        const auto custom = parameters.Resolve<s32>( "Custom" );
+        const auto names = parameters.GetNameLookupCount();
+        material->setMetalness( 0.2f ); material->setRoughness( 0.8f ); material->setAlphaClip( 0.3f );
+        require( parameters.GetScalar( metal.handle ) == 0.2f &&
+                 parameters.GetScalar( rough.handle ) == 0.8f && parameters.GetScalar( clip.handle ) == 0.3f,
+                 "pre-load material setters edit the canonical authored scalar values" );
+        material->load( nullptr );
+        auto technique = material->getTechnique( 0 );
+        auto firstPass = technique->getPass( 0 );
+        auto secondPass = technique->createPass(); secondPass->load( nullptr );
+        auto secondData = static_pointer_cast<MaterialPassStateData>(
+            secondPass->getStateContext()->getStateById( secondPass->getId() )->getData() );
+        require( material->getRenderState()->metalness == 0.2f && secondData->roughness == 0.8f &&
+                 secondData->alphaClip == 0.3f, "loaded and newly added passes seed canonical PBR scalars" );
+        firstPass->setMetalness( 0.9f ); secondPass->setMetalness( 0.7f );
+        secondPass->setMaterial( material ); secondPass->load( nullptr );
+        material->setRoughness( 0.6f );
+        require( material->getMetalness() == 0.9f && secondData->metalness == 0.7f &&
+                 parameters.GetScalar( metal.handle ) == 0.2f,
+                 "direct pass overrides remain local and unrelated canonical edits preserve them" );
+        material->setMetalness( 0.2f );
+        require( material->getMetalness() == 0.2f && secondData->metalness == 0.2f,
+                 "same-authored-value material assignment restores all pass overrides" );
+        auto before = material->getRenderState();
+        auto secondBefore = secondData->getRenderState();
+        const auto storage = parameters.GetValueStorageIdentity();
+        const auto revision = parameters.GetRevision();
+        material->setMetalness( 0.2f );
+        require( material->getRenderState() == before && parameters.GetRevision() == revision &&
+                 parameters.GetValueStorageIdentity() == storage, "canonical no-op reuses payload and render version" );
+        material->batch( [&]( Material &m ) {
+            parameters.Set( metal, 0.4f ); m.setMetalness( 0.5f );
+            m.setRoughness( 0.7f ); parameters.Set( rough, 0.25f ); m.setAlphaClip( 0.1f );
+            parameters.Set( custom, s32( 42 ) );
+            require( m.getRenderState() == before, "mixed canonical edits retain the published version until close" );
+        } );
+        require( parameters.GetScalar( metal.handle ) == 0.5f && parameters.GetScalar( rough.handle ) == 0.25f &&
+                 material->getMetalness() == 0.5f && material->getRoughness() == 0.25f &&
+                 material->getAlphaClip() == 0.1f && parameters.GetInt( custom.handle ) == 42 &&
+                 material->getRenderState()->revision == before->revision + 1 &&
+                 secondData->getRenderState()->revision == secondBefore->revision + 1,
+                 "material and parameter writes share last-write order and publish once per pass" );
+        material->applyShaderParametersToRenderer();
+        require( material->getMetalness() == 0.5f && material->getRoughness() == 0.25f &&
+                 material->getAlphaClip() == 0.1f, "full reapply cannot restore stale material-level scalars" );
+        auto properties = material->getProperties();
+        f32 saved = 0;
+        require( properties->getPropertyValue( "ShaderParam.Metalness", saved ) && saved == 0.5f,
+                 "canonical material edits persist through the existing shader property schema" );
+        require( parameters.GetNameLookupCount() == names, "canonical scalar setters use cached numeric semantics" );
+        auto restored = make_ptr<ClawMaterial>(); restored->load( nullptr ); restored->setProperties( properties );
+        require( restored->getMetalness() == 0.5f && restored->getRoughness() == 0.25f &&
+                 restored->getAlphaClip() == 0.1f, "canonical scalar edits survive property round-trip" );
+        restored->unload( nullptr );
+        {
+            auto edit = parameters.Edit();
+            material->setAlphaClip( 0.45f ); material->setMetalness( 0.15f );
+            auto added = technique->createPass(); added->load( nullptr );
+            auto addedData = added->getStateContext()->getStateDataById<MaterialPassStateData>( added->getId() );
+            require( addedData->alphaClip == 0.45f && addedData->metalness == 0.15f,
+                     "new passes read canonical values while publication is deferred" );
+        }
+        material->unload( nullptr );
+
+        // Matching names alone do not make a shader slot a compatible surface value.
+        MaterialShader mismatched( "ScalarFallbackPBR" );
+        mismatched.addParameter( MaterialShaderParameterType::Int, "Metalness" );
+        material->setShaderParameters( mismatched.getParameterInfo(), mismatched.getShaderID() );
+        material->load( nullptr ); material->setMetalness( 0.65f ); material->setRoughness( 0.35f );
+        require( material->getMetalness() == 0.65f && material->getRoughness() == 0.35f &&
+                 material->getShaderParameters().GetInt( material->getShaderParameters().GetBuiltin(
+                     MaterialBuiltinParameter::Metalness ) ) == 0,
+                 "wrong-type and absent shader slots keep legacy setters without corrupting custom values" );
+        material->setShaderParameters( schema.getParameterInfo(), Material::unlitShaderIDStr );
+        auto &unlit = material->getShaderParameters();
+        const auto unlitMetal = unlit.GetBuiltin( MaterialBuiltinParameter::Metalness );
+        const auto unlitValue = unlit.GetScalar( unlitMetal );
+        material->setMetalness( 0.85f );
+        require( material->getMetalness() == 0.85f && unlit.GetScalar( unlitMetal ) == unlitValue,
+                 "inactive PBR semantics in unlit layouts keep their independent custom values" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
     void runObservedParameters( Fixture &fixture )
     {
         using namespace render;
@@ -2016,7 +2109,8 @@ namespace
         parameters.Set( custom, s32( 17 ) );
         require( material->getRenderState() == before && parameters.GetNameLookupCount() == names,
                  "custom CPU slots do not reapply unrelated surface values or resolve names" );
-        material->setMetalness( 0.9f );
+        material->getTechnique( 0 )->getPass( 0 )->setMetalness( 0.9f );
+        secondPass->setMetalness( 0.9f );
         parameters.Set( rough, 0.2f );
         require( material->getRenderState()->metalness == 0.9f,
                  "incremental parameter edits preserve unrelated legacy pass edits" );
@@ -2338,6 +2432,7 @@ int main( int argc, char **argv )
         runCapturedMaterialRecords( fixture );
         runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
+        runCanonicalSurfaceScalars( fixture );
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );
