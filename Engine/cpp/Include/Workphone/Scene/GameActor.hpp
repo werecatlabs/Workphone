@@ -672,6 +672,7 @@ namespace workphone
 
             //! The local transform object for this actor.
             AtomicSmartPtr<ITransform> m_transform;
+            u64 m_staticWorldRevision = 0;
 
             //! Factory manager used to create components and subobjects (weak reference).
             AtomicWeakPtr<IFactoryManager> m_factoryManager;

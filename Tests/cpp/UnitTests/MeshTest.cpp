@@ -65,6 +65,8 @@ namespace
     {
     public:
         using render::GraphicsSystem::updateLoadQueue;
+        using render::GraphicsSystem::updateReloadQueue;
+        using render::GraphicsSystem::updateUnloadQueue;
 
         void load( SmartPtr<ISharedObject> ) override
         {
@@ -85,6 +87,9 @@ namespace
         }
 
         u32 loadRequests = 0;
+        u32 reloadRequests = 0, unloadRequests = 0;
+        void reload( SmartPtr<ISharedObject> ) override { ++reloadRequests; setLoadingState( LoadingState::Loaded ); }
+        void unload( SmartPtr<ISharedObject> ) override { ++unloadRequests; setLoadingState( LoadingState::Unloaded ); }
     };
 
     class CatalogMeshLoadProbe : public render::GraphicsSystem
@@ -708,6 +713,25 @@ BOOST_AUTO_TEST_CASE( mesh_queued_resource_loads_reuse_completed_resources )
     graphics->loadObject( graphicsObject, true );
     graphics->updateLoadQueue();
     BOOST_CHECK_EQUAL( graphicsObject->loadRequests, 1u );
+}
+
+BOOST_AUTO_TEST_CASE( mesh_queued_lifecycle_discards_cancelled_work )
+{
+    auto graphics = make_ptr<GraphicsLoadQueueProbe>();
+    auto resource = make_ptr<QueuedMeshLoadProbe>();
+    graphics->loadObject( resource, true );
+    graphics->reloadObject( resource, true );
+    graphics->unloadObject( resource, true );
+    graphics->updateLoadQueue(); graphics->updateReloadQueue(); graphics->updateUnloadQueue();
+    BOOST_CHECK_EQUAL( resource->loadRequests, 0u );
+    BOOST_CHECK_EQUAL( resource->reloadRequests, 0u );
+    BOOST_CHECK_EQUAL( resource->unloadRequests, 1u );
+    graphics->unloadObject( resource, true );
+    graphics->loadObject( resource, true );
+    graphics->updateLoadQueue(); graphics->updateUnloadQueue();
+    BOOST_CHECK_EQUAL( resource->loadRequests, 1u );
+    BOOST_CHECK_EQUAL( resource->unloadRequests, 1u );
+    BOOST_CHECK( resource->isLoaded() );
 }
 
 BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )

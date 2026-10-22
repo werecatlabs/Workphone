@@ -42,6 +42,7 @@ namespace workphone
             void setTransform( const Transform3<real_Num> &transform ) override;
 
             void setWorldTransform( const Transform3<real_Num> &transform ) override;
+            Transform3<real_Num> getWorldTransform() const override;
 
             void setParent( SmartPtr<IGraphicsSceneNode> parent ) override;
 

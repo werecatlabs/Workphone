@@ -694,15 +694,6 @@ namespace workphone
                 }
                 GraphicsSystem::update();
 
-                SmartPtr<ISharedObject> object;
-                while( m_reloadQueue.try_pop( object ) )
-                {
-                    if( object )
-                    {
-                        object->reload( nullptr );
-                    }
-                }
-
                 updateUnloadQueue();
 
                 for( auto &window : m_windows )

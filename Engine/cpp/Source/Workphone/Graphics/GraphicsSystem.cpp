@@ -130,12 +130,17 @@ namespace workphone::render
         m_deferredShadingSystems.clear();
         m_graphicsObjects.clear();
         m_loadQueue.clear();
+        m_pendingLoadTickets.clear();
+        m_reloadQueue.clear();
+        m_pendingReloadTickets.clear();
         m_unloadQueue.clear();
+        m_pendingUnloadTickets.clear();
     }
     void GraphicsSystem::update()
     {
         MaterialPublicationScope materialUpdates;
         updateLoadQueue();
+        updateReloadQueue();
         updateUnloadQueue();
 
         for( auto &scene : m_scenes )
@@ -228,11 +233,16 @@ namespace workphone::render
 
     void GraphicsSystem::updateUnloadQueue()
     {
+        ScopedLock lifecycleLock( this );
         if( !m_unloadQueue.empty() )
         {
-            SmartPtr<ISharedObject> obj;
-            while( m_unloadQueue.try_pop( obj ) )
+            LoadRequest request;
+            while( m_unloadQueue.try_pop( request ) )
             {
+                auto obj = request.object;
+                auto pending = m_pendingUnloadTickets.find( obj.get() );
+                if( pending == m_pendingUnloadTickets.end() || pending->second != request.ticket ) continue;
+                m_pendingUnloadTickets.erase( pending );
                 obj->unload( nullptr );
             }
         }
@@ -243,9 +253,13 @@ namespace workphone::render
         ScopedLock lock( this );
         if( !m_loadQueue.empty() )
         {
-            SmartPtr<ISharedObject> obj;
-            while( m_loadQueue.try_pop( obj ) )
+            LoadRequest request;
+            while( m_loadQueue.try_pop( request ) )
             {
+                auto obj = request.object;
+                auto pending = m_pendingLoadTickets.find( obj.get() );
+                if( pending == m_pendingLoadTickets.end() || pending->second != request.ticket ) continue;
+                m_pendingLoadTickets.erase( pending );
                 // Several components can queue the same resource before its first
                 // load completes. Keep later requests from rebuilding it again.
                 // Graphics objects may need a later load to finish initialization.
@@ -255,6 +269,19 @@ namespace workphone::render
                 }
                 obj->load( nullptr );
             }
+        }
+    }
+
+    void GraphicsSystem::updateReloadQueue()
+    {
+        ScopedLock lock( this );
+        LoadRequest request;
+        while( m_reloadQueue.try_pop( request ) )
+        {
+            auto pending = m_pendingReloadTickets.find( request.object.get() );
+            if( pending == m_pendingReloadTickets.end() || pending->second != request.ticket ) continue;
+            m_pendingReloadTickets.erase( pending );
+            request.object->reload( nullptr );
         }
     }
 
@@ -814,9 +841,12 @@ namespace workphone::render
             return;
         }
 
+        m_pendingUnloadTickets.erase( graphicsObject.get() );
         if( forceQueue )
         {
-            m_loadQueue.push( graphicsObject );
+            const auto ticket = ++m_nextLoadTicket;
+            m_pendingLoadTickets[graphicsObject.get()] = ticket;
+            m_loadQueue.push( { graphicsObject, ticket } );
         }
         else
         {
@@ -837,13 +867,16 @@ namespace workphone::render
             }
             else
             {
-                m_loadQueue.push( graphicsObject );
+                const auto ticket = ++m_nextLoadTicket;
+                m_pendingLoadTickets[graphicsObject.get()] = ticket;
+                m_loadQueue.push( { graphicsObject, ticket } );
             }
         }
     }
 
     void GraphicsSystem::reloadObject( SmartPtr<ISharedObject> graphicsObject, bool forceQueue )
     {
+        ScopedLock lifecycleLock( this );
         if( !graphicsObject )
         {
             return;
@@ -851,7 +884,9 @@ namespace workphone::render
 
         if( forceQueue )
         {
-            m_reloadQueue.push( graphicsObject );
+            const auto ticket = ++m_nextLoadTicket;
+            m_pendingReloadTickets[graphicsObject.get()] = ticket;
+            m_reloadQueue.push( { graphicsObject, ticket } );
         }
         else
         {
@@ -865,7 +900,9 @@ namespace workphone::render
             }
             else
             {
-                m_reloadQueue.push( graphicsObject );
+                const auto ticket = ++m_nextLoadTicket;
+                m_pendingReloadTickets[graphicsObject.get()] = ticket;
+                m_reloadQueue.push( { graphicsObject, ticket } );
             }
         }
     }
@@ -873,14 +910,20 @@ namespace workphone::render
     void GraphicsSystem::unloadObject( SmartPtr<ISharedObject> graphicsObject,
                                        bool forceQueue /*= false */ )
     {
+        ScopedLock lifecycleLock( this );
         if( !graphicsObject )
         {
             return;
         }
 
+        m_pendingLoadTickets.erase( graphicsObject.get() );
+        m_pendingReloadTickets.erase( graphicsObject.get() );
+
         if( forceQueue )
         {
-            m_unloadQueue.push( graphicsObject );
+            const auto ticket = ++m_nextLoadTicket;
+            m_pendingUnloadTickets[graphicsObject.get()] = ticket;
+            m_unloadQueue.push( { graphicsObject, ticket } );
         }
         else
         {
@@ -900,7 +943,9 @@ namespace workphone::render
                 }
                 else
                 {
-                    m_unloadQueue.push( graphicsObject );
+                    const auto ticket = ++m_nextLoadTicket;
+                    m_pendingUnloadTickets[graphicsObject.get()] = ticket;
+                    m_unloadQueue.push( { graphicsObject, ticket } );
                 }
             }
             else
@@ -913,8 +958,13 @@ namespace workphone::render
 
     void GraphicsSystem::clearObjectQueues()
     {
+        ScopedLock lifecycleLock( this );
         m_loadQueue.clear();
+        m_pendingLoadTickets.clear();
+        m_reloadQueue.clear();
+        m_pendingReloadTickets.clear();
         m_unloadQueue.clear();
+        m_pendingUnloadTickets.clear();
     }
 
     void GraphicsSystem::setupRenderer( SmartPtr<IGraphicsScene> sceneManager,

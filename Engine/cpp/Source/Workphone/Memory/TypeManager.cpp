@@ -966,6 +966,7 @@ namespace workphone
         scene::ProceduralMesh::setupTypeInfo();
         scene::ProceduralVehicle::setupTypeInfo();
         scene::ProceduralRaceScene::setupTypeInfo();
+        scene::WorldStreaming::setupTypeInfo();
         scene::ProceduralRoad::setupTypeInfo();
         scene::ProceduralSky::setupTypeInfo();
         scene::ProceduralSurfaceTexture::setupTypeInfo();

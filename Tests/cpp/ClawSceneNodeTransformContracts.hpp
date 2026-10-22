@@ -103,6 +103,29 @@ namespace claw_scene_node_transform_contracts
                          "changed owner transform must update both authored and native state" );
         }
         auto camera = make_ptr<render::ClawCamera>();
+        auto parent = make_ptr<Node>();
+        auto parentState = make_ptr<TransformState>();
+        parentState->setId( parent->getId() ); parentState->setOwner( parent );
+        parentState->setData( make_ptr<TransformStateData>() ); context->addState( parentState );
+        parent->setStateContext( context ); parent->load( nullptr ); parent->ownerThread = true;
+        Transform3<real_Num> parentPose( { 12, -4, 7 },
+            Quaternion<real_Num>::eulerDegrees( 0, 30, 0 ), { -2, 3, 4 } );
+        parent->setTransform( parentPose ); node->setParent( parent );
+        Transform3<real_Num> worldPose( { 18, 5, -9 },
+            Quaternion<real_Num>::eulerDegrees( 0, 60, 0 ), { 4, 6, 8 } );
+        node->ownerThread = false;
+        node->setWorldTransform( worldPose );
+        node->ownerThread = true;
+        node->setWorldTransform( worldPose );
+        const auto observed = node->getWorldTransform();
+        ok &= check( ( observed.getPosition() - worldPose.getPosition() ).length() < 1e-4f,
+                     "world setter must invert rotated/scaled parent translation" );
+        ok &= check( ( observed.getScale() - worldPose.getScale() ).length() < 1e-4f &&
+                     matches( native, node->getTransform() ),
+                     "world setter must publish relative native scale, including negative parent scale" );
+        node->setParent( nullptr );
+        parent->unload( nullptr ); parent->setStateContext( nullptr );
+        context->removeState( parentState ); parentState->setOwner( nullptr );
         node->attachObject( camera );
         ok &= check( wp_camera_get_node( camera->getNativeCamera() ) == native,
                      "camera must attach to its native scene node" );

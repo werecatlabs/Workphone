@@ -475,13 +475,10 @@ namespace workphone::scene
                         {
                             updateMaterials();
 
-                            if( auto actor = getActorPtr() )
-                            {
-                                if( auto root = actor->getSceneRoot() )
-                                {
-                                    root->updateTransform();
-                                }
-                            }
+                            // Resource completion belongs to this renderer; walking
+                            // the actor root here repeats the whole imported city.
+                            updateStatic();
+                            updateTransform();
                         }
                     }
                 }

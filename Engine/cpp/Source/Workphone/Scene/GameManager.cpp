@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <unordered_set>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/GameActor.hpp>
 #include <Workphone/Scene/GameScene.hpp>
@@ -403,18 +404,17 @@ namespace workphone::scene
                                     }
                                 }
 
-                                if( !m_dirtyActorTransforms.empty() )
+                                Array<SmartPtr<IGameActor>> pendingTransforms;
+                                std::unordered_set<IGameActor *> queuedTransforms;
+                                auto queueTransform = [&]( SmartPtr<IGameActor> actor ) {
+                                    if( actor && queuedTransforms.insert( actor.get() ).second )
+                                        pendingTransforms.push_back( actor );
+                                };
+                                SmartPtr<ITransform> pendingTransform;
+                                for( u32 count = 0; count < 2048 &&
+                                     m_dirtyActorTransforms.try_pop( pendingTransform ); ++count )
                                 {
-                                    auto count = 0;
-
-                                    SmartPtr<ITransform> transform;
-                                    while( m_dirtyActorTransforms.try_pop( transform ) && count++ < 2048 )
-                                    {
-                                        if( auto actor = transform->getActor() )
-                                        {
-                                            actor->updateTransform();
-                                        }
-                                    }
+                                    if( pendingTransform ) queueTransform( pendingTransform->getActor() );
                                 }
 
                                 if( !m_dirtyActors.empty() )
@@ -435,13 +435,26 @@ namespace workphone::scene
                                     }
                                 }
 
-                                if( !m_dirtyTransforms.empty() )
+                                SmartPtr<IGameActor> pendingActor;
+                                for( u32 count = 0; count < 2048 &&
+                                     m_dirtyTransforms.try_pop( pendingActor ); ++count )
                                 {
-                                    SmartPtr<IGameActor> actor;
-                                    while( m_dirtyTransforms.try_pop( actor ) )
+                                    queueTransform( pendingActor );
+                                }
+                                for( auto &actor : pendingTransforms )
+                                {
+                                    bool covered = false;
+                                    auto parent = actor->getParent();
+                                    for( u32 depth = 0; parent && depth < WP_MAX_ACTORS; ++depth )
                                     {
-                                        actor->updateTransform();
+                                        if( queuedTransforms.count( parent.get() ) )
+                                        {
+                                            covered = true;
+                                            break;
+                                        }
+                                        parent = parent->getParent();
                                     }
+                                    if( !covered && actor->isLoaded() ) actor->updateTransform();
                                 }
 
                                 if( !m_dirtyComponents.empty() )
@@ -458,10 +471,12 @@ namespace workphone::scene
 
                                 if( !m_dirtyComponentTransforms.empty() )
                                 {
+                                    std::unordered_set<IComponent *> updatedComponents;
                                     SmartPtr<IComponent> component;
-                                    while( m_dirtyComponentTransforms.try_pop( component ) )
+                                    for( u32 count = 0; count < 2048 &&
+                                         m_dirtyComponentTransforms.try_pop( component ); ++count )
                                     {
-                                        if( component )
+                                        if( component && updatedComponents.insert( component.get() ).second )
                                         {
                                             if( component->isLoaded() )
                                             {

@@ -3,7 +3,9 @@
 #include <Workphone/Math/Math.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
+#include <Workphone/Interface/Scene/ITransform.hpp>
 #include <limits>
+#include <stdexcept>
 
 namespace workphone::scene
 {
@@ -56,6 +58,8 @@ namespace workphone::scene
         }
 
         m_active[index] = 1;
+        m_parents[index] = {};
+        m_revisions[index] = { ++m_revision, m_revision, m_revision, 0 };
         ++m_activeCount;
         return { index, m_generations[index] };
     }
@@ -116,6 +120,8 @@ namespace workphone::scene
         m_generations.reserve( count );
         m_active.reserve( count );
         m_freeIndices.reserve( count );
+        m_parents.reserve( count );
+        m_revisions.reserve( count );
     }
 
     Transform3<real_Num> TransformSystem::getLocalTransform( Handle handle ) const
@@ -140,9 +146,16 @@ namespace workphone::scene
             return;
         }
 
+        if( makeTransform( m_localPositions[handle.index], m_localOrientations[handle.index],
+                           m_localScales[handle.index] ) == transform )
+        {
+            ++m_statistics.unchangedWrites;
+            return;
+        }
         m_localPositions[handle.index] = transform.getPosition();
         m_localOrientations[handle.index] = transform.getOrientation();
         m_localScales[handle.index] = transform.getScale();
+        touch( handle, true );
     }
 
     Transform3<real_Num> TransformSystem::getWorldTransform( Handle handle ) const
@@ -167,9 +180,16 @@ namespace workphone::scene
             return;
         }
 
+        if( makeTransform( m_worldPositions[handle.index], m_worldOrientations[handle.index],
+                           m_worldScales[handle.index] ) == transform )
+        {
+            ++m_statistics.unchangedWrites;
+            return;
+        }
         m_worldPositions[handle.index] = transform.getPosition();
         m_worldOrientations[handle.index] = transform.getOrientation();
         m_worldScales[handle.index] = transform.getScale();
+        touch( handle, false );
     }
 
     void TransformSystem::getTransforms( Handle handle, Transform3<real_Num> &localTransform,
@@ -206,6 +226,8 @@ namespace workphone::scene
         m_worldPositions[handle.index] = worldTransform.getPosition();
         m_worldOrientations[handle.index] = worldTransform.getOrientation();
         m_worldScales[handle.index] = worldTransform.getScale();
+        touch( handle, true );
+        touch( handle, false );
     }
 
     Vector3<real_Num> TransformSystem::getLocalPosition( Handle handle ) const
@@ -221,7 +243,13 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( m_localPositions[handle.index] == position )
+            {
+                ++m_statistics.unchangedWrites;
+                return;
+            }
             m_localPositions[handle.index] = position;
+            touch( handle, true );
         }
     }
 
@@ -239,7 +267,13 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( m_localOrientations[handle.index] == orientation )
+            {
+                ++m_statistics.unchangedWrites;
+                return;
+            }
             m_localOrientations[handle.index] = orientation;
+            touch( handle, true );
         }
     }
 
@@ -256,7 +290,13 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( m_localScales[handle.index] == scale )
+            {
+                ++m_statistics.unchangedWrites;
+                return;
+            }
             m_localScales[handle.index] = scale;
+            touch( handle, true );
         }
     }
 
@@ -273,7 +313,13 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( m_worldPositions[handle.index] == position )
+            {
+                ++m_statistics.unchangedWrites;
+                return;
+            }
             m_worldPositions[handle.index] = position;
+            touch( handle, false );
         }
     }
 
@@ -291,7 +337,13 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( m_worldOrientations[handle.index] == orientation )
+            {
+                ++m_statistics.unchangedWrites;
+                return;
+            }
             m_worldOrientations[handle.index] = orientation;
+            touch( handle, false );
         }
     }
 
@@ -308,7 +360,13 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( m_worldScales[handle.index] == scale )
+            {
+                ++m_statistics.unchangedWrites;
+                return;
+            }
             m_worldScales[handle.index] = scale;
+            touch( handle, false );
         }
     }
 
@@ -323,6 +381,9 @@ namespace workphone::scene
         }
 
         const auto index = handle.index;
+        const auto previous = makeTransform( m_worldPositions[index], m_worldOrientations[index],
+                                             m_worldScales[index] );
+        ++m_statistics.worldBuilds;
         if( parentWorldTransform )
         {
             const auto &parentPosition = parentWorldTransform->getPosition();
@@ -340,6 +401,11 @@ namespace workphone::scene
             m_worldOrientations[index] = m_localOrientations[index];
             m_worldScales[index] = m_localScales[index];
         }
+        if( previous != makeTransform( m_worldPositions[index], m_worldOrientations[index],
+                                       m_worldScales[index] ) )
+        {
+            m_revisions[index].world = ++m_revision;
+        }
     }
 
     void TransformSystem::updateLocalFromWorld( Handle handle,
@@ -353,6 +419,9 @@ namespace workphone::scene
         }
 
         const auto index = handle.index;
+        const auto previous = makeTransform( m_localPositions[index], m_localOrientations[index],
+                                             m_localScales[index] );
+        ++m_statistics.localBuilds;
         if( parentWorldTransform )
         {
             m_localPositions[index] =
@@ -381,6 +450,11 @@ namespace workphone::scene
             m_localPositions[index] = m_worldPositions[index];
             m_localOrientations[index] = m_worldOrientations[index];
             m_localScales[index] = m_worldScales[index];
+        }
+        if( previous != makeTransform( m_localPositions[index], m_localOrientations[index],
+                                       m_localScales[index] ) )
+        {
+            m_revisions[index].local = ++m_revision;
         }
     }
 
@@ -424,6 +498,10 @@ namespace workphone::scene
             return;
         }
 
+        if( value && ( flag & ( ITransform::dirtyFlag | ITransform::localDirtyFlag ) ) )
+        {
+            invalidateSubtree( handle );
+        }
         if( value )
         {
             m_flags[handle.index] = static_cast<u8>( m_flags[handle.index] | flag );
@@ -573,6 +651,8 @@ namespace workphone::scene
         m_referenceCounts.push_back( 0 );
         m_generations.push_back( 1 );
         m_active.push_back( 0 );
+        m_parents.emplace_back();
+        m_revisions.emplace_back();
     }
 
     void TransformSystem::resetSlot( u32 index )
@@ -589,6 +669,68 @@ namespace workphone::scene
         m_frameTimes[index] = 0.0;
         m_frameDeltaTimes[index] = 0.0;
         m_referenceCounts[index] = 0;
+        m_parents[index] = {};
+        m_revisions[index] = {};
+    }
+
+    void TransformSystem::invalidateSubtree( Handle handle )
+    {
+        const auto revision = ++m_revision;
+        for( size_t depth = 0; containsUnlocked( handle ) && depth <= m_active.size(); ++depth )
+        {
+            m_revisions[handle.index].subtree = revision;
+            handle = m_parents[handle.index];
+        }
+    }
+
+    void TransformSystem::touch( Handle handle, bool local )
+    {
+        invalidateSubtree( handle );
+        auto &revision = m_revisions[handle.index];
+        ( local ? revision.local : revision.world ) = m_revision;
+    }
+
+    TransformSystem::Revisions TransformSystem::revisions( Handle handle ) const
+    {
+        ScopedLock lock( &m_mutex, false );
+        return containsUnlocked( handle ) ? m_revisions[handle.index] : Revisions{};
+    }
+
+    void TransformSystem::setParent( Handle handle, Handle parent )
+    {
+        ScopedLock lock( &m_mutex, true );
+        if( !containsUnlocked( handle ) ) return;
+        auto cursor = parent;
+        for( size_t depth = 0; containsUnlocked( cursor ); ++depth )
+        {
+            if( cursor == handle || depth >= m_active.size() )
+                throw std::logic_error( "Transform hierarchy cycle" );
+            cursor = m_parents[cursor.index];
+        }
+        if( m_parents[handle.index] == parent ) return;
+        invalidateSubtree( handle );
+        m_parents[handle.index] = containsUnlocked( parent ) ? parent : Handle{};
+        invalidateSubtree( handle );
+    }
+
+    void TransformSystem::acknowledgeSubtree( Handle handle, u64 revision )
+    {
+        ScopedLock lock( &m_mutex, true );
+        if( containsUnlocked( handle ) )
+            m_revisions[handle.index].processed = std::max( m_revisions[handle.index].processed,
+                                                          revision );
+    }
+
+    TransformSystem::Statistics TransformSystem::statistics() const
+    {
+        ScopedLock lock( &m_mutex, false );
+        return m_statistics;
+    }
+
+    void TransformSystem::resetStatistics()
+    {
+        ScopedLock lock( &m_mutex, true );
+        m_statistics = {};
     }
 
     TransformSystem::TransformSystem() = default;

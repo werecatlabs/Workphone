@@ -237,6 +237,8 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
+            if( isStatic() && transform->getLocalPosition() == localPosition &&
+                !transform->isDirty() && !transform->isLocalDirty() ) return;
             transform->setLocalPosition( localPosition );
             transform->setDirty( true );
         }
@@ -258,6 +260,8 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
+            if( isStatic() && transform->getLocalScale() == localScale &&
+                !transform->isDirty() && !transform->isLocalDirty() ) return;
             transform->setLocalScale( localScale );
             transform->setDirty( true );
         }
@@ -279,6 +283,8 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
+            if( isStatic() && transform->getLocalOrientation() == localOrientation &&
+                !transform->isDirty() && !transform->isLocalDirty() ) return;
             transform->setLocalOrientation( localOrientation );
             transform->setDirty( true );
         }
@@ -345,6 +351,8 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
+            if( isStatic() && transform->getPosition() == position &&
+                !transform->isDirty() && !transform->isLocalDirty() ) return;
             transform->setPosition( position );
             transform->setLocalDirty( true );
         }
@@ -366,6 +374,8 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
+            if( isStatic() && transform->getScale() == scale &&
+                !transform->isDirty() && !transform->isLocalDirty() ) return;
             transform->setScale( scale );
             transform->setLocalDirty( true );
         }
@@ -387,6 +397,8 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
+            if( isStatic() && transform->getOrientation() == orientation &&
+                !transform->isDirty() && !transform->isLocalDirty() ) return;
             transform->setOrientation( orientation );
             transform->setLocalDirty( true );
         }
@@ -626,6 +638,9 @@ namespace workphone::scene
             ScopedLock componentsLock( &m_componentsMutex );
 
             WP_ASSERT( component );
+
+            m_staticWorldRevision = 0;
+            if( auto transform = getTransform() ) transform->setDirty( true, false );
 
             if( auto actor = component->getActor() )
             {
@@ -982,6 +997,18 @@ namespace workphone::scene
         case State::Edit:
         case State::Play:
         {
+            auto concreteTransform = dynamic_cast<Transform *>( getTransformPtr() );
+            auto &storage = TransformSystem::instance();
+            const auto handle = concreteTransform ? concreteTransform->storageHandle() : TransformSystem::Handle{};
+            const auto before = storage.revisions( handle );
+            const bool stationary = isStatic() && concreteTransform;
+            const bool dirty = concreteTransform &&
+                               ( concreteTransform->isDirty() || concreteTransform->isLocalDirty() );
+            if( stationary && !dirty && before.subtree <= before.processed &&
+                m_staticWorldRevision == before.world )
+            {
+                return;
+            }
             if( auto transform = getTransformPtr() )
             {
                 transform->update();
@@ -997,7 +1024,8 @@ namespace workphone::scene
                 }
             }
 
-            if( m_componentsHead )
+            const auto worldRevision = storage.revisions( handle ).world;
+            if( m_componentsHead && ( !stationary || dirty || m_staticWorldRevision != worldRevision ) )
             {
                 ScopedLock lock( &m_componentsMutex, false );
 
@@ -1007,6 +1035,8 @@ namespace workphone::scene
                     component->updateTransform();
                 }
             }
+            m_staticWorldRevision = worldRevision;
+            storage.acknowledgeSubtree( handle, before.subtree );
         }
         break;
         default:
@@ -1267,6 +1297,15 @@ namespace workphone::scene
     void GameActor::setTransform( SmartPtr<ITransform> transform )
     {
         m_transform = transform;
+        m_staticWorldRevision = 0;
+        if( auto concrete = dynamic_cast<Transform *>( transform.get() ) )
+        {
+            auto parent = getParent();
+            auto parentTransform = parent ? dynamic_cast<Transform *>( parent->getTransformPtr() ) : nullptr;
+            TransformSystem::instance().setParent( concrete->storageHandle(),
+                parentTransform ? parentTransform->storageHandle() : TransformSystem::Handle{} );
+            concrete->setDirty( true, false );
+        }
     }
 
     void GameActor::applyCollisionMaskToComponent( SmartPtr<IComponent> component, bool force )
@@ -1979,6 +2018,12 @@ namespace workphone::scene
         auto p = getParent();
         if( p != parent )
         {
+            if( auto transform = dynamic_cast<Transform *>( getTransformPtr() ) )
+            {
+                auto parentTransform = parent ? dynamic_cast<Transform *>( parent->getTransformPtr() ) : nullptr;
+                TransformSystem::instance().setParent( transform->storageHandle(),
+                    parentTransform ? parentTransform->storageHandle() : TransformSystem::Handle{} );
+            }
             m_parent = parent;
 
             auto state = getState();

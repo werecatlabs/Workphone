@@ -67,6 +67,20 @@ namespace workphone::scene
 
         static TransformSystem &instance();
 
+        struct Revisions
+        {
+            u64 local = 0, world = 0, subtree = 0, processed = 0;
+        };
+        struct Statistics
+        {
+            u64 localBuilds = 0, worldBuilds = 0, unchangedWrites = 0;
+        };
+        Revisions revisions( Handle handle ) const;
+        void setParent( Handle handle, Handle parent );
+        void acknowledgeSubtree( Handle handle, u64 revision );
+        Statistics statistics() const;
+        void resetStatistics();
+
         TransformSystem( const TransformSystem &other ) = delete;
         TransformSystem &operator=( const TransformSystem &other ) = delete;
 
@@ -152,6 +166,8 @@ namespace workphone::scene
         bool containsUnlocked( Handle handle ) const;
         void appendSlot();
         void resetSlot( u32 index );
+        void touch( Handle handle, bool local );
+        void invalidateSubtree( Handle handle );
 
         mutable RecursiveSpinMutex m_mutex;
 
@@ -174,6 +190,10 @@ namespace workphone::scene
         Array<u32> m_generations;
         Array<u8> m_active;
         Array<u32> m_freeIndices;
+        Array<Handle> m_parents;
+        Array<Revisions> m_revisions;
+        u64 m_revision = 1;
+        Statistics m_statistics;
         size_t m_activeCount = 0;
     };
 
@@ -191,6 +211,12 @@ namespace workphone::scene
     void TransformSystem::writeData( Visitor visitor )
     {
         ScopedLock lock( &m_mutex, true );
+        // Bulk writers supply coherent local/world channels. Conservatively
+        // invalidate publication before lending raw storage, including on throw.
+        const auto revision = ++m_revision;
+        for( size_t i = 0; i < m_active.size(); ++i )
+            if( m_active[i] )
+                m_revisions[i].local = m_revisions[i].world = m_revisions[i].subtree = revision;
         visitor( DataView{ m_localPositions.data(), m_localOrientations.data(), m_localScales.data(),
                            m_worldPositions.data(), m_worldOrientations.data(), m_worldScales.data(),
                            m_active.data(), m_generations.data(), m_active.size() } );

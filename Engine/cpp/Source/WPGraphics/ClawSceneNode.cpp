@@ -36,6 +36,9 @@ namespace workphone
 
         void ClawSceneNode::load( SmartPtr<ISharedObject> data )
         {
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
             setLoadingState( LoadingState::Loading );
 
             if( !m_node )
@@ -76,6 +79,9 @@ namespace workphone
 
         void ClawSceneNode::unload( SmartPtr<ISharedObject> data )
         {
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
             setLoadingState( LoadingState::Unloading );
 
             for( auto &object : getObjects() )
@@ -114,6 +120,9 @@ namespace workphone
 
         void ClawSceneNode::setTransform( const Transform3<real_Num> &transform )
         {
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
             // Keep state authoritative so a later dirty-state update cannot restore
             // an old transform, and retain updates made before native-node creation.
             if( m_node && isThreadSafe() )
@@ -132,24 +141,41 @@ namespace workphone
 
         void ClawSceneNode::setWorldTransform( const Transform3<real_Num> &worldTransform )
         {
-            // Keep state authoritative so a later dirty-state update cannot restore
-            // an old transform, and retain updates made before native-node creation.
-            if( m_node && isThreadSafe() )
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
+            auto local = worldTransform;
+            if( auto parent = getParent() )
             {
-                m_transformStateData->worldTransform = worldTransform;
+                const auto pose = parent->getWorldTransform();
+                const auto scale = pose.getScale();
+                if( scale.x == 0 || scale.y == 0 || scale.z == 0 )
+                    throw std::domain_error( "Cannot set world pose below a zero-scale parent" );
+                local.setPosition( pose.convertWorldToLocalPosition( worldTransform.getPosition() ) );
+                local.setOrientation( pose.convertWorldToLocalOrientation( worldTransform.getOrientation() ) );
+                local.setScale( worldTransform.getScale() / scale );
+            }
+            setTransform( local );
+            if( m_transformStateData ) m_transformStateData->worldTransform = worldTransform;
+        }
 
-                // Equal authored state can still be waiting for render-thread dispatch.
-                // Always synchronize the native node when its owner applies the transform.
-                applyNativeTransform( m_node, worldTransform );
-            }
-            else
+        Transform3<real_Num> ClawSceneNode::getWorldTransform() const
+        {
+            auto local = getTransform();
+            if( auto parent = getParent() )
             {
-                GraphicsSceneNode::setTransform( worldTransform );
+                Transform3<real_Num> world;
+                world.transformFromParent( parent->getWorldTransform(), local );
+                return world;
             }
+            return local;
         }
 
         void ClawSceneNode::setParent( SmartPtr<IGraphicsSceneNode> parent )
         {
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
             GraphicsSceneNode::setParent( parent );
 
             wp_scenenode *parentNative = nullptr;
@@ -273,6 +299,9 @@ namespace workphone
 
         bool ClawSceneNode::handleStateChanged( SmartPtr<IState> &state )
         {
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
             if( state && state->getOwnerPtr() == this )
             {
                 if( isLoaded() )

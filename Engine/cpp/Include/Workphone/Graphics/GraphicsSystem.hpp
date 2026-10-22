@@ -688,6 +688,7 @@ namespace workphone
              * graphics resource initialisation.
              */
             void updateLoadQueue();
+            void updateReloadQueue();
 
             /**
              * @brief Process pending unload requests.
@@ -756,13 +757,22 @@ namespace workphone
             ConcurrentArray<SmartPtr<ISharedObject>> m_graphicsObjects;
 
             /** Queue of requested load operations (thread-safe). */
-            ConcurrentQueue<SmartPtr<ISharedObject>> m_loadQueue;
+            struct LoadRequest
+            {
+                SmartPtr<ISharedObject> object;
+                u64 ticket = 0;
+            };
+            ConcurrentQueue<LoadRequest> m_loadQueue;
+            UnorderedMap<ISharedObject *, u64> m_pendingLoadTickets;
+            u64 m_nextLoadTicket = 0;
 
             /** Queue of requested load operations (thread-safe). */
-            ConcurrentQueue<SmartPtr<ISharedObject>> m_reloadQueue;
+            ConcurrentQueue<LoadRequest> m_reloadQueue;
+            UnorderedMap<ISharedObject *, u64> m_pendingReloadTickets;
 
             /** Queue of requested unload operations (thread-safe). */
-            ConcurrentQueue<SmartPtr<ISharedObject>> m_unloadQueue;
+            ConcurrentQueue<LoadRequest> m_unloadQueue;
+            UnorderedMap<ISharedObject *, u64> m_pendingUnloadTickets;
 
             ///< String pool for efficient string management
             AtomicRawPtr<StringPool<c8>> m_stringPool;
