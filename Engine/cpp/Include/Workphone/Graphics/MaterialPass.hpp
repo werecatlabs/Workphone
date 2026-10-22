@@ -545,7 +545,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            void seedShaderSurfaceScalars( MaterialPassStateData &state ) const;
+            void seedShaderSurface( MaterialPassStateData &state ) const;
             /** Retire only the state/context created by this pass. */
             void releaseLocalStateContext();
 

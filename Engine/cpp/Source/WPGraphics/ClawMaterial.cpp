@@ -414,10 +414,26 @@ namespace workphone
                     return;
                 }
 
+                // A saved bag contains both shader values and native aliases.
+                // Restore aliases as pass overrides when an authored semantic is
+                // present, rather than feeding those mirrors back into its owner.
+                // A partial legacy-only bag remains a material-wide editor edit.
+                const auto authored = [&]( const String &name ) {
+                    return m_shaderWorkflow == ShaderWorkflow::Pbr &&
+                           properties->hasProperty( shaderParamPrefixStr + name );
+                };
+                const auto restorePasses = [&]( const auto &update ) {
+                    for( auto technique : getTechniques() )
+                        if( technique )
+                            for( auto pass : technique->getPasses() )
+                                if( pass ) update( *pass );
+                };
                 auto diffuseColour = getDiffuse();
                 if( properties->getPropertyValue( diffuseColourStr, diffuseColour ) )
                 {
-                    setDiffuse( diffuseColour );
+                    if( authored( shaderAlbedoParamStr ) || authored( shaderOpacityParamStr ) )
+                        restorePasses( [&]( IMaterialPass &pass ) { pass.setDiffuse( diffuseColour ); } );
+                    else setDiffuse( diffuseColour );
                 }
 
                 auto specularColour = getSpecular();
@@ -436,19 +452,25 @@ namespace workphone
                 auto emissiveColour = getEmissive();
                 if( properties->getPropertyValue( emissiveColourStr, emissiveColour ) )
                 {
-                    setEmissive( emissiveColour );
+                    if( authored( shaderEmissiveParamStr ) )
+                        restorePasses( [&]( IMaterialPass &pass ) { pass.setEmissive( emissiveColour ); } );
+                    else setEmissive( emissiveColour );
                 }
 
                 auto metalness = getMetalness();
                 if( properties->getPropertyValue( metalnessStr, metalness ) )
                 {
-                    setMetalness( metalness );
+                    if( authored( shaderMetalnessParamStr ) )
+                        restorePasses( [&]( IMaterialPass &pass ) { pass.setMetalness( metalness ); } );
+                    else setMetalness( metalness );
                 }
 
                 auto roughness = getRoughness();
                 if( properties->getPropertyValue( roughnessStr, roughness ) )
                 {
-                    setRoughness( roughness );
+                    if( authored( shaderRoughnessParamStr ) )
+                        restorePasses( [&]( IMaterialPass &pass ) { pass.setRoughness( roughness ); } );
+                    else setRoughness( roughness );
                 }
 
                 auto flags = wp_graphics_material_get_flags( m_material );

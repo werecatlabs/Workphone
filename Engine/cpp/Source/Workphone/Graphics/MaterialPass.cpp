@@ -143,7 +143,7 @@ namespace workphone::render
         }
     }
 
-    void MaterialPass::seedShaderSurfaceScalars( MaterialPassStateData &state ) const
+    void MaterialPass::seedShaderSurface( MaterialPassStateData &state ) const
     {
         auto material = dynamic_pointer_cast<Material>( getMaterial() );
         if( !material || material->m_shaderWorkflow != Material::ShaderWorkflow::Pbr ) return;
@@ -156,6 +156,33 @@ namespace workphone::render
         seed( MaterialBuiltinParameter::Metalness, state.metalness );
         seed( MaterialBuiltinParameter::Roughness, state.roughness );
         seed( MaterialBuiltinParameter::AlphaClip, state.alphaClip );
+        const auto seedColour = [&]( MaterialBuiltinParameter semantic, ColourF &value ) {
+            const auto handle = parameters.GetBuiltin( semantic );
+            if( !parameters.IsHandleValid( handle, MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
+                return false;
+            value = parameters.GetColour( handle );
+            return true;
+        };
+        const auto hasAlbedo = seedColour( MaterialBuiltinParameter::Albedo, state.diffuseColour );
+        seedColour( MaterialBuiltinParameter::Emissive, state.emissiveColour );
+        const auto opacity = parameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
+        const auto hasOpacity = parameters.IsHandleValid( opacity, MaterialShaderParameterType::Scalar, sizeof( f32 ) );
+        if( hasOpacity || hasAlbedo )
+        {
+            state.opacity = Math<f32>::clamp( hasOpacity ? parameters.GetScalar( opacity ) : state.diffuseColour.a,
+                                             0.0f, 1.0f );
+            state.diffuseColour.a = state.opacity;
+            if( state.opacity < 0.999f )
+            {
+                state.setFlag( transparentFlag, true );
+                if( state.renderMode < 2u )
+                {
+                    state.renderMode = 3u;
+                    state.blendMode = 1u;
+                    state.setFlag( cutoutFlag, false );
+                }
+            }
+        }
     }
 
     void MaterialPass::setMaterial( SmartPtr<IMaterial> material )
@@ -165,7 +192,7 @@ namespace workphone::render
         if( changed && material )
             if( auto context = getStateContextPtr() )
                 if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
-                    seedShaderSurfaceScalars( *state );
+                    seedShaderSurface( *state );
     }
 
     void MaterialPass::setStateContext( SmartPtr<IStateContext> stateContext )
@@ -292,7 +319,7 @@ namespace workphone::render
                                         stateData->diffuseColour.a = material->m_pendingOpacity;
                                     }
                                 }
-                                seedShaderSurfaceScalars( *stateData );
+                                seedShaderSurface( *stateData );
                                 stateData->setFlag( depthWriteFlag, true );
                             }
                             state->setId( getId() );

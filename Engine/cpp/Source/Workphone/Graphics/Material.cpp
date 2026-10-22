@@ -157,6 +157,12 @@ namespace workphone::render
             ~MaterialParameterSyncScope() { flag = previous; }
         };
 
+        // The seven layout semantics occupy bits 0..6. Bit 7 records an
+        // alpha-only edit of Albedo in a layout without scalar Opacity.
+        constexpr u8 shaderAlphaOnly = 0x80u;
+        static_assert( static_cast<u32>( MaterialBuiltinParameter::Count ) == 7u,
+                       "Extend the material edit mask before adding built-in semantics" );
+
         void applyCullModeToPasses( IMaterial *material, u32 mode )
         {
             if( !material )
@@ -1150,6 +1156,18 @@ namespace workphone::render
 
     void Material::setDiffuse( const ColourF &diffuse )
     {
+        if( !m_synchronizingShaderParameters && m_shaderWorkflow == ShaderWorkflow::Pbr )
+        {
+            auto edit = m_shaderParameters.Edit();
+            if( setShaderSurfaceColour( MaterialBuiltinParameter::Albedo, diffuse ) )
+            {
+                // This API assigns RGBA. Keep a declared opacity semantic in the
+                // same edit; typed Albedo edits retain the explicit Opacity value.
+                setShaderSurfaceScalar( MaterialBuiltinParameter::Opacity,
+                                        Math<f32>::clamp( diffuse.a, 0.0f, 1.0f ) );
+                return;
+            }
+        }
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -1206,6 +1224,7 @@ namespace workphone::render
 
     void Material::setEmissive( const ColourF &emissive )
     {
+        if( setShaderSurfaceColour( MaterialBuiltinParameter::Emissive, emissive ) ) return;
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -2238,6 +2257,24 @@ namespace workphone::render
     void Material::setOpacity( f32 value )
     {
         value = Math<real_Num>::clamp( value, 0.0f, 1.0f );
+        if( setShaderSurfaceScalar( MaterialBuiltinParameter::Opacity, value ) ) return;
+        // Layouts without a scalar Opacity can still own alpha in Albedo.
+        // Read pending authored RGB, rather than an older pass publication.
+        if( !m_synchronizingShaderParameters && m_shaderWorkflow == ShaderWorkflow::Pbr )
+        {
+            const auto handle = m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Albedo );
+            if( m_shaderParameters.IsHandleValid( handle, MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
+            {
+                auto diffuse = m_shaderParameters.GetColour( handle );
+                diffuse.a = value;
+                {
+                    MaterialParameterSyncScope synchronization( m_synchronizingShaderParameters );
+                    m_shaderParameters.SetColour( handle, diffuse );
+                }
+                shaderParametersChanged( shaderAlphaOnly );
+                return;
+            }
+        }
         batch( [&, value]( Material & ) {
             m_hasPendingOpacity = true;
             m_pendingOpacity = value;
@@ -2693,6 +2730,19 @@ namespace workphone::render
         return true;
     }
 
+    bool Material::setShaderSurfaceColour( MaterialBuiltinParameter semantic, const ColourF &value )
+    {
+        if( m_synchronizingShaderParameters || m_shaderWorkflow != ShaderWorkflow::Pbr ) return false;
+        const auto handle = m_shaderParameters.GetBuiltin( semantic );
+        if( !m_shaderParameters.IsHandleValid( handle, MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
+            return false;
+        const auto revision = m_shaderParameters.GetRevision();
+        m_shaderParameters.SetColour( handle, value );
+        if( m_shaderParameters.GetRevision() == revision )
+            shaderParametersChanged( static_cast<u8>( 1u << static_cast<u32>( semantic ) ) );
+        return true;
+    }
+
     void Material::shaderParametersChanged( u8 mask ) noexcept
     {
         if( m_synchronizingShaderParameters ) return;
@@ -2785,7 +2835,8 @@ namespace workphone::render
         const bool metalChanged = pbr && scalar( MaterialBuiltinParameter::Metalness );
         const bool roughChanged = pbr && scalar( MaterialBuiltinParameter::Roughness );
         const bool clipChanged = pbr && scalar( MaterialBuiltinParameter::AlphaClip );
-        const bool opacityChanged = diffuseChanged || scalar( MaterialBuiltinParameter::Opacity );
+        const bool opacityChanged = diffuseChanged || scalar( MaterialBuiltinParameter::Opacity ) ||
+                                    ( pbr && ( mask & shaderAlphaOnly ) );
         auto diffuse = diffuseChanged ? getColour( colorOnly ? MaterialBuiltinParameter::Color :
             MaterialBuiltinParameter::Albedo, colorOnly ? ColourF( 0.5f, 0.5f, 0.5f, 1 ) : currentDiffuse ) : currentDiffuse;
         const auto emissive = colorOnly ? getColour( MaterialBuiltinParameter::Color, ColourF( 0.5f, 0.5f, 0.5f, 1 ) ) :
@@ -2794,10 +2845,14 @@ namespace workphone::render
         const auto metal = getScalar( MaterialBuiltinParameter::Metalness, currentMetal );
         const auto rough = getScalar( MaterialBuiltinParameter::Roughness, currentRough );
         const auto clip = getScalar( MaterialBuiltinParameter::AlphaClip, currentClip );
-        const auto opacity = Math<f32>::clamp( getScalar( MaterialBuiltinParameter::Opacity,
-            pbr ? currentOpacity : 1.0f ), 0.0f, 1.0f );
+        auto opacityFallback = pbr ? currentOpacity : 1.0f;
+        if( pbr && diffuseChanged ) opacityFallback = diffuse.a;
+        else if( pbr && ( mask & shaderAlphaOnly ) )
+            opacityFallback = getColour( MaterialBuiltinParameter::Albedo, currentDiffuse ).a;
+        const auto opacity = Math<f32>::clamp( getScalar( MaterialBuiltinParameter::Opacity, opacityFallback ),
+                                              0.0f, 1.0f );
         const bool transparent = opacityChanged && opacity < 0.999f;
-        const bool changeRenderMode = transparent && getRenderMode() < 2u;
+        const bool changeRenderModeFallback = transparent && getRenderMode() < 2u;
         if( opacityChanged ) { diffuse.a = opacity; m_hasPendingOpacity = true; m_pendingOpacity = opacity; }
         if( metalChanged ) { m_hasPendingMetalness = true; m_pendingMetalness = metal; }
         if( roughChanged ) { m_hasPendingRoughness = true; m_pendingRoughness = rough; }
@@ -2814,7 +2869,17 @@ namespace workphone::render
                 auto context = pass->getStateContext();
                 auto data = context ? context->invalidateStateDataById<MaterialPassStateData>( pass->getId() ) :
                                       SafePtr<MaterialPassStateData>{};
-                if( diffuseChanged || opacityChanged ) pass->setDiffuse( diffuse );
+                const bool changeRenderMode = transparent &&
+                    ( data ? data->renderMode < 2u : changeRenderModeFallback );
+                if( diffuseChanged ) pass->setDiffuse( diffuse );
+                else if( opacityChanged )
+                {
+                    // Alpha-only edits preserve each pass's local RGB override,
+                    // including live edits inside an enclosing publication scope.
+                    auto passDiffuse = pass->getDiffuse();
+                    passDiffuse.a = opacity;
+                    pass->setDiffuse( passDiffuse );
+                }
                 if( emissiveChanged ) pass->setEmissive( emissive );
                 if( metalChanged ) pass->setMetalness( metal );
                 if( roughChanged ) pass->setRoughness( rough );

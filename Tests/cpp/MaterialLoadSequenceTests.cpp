@@ -1943,6 +1943,174 @@ namespace
         fixture.graphics->pending.clear();
     }
 
+    void runCanonicalSurfaceColours( Fixture &fixture )
+    {
+        using namespace render;
+        auto schema = observedSchema();
+        auto material = make_ptr<ClawMaterial>();
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &parameters = material->getShaderParameters();
+        const auto albedo = parameters.Resolve<ColourF>( "Albedo" );
+        const auto emission = parameters.Resolve<ColourF>( "Emissive" );
+        const auto opacity = parameters.Resolve<f32>( "Opacity" );
+        const auto names = parameters.GetNameLookupCount();
+        const ColourF initial( 0.2f, 0.4f, 0.6f, 0.6f ), glow( 0.1f, 0.3f, 0.5f, 1 );
+        material->setDiffuse( initial ); material->setEmissive( glow ); material->setOpacity( 0.35f );
+        require( parameters.GetColour( albedo.handle ) == initial &&
+                 parameters.GetColour( emission.handle ) == glow && parameters.GetScalar( opacity.handle ) == 0.35f,
+                 "pre-load colour and opacity setters edit the canonical PBR values" );
+        material->load( nullptr );
+        auto technique = material->getTechnique( 0 );
+        auto first = technique->getPass( 0 );
+        auto second = technique->createPass(); second->load( nullptr );
+        const auto stateFor = []( SmartPtr<IMaterialPass> pass ) {
+            return static_pointer_cast<MaterialPassStateData>(
+                pass->getStateContext()->getStateById( pass->getId() )->getData() );
+        };
+        auto firstData = stateFor( first ), secondData = stateFor( second );
+        const ColourF initialRendered( initial.r, initial.g, initial.b, 0.35f );
+        require( material->getDiffuse() == initialRendered && second->getDiffuse() == initialRendered &&
+                 second->getEmissive() == glow && secondData->opacity == 0.35f && secondData->renderMode == 3u &&
+                 secondData->getRenderState()->getFlag( transparentFlag ),
+                 "new passes seed canonical colour, opacity and transparent render state" );
+
+        const ColourF red( 1, 0, 0, 0.7f ), blue( 0, 0, 1, 0.8f );
+        first->setDiffuse( red ); second->setDiffuse( blue );
+        first->setEmissive( red ); second->setEmissive( blue );
+        {
+            auto edit = second->getStateContext()->invalidateStateDataById<MaterialPassStateData>( second->getId() );
+            edit->setUIntSetting( MaterialUIntSetting::renderMode, 1u );
+            edit->setUIntSetting( MaterialUIntSetting::blendMode, 0u );
+            edit->setBoolSetting( MaterialBoolSetting::cutout, true );
+        }
+        auto before = firstData->getRenderState(), secondBefore = secondData->getRenderState();
+        material->setOpacity( 0.45f );
+        require( first->getDiffuse() == ColourF( 1, 0, 0, 0.45f ) &&
+                 second->getDiffuse() == ColourF( 0, 0, 1, 0.45f ) &&
+                 first->getEmissive() == red && second->getEmissive() == blue &&
+                 firstData->getRenderState()->revision == before->revision + 1 &&
+                 secondData->getRenderState()->revision == secondBefore->revision + 1 &&
+                 secondData->renderMode == 3u && secondData->blendMode == 1u && !second->isCutout(),
+                 "opacity-only edits preserve each pass RGB/emission and normalize each pass render mode" );
+        before = firstData->getRenderState();
+        auto shared = parameters;
+        auto storage = parameters.GetValueStorageIdentity();
+        const auto revision = parameters.GetRevision();
+        material->setOpacity( 0.45f );
+        require( firstData->getRenderState() == before && parameters.GetRevision() == revision &&
+                 parameters.GetValueStorageIdentity() == storage && shared.GetValueStorageIdentity() == storage,
+                 "opacity no-op retains shared payload, revision and render snapshot" );
+        secondBefore = secondData->getRenderState();
+        material->setDiffuse( initial );
+        require( material->getDiffuse() == initial && second->getDiffuse() == initial &&
+                 material->getOpacity() == initial.a && parameters.GetScalar( opacity.handle ) == initial.a &&
+                 firstData->getRenderState()->revision == before->revision + 1 &&
+                 secondData->getRenderState()->revision == secondBefore->revision + 1 && second->getEmissive() == blue,
+                 "RGBA material assignment restores colour overrides and publishes colour/opacity together" );
+        material->setEmissive( glow );
+        require( first->getEmissive() == glow && second->getEmissive() == glow && first->getDiffuse() == initial,
+                 "same-authored-value emission assignment restores only emission overrides" );
+
+        before = firstData->getRenderState(); secondBefore = secondData->getRenderState();
+        const ColourF finalColour( 0.7f, 0.3f, 0.2f, 0.7f ), finalGlow( 0.9f, 0.4f, 0.1f, 1 );
+        material->batch( [&]( Material &m ) {
+            parameters.Set( albedo, red ); m.setDiffuse( finalColour );
+            parameters.Set( opacity, 0.2f ); m.setOpacity( 0.4f );
+            parameters.Set( emission, blue ); m.setEmissive( finalGlow );
+            require( m.getRenderState() == before, "mixed colour edits retain the prior publication until close" );
+        } );
+        const ColourF finalRendered( finalColour.r, finalColour.g, finalColour.b, 0.4f );
+        require( material->getDiffuse() == finalRendered && second->getDiffuse() == finalRendered &&
+                 material->getEmissive() == finalGlow && parameters.GetColour( albedo.handle ) == finalColour &&
+                 parameters.GetScalar( opacity.handle ) == 0.4f &&
+                 firstData->getRenderState()->revision == before->revision + 1 &&
+                 secondData->getRenderState()->revision == secondBefore->revision + 1,
+                 "mixed colour/opacity writes follow call order and publish once per pass" );
+        material->applyShaderParametersToRenderer();
+        require( material->getDiffuse() == finalRendered && material->getEmissive() == finalGlow,
+                 "full reapply retains canonical material colour and opacity edits" );
+        auto properties = material->getProperties();
+        auto restored = make_ptr<ClawMaterial>(); restored->load( nullptr ); restored->setProperties( properties );
+        require( restored->getDiffuse() == finalRendered && restored->getEmissive() == finalGlow &&
+                 restored->getOpacity() == 0.4f && restored->getShaderParameters().GetColour(
+                     restored->getShaderParameters().GetBuiltin( MaterialBuiltinParameter::Albedo ) ) == finalColour,
+                 "shader property round-trip preserves authored RGBA as well as normalized render values" );
+        first->setDiffuse( blue ); first->setEmissive( red );
+        first->setMetalness( 0.9f ); first->setRoughness( 0.1f );
+        auto overrides = material->getProperties();
+        restored->setProperties( overrides );
+        const auto &restoredParameters = restored->getShaderParameters();
+        require( restored->getDiffuse() == blue && restored->getEmissive() == red &&
+                 restored->getMetalness() == 0.9f && restored->getRoughness() == 0.1f &&
+                 restoredParameters.GetColour( restoredParameters.GetBuiltin( MaterialBuiltinParameter::Albedo ) ) == finalColour &&
+                 restoredParameters.GetColour( restoredParameters.GetBuiltin( MaterialBuiltinParameter::Emissive ) ) == finalGlow &&
+                 restoredParameters.GetScalar( restoredParameters.GetBuiltin( MaterialBuiltinParameter::Metalness ) ) == 0.0f &&
+                 restoredParameters.GetScalar( restoredParameters.GetBuiltin( MaterialBuiltinParameter::Roughness ) ) == 0.0f,
+                 "saved legacy aliases restore pass overrides without overwriting canonical shader values" );
+        restored->applyShaderParametersToRenderer();
+        require( restored->getDiffuse() == finalRendered && restored->getEmissive() == finalGlow &&
+                 restored->getMetalness() == 0.0f && restored->getRoughness() == 0.0f,
+                 "full reapply after import restores the original authored values" );
+        auto partial = make_ptr<Properties>();
+        partial->setProperty( "diffuseColour", initial );
+        partial->setProperty( "emissiveColour", glow );
+        partial->setProperty( "metalness", 0.6f );
+        partial->setProperty( "roughness", 0.4f );
+        restored->setProperties( partial ); restored->applyShaderParametersToRenderer();
+        require( restored->getDiffuse() == initial && restored->getEmissive() == glow &&
+                 restored->getMetalness() == 0.6f && restored->getRoughness() == 0.4f &&
+                 restoredParameters.GetColour( restoredParameters.GetBuiltin( MaterialBuiltinParameter::Albedo ) ) == initial,
+                 "legacy-only partial property bags remain canonical material edits" );
+        restored->unload( nullptr );
+        require( parameters.GetNameLookupCount() == names, "canonical colour/opacity edits use cached numeric semantics" );
+        {
+            auto edit = parameters.Edit();
+            material->setDiffuse( initial ); material->setOpacity( 0.25f ); material->setEmissive( glow );
+            auto added = technique->createPass(); added->load( nullptr );
+            require( added->getDiffuse() == ColourF( initial.r, initial.g, initial.b, 0.25f ) &&
+                     added->getEmissive() == glow && stateFor( added )->opacity == 0.25f,
+                     "new passes read pending canonical colours while parameter publication is deferred" );
+        }
+        material->unload( nullptr ); material->load( nullptr );
+        require( material->getDiffuse() == ColourF( initial.r, initial.g, initial.b, 0.25f ) &&
+                 material->getEmissive() == glow, "canonical colour and opacity survive graph reload" );
+        material->unload( nullptr );
+
+        MaterialShader sparse( "SparseColourPBR" );
+        sparse.addParameter( MaterialShaderParameterType::Colour, "Albedo" )
+              .addParameter( MaterialShaderParameterType::Int, "Opacity" )
+              .addParameter( MaterialShaderParameterType::Int, "Emissive" );
+        material->setShaderParameters( sparse.getParameterInfo(), sparse.getShaderID() );
+        const auto sparseAlbedo = parameters.Resolve<ColourF>( "Albedo" );
+        const auto customOpacity = parameters.Resolve<s32>( "Opacity" );
+        const auto customEmission = parameters.Resolve<s32>( "Emissive" );
+        parameters.Set( customOpacity, s32( 17 ) ); parameters.Set( customEmission, s32( 23 ) );
+        material->setDiffuse( initial ); material->load( nullptr );
+        first = material->getTechnique( 0 )->getPass( 0 ); first->setDiffuse( blue );
+        material->setOpacity( 0.3f ); material->setEmissive( glow );
+        require( first->getDiffuse() == ColourF( 0, 0, 1, 0.3f ) && material->getOpacity() == 0.3f &&
+                 parameters.GetColour( sparseAlbedo.handle ) == ColourF( initial.r, initial.g, initial.b, 0.3f ) &&
+                 parameters.GetInt( customOpacity.handle ) == 17 && parameters.GetInt( customEmission.handle ) == 23 &&
+                 first->getEmissive() == glow, "Albedo-only alpha edits preserve RGB overrides and wrong-type custom slots" );
+        material->batch( [&]( Material &m ) {
+            m.setDiffuse( initial ); m.setOpacity( 0.2f );
+        } );
+        require( material->getDiffuse() == ColourF( initial.r, initial.g, initial.b, 0.2f ),
+                 "Albedo-only opacity edits preserve pending authored RGB in mixed batches" );
+        material->setOpacity( 4.0f );
+        require( material->getOpacity() == 1.0f && material->getDiffuse().a == 1.0f,
+                 "Albedo-only opacity setters retain clamping" );
+        material->unload( nullptr );
+        material->setShaderParameters( schema.getParameterInfo(), Material::unlitShaderIDStr );
+        material->load( nullptr );
+        const auto unlitRevision = parameters.GetRevision();
+        material->setDiffuse( initial ); material->setEmissive( glow ); material->setOpacity( 0.5f );
+        require( parameters.GetRevision() == unlitRevision && material->getDiffuse().r == initial.r &&
+                 material->getDiffuse().a == 0.5f && material->getEmissive() == glow,
+                 "non-PBR material setters retain the existing legacy ownership contract" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
     void runCanonicalSurfaceScalars( Fixture &fixture )
     {
         using namespace render;
@@ -2433,6 +2601,7 @@ int main( int argc, char **argv )
         runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
         runCanonicalSurfaceScalars( fixture );
+        runCanonicalSurfaceColours( fixture );
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );
