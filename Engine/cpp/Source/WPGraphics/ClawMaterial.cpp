@@ -419,7 +419,10 @@ namespace workphone
                 // present, rather than feeding those mirrors back into its owner.
                 // A partial legacy-only bag remains a material-wide editor edit.
                 const auto authored = [&]( const String &name ) {
-                    return m_shaderWorkflow == ShaderWorkflow::Pbr &&
+                    const bool active = m_shaderWorkflow == ShaderWorkflow::Pbr ||
+                        ( m_shaderWorkflow == ShaderWorkflow::Unlit &&
+                          ( name == shaderEmissiveParamStr || name == shaderOpacityParamStr ) );
+                    return active &&
                            properties->hasProperty( shaderParamPrefixStr + name );
                 };
                 const auto restorePasses = [&]( const auto &update ) {

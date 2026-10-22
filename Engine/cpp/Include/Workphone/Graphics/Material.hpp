@@ -1307,7 +1307,7 @@ namespace workphone
         protected:
             friend class MaterialPass; // Seed newly loaded passes from typed pre-load values.
             friend class MaterialShaderParametersInstance;
-            // Material-wide PBR edits share the shader-authored owner.
+            // Active material-wide surface edits share the shader-authored owner.
             // Direct pass setters remain explicit local overrides.
             bool setShaderSurfaceScalar( MaterialBuiltinParameter semantic, f32 value );
             bool setShaderSurfaceColour( MaterialBuiltinParameter semantic, const ColourF &value );

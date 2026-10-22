@@ -8,6 +8,8 @@ Latest lifecycle validation: resource-cache cleanup and repeated actor/camera te
 
 M4 storage continuation: compatible PBR values now seed future passes directly from the shader buffer, retiring the redundant pending opacity/metalness/roughness copies. Legacy and fallback values use optional masked storage until compatible ownership transfers. Explicit import preserves pre-load edits and reads live values inside batches. This is a conditional object-storage reduction; non-PBR migration and measured whole-material/scene memory remain open. See the implementation status for costs and validation.
 
+Unlit continuation: declared emission and opacity now share shader ownership across material/named/typed edits and seed newly attached passes directly. Compatible opacity no longer retains a future-pass legacy copy. Saved native aliases preserve pass-local overrides. ColorOnly, remaining fallback/storage adapters and whole-material/scene profiling remain open; M4 is partial.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.
