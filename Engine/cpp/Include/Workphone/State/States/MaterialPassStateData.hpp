@@ -4,7 +4,6 @@
 #include <Workphone/State/States/StateData.hpp>
 #include <Workphone/Graphics/MaterialRenderState.hpp>
 #include <Workphone/Core/ColourF.hpp>
-#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
@@ -171,6 +170,7 @@ namespace workphone
 
         // Accounted optional numeric authoring object, excluding allocator overhead.
         size_t getNumericAuthoringStorageBytes() const;
+        size_t getStringAuthoringStorageBytes() const;
 
         void writeEditorSettings( Properties &floats, Properties &uints, Properties &bools,
                                   Properties &strings ) const;
@@ -230,17 +230,15 @@ namespace workphone
 
     private:
         friend class MaterialPublicationScope;
-        struct AuthoringData
-        {
-            FixedString<WP_MAX_CLASSNAME> vertexShaderName, fragmentShaderName, geometryShaderName;
-            FixedString<WP_MAX_PATH> shaderPath, keywords;
-        };
+        const char *getAuthoringText( u32 slot ) const;
+        void setAuthoringText( u32 slot, const String &value, size_t limit );
         // One allocation: 64-bit presence mask followed by packed nondefault words.
         // Floats retain their exact bits; absent slots read shared schema defaults.
         u32 getNumericWord( u32 index, u32 defaultValue ) const;
         void setNumericWord( u32 index, u32 value, u32 defaultValue );
         std::unique_ptr<u32[]> m_numericAuthoring;
-        std::unique_ptr<AuthoringData> m_authoring;
+        // Five offsets followed by only the populated, null-terminated texts.
+        std::unique_ptr<char[]> m_authoring;
         MaterialRenderState::Ptr m_renderState;
         u32 m_writeDepth = 0;
     };

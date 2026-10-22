@@ -1347,6 +1347,9 @@ namespace workphone::render
             return;
         }
 
+        auto context = getStateContextPtr();
+        if( !context || !context->getStateDataById<MaterialPassStateData>( getId() ) ) load( nullptr );
+
         if( auto stateContext = getStateContextPtr() )
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
@@ -1412,7 +1415,9 @@ namespace workphone::render
         setEmissionEnabled( enableEmission );
         setRefractionEnabled( enableRefraction );
 
-        reload( nullptr );
+        // Reconfigure slots/backend against the authored record. A full reload
+        // retires this context and would discard the properties just imported.
+        load( nullptr );
     }
 
     auto MaterialPass::getChildObjects() const -> Array<SmartPtr<ISharedObject>>

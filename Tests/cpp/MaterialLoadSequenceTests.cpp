@@ -3154,6 +3154,40 @@ namespace
                  "native sync consumes latest snapshot" );
         material->setRoughness( 0.35f );
         require( material->getRenderState() == edited, "no-op material edit reuses snapshot" );
+        auto stringsPass = make_ptr<render::ClawMaterialPass>();
+        stringsPass->load(nullptr);
+        stringsPass->setVertexShaderName("PackedVertex");
+        stringsPass->setFragmentShaderName("PackedFragment");
+        stringsPass->setGeometryShaderName("PackedGeometry");
+        {
+            auto data = stringsPass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(stringsPass->getId());
+            data->setEditorString("shaderPath", "Shaders/Packed");
+            data->setEditorString("keywords", "FOG SHADOWS");
+        }
+        require(stringsPass->getVertexShaderName() == "PackedVertex", "native packed vertex adapter writes source state");
+        auto stringProperties = stringsPass->getProperties();
+        String exportedVertex;
+        require(stringProperties->getPropertyValue(render::MaterialPass::vertexShaderStr, exportedVertex) &&
+            exportedVertex == "PackedVertex", "native packed vertex property export");
+        auto restoredStringsPass = make_ptr<render::ClawMaterialPass>();
+        restoredStringsPass->load(nullptr);
+        auto stringContext = restoredStringsPass->getStateContext();
+        auto stringState = stringContext->getStateById(restoredStringsPass->getId());
+        restoredStringsPass->setProperties(stringProperties);
+        require(restoredStringsPass->getStateContext() == stringContext &&
+            stringContext->getStateById(restoredStringsPass->getId()) == stringState,
+            "property import retains the canonical pass context and record");
+        {
+            auto data = restoredStringsPass->getStateContext()->getStateDataById<MaterialPassStateData>(restoredStringsPass->getId());
+            String text;
+            require(restoredStringsPass->getVertexShaderName() == "PackedVertex", "native packed vertex name round trip");
+            require(restoredStringsPass->getFragmentShaderName() == "PackedFragment", "native packed fragment name round trip");
+            require(restoredStringsPass->getGeometryShaderName() == "PackedGeometry", "native packed geometry name round trip");
+            require(data->getEditorString("shaderPath", text) && text == "Shaders/Packed", "native packed shader path round trip");
+            require(data->getEditorString("keywords", text) && text == "FOG SHADOWS", "native packed keywords round trip");
+        }
+        restoredStringsPass->unload(nullptr);
+        stringsPass->unload(nullptr);
         auto pass = material->getTechnique( 0 )->getPass( 0 );
         pass->setMetalness( 0.6f );
         require( material->getRenderState()->metalness == 0.6f, "direct pass edit is visible" );

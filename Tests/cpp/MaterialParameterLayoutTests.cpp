@@ -2,6 +2,7 @@
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -361,11 +362,80 @@ namespace
             << " sparse_single_override_bytes=12 moved_numeric_value_bytes=148" << '\n';
     }
 
+    void stringAuthoringContracts()
+    {
+        MaterialPassStateData state;
+        const auto original = state.getRenderState();
+        require(state.getStringAuthoringStorageBytes() == 0 && state.getVertexShaderName().empty() &&
+            state.getFragmentShaderName().empty() && state.getGeometryShaderName().empty(),
+            "default pass has no string authoring allocation");
+        state.setVertexShaderName(""); state.setEditorString("keywords", "");
+        require(state.getStringAuthoringStorageBytes() == 0, "empty string writes allocate nothing");
+        state.setVertexShaderName("VS");
+        const auto singleBytes = state.getStringAuthoringStorageBytes();
+        require(singleBytes == 23, "single shader name stores five offsets and its terminated bytes");
+        state.setEditorString("keywords", "FOG");
+        state.setGeometryShaderName("GS");
+        state.setFragmentShaderName("PS");
+        state.setStringSetting(MaterialStringSetting::shaderPath, "Shaders/Test");
+        require(state.getVertexShaderName() == "VS" && state.getFragmentShaderName() == "PS" &&
+            state.getGeometryShaderName() == "GS", "out-of-order packing preserves stage names");
+        const auto allBytes = state.getStringAuthoringStorageBytes();
+        require(allBytes == 46, "populated string storage accounts only for offsets and actual text");
+        state.setVertexShaderName("VS");
+        require(state.getStringAuthoringStorageBytes() == allBytes && state.getRenderState() == original,
+            "same string writes preserve storage accounting and runtime snapshot");
+        state.setFragmentShaderName("");
+        state.setVertexShaderName("VertexLonger");
+        String text;
+        require(state.getGeometryShaderName() == "GS" && state.getEditorString("keywords", text) && text == "FOG" &&
+            state.getEditorString("shaderPath", text) && text == "Shaders/Test",
+            "string removal and growth preserve other packed values");
+        Properties floats, uints, bools, strings;
+        state.writeEditorSettings(floats, uints, bools, strings);
+        MaterialPassStateData restored;
+        for(const auto *name : {"shaderPath", "keywords"})
+        {
+            require(strings.getPropertyValue(name, text) && restored.setEditorString(name, text),
+                "packed editor strings retain property keys and round trip");
+        }
+        require(restored.getEditorString("keywords", text) && text == "FOG", "restored keyword value");
+        const String longStage(WP_MAX_CLASSNAME - 1, 's'), longPath(WP_MAX_PATH - 1, 'p');
+        state.setGeometryShaderName(longStage);
+        state.setEditorString("shaderPath", longPath);
+        require(state.getGeometryShaderName() == longStage && state.getEditorString("shaderPath", text) && text == longPath,
+            "maximum supported stage and path lengths retain their full contents");
+#if !WP_ENABLE_ASSERTS
+        const auto validBytes = state.getStringAuthoringStorageBytes();
+        bool rejected = false;
+        try { state.setGeometryShaderName(String(WP_MAX_CLASSNAME + 1, 'x')); }
+        catch(const std::length_error &) { rejected = true; }
+        require(rejected && state.getGeometryShaderName() == longStage &&
+            state.getStringAuthoringStorageBytes() == validBytes, "oversized text preserves the prior authoring allocation");
+#endif
+        const String embedded("A\0ignored", 9);
+        state.setVertexShaderName(embedded);
+        require(state.getVertexShaderName() == "A", "legacy C-string embedded-null behavior is preserved");
+        state.setVertexShaderName(""); state.setGeometryShaderName("");
+        state.setEditorString("shaderPath", ""); state.setEditorString("keywords", "");
+        require(state.getStringAuthoringStorageBytes() == 0 && state.getRenderState() == original &&
+            !state.setStringSetting(MaterialStringSetting::Count, "Invalid"),
+            "final clear retires string storage without publishing a runtime version");
+        struct LegacyStrings
+        {
+            FixedString<WP_MAX_CLASSNAME> vertex, fragment, geometry;
+            FixedString<WP_MAX_PATH> path, keywords;
+        };
+        std::cout << "string_authoring_legacy_bytes=" << sizeof(LegacyStrings)
+                  << " single_name_bytes=" << singleBytes << " five_strings_bytes=" << allBytes << '\n';
+    }
+
     void snapshotContracts()
     {
         TypeManager types;
         types.load(); TypeManager::setInstance( &types );
         numericAuthoringContracts();
+        stringAuthoringContracts();
         {
             MaterialPassStateData state;
             const auto original = state.getRenderState();

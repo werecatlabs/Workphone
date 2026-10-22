@@ -11,6 +11,8 @@
 #include <vector>
 #include <cstring>
 #include <type_traits>
+#include <stdexcept>
+#include <limits>
 #include <Workphone/Interface/System/IStateContext.hpp>
 
 namespace workphone
@@ -39,6 +41,11 @@ namespace workphone
             return sameMaterialValue( a.r, b.r ) && sameMaterialValue( a.g, b.g ) &&
                    sameMaterialValue( a.b, b.b ) && sameMaterialValue( a.a, b.a );
         }
+
+        static_assert( static_cast<u32>( MaterialStringSetting::Count ) == 2, "packed editor string schema" );
+        static_assert( ( u64( WP_MAX_CLASSNAME ) + 1 ) * 3 + ( u64( WP_MAX_PATH ) + 1 ) * 2 +
+                           sizeof( u32 ) * 5 <= std::numeric_limits<u32>::max(),
+                       "packed authoring offsets fit configured string capacities" );
 
         constexpr u32 ColdFloatCount = 20;
         constexpr u32 ColdUIntCount = 17;
@@ -229,32 +236,72 @@ namespace workphone
     }
 
 
-    String MaterialPassStateData::getVertexShaderName() const
-    { return m_authoring ? String( m_authoring->vertexShaderName.c_str() ) : String(); }
-    void MaterialPassStateData::setVertexShaderName( const String &name )
+    const char *MaterialPassStateData::getAuthoringText( u32 slot ) const
     {
-        if( name.empty() && !m_authoring ) return;
-        if( !m_authoring ) m_authoring = std::make_unique<AuthoringData>();
-        m_authoring->vertexShaderName = name.c_str();
+        u32 offset = 0;
+        if( m_authoring ) std::memcpy( &offset, m_authoring.get() + slot * sizeof( offset ), sizeof( offset ) );
+        return offset ? m_authoring.get() + offset : "";
     }
+
+    void MaterialPassStateData::setAuthoringText( u32 slot, const String &value, size_t limit )
+    {
+        // FixedString's C-string assignment contract: embedded null ends the value.
+        const auto *text = value.c_str();
+        const auto length = std::strlen( text );
+        WP_ASSERT( length < limit );
+        if( length > limit ) throw std::length_error( "FixedStringBase: length exceeds maximum size" );
+        if( std::strcmp( getAuthoringText( slot ), text ) == 0 ) return;
+        const char *texts[5];
+        size_t bytes = sizeof( u32 ) * 5;
+        for( u32 i = 0; i < 5; ++i )
+        {
+            texts[i] = i == slot ? text : getAuthoringText( i );
+            if( texts[i][0] ) bytes += std::strlen( texts[i] ) + 1;
+        }
+        if( bytes == sizeof( u32 ) * 5 ) { m_authoring.reset(); return; }
+        auto next = std::make_unique<char[]>( bytes );
+        size_t cursor = sizeof( u32 ) * 5;
+        for( u32 i = 0; i < 5; ++i )
+        {
+            const u32 offset = texts[i][0] ? static_cast<u32>( cursor ) : 0;
+            std::memcpy( next.get() + i * sizeof( offset ), &offset, sizeof( offset ) );
+            if( offset )
+            {
+                const auto count = std::strlen( texts[i] ) + 1;
+                std::memcpy( next.get() + cursor, texts[i], count );
+                cursor += count;
+            }
+        }
+        // Retain the original buffer until all allocation/copy work succeeds.
+        m_authoring = std::move( next );
+    }
+
+    size_t MaterialPassStateData::getStringAuthoringStorageBytes() const
+    {
+        if( !m_authoring ) return 0;
+        size_t bytes = sizeof( u32 ) * 5;
+        for( u32 i = 0; i < 5; ++i )
+        {
+            const auto *text = getAuthoringText( i );
+            if( text[0] ) bytes += std::strlen( text ) + 1;
+        }
+        return bytes;
+    }
+
+    String MaterialPassStateData::getVertexShaderName() const
+    { return String( getAuthoringText( 0 ) ); }
+    void MaterialPassStateData::setVertexShaderName( const String &name )
+    { setAuthoringText( 0, name, WP_MAX_CLASSNAME ); }
 
     String MaterialPassStateData::getFragmentShaderName() const
-    { return m_authoring ? String( m_authoring->fragmentShaderName.c_str() ) : String(); }
+    { return String( getAuthoringText( 1 ) ); }
     void MaterialPassStateData::setFragmentShaderName( const String &name )
-    {
-        if( name.empty() && !m_authoring ) return;
-        if( !m_authoring ) m_authoring = std::make_unique<AuthoringData>();
-        m_authoring->fragmentShaderName = name.c_str();
-    }
+    { setAuthoringText( 1, name, WP_MAX_CLASSNAME ); }
 
     String MaterialPassStateData::getGeometryShaderName() const
-    { return m_authoring ? String( m_authoring->geometryShaderName.c_str() ) : String(); }
+    { return String( getAuthoringText( 2 ) ); }
     void MaterialPassStateData::setGeometryShaderName( const String &name )
-    {
-        if( name.empty() && !m_authoring ) return;
-        if( !m_authoring ) m_authoring = std::make_unique<AuthoringData>();
-        m_authoring->geometryShaderName = name.c_str();
-    }
+    { setAuthoringText( 2, name, WP_MAX_CLASSNAME ); }
 
     MaterialPublicationScope::MaterialPublicationScope()
     { ++publicationQueue.depth; }
@@ -578,9 +625,7 @@ namespace workphone
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( StringFields ) / sizeof( StringFields[0] ) ) return false;
         if( value.empty() && !m_authoring ) return true;
-        if( !m_authoring ) m_authoring = std::make_unique<AuthoringData>();
-        auto &target = id == MaterialStringSetting::shaderPath ? m_authoring->shaderPath : m_authoring->keywords;
-        target = value.c_str();
+        setAuthoringText( 3 + i, value, WP_MAX_PATH );
         if( !m_writeDepth ) publishRenderState();
         return true;
     }
@@ -589,8 +634,7 @@ namespace workphone
     {
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( StringFields ) / sizeof( StringFields[0] ) ) return false;
-        value = !m_authoring ? String() : String( id == MaterialStringSetting::shaderPath ?
-                  m_authoring->shaderPath.c_str() : m_authoring->keywords.c_str() );
+        value = String( getAuthoringText( 3 + i ) );
         return true;
     }
 

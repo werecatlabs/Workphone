@@ -22,6 +22,8 @@ Sparse numeric continuation: nondefault cold settings now use a packed mask/valu
 
 Native name storage continuation: the C material's descriptor-slot name pointers now use an optional packed table with presence masks. Unnamed materials avoid the table, and unchanged slot strings retain borrowed-pointer stability through other edits. Public C descriptors remain unchanged; sparse/dense costs and failure/compatibility evidence are tracked in the implementation status.
 
+Pass string continuation: optional shader names, path and keywords now use a single packed text allocation rather than five maximum-sized fixed buffers. Empty fields use schema defaults and the last clear frees the allocation; existing bounded accessors and serialized keys remain. See implementation status for storage and validation evidence.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.
