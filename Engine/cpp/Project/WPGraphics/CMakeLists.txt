@@ -100,6 +100,14 @@ target_include_directories(WPGraphics PRIVATE ${WP_ROOT}/Dependencies/cJSON)
 set_source_files_properties(${WP_ROOT}/Dependencies/cJSON/cJSON.c
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS CJSON_HIDE_SYMBOLS)
 
+if (WIN32)
+target_link_options(WPGraphics PUBLIC 
+$<$<CONFIG:Release>:/LTCG>
+$<$<CONFIG:MinSizeRel>:/LTCG>
+$<$<CONFIG:RelWithDebInfo>:/LTCG>
+)
+endif()
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         target_link_libraries(WPGraphics Workphone)

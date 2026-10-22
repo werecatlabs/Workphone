@@ -322,6 +322,7 @@ $<$<CONFIG:Release>:/LTCG>
 $<$<CONFIG:MinSizeRel>:/LTCG>
 $<$<CONFIG:RelWithDebInfo>:/LTCG>
 )
+endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
