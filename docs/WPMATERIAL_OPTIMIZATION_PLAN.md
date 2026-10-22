@@ -14,6 +14,8 @@ ColorOnly continuation: declared Color and Opacity now share the existing shader
 
 Root storage continuation: the unused texture/name/path/PBR payload is removed from the root `MaterialStateData`. Its registered lifecycle marker, factory/context ownership and teardown remain; active values stay in existing material/pass/shader owners. C++ clients must rebuild and migrate direct access to the removed root fields. See the implementation status for measured object-storage evidence and remaining whole-material/scene memory gates.
 
+Pass storage continuation: obsolete per-texture dirty flags and their adapter writes are removed. Immutable render-state publication detects binding changes directly and preserves unchanged snapshots. C++ pass-state consumers must rebuild; measured storage and regression evidence are tracked in the implementation status. Whole-material/scene and hardware gates remain open.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.

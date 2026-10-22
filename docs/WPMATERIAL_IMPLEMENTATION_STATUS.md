@@ -576,6 +576,14 @@ The final rebuilt Debug **Editor aggregate passes 66/66 cases / 2,815,495 assert
 
 This changes the public C++ `MaterialStateData` layout and removes its unused raw fields. C++ consumers must rebuild. External field users should migrate `materialName`/`filePath` to material resource name/path APIs, texture access to existing material/pass texture APIs, and metalness/roughness to material/pass surface APIs or compatible shader handles. Public material/pass methods, the root type identifier, C descriptors, Lua/editor property keys and material/cooked formats are unchanged. M4 remains partial.
 
+## Retiring obsolete per-texture dirty storage (M4 continuation, 22 October)
+
+`MaterialPassStateData` no longer embeds `textureDirty`. The repository audit found only writes to that array; immutable publication already compares all base and extension texture identities with the previous render snapshot. Pass/property/unit adapters now write the existing canonical bindings without maintaining unused flags. State invalidation, write-lock publication, texture ownership and native consumption remain on their existing paths. The frozen pre-optimization storage fixture intentionally retains its historical field.
+
+The native load-sequence contract additionally checks same-binding snapshot reuse and a single revision for base-slot replacement, with the retained snapshot preserving the previous resource. Existing contracts cover pre-load units, base-qualified unit clearing, extension-slot updates/removal, batching and serialization. Validation and measured current object size are pending the rebuilt binaries.
+
+This changes the public C++ pass-state layout: consumers must rebuild. External users of the removed flags should mutate textures through the material/pass/unit APIs (or the existing locked state mutation path) and observe published render-state identity/revision. M4 remains partial; this removes redundant storage and writes without establishing a whole-material memory percentage or hardware-cache/frame-time improvement.
+
 ## Remaining plan gates
 
 This is an integrated CPU storage/access and active DX11 consumption change, not completion of all production gates in the plan. Remaining work includes:

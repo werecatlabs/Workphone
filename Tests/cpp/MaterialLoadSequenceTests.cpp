@@ -3170,6 +3170,22 @@ namespace
             require( data && data->getRenderState()->textures[0] == texture,
                      "texture units authored before state creation reach runtime snapshot" );
         }
+        {
+            // Binding identity drives immutable publication; no parallel dirty flags are needed.
+            auto bindingSnapshot = [&] {
+                return detached->getStateContext()->getStateDataById<MaterialPassStateData>(detached->getId())->getRenderState();
+            };
+            auto bound = bindingSnapshot();
+            detachedUnit->setTexture(texture);
+            require(bindingSnapshot() == bound, "same texture binding reuses immutable record");
+            auto replacementTexture = make_ptr<render::ClawTexture>();
+            detachedUnit->setTexture(replacementTexture);
+            auto replacedBinding = bindingSnapshot();
+            require(replacedBinding != bound && replacedBinding->revision == bound->revision + 1 &&
+                    replacedBinding->textures[0] == replacementTexture && bound->textures[0] == texture,
+                    "base texture replacement publishes once and preserves retained binding");
+            detachedUnit->setTexture(texture);
+        }
         auto concreteUnit = detachedUnit;
         require(concreteUnit->MaterialTexture::getTexture() == texture,
                 "native and legacy texture adapters share the canonical resource owner");

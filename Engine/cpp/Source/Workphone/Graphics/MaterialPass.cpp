@@ -400,7 +400,7 @@ namespace workphone::render
                     for(u32 i = static_cast<u32>(slots); i < MaterialRenderState::TextureCount; ++i)
                     {
                         if(i < state->textures.size())
-                        { state->textureDirty[i] = state->textureDirty[i] || bool(state->textures[i]); state->textures[i] = nullptr; }
+                        { state->textures[i] = nullptr; }
                         else state->extendedTextures[i - state->textures.size()] = nullptr;
                     }
             if(!passName.empty()) setName(passName);
@@ -634,7 +634,6 @@ namespace workphone::render
                     {
                         if( i < state->textures.size() )
                         {
-                            state->textureDirty[i] = state->textureDirty[i] || state->textures[i] != texture;
                             state->textures[i] = texture;
                         }
                         else state->extendedTextures[i - state->textures.size()] = texture;
@@ -653,7 +652,6 @@ namespace workphone::render
                     auto texture = i < units.size() && units[i] ? units[i]->getTexture() : nullptr;
                     if( i < state->textures.size() )
                     {
-                        state->textureDirty[i] = state->textureDirty[i] || state->textures[i] != texture;
                         state->textures[i] = texture;
                     }
                     else state->extendedTextures[i - state->textures.size()] = texture;
@@ -730,7 +728,6 @@ namespace workphone::render
                 {
                     if(layerIdx < state->textures.size())
                     {
-                        state->textureDirty[layerIdx] = true;
                         state->textures[layerIdx] = tex;
                     }
                     else if(layerIdx < MaterialRenderState::TextureCount)
@@ -1278,7 +1275,6 @@ namespace workphone::render
                         if( textureIndex < state->textures.size() )
                         {
                             state->textures[textureIndex] = pTexture->getTexture();
-                            state->textureDirty[textureIndex] = true;
                         }
                     }
                 }

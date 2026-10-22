@@ -188,7 +188,6 @@ namespace workphone
 
         FixedArray<SmartPtr<render::ITexture>, (u32)PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES>
             textures = {};
-        FixedArray<bool, (u32)PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES> textureDirty = {};
 
         f32 alphaClip = 0.5f;
         f32 opacity = 1.0f;
