@@ -7,10 +7,14 @@
 #include <string.h>
 #include <stddef.h>
 
+/* Keep configurable descriptor capacities without a fixed-width slot limit. */
+#define WP_MAT_NAME_MASK_WORDS ( ( WP_MATERIAL_MAX_TEXTURES + 31 ) / 32 )
+
 struct wp_graphics_material
 {
     wp_graphics_material_values values;
-    wp_c8 *texture_names[WP_MATERIAL_MAX_TEXTURES];
+    wp_u32 texture_name_mask[WP_MAT_NAME_MASK_WORDS];
+    wp_c8 **texture_names;
     wp_shader_program *shader_program;
     void *native;
     wp_graphics_material_sync_func sync_func;
@@ -22,6 +26,44 @@ struct wp_graphics_material
     wp_u32 revision;
     wp_s32 is_dirty;
 };
+
+static wp_u32 wp_mat_bit_count( wp_u32 mask )
+{
+    wp_u32 count;
+    count = 0u;
+    while( mask ) { mask &= mask - 1u; ++count; }
+    return count;
+}
+
+static wp_u32 wp_mat_name_count( const wp_graphics_material *mat )
+{
+    wp_u32 count;
+    wp_s32 i;
+    count = 0u;
+    for( i = 0; i < WP_MAT_NAME_MASK_WORDS; ++i )
+        count += wp_mat_bit_count( mat->texture_name_mask[i] );
+    return count;
+}
+
+static wp_u32 wp_mat_name_rank( const wp_graphics_material *mat, wp_s32 layer )
+{
+    wp_u32 rank, bit;
+    wp_s32 i;
+    rank = 0u;
+    for( i = 0; i < layer / 32; ++i ) rank += wp_mat_bit_count( mat->texture_name_mask[i] );
+    bit = (wp_u32)1u << ( layer % 32 );
+    return rank + wp_mat_bit_count( mat->texture_name_mask[layer / 32] & ( bit - 1u ) );
+}
+
+/* Internal callers supply a validated descriptor slot. String allocations stay
+   independent, so repacking pointers preserves other slots' borrowed names. */
+static wp_c8 *wp_mat_texture_name( const wp_graphics_material *mat, wp_s32 layer )
+{
+    wp_u32 bit;
+    bit = (wp_u32)1u << ( layer % 32 );
+    return ( mat->texture_name_mask[layer / 32] & bit ) ?
+        mat->texture_names[wp_mat_name_rank( mat, layer )] : NULL;
+}
 
 static wp_f32 wp_mat_clamp( wp_f32 v, wp_f32 lo, wp_f32 hi, wp_f32 fallback )
 {
@@ -187,8 +229,13 @@ wp_graphics_material *wp_graphics_material_clone( const wp_graphics_material *so
 
 void wp_graphics_material_destroy( wp_graphics_material *mat )
 {
-    wp_s32 i;
-    if( mat ) for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) free( mat->texture_names[i] );
+    wp_u32 i, count;
+    if( mat )
+    {
+        count = wp_mat_name_count( mat );
+        for( i = 0; i < count; ++i ) free( mat->texture_names[i] );
+        free( mat->texture_names );
+    }
     if( mat && mat->shader_program )
         wp_shader_program_destroy( mat->shader_program );
     if( mat && mat->native && mat->release_func )
@@ -222,12 +269,12 @@ wp_s32 wp_graphics_material_set_values( wp_graphics_material *mat, const wp_grap
 
 wp_u32 wp_graphics_material_get_storage_size( const wp_graphics_material *mat )
 {
-    wp_u32 bytes;
-    wp_s32 i;
+    wp_u32 bytes, i, count;
     if( !mat ) return 0;
-    bytes = (wp_u32)sizeof( *mat );
-    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
-        if( mat->texture_names[i] ) bytes += (wp_u32)strlen( mat->texture_names[i] ) + 1u;
+    count = wp_mat_name_count( mat );
+    bytes = (wp_u32)sizeof( *mat ) + count * (wp_u32)sizeof( *mat->texture_names );
+    for( i = 0; i < count; ++i )
+        bytes += (wp_u32)strlen( mat->texture_names[i] ) + 1u;
     return bytes;
 }
 
@@ -241,7 +288,7 @@ wp_s32 wp_graphics_material_get_desc( const wp_graphics_material *mat, wp_graphi
     memcpy( &out, &mat->values, sizeof( mat->values ) );
     out.struct_size = (wp_u32)sizeof( out );
     for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
-        wp_mat_name( out.texture_names[i], mat->texture_names[i] );
+        wp_mat_name( out.texture_names[i], wp_mat_texture_name( mat, i ) );
     copy_size = d->struct_size < sizeof( *d ) ? d->struct_size : (wp_u32)sizeof( *d );
     memcpy( d, &out, copy_size );
     return 1;
@@ -252,42 +299,66 @@ wp_s32 wp_graphics_material_set_desc( wp_graphics_material *mat, const wp_graphi
     wp_graphics_material_desc input;
     wp_graphics_material_values values;
     wp_c8 *candidates[WP_MATERIAL_MAX_TEXTURES];
-    wp_u32 copy_size;
+    wp_c8 **table;
+    wp_u32 copy_size, count, rank;
+    wp_u32 mask[WP_MAT_NAME_MASK_WORDS];
     wp_s32 i, changed;
     if( !mat || !d || d->struct_size < sizeof( wp_u32 ) ) return 0;
     wp_graphics_material_desc_init( &input );
     copy_size = d->struct_size < sizeof( input ) ? d->struct_size : (wp_u32)sizeof( input );
     memcpy( &input, d, copy_size );
     memset( candidates, 0, sizeof( candidates ) );
-    /* Allocate the complete candidate first. Failure preserves all existing state. */
+    memset( mask, 0, sizeof( mask ) );
+    table = NULL;
+    count = 0u;
+    changed = 0;
+    /* Stage every changed name and the packed table before touching live state. */
     for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
     {
         input.texture_names[i][WP_MATERIAL_MAX_NAME - 1] = '\0';
-        if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) &&
-            input.texture_names[i][0] )
+        if( input.texture_names[i][0] )
         {
-            candidates[i] = (wp_c8 *)malloc( strlen( input.texture_names[i] ) + 1u );
-            if( !candidates[i] )
-            {
-                for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) free( candidates[i] );
-                return 0;
-            }
-            strcpy( candidates[i], input.texture_names[i] );
+            mask[i / 32] |= (wp_u32)1u << ( i % 32 );
+            ++count;
         }
+        if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) )
+        {
+            changed = 1;
+            if( input.texture_names[i][0] )
+            {
+                candidates[i] = (wp_c8 *)malloc( strlen( input.texture_names[i] ) + 1u );
+                if( !candidates[i] ) goto allocation_failed;
+                strcpy( candidates[i], input.texture_names[i] );
+            }
+        }
+    }
+    if( changed && count )
+    {
+        table = (wp_c8 **)malloc( count * sizeof( *table ) );
+        if( !table ) goto allocation_failed;
+        rank = 0u;
+        for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
+            if( input.texture_names[i][0] )
+                table[rank++] = candidates[i] ? candidates[i] : wp_mat_texture_name( mat, i );
     }
     memcpy( &values, &input, sizeof( values ) );
     values.struct_size = (wp_u32)sizeof( values );
     wp_graphics_material_set_values( mat, &values );
-    changed = 0;
-    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
-        if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) )
-        {
-            free( mat->texture_names[i] );
-            mat->texture_names[i] = candidates[i];
-            changed = 1;
-        }
-    if( changed ) wp_mat_touch( mat );
+    if( changed )
+    {
+        for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
+            if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) )
+                free( wp_mat_texture_name( mat, i ) );
+        free( mat->texture_names );
+        mat->texture_names = table;
+        memcpy( mat->texture_name_mask, mask, sizeof( mask ) );
+        wp_mat_touch( mat );
+    }
     return 1;
+allocation_failed:
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) free( candidates[i] );
+    free( table );
+    return 0;
 }
 
 wp_s32 wp_graphics_material_copy( wp_graphics_material *dst, const wp_graphics_material *src )
@@ -461,17 +532,22 @@ void wp_graphics_material_set_cull_mode( wp_graphics_material *m, wp_cull_mode m
 
 const wp_c8 *wp_graphics_material_get_texture_name( const wp_graphics_material *m, wp_s32 layer )
 {
-    return !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES || !m->texture_names[layer] ?
-        "" : m->texture_names[layer];
+    wp_c8 *name;
+    if( !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES ) return "";
+    name = wp_mat_texture_name( m, layer );
+    return name ? name : "";
 }
 
 void wp_graphics_material_set_texture_name( wp_graphics_material *m, wp_s32 layer, const wp_c8 *name )
 {
     wp_c8 clean[WP_MATERIAL_MAX_NAME];
-    wp_c8 *candidate;
+    wp_c8 *candidate, *old;
+    wp_c8 **table;
+    wp_u32 count, next_count, rank, tail, bit;
     if( !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES ) return;
     wp_mat_name( clean, name );
     if( !strcmp( wp_graphics_material_get_texture_name( m, layer ), clean ) ) return;
+    old = wp_mat_texture_name( m, layer );
     candidate = NULL;
     if( clean[0] )
     {
@@ -479,8 +555,40 @@ void wp_graphics_material_set_texture_name( wp_graphics_material *m, wp_s32 laye
         if( !candidate ) return;
         strcpy( candidate, clean );
     }
-    free( m->texture_names[layer] );
-    m->texture_names[layer] = candidate;
+    rank = wp_mat_name_rank( m, layer );
+    if( old && candidate )
+    {
+        free( old );
+        m->texture_names[rank] = candidate;
+        wp_mat_touch( m );
+        return;
+    }
+    count = wp_mat_name_count( m );
+    next_count = candidate ? count + 1u : count - 1u;
+    table = NULL;
+    if( next_count )
+    {
+        table = (wp_c8 **)malloc( next_count * sizeof( *table ) );
+        if( !table ) { free( candidate ); return; }
+    }
+    if( rank ) memcpy( table, m->texture_names, rank * sizeof( *table ) );
+    if( candidate )
+    {
+        table[rank] = candidate;
+        tail = count - rank;
+        if( tail ) memcpy( table + rank + 1u, m->texture_names + rank, tail * sizeof( *table ) );
+    }
+    else
+    {
+        tail = count - rank - 1u;
+        if( tail ) memcpy( table + rank, m->texture_names + rank + 1u, tail * sizeof( *table ) );
+    }
+    free( old );
+    free( m->texture_names );
+    m->texture_names = table;
+    bit = (wp_u32)1u << ( layer % 32 );
+    if( candidate ) m->texture_name_mask[layer / 32] |= bit;
+    else m->texture_name_mask[layer / 32] &= ~bit;
     wp_mat_touch( m );
 }
 

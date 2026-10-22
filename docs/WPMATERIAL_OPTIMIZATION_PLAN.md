@@ -20,6 +20,8 @@ Numeric storage continuation: 20 additional non-rendered pass settings now share
 
 Sparse numeric continuation: nondefault cold settings now use a packed mask/value allocation rather than copying the full numeric default block. Existing override updates stay in place; insertions/removals repack during authoring. Empty/default passes retain no cold allocation. Dense and sparse storage tradeoffs and validation are recorded in the implementation status.
 
+Native name storage continuation: the C material's descriptor-slot name pointers now use an optional packed table with presence masks. Unnamed materials avoid the table, and unchanged slot strings retain borrowed-pointer stability through other edits. Public C descriptors remain unchanged; sparse/dense costs and failure/compatibility evidence are tracked in the implementation status.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.

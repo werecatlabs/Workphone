@@ -114,6 +114,15 @@ target_link_libraries(
 set_target_properties(WorkphoneGraphicsShaderTests PROPERTIES FOLDER Tests/C)
 add_test(NAME WorkphoneGraphics.shader_contract COMMAND WorkphoneGraphicsShaderTests)
 
+add_executable(WorkphoneGraphicsMaterialSparseTests WorkphoneGraphicsMaterialSparseTests.c)
+target_include_directories(
+    WorkphoneGraphicsMaterialSparseTests
+    PRIVATE ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+            ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+set_target_properties(WorkphoneGraphicsMaterialSparseTests PROPERTIES
+    FOLDER Tests/C C_STANDARD 90 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
+add_test(NAME WorkphoneGraphics.material_sparse_contract COMMAND WorkphoneGraphicsMaterialSparseTests)
+
 add_executable(WorkphoneGraphicsPipelineTests WorkphoneGraphicsPipelineTests.c)
 target_include_directories(
     WorkphoneGraphicsPipelineTests

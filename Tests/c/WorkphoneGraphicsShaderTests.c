@@ -73,8 +73,11 @@ static int material_storage_contracts( void )
     wp_graphics_material *copy;
     wp_graphics_material_values values;
     wp_graphics_material_desc desc;
-    wp_u32 bytes, revision;
+    wp_u32 bytes, revision, expected;
     wp_u32 short_desc[2];
+    const wp_c8 *borrowed;
+    wp_c8 slot_name[32];
+    wp_s32 i, last;
     int ok;
     m = wp_graphics_material_create();
     if( !m ) return check( 0, "compact material creation" );
@@ -95,8 +98,8 @@ static int material_storage_contracts( void )
                  wp_graphics_material_get_roughness( m ) == 0.25f &&
                  wp_graphics_material_get_metalness( m ) == 1.0f, "bulk values sanitize" );
     wp_graphics_material_set_texture_name( m, 2, "Textures/Car.dds" );
-    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes + strlen( "Textures/Car.dds" ) + 1,
-                 "only populated texture identity bytes allocated" );
+    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes + sizeof( wp_c8 * ) + strlen( "Textures/Car.dds" ) + 1,
+                 "only populated texture pointers and identity bytes allocated" );
     desc.struct_size = sizeof( desc );
     ok &= check( wp_graphics_material_get_desc( m, &desc ) &&
                  desc.roughness == 0.25f && !strcmp( desc.texture_names[2], "Textures/Car.dds" ),
@@ -111,6 +114,74 @@ static int material_storage_contracts( void )
     ok &= check( wp_graphics_material_get_storage_size( m ) == bytes &&
                  copy && !strcmp( wp_graphics_material_get_texture_name( copy, 2 ), "Textures/Car.dds" ),
                  "clear releases cold storage without changing clone" );
+    last = WP_MATERIAL_MAX_TEXTURES - 1;
+    wp_graphics_material_set_texture_name( m, last, "Last" );
+    borrowed = wp_graphics_material_get_texture_name( m, last );
+    wp_graphics_material_set_texture_name( m, 0, "First" );
+    wp_graphics_material_set_texture_name( m, 2, "Middle" );
+    ok &= check( borrowed == wp_graphics_material_get_texture_name( m, last ) &&
+                 !strcmp( wp_graphics_material_get_texture_name( m, 0 ), "First" ) &&
+                 !strcmp( wp_graphics_material_get_texture_name( m, 2 ), "Middle" ),
+                 "out-of-order insertion preserves slot identities and borrowed names" );
+    wp_graphics_material_set_texture_name( m, 2, NULL );
+    ok &= check( !wp_graphics_material_get_texture_name( m, 2 )[0] &&
+                 !strcmp( wp_graphics_material_get_texture_name( m, 0 ), "First" ) &&
+                 borrowed == wp_graphics_material_get_texture_name( m, last ),
+                 "middle removal preserves packed prefix and suffix" );
+    wp_graphics_material_set_texture_name( m, 0, NULL );
+    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes + sizeof( wp_c8 * ) + 5u &&
+                 borrowed == wp_graphics_material_get_texture_name( m, last ),
+                 "first removal leaves only the last pointer and string" );
+    revision = wp_graphics_material_get_revision( m );
+    wp_graphics_material_clear_dirty( m );
+    wp_graphics_material_set_texture_name( m, last, borrowed );
+    wp_graphics_material_set_texture_name( m, -1, "Invalid" );
+    wp_graphics_material_set_texture_name( m, WP_MATERIAL_MAX_TEXTURES, "Invalid" );
+    ok &= check( wp_graphics_material_get_revision( m ) == revision &&
+                 !wp_graphics_material_is_dirty( m ) &&
+                 borrowed == wp_graphics_material_get_texture_name( m, last ),
+                 "no-op and invalid slot writes preserve revision, dirty state and borrowed names" );
+    desc.struct_size = sizeof( desc );
+    wp_graphics_material_get_desc( m, &desc );
+    strcpy( desc.texture_names[0], "Descriptor First" );
+    strcpy( desc.texture_names[2], "Descriptor Middle" );
+    desc.roughness = 0.75f;
+    ok &= check( wp_graphics_material_set_desc( m, &desc ) &&
+                 borrowed == wp_graphics_material_get_texture_name( m, last ) &&
+                 !strcmp( wp_graphics_material_get_texture_name( m, 2 ), "Descriptor Middle" ) &&
+                 wp_graphics_material_get_roughness( m ) == 0.75f,
+                 "bulk descriptor stages values and sparse pointers while preserving unchanged names" );
+    ok &= check( copy && wp_graphics_material_copy( copy, m ) &&
+                 !strcmp( wp_graphics_material_get_texture_name( copy, last ), borrowed ) &&
+                 wp_graphics_material_get_texture_name( copy, last ) != borrowed,
+                 "material copy owns independent sparse name allocations" );
+    wp_graphics_material_set_texture_name( copy, last, "Copied Last" );
+    ok &= check( !strcmp( wp_graphics_material_get_texture_name( m, last ), "Last" ),
+                 "copy name edits do not mutate source" );
+    wp_graphics_material_reset( m );
+    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes,
+                 "reset releases every sparse pointer and string" );
+    expected = bytes + WP_MATERIAL_MAX_TEXTURES * (wp_u32)sizeof( wp_c8 * );
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
+    {
+        sprintf( slot_name, "Layer%d", (int)i );
+        expected += (wp_u32)strlen( slot_name ) + 1u;
+        wp_graphics_material_set_texture_name( m, i, slot_name );
+    }
+    ok &= check( wp_graphics_material_get_storage_size( m ) == expected,
+                 "dense inventory accounts for all allocated pointers and strings" );
+    desc.struct_size = sizeof( desc );
+    wp_graphics_material_get_desc( m, &desc );
+    for( i = WP_MATERIAL_MAX_TEXTURES - 1; i >= 0; --i )
+    {
+        sprintf( slot_name, "Layer%d", (int)i );
+        ok &= check( !strcmp( desc.texture_names[i], slot_name ) &&
+                     !strcmp( wp_graphics_material_get_texture_name( m, i ), slot_name ),
+                     "dense descriptor and reverse erasure preserve slot identity" );
+        wp_graphics_material_set_texture_name( m, i, NULL );
+    }
+    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes,
+                 "last removal releases the packed table" );
     short_desc[0] = sizeof( wp_u32 ); short_desc[1] = 0xfeedcafeu;
     ok &= check( wp_graphics_material_get_desc( m, (wp_graphics_material_desc *)short_desc ) &&
                  short_desc[0] == sizeof( desc ) && short_desc[1] == 0xfeedcafeu,
