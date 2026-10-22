@@ -65,6 +65,7 @@ namespace workphone
             {
                 return nullptr;
             }
+
             ScopedLock lock( manager.get() );
             auto database = manager->getDatabase();
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
@@ -87,11 +88,13 @@ namespace workphone
                 entry = projectEntry;
                 return nullptr;
             }
+
             if( inProject )
             {
                 entry = projectEntry;
                 return project;
             }
+
             if( inMedia )
             {
                 entry = mediaEntry;
@@ -146,11 +149,13 @@ namespace workphone
                 }
                 return;
             }
+
             auto app = core::IApplicationManager::instance();
             if( !app || app->getQuit() || !app->isRunning() || !database->isLoaded() )
             {
                 return;
             }
+
             auto owner = SmartPtr<ResourceDatabase>( database );
             auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
             const auto project = app->getProjectPath(), cache = app->getCachePath(),
@@ -161,11 +166,13 @@ namespace workphone
             {
                 return;
             }
+
             if( catalog && !bound &&
                 !catalog->setProjectRoot( project.empty() ? Path::getWorkingDirectory() : project ) )
             {
                 return;
             }
+
             auto valid = [owner, catalog, project, cache, settings, session, bound]() {
                 auto current = core::IApplicationManager::instance();
                 return current && !current->getQuit() && current->isRunning() && owner->isLoaded() &&
@@ -174,6 +181,7 @@ namespace workphone
                        current->getCachePath() == cache && current->getSettingsPath() == settings &&
                        ( !bound || session->isCurrent( catalog ) );
             };
+
             if( !importQueue->enqueue( [owner, valid, project, cache, settings,
                                         operation = std::move( operation )]() {
                     if( !valid() )
@@ -204,6 +212,7 @@ namespace workphone
             {
                 return;
             }
+
             auto queue = app->getJobQueue();
             auto pool = app->getThreadPool();
             if( app->hasTasks() && queue && queue->isRunning() && pool && pool->getNumThreads() > 1 )
@@ -937,11 +946,13 @@ namespace workphone
                 {
                     return;
                 }
+
                 String root, error;
                 if( !canonicalAssetCatalogRoot( cachePath, root, error ) )
                 {
                     return;
                 }
+
                 auto &files = folderListing->getFiles();
                 for( auto &file : files )
                 {
@@ -949,12 +960,14 @@ namespace workphone
                     {
                         return;
                     }
+
                     auto ext = Path::getFileExtension( file );
                     AssetCatalogPath candidate;
                     if( !canonicalAssetCatalogPath( root, file, candidate, error ) )
                     {
                         continue;
                     }
+
                     auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
                     AssetCatalogPath live;
                     if( catalog &&
@@ -965,6 +978,7 @@ namespace workphone
                     {
                         continue;
                     }
+
                     // Only known regenerable payloads are cache-owned. Catalogs, WAL/SHM,
                     // manifests, source files and unknown files must survive reimport.
                     if( ext == ".fbmeshbin" || ext == ".pxtrianglemesh" )
