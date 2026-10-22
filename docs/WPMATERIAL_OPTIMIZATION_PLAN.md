@@ -12,6 +12,8 @@ Unlit continuation: declared emission and opacity now share shader ownership acr
 
 ColorOnly continuation: declared Color and Opacity now share the existing shader value owner across material/typed/named edits and new-pass seeding. Color supplies diffuse RGB/emissive RGBA; opacity controls diffuse alpha. Saved aliases retain independent pass overrides, and partial/wrong-type schemas keep their fallback paths. Remaining physical storage/adapter work and measured whole-material/scene memory are still open; M4 remains partial.
 
+Root storage continuation: the unused texture/name/path/PBR payload is removed from the root `MaterialStateData`. Its registered lifecycle marker, factory/context ownership and teardown remain; active values stay in existing material/pass/shader owners. C++ clients must rebuild and migrate direct access to the removed root fields. See the implementation status for measured object-storage evidence and remaining whole-material/scene memory gates.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.

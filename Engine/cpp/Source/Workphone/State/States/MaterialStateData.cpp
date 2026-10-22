@@ -1,10 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/State/States/MaterialStateData.hpp>
-#include <Workphone/Memory/PointerUtil.hpp>
-#include <Workphone/Core/BitUtil.hpp>
-#include <Workphone/Core/Properties.hpp>
-#include <Workphone/Interface/Graphics/ITexture.hpp>
-#include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 
 namespace workphone

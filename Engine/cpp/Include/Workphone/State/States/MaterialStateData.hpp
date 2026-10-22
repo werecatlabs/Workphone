@@ -2,16 +2,12 @@
 #define __MaterialStateData_h__
 
 #include <Workphone/State/States/StateData.hpp>
-#include <Workphone/Interface/Graphics/IMaterial.hpp>
-#include <Workphone/Atomics/AtomicValue.hpp>
-#include <Workphone/Core/FixedArray.hpp>
-#include <Workphone/Core/FixedString.hpp>
-#include <Workphone/Core/StringTypes.hpp>
 
 namespace workphone
 {
-    class Properties;
-
+    // Root lifecycle/type marker retained by the material's existing context.
+    // Surface/texture values belong to MaterialPassStateData; resource identity
+    // and paths belong to Material. Do not introduce a second value owner here.
     class WPCore_API MaterialStateData : public StateData
     {
     public:
@@ -19,14 +15,6 @@ namespace workphone
         ~MaterialStateData() override;
 
         WP_CLASS_REGISTER_DECL;
-
-        FixedArray<SmartPtr<render::ITexture>, (u32)PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES> textures;
-
-        FixedString<WP_MAX_PATH> filePath = "None";
-        FixedString<WP_MAX_PATH> materialName;
-
-        f32 metalness = 0.0f;
-        f32 roughness = 0.5f;
     };
 
 }  // namespace workphone

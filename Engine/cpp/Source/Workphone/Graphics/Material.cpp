@@ -456,9 +456,8 @@ namespace workphone::render
 
     void Material::load( SmartPtr<ISharedObject> data )
     {
-        // Seed MaterialStateData so property accessors work for callers that construct
-        // a stand-alone Material without explicit setup. createStateObject() already
-        // registers the state context with MaterialStateData.
+        // Keep the root lifecycle context for standalone materials too. Surface
+        // accessors use pass state; the root MaterialStateData is a type marker.
         if( !getStateContext() )
         {
             createStateObject();

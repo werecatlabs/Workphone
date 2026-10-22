@@ -2010,6 +2010,49 @@ namespace
         fixture.graphics->pending.clear();
     }
 
+    void runRootMaterialStateStorage( Fixture &fixture )
+    {
+        using namespace render;
+        require( sizeof( MaterialStateData ) == sizeof( StateData ),
+                 "root material state contains no duplicate surface, texture or resource-name payload" );
+        for( bool pbr : { false, true } )
+        {
+            auto material = make_ptr<ClawMaterial>(); material->setName( "RootStateStorage" );
+            if( pbr )
+            {
+                auto schema = observedSchema();
+                material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+            }
+            material->load( nullptr );
+            auto context = material->getStateContext();
+            require( context && context->getOwner().get() == material.get(), "root context retains its material owner" );
+            auto states = context->getStates();
+            require( states.size() == 1, "loaded material retains one root lifecycle state" );
+            auto root = dynamic_pointer_cast<MaterialStateData>( states[0]->getData() );
+            require( root && root->getOwner() == states[0], "factory-created root retains its material type and state owner" );
+            const ColourF colour( 0.2f, 0.4f, 0.6f, 1 );
+            material->setDiffuse( colour ); material->setMetalness( 0.3f ); material->setRoughness( 0.6f );
+            auto properties = material->getProperties(); material->setProperties( properties ); material->load( nullptr );
+            require( material->getStateContext() == context && states[0]->getData() == root &&
+                     material->getDiffuse() == colour && material->getMetalness() == 0.3f &&
+                     material->getRoughness() == 0.6f && material->getName() == "RootStateStorage",
+                     "surface edits, property round-trip and repeated load keep the root marker and active values" );
+            material->unload( nullptr );
+            require( !material->getStateContext() && !context->getOwner() && context->getStates().empty() &&
+                     context->getStateListeners().empty() && !states[0]->getData(),
+                     "unload retires the compact root through the existing context lifecycle" );
+            material->load( nullptr );
+            auto replacement = material->getStateContext();
+            require( replacement && replacement != context && replacement->getStates().size() == 1 &&
+                     replacement->getStates()[0]->getData() != root && material->getMetalness() == 0.3f &&
+                     material->getRoughness() == 0.6f, "reload creates a new root without losing pass/shader-owned surface values" );
+            material = nullptr;
+            require( !replacement->getOwner() && replacement->getStateListeners().empty() && replacement->getStates().empty(),
+                     "destruction retires the replacement root even when its context is retained" );
+        }
+        fixture.graphics->pending.clear();
+    }
+
     void runColorOnlySurfaceOwnership( Fixture &fixture )
     {
         using namespace render;
@@ -3275,6 +3318,7 @@ int main( int argc, char **argv )
         runLegacySurfaceStorage( fixture );
         runUnlitSurfaceOwnership( fixture );
         runColorOnlySurfaceOwnership( fixture );
+        runRootMaterialStateStorage( fixture );
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );
