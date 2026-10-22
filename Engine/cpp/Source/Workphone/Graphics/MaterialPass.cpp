@@ -184,9 +184,11 @@ namespace workphone::render
             if( state.opacity < 0.999f )
             {
                 state.setFlag( transparentFlag, true );
-                if( state.renderMode < 2u )
+                u32 renderMode = 0;
+                state.getUIntSetting( MaterialUIntSetting::renderMode, renderMode );
+                if( renderMode < 2u )
                 {
-                    state.renderMode = 3u;
+                    state.setUIntSetting( MaterialUIntSetting::renderMode, 3u );
                     state.blendMode = 1u;
                     state.setFlag( cutoutFlag, false );
                 }

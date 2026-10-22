@@ -250,11 +250,14 @@ namespace
         const auto snapshot = state.getRenderState();
         require(state.getNumericAuthoringStorageBytes() == 0, "default pass has no numeric authoring allocation");
         const char *floatNames[] = {"maxTextureSize","renderQueue","sortPriority","stencilRef",
-            "stencilReadMask","stencilWriteMask","layerMaskStrength","previewExposure","previewRotation"};
-        const f32 defaults[] = {2048,2000,0,0,255,255,1,1,0};
+            "stencilReadMask","stencilWriteMask","layerMaskStrength","previewExposure","previewRotation",
+            "specular","heightScale","parallaxSteps","anisotropy","detailTilingX","detailTilingY",
+            "detailOffsetX","detailOffsetY","detailRotation","detailStrength","detailNormalStrength"};
+        const f32 defaults[] = {2048,2000,0,0,255,255,1,1,0, .05f,.02f,16,0,1,1,0,0,0,0,1};
         const char *uintNames[] = {"materialVariant","technique","pcCompression","macCompression",
-            "iosCompression","androidCompression","previewShape","previewEnvironment"};
-        for(u32 i = 0; i < 9; ++i)
+            "iosCompression","androidCompression","previewShape","previewEnvironment",
+            "preset","renderMode","workflow","uvSet","detailBlendMode","heightSource","srcBlend","dstBlend","layerBlend"};
+        for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i)
         {
             f32 value = -1;
             require(state.getEditorFloat(floatNames[i], value) && value == defaults[i] &&
@@ -272,7 +275,7 @@ namespace
         require(state.getNumericAuthoringStorageBytes() == 0 && state.getRenderState() == snapshot,
             "default operations and property export allocate no numeric authoring storage or runtime version");
         state.setEditorFloat("previewExposure", 2.0f);
-        for(u32 i = 0; i < 9; ++i)
+        for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i)
         {
             f32 value = 0;
             require(state.getEditorFloat(floatNames[i], value) && value == (i == 7 ? 2.0f : defaults[i]),
@@ -280,14 +283,14 @@ namespace
         }
         state.setEditorFloat("previewExposure", 1.0f);
         require(state.getNumericAuthoringStorageBytes() == 0, "single setting reset releases the authoring block");
-        for(u32 i = 0; i < 9; ++i) state.setEditorFloat(floatNames[i], defaults[i] + 2);
-        for(u32 i = 0; i < 8; ++i) state.setEditorUInt(uintNames[i], i + 1);
+        for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i) state.setEditorFloat(floatNames[i], defaults[i] + 2);
+        for(u32 i = 0; i < sizeof(uintNames) / sizeof(uintNames[0]); ++i) state.setEditorUInt(uintNames[i], i + 1);
         const auto authoredBytes = state.getNumericAuthoringStorageBytes();
         require(authoredBytes > 0 && state.getRenderState() == snapshot,
             "cold writes allocate authoring storage without replacing the runtime record");
         state.writeEditorSettings(floats, uints, bools, strings);
         MaterialPassStateData restored;
-        for(u32 i = 0; i < 9; ++i)
+        for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i)
         {
             f32 value = 0;
             require(floats.getPropertyValue(floatNames[i], value) && value == defaults[i] + 2 &&
@@ -296,7 +299,7 @@ namespace
         }
         require(state.getNumericAuthoringStorageBytes() == authoredBytes,
             "resetting floats preserves nondefault uint settings");
-        for(u32 i = 0; i < 8; ++i)
+        for(u32 i = 0; i < sizeof(uintNames) / sizeof(uintNames[0]); ++i)
         {
             u32 value = 0;
             require(uints.getPropertyValue(uintNames[i], value) && value == i + 1 &&
@@ -314,7 +317,7 @@ namespace
             !state.setEditorFloat("unknown", 2) && !state.setEditorUInt("unknown", 2),
             "default reset and rejected settings leave no numeric authoring allocation");
         std::cout << "pass_state_bytes=" << sizeof(state) << " numeric_authoring_bytes=" << authoredBytes
-            << " moved_numeric_value_bytes=68" << '\n';
+            << " moved_numeric_value_bytes=148" << '\n';
     }
 
     void snapshotContracts()

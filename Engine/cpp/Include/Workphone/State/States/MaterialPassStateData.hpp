@@ -196,15 +196,11 @@ namespace workphone
 
         f32 metalness = 0.0f;
         f32 roughness = 0.5f;
-        f32 specular = 0.05f;
         f32 normalStrength = 1.0f;
         f32 aoStrength = 1.0f;
-        f32 heightScale = 0.02f;
-        f32 parallaxSteps = 16.0f;
         f32 emissionIntensity = 1.0f;
         f32 clearCoat = 0.0f;
         f32 clearCoatRoughness = 0.1f;
-        f32 anisotropy = 0.0f;
 
         f32 uvTilingX = 1.0f;
         f32 uvTilingY = 1.0f;
@@ -214,34 +210,17 @@ namespace workphone
         f32 uvTriplanarScale = 1.0f;
         f32 uvAniso = 1.0f;
 
-        f32 detailTilingX = 1.0f;
-        f32 detailTilingY = 1.0f;
-        f32 detailOffsetX = 0.0f;
-        f32 detailOffsetY = 0.0f;
-        f32 detailRotation = 0.0f;
-        f32 detailStrength = 0.0f;
-        f32 detailNormalStrength = 1.0f;
-
-        u32 preset = 0u;
-        u32 renderMode = 0u;
-        u32 workflow = 0u;
         u32 blendMode = 0; /**< Blending mode (implementation-specific). */
         u32 cullMode = 2;  /**< Face culling mode (none=1, clockwise=2, anticlockwise=3). */
-        u32 uvSet = 0u;
         u32 uvProjection = 0u;
         u32 uvWrapU = 0u;
         u32 uvWrapV = 0u;
         u32 uvFilter = 1u;
-        u32 detailBlendMode = 0u;
         u32 metallicSource = 0u;
         u32 roughnessSource = 0u;
         u32 aoSource = 0u;
         u32 opacitySource = 0u;
-        u32 heightSource = 0u;
-        u32 srcBlend = 0u;
-        u32 dstBlend = 0u;
         u32 depthTest = 2u;
-        u32 layerBlend = 0u;
 
         u32 flags = 0;
 
@@ -256,10 +235,11 @@ namespace workphone
             FixedString<WP_MAX_CLASSNAME> vertexShaderName, fragmentShaderName, geometryShaderName;
             FixedString<WP_MAX_PATH> shaderPath, keywords;
         };
+        // Values absent from the runtime snapshot share one lazy schema-default block.
         struct NumericAuthoringData
         {
-            FixedArray<f32, 9> floats = {};
-            FixedArray<u32, 8> uints = {};
+            FixedArray<f32, 20> floats = {};
+            FixedArray<u32, 17> uints = {};
         };
         NumericAuthoringData &ensureNumericAuthoring();
         void releaseDefaultNumericAuthoring();

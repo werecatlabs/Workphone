@@ -52,6 +52,13 @@ namespace
             throw std::runtime_error( message );
     }
 
+    u32 readUIntSetting( const MaterialPassStateData &state, MaterialUIntSetting setting )
+    {
+        u32 value = 0;
+        require( state.getUIntSetting( setting, value ), "typed pass setting is available" );
+        return value;
+    }
+
     void runDrawSorting()
     {
         using namespace render;
@@ -2359,7 +2366,7 @@ namespace
         auto addedData = static_pointer_cast<MaterialPassStateData>(
             added->getStateContext()->getStateById( added->getId() )->getData() );
         require( added->getMetalness() == 0.25f && added->getRoughness() == 0.75f &&
-                 added->getDiffuse().a == 0.6f && addedData->opacity == 0.6f && addedData->renderMode == 3u &&
+                 added->getDiffuse().a == 0.6f && addedData->opacity == 0.6f && readUIntSetting( *addedData, MaterialUIntSetting::renderMode ) == 3u &&
                  addedData->getRenderState()->getFlag( transparentFlag ),
                  "newly attached legacy passes inherit cached values and opacity normalization" );
         added->setMetalness( 0.9f ); added->setMaterial( material ); added->load( nullptr );
@@ -2671,7 +2678,7 @@ namespace
         auto firstData = stateFor( first ), secondData = stateFor( second );
         const ColourF initialRendered( initial.r, initial.g, initial.b, 0.35f );
         require( material->getDiffuse() == initialRendered && second->getDiffuse() == initialRendered &&
-                 second->getEmissive() == glow && secondData->opacity == 0.35f && secondData->renderMode == 3u &&
+                 second->getEmissive() == glow && secondData->opacity == 0.35f && readUIntSetting( *secondData, MaterialUIntSetting::renderMode ) == 3u &&
                  secondData->getRenderState()->getFlag( transparentFlag ),
                  "new passes seed canonical colour, opacity and transparent render state" );
 
@@ -2691,7 +2698,7 @@ namespace
                  first->getEmissive() == red && second->getEmissive() == blue &&
                  firstData->getRenderState()->revision == before->revision + 1 &&
                  secondData->getRenderState()->revision == secondBefore->revision + 1 &&
-                 secondData->renderMode == 3u && secondData->blendMode == 1u && !second->isCutout(),
+                 readUIntSetting( *secondData, MaterialUIntSetting::renderMode ) == 3u && secondData->blendMode == 1u && !second->isCutout(),
                  "opacity-only edits preserve each pass RGB/emission and normalize each pass render mode" );
         before = firstData->getRenderState();
         auto shared = parameters;

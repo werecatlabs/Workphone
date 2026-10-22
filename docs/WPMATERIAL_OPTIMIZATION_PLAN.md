@@ -16,6 +16,8 @@ Root storage continuation: the unused texture/name/path/PBR payload is removed f
 
 Pass storage continuation: obsolete per-texture dirty flags and their adapter writes are removed. Immutable render-state publication detects binding changes directly and preserves unchanged snapshots. C++ pass-state consumers must rebuild; measured storage and regression evidence are tracked in the implementation status. Whole-material/scene and hardware gates remain open.
 
+Numeric storage continuation: 20 additional non-rendered pass settings now share the existing lazy numeric authoring block. Runtime snapshots retain their surface/binding representation; render-mode seeding adapters use typed setting access. Default passes avoid the inline values while nondefault authoring pays the larger optional block. See implementation status for measured inventory and compatibility evidence.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.

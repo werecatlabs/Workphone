@@ -2834,9 +2834,11 @@ namespace workphone::render
             if( state.opacity < 0.999f )
             {
                 state.setFlag( render::transparentFlag, true );
-                if( state.renderMode < 2u )
+                u32 renderMode = 0;
+                state.getUIntSetting( MaterialUIntSetting::renderMode, renderMode );
+                if( renderMode < 2u )
                 {
-                    state.renderMode = 3u;
+                    state.setUIntSetting( MaterialUIntSetting::renderMode, 3u );
                     state.blendMode = 1u;
                     state.setFlag( render::cutoutFlag, false );
                 }
@@ -3031,8 +3033,10 @@ namespace workphone::render
                 auto context = pass->getStateContext();
                 auto data = context ? context->invalidateStateDataById<MaterialPassStateData>( pass->getId() ) :
                                       SafePtr<MaterialPassStateData>{};
+                u32 renderMode = 0;
+                if( data ) data->getUIntSetting( MaterialUIntSetting::renderMode, renderMode );
                 const bool changeRenderMode = transparent &&
-                    ( data ? data->renderMode < 2u : changeRenderModeFallback );
+                    ( data ? renderMode < 2u : changeRenderModeFallback );
                 if( diffuseChanged ) pass->setDiffuse( diffuse );
                 else if( opacityChanged )
                 {
