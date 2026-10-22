@@ -18,6 +18,8 @@ Pass storage continuation: obsolete per-texture dirty flags and their adapter wr
 
 Numeric storage continuation: 20 additional non-rendered pass settings now share the existing lazy numeric authoring block. Runtime snapshots retain their surface/binding representation; render-mode seeding adapters use typed setting access. Default passes avoid the inline values while nondefault authoring pays the larger optional block. See implementation status for measured inventory and compatibility evidence.
 
+Sparse numeric continuation: nondefault cold settings now use a packed mask/value allocation rather than copying the full numeric default block. Existing override updates stay in place; insertions/removals repack during authoring. Empty/default passes retain no cold allocation. Dense and sparse storage tradeoffs and validation are recorded in the implementation status.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.

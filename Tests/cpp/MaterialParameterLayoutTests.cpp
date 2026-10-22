@@ -274,7 +274,36 @@ namespace
         state.writeEditorSettings(floats, uints, bools, strings);
         require(state.getNumericAuthoringStorageBytes() == 0 && state.getRenderState() == snapshot,
             "default operations and property export allocate no numeric authoring storage or runtime version");
+        // Insert out of order, including mask bits above 31, then erase at both ends.
+        state.setEditorUInt("layerBlend", 0xdeadbeefu);
+        require(state.getNumericAuthoringStorageBytes() == 12, "one override stores only mask and one word");
+        state.setEditorFloat("maxTextureSize", 1024.0f);
+        state.setEditorUInt("renderMode", 3u);
+        u32 selector = 0;
+        f32 textureLimit = 0;
+        require(state.getNumericAuthoringStorageBytes() == 20 &&
+            state.getEditorUInt("layerBlend", selector) && selector == 0xdeadbeefu &&
+            state.getEditorFloat("maxTextureSize", textureLimit) && textureLimit == 1024.0f,
+            "out-of-order packed insertion preserves high-mask values and earlier words");
+        state.setEditorUInt("renderMode", 0u);
+        require(state.getNumericAuthoringStorageBytes() == 16 &&
+            state.getEditorFloat("maxTextureSize", textureLimit) && textureLimit == 1024.0f &&
+            state.getEditorUInt("layerBlend", selector) && selector == 0xdeadbeefu,
+            "erasing the middle word preserves both prefix and suffix");
+        state.setEditorUInt("renderMode", 3u);
+        state.setEditorFloat("maxTextureSize", 2048.0f);
+        require(state.getNumericAuthoringStorageBytes() == 16 &&
+            state.getEditorUInt("renderMode", selector) && selector == 3u &&
+            state.getEditorUInt("layerBlend", selector) && selector == 0xdeadbeefu,
+            "erasing the first word compacts retained selectors");
+        state.setEditorUInt("layerBlend", 0u);
+        require(state.getNumericAuthoringStorageBytes() == 12 &&
+            state.getEditorUInt("renderMode", selector) && selector == 3u,
+            "erasing the last word preserves the remaining override");
+        state.setEditorUInt("renderMode", 0u);
+        require(state.getNumericAuthoringStorageBytes() == 0, "last packed override reset releases allocation");
         state.setEditorFloat("previewExposure", 2.0f);
+        require(state.getNumericAuthoringStorageBytes() == 12, "one float also uses one packed word");
         for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i)
         {
             f32 value = 0;
@@ -283,24 +312,27 @@ namespace
         }
         state.setEditorFloat("previewExposure", 1.0f);
         require(state.getNumericAuthoringStorageBytes() == 0, "single setting reset releases the authoring block");
-        for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i) state.setEditorFloat(floatNames[i], defaults[i] + 2);
+        for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i) state.setEditorFloat(floatNames[i], defaults[i] + f32(i + 2));
         for(u32 i = 0; i < sizeof(uintNames) / sizeof(uintNames[0]); ++i) state.setEditorUInt(uintNames[i], i + 1);
         const auto authoredBytes = state.getNumericAuthoringStorageBytes();
-        require(authoredBytes > 0 && state.getRenderState() == snapshot,
+        require(authoredBytes == 156 && state.getRenderState() == snapshot,
             "cold writes allocate authoring storage without replacing the runtime record");
         state.writeEditorSettings(floats, uints, bools, strings);
         MaterialPassStateData restored;
         for(u32 i = 0; i < sizeof(floatNames) / sizeof(floatNames[0]); ++i)
         {
             f32 value = 0;
-            require(floats.getPropertyValue(floatNames[i], value) && value == defaults[i] + 2 &&
+            require(floats.getPropertyValue(floatNames[i], value) && value == defaults[i] + f32(i + 2) &&
                 restored.setEditorFloat(floatNames[i], value), "cold float properties round trip");
             state.setEditorFloat(floatNames[i], defaults[i]);
         }
-        require(state.getNumericAuthoringStorageBytes() == authoredBytes,
-            "resetting floats preserves nondefault uint settings");
+        require(state.getNumericAuthoringStorageBytes() == 76,
+            "resetting floats compacts the allocation to the remaining uint words");
         for(u32 i = 0; i < sizeof(uintNames) / sizeof(uintNames[0]); ++i)
         {
+            u32 retained = 0;
+            require(state.getEditorUInt(uintNames[i], retained) && retained == i + 1,
+                "packed erase preserves every remaining uint value");
             u32 value = 0;
             require(uints.getPropertyValue(uintNames[i], value) && value == i + 1 &&
                 restored.setEditorUInt(uintNames[i], value), "cold uint properties round trip");
@@ -310,14 +342,23 @@ namespace
         state.setEditorFloat("previewRotation", -0.0f);
         f32 signedZero = 1;
         state.getEditorFloat("previewRotation", signedZero);
-        require(std::signbit(signedZero) && state.getNumericAuthoringStorageBytes() != 0,
+        require(std::signbit(signedZero) && state.getNumericAuthoringStorageBytes() == 12,
             "cold floats preserve signed zero instead of silently replacing authored bits");
+        const u32 nanBits = 0x7fc12345u;
+        f32 authoredNan = 0;
+        std::memcpy(&authoredNan, &nanBits, sizeof(authoredNan));
+        state.setEditorFloat("previewRotation", authoredNan);
+        state.getEditorFloat("previewRotation", authoredNan);
+        u32 restoredNanBits = 0;
+        std::memcpy(&restoredNanBits, &authoredNan, sizeof(restoredNanBits));
+        require(restoredNanBits == nanBits && state.getNumericAuthoringStorageBytes() == 12,
+            "packed float storage preserves authored NaN payload bits");
         state.setEditorFloat("previewRotation", 0.0f);
         require(state.getNumericAuthoringStorageBytes() == 0 &&
             !state.setEditorFloat("unknown", 2) && !state.setEditorUInt("unknown", 2),
             "default reset and rejected settings leave no numeric authoring allocation");
         std::cout << "pass_state_bytes=" << sizeof(state) << " numeric_authoring_bytes=" << authoredBytes
-            << " moved_numeric_value_bytes=148" << '\n';
+            << " sparse_single_override_bytes=12 moved_numeric_value_bytes=148" << '\n';
     }
 
     void snapshotContracts()

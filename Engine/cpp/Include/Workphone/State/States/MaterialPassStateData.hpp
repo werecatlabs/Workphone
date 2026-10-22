@@ -235,15 +235,11 @@ namespace workphone
             FixedString<WP_MAX_CLASSNAME> vertexShaderName, fragmentShaderName, geometryShaderName;
             FixedString<WP_MAX_PATH> shaderPath, keywords;
         };
-        // Values absent from the runtime snapshot share one lazy schema-default block.
-        struct NumericAuthoringData
-        {
-            FixedArray<f32, 20> floats = {};
-            FixedArray<u32, 17> uints = {};
-        };
-        NumericAuthoringData &ensureNumericAuthoring();
-        void releaseDefaultNumericAuthoring();
-        std::unique_ptr<NumericAuthoringData> m_numericAuthoring;
+        // One allocation: 64-bit presence mask followed by packed nondefault words.
+        // Floats retain their exact bits; absent slots read shared schema defaults.
+        u32 getNumericWord( u32 index, u32 defaultValue ) const;
+        void setNumericWord( u32 index, u32 value, u32 defaultValue );
+        std::unique_ptr<u32[]> m_numericAuthoring;
         std::unique_ptr<AuthoringData> m_authoring;
         MaterialRenderState::Ptr m_renderState;
         u32 m_writeDepth = 0;
