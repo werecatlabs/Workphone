@@ -163,6 +163,13 @@ namespace workphone::render
         static_assert( static_cast<u32>( MaterialBuiltinParameter::Count ) == 7u,
                        "Extend the material edit mask before adding built-in semantics" );
 
+        constexpr u8 legacySurfaceMask( MaterialBuiltinParameter semantic )
+        {
+            return semantic == MaterialBuiltinParameter::Opacity || semantic == MaterialBuiltinParameter::Metalness ||
+                   semantic == MaterialBuiltinParameter::Roughness ?
+                   static_cast<u8>( 1u << static_cast<u32>( semantic ) ) : 0;
+        }
+
         void applyCullModeToPasses( IMaterial *material, u32 mode )
         {
             if( !material )
@@ -1095,8 +1102,7 @@ namespace workphone::render
     void Material::setMetalness( f32 metalness )
     {
         if( setShaderSurfaceScalar( MaterialBuiltinParameter::Metalness, metalness ) ) return;
-        m_hasPendingMetalness = true;
-        m_pendingMetalness = metalness;
+        rememberLegacySurface( MaterialBuiltinParameter::Metalness, metalness );
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -1126,8 +1132,7 @@ namespace workphone::render
     void Material::setRoughness( f32 roughness )
     {
         if( setShaderSurfaceScalar( MaterialBuiltinParameter::Roughness, roughness ) ) return;
-        m_hasPendingRoughness = true;
-        m_pendingRoughness = roughness;
+        rememberLegacySurface( MaterialBuiltinParameter::Roughness, roughness );
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -1276,9 +1281,7 @@ namespace workphone::render
             }
             // Pass constructors may initialize state before the material owner is
             // attached. Apply pre-load values after the complete graph is ready.
-            if( m_hasPendingRoughness ) setRoughness( m_pendingRoughness );
-            if( m_hasPendingMetalness ) setMetalness( m_pendingMetalness );
-            if( m_hasPendingOpacity ) setOpacity( m_pendingOpacity );
+            applyPendingLegacySurface();
         }
         catch( std::exception &e )
         {
@@ -1292,18 +1295,7 @@ namespace workphone::render
         if( technique ) technique->setMaterial( this );
         m_techniques.push_back( technique );
         invalidateRenderState();
-        if( m_hasPendingRoughness )
-        {
-            setRoughness( m_pendingRoughness );
-        }
-        if( m_hasPendingMetalness )
-        {
-            setMetalness( m_pendingMetalness );
-        }
-        if( m_hasPendingOpacity )
-        {
-            setOpacity( m_pendingOpacity );
-        }
+        applyPendingLegacySurface();
     }
 
     auto Material::getMaterialType() const -> MaterialType
@@ -2302,8 +2294,7 @@ namespace workphone::render
             }
         }
         batch( [&, value]( Material & ) {
-            m_hasPendingOpacity = true;
-            m_pendingOpacity = value;
+            rememberLegacySurface( MaterialBuiltinParameter::Opacity, value );
             setNumericSetting( *this, MaterialFloatSetting::opacity, value );
 
             auto diffuse = getDiffuse();
@@ -2690,7 +2681,9 @@ namespace workphone::render
             return;
         }
 
-        const auto state = MaterialPublicationScope::isActive() ? MaterialRenderState::Ptr{} : getRenderState();
+        const auto published = getRenderState();
+        const auto state = ( m_batchActive || MaterialPublicationScope::isActive() )
+                               ? MaterialRenderState::Ptr{} : published;
         MaterialParameterSyncScope synchronization( m_synchronizingShaderParameters );
 
         // Explicitly import legacy values for declared slots without feeding the
@@ -2710,13 +2703,46 @@ namespace workphone::render
             }
         };
 
-        trySetColour( MaterialBuiltinParameter::Albedo, state ? state->diffuseColour : getDiffuse() );
-        trySetScalar( MaterialBuiltinParameter::Metalness, state ? state->metalness : getMetalness() );
-        trySetScalar( MaterialBuiltinParameter::Roughness, state ? state->roughness : getRoughness() );
+        // Before graph creation, the optional legacy block is the value owner.
+        // Inside a batch, published snapshots still contain the previous values.
+        auto importScalar = [this, &published]( MaterialBuiltinParameter semantic, f32 value ) {
+            if( !published && m_legacySurface && ( m_legacySurface->mask & legacySurfaceMask( semantic ) ) )
+            {
+                switch( semantic )
+                {
+                case MaterialBuiltinParameter::Metalness: return m_legacySurface->metalness;
+                case MaterialBuiltinParameter::Roughness: return m_legacySurface->roughness;
+                case MaterialBuiltinParameter::Opacity: return m_legacySurface->opacity;
+                default: break;
+                }
+            }
+            return value;
+        };
+        auto albedo = state ? state->diffuseColour : getDiffuse();
+        if( !published ) albedo.a = importScalar( MaterialBuiltinParameter::Opacity, albedo.a );
+        trySetColour( MaterialBuiltinParameter::Albedo, albedo );
+        trySetScalar( MaterialBuiltinParameter::Metalness,
+                      importScalar( MaterialBuiltinParameter::Metalness, state ? state->metalness : getMetalness() ) );
+        trySetScalar( MaterialBuiltinParameter::Roughness,
+                      importScalar( MaterialBuiltinParameter::Roughness, state ? state->roughness : getRoughness() ) );
         trySetColour( MaterialBuiltinParameter::Emissive, state ? state->emissiveColour : getEmissive() );
-        trySetScalar( MaterialBuiltinParameter::Opacity, state ? state->opacity : getOpacity() );
+        trySetScalar( MaterialBuiltinParameter::Opacity,
+                      importScalar( MaterialBuiltinParameter::Opacity, state ? state->opacity : getOpacity() ) );
         trySetScalar( MaterialBuiltinParameter::AlphaClip, state ? state->alphaClip : getAlphaClip() );
 
+        if( m_shaderWorkflow == ShaderWorkflow::Pbr )
+        {
+            auto ownsScalar = [this]( MaterialBuiltinParameter semantic ) {
+                return m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( semantic ),
+                                                        MaterialShaderParameterType::Scalar, sizeof( f32 ) );
+            };
+            if( ownsScalar( MaterialBuiltinParameter::Metalness ) ) forgetLegacySurface( MaterialBuiltinParameter::Metalness );
+            if( ownsScalar( MaterialBuiltinParameter::Roughness ) ) forgetLegacySurface( MaterialBuiltinParameter::Roughness );
+            if( ownsScalar( MaterialBuiltinParameter::Opacity ) ||
+                m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Albedo ),
+                                                 MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
+                forgetLegacySurface( MaterialBuiltinParameter::Opacity );
+        }
         m_shaderParametersDirty = false;
     }
 
@@ -2736,6 +2762,69 @@ namespace workphone::render
         if( getMaterialType() != target )
         {
             setMaterialType( target );
+        }
+    }
+
+    std::size_t Material::getLegacySurfaceStorageBytes() const
+    {
+        return m_legacySurface ? sizeof( LegacySurfaceData ) : 0;
+    }
+
+    void Material::rememberLegacySurface( MaterialBuiltinParameter semantic, f32 value )
+    {
+        const auto mask = legacySurfaceMask( semantic );
+        if( !mask ) return;
+        if( !m_legacySurface ) m_legacySurface = std::make_unique<LegacySurfaceData>();
+        switch( semantic )
+        {
+        case MaterialBuiltinParameter::Opacity: m_legacySurface->opacity = value; break;
+        case MaterialBuiltinParameter::Metalness: m_legacySurface->metalness = value; break;
+        case MaterialBuiltinParameter::Roughness: m_legacySurface->roughness = value; break;
+        default: break;
+        }
+        m_legacySurface->mask |= mask;
+    }
+
+    void Material::forgetLegacySurface( MaterialBuiltinParameter semantic )
+    {
+        if( !m_legacySurface ) return;
+        m_legacySurface->mask &= static_cast<u8>( ~legacySurfaceMask( semantic ) );
+        if( !m_legacySurface->mask ) m_legacySurface.reset();
+    }
+
+    void Material::applyPendingLegacySurface()
+    {
+        // Each setter may transfer several pending values into canonical storage
+        // and release the block. Recheck ownership before reading the next value.
+        if( m_legacySurface && ( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Roughness ) ) )
+            setRoughness( m_legacySurface->roughness );
+        if( m_legacySurface && ( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Metalness ) ) )
+            setMetalness( m_legacySurface->metalness );
+        if( m_legacySurface && ( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Opacity ) ) )
+            setOpacity( m_legacySurface->opacity );
+    }
+
+    void Material::seedLegacySurface( MaterialPassStateData &state ) const
+    {
+        if( !m_legacySurface ) return;
+        if( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Metalness ) )
+            state.metalness = m_legacySurface->metalness;
+        if( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Roughness ) )
+            state.roughness = m_legacySurface->roughness;
+        if( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Opacity ) )
+        {
+            state.opacity = m_legacySurface->opacity;
+            state.diffuseColour.a = m_legacySurface->opacity;
+            if( state.opacity < 0.999f )
+            {
+                state.setFlag( render::transparentFlag, true );
+                if( state.renderMode < 2u )
+                {
+                    state.renderMode = 3u;
+                    state.blendMode = 1u;
+                    state.setFlag( render::cutoutFlag, false );
+                }
+            }
         }
     }
 
@@ -2879,9 +2968,26 @@ namespace workphone::render
                                               0.0f, 1.0f );
         const bool transparent = opacityChanged && opacity < 0.999f;
         const bool changeRenderModeFallback = transparent && getRenderMode() < 2u;
-        if( opacityChanged ) { diffuse.a = opacity; m_hasPendingOpacity = true; m_pendingOpacity = opacity; }
-        if( metalChanged ) { m_hasPendingMetalness = true; m_pendingMetalness = metal; }
-        if( roughChanged ) { m_hasPendingRoughness = true; m_pendingRoughness = rough; }
+        const auto ownsScalar = [&]( MaterialBuiltinParameter semantic ) {
+            return m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( semantic ),
+                                                    MaterialShaderParameterType::Scalar, sizeof( f32 ) );
+        };
+        const auto updateFuturePassValue = [&]( MaterialBuiltinParameter semantic, f32 value, bool canonical ) {
+            if( canonical ) forgetLegacySurface( semantic );
+            else rememberLegacySurface( semantic, value );
+        };
+        if( opacityChanged )
+        {
+            diffuse.a = opacity;
+            const bool canonical = pbr && ( ownsScalar( MaterialBuiltinParameter::Opacity ) ||
+                m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Albedo ),
+                                                 MaterialShaderParameterType::Colour, sizeof( ColourF ) ) );
+            updateFuturePassValue( MaterialBuiltinParameter::Opacity, opacity, canonical );
+        }
+        if( metalChanged ) updateFuturePassValue( MaterialBuiltinParameter::Metalness, metal,
+                                                 ownsScalar( MaterialBuiltinParameter::Metalness ) );
+        if( roughChanged ) updateFuturePassValue( MaterialBuiltinParameter::Roughness, rough,
+                                                 ownsScalar( MaterialBuiltinParameter::Roughness ) );
 
         bool applied = false;
         // One graph walk and one write scope per pass. Virtual surface setters keep

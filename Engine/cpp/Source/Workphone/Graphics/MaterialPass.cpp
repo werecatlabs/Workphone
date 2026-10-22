@@ -192,7 +192,10 @@ namespace workphone::render
         if( changed && material )
             if( auto context = getStateContextPtr() )
                 if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                {
+                    if( auto owner = dynamic_pointer_cast<Material>( material ) ) owner->seedLegacySurface( *state );
                     seedShaderSurface( *state );
+                }
     }
 
     void MaterialPass::setStateContext( SmartPtr<IStateContext> stateContext )
@@ -308,17 +311,7 @@ namespace workphone::render
                             {
                                 // State data owns the documented surface defaults.
                                 if( auto material = dynamic_pointer_cast<Material>( getMaterial() ) )
-                                {
-                                    if( material->m_hasPendingMetalness )
-                                        stateData->metalness = material->m_pendingMetalness;
-                                    if( material->m_hasPendingRoughness )
-                                        stateData->roughness = material->m_pendingRoughness;
-                                    if( material->m_hasPendingOpacity )
-                                    {
-                                        stateData->opacity = material->m_pendingOpacity;
-                                        stateData->diffuseColour.a = material->m_pendingOpacity;
-                                    }
-                                }
+                                    material->seedLegacySurface( *stateData );
                                 seedShaderSurface( *stateData );
                                 stateData->setFlag( depthWriteFlag, true );
                             }
