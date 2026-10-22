@@ -1161,13 +1161,21 @@ namespace workphone::render
 
     void Material::setDiffuse( const ColourF &diffuse )
     {
-        if( !m_synchronizingShaderParameters && m_shaderWorkflow == ShaderWorkflow::Pbr )
+        const bool colorOnly = m_shaderWorkflow == ShaderWorkflow::ColorOnly;
+        const bool hasOpacity = colorOnly && m_shaderParameters.IsHandleValid(
+            m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Opacity ),
+            MaterialShaderParameterType::Scalar, sizeof( f32 ) );
+        // ColorOnly's diffuse alias needs both slots to represent RGBA without
+        // changing the existing no-Opacity workflow's opaque diffuse fallback.
+        if( !m_synchronizingShaderParameters &&
+            ( m_shaderWorkflow == ShaderWorkflow::Pbr || ( colorOnly && hasOpacity ) ) )
         {
             auto edit = m_shaderParameters.Edit();
-            if( setShaderSurfaceColour( MaterialBuiltinParameter::Albedo, diffuse ) )
+            if( setShaderSurfaceColour( colorOnly ? MaterialBuiltinParameter::Color :
+                                                   MaterialBuiltinParameter::Albedo, diffuse ) )
             {
                 // This API assigns RGBA. Keep a declared opacity semantic in the
-                // same edit; typed Albedo edits retain the explicit Opacity value.
+                // same edit; typed colour edits retain the explicit Opacity value.
                 setShaderSurfaceScalar( MaterialBuiltinParameter::Opacity,
                                         Math<f32>::clamp( diffuse.a, 0.0f, 1.0f ) );
                 return;
@@ -1229,7 +1237,9 @@ namespace workphone::render
 
     void Material::setEmissive( const ColourF &emissive )
     {
-        if( setShaderSurfaceColour( MaterialBuiltinParameter::Emissive, emissive ) ) return;
+        if( setShaderSurfaceColour( m_shaderWorkflow == ShaderWorkflow::ColorOnly ? MaterialBuiltinParameter::Color :
+                                                                                 MaterialBuiltinParameter::Emissive,
+                                    emissive ) ) return;
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -1996,7 +2006,7 @@ namespace workphone::render
             if( setShaderSurfaceScalar( MaterialBuiltinParameter::AlphaClip, value ) ) return;
             break;
         case MaterialFloatSetting::opacity:
-            if( ( ( m_shaderWorkflow == ShaderWorkflow::Pbr || m_shaderWorkflow == ShaderWorkflow::Unlit ) &&
+            if( ( m_shaderWorkflow != ShaderWorkflow::Legacy &&
                   m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Opacity ),
                     MaterialShaderParameterType::Scalar, sizeof( f32 ) ) ) ||
                 ( m_shaderWorkflow == ShaderWorkflow::Pbr &&
@@ -2722,6 +2732,8 @@ namespace workphone::render
         auto albedo = state ? state->diffuseColour : getDiffuse();
         if( !published ) albedo.a = importScalar( MaterialBuiltinParameter::Opacity, albedo.a );
         trySetColour( MaterialBuiltinParameter::Albedo, albedo );
+        if( m_shaderWorkflow == ShaderWorkflow::ColorOnly )
+            trySetColour( MaterialBuiltinParameter::Color, albedo );
         trySetScalar( MaterialBuiltinParameter::Metalness,
                       importScalar( MaterialBuiltinParameter::Metalness, state ? state->metalness : getMetalness() ) );
         trySetScalar( MaterialBuiltinParameter::Roughness,
@@ -2744,7 +2756,7 @@ namespace workphone::render
                                                  MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
                 forgetLegacySurface( MaterialBuiltinParameter::Opacity );
         }
-        else if( m_shaderWorkflow == ShaderWorkflow::Unlit &&
+        else if( ( m_shaderWorkflow == ShaderWorkflow::Unlit || m_shaderWorkflow == ShaderWorkflow::ColorOnly ) &&
                  m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Opacity ),
                                                   MaterialShaderParameterType::Scalar, sizeof( f32 ) ) )
             forgetLegacySurface( MaterialBuiltinParameter::Opacity );
@@ -2837,7 +2849,8 @@ namespace workphone::render
     {
         if( m_synchronizingShaderParameters ||
             !( m_shaderWorkflow == ShaderWorkflow::Pbr ||
-               ( m_shaderWorkflow == ShaderWorkflow::Unlit && semantic == MaterialBuiltinParameter::Opacity ) ) )
+               ( ( m_shaderWorkflow == ShaderWorkflow::Unlit || m_shaderWorkflow == ShaderWorkflow::ColorOnly ) &&
+                 semantic == MaterialBuiltinParameter::Opacity ) ) )
             return false;
         const auto handle = m_shaderParameters.GetBuiltin( semantic );
         if( !m_shaderParameters.IsHandleValid( handle, MaterialShaderParameterType::Scalar, sizeof( f32 ) ) )
@@ -2857,7 +2870,8 @@ namespace workphone::render
     {
         if( m_synchronizingShaderParameters ||
             !( m_shaderWorkflow == ShaderWorkflow::Pbr ||
-               ( m_shaderWorkflow == ShaderWorkflow::Unlit && semantic == MaterialBuiltinParameter::Emissive ) ) )
+               ( m_shaderWorkflow == ShaderWorkflow::Unlit && semantic == MaterialBuiltinParameter::Emissive ) ||
+               ( m_shaderWorkflow == ShaderWorkflow::ColorOnly && semantic == MaterialBuiltinParameter::Color ) ) )
             return false;
         const auto handle = m_shaderParameters.GetBuiltin( semantic );
         if( !m_shaderParameters.IsHandleValid( handle, MaterialShaderParameterType::Colour, sizeof( ColourF ) ) )
@@ -2972,6 +2986,11 @@ namespace workphone::render
         const auto rough = getScalar( MaterialBuiltinParameter::Roughness, currentRough );
         const auto clip = getScalar( MaterialBuiltinParameter::AlphaClip, currentClip );
         auto opacityFallback = pbr ? currentOpacity : 1.0f;
+        // Once a scalar slot hands off, legacy opacity is the explicit owner.
+        // A pending Color apply must not replace it with an implicit default.
+        if( colorOnly && m_legacySurface &&
+            ( m_legacySurface->mask & legacySurfaceMask( MaterialBuiltinParameter::Opacity ) ) )
+            opacityFallback = m_legacySurface->opacity;
         if( pbr && diffuseChanged ) opacityFallback = diffuse.a;
         else if( pbr && ( mask & shaderAlphaOnly ) )
             opacityFallback = getColour( MaterialBuiltinParameter::Albedo, currentDiffuse ).a;
@@ -2990,7 +3009,7 @@ namespace workphone::render
         if( opacityChanged )
         {
             diffuse.a = opacity;
-            const bool canonical = ( ( pbr || m_shaderWorkflow == ShaderWorkflow::Unlit ) &&
+            const bool canonical = ( m_shaderWorkflow != ShaderWorkflow::Legacy &&
                                       ownsScalar( MaterialBuiltinParameter::Opacity ) ) ||
                 ( pbr && m_shaderParameters.IsHandleValid( m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Albedo ),
                                                           MaterialShaderParameterType::Colour, sizeof( ColourF ) ) );
@@ -3151,11 +3170,11 @@ namespace workphone::render
         }
         // A removed/inactive owner must hand its last value back before Reset
         // discards the slot. Future passes still use the legacy fallback there.
-        if( m_shaderWorkflow == ShaderWorkflow::Unlit )
+        if( m_shaderWorkflow != ShaderWorkflow::Legacy )
         {
             const auto oldOpacity = m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
             const auto nextOpacity = layout->GetBuiltin( MaterialBuiltinParameter::Opacity );
-            const bool nextOwnsOpacity = !candidateId.empty() && candidateId != colorOnlyShaderIDStr &&
+            const bool nextOwnsOpacity = !candidateId.empty() &&
                 nextOpacity.IsValid() && layout->GetParameterInfo()[nextOpacity.m_parameterIndex].m_type ==
                                            MaterialShaderParameterType::Scalar;
             if( !nextOwnsOpacity && m_shaderParameters.IsHandleValid( oldOpacity,
@@ -3232,8 +3251,7 @@ namespace workphone::render
     {
         // During schema migration the old buffer has already handed off above;
         // the replacement's defaults must not overwrite that retained value.
-        if( !m_synchronizingShaderParameters && m_shaderWorkflow == ShaderWorkflow::Unlit &&
-            ( shaderID.empty() || shaderID == colorOnlyShaderIDStr ) )
+        if( !m_synchronizingShaderParameters && m_shaderWorkflow != ShaderWorkflow::Legacy && shaderID.empty() )
         {
             const auto opacity = m_shaderParameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
             if( m_shaderParameters.IsHandleValid( opacity, MaterialShaderParameterType::Scalar, sizeof( f32 ) ) )

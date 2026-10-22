@@ -148,7 +148,8 @@ namespace workphone::render
         auto material = dynamic_pointer_cast<Material>( getMaterial() );
         if( !material ) return;
         const bool pbr = material->m_shaderWorkflow == Material::ShaderWorkflow::Pbr;
-        if( !pbr && material->m_shaderWorkflow != Material::ShaderWorkflow::Unlit ) return;
+        const bool colorOnly = material->m_shaderWorkflow == Material::ShaderWorkflow::ColorOnly;
+        if( material->m_shaderWorkflow == Material::ShaderWorkflow::Legacy ) return;
         const auto &parameters = material->getShaderParameters();
         const auto seed = [&]( MaterialBuiltinParameter semantic, f32 &value ) {
             const auto handle = parameters.GetBuiltin( semantic );
@@ -169,12 +170,15 @@ namespace workphone::render
             return true;
         };
         const auto hasAlbedo = pbr && seedColour( MaterialBuiltinParameter::Albedo, state.diffuseColour );
-        seedColour( MaterialBuiltinParameter::Emissive, state.emissiveColour );
+        const auto hasColor = colorOnly && seedColour( MaterialBuiltinParameter::Color, state.diffuseColour );
+        if( hasColor ) state.emissiveColour = state.diffuseColour;
+        else if( !colorOnly ) seedColour( MaterialBuiltinParameter::Emissive, state.emissiveColour );
         const auto opacity = parameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
         const auto hasOpacity = parameters.IsHandleValid( opacity, MaterialShaderParameterType::Scalar, sizeof( f32 ) );
-        if( hasOpacity || hasAlbedo )
+        if( hasOpacity || hasAlbedo || hasColor )
         {
-            state.opacity = Math<f32>::clamp( hasOpacity ? parameters.GetScalar( opacity ) : state.diffuseColour.a,
+            state.opacity = Math<f32>::clamp( hasOpacity ? parameters.GetScalar( opacity ) :
+                                             ( colorOnly ? state.opacity : state.diffuseColour.a ),
                                              0.0f, 1.0f );
             state.diffuseColour.a = state.opacity;
             if( state.opacity < 0.999f )

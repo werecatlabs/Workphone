@@ -421,7 +421,9 @@ namespace workphone
                 const auto authored = [&]( const String &name ) {
                     const bool active = m_shaderWorkflow == ShaderWorkflow::Pbr ||
                         ( m_shaderWorkflow == ShaderWorkflow::Unlit &&
-                          ( name == shaderEmissiveParamStr || name == shaderOpacityParamStr ) );
+                          ( name == shaderEmissiveParamStr || name == shaderOpacityParamStr ) ) ||
+                        ( m_shaderWorkflow == ShaderWorkflow::ColorOnly &&
+                          ( name == shaderColorParamStr || name == shaderOpacityParamStr ) );
                     return active &&
                            properties->hasProperty( shaderParamPrefixStr + name );
                 };
@@ -434,7 +436,7 @@ namespace workphone
                 auto diffuseColour = getDiffuse();
                 if( properties->getPropertyValue( diffuseColourStr, diffuseColour ) )
                 {
-                    if( authored( shaderAlbedoParamStr ) || authored( shaderOpacityParamStr ) )
+                    if( authored( shaderAlbedoParamStr ) || authored( shaderColorParamStr ) || authored( shaderOpacityParamStr ) )
                         restorePasses( [&]( IMaterialPass &pass ) { pass.setDiffuse( diffuseColour ); } );
                     else setDiffuse( diffuseColour );
                 }
@@ -455,7 +457,7 @@ namespace workphone
                 auto emissiveColour = getEmissive();
                 if( properties->getPropertyValue( emissiveColourStr, emissiveColour ) )
                 {
-                    if( authored( shaderEmissiveParamStr ) )
+                    if( authored( shaderEmissiveParamStr ) || authored( shaderColorParamStr ) )
                         restorePasses( [&]( IMaterialPass &pass ) { pass.setEmissive( emissiveColour ); } );
                     else setEmissive( emissiveColour );
                 }

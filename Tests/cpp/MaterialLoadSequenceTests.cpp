@@ -2009,6 +2009,146 @@ namespace
         fixture.graphics->pending.clear();
     }
 
+    void runColorOnlySurfaceOwnership( Fixture &fixture )
+    {
+        using namespace render;
+        MaterialShaderRegistry::instance().registerBuiltinShaders();
+        const auto info = MaterialShaderRegistry::instance().find( Material::colorOnlyShaderIDStr )->getParameterInfo();
+        const ColourF colour( 0.2f, 0.4f, 0.6f, 0.7f ), glow( 0.1f, 0.8f, 0.2f, 0.3f );
+        const ColourF localDiffuse( 1, 0, 0, 0.9f ), localEmission( 0, 0, 1, 1 );
+        const auto rendered = []( const ColourF &value, f32 alpha ) {
+            return ColourF( value.r, value.g, value.b, alpha );
+        };
+        const auto stateFor = []( SmartPtr<IMaterialPass> pass ) {
+            return static_pointer_cast<MaterialPassStateData>(
+                pass->getStateContext()->getStateById( pass->getId() )->getData() );
+        };
+        auto material = make_ptr<ClawMaterial>(); material->setOpacity( 0.2f );
+        material->setShaderParameters( info, Material::colorOnlyShaderIDStr );
+        auto &parameters = material->getShaderParameters();
+        const auto colorSlot = parameters.Resolve<ColourF>( "Color" );
+        const auto opacity = parameters.Resolve<f32>( "Opacity" );
+        const auto names = parameters.GetNameLookupCount();
+        material->setDiffuse( colour ); material->load( nullptr );
+        auto first = material->getTechnique( 0 )->getPass( 0 ); auto firstData = stateFor( first );
+        require( parameters.GetColour( colorSlot.handle ) == colour && parameters.GetScalar( opacity.handle ) == 0.7f &&
+                 first->getDiffuse() == colour && first->getEmissive() == colour && material->getLegacySurfaceStorageBytes() == 0,
+                 "ColorOnly diffuse RGBA writes shared Color and Opacity before loading without a legacy mirror" );
+        parameters.Set( colorSlot, glow );
+        require( first->getDiffuse() == rendered( glow, 0.7f ) && first->getEmissive() == glow,
+                 "typed Color keeps separate opacity while supplying both diffuse RGB and emission" );
+        first->setDiffuse( localDiffuse ); first->setEmissive( localEmission );
+        auto before = firstData->getRenderState();
+        auto second = material->createTechnique()->createPass(); second->load( nullptr ); auto secondData = stateFor( second );
+        require( firstData->getRenderState() == before && second->getDiffuse() == rendered( glow, 0.7f ) &&
+                 second->getEmissive() == glow && secondData->opacity == 0.7f,
+                 "ColorOnly graph additions seed both colours and opacity without replaying old copies over overrides" );
+        material->setOpacity( 0.4f );
+        require( first->getDiffuse() == rendered( localDiffuse, 0.4f ) && first->getEmissive() == localEmission,
+                 "ColorOnly opacity-only edits preserve local RGB and emission overrides" );
+        material->setEmissive( glow );
+        require( first->getDiffuse() == rendered( glow, 0.4f ) && first->getEmissive() == glow &&
+                 parameters.GetScalar( opacity.handle ) == 0.4f,
+                 "same-authored emission alias restores the shared Color outputs without changing opacity" );
+        before = firstData->getRenderState(); const auto secondBefore = secondData->getRenderState();
+        auto retained = parameters;
+        material->batch( [&]( Material &m ) {
+            parameters.Set( colorSlot, localEmission ); m.setDiffuse( colour );
+            parameters.Set( opacity, 0.2f ); m.setEditorFloat( "opacity", 0.6f ); m.setEmissive( glow );
+            require( firstData->getRenderState() == before, "ColorOnly batches retain the previous render version" );
+        } );
+        require( firstData->getRenderState()->revision == before->revision + 1 &&
+                 secondData->getRenderState()->revision == secondBefore->revision + 1 &&
+                 first->getDiffuse() == rendered( glow, 0.6f ) && first->getEmissive() == glow &&
+                 parameters.GetColour( colorSlot.handle ) == glow && parameters.GetScalar( opacity.handle ) == 0.6f &&
+                 retained.GetScalar( opacity.handle ) == 0.4f,
+                 "mixed ColorOnly writes obey call order, detach shared payloads and publish once per pass" );
+        material->applyShaderParametersToRenderer();
+        require( material->getLegacySurfaceStorageBytes() == 0, "ColorOnly full apply does not recreate the opacity mirror" );
+        first->setDiffuse( localDiffuse ); first->setEmissive( localEmission );
+        auto properties = material->getProperties();
+        auto restored = make_ptr<ClawMaterial>(); restored->load( nullptr ); restored->setProperties( properties );
+        auto &values = restored->getShaderParameters();
+        require( restored->getDiffuse() == localDiffuse && restored->getEmissive() == localEmission &&
+                 values.GetColour( values.GetBuiltin( MaterialBuiltinParameter::Color ) ) == glow &&
+                 values.GetScalar( values.GetBuiltin( MaterialBuiltinParameter::Opacity ) ) == 0.6f,
+                 "ColorOnly saved native aliases preserve independent overrides and canonical shader values" );
+        const auto storage = values.GetValueStorageIdentity(); const auto revision = values.GetRevision();
+        restored->setProperties( properties );
+        require( values.GetValueStorageIdentity() == storage && values.GetRevision() == revision,
+                 "no-op ColorOnly restore preserves payload sharing and revision" );
+        restored->applyShaderParametersToRenderer();
+        require( restored->getDiffuse() == rendered( glow, 0.6f ) && restored->getEmissive() == glow,
+                 "full ColorOnly reapply restores both shared-colour outputs and authored opacity" );
+        auto partial = make_ptr<Properties>(); partial->setProperty( "diffuseColour", colour );
+        restored->setProperties( partial );
+        require( values.GetColour( values.GetBuiltin( MaterialBuiltinParameter::Color ) ) == colour &&
+                 values.GetScalar( values.GetBuiltin( MaterialBuiltinParameter::Opacity ) ) == 0.7f,
+                 "partial legacy diffuse RGBA bags update both ColorOnly canonical slots" );
+        restored->unload( nullptr );
+        require( parameters.GetNameLookupCount() == names, "ColorOnly mutation uses cached semantic handles" );
+        {
+            auto edit = parameters.Edit(); material->setDiffuse( colour ); material->setOpacity( 0.25f );
+            auto pending = material->createTechnique()->createPass(); pending->load( nullptr );
+            require( pending->getDiffuse() == rendered( colour, 0.25f ) && pending->getEmissive() == colour,
+                     "ColorOnly passes seed pending canonical edits before parameter publication closes" );
+        }
+        material->unload( nullptr ); material->load( nullptr );
+        require( material->getDiffuse() == rendered( colour, 0.25f ) && material->getEmissive() == colour &&
+                 material->getLegacySurfaceStorageBytes() == 0, "ColorOnly canonical values survive graph reload" );
+        material->unload( nullptr );
+
+        auto imported = make_ptr<ClawMaterial>(); imported->setOpacity( 0.35f );
+        imported->setShaderParameters( info, Material::colorOnlyShaderIDStr ); imported->syncPBRToShaderParameters();
+        imported->load( nullptr );
+        require( imported->getOpacity() == 0.35f && imported->getLegacySurfaceStorageBytes() == 0,
+                 "explicit ColorOnly import retires pre-load legacy opacity" );
+        imported->setDiffuse( colour ); auto importedFirst = imported->getTechnique( 0 )->getPass( 0 );
+        importedFirst->setEmissive( localEmission ); imported->syncPBRToShaderParameters();
+        auto importedPass = imported->createTechnique()->createPass(); importedPass->load( nullptr );
+        require( importedFirst->getEmissive() == localEmission && importedPass->getEmissive() == colour &&
+                 importedPass->getDiffuse() == colour,
+                 "explicit ColorOnly import chooses primary diffuse for shared Color without feeding back into overrides" );
+        imported->unload( nullptr );
+
+        auto cleared = make_ptr<ClawMaterial>(); cleared->setShaderParameters( info, Material::colorOnlyShaderIDStr );
+        cleared->setOpacity( 0.42f ); cleared->setShaderID( String() ); cleared->load( nullptr );
+        require( cleared->getOpacity() == 0.42f && cleared->getLegacySurfaceStorageBytes() > 0,
+                 "clearing ColorOnly hands declared opacity back before first-load legacy seeding" );
+        cleared->unload( nullptr );
+        MaterialShader sparse( Material::colorOnlyShaderIDStr );
+        sparse.addParameter( MaterialShaderParameterType::Colour, "Color" );
+        auto removed = make_ptr<ClawMaterial>(); removed->setShaderParameters( info, Material::colorOnlyShaderIDStr );
+        removed->setDiffuse( rendered( colour, 0.43f ) ); removed->setShaderParameters( sparse.getParameterInfo(), sparse.getShaderID() );
+        removed->load( nullptr );
+        require( removed->getOpacity() == 0.43f && removed->getLegacySurfaceStorageBytes() > 0,
+                 "removing ColorOnly opacity preserves its last declared value for future passes" );
+        removed->unload( nullptr );
+        material->setShaderParameters( sparse.getParameterInfo(), sparse.getShaderID() ); material->load( nullptr );
+        parameters.SetColour( parameters.GetBuiltin( MaterialBuiltinParameter::Color ), colour );
+        const auto sparseRevision = parameters.GetRevision(); material->setDiffuse( localDiffuse ); material->setOpacity( 0.3f );
+        require( parameters.GetRevision() == sparseRevision && material->getDiffuse() == rendered( localDiffuse, 0.3f ),
+                 "ColorOnly without Opacity keeps diffuse RGBA and opacity edits on the legacy fallback" );
+        auto fallback = material->createTechnique()->createPass(); fallback->load( nullptr );
+        require( fallback->getDiffuse() == rendered( colour, 0.3f ) && fallback->getEmissive() == colour,
+                 "partial ColorOnly seeds declared Color and retained legacy opacity independently" );
+        parameters.SetColour( parameters.GetBuiltin( MaterialBuiltinParameter::Color ), glow );
+        require( material->getOpacity() == 0.3f && fallback->getDiffuse() == rendered( glow, 0.3f ),
+                 "partial ColorOnly colour edits preserve explicit legacy opacity over the implicit opaque default" );
+        material->unload( nullptr );
+        MaterialShader wrongType( Material::colorOnlyShaderIDStr );
+        wrongType.addParameter( MaterialShaderParameterType::Int, "Color" )
+                 .addParameter( MaterialShaderParameterType::Int, "Opacity" );
+        material->setShaderParameters( wrongType.getParameterInfo(), wrongType.getShaderID() ); material->load( nullptr );
+        const auto customColor = parameters.Resolve<s32>( "Color" ), customOpacity = parameters.Resolve<s32>( "Opacity" );
+        parameters.Set( customColor, s32( 17 ) ); parameters.Set( customOpacity, s32( 23 ) );
+        material->setDiffuse( localDiffuse ); material->setEmissive( localEmission ); material->setOpacity( 0.45f );
+        require( parameters.GetInt( customColor.handle ) == 17 && parameters.GetInt( customOpacity.handle ) == 23 &&
+                 material->getDiffuse() == rendered( localDiffuse, 0.45f ) && material->getEmissive() == localEmission,
+                 "wrong-type ColorOnly slots remain independent custom values while legacy setters retain their contract" );
+        material->unload( nullptr ); fixture.graphics->pending.clear();
+    }
+
     void runUnlitSurfaceOwnership( Fixture &fixture )
     {
         using namespace render;
@@ -2138,7 +2278,7 @@ namespace
         switched->setShaderParameters( colorOnly.getParameterInfo(), colorOnly.getShaderID() );
         switched->load( nullptr );
         require( switched->getOpacity() == 0.44f,
-                 "Unlit to ColorOnly schema migration retains opacity while the new workflow uses legacy seeding" );
+                 "Unlit to ColorOnly schema migration retains canonical opacity" );
         switched->unload( nullptr );
 
         MaterialShader wrongType( Material::unlitShaderIDStr );
@@ -3130,6 +3270,7 @@ int main( int argc, char **argv )
         runNamedPbrOwnership( fixture );
         runLegacySurfaceStorage( fixture );
         runUnlitSurfaceOwnership( fixture );
+        runColorOnlySurfaceOwnership( fixture );
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );
