@@ -2,6 +2,7 @@
 #define StateData_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 
 namespace workphone
