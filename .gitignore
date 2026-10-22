@@ -200,3 +200,5 @@ steam_appid.txt
 /artifacts
 /.github
 /.codex
+/build_windows.cmd
+/build_android.cmd

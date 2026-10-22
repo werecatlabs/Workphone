@@ -316,6 +316,13 @@ else()
     add_executable(Editor ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+if (WIN32)
+target_link_options(Editor PUBLIC 
+$<$<CONFIG:Release>:/LTCG>
+$<$<CONFIG:MinSizeRel>:/LTCG>
+$<$<CONFIG:RelWithDebInfo>:/LTCG>
+)
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         target_link_libraries(Editor Workphone)
