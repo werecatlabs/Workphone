@@ -10,6 +10,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawTexture.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
+#include <Workphone/State/States/MaterialStateData.hpp>
 #include <Workphone/Graphics/MaterialShader.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/GraphicsScene.hpp>
@@ -3204,6 +3205,9 @@ int main( int argc, char **argv )
 {
     try
     {
+        std::cout << "root_material_state_bytes=" << sizeof( MaterialStateData )
+                  << " base_state_bytes=" << sizeof( StateData ) << '\n';
+        if( argc == 2 && std::string( argv[1] ) == "--root-state-storage" ) return 0;
         runDrawSorting();
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-sorting" )
         {
