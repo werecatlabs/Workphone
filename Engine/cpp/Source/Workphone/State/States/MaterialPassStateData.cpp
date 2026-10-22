@@ -40,6 +40,36 @@ namespace workphone
                    sameMaterialValue( a.b, b.b ) && sameMaterialValue( a.a, b.a );
         }
 
+        constexpr u32 ColdFloatCount = 20;
+        constexpr u32 ColdUIntCount = 17;
+        static_assert( ColdFloatCount + ColdUIntCount <= 64, "numeric presence mask capacity" );
+        static_assert( sizeof( f32 ) == sizeof( u32 ), "numeric authoring word size" );
+
+        u32 floatWord( f32 value )
+        {
+            u32 result;
+            std::memcpy( &result, &value, sizeof( result ) );
+            return result;
+        }
+        f32 wordFloat( u32 value )
+        {
+            f32 result;
+            std::memcpy( &result, &value, sizeof( result ) );
+            return result;
+        }
+        u64 numericMask( const u32 *words )
+        {
+            u64 result = 0;
+            if( words ) std::memcpy( &result, words, sizeof( result ) );
+            return result;
+        }
+        u32 numericWordCount( u64 mask )
+        {
+            u32 count = 0;
+            while( mask ) { mask &= mask - 1; ++count; }
+            return count;
+        }
+
         template <class T>
         struct EditorField
         {
@@ -55,7 +85,7 @@ namespace workphone
             u32 flag;
         };
 
-        const EditorField<f32> FloatFields[] = {
+        constexpr EditorField<f32> FloatFields[] = {
             { "alphaClip", &MaterialPassStateData::alphaClip },
             { "opacity", &MaterialPassStateData::opacity },
             { "refractionAmount", &MaterialPassStateData::refractionAmount },
@@ -96,7 +126,7 @@ namespace workphone
             { "previewRotation", nullptr, 8u, 0.0f },
         };
 
-        const EditorField<u32> UIntFields[] = {
+        constexpr EditorField<u32> UIntFields[] = {
             { "preset", nullptr, 8u, 0u },
             { "renderMode", nullptr, 9u, 0u },
             { "workflow", nullptr, 10u, 0u },
@@ -126,6 +156,23 @@ namespace workphone
             { "previewShape", nullptr, 6u, 0u },
             { "previewEnvironment", nullptr, 7u, 0u },
         };
+
+        template <class T, size_t N>
+        constexpr bool validColdIndices( const EditorField<T> ( &fields )[N], u32 count )
+        {
+            u64 seen = 0;
+            for( const auto &field : fields )
+                if( !field.member )
+                {
+                    if( field.coldIndex >= count ) return false;
+                    const auto bit = u64( 1 ) << field.coldIndex;
+                    if( seen & bit ) return false;
+                    seen |= bit;
+                }
+            return seen == ( ( u64( 1 ) << count ) - 1 );
+        }
+        static_assert( validColdIndices( FloatFields, ColdFloatCount ), "unique packed float slots" );
+        static_assert( validColdIndices( UIntFields, ColdUIntCount ), "unique packed uint slots" );
 
         const EditorBoolField BoolFields[] = {
             { "transparent", transparentFlag },
@@ -420,12 +467,7 @@ namespace workphone
         if( field.member ) this->*( field.member ) = value;
         else
         {
-            const auto current = m_numericAuthoring ? m_numericAuthoring->floats[field.coldIndex] : field.defaultValue;
-            if( !sameMaterialValue( current, value ) )
-            {
-                ensureNumericAuthoring().floats[field.coldIndex] = value;
-                releaseDefaultNumericAuthoring();
-            }
+            setNumericWord( field.coldIndex, floatWord( value ), floatWord( field.defaultValue ) );
         }
         if( !m_writeDepth ) publishRenderState();
         return true;
@@ -437,7 +479,7 @@ namespace workphone
         if( i >= sizeof( FloatFields ) / sizeof( FloatFields[0] ) ) return false;
         const auto &field = FloatFields[i];
         value = field.member ? this->*( field.member ) :
-            m_numericAuthoring ? m_numericAuthoring->floats[field.coldIndex] : field.defaultValue;
+            wordFloat( getNumericWord( field.coldIndex, floatWord( field.defaultValue ) ) );
         return true;
     }
 
@@ -470,12 +512,7 @@ namespace workphone
         if( field.member ) this->*( field.member ) = value;
         else
         {
-            const auto current = m_numericAuthoring ? m_numericAuthoring->uints[field.coldIndex] : field.defaultValue;
-            if( current != value )
-            {
-                ensureNumericAuthoring().uints[field.coldIndex] = value;
-                releaseDefaultNumericAuthoring();
-            }
+            setNumericWord( ColdFloatCount + field.coldIndex, value, field.defaultValue );
         }
         if( !m_writeDepth ) publishRenderState();
         return true;
@@ -489,7 +526,7 @@ namespace workphone
         if( i >= sizeof( UIntFields ) / sizeof( UIntFields[0] ) ) return false;
         const auto &field = UIntFields[i];
         value = field.member ? this->*( field.member ) :
-            m_numericAuthoring ? m_numericAuthoring->uints[field.coldIndex] : field.defaultValue;
+            getNumericWord( ColdFloatCount + field.coldIndex, field.defaultValue );
         return true;
     }
 
@@ -574,33 +611,56 @@ namespace workphone
         return BitUtil::getFlagValue( flags, flag );
     }
 
-    MaterialPassStateData::NumericAuthoringData &MaterialPassStateData::ensureNumericAuthoring()
+    u32 MaterialPassStateData::getNumericWord( u32 index, u32 defaultValue ) const
     {
-        if( !m_numericAuthoring )
-        {
-            auto next = std::make_unique<NumericAuthoringData>();
-            for( const auto &field : FloatFields )
-                if( !field.member ) next->floats[field.coldIndex] = field.defaultValue;
-            for( const auto &field : UIntFields )
-                if( !field.member ) next->uints[field.coldIndex] = field.defaultValue;
-            m_numericAuthoring = std::move( next );
-        }
-        return *m_numericAuthoring;
+        const auto mask = numericMask( m_numericAuthoring.get() );
+        const auto bit = u64( 1 ) << index;
+        if( !( mask & bit ) ) return defaultValue;
+        return m_numericAuthoring[2 + numericWordCount( mask & ( bit - 1 ) )];
     }
 
-    void MaterialPassStateData::releaseDefaultNumericAuthoring()
+    void MaterialPassStateData::setNumericWord( u32 index, u32 value, u32 defaultValue )
     {
-        if( !m_numericAuthoring ) return;
-        for( const auto &field : FloatFields )
-            if( !field.member && !sameMaterialValue( m_numericAuthoring->floats[field.coldIndex], field.defaultValue ) )
-                return;
-        for( const auto &field : UIntFields )
-            if( !field.member && m_numericAuthoring->uints[field.coldIndex] != field.defaultValue ) return;
-        m_numericAuthoring.reset();
+        const auto mask = numericMask( m_numericAuthoring.get() );
+        const auto bit = u64( 1 ) << index;
+        const bool present = ( mask & bit ) != 0;
+        const bool remove = value == defaultValue;
+        if( !present && remove ) return;
+        const auto rank = numericWordCount( mask & ( bit - 1 ) );
+        if( present && !remove )
+        {
+            m_numericAuthoring[2 + rank] = value;
+            return;
+        }
+        const auto nextMask = remove ? mask & ~bit : mask | bit;
+        if( !nextMask ) { m_numericAuthoring.reset(); return; }
+        const auto count = numericWordCount( mask );
+        const auto nextCount = remove ? count - 1 : count + 1;
+        auto next = std::make_unique<u32[]>( 2 + nextCount );
+        std::memcpy( next.get(), &nextMask, sizeof( nextMask ) );
+        if( rank ) std::memcpy( next.get() + 2, m_numericAuthoring.get() + 2, rank * sizeof( u32 ) );
+        if( remove )
+        {
+            const auto tail = count - rank - 1;
+            if( tail ) std::memcpy( next.get() + 2 + rank, m_numericAuthoring.get() + 3 + rank,
+                                   tail * sizeof( u32 ) );
+        }
+        else
+        {
+            next[2 + rank] = value;
+            const auto tail = count - rank;
+            if( tail ) std::memcpy( next.get() + 3 + rank, m_numericAuthoring.get() + 2 + rank,
+                                   tail * sizeof( u32 ) );
+        }
+        // Publish the replacement only after allocation/copy succeeds.
+        m_numericAuthoring = std::move( next );
     }
 
     size_t MaterialPassStateData::getNumericAuthoringStorageBytes() const
-    { return m_numericAuthoring ? sizeof( NumericAuthoringData ) : 0; }
+    {
+        return m_numericAuthoring ? ( 2 + numericWordCount( numericMask( m_numericAuthoring.get() ) ) ) *
+                                       sizeof( u32 ) : 0;
+    }
 
     void MaterialPassStateData::writeEditorSettings( Properties &floats, Properties &uints,
                                                      Properties &bools, Properties &strings ) const
