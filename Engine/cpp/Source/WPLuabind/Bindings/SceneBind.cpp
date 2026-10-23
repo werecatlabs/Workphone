@@ -13,6 +13,24 @@ namespace workphone
 {
     using namespace scene;
 
+    namespace
+    {
+        Array<SmartPtr<ISharedObject>> getActorComponents( const IGameActor *actor )
+        {
+            Array<SmartPtr<ISharedObject>> objects;
+            if( actor )
+            {
+                auto components = actor->getComponents();
+                objects.reserve( components.size() );
+                for( auto component : components )
+                {
+                    objects.push_back( component );
+                }
+            }
+            return objects;
+        }
+    }  // namespace
+
     SmartPtr<IComponent> getComponentHash( SmartPtr<IGameActor> entity, lua_Integer hash )
     {
         if( !entity )
@@ -288,7 +306,7 @@ namespace workphone
                     .def( "getComponentByType", getComponentHash )
                     .def( "hasComponent",
                           static_cast<bool ( IGameActor::* )( hash_type )>( &IGameActor::hasComponent ) )
-                    .def( "getComponents", &IGameActor::getComponents )
+                    .def( "getComponents", getActorComponents )
 
                     .def( "getChildByIndex", &IGameActor::getChildByIndex )
                     .def( "getNumChildren", &IGameActor::getNumChildren )

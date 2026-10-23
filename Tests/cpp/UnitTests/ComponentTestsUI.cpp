@@ -1177,6 +1177,75 @@ BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
     BOOST_CHECK( !dropdown->getContent()->isEnabled() );
 }
 
+BOOST_AUTO_TEST_CASE( uiutil_manual_order_elements_join_their_canvas )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Generated menu", true );
+    auto layout = window->getComponent<Layout>();
+    auto background = UiUtil::createImage( "", false );
+    auto title = UiUtil::createText( "Vehicle Simulator", false );
+
+    // The Lua builder configures detached widgets and their explicit order before mounting.
+    auto backgroundTransform = background->getComponent<LayoutTransform>();
+    auto titleTransform = title->getComponent<LayoutTransform>();
+    backgroundTransform->setAutoCalculateOrder( false, false );
+    backgroundTransform->setZOrder( 0, false );
+    titleTransform->setAutoCalculateOrder( false, false );
+    titleTransform->setZOrder( 1, false );
+    window->addChild( background );
+    window->addChild( title );
+    UiUtil::loadHierarchy( window );
+
+    auto backgroundComponent = background->getComponent<scene::Image>();
+    auto titleComponent = title->getComponent<Text>();
+    for( auto actor : { window, background, title } )
+    {
+        for( auto component : actor->getComponents() )
+        {
+            component->setState( IComponent::State::Edit );
+        }
+    }
+    window->hierarchyChanged();
+
+    auto canvasElement = layout->getLayout();
+    auto backgroundElement = backgroundComponent->getElement();
+    auto titleElement = titleComponent->getElement();
+    BOOST_REQUIRE( canvasElement );
+    BOOST_REQUIRE( backgroundElement );
+    BOOST_REQUIRE( titleElement );
+    BOOST_CHECK( backgroundElement->getParent() == canvasElement );
+    BOOST_CHECK( backgroundElement->getLayout() == canvasElement );
+    BOOST_CHECK( titleElement->getParent() == canvasElement );
+    BOOST_CHECK( titleElement->getLayout() == canvasElement );
+    BOOST_CHECK_EQUAL( backgroundElement->getOrder(), 0 );
+    BOOST_CHECK_EQUAL( titleElement->getOrder(), 1 );
+
+    // Refreshing generated UI must preserve the requested order without duplicate children.
+    window->hierarchyChanged();
+    backgroundComponent->updateOrder();
+    titleComponent->updateOrder();
+    BOOST_REQUIRE_EQUAL( canvasElement->getChildren().size(), 2 );
+    BOOST_CHECK_EQUAL( titleTransform->getZOrder(), 1 );
+
+    auto secondWindow = UiUtil::createLayout( "Other canvas", true );
+    UiUtil::loadHierarchy( secondWindow );
+    secondWindow->addChild( title );
+    title->hierarchyChanged();
+    titleComponent->updateOrder();
+    auto secondCanvas = secondWindow->getComponent<Layout>()->getLayout();
+    BOOST_REQUIRE( secondCanvas );
+    BOOST_CHECK( titleElement->getParent() == secondCanvas );
+    BOOST_CHECK( titleElement->getLayout() == secondCanvas );
+    BOOST_CHECK_EQUAL( titleElement->getOrder(), 1 );
+    BOOST_CHECK_EQUAL( canvasElement->getChildren().size(), 1 );
+    BOOST_CHECK_EQUAL( secondCanvas->getChildren().size(), 1 );
+}
+
 BOOST_AUTO_TEST_CASE( uiutil_scroll_input_routes_to_children )
 {
     if( skipWhenUiRuntimeUnavailable() )

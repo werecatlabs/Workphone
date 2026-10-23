@@ -966,6 +966,67 @@ BOOST_AUTO_TEST_CASE( script_lua_manager )
 }
 
 #if WP_ENABLE_LUA
+BOOST_AUTO_TEST_CASE( script_actor_components_support_ui_state_activation )
+{
+    UiUtilTestGuard guard;
+    // Load the actual Lua plugin and its complete actor/component registrations.
+    // Mocking IActor hides unbound collection return types during generated UI loading.
+    auto scriptManager = guard.factoryManager->make_object<IScriptManager>( "Lua" );
+    BOOST_REQUIRE( scriptManager );
+    scriptManager->load( nullptr );
+    guard.addCleanup( [scriptManager]() mutable { scriptManager->unload( nullptr ); } );
+    BOOST_REQUIRE( scriptManager->isLoaded() );
+
+    auto root = scene::UiUtil::createLayout( "Generated canvas", false );
+    auto textActor = scene::UiUtil::createText( "Vehicle Simulator", false );
+    root->addChild( textActor );
+    constexpr auto script = R"(
+        function activateGeneratedUI(parameters, results)
+            local generatedRoot = parameters:getAsObject(0)
+            local expectedRootComponents = parameters:getAsInt(1)
+            local expectedTextComponents = parameters:getAsInt(2)
+            UiUtil.loadHierarchy(generatedRoot)
+            local function activate(actor, expectedCount)
+                local components = actor:getComponents()
+                assert(components:size() == expectedCount)
+                assert(not components:empty())
+                for index = 0, components:size() - 1 do
+                    local component = components:at(index)
+                    assert(component:getActor():getName() == actor:getName())
+                    component:setState(State.Edit)
+                    assert(component:getState() == State.Edit)
+                    component:updateOrder()
+                end
+                return components
+            end
+            local rootComponents = activate(generatedRoot, expectedRootComponents)
+            assert(generatedRoot:getNumChildren() == 1)
+            activate(generatedRoot:getChildByIndex(0), expectedTextComponents)
+            generatedRoot:hierarchyChanged()
+            -- Returned snapshots preserve their components and native interfaces.
+            assert(rootComponents:size() == expectedRootComponents)
+            assert(rootComponents:at(0):getState() == State.Edit)
+            results:addAsBool(true)
+        end
+    )";
+    scriptManager->loadScriptFromString( script );
+    const Parameters parameters{ Parameter( SmartPtr<ISharedObject>( root ) ),
+                                 Parameter( static_cast<s32>( root->getComponents().size() ) ),
+                                 Parameter( static_cast<s32>( textActor->getComponents().size() ) ) };
+    Parameters results;
+    scriptManager->callFunction( "activateGeneratedUI", parameters, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 1 );
+    BOOST_CHECK( results[0].getBool() );
+    for( auto actor : { root, textActor } )
+    {
+        for( auto component : actor->getComponents() )
+        {
+            BOOST_CHECK( component->getState() == scene::IComponent::State::Edit );
+        }
+    }
+    BOOST_CHECK( guard.scene->getActors().empty() );
+}
+
 BOOST_AUTO_TEST_CASE( script_uiutil_factory_contracts )
 {
     UiUtilTestGuard guard;
