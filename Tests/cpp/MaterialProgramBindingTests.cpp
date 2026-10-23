@@ -364,6 +364,73 @@ namespace
         std::cout << "Generic binding maps: exact types, reordered offsets, zero padding, A/B/A isolation, resources and invalidation passed\n";
     }
 
+    void mapBudgetContracts()
+    {
+        const auto layout = MaterialShaderParameterLayout::Create( mixedInfo() );
+        auto program = programFor( layout );
+        Recipe recipe; String error;
+        const auto retained = recipe.create( layout, program.get(), error );
+        require( bool( retained ), "budget fixture starts with a published map" );
+        const auto values = valuesFor( layout );
+        std::vector<u8> bytes( retained->GetPackedSize() );
+        std::array<MaterialProgramResourceValue, 3> resources{};
+        require( retained->Pack( values, 7, bytes.data(), bytes.size(), resources.data(), resources.size() ),
+            "budget fixture warms published map packing" );
+
+        struct Capacity
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
+            static constexpr size_t source() { return size_t( StreamMemoryClass::SourceCpu ); }
+            u64 original = scheduler->stats().limits[source()];
+            void restore() noexcept
+            {
+                String ignored;
+                scheduler->setBudget( StreamMemoryClass::SourceCpu, original, ignored );
+            }
+            ~Capacity() { restore(); }
+        } capacity;
+        const auto baseline = capacity.scheduler->stats().used[Capacity::source()];
+        const auto before = capacity.scheduler->stats();
+        const auto set = capacity.scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline, error );
+        bool denied = false;
+        try { recipe.create( layout, program.get(), error ); }
+        catch( const std::bad_alloc & ) { denied = true; }
+        const auto afterDenied = capacity.scheduler->stats();
+        const auto current = retained->IsCurrent( layout, program.get(), 7 );
+        const auto packed = retained->Pack( values, 7, bytes.data(), bytes.size(), resources.data(), resources.size() );
+        const auto afterPack = capacity.scheduler->stats();
+        capacity.restore();
+        require( set && denied && afterDenied.used[Capacity::source()] == baseline &&
+            afterDenied.rejectedReservations[Capacity::source()] > before.rejectedReservations[Capacity::source()],
+            "denied candidate construction throws bad_alloc without leaking a SourceCpu lease" );
+        require( current && packed && afterPack.used[Capacity::source()] == baseline &&
+            afterPack.rejectedReservations[Capacity::source()] == afterDenied.rejectedReservations[Capacity::source()],
+            "published map packs at a full budget without allocation or rejected reservations" );
+
+        // Step across every candidate-construction allocation boundary. In MSVC
+        // Debug this also reaches default vector construction after admitting
+        // the map/control block, where budgeted iterator proxies used to abort.
+        bool succeeded = false, limitsApplied = true, cleanRollback = true;
+        size_t denials = 0;
+        for( u64 headroom = 0; headroom <= 16384; headroom += 32 )
+        {
+            limitsApplied &= capacity.scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline + headroom, error );
+            try
+            {
+                auto candidate = recipe.create( layout, program.get(), error );
+                succeeded = bool( candidate );
+            }
+            catch( const std::bad_alloc & ) { ++denials; }
+            cleanRollback &= capacity.scheduler->stats().used[Capacity::source()] == baseline;
+            if( succeeded ) break;
+        }
+        capacity.restore();
+        require( limitsApplied && cleanRollback && denials > 1 && succeeded &&
+            retained->IsCurrent( layout, program.get(), 7 ),
+            "incremental map admission failures unwind cleanly and retry succeeds without replacing the published map" );
+        std::cout << "Binding map SourceCpu admission: clean denial, allocation-free warm packing and incremental retry passed\n";
+    }
+
     ComPtr<ID3DBlob> compile( const char *source, const char *profile )
     {
         ComPtr<ID3DBlob> bytecode, diagnostics;
@@ -615,7 +682,7 @@ int main()
     struct Shutdown { ~Shutdown() { WorldStreamingScheduler::shutdownShared(); } } shutdown;
     try
     {
-        genericContracts(); reflectionContracts(); unsupportedReflectionContracts(); selectedReflectionContracts();
+        genericContracts(); mapBudgetContracts(); reflectionContracts(); unsupportedReflectionContracts(); selectedReflectionContracts();
         std::cout << "Material program binding and packing contracts passed\n";
         return 0;
     }

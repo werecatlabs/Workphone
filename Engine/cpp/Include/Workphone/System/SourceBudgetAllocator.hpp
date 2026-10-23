@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphoneTypes.hpp>
 #include <limits>
+#include <memory>
 #include <new>
 #include <type_traits>
 
@@ -44,9 +45,29 @@ namespace workphone
         T *allocate( size_t count )
         {
             if( count > std::numeric_limits<size_t>::max() / sizeof( T ) ) throw std::bad_alloc();
+#if defined( _MSC_VER ) && _ITERATOR_DEBUG_LEVEL != 0
+            // MSVC creates iterator proxies inside unconditional noexcept
+            // container constructors/moves. Budget denial there would terminate
+            // instead of propagating bad_alloc from a payload allocation. Only
+            // this Debug STL bookkeeping is excluded from the SourceCpu ledger;
+            // physical heap profiling still includes it.
+            if constexpr( std::is_same_v<T, std::_Container_proxy> )
+                return std::allocator<T>{}.allocate( count );
+#endif
             return static_cast<T *>( allocateSourceBudgetStorage( count * sizeof( T ), alignof( T ) ) );
         }
-        void deallocate( T *pointer, size_t ) noexcept { freeSourceBudgetStorage( pointer, alignof( T ) ); }
+        void deallocate( T *pointer, size_t count ) noexcept
+        {
+#if defined( _MSC_VER ) && _ITERATOR_DEBUG_LEVEL != 0
+            if constexpr( std::is_same_v<T, std::_Container_proxy> )
+            {
+                std::allocator<T>{}.deallocate( pointer, count );
+                return;
+            }
+#endif
+            (void)count;
+            freeSourceBudgetStorage( pointer, alignof( T ) );
+        }
         template <class U> bool operator==( const SourceBudgetAllocator<U> & ) const noexcept { return true; }
         template <class U> bool operator!=( const SourceBudgetAllocator<U> & ) const noexcept { return false; }
     };
