@@ -270,6 +270,24 @@ namespace cooked_terrain_contracts
         producerLimits.maximumReadyBytes = 64ull << 20;
         auto producer = scheduler->createProducer( producerLimits, error );
         require( producer != nullptr, error );
+        // This check isolates decoded/texture ownership. Keep unrelated shared
+        // String slab growth out of its exact SourceCpu retirement comparison;
+        // the string-pool contracts separately verify charged spare capacity.
+        for(size_t count = 64; count <= 1024; count += 64)
+            CharacterPoolAllocator<char>::reserve_blocks(count, 64);
+        {
+            auto historicalData = authored;
+            historicalData.appearance = {};
+            historicalData.surfaceMasks.clear();
+            auto currentJson = serializeTerrainData(authored);
+            auto historicalJson = serializeTerrainData(historicalData);
+            historicalJson.replace(historicalJson.find("\"version\":3"), 11, "\"version\":2");
+            // The decoder constructs a buffer with the exact JSON length,
+            // distinct from the serializer's geometric growth capacity.
+            String currentRead(currentJson.data(), currentJson.size());
+            String historicalRead(historicalJson.data(), historicalJson.size());
+        }
+        const auto stringPoolBefore = CharacterPoolAllocator<char>::stats();
         const auto budgetBefore = scheduler->stats();
         CookedTerrainDecodeOptions decodeOptions;
         decodeOptions.key = 71;
@@ -507,6 +525,17 @@ namespace cooked_terrain_contracts
                  "an escaped resolver texture must retain exactly its own physical mip budget after terrain unload" );
         escapedTexture = nullptr;
         claw_texture_mip_contracts::completeGpuWork( retirementContext );
+        const auto stringPoolAfter = CharacterPoolAllocator<char>::stats();
+        if(stringPoolAfter.committedBytes != stringPoolBefore.committedBytes ||
+            stringPoolAfter.bucketCount != stringPoolBefore.bucketCount)
+            std::fprintf(stderr, "Cooked string-pool capacity: bytes=%zu->%zu buckets=%zu->%zu SourceCpu=%llu->%llu\n",
+                stringPoolBefore.committedBytes, stringPoolAfter.committedBytes,
+                stringPoolBefore.bucketCount, stringPoolAfter.bucketCount,
+                static_cast<unsigned long long>(budgetBefore.used[size_t(StreamMemoryClass::SourceCpu)]),
+                static_cast<unsigned long long>(scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)]));
+        require(stringPoolAfter.committedBytes == stringPoolBefore.committedBytes &&
+                    stringPoolAfter.bucketCount == stringPoolBefore.bucketCount,
+                "cooked retirement fixture must retain a constant shared string-pool capacity");
         require( scheduler->stats().used[size_t(StreamMemoryClass::ResultCpu)] ==
                      budgetBefore.used[size_t(StreamMemoryClass::ResultCpu)] &&
                      scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)] ==

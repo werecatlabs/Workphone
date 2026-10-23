@@ -130,7 +130,7 @@ namespace workphone
             }
 
         private:
-            Array<u8> m_bytes;
+            Array<u8> m_bytes = makeSourceBudgetSnapshot<u8>();
         };
 
         class BinaryReader

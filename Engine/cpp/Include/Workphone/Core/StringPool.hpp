@@ -2,6 +2,7 @@
 #define StringPool_h__
 
 #include <Workphone/WorkphoneTypes.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <vector>
 #include <cstring>
 #include <algorithm>
@@ -28,26 +29,30 @@ namespace workphone
         StringPool( u32 capacity, u32 maxStringSize = 128 )
         {
             validateMaxStringSize( maxStringSize );
-            m_data = new T[capacity];
-            m_poolSize = capacity;
             m_maxStringSize = maxStringSize;
-            rebuildFreeList();
+            resize(capacity);
         }
 
         // Destructor
-        ~StringPool()
-        {
-            delete[] m_data;
-        }
+        ~StringPool() = default;
+        StringPool(const StringPool &) = delete;
+        StringPool &operator=(const StringPool &) = delete;
 
         void resize( size_type n )
         {
             if( n > m_poolSize )
             {
-                delete[] m_data;
-                m_data = new T[n];
+                // Keep the old pool and free list intact if either admission
+                // fails. Successful resize retains the existing reset semantics.
+                decltype(m_storage) storage(n);
+                decltype(m_freeList) freeList;
+                freeList.reserve(n / m_maxStringSize);
+                for(size_type i = 0; i < n / m_maxStringSize; ++i)
+                    freeList.push_back(storage.data() + i * m_maxStringSize);
+                m_storage.swap(storage);
+                m_freeList.swap(freeList);
+                m_data = m_storage.data();
                 m_poolSize = n;
-                rebuildFreeList();
             }
         }
 
@@ -119,6 +124,8 @@ namespace workphone
         void setMaxStringSize( u32 maxStringSize )
         {
             validateMaxStringSize( maxStringSize );
+            // Reserve before changing the block size or resetting live entries.
+            m_freeList.reserve(m_poolSize / maxStringSize);
             m_maxStringSize = maxStringSize;
             rebuildFreeList();
         }
@@ -132,6 +139,7 @@ namespace workphone
 
         void rebuildFreeList()
         {
+            m_freeList.reserve(m_poolSize / m_maxStringSize);
             m_freeList.clear();
             if( m_data == nullptr || m_poolSize < m_maxStringSize )
                 return;
@@ -153,9 +161,10 @@ namespace workphone
         }
 
         T *m_data = nullptr;
-        u32 m_poolSize = 0;
+        size_type m_poolSize = 0;
         u32 m_maxStringSize = 32;
-        std::vector<T *> m_freeList;
+        std::vector<T, SourceBudgetAllocator<T>> m_storage;
+        std::vector<T *, SourceBudgetAllocator<T *>> m_freeList;
     };
 
 }  // namespace workphone

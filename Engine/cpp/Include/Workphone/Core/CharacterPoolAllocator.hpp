@@ -2,6 +2,7 @@
 #define WORKPHONE_CHARACTER_POOL_ALLOCATOR_HPP
 
 #include <Workphone/WorkphoneConfig.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -143,7 +144,13 @@ namespace workphone
         class Pool
         {
         private:
-            using Traits = std::allocator_traits<UpstreamAllocator>;
+            // Standard engine strings charge physical slabs, including spare
+            // blocks. Explicit custom upstream allocators retain their policy.
+            using StorageAllocator = std::conditional_t<
+                std::is_same_v<UpstreamAllocator, std::allocator<T>>,
+                SourceBudgetAllocator<T>, UpstreamAllocator>;
+            using Traits = std::allocator_traits<StorageAllocator>;
+            template<class U> using MetadataAllocator = typename Traits::template rebind_alloc<U>;
 
             struct Slab
             {
@@ -156,14 +163,29 @@ namespace workphone
                 size_type blockCharacters = 0;
                 size_type liveBlocks = 0;
                 size_type totalBlocks = 0;
-                std::vector<T *> freeBlocks;
-                std::vector<Slab> slabs;
+                std::vector<T *, MetadataAllocator<T *>> freeBlocks;
+                std::vector<Slab, MetadataAllocator<Slab>> slabs;
             };
 
         public:
             Pool() = default;
             Pool( const Pool & ) = delete;
             Pool &operator=( const Pool & ) = delete;
+
+            static Pool &persistent()
+            {
+                // Keep the mutex and directory alive for Strings destroyed
+                // after the DLL's ordinary static cleanup. Trim idle storage
+                // at cleanup; late returns remain safe and can still retire.
+                struct Lifetime
+                {
+                    union { Pool value; };
+                    Lifetime() : value() {}
+                    ~Lifetime() { value.m_retiring = true; value.releaseUnused(); }
+                };
+                static Lifetime lifetime;
+                return lifetime.value;
+            }
 
             // A static StringBase may still own a block during shutdown. Free
             // only buckets with no live blocks, leaving those strings' storage
@@ -174,9 +196,9 @@ namespace workphone
                 m_destroyed.store( true, std::memory_order_release );
                 for( auto &entry : m_buckets )
                 {
-                    if( entry.second.liveBlocks == 0 )
+                    if( entry.liveBlocks == 0 )
                     {
-                        releaseBucket( entry.second );
+                        releaseBucket( entry );
                     }
                 }
             }
@@ -220,7 +242,7 @@ namespace workphone
                 const size_type rounded = roundCount( count );
                 std::lock_guard<std::mutex> lock( m_mutex );
 
-                Bucket &bucket = m_buckets[rounded];
+                Bucket &bucket = findOrCreateBucket( rounded );
                 if( bucket.blockCharacters == 0 )
                 {
                     bucket.blockCharacters = rounded;
@@ -266,7 +288,7 @@ namespace workphone
                     // touching m_buckets here and just leak the memory.
                     return;
                 }
-                auto it = m_buckets.find( rounded );
+                auto it = findBucket( rounded );
                 if( it == m_buckets.end() )
                 {
                     // Bucket was destroyed (e.g., pool shutdown during static destruction).
@@ -275,7 +297,7 @@ namespace workphone
                     return;
                 }
 
-                Bucket &bucket = it->second;
+                Bucket &bucket = *it;
                 if( bucket.liveBlocks == 0 )
                 {
                     // Bucket is in a corrupt state (already fully deallocated).
@@ -288,6 +310,12 @@ namespace workphone
                 // making any block visible, therefore this push_back cannot allocate.
                 bucket.freeBlocks.push_back( ptr );
                 --bucket.liveBlocks;
+                if( m_retiring && bucket.liveBlocks == 0 )
+                {
+                    releaseBucket(bucket);
+                    m_buckets.erase(it);
+                    if( m_buckets.empty() ) decltype(m_buckets){}.swap(m_buckets);
+                }
             }
 
             void reserveBlocks( size_type count, size_type requestedFreeBlocks )
@@ -301,7 +329,7 @@ namespace workphone
                 const size_type rounded = roundCount( count );
                 std::lock_guard<std::mutex> lock( m_mutex );
 
-                Bucket &bucket = m_buckets[rounded];
+                Bucket &bucket = findOrCreateBucket( rounded );
                 if( bucket.blockCharacters == 0 )
                 {
                     bucket.blockCharacters = rounded;
@@ -317,14 +345,17 @@ namespace workphone
             {
                 std::lock_guard<std::mutex> lock( m_mutex );
 
-                for( auto &entry : m_buckets )
+                for( auto it = m_buckets.begin(); it != m_buckets.end(); )
                 {
-                    Bucket &bucket = entry.second;
+                    Bucket &bucket = *it;
                     if( bucket.liveBlocks == 0 )
                     {
                         releaseBucket( bucket );
+                        it = m_buckets.erase( it );
                     }
+                    else ++it;
                 }
+                if( m_buckets.empty() ) decltype(m_buckets){}.swap(m_buckets);
             }
 
             void releaseAll() noexcept
@@ -333,7 +364,7 @@ namespace workphone
 
                 for( auto &entry : m_buckets )
                 {
-                    releaseBucket( entry.second );
+                    releaseBucket( entry );
                 }
                 m_buckets.clear();
             }
@@ -347,7 +378,7 @@ namespace workphone
 
                 for( const auto &entry : m_buckets )
                 {
-                    const Bucket &bucket = entry.second;
+                    const Bucket &bucket = entry;
                     result.liveBlocks += bucket.liveBlocks;
                     result.freeBlocks += bucket.freeBlocks.size();
                     result.slabCount += bucket.slabs.size();
@@ -362,6 +393,26 @@ namespace workphone
             }
 
         private:
+            using Buckets = std::vector<Bucket, MetadataAllocator<Bucket>>;
+            typename Buckets::iterator findBucket( size_type count )
+            {
+                auto it = std::lower_bound(m_buckets.begin(), m_buckets.end(), count,
+                    [](const Bucket &bucket, size_type value) { return bucket.blockCharacters < value; });
+                return it != m_buckets.end() && it->blockCharacters == count ? it : m_buckets.end();
+            }
+            Bucket &findOrCreateBucket( size_type count )
+            {
+                auto it = std::lower_bound(m_buckets.begin(), m_buckets.end(), count,
+                    [](const Bucket &bucket, size_type value) { return bucket.blockCharacters < value; });
+                if( it == m_buckets.end() || it->blockCharacters != count )
+                {
+                    Bucket candidate;
+                    candidate.blockCharacters = count;
+                    it = m_buckets.insert(it, std::move(candidate));
+                }
+                return *it;
+            }
+
             static bool isPooledCount( size_type count ) noexcept
             {
                 if( count == 0 )
@@ -397,7 +448,8 @@ namespace workphone
 
                 // Reserve metadata before allocating the character slab. This makes
                 // deallocation non-allocating for all blocks in the slab.
-                bucket.freeBlocks.reserve( bucket.freeBlocks.size() + blocks );
+                if( blocks > maxCount() - bucket.totalBlocks ) throw std::bad_array_new_length();
+                bucket.freeBlocks.reserve( bucket.totalBlocks + blocks );
                 bucket.slabs.reserve( bucket.slabs.size() + 1 );
 
                 T *slab = Traits::allocate( m_upstream, slabChars );
@@ -434,16 +486,17 @@ namespace workphone
                     }
                 }
 
-                bucket.slabs.clear();
-                bucket.freeBlocks.clear();
+                decltype(bucket.slabs){}.swap(bucket.slabs);
+                decltype(bucket.freeBlocks){}.swap(bucket.freeBlocks);
                 bucket.totalBlocks = 0;
                 bucket.liveBlocks = 0;
             }
 
-            UpstreamAllocator m_upstream{};
-            std::unordered_map<size_type, Bucket> m_buckets;
+            StorageAllocator m_upstream{};
+            Buckets m_buckets;
             std::mutex m_mutex;
             std::atomic<bool> m_destroyed{ false };
+            std::atomic<bool> m_retiring{ false };
         };
 
         static Pool &pool();
@@ -454,8 +507,13 @@ namespace workphone
     CharacterPoolAllocator<T, UpstreamAllocator>::pool()
     {
         // C++11+ guarantees thread-safe initialization of local statics.
-        static Pool instance;
-        return instance;
+        if constexpr( std::is_same_v<UpstreamAllocator, std::allocator<T>> )
+            return Pool::persistent();
+        else
+        {
+            static Pool instance;
+            return instance;
+        }
     }
 
 #if defined( WP_PLATFORM_WIN32 ) && !defined( _WP_STATIC_LIB_ )

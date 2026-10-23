@@ -396,6 +396,13 @@ namespace
         try { recipe.create( layout, program.get(), error ); }
         catch( const std::bad_alloc & ) { denied = true; }
         const auto afterDenied = capacity.scheduler->stats();
+        // Empty STL staging/moves need no resource payload. MSVC Debug still
+        // creates iterator bookkeeping inside these noexcept operations.
+        {
+            std::vector<u8, SourceBudgetAllocator<u8>> empty;
+            auto moved = std::move( empty );
+            (void)moved;
+        }
         const auto current = retained->IsCurrent( layout, program.get(), 7 );
         const auto packed = retained->Pack( values, 7, bytes.data(), bytes.size(), resources.data(), resources.size() );
         const auto afterPack = capacity.scheduler->stats();

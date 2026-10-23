@@ -65,7 +65,7 @@ namespace workphone
         };
         struct EntryPage
         {
-            Array<EntrySnapshot> entries;
+            Array<EntrySnapshot> entries = makeSourceBudgetSnapshot<EntrySnapshot>();
             EntryCursor next;
             bool hasMore = false;
             bool succeeded = false;

@@ -36,7 +36,7 @@ namespace workphone
 
         setLoadingState( LoadingState::Unloading );
 
-        auto factories = m_factories.snapshot();
+        auto factories = std::move(m_factories);
 
         for( auto &factory : factories )
         {
@@ -491,7 +491,7 @@ namespace workphone
 
     Array<SmartPtr<IFactory>> FactoryManager::getFactoriesWithTag( const String &tag )
     {
-        Array<SmartPtr<IFactory>> result;
+        auto result = makeSourceBudgetSnapshot<SmartPtr<IFactory>>();
         result.reserve( 4 );
 
         for( auto &factory : m_factories )

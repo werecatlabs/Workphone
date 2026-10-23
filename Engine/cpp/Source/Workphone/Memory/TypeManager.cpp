@@ -1313,6 +1313,7 @@ namespace workphone
 
     auto TypeManager::getNewTypeId( const String &name, u32 baseType ) -> u32
     {
+        ScopedLock lock( &m_mutex );
         WP_ASSERT( StringUtil::isNullOrEmpty( name ) == false );
 
         auto type = getTypeByName( name );
@@ -1322,9 +1323,11 @@ namespace workphone
         }
 
         WP_ASSERT( m_typeCount <= getSize() );
-        auto newId = m_typeCount++;
+        const u32 newId = m_typeCount;
         if( newId >= getSize() )
         {
+            if( getSize() > std::numeric_limits<u32>::max() - WP_TYPE_MANAGER_NUM_TYPES )
+                throw std::bad_alloc();
             auto size = getSize() + WP_TYPE_MANAGER_NUM_TYPES;
             reserve( size );
         }
@@ -1344,12 +1347,22 @@ namespace workphone
         WP_ASSERT( m_baseType[newId].load() == 0 );
         m_baseType[newId] = baseType;
 
+        m_typeCount = newId + 1;
         return newId;
     }
 
     auto TypeManager::getNewTypeId() -> u32
     {
-        return m_typeCount++;
+        ScopedLock lock( &m_mutex );
+        const u32 id = m_typeCount;
+        if( id >= getSize() )
+        {
+            if( getSize() > std::numeric_limits<u32>::max() - WP_TYPE_MANAGER_NUM_TYPES )
+                throw std::bad_alloc();
+            reserve(getSize() + WP_TYPE_MANAGER_NUM_TYPES);
+        }
+        m_typeCount = id + 1;
+        return id;
     }
 
     auto TypeManager::getNewTypeIdFromName( const String &name, const String &baseName ) -> u32
@@ -1657,20 +1670,31 @@ namespace workphone
 
     void TypeManager::reserve( u32 size )
     {
+        ScopedLock lock( &m_mutex );
         if( m_size != size )
         {
-            baseObjectDataPools.resize( size );
-            sharedObjectDataPools.resize( size );
-
-            m_names.resize( size );
-            m_labels.resize( size );
-            m_hashes.resize( size );
-            m_typeIndex.resize( size );
-            m_typeGroup.resize( size );
-            m_baseType.resize( size );
-            m_dataTypes.resize( size );
-            m_numInstances.resize( size );
-            // Failed pool-state admission must leave reserve retryable.
+            // Admit complete replacement tables before publishing any storage.
+            // Pool copies share their existing state, preserving live objects.
+            auto bases = baseObjectDataPools; bases.resize(size);
+            auto shared = sharedObjectDataPools; shared.resize(size);
+            auto names = m_names; names.resize(size);
+            auto labels = m_labels; labels.resize(size);
+            auto hashes = m_hashes; hashes.resize(size);
+            auto indices = m_typeIndex; indices.resize(size);
+            auto groups = m_typeGroup; groups.resize(size);
+            auto parents = m_baseType; parents.resize(size);
+            auto data = m_dataTypes; data.resize(size);
+            auto instances = m_numInstances; instances.resize(size);
+            baseObjectDataPools = std::move(bases);
+            sharedObjectDataPools = std::move(shared);
+            m_names = std::move(names);
+            m_labels = std::move(labels);
+            m_hashes = std::move(hashes);
+            m_typeIndex = std::move(indices);
+            m_typeGroup = std::move(groups);
+            m_baseType = std::move(parents);
+            m_dataTypes = std::move(data);
+            m_numInstances = std::move(instances);
             m_size = size;
         }
     }
@@ -1722,28 +1746,39 @@ namespace workphone
     void TypeManager::resizeObjectData( u32 growSize )
     {
         ScopedLock lock( &m_mutex );
+        if( !growSize ) return;
 
-        auto newSize = m_objectDataSize + growSize;
+        if( growSize > std::numeric_limits<u32>::max() - m_objectDataSize.load() )
+            throw std::bad_alloc();
+        const u32 newSize = m_objectDataSize + growSize;
+        auto info = iTypeInfo; info.resize(newSize);
+        auto flags = objectFlags; flags.resize(newSize);
 
-        iTypeInfo.resize( newSize );
-        objectFlags.resize( newSize );
-
-        for( size_t i = m_objectDataSize; i < growSize; ++i )
+        for( size_t i = m_objectDataSize; i < newSize; ++i )
         {
-            iTypeInfo[i] = 0;
-            objectFlags[i] = OBJECT_FLAG_ALIVE | OBJECT_FLAG_GARBAGE_COLLECTED;
+            info[i] = 0;
+            flags[i] = OBJECT_FLAG_ALIVE | OBJECT_FLAG_GARBAGE_COLLECTED;
         }
 
+        iTypeInfo = std::move(info);
+        objectFlags = std::move(flags);
         m_objectDataSize = newSize;
     }
 
     void TypeManager::registerType( u32 id, SharedPtr<reflection::Type> type )
     {
-        types[id] = type;
+        SharedPtr<reflection::Type> retiring;
+        {
+            ScopedLock lock( &m_mutex );
+            auto it = types.find(id);
+            if( it == types.end() ) types.emplace(id, std::move(type));
+            else { retiring = std::move(it->second); it->second = std::move(type); }
+        }
     }
 
     SharedPtr<reflection::Type> TypeManager::getType( u32 id )
     {
+        ScopedLock lock( &m_mutex );
         auto it = types.find( id );
         return it != types.end() ? it->second : nullptr;
     }

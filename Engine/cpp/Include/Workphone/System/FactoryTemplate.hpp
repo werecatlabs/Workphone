@@ -273,7 +273,7 @@ namespace workphone
 
         // WP_ASSERT( m_instances.empty() );  // instances not freed
 
-        auto instances = m_instances.snapshot();
+        auto instances = std::move(m_instances);
         for( auto &instance : instances )
         {
             if( instance )
@@ -480,10 +480,13 @@ namespace workphone
     {
         Array<SmartPtr<ISharedObject>> result;
 
-        auto instances = m_instances.snapshot();
-        result.reserve( instances.size() );
+        // Legacy lifecycle batch: pin every object while the inventory is
+        // locked. This temporary strong-reference batch remains external until
+        // factories pre-admit teardown scratch as part of instance publication.
+        ScopedLock lock(&m_instances, false);
+        result.reserve( m_instances.size() );
 
-        for( auto instance : instances )
+        for( auto instance : m_instances )
         {
             if( instance )
             {

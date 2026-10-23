@@ -28,6 +28,9 @@ namespace claw_material_residency_contracts
         const auto beforeManager = scheduler->stats().used[source];
         auto manager = make_ptr<ClawMaterialManager>();
         manager->load( nullptr );
+        // Measure the manager before constructing caller-owned document and
+        // String fixtures, whose retained character slabs are also budgeted.
+        const auto managerInventoryBytes = scheduler->stats().used[source] - beforeManager;
         const auto path = fixture.root / "resident_city_surface.mat";
         const String file = path.generic_string().c_str();
         // Use the serialized scheme/pass/slot shape of authored .mat assets.
@@ -47,7 +50,6 @@ namespace claw_material_residency_contracts
             require( output.good(), "material residency source fixture is writable" );
         }
         const auto baseline = scheduler->stats();
-        const auto managerInventoryBytes = baseline.used[source] - beforeManager;
         String error;
         auto material = dynamic_pointer_cast<ClawMaterial>( manager->loadFromFile( file ) );
         require( material && material->isLoaded(), "file-backed material loads through its manager" );

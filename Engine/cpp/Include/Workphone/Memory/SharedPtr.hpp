@@ -2,6 +2,7 @@
 #define SharedPtr_h__
 
 #include <Workphone/WorkphoneConfig.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <atomic>
 
 namespace workphone
@@ -60,8 +61,11 @@ namespace workphone
      *
      * @tparam T Type of the originally constructed object.
      */
+    struct UnbudgetedSharedPtrControl {};
     template <class T>
-    class SharedPtrControlBlockImpl final : public SharedPtrControlBlock
+    class SharedPtrControlBlockImpl final : public SharedPtrControlBlock,
+        public std::conditional_t<std::is_base_of_v<SourceBudgetObject, T>,
+                                  SourceBudgetObject, UnbudgetedSharedPtrControl>
     {
     public:
         explicit SharedPtrControlBlockImpl( T *ptr ) : m_ptr( ptr )
@@ -326,17 +330,19 @@ namespace workphone
 
     template <class T>
     SharedPtr<T>::SharedPtr( T *ptr ) :
-        m_ptr( ptr ),
-        m_ctrl( ptr ? new SharedPtrControlBlockImpl<T>( ptr ) : nullptr )
+        m_ptr( ptr )
     {
+        try { m_ctrl = ptr ? new SharedPtrControlBlockImpl<T>(ptr) : nullptr; }
+        catch (...) { delete ptr; throw; }
     }
 
     template <class T>
     template <class Y>
     SharedPtr<T>::SharedPtr( Y *ptr ) :
-        m_ptr( static_cast<T *>( ptr ) ),
-        m_ctrl( ptr ? new SharedPtrControlBlockImpl<Y>( ptr ) : nullptr )
+        m_ptr( static_cast<T *>( ptr ) )
     {
+        try { m_ctrl = ptr ? new SharedPtrControlBlockImpl<Y>(ptr) : nullptr; }
+        catch (...) { delete ptr; throw; }
     }
 
     template <class T>
@@ -486,12 +492,8 @@ namespace workphone
     template <class Y>
     void SharedPtr<T>::reset( Y *ptr )
     {
-        releaseRef();
-        if( ptr )
-        {
-            m_ptr = static_cast<T *>( ptr );
-            m_ctrl = new SharedPtrControlBlockImpl<Y>( ptr );
-        }
+        SharedPtr candidate(ptr);
+        swap(candidate);
     }
 
     template <class T>

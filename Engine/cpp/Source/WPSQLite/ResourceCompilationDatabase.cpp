@@ -533,7 +533,6 @@ namespace workphone::resource
     bool ResourceCompilationDatabase::queryDependencies(
         const String &resourceId, const CompilationVariant *variant, Array<CompileDependencyRecord> &dependencies ) const
     {
-        dependencies.clear();
         std::lock_guard<std::mutex> lock( m_impl->mutex );
         m_impl->lastError.clear();
         if( !m_impl->database )
@@ -552,27 +551,35 @@ namespace workphone::resource
             return false;
         }
 
-        int result = SQLITE_ROW;
-        while( ( result = sqlite3_step( statement.get() ) ) == SQLITE_ROW )
+        try
         {
-            CompileDependencyRecord dependency;
-            dependency.path = readText( statement.get(), 0 );
-            dependency.isResource = sqlite3_column_int( statement.get(), 1 ) != 0;
-            dependencies.push_back( dependency );
+            auto candidate = makeSourceBudgetSnapshot<CompileDependencyRecord>();
+            int result = SQLITE_ROW;
+            while( ( result = sqlite3_step( statement.get() ) ) == SQLITE_ROW )
+            {
+                CompileDependencyRecord dependency;
+                dependency.path = readText( statement.get(), 0 );
+                dependency.isResource = sqlite3_column_int( statement.get(), 1 ) != 0;
+                candidate.push_back( dependency );
+            }
+            if( result != SQLITE_DONE )
+            {
+                m_impl->setError( sqlite3_errmsg( m_impl->database ) );
+                return false;
+            }
+            dependencies = std::move(candidate);
+            return true;
         }
-        if( result != SQLITE_DONE )
+        catch(const std::bad_alloc &)
         {
-            dependencies.clear();
-            m_impl->setError( sqlite3_errmsg( m_impl->database ) );
+            m_impl->setError("Budget exhausted");
             return false;
         }
-        return true;
     }
 
     bool ResourceCompilationDatabase::queryDependents( const String &dependencyPath,
         const CompilationVariant *variant, Array<String> &resourceIds ) const
     {
-        resourceIds.clear();
         std::lock_guard<std::mutex> lock( m_impl->mutex );
         m_impl->lastError.clear();
         if( !m_impl->database )
@@ -592,17 +599,26 @@ namespace workphone::resource
             return false;
         }
 
-        int result = SQLITE_ROW;
-        while( ( result = sqlite3_step( statement.get() ) ) == SQLITE_ROW )
+        try
         {
-            resourceIds.push_back( readText( statement.get(), 0 ) );
+            auto candidate = makeSourceBudgetSnapshot<String>();
+            int result = SQLITE_ROW;
+            while( ( result = sqlite3_step( statement.get() ) ) == SQLITE_ROW )
+            {
+                candidate.push_back( readText( statement.get(), 0 ) );
+            }
+            if( result != SQLITE_DONE )
+            {
+                m_impl->setError( sqlite3_errmsg( m_impl->database ) );
+                return false;
+            }
+            resourceIds = std::move(candidate);
+            return true;
         }
-        if( result != SQLITE_DONE )
+        catch(const std::bad_alloc &)
         {
-            resourceIds.clear();
-            m_impl->setError( sqlite3_errmsg( m_impl->database ) );
+            m_impl->setError("Budget exhausted");
             return false;
         }
-        return true;
     }
 }  // namespace workphone::resource

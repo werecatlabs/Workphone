@@ -1,7 +1,9 @@
 #ifndef Rttr_h__
 #define Rttr_h__
 
+#include <Workphone/System/ReflectionStorage.hpp>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <functional>
@@ -15,35 +17,45 @@ namespace workphone
 {
     namespace reflection
     {
+        using Name = std::basic_string<char, std::char_traits<char>, SourceBudgetAllocator<char>>;
+        struct NameHash
+        {
+            size_t operator()(const Name &name) const noexcept
+            { return std::hash<std::string_view>{}({name.data(), name.size()}); }
+        };
+        template<class T> using Table = std::unordered_map<Name, T, NameHash, std::equal_to<Name>,
+            SourceBudgetAllocator<std::pair<const Name, T>>>;
 
         struct Property
         {
-            std::string name;
-            std::function<std::any( void * )> getter;
-            std::function<void( void *, std::any )> setter;
+            Name name;
+            Callback<Any( void * )> getter;
+            Callback<void( void *, Any )> setter;
         };
 
         struct Method
         {
-            std::string name;
-            std::function<std::any( void *, const std::vector<std::any> & )> invoker;
+            Name name;
+            Callback<Any( void *, const Arguments & )> invoker;
         };
 
-        struct Type
+        struct Type : SourceBudgetObject
         {
-            std::string name;
-            std::function<void *()> constructor;
-            std::unordered_map<std::string, Property> properties;
-            std::unordered_map<std::string, Method> methods;
+            Name name;
+            Callback<void *()> constructor;
+            Table<Property> properties;
+            Table<Method> methods;
 
             void addProperty( const Property &prop )
             {
-                properties[prop.name] = prop;
+                Property candidate(prop);
+                properties.insert_or_assign(candidate.name, std::move(candidate));
             }
 
             void addMethod( const Method &method )
             {
-                methods[method.name] = method;
+                Method candidate(method);
+                methods.insert_or_assign(candidate.name, std::move(candidate));
             }
         };
 
@@ -51,20 +63,20 @@ namespace workphone
 }  // namespace workphone
 
 #define REFLECT_TYPE( TYPE )                                  \
-    if( auto t = workphone::make_shared<reflection::Type>() ) \
+    if( auto t = workphone::make_shared<workphone::reflection::Type>() ) \
     {                                                         \
         t->name = #TYPE;                                      \
         t->constructor = []() -> void * { return new TYPE(); };
 
 #define REFLECT_PROPERTY( CLASS, FIELD )                                                                \
     t->addProperty(                                                                                     \
-        { #FIELD, []( void *obj ) -> std::any { return static_cast<CLASS *>( obj )->FIELD; },           \
-          []( void *obj, std::any newValue ) {                                                          \
-              static_cast<CLASS *>( obj )->FIELD = std::any_cast<decltype( CLASS::FIELD )>( newValue ); \
+        { #FIELD, []( void *obj ) -> workphone::reflection::Any { return static_cast<CLASS *>( obj )->FIELD; },           \
+          []( void *obj, workphone::reflection::Any newValue ) {                                                          \
+              static_cast<CLASS *>( obj )->FIELD = workphone::reflection::copyToExternal<decltype( CLASS::FIELD )>( newValue ); \
           } } );
 
 #define REFLECT_METHOD( CLASS, METHOD )                                                       \
-    t->addMethod( { #METHOD, []( void *obj, const std::vector<std::any> &args ) -> std::any { \
+    t->addMethod( { #METHOD, []( void *obj, const workphone::reflection::Arguments &args ) -> workphone::reflection::Any { \
                        return static_cast<CLASS *>( obj )->METHOD();                          \
                    } } );
 

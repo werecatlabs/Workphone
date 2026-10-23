@@ -235,7 +235,7 @@ namespace workphone
         Array<SmartPtr<ISharedObject>> snapshotObjects(
             const SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects )
         {
-            Array<SmartPtr<ISharedObject>> snapshot;
+            auto snapshot = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
             {
                 auto registry = objects.readLocked();
                 snapshot.reserve( registry.size() );
@@ -260,7 +260,7 @@ namespace workphone
                         if( !uuid.is_nil() ) candidate[uuid] = object;
                     }
 
-            Array<SmartPtr<ISharedObject>> retired;
+            auto retired = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
             {
                 auto registry = objects.writeLocked();
                 retired.reserve( registry.size() );
@@ -736,7 +736,7 @@ namespace workphone
                 auto scene = sceneManager->getCurrentScene();
                 WP_ASSERT( scene );
 
-                Array<SmartPtr<ISharedObject>> objects;
+                auto objects = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
 
                 auto actors = scene->getActors();
                 for( auto actor : actors )
@@ -896,7 +896,7 @@ namespace workphone
 
         assetDatabaseManager->loadFromFile( databasePath );
 
-        Array<SmartPtr<ISharedObject>> objects;
+        auto objects = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
         auto sceneManager = applicationManager->getGameManager();
         if( sceneManager )
         {
@@ -1433,7 +1433,7 @@ namespace workphone
             auto typeManager = TypeManager::instance();
             WP_ASSERT( typeManager );
 
-            Array<SmartPtr<IBuildDirector>> resources;
+            auto resources = makeSourceBudgetSnapshot<SmartPtr<IBuildDirector>>();
             resources.reserve( 1024 );
 
             auto referenceObjects = getReferenceObjects();
@@ -1592,7 +1592,7 @@ namespace workphone
 
     auto ResourceDatabase::getResources() const -> Array<SmartPtr<IResource>>
     {
-        Array<SmartPtr<IResource>> resources;
+        auto resources = makeSourceBudgetSnapshot<SmartPtr<IResource>>();
         resources.reserve( 1024 );
 
         auto objects = getSceneObjects();
@@ -2803,7 +2803,7 @@ namespace workphone
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
-        Array<SmartPtr<ISharedObject>> objects;
+        auto objects = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
         objects.reserve( 4096 );
 
         auto databaseManager = getDatabaseManager();
@@ -2856,7 +2856,7 @@ namespace workphone
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
-        Array<SmartPtr<ISharedObject>> objects;
+        auto objects = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
         objects.reserve( 4096 * 8 );
 
         if( auto sceneManager = applicationManager->getGameManager() )

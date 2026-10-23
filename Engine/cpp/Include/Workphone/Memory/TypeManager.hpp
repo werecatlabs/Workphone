@@ -53,6 +53,8 @@ namespace workphone
     class WPCore_API TypeManager
     {
     public:
+        template<class T> using MetadataArray = Array<T, SourceBudgetAllocator<T>>;
+        template<class T> using MetadataConcurrentArray = ConcurrentArray<T, SourceBudgetAllocator<T>>;
         /**
          * @brief Construct a TypeManager.
          *
@@ -465,17 +467,18 @@ namespace workphone
          */
         atomic_u32 m_objectDataSize = 0;   ///< Current reserved size of object data (number of slots).
         atomic_u32 m_objectDataIndex = 0;  ///< Next object data index to allocate from (atomic).
-        Array<u32> iTypeInfo;  ///< Maps runtime type id to internal type info / slot (iTypeInfo[id] =>
+        MetadataArray<u32> iTypeInfo;  ///< Maps runtime type id to internal type info / slot (iTypeInfo[id] =>
                                ///< typeInfo).
-        Array<atomic_u8>
+        MetadataArray<atomic_u8>
             objectFlags;  ///< Per-object flags stored as atomic bytes (one per object slot).
         GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>> baseObjectDataPool;      ///< Pool of base object data instances.
         GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>> sharedObjectDataPool;  ///< Pool of shared object data instances.
-        Array<GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>>>
+        MetadataArray<GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>>>
             baseObjectDataPools;  ///< Array of base object data pools for different groups.
-        Array<GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>>>
+        MetadataArray<GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>>>
             sharedObjectDataPools;  ///< Array of shared object data pools for different groups.
-        std::unordered_map<u32, SharedPtr<reflection::Type>>
+        std::unordered_map<u32, SharedPtr<reflection::Type>, std::hash<u32>, std::equal_to<u32>,
+            SourceBudgetAllocator<std::pair<const u32, SharedPtr<reflection::Type>>>>
             types;  ///< Map of runtime id -> reflection metadata. Use registerType / getType to modify.
 
     private:
@@ -509,32 +512,32 @@ namespace workphone
         u32 calculateGroupIndex( u32 typeInfo ) const;
 
         /// Stores the internal (non-localized) names of types indexed by id.
-        ConcurrentArray<FixedString<128>> m_names;
+        MetadataConcurrentArray<FixedString<128>> m_names;
 
         /// Stores human-friendly (possibly localized) labels for types indexed by id.
-        ConcurrentArray<FixedString<128>> m_labels;
+        MetadataConcurrentArray<FixedString<128>> m_labels;
 
         /// Atomic storage of 64-bit persistent type hashes indexed by id.
-        Array<atomic_u64> m_hashes;
+        MetadataArray<atomic_u64> m_hashes;
 
         /// Atomic storage of compact runtime type indices indexed by id.
-        Array<atomic_u32> m_typeIndex;
+        MetadataArray<atomic_u32> m_typeIndex;
 
         /// Atomic storage of computed type group indices. Mutable because some
         /// const queries compute and cache group indices lazily.
-        mutable Array<atomic_u32> m_typeGroup;
+        mutable MetadataArray<atomic_u32> m_typeGroup;
 
         /// Mapping from hash buckets to runtime type ids (for hash -> id lookup).
-        Array<atomic_u32> m_hashTypes;
+        MetadataArray<atomic_u32> m_hashTypes;
 
         /// Atomic storage of immediate base type id for each runtime type id.
-        Array<atomic_u32> m_baseType;
+        MetadataArray<atomic_u32> m_baseType;
 
         /// Custom data type ids used by data-oriented systems.
-        Array<atomic_u32> m_dataTypes;
+        MetadataArray<atomic_u32> m_dataTypes;
 
         /// Atomic live-instance counters per runtime type.
-        Array<atomic_u32> m_numInstances;
+        MetadataArray<atomic_u32> m_numInstances;
 
         /// Next available runtime type id / running type count (starts at 1).
         atomic_u32 m_typeCount = 1;

@@ -1111,6 +1111,7 @@ namespace
 }  // namespace
 #include "AssetReferenceGraphContracts.hpp"
 #include "AssetImportSchedulingContracts.hpp"
+#include "CatalogSnapshotBudgetContracts.hpp"
 
 int main()
 {
@@ -1140,6 +1141,7 @@ int main()
             contracts( *catalog, folder );
             batchImportContracts( folder );
             browsingContracts(folder);
+            catalogSnapshotBudgetContracts(folder);
             mediaAssetCatalogContracts(folder);
             assetReferenceChangeContracts(folder);
             databaseValueContracts(folder);

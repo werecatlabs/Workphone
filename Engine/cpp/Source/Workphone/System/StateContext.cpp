@@ -71,20 +71,14 @@ namespace workphone
 
     Array<SmartPtr<IState>> StateContext::snapshotStates() const
     {
-        auto values = m_states.snapshot();
-        return Array<SmartPtr<IState>>( values.begin(), values.end() );
+        return m_states.snapshot();
     }
 
     void StateContext::clearStates()
     {
         // Keep removed states alive until after the inventory lock is released;
         // their destruction can reenter a context or another subsystem.
-        Array<SmartPtr<IState>> removed;
-        {
-            ScopedLock lock( &m_states );
-            removed = m_states.snapshot();
-            m_states.releaseStorage();
-        }
+        auto removed = std::move(m_states);
     }
 
     Array<SmartPtr<IStateListener>> StateContext::snapshotStateListeners() const
@@ -95,18 +89,14 @@ namespace workphone
     void StateContext::clearStateListeners()
     {
         // Release references outside the lock: destructors may re-enter the context.
-        Array<SmartPtr<IStateListener>> removed;
-        {
-            ScopedLock lock( &m_stateListeners );
-            removed = m_stateListeners.snapshot();
-            m_stateListeners.releaseStorage();
-        }
+        auto removed = std::move(m_stateListeners);
     }
 
     Array<SmartPtr<IStateQueue>> StateContext::snapshotStateQueues() const
     {
         auto values = m_stateQueues.readLocked();
-        return Array<SmartPtr<IStateQueue>>( values.begin(), values.end() );
+        return Array<SmartPtr<IStateQueue>>( values.begin(), values.end(),
+                                            Allocator<SmartPtr<IStateQueue>>(sourceBudget) );
     }
 
     void StateContext::clearStateQueues()
@@ -127,12 +117,7 @@ namespace workphone
     void StateContext::clearEventListeners()
     {
         // Retain references until outside the lock, as listener teardown may re-enter.
-        Array<SmartPtr<IEventListener>> removed;
-        {
-            ScopedLock lock( &m_eventListeners );
-            removed = m_eventListeners.snapshot();
-            m_eventListeners.releaseStorage();
-        }
+        auto removed = std::move(m_eventListeners);
     }
 
     void StateContext::appendStateQueue( SmartPtr<IStateQueue> stateQueue )
@@ -301,7 +286,7 @@ namespace workphone
             std::fprintf( stderr, "TRACE StateContext all queues drained\n" );
 
             // Detach and unload all managed states.
-            auto states = snapshotStates();
+            auto states = std::move(m_states);
             std::fprintf( stderr, "TRACE StateContext states snapshotted %zu\n", states.size() );
             for( auto &state : states )
             {
@@ -387,6 +372,9 @@ namespace workphone
                     continue;
 
                 auto listeners = getStateListeners();
+                // Admit context-owned dispatch lists before a handler can mark
+                // the state clean. Denial leaves the state pending for retry.
+                auto contextEvents = snapshotEventListeners();
                 bool handled = false;
 
                 for( auto &listener : listeners )
@@ -431,9 +419,7 @@ namespace workphone
                 // task and makes listener removal from inside a callback safe.
                 std::unordered_set<IEventListener *> notifiedListeners;
                 auto notifyListeners = [&]( auto eventListeners ) {
-                    Array<SmartPtr<IEventListener>> retainedListeners( eventListeners.begin(),
-                                                                       eventListeners.end() );
-                    for( auto &eventListener : retainedListeners )
+                    for( auto &eventListener : eventListeners )
                     {
                         if( !eventListener || !notifiedListeners.insert( eventListener.get() ).second )
                         {
@@ -458,11 +444,9 @@ namespace workphone
                     }
                 };
 
-                notifyListeners( snapshotEventListeners() );
-                if( auto stateOwner = state->getOwner() )
-                {
-                    notifyListeners( stateOwner->getObjectListeners() );
-                }
+                notifyListeners( std::move(contextEvents) );
+                if(auto stateOwner = state->getOwner())
+                    notifyListeners(stateOwner->getObjectListeners());
             }
 
             // --- Process queued messages for this task ---
@@ -473,8 +457,8 @@ namespace workphone
             if( stateQueue->isEmpty() )
                 return;
 
-            auto messages = stateQueue->getMessagesAndClear();
             auto listeners = getStateListeners();
+            auto messages = stateQueue->getMessagesAndClear();
 
             for( auto &message : messages )
             {
@@ -506,6 +490,11 @@ namespace workphone
 
                 message->unload( nullptr );
             }
+        }
+        catch( const std::bad_alloc & )
+        {
+            // Retained queues/dirty states remain scheduled until admission
+            // returns. In particular, never dequeue before listener admission.
         }
         catch( Exception &e )
         {
@@ -1027,7 +1016,11 @@ namespace workphone
 
     void StateContext::clear()
     {
-        auto stateQueues = snapshotStateQueues();
+        decltype(m_stateQueues)::storage_type stateQueues;
+        {
+            auto queues = m_stateQueues.writeLocked();
+            stateQueues = std::move(*queues);
+        }
         for( auto &stateQueue : stateQueues )
         {
             if( stateQueue )
@@ -1042,7 +1035,7 @@ namespace workphone
 
         clearStateQueues();
 
-        auto states = snapshotStates();
+        auto states = std::move(m_states);
         for( auto &state : states )
         {
             if( state )
@@ -1148,19 +1141,28 @@ namespace workphone
 
     bool StateContext::isDirty() const
     {
-        auto states = snapshotStates();
-        for( const auto &state : states )
+        // Inline queue inventory copies do not allocate and callbacks run after
+        // its lock is released. Accepted messages must survive denied dispatch.
+        auto queues = m_stateQueues.snapshot();
+        for(const auto &queue : queues)
+            if(queue && !queue->isEmpty()) return true;
+        try
         {
-            if( state )
+            auto states = snapshotStates();
+            for( const auto &state : states )
             {
-                if( state->isDirty() )
+                if( state )
                 {
-                    return true;
+                    if( state->isDirty() )
+                    {
+                        return true;
+                    }
                 }
             }
-        }
 
-        return false;
+            return false;
+        }
+        catch(const std::bad_alloc &) { return true; }
     }
 
     void StateContext::setDirty( bool dirty, bool cascade )

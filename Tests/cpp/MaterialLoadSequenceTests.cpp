@@ -55,6 +55,9 @@
 #include "ClawMaterialResidencyContracts.hpp"
 #include "ClawMaterialMetadataBudgetContracts.hpp"
 #include "GenericEngineCatalogBudgetContracts.hpp"
+#include "ReflectionStringBudgetContracts.hpp"
+#include "ReflectionPayloadBudgetContracts.hpp"
+#include "SnapshotContainerBudgetContracts.hpp"
 
 namespace
 {
@@ -3765,6 +3768,9 @@ int main( int argc, char **argv )
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         generic_engine_catalog_budget_contracts::bootstrap();
         Fixture fixture;
+        reflection_string_budget_contracts::run(fixture);
+        reflection_payload_budget_contracts::run();
+        snapshot_container_budget_contracts::run();
         generic_engine_catalog_budget_contracts::run(fixture);
         material_texture_cold_contracts::run();
         claw_material_residency_contracts::run( fixture );

@@ -6,6 +6,8 @@
 #include <Workphone/Core/ConcurrentMap.hpp>
 #include <string>
 #include <utility>
+#include <map>
+#include <set>
 
 namespace workphone
 {
@@ -13,9 +15,12 @@ namespace workphone
     using SourceBudgetConcurrentMap = ConcurrentMap<K, V, Compare, SourceBudgetAllocator<std::pair<const K,V>>>;
 
     template<class T> using SourceBudgetArray = Array<T, SourceBudgetAllocator<T>>;
+    template<class T> using SourceBudgetSet = std::set<T, std::less<T>, SourceBudgetAllocator<T>>;
+    template<class K, class V> using SourceBudgetMap =
+        std::map<K, V, std::less<K>, SourceBudgetAllocator<std::pair<const K, V>>>;
+    using SourceBudgetText = std::basic_string<char, std::char_traits<char>, SourceBudgetAllocator<char>>;
 
-    // Persistent storage uses the shared budget. Public snapshots keep the
-    // existing caller-owned Array API and are copied under one inventory lock.
+    // Persistent storage and detached caller snapshots use the shared budget.
     template<class T> class SourceBudgetConcurrentArray : public ConcurrentArray<T, SourceBudgetAllocator<T>>
     {
         using Base = ConcurrentArray<T, SourceBudgetAllocator<T>>;
@@ -25,7 +30,7 @@ namespace workphone
         Array<T> snapshot() const
         {
             ScopedLock lock( this, false );
-            return Array<T>( this->cbegin(), this->cend() );
+            return Array<T>( this->cbegin(), this->cend(), Allocator<T>(sourceBudget) );
         }
     };
 
@@ -68,20 +73,12 @@ namespace workphone
         return budget;
     }
 
-    // Preserve Array reference APIs for immutable shared payloads. The buffer
-    // lease precedes the value so physical storage dies before its reservation.
+    // Preserve Array reference APIs while admitting the actual copied buffer,
+    // including allocator headers and retained capacity. No estimated lease.
     template<class T> std::shared_ptr<Array<T>> copySourceBudgetArray( const Array<T> &value )
     {
-        struct Owner
-        {
-            StreamBudget budget;
-            Array<T> value;
-            explicit Owner( const Array<T> &input ) :
-                budget( reserveSourceBudgetBytes( input.capacity() * sizeof(T) ) ), value(input) {}
-        };
-        auto owner = std::allocate_shared<Owner>( SourceBudgetAllocator<Owner>{}, value );
-        auto payload = &owner->value;
-        return std::shared_ptr<Array<T>>( std::move(owner), payload );
+        return std::allocate_shared<Array<T>>(SourceBudgetAllocator<Array<T>>{},
+                                               makeSourceBudgetSnapshot(value));
     }
 
     // Private authoring/cache strings admit every heap buffer, including old/new

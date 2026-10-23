@@ -89,8 +89,8 @@ namespace workphone
             {
                 String uuid, path, key, type, usage;
             };
-            Array<Row> entries;
-            std::set<std::string> keys, ids;
+            auto entries = makeSourceBudgetSnapshot<Row>();
+            SourceBudgetSet<String> keys, ids;
             const auto namespaceId = StringUtil::parseUUID( "8daa280e-45e1-4a75-9b22-84a3cc2e5991" );
             boost::uuids::uuid namespaceUuid;
             std::copy( namespaceId.data(), namespaceId.data() + namespaceId.size(),
@@ -207,11 +207,18 @@ namespace workphone
         }
         catch( const std::exception &failure )
         {
-            error = failure.what();
+            try { error = failure.what(); }
+            catch(const std::bad_alloc &) { error = "Budget exhausted"; }
             if( catalog )
             {
                 if( transaction )
-                    mediaQuery( catalog, "ROLLBACK" );
+                {
+                    auto database = catalog->getDatabase();
+                    if(auto cleanup = dynamic_cast<ITransactionCleanupDatabase *>(database.get()))
+                        cleanup->rollbackTransaction();
+                    else
+                        try { mediaQuery( catalog, "ROLLBACK" ); } catch(...) {}
+                }
                 catalog->unload( nullptr );
             }
             if( !temporary.empty() )

@@ -276,16 +276,18 @@ namespace claw_material_metadata_budget_contracts
             require(!texture.copyLinearFloatData(overallocated, {1,1}, error) &&
                     scheduler->stats().used[source] == baseline.used[source],
                 "retained float texture admission includes copied capacity rather than only logical pixels");
+            limit(baseline.limits[source]);
             auto settings = make_ptr<Properties>();
             settings->setProperty("mipmapFilter", 1);
-            limit(baseline.used[source]); denied = false;
+            const auto settingsResident = scheduler->stats().used[source];
+            limit(settingsResident); denied = false;
             try { texture.setProperties(settings); } catch(const std::bad_alloc &) { denied = true; }
-            require(denied && scheduler->stats().used[source] == baseline.used[source],
+            require(denied && scheduler->stats().used[source] == settingsResident,
                 "texture cache node and bucket admission denies without retained storage");
             limit(baseline.limits[source]); texture.setProperties(settings);
-            require(scheduler->stats().used[source] > baseline.used[source], "empty texture cache metadata is charged without a pixel payload");
+            require(scheduler->stats().used[source] > settingsResident, "empty texture cache metadata is charged without a pixel payload");
             texture.unload(nullptr);
-            require(scheduler->stats().used[source] > baseline.used[source], "retained texture cache metadata stays charged after unload");
+            require(scheduler->stats().used[source] > settingsResident, "retained texture cache metadata stays charged after unload");
         }
         require(scheduler->stats().used[source] == baseline.used[source], "final texture cache erasure frees nodes and retained bucket capacity");
 

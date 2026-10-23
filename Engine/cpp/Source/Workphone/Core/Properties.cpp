@@ -385,8 +385,10 @@ namespace workphone
     {
         if( this != &other )
         {
-            m_properties = other.m_properties;
-            m_children = other.m_children;
+            auto properties = makeSourceBudgetSnapshot(other.m_properties);
+            auto children = makeSourceBudgetSnapshot(other.m_children);
+            m_properties.swap(properties);
+            m_children.swap(children);
         }
 
         return *this;
@@ -458,7 +460,7 @@ namespace workphone
 
     auto Properties::getChildrenByName( const String &name ) const -> Array<SmartPtr<Properties>>
     {
-        Array<SmartPtr<Properties>> children;
+        auto children = makeSourceBudgetSnapshot<SmartPtr<Properties>>();
         children.reserve( m_children.size() );
 
         for( auto &child : m_children )
@@ -534,7 +536,8 @@ namespace workphone
 
     void Properties::setPropertiesAsArray( const Array<Property> &array )
     {
-        m_properties = array;
+        auto candidate = makeSourceBudgetSnapshot(array);
+        m_properties.swap(candidate);
     }
 
     auto Properties::getPropertiesAsArray() const -> Array<Property>

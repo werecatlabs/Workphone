@@ -19,7 +19,7 @@ namespace workphone
     {
         AssetCatalogSession session;
         String sourcePath, sourceKey, revision, digest;
-        Array<AssetReferenceEdge> edges;
+        Array<AssetReferenceEdge> edges = makeSourceBudgetSnapshot<AssetReferenceEdge>();
     };
 
     WPCore_API bool beginAssetReferenceSave( SmartPtr<AssetDatabaseManager> catalog,
@@ -39,7 +39,7 @@ namespace workphone
 
     struct AssetReferencePage
     {
-        Array<AssetReferenceEdge> edges;
+        Array<AssetReferenceEdge> edges = makeSourceBudgetSnapshot<AssetReferenceEdge>();
         AssetReferenceCursor next;
         bool succeeded = false, hasMore = false;
         String error;

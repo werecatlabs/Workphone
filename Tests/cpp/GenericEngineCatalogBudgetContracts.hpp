@@ -239,10 +239,18 @@ namespace generic_engine_catalog_budget_contracts
         budget.set(inventory);
         denied = false;
         try { registry.setInstances(instances); } catch (const std::bad_alloc &) { denied = true; }
-        const auto retained = registry.getInstances();
-        require(denied && retained.size() == 2 && retained[0] == first && retained[1] == second &&
-                    budget.used() == inventory, "denied instance replacement preserves old inventory");
-        registry.setInstances({});
+        require(denied && budget.used() == inventory, "denied instance replacement releases candidate storage");
+        budget.restore();
+        {
+            const auto retained = registry.getInstances();
+            require(retained.size() == 2 && retained[0] == first && retained[1] == second,
+                    "denied instance replacement preserves old inventory");
+            const auto withSnapshot = budget.used();
+            budget.set(withSnapshot);
+            registry.setInstances({});
+            require(budget.used() == baseline + withSnapshot - inventory && retained[0] == first,
+                    "detached inventory keeps its own admitted capacity after producer retirement");
+        }
         require(budget.used() == baseline, "empty instance replacement retires inventory storage");
         budget.restore();
     }
@@ -381,22 +389,33 @@ namespace generic_engine_catalog_budget_contracts
         budget.set(resident);
         bool denied = false;
         try { context->addState(states.back()); } catch (const std::bad_alloc &) { denied = true; }
-        require(denied && context->getStates().size() == 12 && !states.back()->getStateContext() &&
+        require(denied && !states.back()->getStateContext() &&
                     budget.used() == resident, "denied context growth preserves state ownership and inventory");
+        denied = false;
+        try { auto snapshot = context->getStates(); } catch(const std::bad_alloc &) { denied = true; }
+        require(denied && budget.used() == resident, "caller state snapshots require separate admitted capacity");
         budget.restore();
+        require(context->getStates().size() == 12, "denied registration retains every previous state");
         context->addState(states.back());
         require(context->getStates().size() == 13 && states.back()->getStateContext() == context,
                 "context state inventory retries after capacity restoration");
         const auto grown = budget.used();
         budget.set(grown);
         context->removeState(states[4]);
-        const auto compacted = context->getStates();
-        require(compacted.size() == 12 && compacted[4] == states[5] && budget.used() == grown,
+        require(budget.used() == grown,
                 "state removal compacts in order without requiring budget headroom");
+        budget.restore();
+        {
+            const auto compacted = context->getStates();
+            require(compacted.size() == 12 && compacted[4] == states[5],
+                    "admitted state snapshot preserves compaction order");
+        }
+        budget.set(grown);
         context->addState(states[4]);
-        require(context->getStates().size() == 13 && budget.used() == grown,
+        require(budget.used() == grown,
                 "state registration reuses retained capacity at the cap");
         budget.restore();
+        require(context->getStates().size() == 13, "retained state capacity accepts the restored registration");
         auto foreign = make_ptr<StateContext>();
         auto message = make_ptr<StateMessage>();
         message->setStateContext(foreign);
@@ -412,7 +431,12 @@ namespace generic_engine_catalog_budget_contracts
         queue = context->getStateQueue(u32(TaskId::Primary));
         require(queue && !queue->isEmpty() && message->getStateContext() == context,
                 "message enqueue retries through the normal state manager");
+        const auto beforeUnload = budget.used();
+        budget.set(beforeUnload);
         context->unload(nullptr);
+        require(!context->isLoaded() && !states[0]->getStateContext() && budget.used() < beforeUnload,
+                "context teardown transfers existing state/message storage without admission at the cap");
+        budget.restore();
         require(context->getStates().empty(), "context unload clears admitted state inventory");
         auto first = fixture.states->addStateContext();
         auto second = fixture.states->addStateContext();
@@ -421,18 +445,26 @@ namespace generic_engine_catalog_budget_contracts
         const auto beforeRetirement = budget.used();
         budget.set(beforeRetirement);
         require(fixture.states->removeStateContext(first) && !first->isLoaded() && second->isLoaded() &&
-                    fixture.states->getStateContexts().size() == managed - 1 && budget.used() < beforeRetirement,
+                    budget.used() < beforeRetirement,
                 "manager retirement reclaims context storage without allocating a replacement inventory");
         require(fixture.states->removeStateContext(second), "remaining managed context retires at capacity");
+        budget.restore();
+        require(fixture.states->getStateContexts().size() == managed - 2,
+                "admitted caller snapshot reflects complete context retirement");
     }
 
     template<class Fixture> void run(Fixture &fixture)
     {
-        pools();
-        registries();
-        queues();
-        queries(fixture);
-        contexts(fixture);
+        const char *stage = "unexpected pool admission failure";
+        try
+        {
+            pools();
+            stage = "unexpected registry admission failure"; registries();
+            stage = "unexpected queue admission failure"; queues();
+            stage = "unexpected query admission failure"; queries(fixture);
+            stage = "unexpected state-context admission failure"; contexts(fixture);
+        }
+        catch(const std::bad_alloc &) { throw std::runtime_error(stage); }
         std::cout << "PASS: generic pool, catalog inventory and eager query memory budgets\n";
     }
 }

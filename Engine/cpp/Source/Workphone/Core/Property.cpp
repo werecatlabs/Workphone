@@ -147,7 +147,7 @@ namespace workphone
 
     auto Property::getAttributes() const -> Array<Pair<String, String>>
     {
-        Array<Pair<String, String>> attributes;
+        auto attributes = makeSourceBudgetSnapshot<Pair<String, String>>();
         attributes.reserve( m_attributes.size() );
 
         for( const auto &attrib : m_attributes )
@@ -173,15 +173,18 @@ namespace workphone
 
     auto Property::operator=( const Property &other ) -> Property &
     {
+        if(this == &other) return *this;
+        auto value = other.m_value;
+        auto attributes = makeSourceBudgetSnapshot(other.m_attributes);
         m_name = other.m_name;
-        m_value = other.m_value;
+        m_value.swap(value);
 
         m_data = other.m_data;
 
         m_type = other.m_type;
         m_readOnly = other.m_readOnly;
 
-        m_attributes = other.m_attributes;
+        m_attributes.swap(attributes);
 
         return *this;
     }

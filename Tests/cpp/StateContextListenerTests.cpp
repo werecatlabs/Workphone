@@ -7,6 +7,7 @@
 #include <Workphone/System/StateManager.hpp>
 #include <Workphone/System/StateQueue.hpp>
 #include <Workphone/System/FactoryTemplate.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <atomic>
 #include <iostream>
 #include <stdexcept>
@@ -355,6 +356,62 @@ namespace
     void queueContracts()
     {
         QueueFixture fixture;
+        {
+            auto context = fixture.context();
+            auto state = make_ptr<DirtyState>(); context->addState(state);
+            auto listener = make_ptr<InventoryListener>(); context->addStateListener(listener);
+            auto event = make_ptr<EventListener>(); context->addEventListener(event);
+            auto scheduler = WorldStreamingScheduler::shared();
+            constexpr auto source = size_t(StreamMemoryClass::SourceCpu);
+            const auto original = scheduler->stats().limits[source];
+            struct Restore
+            {
+                std::shared_ptr<WorldStreamingScheduler> scheduler;
+                u64 limit;
+                ~Restore() { String error; scheduler->setBudget(StreamMemoryClass::SourceCpu, limit, error); }
+            } restore{scheduler, original};
+            const auto resident = scheduler->stats().used[source];
+            const auto partial = sourceBudgetStorageBytes(sizeof(SmartPtr<IState>), alignof(SmartPtr<IState>)) +
+                sourceBudgetStorageBytes(sizeof(SmartPtr<IStateListener>), alignof(SmartPtr<IStateListener>));
+            String error;
+            require(scheduler->setBudget(StreamMemoryClass::SourceCpu, resident + partial, error),
+                    "Partial state dispatch snapshot budget applies");
+            context->update();
+            require(state->dirty && listener->notifications == 0 && scheduler->stats().used[source] == resident,
+                    "Event-list admission failure retires partial dispatch buffers before consuming a dirty state");
+            require(scheduler->setBudget(StreamMemoryClass::SourceCpu, original, error), "State dispatch capacity restores");
+            context->update();
+            require(!state->dirty && listener->notifications == 1, "Dirty state dispatch retries after event-list admission returns");
+            context->unload(nullptr); fixture.drainScheduling();
+        }
+        {
+            auto context = fixture.context();
+            auto listener = make_ptr<QueueListener>(); context->addStateListener(listener);
+            auto message = fixture.message(); context->addMessage(TaskId::Primary, message);
+            auto scheduler = WorldStreamingScheduler::shared();
+            constexpr auto source = size_t(StreamMemoryClass::SourceCpu);
+            const auto original = scheduler->stats().limits[source];
+            struct Restore
+            {
+                std::shared_ptr<WorldStreamingScheduler> scheduler;
+                u64 limit;
+                ~Restore() { String error; scheduler->setBudget(StreamMemoryClass::SourceCpu, limit, error); }
+            } restore{scheduler, original};
+            String error;
+            require(scheduler->setBudget(StreamMemoryClass::SourceCpu, scheduler->stats().used[source], error),
+                    "Dispatch snapshot admission cap applies");
+            fixture.states->update();
+            require(listener->messages == 0 && message->unloads == 0 && context->isDirty() &&
+                        !context->getStateQueue(0)->isEmpty(),
+                    "Denied listener snapshot keeps an accepted message queued and scheduled without any states");
+            require(scheduler->setBudget(StreamMemoryClass::SourceCpu, original, error), "Dispatch capacity restores");
+            fixture.states->update();
+            require(listener->messages == 1 && message->unloads == 1 && !context->isDirty(),
+                    "Restored snapshot admission dispatches the retained message exactly once");
+            fixture.states->update();
+            require(listener->messages == 1 && message->unloads == 1, "Dispatch retry never duplicates delivery");
+            context->unload(nullptr); fixture.drainScheduling();
+        }
         {
             auto context = fixture.context();
             const auto &readOnly = *context;

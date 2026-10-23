@@ -94,7 +94,7 @@ namespace workphone
             {
                 setLoadingState( LoadingState::Unloading );
 
-                auto stateObjects = m_stateContexts.snapshot();
+                auto stateObjects = std::move(m_stateContexts);
                 for( auto &stateContext : stateObjects )
                 {
                     if( stateContext )
@@ -232,8 +232,7 @@ namespace workphone
 
     auto StateManager::getStateContexts() const -> Array<SmartPtr<IStateContext>>
     {
-        auto snapshot = m_stateContexts.snapshot();
-        return Array<SmartPtr<IStateContext>>( snapshot.begin(), snapshot.end() );
+        return m_stateContexts.snapshot();
     }
 
     void StateManager::update()

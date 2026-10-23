@@ -27,6 +27,7 @@
 #include <set>
 #include <map>
 #include <fstream>
+#include <charconv>
 #include <stdexcept>
 #if defined WP_PLATFORM_WIN32
 #    ifndef NOMINMAX
@@ -81,12 +82,18 @@ namespace workphone
                 if( !m_serialized )
                     return;
                 m_serialized->lockConnection();
-                m_active = queryCatalog( manager, "BEGIN IMMEDIATE" ) != nullptr;
+                try { m_active = queryCatalog( manager, "BEGIN IMMEDIATE" ) != nullptr; }
+                catch(...) { m_serialized->unlockConnection(); throw; }
             }
             ~CatalogTransaction()
             {
                 if( m_active )
-                    queryCatalog( m_manager, "ROLLBACK" );
+                {
+                    if( auto cleanup = dynamic_cast<ITransactionCleanupDatabase *>(m_database.get()) )
+                        cleanup->rollbackTransaction();
+                    else
+                        try { queryCatalog( m_manager, "ROLLBACK" ); } catch(...) {}
+                }
                 if( m_serialized )
                     m_serialized->unlockConnection();
             }
@@ -166,8 +173,8 @@ namespace workphone
                 AssetCatalogPath path;
                 String kind;
             };
-            Array<Identity> identities;
-            std::set<std::string> keys;
+            Array<Identity> identities = makeSourceBudgetSnapshot<Identity>();
+            SourceBudgetSet<String> keys;
             while( !rows->eof() )
             {
                 Identity identity;
@@ -231,7 +238,7 @@ namespace workphone
             auto rows = queryCatalog( manager, "SELECT uuid,path,type,kind,path_key FROM resources" );
             if( !rows )
                 return false;
-            std::set<std::string> ids, keys;
+            SourceBudgetSet<String> ids, keys;
             while( !rows->eof() )
             {
                 const auto uuid = rows->getFieldValue( "uuid" );
@@ -746,7 +753,7 @@ namespace workphone
         CatalogTransaction transaction( *this );
         auto rows =
             transaction.active() ? queryCatalog( *this, "SELECT 1 FROM resources LIMIT 1" ) : nullptr;
-        Array<String> targets;
+        Array<String> targets = makeSourceBudgetSnapshot<String>();
         auto identities =
             transaction.active() ? queryCatalog( *this, "SELECT uuid FROM resources" ) : nullptr;
         while( identities && !identities->eof() )
@@ -791,7 +798,7 @@ namespace workphone
         CatalogTransaction transaction( *this );
         if( !transaction.active() )
             return;
-        Array<Pair<SmartPtr<ISharedObject>, String>> inserted;
+        Array<Pair<SmartPtr<ISharedObject>, String>> inserted = makeSourceBudgetSnapshot<Pair<SmartPtr<ISharedObject>, String>>();
         for( const auto &object : objects )
         {
             if( !object || !object->getHandle() )
@@ -999,98 +1006,109 @@ namespace workphone
     {
         ScopedLock lock( this );
         EntryPage page;
-        auto fail = [&page]( const String &error ) {
-            page = EntryPage();
-            page.error = error;
+        const auto denials = sourceBudgetDenialCount();
+        try
+        {
+            auto fail = [&page]( const String &error ) {
+                page = EntryPage();
+                page.error = error;
+                return page;
+            };
+            if( query.pageSize == 0 || query.pageSize > 256 || query.search.size() > 1024 ||
+                query.type.size() > 256 || query.search.find( '\0' ) != String::npos ||
+                query.type.find( '\0' ) != String::npos )
+                return fail(
+                    "Invalid catalog query: page size must be 1-256 and filters must be bounded text." );
+            if( !m_catalogReady )
+                return fail( "No open asset catalog." );
+            auto database = getDatabase();
+            DatabaseConnectionLock connection(
+                database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr );
+            if( !refreshDatabaseRevision() )
+                return fail( "Cannot read the catalog revision." );
+            const auto generation = m_catalogGeneration;
+            if( cursor &&
+                ( cursor->catalogInstance != m_catalogInstance || cursor->generation != generation ||
+                  cursor->search != query.search || cursor->type != query.type ||
+                  cursor->includeScenes != query.includeScenes || !validValue( cursor->afterUuid, 256 ) ) )
+                return fail( "Catalog or filters changed; restart browsing from the first page." );
+            // The bundled SQLite predates instr(). GLOB is case-sensitive; escape
+            // its metacharacters so user text remains a literal substring.
+            String pattern = "*";
+            for( const auto ch : query.search )
+            {
+                if( ch == '*' )
+                    pattern += "[*]";
+                else if( ch == '?' )
+                    pattern += "[?]";
+                else if( ch == '[' )
+                    pattern += "[[]";
+                else
+                    pattern += ch;
+            }
+            pattern += '*';
+            auto rows = queryCatalog(
+                *this,
+                "SELECT uuid,path,type,kind,path_key FROM resources "
+                "WHERE (?='' OR path GLOB ? OR uuid GLOB ?) "
+                "AND (?='' OR type=?) AND (?='1' OR kind='file') "
+                "AND uuid COLLATE BINARY > ? ORDER BY uuid COLLATE BINARY LIMIT ?",
+                { query.search, pattern, pattern, query.type, query.type, query.includeScenes ? "1" : "0",
+                  cursor ? cursor->afterUuid : String(), StringUtil::toString( query.pageSize + 1 ) } );
+            if( !rows )
+                return fail( "Asset catalog query failed." );
+            while( !rows->eof() )
+            {
+                if( page.entries.size() == query.pageSize )
+                {
+                    page.hasMore = true;
+                    break;
+                }
+                EntrySnapshot entry;
+                entry.uuid = rows->getFieldValue( "uuid" );
+                entry.path = rows->getFieldValue( "path" );
+                entry.type = rows->getFieldValue( "type" );
+                const auto kind = rows->getFieldValue( "kind" );
+                const auto key = rows->getFieldValue( "path_key" );
+                if( !validValue( entry.uuid, 256 ) || !validValue( entry.type, 256 ) )
+                    return fail( "Invalid catalog identity; repair the catalog before browsing." );
+                if( kind == "file" )
+                {
+                    AssetCatalogPath canonical;
+                    String error;
+                    if( !canonicalAssetCatalogPath( m_projectRoot, entry.path, canonical, error ) ||
+                        canonical.path != entry.path || canonical.key != key )
+                        return fail( "Invalid catalog path; repair the catalog before browsing." );
+                }
+                else if( kind == "scene" && entry.path == "scene" && key.empty() )
+                    entry.kind = EntryKind::Scene;
+                else
+                    return fail( "Invalid catalog entry kind." );
+                entry.generation = generation;
+                entry.catalogInstance = m_catalogInstance;
+                page.entries.push_back( entry );
+                rows->nextRow();
+            }
+            // Also catches writes from another connection during this materialized query.
+            if( !refreshDatabaseRevision() || generation != m_catalogGeneration )
+                return fail( "Catalog changed during browsing; refresh the first page." );
+            page.next.search = query.search;
+            page.next.type = query.type;
+            page.next.includeScenes = query.includeScenes;
+            page.next.generation = generation;
+            page.next.catalogInstance = m_catalogInstance;
+            if( !page.entries.empty() )
+                page.next.afterUuid = page.entries.back().uuid;
+            if(sourceBudgetDenialCount() != denials) throw std::bad_alloc();
+            page.succeeded = true;
             return page;
-        };
-        if( query.pageSize == 0 || query.pageSize > 256 || query.search.size() > 1024 ||
-            query.type.size() > 256 || query.search.find( '\0' ) != String::npos ||
-            query.type.find( '\0' ) != String::npos )
-            return fail(
-                "Invalid catalog query: page size must be 1-256 and filters must be bounded text." );
-        if( !m_catalogReady )
-            return fail( "No open asset catalog." );
-        auto database = getDatabase();
-        DatabaseConnectionLock connection(
-            database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr );
-        if( !refreshDatabaseRevision() )
-            return fail( "Cannot read the catalog revision." );
-        const auto generation = m_catalogGeneration;
-        if( cursor &&
-            ( cursor->catalogInstance != m_catalogInstance || cursor->generation != generation ||
-              cursor->search != query.search || cursor->type != query.type ||
-              cursor->includeScenes != query.includeScenes || !validValue( cursor->afterUuid, 256 ) ) )
-            return fail( "Catalog or filters changed; restart browsing from the first page." );
-        // The bundled SQLite predates instr(). GLOB is case-sensitive; escape
-        // its metacharacters so user text remains a literal substring.
-        String pattern = "*";
-        for( const auto ch : query.search )
-        {
-            if( ch == '*' )
-                pattern += "[*]";
-            else if( ch == '?' )
-                pattern += "[?]";
-            else if( ch == '[' )
-                pattern += "[[]";
-            else
-                pattern += ch;
         }
-        pattern += '*';
-        auto rows = queryCatalog(
-            *this,
-            "SELECT uuid,path,type,kind,path_key FROM resources "
-            "WHERE (?='' OR path GLOB ? OR uuid GLOB ?) "
-            "AND (?='' OR type=?) AND (?='1' OR kind='file') "
-            "AND uuid COLLATE BINARY > ? ORDER BY uuid COLLATE BINARY LIMIT ?",
-            { query.search, pattern, pattern, query.type, query.type, query.includeScenes ? "1" : "0",
-              cursor ? cursor->afterUuid : String(), StringUtil::toString( query.pageSize + 1 ) } );
-        if( !rows )
-            return fail( "Asset catalog query failed." );
-        while( !rows->eof() )
+        catch(const std::bad_alloc &)
         {
-            if( page.entries.size() == query.pageSize )
-            {
-                page.hasMore = true;
-                break;
-            }
-            EntrySnapshot entry;
-            entry.uuid = rows->getFieldValue( "uuid" );
-            entry.path = rows->getFieldValue( "path" );
-            entry.type = rows->getFieldValue( "type" );
-            const auto kind = rows->getFieldValue( "kind" );
-            const auto key = rows->getFieldValue( "path_key" );
-            if( !validValue( entry.uuid, 256 ) || !validValue( entry.type, 256 ) )
-                return fail( "Invalid catalog identity; repair the catalog before browsing." );
-            if( kind == "file" )
-            {
-                AssetCatalogPath canonical;
-                String error;
-                if( !canonicalAssetCatalogPath( m_projectRoot, entry.path, canonical, error ) ||
-                    canonical.path != entry.path || canonical.key != key )
-                    return fail( "Invalid catalog path; repair the catalog before browsing." );
-            }
-            else if( kind == "scene" && entry.path == "scene" && key.empty() )
-                entry.kind = EntryKind::Scene;
-            else
-                return fail( "Invalid catalog entry kind." );
-            entry.generation = generation;
-            entry.catalogInstance = m_catalogInstance;
-            page.entries.push_back( entry );
-            rows->nextRow();
+            page = {};
+            page.error = "Budget exhausted";
+            return page;
         }
-        // Also catches writes from another connection during this materialized query.
-        if( !refreshDatabaseRevision() || generation != m_catalogGeneration )
-            return fail( "Catalog changed during browsing; refresh the first page." );
-        page.next.search = query.search;
-        page.next.type = query.type;
-        page.next.includeScenes = query.includeScenes;
-        page.next.generation = generation;
-        page.next.catalogInstance = m_catalogInstance;
-        if( !page.entries.empty() )
-            page.next.afterUuid = page.entries.back().uuid;
-        page.succeeded = true;
-        return page;
     }
 
     bool AssetDatabaseManager::isEntryCurrent( const EntrySnapshot &snapshot )
@@ -1202,7 +1220,7 @@ namespace workphone
             std::ifstream input( file, std::ios::binary );
             if( !input )
                 throw std::runtime_error( "Cannot read reference source document" );
-            std::vector<u8> bytes( static_cast<size_t>( size ) );
+            std::vector<u8, SourceBudgetAllocator<u8>> bytes( static_cast<size_t>( size ) );
             if( size )
                 input.read( reinterpret_cast<char *>( bytes.data() ),
                             static_cast<std::streamsize>( size ) );
@@ -1321,7 +1339,7 @@ namespace workphone
                                       { from.key, from.key + "/" } );
             if( !rows )
                 return false;
-            Array<std::pair<String, String>> paths;
+            Array<std::pair<String, String>> paths = makeSourceBudgetSnapshot<std::pair<String, String>>();
             while( !rows->eof() )
             {
                 if( paths.size() >= 10000 || !validValue( rows->getFieldValue( "path_key" ), 1024 ) ||
@@ -1385,8 +1403,9 @@ namespace workphone
                     String slot;
                     size_t depth;
                 };
-                Array<Node> nodes{ { serialized, "root", 0 } };
-                std::set<const Properties *> visited;
+                auto nodes = makeSourceBudgetSnapshot<Node>();
+                nodes.push_back({ serialized, "root", 0 });
+                SourceBudgetSet<const Properties *> visited;
                 size_t properties = 0;
                 for( size_t i = 0; i < nodes.size(); ++i )
                 {
@@ -1463,9 +1482,9 @@ namespace workphone
                     save = std::move( candidate );
                     return true;
                 }
-                std::unique_ptr<CatalogTransaction> transaction;
+                SourceBudgetUnique<CatalogTransaction> transaction;
                 if( ownTransaction )
-                    transaction = std::make_unique<CatalogTransaction>( *catalog );
+                    transaction = makeSourceBudgetUnique<CatalogTransaction>( *catalog );
                 if( media && !mediaSession.isCurrent( media ) )
                     throw std::runtime_error( "Bundled media reference session changed" );
                 if( ( transaction && !transaction->active() ) || !referenceSchema( *catalog ) )
@@ -1497,6 +1516,12 @@ namespace workphone
                     throw std::runtime_error( "Cannot commit pending reference save" );
                 save = std::move( candidate );
                 return true;
+            }
+            catch( const std::bad_alloc & )
+            {
+                if( captureOnly ) throw;
+                error = "Budget exhausted";
+                return false;
             }
             catch( const std::exception &e )
             {
@@ -1750,11 +1775,19 @@ namespace workphone
     bool saveAssetDocumentText( const String &path, SmartPtr<Properties> serialized, const String &text,
                                 String &error )
     {
-        Array<u8> bytes;
-        bytes.resize( text.size() );
-        std::copy( text.begin(), text.end(), bytes.begin() );
-        String installed;
-        return saveAssetDocument( path, serialized, bytes, installed, error );
+        try
+        {
+            auto bytes = makeSourceBudgetSnapshot<u8>();
+            bytes.resize( text.size() );
+            std::copy( text.begin(), text.end(), bytes.begin() );
+            String installed;
+            return saveAssetDocument( path, serialized, bytes, installed, error );
+        }
+        catch(const std::bad_alloc &)
+        {
+            error = "Budget exhausted";
+            return false;
+        }
     }
 
     namespace
@@ -1831,7 +1864,7 @@ namespace workphone
                     "Legacy JSON lacks typed property metadata. Open and save it before reindexing" );
             auto result = make_ptr<Properties>();
             result->setName( jsonString( jsonMember( node, "handle_name" ) ) );
-            std::set<String> names;
+            SourceBudgetSet<String> names;
             for( auto entry = metadata->child; entry; entry = entry->next )
             {
                 if( !cJSON_IsObject( entry ) || ++fields > 100000 )
@@ -1869,7 +1902,7 @@ namespace workphone
             return result;
         }
 
-        void preflightReferenceXml( const std::string &text )
+        void preflightReferenceXml( const SourceBudgetText &text )
         {
             if( text.find( '\0' ) != std::string::npos )
                 throw std::runtime_error( "Reference XML contains NUL bytes" );
@@ -1878,13 +1911,13 @@ namespace workphone
                 auto end = text.find( ';', at + 2 );
                 if( end == std::string::npos || end - at > 12 )
                     throw std::runtime_error( "Malformed XML character reference" );
-                const auto number = text.substr( at + 2, end - at - 2 );
-                size_t consumed = 0;
-                const bool hex = !number.empty() && number[0] == 'x';
-                const auto value =
-                    std::stoul( hex ? number.substr( 1 ) : number, &consumed, hex ? 16 : 10 );
+                const bool hex = at + 2 < end && text[at + 2] == 'x';
+                const auto begin = text.data() + at + 2 + (hex ? 1 : 0);
+                const auto last = text.data() + end;
+                u32 value = 0;
+                const auto parsed = std::from_chars(begin, last, value, hex ? 16 : 10);
                 if( !value || value > 0x10ffff || ( value >= 0xd800 && value <= 0xdfff ) ||
-                    consumed != number.size() - ( hex ? 1 : 0 ) )
+                    parsed.ec != std::errc{} || parsed.ptr != last )
                     throw std::runtime_error( "Invalid XML character reference" );
             }
             size_t depth = 0, tags = 0;
@@ -1961,7 +1994,7 @@ namespace workphone
                     "Legacy XML lacks typed property metadata. Open and save it before reindexing" );
             auto result = make_ptr<Properties>();
             result->setName( name );
-            std::set<String> names;
+            SourceBudgetSet<String> names;
             bool childrenSeen = false;
             for( auto child = node->FirstChildElement(); child; child = child->NextSiblingElement() )
             {
@@ -1986,7 +2019,7 @@ namespace workphone
                     result->setProperty( key, child->GetText() ? child->GetText() : "", type );
                     auto &property = result->getPropertyObject( key );
                     property.setReadOnly( String( readOnly ) == "true" );
-                    std::set<String> attributes;
+                    SourceBudgetSet<String> attributes;
                     for( auto entry = child->FirstChildElement(); entry;
                          entry = entry->NextSiblingElement() )
                     {
@@ -2013,7 +2046,7 @@ namespace workphone
                     throw std::runtime_error( error.c_str() );
                 return result;
             }
-            const std::string textBytes( bytes.begin(), bytes.end() );
+            const SourceBudgetText textBytes( bytes.begin(), bytes.end() );
             const auto first = textBytes.find_first_not_of( " \t\r\n" );
             if( first != std::string::npos && textBytes[first] == '<' )
             {
@@ -2031,7 +2064,7 @@ namespace workphone
                 return referenceXmlProperties( properties, 0, nodes, fields );
             }
             preflightReferenceJson( bytes );
-            std::vector<char> text( bytes.begin(), bytes.end() );
+            std::vector<char, SourceBudgetAllocator<char>> text( bytes.begin(), bytes.end() );
             text.push_back( 0 );
             std::unique_ptr<cJSON, decltype( &cJSON_Delete )> json(
                 cJSON_ParseWithLengthOpts( text.data(), text.size(), nullptr, 1 ), &cJSON_Delete );
@@ -2040,12 +2073,12 @@ namespace workphone
                     "Malformed or unsupported reference document; reindex supports typed JSON and "
                     "portable binary" );
             // cJSON permits duplicate keys. Reject them before any identity lookup.
-            std::vector<const cJSON *> pending{ json.get() };
+            std::vector<const cJSON *, SourceBudgetAllocator<const cJSON *>> pending{ json.get() };
             size_t visited = 0;
             for( size_t i = 0; i < pending.size(); ++i )
             {
                 auto node = pending[i];
-                std::set<std::string> keys;
+                SourceBudgetSet<String> keys;
                 for( auto child = node->child; child; child = child->next )
                 {
                     if( ++visited > 300000 )
@@ -2105,7 +2138,7 @@ namespace workphone
             const auto size = std::filesystem::file_size( file );
             if( !size || size > 64 * 1024 * 1024 )
                 throw std::runtime_error( "Reindex document exceeds byte budget" );
-            Array<u8> bytes;
+            Array<u8> bytes = makeSourceBudgetSnapshot<u8>();
             bytes.resize( static_cast<size_t>( size ) );
             std::ifstream input( file, std::ios::binary );
             input.read( reinterpret_cast<char *>( bytes.data() ),
@@ -2136,7 +2169,7 @@ namespace workphone
         ObjectObserver<AssetDatabaseManager> media;
         ObjectObserver<ResourceDatabase> activeResources;
         AssetDocumentScanOptions options;
-        Array<AssetDocumentInventoryEntry> documents;
+        Array<AssetDocumentInventoryEntry> documents = makeSourceBudgetSnapshot<AssetDocumentInventoryEntry>();
         String root, cacheKey, mediaKey;
         u64 generation = 0, mediaGeneration = 0;
         bool active = false, hasMedia = false;
@@ -2177,7 +2210,7 @@ namespace workphone
             if( size > budget )
                 throw DocumentScanBudgetExceeded();
             budget -= size;
-            Array<u8> bytes;
+            Array<u8> bytes = makeSourceBudgetSnapshot<u8>();
             bytes.resize( static_cast<size_t>( size ) );
             std::ifstream input( file, std::ios::binary );
             input.read( reinterpret_cast<char *>( bytes.data() ),
@@ -2210,6 +2243,7 @@ namespace workphone
                                                SmartPtr<AssetDatabaseManager> media )
     {
         AssetDocumentInventory report;
+        const auto denials = sourceBudgetDenialCount();
         try
         {
             namespace fs = std::filesystem;
@@ -2219,7 +2253,7 @@ namespace workphone
                 throw std::runtime_error(
                     "Scan requires an available project catalog and bounded limits" );
             ScopedLock lock( catalog.get() );
-            auto snapshot = std::make_shared<AssetDocumentInventorySnapshot>();
+            auto snapshot = std::allocate_shared<AssetDocumentInventorySnapshot>(SourceBudgetAllocator<AssetDocumentInventorySnapshot>{});
             snapshot->options = options;
             snapshot->root = catalog->getProjectRoot();
             if( !snapshot->session.capture( catalog ) )
@@ -2281,7 +2315,7 @@ namespace workphone
             {
                 String path, diagnostic;
             };
-            std::map<std::string, Candidate> candidates;
+            SourceBudgetMap<String, Candidate> candidates;
             auto add = [&]( const String &key, const String &path, const String &diagnostic ) {
                 auto found = candidates.find( key.c_str() );
                 if( found == candidates.end() )
@@ -2383,6 +2417,10 @@ namespace workphone
                             throw std::runtime_error( error.c_str() );
                         entry.canReindex = true;
                     }
+                    catch( const std::bad_alloc & )
+                    {
+                        throw;
+                    }
                     catch( const DocumentScanBudgetExceeded & )
                     {
                         throw;
@@ -2392,6 +2430,7 @@ namespace workphone
                         entry.diagnostic = e.what();
                     }
                 }
+                if(sourceBudgetDenialCount() != denials) throw std::bad_alloc();
                 if( entry.canReindex )
                     ++report.ready;
                 else
@@ -2404,9 +2443,15 @@ namespace workphone
                 ( media && ( !snapshot->mediaSession.isCurrent( media ) ||
                              snapshot->mediaGeneration != media->getCatalogGeneration() ) ) )
                 throw std::runtime_error( "Catalog changed during document scan; scan again" );
+            if(sourceBudgetDenialCount() != denials) throw std::bad_alloc();
             snapshot->documents = report.documents;
             report.m_snapshot = snapshot;
             report.succeeded = true;
+        }
+        catch( const std::bad_alloc & )
+        {
+            report = {};
+            report.error = "Budget exhausted";
         }
         catch( const std::exception &e )
         {
@@ -2612,14 +2657,14 @@ namespace workphone
         }
         String treeDigest( const assetfs::path &path )
         {
-            std::map<std::string, assetfs::path> entries;
+            SourceBudgetMap<String, String> entries;
             auto add = [&]( const assetfs::path &entry, const std::string &relative ) {
                 if( reparsePath( entry ) ||
                     ( !assetfs::is_directory( entry ) && !assetfs::is_regular_file( entry ) ) )
                     throw std::runtime_error( "Asset operations reject links and special files" );
                 if( entries.size() >= 100000 )
                     throw std::runtime_error( "Asset operation exceeds the tree entry limit" );
-                entries.emplace( relative, entry );
+                entries.emplace( relative.c_str(), entry.u8string().c_str() );
             };
             add( path, "." );
             if( assetfs::is_directory( path ) )
@@ -2636,11 +2681,12 @@ namespace workphone
             for( const auto &entry : entries )
             {
                 feed( entry.first.data(), entry.first.size() );
-                const char kind = assetfs::is_directory( entry.second ) ? 'D' : 'F';
+                const auto file = assetfs::u8path(entry.second.c_str());
+                const char kind = assetfs::is_directory( file ) ? 'D' : 'F';
                 feed( &kind, 1 );
                 if( kind == 'F' )
                 {
-                    std::ifstream input( entry.second, std::ios::binary );
+                    std::ifstream input( file, std::ios::binary );
                     if( !input )
                         throw std::runtime_error( "Cannot snapshot asset bytes" );
                     char bytes[65536];
@@ -2702,7 +2748,7 @@ namespace workphone
                 manager, "SELECT * FROM wp_asset_operation_entries WHERE operation_id=?", { id } );
             if( !rows )
                 throw std::runtime_error( "Cannot read asset operation identities" );
-            Array<OperationEntry> entries;
+            Array<OperationEntry> entries = makeSourceBudgetSnapshot<OperationEntry>();
             while( !rows->eof() )
             {
                 entries.push_back( { rows->getFieldValue( "uuid" ), rows->getFieldValue( "path" ),
@@ -2813,7 +2859,7 @@ namespace workphone
                 throw std::runtime_error( "Destination folder does not exist" );
             const auto digest = treeDigest( from );
             const auto expectedRevision = m_databaseRevision;
-            Array<OperationEntry> entries;
+            Array<OperationEntry> entries = makeSourceBudgetSnapshot<OperationEntry>();
             auto rows =
                 queryCatalog( *this, "SELECT uuid,path,type,path_key FROM resources WHERE kind='file'" );
             if( !rows )
@@ -2859,7 +2905,7 @@ namespace workphone
                         if( assetfs::is_regular_file( entry.path() ) )
                             checkFormat( entry.path() );
             }
-            Array<String> removedIds;
+            Array<String> removedIds = makeSourceBudgetSnapshot<String>();
             for( const auto &entry : entries )
                 removedIds.push_back( entry.uuid );
             {
@@ -2949,7 +2995,7 @@ namespace workphone
             if( assetfs::exists( to ) || treeDigest( from ) != row->getFieldValue( "digest" ) )
                 throw std::runtime_error( "Undo conflicts with external files or changed asset bytes" );
             const auto entries = operationEntries( *this, id );
-            Array<String> removedIds;
+            Array<String> removedIds = makeSourceBudgetSnapshot<String>();
             for( const auto &entry : entries )
                 removedIds.push_back( entry.newUuid );
             const auto originalSource = row->getFieldValue( "source" );
@@ -2997,7 +3043,7 @@ namespace workphone
     Array<AssetDatabaseManager::FileOperationResult> AssetDatabaseManager::recoverFileOperations()
     {
         ScopedLock lock( this );
-        Array<FileOperationResult> results;
+        Array<FileOperationResult> results = makeSourceBudgetSnapshot<FileOperationResult>();
         if( m_readOnly )
             return results;
         if( !m_catalogReady )

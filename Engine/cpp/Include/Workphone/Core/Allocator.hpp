@@ -8,6 +8,7 @@
 #include <new>
 #include <type_traits>
 #include <utility>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 // Static assertions to validate type requirements at compile time
 static_assert( std::is_nothrow_default_constructible<std::size_t>::value,
@@ -17,6 +18,20 @@ static_assert( std::is_nothrow_default_constructible<std::ptrdiff_t>::value,
 
 namespace workphone
 {
+    struct SourceBudgetTag {};
+    inline constexpr SourceBudgetTag sourceBudget{};
+
+    namespace detail
+    {
+        struct ContainerAllocationPolicy
+        {
+            void *(*allocate)(size_t, size_t);
+            void (*deallocate)(void *, size_t) noexcept;
+        };
+        // The policy lives in WPCore, so retained snapshots never point into
+        // a producing plugin's static data after that plugin is unloaded.
+        WPCore_API const ContainerAllocationPolicy &sourceContainerPolicy() noexcept;
+    }
 
     /**
      * @brief Standard-compatible allocator base template.
@@ -24,8 +39,8 @@ namespace workphone
      * Provides the full named-requirements interface expected by
      * std::allocator_traits and by the engine's own containers
      * (ArrayBase, MapBase, etc.). Allocation is performed through
-     * global operator new / operator delete so the class is usable
-     * without any engine-specific dependencies.
+     * global operator new / operator delete by default. An explicit sourceBudget
+     * tag selects shared SourceCpu admission and follows container ownership.
      *
      * Derived allocators (pool allocators, aligned allocators, …)
      * can override allocate / deallocate while inheriting the
@@ -60,7 +75,9 @@ namespace workphone
         using reference = T &;
         using const_reference = const T &;
         using propagate_on_container_move_assignment = std::true_type;
-        using is_always_equal = std::true_type;
+        using propagate_on_container_copy_assignment = std::true_type;
+        using propagate_on_container_swap = std::true_type;
+        using is_always_equal = std::false_type;
 
         /**
          * @brief Rebind structure for allocator conversion.
@@ -82,10 +99,13 @@ namespace workphone
         /**
          * @brief Default constructor.
          *
-         * Constructs an empty allocator. All instances of AllocatorBase<T>
-         * are equal, so this is a minor optimization.
+         * Constructs a raw allocator. Tagged snapshots opt into SourceCpu.
          */
         AllocatorBase() noexcept = default;
+        explicit AllocatorBase( SourceBudgetTag ) noexcept :
+            m_policy( &detail::sourceContainerPolicy() ) {}
+        bool isSourceBudgeted() const noexcept { return m_policy != nullptr; }
+        AllocatorBase &operator=( const AllocatorBase & ) noexcept = default;
 
         /**
          * @brief Copy constructor.
@@ -106,7 +126,7 @@ namespace workphone
          * @param other The allocator to copy.
          */
         template <typename U>
-        AllocatorBase( const AllocatorBase<U> & ) noexcept
+        AllocatorBase( const AllocatorBase<U> &other ) noexcept : m_policy(other.m_policy)
         {
         }
 
@@ -167,6 +187,14 @@ namespace workphone
             }
 
             const size_type bytes = n * sizeof( T );
+#if defined( _MSC_VER ) && _ITERATOR_DEBUG_LEVEL != 0
+            // As with SourceBudgetAllocator, MSVC's noexcept iterator-proxy
+            // constructors cannot propagate budget denial. Exclude only proxies.
+            if constexpr( std::is_same_v<T, std::_Container_proxy> )
+                return std::allocator<T>{}.allocate(n);
+#endif
+            if( m_policy )
+                return static_cast<pointer>( m_policy->allocate(bytes, alignof(T)) );
 
             // Final validation before allocation
             if( bytes == 0 )
@@ -217,10 +245,16 @@ namespace workphone
          * - p == nullptr: Safe to call, no-op
          * - n == 0: Safe to call, no-op
          */
-        void deallocate( pointer p, size_type /*n*/ ) noexcept
+        void deallocate( pointer p, size_type n ) noexcept
         {
+#if defined( _MSC_VER ) && _ITERATOR_DEBUG_LEVEL != 0
+            if constexpr( std::is_same_v<T, std::_Container_proxy> )
+            { std::allocator<T>{}.deallocate(p, n); return; }
+#endif
+            (void)n;
             if( p != nullptr )
             {
+                if( m_policy ) { m_policy->deallocate(p, alignof(T)); return; }
                 ::operator delete( static_cast<void *>( p ) );
             }
         }
@@ -344,9 +378,10 @@ namespace workphone
         /** @} */
 
     private:
-        // Disallow assignment to prevent accidental misuse
-        // Allocators should be lightweight and typically not need assignment
-        AllocatorBase &operator=( const AllocatorBase & ) = delete;
+        template<class> friend class AllocatorBase;
+        // Raw by default. Snapshot producers explicitly select SourceCpu;
+        // copying/rebinding/moving the allocator preserves physical ownership.
+        const detail::ContainerAllocationPolicy *m_policy = nullptr;
     };
 
     /**
@@ -357,33 +392,31 @@ namespace workphone
     /**
      * @brief Equality comparison for allocators.
      *
-     * All AllocatorBase instances are considered equal since they are stateless.
-     * This allows containers using different allocator instances to share memory
-     * if needed.
+     * Instances compare equal when they use the same allocation policy.
      *
      * @tparam T Value type of the first allocator.
      * @tparam U Value type of the second allocator.
-     * @return Always returns true.
+     * @return Whether storage can be exchanged without changing its policy.
      */
     template <typename T, typename U>
-    bool operator==( const AllocatorBase<T> &, const AllocatorBase<U> & ) noexcept
+    bool operator==( const AllocatorBase<T> &a, const AllocatorBase<U> &b ) noexcept
     {
-        return true;
+        return a.isSourceBudgeted() == b.isSourceBudgeted();
     }
 
     /**
      * @brief Inequality comparison for allocators.
      *
-     * All AllocatorBase instances are considered equal since they are stateless.
+     * Raw storage and admitted storage require different deallocation paths.
      *
      * @tparam T Value type of the first allocator.
      * @tparam U Value type of the second allocator.
-     * @return Always returns false.
+     * @return Whether the policies differ.
      */
     template <typename T, typename U>
-    bool operator!=( const AllocatorBase<T> &, const AllocatorBase<U> & ) noexcept
+    bool operator!=( const AllocatorBase<T> &a, const AllocatorBase<U> &b ) noexcept
     {
-        return false;
+        return !(a == b);
     }
 
     /** @} */

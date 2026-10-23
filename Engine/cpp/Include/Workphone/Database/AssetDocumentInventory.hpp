@@ -25,7 +25,7 @@ namespace workphone
      * files are rewritten, and blocked/missing documents retain their old graph. */
     struct AssetDocumentInventory
     {
-        Array<AssetDocumentInventoryEntry> documents;
+        Array<AssetDocumentInventoryEntry> documents = makeSourceBudgetSnapshot<AssetDocumentInventoryEntry>();
         u64 bytesRead = 0;
         u32 visited = 0, excluded = 0, ready = 0, blocked = 0;
         bool succeeded = false;

@@ -53,7 +53,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Unloading );
-            auto textures = m_textures.snapshot();
+            auto textures = std::move(m_textures);
             for( auto &texture : textures )
             {
                 if( texture )

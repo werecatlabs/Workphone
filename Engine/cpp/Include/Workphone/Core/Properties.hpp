@@ -1013,12 +1013,12 @@ namespace workphone
         /**
          * @brief The array containing all properties in this group.
          */
-        Array<Property> m_properties;
+        Array<Property> m_properties = makeSourceBudgetSnapshot<Property>();
 
         /**
          * @brief Array of child property groups, allowing for hierarchical property organization.
          */
-        Array<SmartPtr<Properties>> m_children;
+        Array<SmartPtr<Properties>> m_children = makeSourceBudgetSnapshot<SmartPtr<Properties>>();
     };
 
     template <class T>

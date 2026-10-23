@@ -277,14 +277,14 @@ namespace workphone
             MeshCacheLock lifecycleLock;
             setLoadingState( LoadingState::Unloading );
 
-            auto meshes = m_meshes.snapshot();
+            auto meshes = std::move(m_meshes);
             for( const auto &mesh : meshes )
             {
                 mesh.get()->unload( nullptr );
             }
             m_meshes.releaseStorage();
 
-            auto resources = m_meshResources.snapshot();
+            auto resources = std::move(m_meshResources);
             for( const auto &resource : resources )
             {
                 resource.get()->unload( nullptr );

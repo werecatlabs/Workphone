@@ -318,7 +318,8 @@ namespace workphone
         String m_value;
 
         /** The attributes associated with this property. */
-        Array<Pair<FixedString<128>, FixedString<256>>> m_attributes;
+        Array<Pair<FixedString<128>, FixedString<256>>> m_attributes =
+            makeSourceBudgetSnapshot<Pair<FixedString<128>, FixedString<256>>>();
     };
 
     inline c8 *Property::getNamePtr()

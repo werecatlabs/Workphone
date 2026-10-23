@@ -14,8 +14,18 @@
 
 namespace workphone
 {
+    namespace detail
+    {
+        const ContainerAllocationPolicy &sourceContainerPolicy() noexcept
+        {
+            static const ContainerAllocationPolicy policy{
+                &allocateSourceBudgetStorage, &freeSourceBudgetStorage};
+            return policy;
+        }
+    }
     namespace
     {
+        thread_local u64 sourceDenials = 0;
         struct SourceStorageHeader
         {
             StreamBudget budget;
@@ -29,6 +39,7 @@ namespace workphone
             return ( sizeof( SourceStorageHeader ) + alignment - 1 ) & ~( alignment - 1 );
         }
     }
+    u64 sourceBudgetDenialCount() noexcept { return sourceDenials; }
     size_t sourceBudgetStorageBytes( size_t bytes, size_t alignment )
     {
         const auto offset = sourceStorageOffset( alignment );
@@ -39,7 +50,7 @@ namespace workphone
     {
         const auto total = sourceBudgetStorageBytes( bytes, alignment );
         auto budget = WorldStreamingScheduler::reserveSharedSource( total );
-        if( !budget ) throw std::bad_alloc();
+        if( !budget ) { ++sourceDenials; throw std::bad_alloc(); }
         const auto allocationAlignment = std::max( alignment, alignof( SourceStorageHeader ) );
         auto pointer = ::operator new( total, std::align_val_t( allocationAlignment ) );
         ::new( pointer ) SourceStorageHeader{ std::move( budget ), allocationAlignment };
@@ -58,6 +69,11 @@ namespace workphone
     }
     namespace
     {
+        void streamError(String &error, const char *message) noexcept
+        {
+            try { error = message; }
+            catch( const std::bad_alloc & ) { error = "Budget exhausted"; }
+        }
         thread_local const void *streamWorker = nullptr;
         const char *memoryName( StreamMemoryClass category )
         {
@@ -94,12 +110,18 @@ namespace workphone
     {
         std::shared_ptr<StreamBudgetState> sharedAllocationLedger()
         {
-            static auto state = [] {
-                auto value = std::make_shared<StreamBudgetState>();
-                value->limits = WorldStreamLimits{}.bytes;
-                return value;
-            }();
-            return state;
+            // Standard String pools can be used by late static destructors.
+            // Keep this small process-lifetime ledger alive independently of
+            // service and static cleanup order; physical leases still retire.
+            struct Ledger
+            {
+                union { std::shared_ptr<StreamBudgetState> state; };
+                Ledger() : state(std::make_shared<StreamBudgetState>())
+                { state->limits = WorldStreamLimits{}.bytes; }
+                ~Ledger() {}
+            };
+            static Ledger ledger;
+            return ledger.state;
         }
     }
     StreamBudget WorldStreamingScheduler::reserveSharedSource( u64 bytes )
@@ -321,13 +343,13 @@ namespace workphone
                 {
                     result.payload.reset();
                     result.bytes = 0;
-                    result.error = e.what();
+                    streamError(result.error, e.what());
                 }
                 catch( ... )
                 {
                     result.payload.reset();
                     result.bytes = 0;
-                    result.error = "Streaming producer threw an unknown exception.";
+                    streamError(result.error, "Streaming producer threw an unknown exception.");
                 }
                 result.key = job.request.key;
                 result.generation = job.generation;
@@ -453,33 +475,49 @@ namespace workphone
         const auto index = size_t( category );
         if( index >= size_t( StreamMemoryClass::Count ) )
         {
-            error = "Invalid streaming memory class.";
+            streamError(error, "Invalid streaming memory class.");
             return {};
         }
         try
         {
             auto state = m_impl->budget;
             auto lease = StreamBudget( new StreamBudgetLease( state, category, 0 ) );
-            std::lock_guard<std::mutex> lock( state->mutex );
-            if( bytes > state->limits[index] || state->used[index] > state->limits[index] - bytes )
+            u64 available = 0;
+            bool denied = false;
             {
-                if( state->rejectedReservations[index] != std::numeric_limits<u64>::max() )
-                    ++state->rejectedReservations[index];
-                error = String( "Shared streaming budget for " ) + memoryName( category ) +
-                        " is exhausted: requested " + std::to_string( bytes ) + " bytes, available " +
-                        std::to_string( state->limits[index] - state->used[index] ) + " bytes.";
+                std::lock_guard<std::mutex> lock( state->mutex );
+                available = state->limits[index] - state->used[index];
+                denied = bytes > available;
+                if( denied )
+                {
+                    if( state->rejectedReservations[index] != std::numeric_limits<u64>::max() )
+                        ++state->rejectedReservations[index];
+                }
+                else
+                {
+                    state->used[index] += bytes;
+                    state->peakUsed[index] = std::max(state->peakUsed[index], state->used[index]);
+                    lease->m_bytes = bytes;
+                }
+            }
+            // Engine String slabs use this same ledger. Never allocate or
+            // release their storage while holding its mutex.
+            if( denied )
+            {
+                try {
+                    error = String("Shared streaming budget for ") + memoryName(category) +
+                        " is exhausted: requested " + std::to_string(bytes) + " bytes, available " +
+                        std::to_string(available) + " bytes.";
+                }
+                catch( const std::bad_alloc & ) { streamError(error, "Budget exhausted"); }
                 return {};
             }
-            // A zero-byte lease is still a successful admission token.
-            state->used[index] += bytes;
-            state->peakUsed[index] = std::max( state->peakUsed[index], state->used[index] );
-            lease->m_bytes = bytes;
             error.clear();
             return lease;
         }
         catch( const std::exception &e )
         {
-            error = e.what();
+            streamError(error, e.what());
             return {};
         }
     }
@@ -488,7 +526,7 @@ namespace workphone
         const auto index = size_t( category );
         if( index >= size_t( StreamMemoryClass::Count ) )
         {
-            error = "Invalid streaming memory class.";
+            streamError(error, "Invalid streaming memory class.");
             return false;
         }
         std::lock_guard<std::mutex> queue( m_impl->mutex );
@@ -498,17 +536,19 @@ namespace workphone
                     ( category == StreamMemoryClass::ResultCpu &&
                       job.request.maximumResultBytes > bytes ) )
                 {
-                    error = "Streaming budget cannot make pending work impossible.";
+                    streamError(error, "Streaming budget cannot make pending work impossible.");
                     return false;
                 }
+        bool belowLive = false;
         {
             std::lock_guard<std::mutex> lock( m_impl->budget->mutex );
-            if( bytes < m_impl->budget->used[index] )
-            {
-                error = "Streaming budget cannot shrink below live reservations.";
-                return false;
-            }
-            m_impl->budget->limits[index] = bytes;
+            belowLive = bytes < m_impl->budget->used[index];
+            if( !belowLive ) m_impl->budget->limits[index] = bytes;
+        }
+        if( belowLive )
+        {
+            streamError(error, "Streaming budget cannot shrink below live reservations.");
+            return false;
         }
         m_impl->budget->wake.notify_all();
         error.clear();
@@ -522,7 +562,7 @@ namespace workphone
             limits.maximumActive > m_impl->limits.workers ||
             limits.maximumReady > m_impl->limits.maximumReady )
         {
-            error = "Invalid streaming producer limits.";
+            streamError(error, "Invalid streaming producer limits.");
             return {};
         }
         try
@@ -535,7 +575,7 @@ namespace workphone
             std::lock_guard<std::mutex> lock( m_impl->mutex );
             if( m_impl->stopping || m_impl->producers.size() >= m_impl->limits.maximumProducers )
             {
-                error = "Shared streaming producer limit is exhausted.";
+                streamError(error, "Shared streaming producer limit is exhausted.");
                 return {};
             }
             const auto id = m_impl->nextId++;
@@ -547,7 +587,7 @@ namespace workphone
         }
         catch( const std::exception &e )
         {
-            error = e.what();
+            streamError(error, e.what());
             return {};
         }
     }
@@ -601,7 +641,7 @@ namespace workphone
                 const auto &state = *p.producers.at( m_id );
                 if( requests.size() > state.limits.maximumPending )
                 {
-                    error = "Streaming demand exceeds producer request limit.";
+                    streamError(error, "Streaming demand exceeds producer request limit.");
                     return false;
                 }
                 resultLimit = state.limits.maximumReadyBytes;
@@ -614,7 +654,7 @@ namespace workphone
                     request.maximumResultBytes > budgets[size_t( StreamMemoryClass::ResultCpu )] ||
                     request.workingBytes > budgets[size_t( StreamMemoryClass::WorkingCpu )] )
                 {
-                    error = "Invalid, duplicate or over-budget streaming request.";
+                    streamError(error, "Invalid, duplicate or over-budget streaming request.");
                     return false;
                 }
                 auto reservation = m_scheduler->reserve(
@@ -633,12 +673,13 @@ namespace workphone
                     candidate.size() >
                         p.limits.maximumPending - ( p.pendingCount - state.pending.size() ) )
                 {
-                    error = "Shared streaming pending request limit is exhausted.";
+                    streamError(error, "Shared streaming pending request limit is exhausted.");
                     return false;
                 }
                 // Budget updates take the same queue->budget lock order. Recheck
                 // after preparation so a concurrent limit change cannot admit a
                 // request which could never dispatch.
+                bool impossible = false;
                 {
                     std::lock_guard<std::mutex> budget( p.budget->mutex );
                     for( const auto &job : candidate )
@@ -647,14 +688,18 @@ namespace workphone
                             job.request.maximumResultBytes >
                                 p.budget->limits[size_t( StreamMemoryClass::ResultCpu )] )
                         {
-                            error =
-                                "Streaming request exceeds the current CPU working or result budget.";
-                            return false;
+                            impossible = true;
+                            break;
                         }
+                }
+                if( impossible )
+                {
+                    streamError(error, "Streaming request exceeds the current CPU working or result budget.");
+                    return false;
                 }
                 if( state.stats.generation == std::numeric_limits<u64>::max() )
                 {
-                    error = "Streaming generation exhausted.";
+                    streamError(error, "Streaming generation exhausted.");
                     return false;
                 }
                 ++state.stats.generation;
@@ -680,7 +725,7 @@ namespace workphone
         }
         catch( const std::exception &e )
         {
-            error = e.what();
+            streamError(error, e.what());
             return false;
         }
     }

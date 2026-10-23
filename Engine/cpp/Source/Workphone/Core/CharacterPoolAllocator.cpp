@@ -7,15 +7,13 @@ namespace workphone
     template <>
     CharacterPoolAllocator<char>::Pool &CharacterPoolAllocator<char>::pool()
     {
-        static Pool instance;
-        return instance;
+        return Pool::persistent();
     }
 
     template <>
     CharacterPoolAllocator<wchar_t>::Pool &CharacterPoolAllocator<wchar_t>::pool()
     {
-        static Pool instance;
-        return instance;
+        return Pool::persistent();
     }
 }  // namespace workphone
 #endif

@@ -25,6 +25,15 @@ namespace workphone
         virtual void unlockConnection() = 0;
     };
 
+    /** Optional failure cleanup. Rollback must not allocate an engine result
+     * wrapper: cleanup must work when SourceCpu admission is exhausted. */
+    class ITransactionCleanupDatabase
+    {
+    public:
+        virtual ~ITransactionCleanupDatabase() = default;
+        virtual bool rollbackTransaction() noexcept = 0;
+    };
+
     class DatabaseConnectionLock final
     {
     public:

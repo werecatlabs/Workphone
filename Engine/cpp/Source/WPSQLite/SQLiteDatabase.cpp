@@ -9,6 +9,13 @@ namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, SQLiteDatabase, IDatabase );
 
+    bool SQLiteDatabase::rollbackTransaction() noexcept
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_boundQueryMutex);
+        return m_database && m_database->mpDB &&
+            sqlite3_exec(m_database->mpDB, "ROLLBACK", nullptr, nullptr, nullptr) == SQLITE_OK;
+    }
+
     SQLiteDatabase::SQLiteDatabase()
     {
         m_database = workphone::make_shared<CppSQLite3DB>();

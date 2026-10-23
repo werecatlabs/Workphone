@@ -14,6 +14,9 @@ namespace workphone
     WPCore_API void *allocateSourceBudgetStorage( size_t bytes, size_t alignment );
     WPCore_API void freeSourceBudgetStorage( void *pointer, size_t alignment ) noexcept;
     WPCore_API size_t sourceBudgetStorageBytes( size_t bytes, size_t alignment );
+    // Per-thread epoch lets a staged operation detect denial swallowed by a
+    // legacy bool/null-result adapter before publishing an incomplete snapshot.
+    WPCore_API u64 sourceBudgetDenialCount() noexcept;
 
     // Opt-in policy for asset wrappers and authoring nodes. Factory and pool
     // storage use the same marker, including unused slots retained by a pool.

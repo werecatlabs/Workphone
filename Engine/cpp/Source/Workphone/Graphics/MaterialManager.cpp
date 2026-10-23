@@ -39,7 +39,7 @@ namespace workphone::render
         ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
-            auto materials = m_materials.snapshot();
+            auto materials = std::move(m_materials);
             for( auto &material : materials )
             {
                 if( material )

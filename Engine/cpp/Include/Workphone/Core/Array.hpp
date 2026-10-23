@@ -462,6 +462,8 @@ namespace workphone
 
         /** @brief Default constructor. */
         ArrayBase();
+        explicit ArrayBase( const allocator_type &allocator ) : m_alloc(allocator) {}
+        allocator_type get_allocator() const { return m_alloc; }
 
         /** @brief Configure automatic capacity growth. */
         explicit ArrayBase( GrowthPolicy growthPolicy, size_type growthSize = 1,
@@ -1788,6 +1790,19 @@ namespace workphone
 
     template <class _Ty, class _Alloc = Allocator<_Ty>>
     using Array = ArrayBase<_Ty, _Alloc>;
+
+    // Public Array type, with allocation policy retained by copies, moves,
+    // std::vector exports, and subsequent caller growth (including spare capacity).
+    template<class T> Array<T> makeSourceBudgetSnapshot()
+    { return Array<T>(Allocator<T>(sourceBudget)); }
+
+    template<class T, class A> Array<T> makeSourceBudgetSnapshot(const Array<T, A> &input)
+    {
+        auto result = makeSourceBudgetSnapshot<T>();
+        result.reserve(input.capacity());
+        for(const auto &value : input) result.push_back(value);
+        return result;
+    }
 
 }  // namespace workphone
 
