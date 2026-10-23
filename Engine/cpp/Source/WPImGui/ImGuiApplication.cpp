@@ -2632,7 +2632,7 @@ namespace workphone::ui
         {
             if( auto renderTexture = renderWindow->getRenderTexture() )
             {
-                auto pos = ImGui::GetWindowPos();
+                const auto imageMin = ImGui::GetCursorScreenPos();
                 auto avail_size = ImGui::GetContentRegionAvail();
 
                 void *pTexture = nullptr;
@@ -2643,7 +2643,6 @@ namespace workphone::ui
                     // Submit the render texture directly to the window draw list. ImGui::Image
                     // creates a hovered item, which makes ImGuizmo's activation guard reject
                     // mouse presses over the scene.
-                    const auto imageMin = ImGui::GetCursorScreenPos();
                     const auto imageMax = ImVec2( imageMin.x + avail_size.x, imageMin.y + avail_size.y );
                     ImGui::GetWindowDrawList()->AddImage( pTexture, imageMin, imageMax );
                 }
@@ -2657,9 +2656,11 @@ namespace workphone::ui
                     Vector2I( static_cast<s32>( avail_size.x ), static_cast<s32>( avail_size.y ) );
                 renderTexture->setSize( textureSize );
 
-                renderWindow->setPosition( Vector2F( pos.x, pos.y ) );
-                renderWindow->setSize( Vector2<real_Num>( static_cast<real_Num>( textureSize.x ),
-                                                          static_cast<real_Num>( textureSize.y ) ) );
+                // Input is mapped from client pixels into this displayed image rectangle.
+                // WindowPos includes the title/tab bar and padding; integer texture sizes
+                // also lose fractional display geometry when the image is scaled.
+                renderWindow->setPosition( Vector2F( imageMin.x, imageMin.y ) );
+                renderWindow->setSize( Vector2<real_Num>( avail_size.x, avail_size.y ) );
             }
         }
         catch( std::exception &e )

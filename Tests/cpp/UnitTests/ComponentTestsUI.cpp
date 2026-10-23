@@ -5,6 +5,7 @@
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <boost/test/unit_test.hpp>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 
 using namespace workphone;
@@ -323,6 +324,136 @@ BOOST_AUTO_TEST_CASE( ui_dropdown_button_callback_toggle )
     catch( std::exception &e )
     {
         WP_LOG_EXCEPTION( e );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( ui_actor_enable_preserves_native_visibility_callbacks )
+{
+    UiUtilTestGuard guard;
+    auto root = UiUtil::createLayout( "Settings", true );
+    auto child = UiUtil::createButton( "Back", false );
+    root->addChild( child );
+    UiUtil::loadHierarchy( root );
+    auto actors = root->getAllChildren();
+    actors.push_back( root );
+    for( auto actor : actors )
+        for( auto component : actor->getComponents() ) component->setState( IComponent::State::Edit );
+    auto button = child->getComponent<Button>();
+    BOOST_REQUIRE( button );
+    BOOST_REQUIRE( button->getElement() );
+    root->setEnabled( true, false );
+    child->setEnabled( true, false );
+    button->updateVisibility();
+    BOOST_CHECK( button->getElement()->isVisible() );
+
+    root->setEnabled( false, false );
+    BOOST_CHECK( child->isEnabled() );
+    BOOST_CHECK( !child->isEnabledInScene() );
+    BOOST_CHECK( !button->getElement()->isVisible() );
+    root->setEnabled( true, false );
+    BOOST_CHECK( child->isEnabledInScene() );
+    BOOST_CHECK( button->getElement()->isVisible() );
+
+    child->setEnabled( false, false );
+    BOOST_CHECK( !button->getElement()->isVisible() );
+    child->setEnabled( true, false );
+    BOOST_CHECK( button->getElement()->isVisible() );
+}
+
+BOOST_AUTO_TEST_CASE( ui_button_callback_replacement_releases_previous_handler )
+{
+    UiUtilTestGuard guard;
+    auto actor = UiUtil::createButton( "Apply", false );
+    auto button = actor->getComponent<Button>();
+    BOOST_REQUIRE( button );
+    int firstCalls = 0;
+    int replacementCalls = 0;
+    auto captured = std::make_shared<int>( 0 );
+    std::weak_ptr<int> previousCapture = captured;
+    button->setCallbackFunction( [&, captured]( hash_type ) { ++firstCalls; } );
+    captured.reset();
+    button->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+    BOOST_CHECK_EQUAL( firstCalls, 1 );
+    BOOST_CHECK( !previousCapture.expired() );
+
+    button->setCallbackFunction( [&]( hash_type ) { ++replacementCalls; } );
+    BOOST_CHECK( previousCapture.expired() );
+    button->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+    BOOST_CHECK_EQUAL( firstCalls, 1 );
+    BOOST_CHECK_EQUAL( replacementCalls, 1 );
+
+    button->setCallbackFunction( nullptr );
+    button->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+    BOOST_CHECK_EQUAL( firstCalls, 1 );
+    BOOST_CHECK_EQUAL( replacementCalls, 1 );
+}
+
+BOOST_AUTO_TEST_CASE( ui_dropdown_reloading_rebinds_trigger_once )
+{
+    UiUtilTestGuard guard;
+    auto actor = UiUtil::createDropdownWithOptions( "60 FPS", { "30 FPS", "60 FPS" }, false );
+    UiUtil::loadHierarchy( actor );
+    auto dropdown = actor->getComponent<Dropdown>();
+    BOOST_REQUIRE( dropdown );
+    auto button = dropdown->getButton();
+    BOOST_REQUIRE( button );
+    actor->setEnabled( true, false );
+    dropdown->setEnabled( true );
+
+    for( int reload = 0; reload < 3; ++reload )
+    {
+        dropdown->setButton( nullptr );
+        button->load( nullptr );
+        dropdown->load( nullptr );
+        dropdown->setButton( button );
+        BOOST_REQUIRE( dropdown->getButton() == button );
+        dropdown->setOpen( false );
+        button->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+        BOOST_CHECK( dropdown->isOpen() );
+        button->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+        BOOST_CHECK( !dropdown->isOpen() );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( ui_dropdown_native_state_transitions_restore_canvas )
+{
+    if( skipWhenUiRuntimeUnavailable() ) return;
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Settings lifecycle", true );
+    auto actor = UiUtil::createDropdownWithOptions( "60 FPS", { "30 FPS", "60 FPS" }, false );
+    window->addChild( actor );
+    UiUtil::loadHierarchy( window );
+    auto actors = window->getAllChildren();
+    actors.push_back( window );
+    for( auto current : actors )
+        for( auto component : current->getComponents() ) component->setState( IComponent::State::Edit );
+    window->hierarchyChanged();
+
+    auto dropdown = actor->getComponent<Dropdown>();
+    auto native = workphone::dynamic_pointer_cast<ui::IUIDropdown>( dropdown->getElement() );
+    auto canvas = window->getComponent<Layout>()->getLayout();
+    BOOST_REQUIRE( native );
+    BOOST_REQUIRE( canvas );
+    BOOST_REQUIRE( native->getParent() == canvas );
+
+    // Observe both halves of repeated Edit/Play transitions independently: leaving
+    // must detach the old widget, and entering must restore its canvas membership.
+    for( auto state : { IComponent::State::Play, IComponent::State::Edit, IComponent::State::Play } )
+    {
+        dropdown->setState( IComponent::State::None );
+        BOOST_CHECK( native->getParent() != canvas );
+        dropdown->setState( state );
+        BOOST_CHECK( native->getParent() == canvas );
+        BOOST_CHECK( native->getLayout() == canvas );
+        BOOST_CHECK( native->isVisible() );
+        BOOST_CHECK( !dropdown->getButton()->getActor()->isEnabled() );
+        BOOST_REQUIRE_EQUAL( native->getOptions().size(), 2 );
+        native->setSelectedOption( 0 );
+        dropdown->handleEvent( EventType::UI, IEvent::SELECT_HASH, {}, native, nullptr, nullptr );
+        BOOST_CHECK_EQUAL( dropdown->getLabel(), "30 FPS" );
+        native->setSelectedOption( 1 );
+        dropdown->handleEvent( EventType::UI, IEvent::SELECT_HASH, {}, native, nullptr, nullptr );
+        BOOST_CHECK_EQUAL( dropdown->getLabel(), "60 FPS" );
     }
 }
 
@@ -1175,6 +1306,75 @@ BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
     dropdown->setUseNativeUI( true );
     BOOST_CHECK( nativeDropdown->isVisible() );
     BOOST_CHECK( !dropdown->getContent()->isEnabled() );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_manual_order_elements_join_their_canvas )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Generated menu", true );
+    auto layout = window->getComponent<Layout>();
+    auto background = UiUtil::createImage( "", false );
+    auto title = UiUtil::createText( "Vehicle Simulator", false );
+
+    // The Lua builder configures detached widgets and their explicit order before mounting.
+    auto backgroundTransform = background->getComponent<LayoutTransform>();
+    auto titleTransform = title->getComponent<LayoutTransform>();
+    backgroundTransform->setAutoCalculateOrder( false, false );
+    backgroundTransform->setZOrder( 0, false );
+    titleTransform->setAutoCalculateOrder( false, false );
+    titleTransform->setZOrder( 1, false );
+    window->addChild( background );
+    window->addChild( title );
+    UiUtil::loadHierarchy( window );
+
+    auto backgroundComponent = background->getComponent<scene::Image>();
+    auto titleComponent = title->getComponent<Text>();
+    for( auto actor : { window, background, title } )
+    {
+        for( auto component : actor->getComponents() )
+        {
+            component->setState( IComponent::State::Edit );
+        }
+    }
+    window->hierarchyChanged();
+
+    auto canvasElement = layout->getLayout();
+    auto backgroundElement = backgroundComponent->getElement();
+    auto titleElement = titleComponent->getElement();
+    BOOST_REQUIRE( canvasElement );
+    BOOST_REQUIRE( backgroundElement );
+    BOOST_REQUIRE( titleElement );
+    BOOST_CHECK( backgroundElement->getParent() == canvasElement );
+    BOOST_CHECK( backgroundElement->getLayout() == canvasElement );
+    BOOST_CHECK( titleElement->getParent() == canvasElement );
+    BOOST_CHECK( titleElement->getLayout() == canvasElement );
+    BOOST_CHECK_EQUAL( backgroundElement->getOrder(), 0 );
+    BOOST_CHECK_EQUAL( titleElement->getOrder(), 1 );
+
+    // Refreshing generated UI must preserve the requested order without duplicate children.
+    window->hierarchyChanged();
+    backgroundComponent->updateOrder();
+    titleComponent->updateOrder();
+    BOOST_REQUIRE_EQUAL( canvasElement->getChildren().size(), 2 );
+    BOOST_CHECK_EQUAL( titleTransform->getZOrder(), 1 );
+
+    auto secondWindow = UiUtil::createLayout( "Other canvas", true );
+    UiUtil::loadHierarchy( secondWindow );
+    secondWindow->addChild( title );
+    title->hierarchyChanged();
+    titleComponent->updateOrder();
+    auto secondCanvas = secondWindow->getComponent<Layout>()->getLayout();
+    BOOST_REQUIRE( secondCanvas );
+    BOOST_CHECK( titleElement->getParent() == secondCanvas );
+    BOOST_CHECK( titleElement->getLayout() == secondCanvas );
+    BOOST_CHECK_EQUAL( titleElement->getOrder(), 1 );
+    BOOST_CHECK_EQUAL( canvasElement->getChildren().size(), 1 );
+    BOOST_CHECK_EQUAL( secondCanvas->getChildren().size(), 1 );
 }
 
 BOOST_AUTO_TEST_CASE( uiutil_scroll_input_routes_to_children )

@@ -589,7 +589,7 @@ namespace workphone::scene
     void Button::setCallbackFunction( std::function<void( hash_type )> callbackFunction )
     {
         ScopedLock lock( this );
-        WP_ASSERT( m_callbackFunction == nullptr );
+        // Composed controls rebind their trigger when they are loaded or restored.
         m_callbackFunction = callbackFunction;
     }
 

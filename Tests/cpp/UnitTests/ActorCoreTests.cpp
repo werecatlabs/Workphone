@@ -2,9 +2,104 @@
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <thread>
 
 using namespace workphone;
 using namespace workphone::scene;
+
+namespace
+{
+    class FlagCallbackActor : public GameActor
+    {
+    public:
+        std::function<void( u32, u32 )> onFlagChange;
+
+        void updateDirty( u32 flags, u32 oldFlags ) override
+        {
+            if( onFlagChange ) onFlagChange( flags, oldFlags );
+        }
+
+        bool tryReadFlags( u32 &flags )
+        {
+            if( !m_flags.try_lock() ) return false;
+            flags = m_flags.load();
+            m_flags.unlock();
+            return true;
+        }
+    };
+}  // namespace
+
+BOOST_AUTO_TEST_CASE( actor_flag_callbacks_release_lock_before_cross_thread_reads )
+{
+    struct Mutation
+    {
+        const char *name;
+        u32 bit;
+        std::function<void( GameActor & )> apply;
+    };
+    const Mutation mutations[] = {
+        { "mine", IGameActor::ActorFlagMine, []( GameActor &actor ) { actor.setMine( true ); } },
+        { "static", IGameActor::ActorFlagStatic, []( GameActor &actor ) { actor.setStatic( true, false ); } },
+        { "enabled", IGameActor::ActorFlagEnabled, []( GameActor &actor ) { actor.setEnabled( true, false ); } },
+        { "visible", IGameActor::ActorFlagVisible, []( GameActor &actor ) { actor.setVisible( true, false ); } },
+        { "dirty", IGameActor::ActorFlagDirty, []( GameActor &actor ) { actor.setDirty( true, false ); } },
+        { "smooth motion", IGameActor::ActorFlagSmoothMotion, []( GameActor &actor ) { actor.setSmoothMotion( true, false ); } },
+        { "perpetual", IGameActor::ActorFlagPerpetual, []( GameActor &actor ) { actor.setPerpetual( true, false ); } },
+        { "all flags", IGameActor::ActorFlagVisible, []( GameActor &actor ) { actor.setFlags( IGameActor::ActorFlagVisible ); } },
+        { "one flag", IGameActor::ActorFlagVisible, []( GameActor &actor ) { actor.setFlag( IGameActor::ActorFlagVisible, true, false ); } }
+    };
+
+    for( const auto &mutation : mutations )
+    {
+        auto actor = make_ptr<FlagCallbackActor>();
+        std::mutex gate;
+        std::condition_variable rendezvous;
+        bool callbackEntered = false;
+        bool readerFinished = false;
+        bool callbackReadComplete = false;
+        bool readerSawCallback = false;
+        bool readableDuringCallback = false;
+        u32 observedFlags = 0;
+        u32 notifiedFlags = 0;
+        u32 notifiedOldFlags = 0;
+
+        actor->onFlagChange = [&]( u32 flags, u32 oldFlags ) {
+            std::unique_lock<std::mutex> lock( gate );
+            if( callbackEntered ) return;
+            notifiedFlags = flags;
+            notifiedOldFlags = oldFlags;
+            callbackEntered = true;
+            rendezvous.notify_one();
+            callbackReadComplete = rendezvous.wait_for( lock, std::chrono::seconds( 2 ),
+                                                       [&]() { return readerFinished; } );
+        };
+
+        // Inspect the reader lock only while notification is executing. try_lock
+        // makes the old inversion fail deterministically instead of hanging tests.
+        std::thread reader( [&]() {
+            std::unique_lock<std::mutex> lock( gate );
+            readerSawCallback = rendezvous.wait_for( lock, std::chrono::seconds( 2 ),
+                                                    [&]() { return callbackEntered; } );
+            if( readerSawCallback ) readableDuringCallback = actor->tryReadFlags( observedFlags );
+            readerFinished = true;
+            rendezvous.notify_one();
+        } );
+        mutation.apply( *actor );
+        reader.join();
+        actor->onFlagChange = nullptr;
+
+        BOOST_CHECK_MESSAGE( callbackReadComplete && readerSawCallback, mutation.name );
+        BOOST_CHECK_MESSAGE( readableDuringCallback, mutation.name );
+        BOOST_CHECK_EQUAL( notifiedFlags, mutation.bit );
+        BOOST_CHECK_EQUAL( notifiedOldFlags, 0u );
+        if( readableDuringCallback ) BOOST_CHECK_EQUAL( observedFlags, notifiedFlags );
+        BOOST_CHECK( actor->getFlag( mutation.bit ) );
+    }
+}
 
 // Helper macro for logging test state with context
 #define BOOST_TEST_LOG_MESSAGE( msg ) \

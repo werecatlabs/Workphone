@@ -261,25 +261,8 @@ namespace workphone::scene
 
             createScriptData();
 
-            if( auto invoker = getInvoker() )
-            {
-                try
-                {
-                    auto params = Parameters();
-
-                    Parameter param;
-                    param.setObject( properties );
-
-                    params.push_back( param );
-
-                    invoker->callObjectMember( setPropertiesStr, params );
-                }
-                catch( std::exception &e )
-                {
-                    WP_LOG_EXCEPTION( e );
-                }
-            }
-
+            // Commit native update state before calling Lua: the callback may apply
+            // another property set, and its newer flags/registration must survive.
             auto enabled = isEnabled() && actor->isEnabledInScene();
             if( enabled )
             {
@@ -301,6 +284,25 @@ namespace workphone::scene
                 m_updateInPlayMode = updateInPlayMode;
 
                 sceneManager->unregisterAllComponent( this );
+            }
+
+            if( auto invoker = getInvoker() )
+            {
+                try
+                {
+                    auto params = Parameters();
+
+                    Parameter param;
+                    param.setObject( properties );
+
+                    params.push_back( param );
+
+                    invoker->callObjectMember( setPropertiesStr, params );
+                }
+                catch( std::exception &e )
+                {
+                    WP_LOG_EXCEPTION( e );
+                }
             }
         }
         catch( std::exception &e )

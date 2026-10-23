@@ -982,42 +982,44 @@ namespace workphone::scene
             if( auto layoutTransform = getLayoutTransform() )
             {
                 auto autoCalculateOrder = layoutTransform->getAutoCalculateOrder();
-                if( autoCalculateOrder )
+                auto pCanvas = getCanvas();
+                if( !pCanvas )
                 {
-                    auto pCanvas = getCanvas();
-                    if( !pCanvas )
-                    {
-                        setupCanvas();
-                        pCanvas = getCanvas();
-                    }
+                    setupCanvas();
+                    pCanvas = getCanvas();
+                }
 
-                    if( pCanvas )
-                    {
-                        auto canvas = workphone::static_pointer_cast<Layout>( pCanvas );
+                if( pCanvas )
+                {
+                    auto canvas = workphone::static_pointer_cast<Layout>( pCanvas );
 
-                        if( auto layout = canvas->getLayout() )
+                    if( auto layout = canvas->getLayout() )
+                    {
+                        if( auto element = getElement() )
                         {
-                            if( auto element = getElement() )
+                            // Explicit draw order still requires membership of the native canvas.
+                            // A canvas is its own UI element, not its own child.
+                            if( element.get() != layout.get() )
                             {
-                                // A canvas is its own UI element, not its own child.
-                                if( element.get() != layout.get() )
+                                if( element->getParent() != layout )
                                 {
-                                    element->setLayout( layout );
-                                    if( element->getParent() != layout )
-                                    {
-                                        layout->addChild( element );
-                                    }
+                                    layout->addChild( element );
                                 }
+                                // Reparenting can clear the old canvas while adding the child.
+                                element->setLayout( layout );
+                            }
 
+                            if( autoCalculateOrder )
+                            {
                                 auto order = canvas->getZOrder( actor );
                                 element->setOrder( order );
-
                                 layoutTransform->setZOrder( order );
                             }
                         }
                     }
                 }
-                else
+
+                if( !autoCalculateOrder )
                 {
                     if( auto element = getElement() )
                     {
