@@ -32,6 +32,7 @@ namespace workphone
     struct WorldStreamStats
     {
         u32 workers = 0, producers = 0, pending = 0, active = 0, ready = 0;
+        u32 maximumPending = 0, maximumReady = 0;
         u64 completed = 0, cancelled = 0;
         std::array<u64, size_t( StreamMemoryClass::Count )> used{}, limits{};
     };

@@ -112,6 +112,12 @@ namespace workphone
          */
         void removeMeshResource( SmartPtr<IMeshResource> meshResource );
 
+        /** Release reloadable CPU geometry when the caller and this cache are
+         * its only resource owners. Direct mesh owners and shared geometry keep
+         * it resident. Call during the scene owner's retirement transaction;
+         * graphics loading is serialized internally. Identity/settings survive. */
+        bool releaseUnusedResource( const SmartPtr<IMeshResource> &resource );
+
         /**
          * @brief Finds a mesh by name in the managed collection.
          *

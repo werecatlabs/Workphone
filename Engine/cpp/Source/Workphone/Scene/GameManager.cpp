@@ -5,6 +5,7 @@
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/System/FSMManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSceneNode.hpp>
+#include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/Scene/IComponentEvent.hpp>
 #include <Workphone/Interface/Scene/IComponentEventListener.hpp>
@@ -14,12 +15,14 @@
 #include <Workphone/Interface/System/ITaskLock.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/Interface/System/IThreadPool.hpp>
+#include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Util.hpp>
 #include <Workphone/Jobs/ActorLoadJob.hpp>
+#include <Workphone/System/Job.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
 #include <Workphone/Scene/Components/CollisionBox.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
@@ -32,9 +35,168 @@
 #include <crtdbg.h>
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <mutex>
+#include <thread>
 
 namespace workphone::scene
 {
+    namespace
+    {
+        struct SceneRefreshRequests
+        {
+            struct Request
+            {
+                u64 ticket;
+                bool executing = false, repeat = false;
+                std::thread::id executionThread;
+            };
+            std::mutex mutex;
+            std::map<IResourceDatabase *, Request> pending;
+            u64 nextTicket = 0;
+        };
+
+        SceneRefreshRequests &sceneRefreshRequests()
+        {
+            // Jobs can be released during late queue/factory teardown.
+            static auto *requests = new SceneRefreshRequests;
+            return *requests;
+        }
+
+        void requestSceneResourceRefresh( SmartPtr<IResourceDatabase> database );
+
+        bool isCurrentResourceDatabase( const SmartPtr<IResourceDatabase> &database )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            return database && database->isLoaded() && app &&
+                   app->getResourceDatabase() == database;
+        }
+
+        class SceneResourceRefreshJob : public Job
+        {
+        public:
+            explicit SceneResourceRefreshJob( SmartPtr<IResourceDatabase> database ) :
+                m_database( std::move( database ) ) { setPrimary( true ); }
+            ~SceneResourceRefreshJob() override { releaseTicket(); }
+
+            bool claimTicket()
+            {
+                auto &requests = sceneRefreshRequests();
+                std::lock_guard<std::mutex> lock( requests.mutex );
+                if( auto it = requests.pending.find( m_database.get() ); it != requests.pending.end() )
+                {
+                    // A queued scan covers earlier mutations. Fold same-thread
+                    // callback reentry into it; a concurrent mutation can land
+                    // after its snapshot and needs one scan on a future update.
+                    if( it->second.executing &&
+                        it->second.executionThread != std::this_thread::get_id() )
+                        it->second.repeat = true;
+                    return false;
+                }
+                if( !++requests.nextTicket ) ++requests.nextTicket;
+                m_ticket = requests.nextTicket;
+                requests.pending.emplace( m_database.get(), SceneRefreshRequests::Request{ m_ticket } );
+                return true;
+            }
+
+            bool releaseTicket()
+            {
+                auto &requests = sceneRefreshRequests();
+                std::lock_guard<std::mutex> lock( requests.mutex );
+                const auto it = requests.pending.find( m_database.get() );
+                bool repeat = false;
+                if( m_ticket && it != requests.pending.end() && it->second.ticket == m_ticket )
+                {
+                    repeat = it->second.repeat;
+                    requests.pending.erase( it );
+                }
+                m_ticket = 0;
+                return repeat;
+            }
+
+            void execute() override
+            {
+                if( !refreshOnce() ) return;
+                auto app = core::IApplicationManager::instancePtr();
+                if( auto queue = app ? app->getJobQueue() : nullptr; queue && queue->isRunning() )
+                {
+                    // Primary runs after the coroutine snapshot. Registration
+                    // defers the next scan until the next update; subsequent
+                    // dirty scans yield so JobQueueMT cannot drain forever.
+                    queue->startCoroutine( [request = SmartPtr<SceneResourceRefreshJob>( this )](
+                                              ICoroutineData::PullType &yield ) mutable {
+                        while( request->refreshOnce() ) yield();
+                    } );
+                }
+                else
+                {
+                    // Preserve the synchronous fallback if the queue stops
+                    // between the first scan and deferred registration.
+                    refreshOnce();
+                    releaseTicket();
+                }
+            }
+
+        private:
+            bool refreshOnce()
+            {
+                // A queued owner keeps storage alive, but unload/replacement
+                // invalidates its catalog and its claim on the current scene.
+                if( !isCurrentResourceDatabase( m_database ) )
+                {
+                    releaseTicket();
+                    return false;
+                }
+                {
+                    auto &requests = sceneRefreshRequests();
+                    std::lock_guard<std::mutex> lock( requests.mutex );
+                    const auto it = requests.pending.find( m_database.get() );
+                    if( it == requests.pending.end() || it->second.ticket != m_ticket ) return false;
+                    it->second.executing = true;
+                    it->second.executionThread = std::this_thread::get_id();
+                    it->second.repeat = false;
+                }
+                // Catalog and scene callbacks must never run under the ticket lock.
+                try { m_database->refresh(); }
+                catch( ... ) { releaseTicket(); throw; }
+                auto &requests = sceneRefreshRequests();
+                std::lock_guard<std::mutex> lock( requests.mutex );
+                const auto it = requests.pending.find( m_database.get() );
+                if( it == requests.pending.end() || it->second.ticket != m_ticket ) return false;
+                it->second.executing = false;
+                it->second.executionThread = {};
+                if( it->second.repeat ) return true;
+                requests.pending.erase( it );
+                m_ticket = 0;
+                return false;
+            }
+
+            SmartPtr<IResourceDatabase> m_database;
+            u64 m_ticket = 0;
+        };
+
+        void requestSceneResourceRefresh( SmartPtr<IResourceDatabase> database )
+        {
+            if( !isCurrentResourceDatabase( database ) ) return;
+            auto app = core::IApplicationManager::instancePtr();
+            auto queue = app ? app->getJobQueue() : nullptr;
+            if( !queue || !queue->isRunning() )
+            {
+                database->refresh();
+                return;
+            }
+            auto job = make_ptr<SceneResourceRefreshJob>( database );
+            if( !job->claimTicket() ) return;
+            queue->addJob( job );
+            if( job->getState() == IJob::State::Ready )
+            {
+                // Some queues reject work when the application is paused or
+                // quitting. Release the ticket and preserve the immediate path.
+                job->releaseTicket();
+                if( isCurrentResourceDatabase( database ) ) database->refresh();
+            }
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameManager, workphone::scene::IGameManager );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameManager::EventListener, IEventListener );
@@ -188,7 +350,8 @@ namespace workphone::scene
 
                 m_components.clear();
 
-                for( auto t : m_transforms )
+                auto transforms = m_transforms.snapshot();
+                for( auto t : transforms )
                 {
                     if( t )
                     {
@@ -198,7 +361,10 @@ namespace workphone::scene
 
                 m_transforms.clear();
 
-                for( auto t : m_smoothTransforms )
+                // Unload can unregister a smooth transform. Keep iteration and
+                // the final reference releases outside the inventory lock.
+                auto smoothTransforms = m_smoothTransforms.snapshot();
+                for( auto t : smoothTransforms )
                 {
                     if( t )
                     {
@@ -693,13 +859,15 @@ namespace workphone::scene
                 TryLockGuard lock( this );
                 if( lock.locked() )
                 {
-                    for( auto transform : m_smoothTransforms )
+                    auto smoothTransforms = m_smoothTransforms.snapshot();
+                    for( auto transform : smoothTransforms )
                     {
-                        if( transform && transform->getTask() == task )
+                        if( transform && transform->isLoaded() && transform->getTask() == task )
                         {
                             transform->update();
 
-                            auto actor = transform->getActorPtr();
+                            auto actor = transform->getActor();
+                            if( !actor || !actor->isLoaded() ) continue;
                             auto handle = actor->getHandle();
                             auto id = handle->getInstanceId();
 
@@ -1155,6 +1323,11 @@ namespace workphone::scene
 
     u32 GameManager::addTransformComponent( SmartPtr<ITransform> transformComponent )
     {
+        auto handle = transformComponent->getHandle();
+        // ConcurrentArray::operator[] returns a reference after its internal
+        // lock has gone. Keep the whole slot transaction locked so concurrent
+        // creation/removal cannot assign the same SmartPtr and release it twice.
+        ScopedLock transformLock( &m_transforms, true );
         auto id = static_cast<u32>( m_transforms.size() );
         for( auto i = 0u; i < m_transforms.size(); ++i )
         {
@@ -1175,7 +1348,7 @@ namespace workphone::scene
             m_transforms[id] = transformComponent;
         }
 
-        if( auto handle = transformComponent->getHandle() )
+        if( handle )
         {
             handle->setInstanceId( id );
         }
@@ -1428,19 +1601,30 @@ namespace workphone::scene
 
             transform->unload( nullptr );
 
+            // Unload may call scene/component code. Only the registry mutation
+            // below holds its array lock; the argument retains the removed facade.
+            ScopedLock transformLock( &m_transforms, true );
             if( pos < m_transforms.size() && m_transforms[pos] == transform )
             {
                 m_transforms[pos] = nullptr;
             }
             else
             {
-                m_transforms.erase( transform );
+                // Slots are referenced by handle IDs. Never shift live entries
+                // when recovering a mismatched/stale registration ID.
+                for( auto &registered : m_transforms )
+                    if( registered == transform )
+                    {
+                        registered = nullptr;
+                        break;
+                    }
             }
         }
     }
 
     SmartPtr<Transform> GameManager::getTransform( u32 id ) const
     {
+        ScopedLock transformLock( &m_transforms, false );
         WP_ASSERT( id < m_transforms.size() );
         return m_transforms[id];
     }
@@ -1916,14 +2100,27 @@ namespace workphone::scene
 
     void GameManager::addSmoothTransform( SmartPtr<ITransform> transform )
     {
-        m_smoothTransforms.push_back( transform );
+        if( !transform ) return;
+        ScopedLock smoothLock( &m_smoothTransforms, true );
+        if( std::find( m_smoothTransforms.begin(), m_smoothTransforms.end(), transform ) ==
+            m_smoothTransforms.end() )
+            m_smoothTransforms.push_back( transform );
     }
 
     void GameManager::removeSmoothTransform( SmartPtr<ITransform> transform )
     {
-        m_smoothTransforms.erase(
-            std::remove( m_smoothTransforms.begin(), m_smoothTransforms.end(), transform ),
-            m_smoothTransforms.end() );
+        if( !transform ) return;
+        Array<SmartPtr<ITransform>> removed;
+        {
+            ScopedLock smoothLock( &m_smoothTransforms, true );
+            // Retain removed entries until the transaction ends so final
+            // destruction cannot call back into this inventory under its lock.
+            for( const auto &registered : m_smoothTransforms )
+                if( registered == transform ) removed.push_back( registered );
+            m_smoothTransforms.erase(
+                std::remove( m_smoothTransforms.begin(), m_smoothTransforms.end(), transform ),
+                m_smoothTransforms.end() );
+        }
     }
 
     Array<String> GameManager::getComponentFactoryIgnoreList() const
@@ -2242,7 +2439,7 @@ namespace workphone::scene
             WP_ASSERT( applicationManager );
 
             auto resourceDatabase = applicationManager->getResourceDatabase();
-            resourceDatabase->refresh();
+            requestSceneResourceRefresh( resourceDatabase );
         }
 
         if( auto scene = getCurrentScene() )

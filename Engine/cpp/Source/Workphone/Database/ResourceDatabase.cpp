@@ -232,6 +232,50 @@ namespace workphone
             bool unused = false;
         };
 
+        Array<SmartPtr<ISharedObject>> snapshotObjects(
+            const ConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects )
+        {
+            Array<SmartPtr<ISharedObject>> snapshot;
+            {
+                auto registry = objects.readLocked();
+                snapshot.reserve( registry.size() );
+                for( const auto &[id, object] : registry ) snapshot.push_back( object );
+            }
+            return snapshot;
+        }
+
+        Array<SmartPtr<ISharedObject>> replaceObjects(
+            ConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
+            const Array<SmartPtr<ISharedObject>> &replacement )
+        {
+            // Scene traversal and object metadata access must not run under the
+            // registry lock. Readers acquire their strong references under it.
+            Array<Pair<UUID, SmartPtr<ISharedObject>>> entries;
+            entries.reserve( replacement.size() );
+            for( const auto &object : replacement )
+                if( object )
+                    if( auto handle = object->getHandle() )
+                    {
+                        const auto uuid = handle->getUUID();
+                        // getObject rejects nil identities; caching them would
+                        // only replace unrelated objects under the same key.
+                        if( !uuid.is_nil() ) entries.emplace_back( uuid, object );
+                    }
+
+            Array<SmartPtr<ISharedObject>> retired;
+            {
+                auto registry = objects.writeLocked();
+                retired.reserve( registry.size() );
+                for( const auto &[id, object] : registry ) retired.push_back( object );
+                registry.clear();
+                registry.reserve( entries.size() );
+                for( const auto &entry : entries ) registry[entry.first] = entry.second;
+            }
+            // Destruction of replaced owners can re-enter the database. Keep
+            // them alive until the complete publication transaction has ended.
+            return retired;
+        }
+
         // Count all database aliases before inspecting ownership. One temporary
         // strong reference per object keeps destruction outside the container locks.
         Array<ResourceCleanupCandidate> collectUnusedResources(
@@ -634,12 +678,12 @@ namespace workphone
         {
             setLoadingState( LoadingState::Unloading );
 
-            for( auto [id, object] : m_objects )
+            auto objects = replaceObjects( m_objects, {} );
+            for( auto object : objects )
             {
-                object->unload( nullptr );
+                if( object ) object->unload( nullptr );
             }
 
-            m_objects.clear();
             m_resourceMap.clear();
             setDatabaseManager( nullptr );
             setMediaCatalog( nullptr );
@@ -729,7 +773,16 @@ namespace workphone
                 {
                     auto handle = object->getHandle();
                     auto uuid = handle->getUUID();
-                    m_objects[uuid] = object;
+                    if( !uuid.is_nil() )
+                    {
+                        SmartPtr<ISharedObject> retired;
+                        {
+                            auto registry = m_objects.writeLocked();
+                            auto &slot = registry[uuid];
+                            retired = slot;
+                            slot = object;
+                        }
+                    }
                 }
             }
 
@@ -843,27 +896,16 @@ namespace workphone
 
         assetDatabaseManager->loadFromFile( databasePath );
 
-        m_objects.clear();
-
+        Array<SmartPtr<ISharedObject>> objects;
         auto sceneManager = applicationManager->getGameManager();
         if( sceneManager )
         {
             auto scene = sceneManager->getCurrentScene();
             WP_ASSERT( scene );
 
-            auto objects = getSceneObjects();
-            for( auto &object : objects )
-            {
-                if( object )
-                {
-                    if( auto handle = object->getHandle() )
-                    {
-                        auto uuid = handle->getUUID();
-                        m_objects[uuid] = object;
-                    }
-                }
-            }
+            objects = getSceneObjects();
         }
+        auto retired = replaceObjects( m_objects, objects );
     }
 
     void ResourceDatabase::optimise()
@@ -1926,7 +1968,8 @@ namespace workphone
         auto fileDataPath = settingsCachePath + StringUtil::toString( filePathHash ) + resourcedataExt;
         auto relativeFileDataPath = Path::getRelativePath( projectPath, fileDataPath );
 
-        for( auto &[id, object] : m_objects )
+        auto objects = snapshotObjects( m_objects );
+        for( const auto &object : objects )
         {
             auto resource = workphone::dynamic_pointer_cast<IResource>( object );
             if( resource )
@@ -2402,10 +2445,10 @@ namespace workphone
             return nullptr;
         }
 
-        auto it = m_objects.find( id );
-        if( it != m_objects.end() )
+        SmartPtr<ISharedObject> object;
+        if( m_objects.tryGet( id, object ) )
         {
-            return it->second;
+            return object;
         }
 
         AssetDatabaseManager::EntrySnapshot entry;
@@ -2743,7 +2786,7 @@ namespace workphone
         }
 
         auto components = actor->getComponents();
-        objects.insert( objects.end(), components.begin(), components.end() );
+        for( const auto &component : components ) objects.emplace_back( component );
 
         auto children = actor->getChildren();
         for( auto &child : children )
@@ -2838,13 +2881,17 @@ namespace workphone
     {
         auto fileUUID = StringUtil::parseUUID( fileId );
 
-        for( auto &[id, object] : m_objects )
+        auto objects = snapshotObjects( m_objects );
+        for( const auto &object : objects )
         {
-            if( auto handle = object->getHandle() )
+            if( object )
             {
-                if( handle->getFileId() == fileUUID )
+                if( auto handle = object->getHandle() )
                 {
-                    return object;
+                    if( handle->getFileId() == fileUUID )
+                    {
+                        return object;
+                    }
                 }
             }
         }

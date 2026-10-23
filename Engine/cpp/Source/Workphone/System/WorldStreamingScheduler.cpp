@@ -472,6 +472,8 @@ namespace workphone
         WorldStreamStats result;
         std::lock_guard<std::mutex> lock( m_impl->mutex );
         result.workers = u32( m_impl->workers.size() );
+        result.maximumPending = m_impl->limits.maximumPending;
+        result.maximumReady = m_impl->limits.maximumReady;
         result.producers = u32( m_impl->producers.size() );
         result.pending = m_impl->pendingCount;
         result.active = m_impl->activeCount;

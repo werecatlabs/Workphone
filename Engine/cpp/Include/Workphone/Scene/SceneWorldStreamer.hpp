@@ -19,6 +19,8 @@ namespace workphone::scene
         u32 residentCells = 0, residentActors = 0, pendingCells = 0, retiringObjects = 0;
         u64 cellReads = 0, installedCells = 0, evictedCells = 0, failedCells = 0;
         u64 residentSourceBytes = 0, manifestBytes = 0, installBudgetOvershoots = 0;
+        u64 releasedMeshResources = 0;
+        u32 indexNodesVisited = 0, indexCellsTested = 0;
         double lastInstallMilliseconds = 0;
     };
 

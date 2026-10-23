@@ -17,6 +17,8 @@
 #include <Workphone/Interface/Mesh/IVertexElement.hpp>
 #include <Workphone/Interface/Mesh/IIndexBuffer.hpp>
 #include <Workphone/Interface/System/IResourceManager.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
 
 namespace workphone
 {
@@ -26,6 +28,21 @@ namespace workphone
 
         namespace
         {
+            class NativeMeshLifecycleLock
+            {
+            public:
+                NativeMeshLifecycleLock() : m_graphics( currentGraphics() ), m_lock( m_graphics ) {}
+
+            private:
+                static SmartPtr<IGraphicsSystem> currentGraphics()
+                {
+                    auto app = core::IApplicationManager::instancePtr();
+                    return app ? app->getGraphicsSystem() : nullptr;
+                }
+                SmartPtr<IGraphicsSystem> m_graphics;
+                ScopedLock<IGraphicsSystem> m_lock;
+            };
+
             // Convert the registered CPU resource without creating a temporary mesh file.
             wp_graphics_mesh *createProceduralNativeMesh( SmartPtr<workphone::IMesh> mesh )
             {
@@ -285,6 +302,7 @@ namespace workphone
 
         void ClawMesh::unload( SmartPtr<ISharedObject> data )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             m_skinVertices.reset();
             m_skinOutput.clear();
             setLoadingState( LoadingState::Unloading );
@@ -309,6 +327,7 @@ namespace workphone
 
         void ClawMesh::bindNativeRenderObject( wp_graphics_object *object )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             if( m_renderObject == object )
             {
                 return;
@@ -385,6 +404,7 @@ namespace workphone
 
         void ClawMesh::setMaterial( SmartPtr<IMaterial> material, s32 index )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             GraphicsMesh::setMaterial( material, index );
             if( m_renderObject && index <= 0 )
             {
@@ -416,6 +436,7 @@ namespace workphone
 
         void ClawMesh::setVisible( bool visible )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             m_visible = visible;
             GraphicsMesh::setVisible( visible );
             if( m_renderObject )
@@ -431,6 +452,7 @@ namespace workphone
 
         void ClawMesh::setCastShadows( bool castShadows )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             m_castShadows = castShadows;
             GraphicsMesh::setCastShadows( castShadows );
             if( m_renderObject )
@@ -446,6 +468,7 @@ namespace workphone
 
         void ClawMesh::setReceiveShadows( bool receiveShadows )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             m_receiveShadows = receiveShadows;
             GraphicsMesh::setReceiveShadows( receiveShadows );
             if( m_renderObject )
@@ -461,6 +484,7 @@ namespace workphone
 
         void ClawMesh::setVisibilityFlags( u32 flags )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             GraphicsMesh::setVisibilityFlags( flags );
             if( m_renderObject )
             {
@@ -502,6 +526,7 @@ namespace workphone
 
         bool ClawMesh::setSkinningData( const Array<wp_skin_vertex> &vertices )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             if( !m_mesh || vertices.size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
                 vertices.empty() )
             {
@@ -541,6 +566,7 @@ namespace workphone
 
         bool ClawMesh::applySkinningPalette( const Array<wp_mat4f> &palette )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             if( !m_mesh || !m_skinVertices || m_skinVertices->empty() ||
                 m_skinVertices->size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
                 palette.empty() || palette.size() > WP_SKIN_MAX_JOINTS )
@@ -593,6 +619,7 @@ namespace workphone
         bool ClawMesh::updateGeometry( const Array<wp_graphics_mesh_vertex_pntc> &vertices,
                                        const Array<u32> &indices )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             if( !m_mesh || vertices.empty() || indices.empty() || indices.size() % 3 != 0 ||
                 vertices.size() > std::numeric_limits<u32>::max() ||
                 indices.size() > std::numeric_limits<u32>::max() )

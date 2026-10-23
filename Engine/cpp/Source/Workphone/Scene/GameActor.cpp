@@ -19,9 +19,24 @@
 #include <Workphone/Core/Util.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/ApplicationUtil.hpp>
+#include <array>
+#include <cstdint>
+#include <mutex>
 
 namespace workphone::scene
 {
+    namespace
+    {
+        std::mutex &transformLifetimeMutex( const GameActor *actor )
+        {
+            // The transform must gain a strong reference before replacement can
+            // release the actor's reference. Keep these gates alive for late
+            // factory teardown, without adding a mutex to every actor.
+            static auto *gates = new std::array<std::mutex, 64>();
+            const auto index = ( reinterpret_cast<std::uintptr_t>( actor ) >> 4 ) % gates->size();
+            return ( *gates )[index];
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameActor, Resource<IGameActor> );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameActor::FsmListener, FSMListener );
@@ -997,7 +1012,8 @@ namespace workphone::scene
         case State::Edit:
         case State::Play:
         {
-            auto concreteTransform = dynamic_cast<Transform *>( getTransformPtr() );
+            auto actorTransform = getTransform();
+            auto concreteTransform = dynamic_cast<Transform *>( actorTransform.get() );
             auto &storage = TransformSystem::instance();
             const auto handle = concreteTransform ? concreteTransform->storageHandle() : TransformSystem::Handle{};
             const auto before = storage.revisions( handle );
@@ -1009,9 +1025,9 @@ namespace workphone::scene
             {
                 return;
             }
-            if( auto transform = getTransformPtr() )
+            if( actorTransform )
             {
-                transform->update();
+                actorTransform->update();
             }
 
             if( m_childrenHead )
@@ -1287,30 +1303,42 @@ namespace workphone::scene
 
     auto GameActor::getTransform() const -> SmartPtr<ITransform>
     {
-        return m_transform;
+        std::lock_guard<std::mutex> lock( transformLifetimeMutex( this ) );
+        return m_transform.load();
     }
 
     void GameActor::setTransform( SmartPtr<ITransform> transform )
     {
-        m_transform = transform;
+        SmartPtr<ITransform> previous;
+        {
+            std::lock_guard<std::mutex> lock( transformLifetimeMutex( this ) );
+            previous = m_transform.exchange( transform );
+        }
+        // The previous transform is released after the lifetime gate. No actor
+        // membership locks, transform work or callbacks execute under that gate.
         m_staticWorldRevision = 0;
         if( auto concrete = dynamic_cast<Transform *>( transform.get() ) )
         {
             auto parent = getParent();
-            auto parentTransform = parent ? dynamic_cast<Transform *>( parent->getTransformPtr() ) : nullptr;
+            auto parentTransform = parent ? parent->getTransform() : nullptr;
+            auto concreteParent = dynamic_cast<Transform *>( parentTransform.get() );
             TransformSystem::instance().setParent( concrete->storageHandle(),
-                parentTransform ? parentTransform->storageHandle() : TransformSystem::Handle{} );
+                concreteParent ? concreteParent->storageHandle() : TransformSystem::Handle{} );
             concrete->setDirty( true, false );
         }
         auto concrete = dynamic_cast<Transform *>( transform.get() );
         const auto handle = concrete ? concrete->storageHandle() : TransformSystem::Handle{};
-        ScopedLock childrenLock( &m_childrenMutex, false );
-        for( auto child = m_childrenHead; child != nullptr; child = child->nextChild.load() )
-            if( auto childTransform = dynamic_cast<Transform *>( child->getTransformPtr() ) )
+        auto children = snapshotChildren();
+        for( const auto &child : children )
+        {
+            if( child->getParentPtr() != this ) continue;
+            auto childTransform = child->getTransform();
+            if( auto concreteChild = dynamic_cast<Transform *>( childTransform.get() ) )
             {
-                TransformSystem::instance().setParent( childTransform->storageHandle(), handle );
-                childTransform->setDirty( true, false );
+                TransformSystem::instance().setParent( concreteChild->storageHandle(), handle );
+                concreteChild->setDirty( true, false );
             }
+        }
     }
 
     void GameActor::applyCollisionMaskToComponent( SmartPtr<IComponent> component, bool force )
@@ -2023,11 +2051,13 @@ namespace workphone::scene
         auto p = getParent();
         if( p != parent )
         {
-            if( auto transform = dynamic_cast<Transform *>( getTransformPtr() ) )
+            auto actorTransform = getTransform();
+            if( auto transform = dynamic_cast<Transform *>( actorTransform.get() ) )
             {
-                auto parentTransform = parent ? dynamic_cast<Transform *>( parent->getTransformPtr() ) : nullptr;
+                auto parentTransform = parent ? parent->getTransform() : nullptr;
+                auto concreteParent = dynamic_cast<Transform *>( parentTransform.get() );
                 TransformSystem::instance().setParent( transform->storageHandle(),
-                    parentTransform ? parentTransform->storageHandle() : TransformSystem::Handle{} );
+                    concreteParent ? concreteParent->storageHandle() : TransformSystem::Handle{} );
             }
             m_parent = parent;
 

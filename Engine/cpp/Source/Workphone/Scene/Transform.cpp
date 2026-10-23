@@ -100,11 +100,11 @@ namespace workphone::scene
         const Transform3<real_Num> *parentWorldTransformPtr = nullptr;
         auto canUpdateTransform = true;
 
-        if( auto actor = getActorPtr() )
+        if( auto actor = getActor() )
         {
-            if( auto parent = actor->getParentPtr() )
+            if( auto parent = actor->getParent() )
             {
-                if( auto parentTransform = parent->getTransformPtr() )
+                if( auto parentTransform = parent->getTransform() )
                 {
                     parentWorldTransform = parentTransform->getWorldTransform();
                     parentWorldTransformPtr = &parentWorldTransform;
@@ -402,12 +402,12 @@ namespace workphone::scene
             const Transform3<real_Num> *parentWorldTransformPtr = nullptr;
             auto canUpdateTransform = true;
 
-            if( auto actor = getActorPtr() )
+            if( auto actor = getActor() )
             {
-                auto parent = actor->getParentPtr();
+                auto parent = actor->getParent();
                 if( parent )
                 {
-                    if( auto parentTransform = parent->getTransformPtr() )
+                    if( auto parentTransform = parent->getTransform() )
                     {
                         parentWorldTransform = parentTransform->getWorldTransform();
                         parentWorldTransformPtr = &parentWorldTransform;

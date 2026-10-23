@@ -24,7 +24,9 @@ namespace workphone::ui
             }
 
             void *iTexture = nullptr;
-            texture->getTextureGPU( &iTexture );
+            // ImGui samples a texture view; render targets expose their backing
+            // resource separately through getTextureGPU().
+            texture->getTextureFinal( &iTexture );
             m_textureHandle = reinterpret_cast<size_t>( iTexture );
 
             if( iTexture != nullptr )

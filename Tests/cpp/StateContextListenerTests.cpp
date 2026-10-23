@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <future>
+#include <chrono>
+#include <functional>
 
 using namespace workphone;
 namespace
@@ -26,6 +29,26 @@ namespace
         Parameter handleEvent( EventType, hash_type, const Array<Parameter> &,
                                SmartPtr<ISharedObject>, SmartPtr<ISharedObject>,
                                SmartPtr<IEvent> ) override { return {}; }
+    };
+    class DirtyState : public State
+    {
+    public:
+        bool isDirty() const override { return dirty; }
+        void setDirty(bool value) override { dirty = value; }
+        bool dirty = true;
+    };
+    class InventoryListener : public IStateListener
+    {
+    public:
+        bool handleStateMessage(const SmartPtr<IStateMessage> &) override { return true; }
+        bool handleStateChanged(SmartPtr<IState> &) override
+        {
+            ++notifications;
+            if(onFirst) { auto callback = std::move(onFirst); callback(); }
+            return true;
+        }
+        unsigned notifications = 0;
+        std::function<void()> onFirst;
     };
 }
 int main()
@@ -85,7 +108,54 @@ int main()
         context.unload(nullptr);
         require(context.getStateListeners().empty() && context.getEventListeners().empty(),
                 "Teardown must release all registrations");
-        std::cout << "State/event listeners: fan-out, concurrent deduplication, dispatch and cleanup PASS\n";
+        {
+            auto inventory = make_ptr<StateContext>();
+            auto owner = make_ptr<State>();
+            owner->setLoadingState(LoadingState::Loaded);
+            inventory->setLoadingState(LoadingState::Loaded);
+            inventory->setOwner(owner);
+            std::vector<SmartPtr<DirtyState>> states;
+            for(unsigned i = 0; i < 128; ++i) states.push_back(make_ptr<DirtyState>());
+            threads.clear();
+            for(unsigned worker = 0; worker < 4; ++worker)
+                threads.emplace_back([&]() {
+                    for(const auto &entry : states) inventory->addState(entry);
+                });
+            for(auto &thread : threads) thread.join();
+            require(inventory->getStates().size() == states.size(),
+                    "Concurrent state registration must not publish duplicates");
+            auto retained = inventory->getStates();
+            auto dispatch = make_ptr<InventoryListener>();
+            std::promise<void> beginRemoval, removed;
+            auto begin = beginRemoval.get_future();
+            auto complete = removed.get_future();
+            std::thread remover([&]() {
+                begin.wait();
+                for(const auto &entry : states) inventory->removeState(entry);
+                removed.set_value();
+            });
+            bool removedInsideCallback = false;
+            dispatch->onFirst = [&]() {
+                beginRemoval.set_value();
+                removedInsideCallback = complete.wait_for(std::chrono::seconds(2)) ==
+                                        std::future_status::ready;
+            };
+            inventory->addStateListener(dispatch);
+            inventory->update();
+            remover.join();
+            require(removedInsideCallback, "State callbacks must not hold the inventory lock");
+            require(dispatch->notifications == states.size(),
+                    "A dispatch snapshot must survive concurrent removal of every state");
+            require(inventory->getStates().empty() && retained.size() == states.size(),
+                    "State removal must preserve previously retained snapshots");
+            inventory->update();
+            require(dispatch->notifications == states.size(),
+                    "Removed states must not be dispatched in a later update");
+            for(auto &entry : states) entry->setStateContext(nullptr);
+            inventory->setOwner(nullptr);
+            inventory->unload(nullptr);
+        }
+        std::cout << "State inventory/listeners: concurrent registration, retained dispatch and cleanup PASS\n";
     }
     catch(const std::exception &error)
     {
