@@ -28,13 +28,14 @@ int main( int argc, char **argv )
     try
     {
         if( argc < 3 )
-            throw std::runtime_error( "Usage: WorkphoneSceneWorld INPUT_SCENE_OR_PREFAB OUTPUT_DIRECTORY [--cell-size N] [--max-actors N] [--asset-root PATH] [--render-only-static]" );
+            throw std::runtime_error( "Usage: WorkphoneSceneWorld INPUT_SCENE_OR_PREFAB OUTPUT_DIRECTORY [--cell-size N] [--max-actors N] [--asset-root PATH] [--render-only-static] [--hlod]" );
         WorldCookOptions options;
         options.assetRoot = std::filesystem::absolute( argv[1] ).parent_path().generic_string().c_str();
         for( int i = 3; i < argc; ++i )
         {
             const std::string option = argv[i];
             if( option == "--render-only-static" ) options.convertRenderOnlyLeaves = true;
+            else if( option == "--hlod" ) options.generateHlod = true;
             else if( option == "--cell-size" && i + 1 < argc ) options.cellSize = std::stof( argv[++i] );
             else if( option == "--max-actors" && i + 1 < argc ) options.maximumActorsPerCell = std::stoul( argv[++i] );
             else if( option == "--asset-root" && i + 1 < argc ) options.assetRoot = argv[++i];
@@ -78,14 +79,16 @@ int main( int argc, char **argv )
         if( !relativeManifest.empty() && *relativeManifest.begin() != ".." ) manifestLocation = relativeManifest;
         component->setProperty( "World Manifest", manifestLocation.generic_string().c_str() );
         component->setProperty( "Preview Editor Camera", true );
+        component->setProperty( "Enable HLOD", options.generateHlod );
         actor->addChild( component ); bootstrap->addChild( actor );
         auto text = DataUtil::toString( bootstrap.get(), true, DataFormat::JSON );
         std::ofstream preview( std::filesystem::path( argv[2] ) / "world-preview.fbscene", std::ios::binary );
         preview.write( text.c_str(), text.size() ); preview.close();
         if( !preview ) throw std::runtime_error( "Could not write world bootstrap scene" );
-        u64 actors = 0;
-        for( const auto &cell : cooked.cells ) actors += cell.actors;
-        std::cout << "manifest=" << manifest.c_str() << " cells=" << cooked.cells.size() << " actors=" << actors << '\n';
+        u64 actors = 0, proxies = 0;
+        for( const auto &cell : cooked.cells ) { actors += cell.actors; if( cell.detailKey ) ++proxies; }
+        std::cout << "manifest=" << manifest.c_str() << " cells=" << cooked.cells.size() << " actors=" << actors
+                  << " proxies=" << proxies << '\n';
     }
     catch( const std::exception &e ) { std::cerr << e.what() << '\n'; status = 1; }
     factory->unload( nullptr ); application->setFactoryManager( nullptr );

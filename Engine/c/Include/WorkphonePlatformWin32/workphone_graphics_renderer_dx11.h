@@ -61,6 +61,22 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *rend
     struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count );
 void wp_renderer_dx11_forget_mesh( const struct wp_graphics_mesh *mesh );
 
+/* Optional owner-provided allocation admission. reserve returns a token for the
+ * full immutable vertex/index allocation, retain attaches it to each physical
+ * D3D resource, and release drops the temporary token. Callbacks never escape
+ * this call. Cache hits do not reserve again. Existing terrain/foliage admission
+ * continues to use prepare_mesh_geometry without this additional reservation. */
+typedef struct wp_gpu_allocation_callbacks
+{
+    void *user;
+    void *( *reserve )( void *user, wp_u64 bytes );
+    wp_s32 ( *retain )( void *reservation, void *native_resource );
+    void ( *release )( void *reservation );
+} wp_gpu_allocation_callbacks;
+wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_dx11 *renderer,
+    struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count,
+    const wp_gpu_allocation_callbacks *callbacks );
+
 /** Parameters consumed by the built-in forward PBR mesh shader. */
 typedef struct wp_material_dx11
 {

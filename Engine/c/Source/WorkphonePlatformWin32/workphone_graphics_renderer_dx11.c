@@ -4112,6 +4112,13 @@ void wp_renderer_dx11_forget_mesh( const wp_graphics_mesh *mesh )
 wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *r,
     wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count )
 {
+    return wp_renderer_dx11_prepare_mesh_geometry_budgeted( r, mesh, first, count, NULL );
+}
+
+wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_dx11 *r,
+    wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count,
+    const wp_gpu_allocation_callbacks *callbacks )
+{
     wp_dx11_mesh_cache *entry, **owner;
     const wp_vertex_pntc *vertices;
     const void *source_indices;
@@ -4121,7 +4128,9 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *r,
     wp_s32 strip;
     unsigned bucket;
     wp_geometry_dx11 *geometry;
+    void *reservation = NULL;
     if( !r || !mesh ) return NULL;
+    if( callbacks && ( !callbacks->reserve || !callbacks->retain || !callbacks->release ) ) return NULL;
     strip = wp_graphics_mesh_get_primitive_type( mesh ) == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP;
     if( !strip && wp_graphics_mesh_get_primitive_type( mesh ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ) return NULL;
     vertex_count = wp_graphics_mesh_get_vertex_count( mesh );
@@ -4134,19 +4143,6 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *r,
     bucket = wp_dx11_mesh_bucket( mesh );
     for( entry = r->meshes[bucket]; entry; entry = entry->next )
         if( entry->mesh == mesh && entry->first == first && entry->count == count && entry->generation == generation ) return entry->geometry;
-    /* Retire outdated versions, including index-only edits and address reuse. */
-    owner = &r->meshes[wp_dx11_mesh_bucket( mesh )];
-    while( *owner )
-    {
-        entry = *owner;
-        if( entry->mesh == mesh && entry->generation != generation )
-        {
-            *owner = entry->next;
-            wp_renderer_dx11_destroy_geometry( entry->geometry );
-            free( entry );
-        }
-        else owner = &entry->next;
-    }
     vertices = wp_graphics_mesh_prepare_lit_vertices( mesh );
     if( !vertices ) return NULL;
     output_count = strip ? ( count - 2u ) * 3u : count;
@@ -4168,11 +4164,41 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *r,
         if( strip && ( i & 1u ) ) { swap = a; a = b; b = swap; }
         indices[out++] = a; indices[out++] = b; indices[out++] = c;
     }
+    if( callbacks )
+    {
+        reservation = callbacks->reserve( callbacks->user,
+            (wp_u64)vertex_count * sizeof( wp_vertex_pntc ) + (wp_u64)out * sizeof( wp_u32 ) );
+        if( !reservation ) { free( indices ); return NULL; }
+    }
     geometry = wp_renderer_dx11_create_indexed_geometry_pntc( r, vertices, (wp_s32)vertex_count, indices, (wp_s32)out, 1 );
     free( indices );
+    if( reservation )
+    {
+        if( geometry && ( !callbacks->retain( reservation, geometry->vertex_buffer ) ||
+                         !callbacks->retain( reservation, geometry->index_buffer ) ) )
+        {
+            wp_renderer_dx11_destroy_geometry( geometry );
+            geometry = NULL;
+        }
+        callbacks->release( reservation );
+    }
     if( !geometry ) return NULL;
     entry = (wp_dx11_mesh_cache *)malloc( sizeof( *entry ) );
     if( !entry ) { wp_renderer_dx11_destroy_geometry( geometry ); return NULL; }
+    /* Publication is transactional: allocation/admission failure retains the
+     * previous physical geometry and its reservation. */
+    owner = &r->meshes[bucket];
+    while( *owner )
+    {
+        wp_dx11_mesh_cache *retired = *owner;
+        if( retired->mesh == mesh && retired->generation != generation )
+        {
+            *owner = retired->next;
+            wp_renderer_dx11_destroy_geometry( retired->geometry );
+            free( retired );
+        }
+        else owner = &retired->next;
+    }
     entry->mesh = mesh; entry->generation = generation; entry->first = first; entry->count = count;
     entry->geometry = geometry; entry->next = r->meshes[bucket]; r->meshes[bucket] = entry;
     return geometry;

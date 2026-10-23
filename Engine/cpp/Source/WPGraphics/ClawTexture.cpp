@@ -16,6 +16,7 @@
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <FreeImage.h>
+#include "ClawAssetBudget.hpp"
 
 #include <cstring>
 #include <limits>
@@ -27,6 +28,8 @@ namespace
 {
     struct ClawTextureData
     {
+        // Declared before arrays so their storage is freed before the lease.
+        workphone::StreamBudget sourceBudget;
         workphone::Array<workphone::u8> pixels;
         workphone::Array<workphone::f32> floatPixels;
         workphone::Array<workphone::render::TextureMipLevel> cookedLevels;
@@ -46,6 +49,22 @@ namespace
 
     std::mutex g_textureMutex;
     std::unordered_map<const workphone::render::ClawTexture *, ClawTextureData> g_textureData;
+
+    workphone::StreamBudget reserveTextureCpu( workphone::u64 bytes, workphone::String &error )
+    {
+        return workphone::WorldStreamingScheduler::shared()->reserve(
+            workphone::StreamMemoryClass::SourceCpu, bytes + sizeof( ClawTextureData ) + 4096, error );
+    }
+
+    void *retainUploadedTexture( void *view, workphone::StreamBudget budget )
+    {
+        if( view && !workphone::render::asset_budget::retainTexture( view, std::move( budget ) ) )
+        {
+            wp_renderer_dx11_destroy_texture_native( view );
+            return nullptr;
+        }
+        return view;
+    }
 
     struct FreeImageLifetime
     {
@@ -121,28 +140,41 @@ namespace
     }
 
     template <class Levels>
-    void *uploadMipLevels( wp_renderer_dx11 *renderer, const Levels &levels )
+    void *uploadMipLevels( wp_renderer_dx11 *renderer, const Levels &levels, bool *budgetDenied = nullptr )
     {
+        workphone::u64 bytes = 0;
+        for( const auto &level : levels ) bytes += level.bgra.size();
+        workphone::String error;
+        auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
+            workphone::StreamMemoryClass::Gpu, bytes, error );
+        if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
         std::vector<wp_texture_mip_dx11> nativeLevels;
         nativeLevels.reserve( levels.size() );
         for( const auto &level : levels )
         {
             nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
         }
-        return wp_renderer_dx11_create_texture_mips_native( renderer, nativeLevels.data(),
-                                                            static_cast<wp_u32>( nativeLevels.size() ) );
+        return retainUploadedTexture( wp_renderer_dx11_create_texture_mips_native(
+            renderer, nativeLevels.data(), static_cast<wp_u32>( nativeLevels.size() ) ), std::move( budget ) );
     }
 
-    void *uploadDds( wp_renderer_dx11 *renderer, const std::vector<workphone::u8> &bytes )
+    void *uploadDds( wp_renderer_dx11 *renderer, const std::vector<workphone::u8> &bytes,
+                     bool *budgetDenied = nullptr )
     {
         const auto image = workphone::dds::inspect( bytes );
+        workphone::u64 residentBytes = 0;
+        for( const auto &m : image.mips ) residentBytes += m.size;
+        workphone::String error;
+        auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
+            workphone::StreamMemoryClass::Gpu, residentBytes, error );
+        if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
         std::vector<wp_texture_encoded_mip_dx11> levels;
         for( const auto &m : image.mips )
         {
             levels.push_back( { bytes.data() + m.offset, m.width, m.height, m.size } );
         }
-        return wp_renderer_dx11_create_texture_encoded_mips_native(
-            renderer, levels.data(), static_cast<wp_u32>( levels.size() ), image.format );
+        return retainUploadedTexture( wp_renderer_dx11_create_texture_encoded_mips_native(
+            renderer, levels.data(), static_cast<wp_u32>( levels.size() ), image.format ), std::move( budget ) );
     }
 
     bool decodeTexture( workphone::render::ClawTexture *texture )
@@ -173,10 +205,6 @@ namespace
             {
                 return !data.pixels.empty();
             }
-            data.pixels.clear();
-            data.cookedLevels.clear();
-            data.floatPixels.clear();
-            data.pixelSize = { 0, 0 };
             data.sourcePath = filePath;
             data.decodeAttempted = true;
         }
@@ -197,6 +225,16 @@ namespace
             return false;
         }
 
+        String budgetError;
+        auto encodedBudget = WorldStreamingScheduler::shared()->reserve(
+            StreamMemoryClass::WorkingCpu, streamSize, budgetError );
+        if( !encodedBudget )
+        {
+            std::scoped_lock lock( g_textureMutex );
+            g_textureData[texture].decodeAttempted = false;
+            WP_LOG_WARNING( budgetError );
+            return false;
+        }
         Array<u8> encoded( streamSize );
         if( stream->read( encoded.data(), streamSize ) != streamSize )
         {
@@ -238,7 +276,8 @@ namespace
 
         const auto width = FreeImage_GetWidth( converted );
         const auto height = FreeImage_GetHeight( converted );
-        if( width == 0 || height == 0 ||
+        if( width == 0 || height == 0 || width > 16384 || height > 16384 ||
+            u64( width ) * height * 4u > render::graphicsTextureByteLimit ||
             static_cast<size_t>( width ) >
                 std::numeric_limits<size_t>::max() / ( static_cast<size_t>( height ) * 4u ) )
         {
@@ -248,6 +287,15 @@ namespace
             return false;
         }
 
+        auto sourceBudget = reserveTextureCpu( u64( width ) * height * 4u, budgetError );
+        if( !sourceBudget )
+        {
+            FreeImage_Unload( converted );
+            std::scoped_lock lock( g_textureMutex );
+            g_textureData[texture].decodeAttempted = false;
+            WP_LOG_WARNING( budgetError );
+            return false;
+        }
         Array<u8> pixels( static_cast<size_t>( width ) * static_cast<size_t>( height ) * 4u );
         const auto rowBytes = static_cast<size_t>( width ) * 4u;
         for( u32 y = 0; y < height; ++y )
@@ -261,8 +309,10 @@ namespace
         texture->setSize( Vector2I( static_cast<s32>( width ), static_cast<s32>( height ) ) );
         std::scoped_lock lock( g_textureMutex );
         auto &data = g_textureData[texture];
+        auto retiredBudget = std::move( data.sourceBudget );
+        data.sourceBudget = std::move( sourceBudget );
         data.pixels = std::move( pixels );
-        data.cookedLevels.clear();
+        std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );
         data.pixelSize = { static_cast<s32>( width ), static_cast<s32>( height ) };
         data.uploadPending = true;
         return true;
@@ -322,29 +372,40 @@ namespace
         try
         {
             void *candidate = nullptr;
+            bool budgetDenied = false;
             if( !data.floatPixels.empty() )
             {
-                candidate = wp_renderer_dx11_create_texture_rgba32f_native(
+                String error;
+                auto budget = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::Gpu, data.floatPixels.size() * sizeof( f32 ), error );
+                if( !budget ) { data.uploadPending = true; WP_LOG_WARNING( error ); return previousView; }
+                candidate = retainUploadedTexture( wp_renderer_dx11_create_texture_rgba32f_native(
                     dx11, data.floatPixels.data(), static_cast<wp_u32>( data.pixelSize.x ),
                     static_cast<wp_u32>( data.pixelSize.y ),
-                    static_cast<wp_u64>( data.floatPixels.size() ) );
+                    static_cast<wp_u64>( data.floatPixels.size() ) ), std::move( budget ) );
             }
             else if( !data.ddsBytes.empty() )
             {
-                candidate = uploadDds( dx11, data.ddsBytes );
+                candidate = uploadDds( dx11, data.ddsBytes, &budgetDenied );
             }
             else if( !data.cookedLevels.empty() )
             {
-                candidate = uploadMipLevels( dx11, data.cookedLevels );
+                candidate = uploadMipLevels( dx11, data.cookedLevels, &budgetDenied );
             }
             else
             {
+                String error;
+                // A complete mip chain is smaller than twice its base level.
+                auto working = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::WorkingCpu, u64( data.pixels.size() ) * 2 + 4096, error );
+                if( !working ) { data.uploadPending = true; WP_LOG_WARNING( error ); return previousView; }
                 const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
                                                          data.pixelSize.y, data.mipSettings );
-                candidate = uploadMipLevels( dx11, levels );
+                candidate = uploadMipLevels( dx11, levels, &budgetDenied );
             }
             if( !candidate )
             {
+                data.uploadPending = budgetDenied;
                 WP_LOG_WARNING(
                     "WPGraphics/Texture: GPU mip upload failed; retaining the previous texture." );
                 return previousView;
@@ -425,6 +486,7 @@ namespace workphone
                     auto cookedLevels = std::move( found->second.cookedLevels );
                     auto floatPixels = std::move( found->second.floatPixels );
                     auto ddsBytes = std::move( found->second.ddsBytes );
+                    auto sourceBudget = std::move( found->second.sourceBudget );
                     auto profile = std::move( found->second.cookedProfile );
                     const auto dimensions = found->second.pixelSize;
                     found->second = ClawTextureData{};
@@ -432,6 +494,9 @@ namespace workphone
                     found->second.cookedLevels = std::move( cookedLevels );
                     found->second.floatPixels = std::move( floatPixels );
                     found->second.ddsBytes = std::move( ddsBytes );
+                    if( !found->second.cookedLevels.empty() || !found->second.floatPixels.empty() ||
+                        !found->second.ddsBytes.empty() )
+                        found->second.sourceBudget = std::move( sourceBudget );
                     found->second.cookedProfile = std::move( profile );
                     if( !found->second.ddsBytes.empty() || !found->second.floatPixels.empty() )
                     {
@@ -457,24 +522,31 @@ namespace workphone
 
         void ClawTexture::copyData( void *data, const Vector2I &size )
         {
-            m_size = size;
-
             if( data && size.x > 0 && size.y > 0 )
             {
+                if( size.x > 16384 || size.y > 16384 ||
+                    u64( size.x ) * size.y * 4u > graphicsTextureByteLimit ) return;
                 const auto byteCount =
                     static_cast<size_t>( size.x ) * static_cast<size_t>( size.y ) * 4u;
+                String error;
+                auto sourceBudget = reserveTextureCpu( byteCount, error );
+                if( !sourceBudget ) { WP_LOG_WARNING( error ); return; }
                 std::scoped_lock lock( g_textureMutex );
                 auto &textureData = g_textureData[this];
                 Array<u8> pixels( byteCount );
                 std::memcpy( pixels.data(), data, byteCount );
+                auto retiredBudget = std::move( textureData.sourceBudget );
+                textureData.sourceBudget = std::move( sourceBudget );
                 textureData.pixels = std::move( pixels );
-                textureData.floatPixels.clear();
-                textureData.cookedLevels.clear();
-                textureData.ddsBytes.clear();
+                std::decay_t<decltype( textureData.floatPixels )>{}.swap( textureData.floatPixels );
+                std::decay_t<decltype( textureData.cookedLevels )>{}.swap( textureData.cookedLevels );
+                std::decay_t<decltype( textureData.ddsBytes )>{}.swap( textureData.ddsBytes );
                 textureData.cookedProfile.clear();
                 textureData.pixelSize = size;
                 textureData.uploadPending = true;
             }
+
+            m_size = size;
 
             if( auto renderTarget = getRenderTarget() )
             {
@@ -502,13 +574,18 @@ namespace workphone
                 }
             try
             {
+                StreamBudget retiredBudget;
+                auto sourceBudget = reserveTextureCpu( rgba.size() * sizeof( f32 ), error );
+                if( !sourceBudget ) return false;
                 auto candidate = rgba;
                 std::scoped_lock lock( g_textureMutex );
                 auto &data = g_textureData[this];
+                retiredBudget = std::move( data.sourceBudget );
+                data.sourceBudget = std::move( sourceBudget );
                 data.floatPixels.swap( candidate );
-                data.pixels.clear();
-                data.cookedLevels.clear();
-                data.ddsBytes.clear();
+                std::decay_t<decltype( data.pixels )>{}.swap( data.pixels );
+                std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );
+                std::decay_t<decltype( data.ddsBytes )>{}.swap( data.ddsBytes );
                 data.cookedProfile.clear();
                 data.sourcePath.clear();
                 data.decodeAttempted = true;
@@ -626,6 +703,11 @@ namespace workphone
             }
             try
             {
+                StreamBudget retiredBudget;
+                u64 bytes = levels.size() * sizeof( TextureMipLevel );
+                for( const auto &level : levels ) bytes += level.bgra.size();
+                auto sourceBudget = reserveTextureCpu( bytes, error );
+                if( !sourceBudget ) return false;
                 auto retainedLevels = levels;
                 {
                     std::scoped_lock lock( g_textureMutex );
@@ -638,11 +720,13 @@ namespace workphone
                     }
                     // All allocating work has succeeded; publish the complete replacement.
                     destroyTextureView( data );
+                    retiredBudget = std::move( data.sourceBudget );
+                    data.sourceBudget = std::move( sourceBudget );
                     data.cookedLevels.swap( retainedLevels );
-                    data.ddsBytes.clear();
+                    std::decay_t<decltype( data.ddsBytes )>{}.swap( data.ddsBytes );
                     data.cookedProfile.clear();
-                    data.pixels.clear();
-                    data.floatPixels.clear();
+                    std::decay_t<decltype( data.pixels )>{}.swap( data.pixels );
+                    std::decay_t<decltype( data.floatPixels )>{}.swap( data.floatPixels );
                     data.sourcePath.clear();
                     data.decodeAttempted = true;
                     data.mipSettings = settings;
@@ -688,6 +772,9 @@ namespace workphone
             }
             try
             {
+                StreamBudget retiredBudget;
+                auto sourceBudget = reserveTextureCpu( input.ddsBytes.size() + input.target.size(), error );
+                if( !sourceBudget ) return false;
                 auto retained = input.ddsBytes;
                 auto profile = input.target;
                 const auto image = dds::inspect( retained );
@@ -700,10 +787,12 @@ namespace workphone
                     return false;
                 }
                 destroyTextureView( data );
+                retiredBudget = std::move( data.sourceBudget );
+                data.sourceBudget = std::move( sourceBudget );
                 data.ddsBytes.swap( retained );
-                data.cookedLevels.clear();
-                data.pixels.clear();
-                data.floatPixels.clear();
+                std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );
+                std::decay_t<decltype( data.pixels )>{}.swap( data.pixels );
+                std::decay_t<decltype( data.floatPixels )>{}.swap( data.floatPixels );
                 data.sourcePath.clear();
                 data.cookedProfile.swap( profile );
                 data.mipSettings = input.mipSettings;
@@ -897,9 +986,13 @@ namespace workphone
                 if( !data.cookedLevels.empty() )
                 {
                     const auto &base = data.cookedLevels.front().bgra;
+                    String error;
+                    auto working = WorldStreamingScheduler::shared()->reserve(
+                        StreamMemoryClass::WorkingCpu, base.size(), error );
+                    if( !working ) { WP_LOG_WARNING( error ); return; }
                     Array<u8> pixels( base.begin(), base.end() );
                     data.pixels = std::move( pixels );
-                    data.cookedLevels.clear();
+                    std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );
                 }
                 data.uploadPending = true;
             }

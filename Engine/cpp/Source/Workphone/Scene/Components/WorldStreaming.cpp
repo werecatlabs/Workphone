@@ -121,6 +121,9 @@ namespace workphone::scene
         p->setProperty( "World Manifest", m_manifestPath );
         p->setProperty( "Load Radius", m_options.loadRadius );
         p->setProperty( "Retain Radius", m_options.retainRadius );
+        p->setProperty( "Enable HLOD", m_options.enableHlod );
+        p->setProperty( "Proxy Load Radius", m_options.proxyLoadRadius );
+        p->setProperty( "Proxy Retain Radius", m_options.proxyRetainRadius );
         p->setProperty( "Maximum Resident Actors", m_options.maximumResidentActors );
         p->setProperty( "Maximum Resident Cells", m_options.maximumResidentCells );
         p->setProperty( "Install Milliseconds", m_options.installMilliseconds );
@@ -130,6 +133,10 @@ namespace workphone::scene
         auto stats = statistics();
         p->setProperty( "Resident Actors", stats.residentActors, true );
         p->setProperty( "Resident Cells", stats.residentCells, true );
+        p->setProperty( "Resident Proxy Cells", stats.residentProxyCells, true );
+        p->setProperty( "Visible Proxy Cells", stats.visibleProxyCells, true );
+        p->setProperty( "Representation Switches", stats.representationSwitches, true );
+        p->setProperty( "HLOD Admission Failures", stats.hlodAdmissionFailures, true );
         p->setProperty( "Pending Cells", stats.pendingCells, true );
         p->setProperty( "Resident Source Bytes", stats.residentSourceBytes, true );
         p->setProperty( "Released CPU Mesh Resources", stats.releasedMeshResources, true );
@@ -146,6 +153,9 @@ namespace workphone::scene
         p->getPropertyValue( "World Manifest", m_manifestPath );
         p->getPropertyValue( "Load Radius", m_options.loadRadius );
         p->getPropertyValue( "Retain Radius", m_options.retainRadius );
+        p->getPropertyValue( "Enable HLOD", m_options.enableHlod );
+        p->getPropertyValue( "Proxy Load Radius", m_options.proxyLoadRadius );
+        p->getPropertyValue( "Proxy Retain Radius", m_options.proxyRetainRadius );
         p->getPropertyValue( "Maximum Resident Actors", m_options.maximumResidentActors );
         p->getPropertyValue( "Maximum Resident Cells", m_options.maximumResidentCells );
         p->getPropertyValue( "Install Milliseconds", m_options.installMilliseconds );
@@ -155,6 +165,8 @@ namespace workphone::scene
         m_observer = observer;
         m_reopen |= beforePath != m_manifestPath || before.loadRadius != m_options.loadRadius ||
             before.retainRadius != m_options.retainRadius || before.maximumResidentActors != m_options.maximumResidentActors ||
+            before.enableHlod != m_options.enableHlod || before.proxyLoadRadius != m_options.proxyLoadRadius ||
+            before.proxyRetainRadius != m_options.proxyRetainRadius ||
             before.maximumResidentCells != m_options.maximumResidentCells || before.installMilliseconds != m_options.installMilliseconds;
     }
 

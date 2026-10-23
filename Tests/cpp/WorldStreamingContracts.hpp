@@ -282,6 +282,10 @@ namespace world_streaming_contracts
             auto alias = gpu;
             require( gpu && !scheduler->reserve( StreamMemoryClass::Gpu, 1, error ),
                      "Shared admission rejects combined allocations above the class budget." );
+            const auto pressure = scheduler->stats();
+            require( pressure.peakUsed[size_t( StreamMemoryClass::Gpu )] == 4096 &&
+                         pressure.rejectedReservations[size_t( StreamMemoryClass::Gpu )] == 1,
+                     "Memory telemetry records the physical reservation peak and explicit rejection." );
             gpu.reset();
             require( scheduler->stats().used[size_t( StreamMemoryClass::Gpu )] == 4096,
                      "Shared active/staged ownership charges one actual allocation." );
@@ -291,6 +295,13 @@ namespace world_streaming_contracts
             require( scheduler->reserve( StreamMemoryClass::Gpu, 0, error ) != nullptr &&
                          !scheduler->reserve( StreamMemoryClass::Gpu, 1, error ),
                      "Zero-byte admission succeeds without bypassing zero-byte limits." );
+            const auto retired = scheduler->stats();
+            require( retired.used[size_t( StreamMemoryClass::Gpu )] == 0 &&
+                         retired.peakUsed[size_t( StreamMemoryClass::Gpu )] == 4096 &&
+                         retired.rejectedReservations[size_t( StreamMemoryClass::Gpu )] == 2 &&
+                         retired.peakUsed[size_t( StreamMemoryClass::WorkingCpu )] >= 64 &&
+                         retired.peakUsed[size_t( StreamMemoryClass::ResultCpu )] >= 64,
+                     "Retirement and budget changes preserve peaks, including worker reservations." );
         }
         auto fourth = scheduler->createProducer( producerLimits, error );
         require( fourth && !scheduler->createProducer( producerLimits, error ) && !error.empty(),

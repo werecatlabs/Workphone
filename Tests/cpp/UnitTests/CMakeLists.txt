@@ -791,6 +791,7 @@ add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
     TypeManagerFixture.cpp GameTestFixture.cpp GraphicsTestFixture.cpp TestGuard.cpp
     SceneWorldStreamingTests.cpp ActorTransformTests.cpp ComponentTestsMeshRenderer.cpp
     GraphicsSceneNodeTests.cpp GameSceneAsyncLoadingTests.cpp GameSceneLoadingTests.cpp MeshTest.cpp
+    MeshAssetBudgetTests.cpp
     PoolTests.cpp)
 foreach(property IN ITEMS INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS LINK_DIRECTORIES LINK_OPTIONS)
     get_target_property(actor_scene_property UnitTests ${property})
@@ -804,6 +805,6 @@ set_target_properties(WPActorSceneTests PROPERTIES FOLDER Tests/Cpp)
 add_custom_command(TARGET WPActorSceneTests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Fixtures" "$<TARGET_FILE_DIR:WPActorSceneTests>")
 add_test(NAME Workphone.actor_scene_streaming COMMAND WPActorSceneTests
-    --run_test=SceneWorldStreamingTests,ActorTransformTests,GameSceneAsyncLoadingTests,GameSceneLoadingTests,pool_*)
+    --run_test=SceneWorldStreamingTests,MeshAssetBudgetTests,ActorTransformTests,GameSceneAsyncLoadingTests,GameSceneLoadingTests,pool_*)
 set_tests_properties(Workphone.actor_scene_streaming PROPERTIES TIMEOUT 120
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;streaming;headless")

@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/IIndexBuffer.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 
 namespace workphone
 {
@@ -131,6 +132,10 @@ namespace workphone
 
         /** @brief Pointer to the raw index data storage. */
         void *m_indexData = nullptr;
+
+        StreamBudget m_indexBudget;
+        Type m_allocatedIndexType = Type::IT_32BIT;
+        u32 m_allocatedNumIndices = 0, m_allocatedIndexSize = sizeof( u32 );
     };
 
 }  // namespace workphone

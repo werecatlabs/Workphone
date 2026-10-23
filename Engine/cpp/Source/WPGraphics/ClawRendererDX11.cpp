@@ -12,6 +12,7 @@
 #include <Workphone/Graphics/FoliageData.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "ClawMeshMaterial.hpp"
+#include "ClawAssetBudget.hpp"
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
 #include <workphone_graphics_renderer_dx11.h>
@@ -965,7 +966,7 @@ namespace workphone::render
 
         auto dx11 = wp_renderer_get_dx11( m_renderer );
         const auto geometry = topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST
-            ? wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, 0, elementCount ) : nullptr;
+            ? asset_budget::prepareMesh( dx11, nativeMesh, 0, elementCount ) : nullptr;
 
         for( s32 submeshIndex = 0; submeshIndex < drawCount; ++submeshIndex )
         {
@@ -1131,7 +1132,7 @@ namespace workphone::render
             }
             else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP && count >= 3 )
             {
-                if( auto stripGeometry = wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, start, count ) )
+                if( auto stripGeometry = asset_budget::prepareMesh( dx11, nativeMesh, start, count ) )
                 {
                     wp_renderer_dx11_draw_geometry_pntc( dx11, stripGeometry, 0,
                         static_cast<wp_s32>( ( count - 2u ) * 3u ), 0 );

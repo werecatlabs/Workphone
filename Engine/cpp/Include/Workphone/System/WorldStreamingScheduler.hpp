@@ -35,6 +35,9 @@ namespace workphone
         u32 maximumPending = 0, maximumReady = 0;
         u64 completed = 0, cancelled = 0;
         std::array<u64, size_t( StreamMemoryClass::Count )> used{}, limits{};
+        // Lifetime high-water marks include active, staged and retiring owners.
+        // Rejections count explicit reserve() calls, not worker retry polls.
+        std::array<u64, size_t( StreamMemoryClass::Count )> peakUsed{}, rejectedReservations{};
     };
     struct StreamBudgetState;
     class WPCore_API StreamBudgetLease final

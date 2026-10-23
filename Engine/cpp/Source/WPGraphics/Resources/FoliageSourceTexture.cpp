@@ -96,23 +96,9 @@ namespace workphone::render
             {
                 return {};
             }
-            u64 bytes = 0;
-            for( const auto &level : source->data.levels )
-            {
-                bytes += level.bgra.size();
-            }
-            auto scheduler = WorldStreamingScheduler::shared();
-            auto gpu = scheduler->reserve( StreamMemoryClass::Gpu, bytes, error );
-            if( !gpu )
-            {
-                return {};
-            }
-            auto cpu = scheduler->reserve( StreamMemoryClass::SourceCpu, bytes + 4096, error );
-            if( !cpu )
-            {
-                return {};
-            }
-            auto texture = make_ptr<SourceClawTexture>( std::move( gpu ), std::move( cpu ) );
+            // The decoder and ClawTexture separately own the source and retained
+            // reupload copy. ClawTexture also budgets the physical GPU resource.
+            auto texture = make_ptr<ClawTexture>();
             if( !texture->uploadCookedMips( source->data.levels, source->data.mipSettings, renderer,
                                             error ) )
             {

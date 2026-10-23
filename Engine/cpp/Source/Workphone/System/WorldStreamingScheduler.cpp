@@ -42,6 +42,7 @@ namespace workphone
         mutable std::mutex mutex;
         std::condition_variable wake;
         std::array<u64, size_t( StreamMemoryClass::Count )> used{}, limits{};
+        std::array<u64, size_t( StreamMemoryClass::Count )> peakUsed{}, rejectedReservations{};
     };
     StreamBudgetLease::StreamBudgetLease( std::shared_ptr<StreamBudgetState> state,
                                           StreamMemoryClass category, u64 bytes ) :
@@ -135,6 +136,8 @@ namespace workphone
                         return false;
                     budget->used[w] += workBytes;
                     budget->used[r] += resultBytes;
+                    budget->peakUsed[w] = std::max( budget->peakUsed[w], budget->used[w] );
+                    budget->peakUsed[r] = std::max( budget->peakUsed[r], budget->used[r] );
                     candidateWork->m_bytes = workBytes;
                     candidateResult->m_bytes = resultBytes;
                 }
@@ -382,6 +385,8 @@ namespace workphone
             std::lock_guard<std::mutex> lock( state->mutex );
             if( bytes > state->limits[index] || state->used[index] > state->limits[index] - bytes )
             {
+                if( state->rejectedReservations[index] != std::numeric_limits<u64>::max() )
+                    ++state->rejectedReservations[index];
                 error = String( "Shared streaming budget for " ) + memoryName( category ) +
                         " is exhausted: requested " + std::to_string( bytes ) + " bytes, available " +
                         std::to_string( state->limits[index] - state->used[index] ) + " bytes.";
@@ -389,6 +394,7 @@ namespace workphone
             }
             // A zero-byte lease is still a successful admission token.
             state->used[index] += bytes;
+            state->peakUsed[index] = std::max( state->peakUsed[index], state->used[index] );
             lease->m_bytes = bytes;
             error.clear();
             return lease;
@@ -483,6 +489,8 @@ namespace workphone
         std::lock_guard<std::mutex> budget( m_impl->budget->mutex );
         result.used = m_impl->budget->used;
         result.limits = m_impl->budget->limits;
+        result.peakUsed = m_impl->budget->peakUsed;
+        result.rejectedReservations = m_impl->budget->rejectedReservations;
         return result;
     }
 

@@ -1248,24 +1248,15 @@ namespace workphone::render
             auto native =
                 renderer.isLoaded() ? wp_renderer_get_dx11( renderer.getNativeRenderer() ) : nullptr;
             check( native != nullptr, "Cooked foliage staging requires a loaded DX11 renderer" );
-            u64 gpuBytes = 0, cpuBytes = 4096;
+            u64 cpuBytes = 4096;
             for( const auto &entry : decoded->textures )
             {
                 checked( validateCookedTextureData( entry.second, error ), error );
-                cpuBytes += textureBytes( entry.second ) + entry.first.capacity() +
+                cpuBytes += entry.first.capacity() +
                             sizeof( BudgetedFoliageTexture ) + 512;
-                gpuBytes += entry.second.ddsBytes.size();
-                for( const auto &level : entry.second.levels )
-                {
-                    gpuBytes += level.bgra.size();
-                }
             }
             auto scheduler = WorldStreamingScheduler::shared();
-            auto gpu = scheduler->reserve( StreamMemoryClass::Gpu, gpuBytes, error );
-            if( !gpu )
-            {
-                return {};
-            }
+            // ClawTexture owns per-payload CPU and physical GPU reservations.
             auto cpu = scheduler->reserve( StreamMemoryClass::SourceCpu, cpuBytes, error );
             if( !cpu )
             {
@@ -1274,7 +1265,7 @@ namespace workphone::render
             auto maps = std::make_shared<std::map<String, SmartPtr<ITexture>>>();
             for( const auto &entry : decoded->textures )
             {
-                auto texture = make_ptr<BudgetedFoliageTexture>( gpu, cpu );
+                auto texture = make_ptr<BudgetedFoliageTexture>( StreamBudget{}, cpu );
                 const auto ok = entry.second.ddsBytes.empty()
                                     ? texture->uploadCookedMips(
                                           entry.second.levels, entry.second.mipSettings, native, error )

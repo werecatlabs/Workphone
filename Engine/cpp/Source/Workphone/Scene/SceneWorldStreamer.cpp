@@ -66,6 +66,7 @@ namespace workphone::scene
             Clock::time_point installed;
             u32 count = 0;
             bool pinned = false;
+            bool visible = true;
             u64 baseline = 0;
         };
         struct Overlay { SmartPtr<Properties> data; StreamBudget budget; };
@@ -96,6 +97,7 @@ namespace workphone::scene
         std::map<u64, Resident> residents;
         std::map<u64, WorldStreamResult> ready;
         std::set<u64> demand, failed;
+        std::map<u64, u64> representationTargets;
         String failure;
         Array<Retired> retired;
         std::map<u64, Overlay> overlays;
@@ -132,10 +134,16 @@ namespace workphone::scene
             auto snapshot = stats;
             snapshot.residentCells = static_cast<u32>( residents.size() );
             snapshot.residentActors = 0; snapshot.residentSourceBytes = 0; snapshot.retiringObjects = 0;
+            snapshot.residentProxyCells = 0; snapshot.visibleProxyCells = 0;
             for( const auto &resident : residents )
             {
                 snapshot.residentActors += resident.second.count;
                 snapshot.residentSourceBytes += resident.second.sourceBudget->bytes();
+                if( manifest.cells[index.byKey.at( resident.first )].detailKey )
+                {
+                    ++snapshot.residentProxyCells;
+                    if( resident.second.visible ) ++snapshot.visibleProxyCells;
+                }
             }
             for( const auto &r : retired )
             {
@@ -170,6 +178,58 @@ namespace workphone::scene
             if( !actor->isStatic() ) return true;
             for( const auto &child : actor->getChildren() ) if( dynamic( child ) ) return true;
             return false;
+        }
+        bool graphicsReady( const SmartPtr<IGameActor> &actor ) const
+        {
+            for( const auto &renderer : actor->getComponentsByType<Renderer>() )
+                if( renderer->isEnabled() && actor->isEnabledInScene() )
+                {
+                    const auto object = renderer->getGraphicsObject();
+                    if( !object || !object->isLoaded() ) return false;
+                }
+            for( const auto &child : actor->getChildren() ) if( !graphicsReady( child ) ) return false;
+            return true;
+        }
+        bool representationReady( u64 key ) const
+        {
+            const auto found = residents.find( key );
+            if( found == residents.end() ) return false;
+            const auto app = core::IApplicationManager::instancePtr();
+            // Actor-only/headless scenes have no asynchronous renderer boundary.
+            if( !app || !app->getGraphicsSystem() ) return true;
+            for( const auto &actor : found->second.actors ) if( !graphicsReady( actor ) ) return false;
+            return true;
+        }
+        void setRepresentationVisible( const SmartPtr<IGameActor> &actor, bool visible )
+        {
+            // Use the existing LOD visibility channel; authored flags and the
+            // serialized edit baseline must not change during a handoff.
+            for( const auto &renderer : actor->getComponentsByType<Renderer>() ) renderer->setLODVisible( visible );
+            for( const auto &child : actor->getChildren() ) setRepresentationVisible( child, visible );
+        }
+        void publishRepresentations()
+        {
+            if( representationTargets.empty() ) return;
+            auto app = core::IApplicationManager::instancePtr();
+            std::unique_ptr<TaskLock> pause;
+            if( auto tasks = app ? app->getTaskManager() : nullptr )
+                if( auto renderTask = tasks->getTask( TaskId::Render ); renderTask && renderTask->isLoaded() )
+                    pause = std::make_unique<TaskLock>( renderTask );
+            for( const auto &target : representationTargets )
+            {
+                const auto &detail = manifest.cells[index.byKey.at( target.first )];
+                const auto other = target.second == detail.key ? detail.proxyKey : detail.key;
+                const auto shown = representationReady( target.second ) ? target.second : other;
+                for( auto key : { detail.key, detail.proxyKey } )
+                {
+                    auto found = residents.find( key );
+                    if( found == residents.end() ) continue;
+                    const bool visible = key == shown;
+                    if( found->second.visible == visible ) continue;
+                    for( const auto &actor : found->second.actors ) setRepresentationVisible( actor, visible );
+                    found->second.visible = visible; ++stats.representationSwitches;
+                }
+            }
         }
         bool preserve( u64 key, Resident &resident, String &error )
         {
@@ -264,6 +324,9 @@ namespace workphone::scene
             if( !s.scheduler || !scene || !scene->isLoaded() ||
                 !std::isfinite( options.loadRadius ) || options.loadRadius < 0 ||
                 !std::isfinite( options.retainRadius ) || options.retainRadius < options.loadRadius ||
+                !std::isfinite( options.proxyLoadRadius ) || !std::isfinite( options.proxyRetainRadius ) ||
+                options.proxyLoadRadius < 0 || options.proxyRetainRadius < options.proxyLoadRadius ||
+                ( options.enableHlod && options.proxyLoadRadius < options.retainRadius ) ||
                 !std::isfinite( options.installMilliseconds ) || options.installMilliseconds <= 0 ||
                 !std::isfinite( options.minimumResidencySeconds ) || options.minimumResidencySeconds < 0 ||
                 !options.maximumResidentActors || options.maximumResidentActors > WP_MAX_ACTORS ||
@@ -303,7 +366,7 @@ namespace workphone::scene
                 // Editing radii/budgets is not a new world session. Retain live
                 // actors, promoted cells and state overlays across configuration.
                 s.producer->drain(); s.producer = std::move( producer );
-                s.ready.clear(); s.demand.clear(); s.failed.clear(); s.failure.clear();
+                s.ready.clear(); s.demand.clear(); s.failed.clear(); s.failure.clear(); s.representationTargets.clear();
                 s.refreshRequests = false; s.options = options;
                 s.manifest = std::move( manifest ); s.manifestBudget = std::move( budget );
                 s.index = std::move( index ); s.requestLimit = limits.maximumPending;
@@ -339,19 +402,25 @@ namespace workphone::scene
             // Authored static content can become gameplay content at runtime.
             // Promote its ownership before distance eviction can destroy it.
             for( auto &resident : s.residents )
+                if( !s.manifest.cells[s.index.byKey.at( resident.first )].detailKey )
                 for( const auto &actor : resident.second.actors )
                     if( actor && s.dynamic( actor ) ) resident.second.pinned = true;
-            struct Candidate { const WorldCell *cell; double distance; bool pinned; };
+            struct Candidate { const WorldCell *cell; double distance; bool pinned; const WorldCell *fallback = nullptr; };
             Array<Candidate> candidates;
             const auto now = Clock::now();
             Array<u32> nearby;
             s.stats.indexNodesVisited = 0; s.stats.indexCellsTested = 0;
+            const auto queryRadius = s.options.enableHlod ? s.options.proxyRetainRadius : s.options.retainRadius;
             for( const auto &observer : observers )
-                s.index.query( s.manifest, observer, double( s.options.retainRadius ) * s.options.retainRadius,
+                s.index.query( s.manifest, observer, double( queryRadius ) * queryRadius,
                                nearby, s.stats.indexNodesVisited, s.stats.indexCellsTested );
             // Existing residents must also be considered outside the query for
             // explicit pins and the minimum-residency/teleport policy.
-            for( const auto &resident : s.residents ) nearby.push_back( s.index.byKey.at( resident.first ) );
+            for( const auto &resident : s.residents )
+            {
+                const auto &cell = s.manifest.cells[s.index.byKey.at( resident.first )];
+                nearby.push_back( s.index.byKey.at( cell.detailKey ? cell.detailKey : cell.key ) );
+            }
             if( s.index.persistent != ~u32( 0 ) ) nearby.push_back( s.index.persistent );
             std::sort( nearby.begin(), nearby.end() );
             nearby.erase( std::unique( nearby.begin(), nearby.end() ), nearby.end() );
@@ -366,24 +435,67 @@ namespace workphone::scene
                     ( std::chrono::duration<double>( now - resident->second.installed ).count() <
                         s.options.minimumResidencySeconds && distance < double( s.options.retainRadius ) * s.options.retainRadius * 16 ) ) );
                 const auto radius = present ? s.options.retainRadius : s.options.loadRadius;
-                if( pinned || distance <= double( radius ) * radius ) candidates.push_back( { &cell, distance, pinned } );
+                const WorldCell *target = nullptr, *fallback = nullptr;
+                const WorldCell *proxy = cell.proxyKey ? &s.manifest.cells[s.index.byKey.at( cell.proxyKey )] : nullptr;
+                if( pinned || distance <= double( radius ) * radius ) target = &cell;
+                else if( s.options.enableHlod && proxy )
+                {
+                    const auto proxyRadius = s.residents.count( proxy->key ) ? s.options.proxyRetainRadius : s.options.proxyLoadRadius;
+                    if( distance <= double( proxyRadius ) * proxyRadius ) target = proxy;
+                }
+                if( !target ) continue;
+                if( proxy && !s.representationReady( target->key ) )
+                {
+                    // Keep a usable old representation through decoding and GPU
+                    // creation. A cold near-cell request also asks for its cheap
+                    // skyline proxy while the detailed graph is installed.
+                    const auto other = target == proxy ? &cell : proxy;
+                    if( s.residents.count( other->key ) || ( target == &cell && s.options.enableHlod ) ) fallback = other;
+                }
+                candidates.push_back( { target, distance, pinned, fallback } );
             }
             std::stable_sort( candidates.begin(), candidates.end(), []( const auto &a, const auto &b ) {
                 return a.pinned != b.pinned ? a.pinned > b.pinned :
                     a.distance != b.distance ? a.distance < b.distance : a.cell->key < b.cell->key;
             } );
             std::set<u64> desired;
+            std::map<u64, u64> targets;
+            Array<Candidate> admitted;
             u32 actors = 0;
             for( const auto &candidate : candidates )
             {
-                if( desired.size() >= s.options.maximumResidentCells ||
-                    candidate.cell->actors > s.options.maximumResidentActors - actors )
+                const auto *target = candidate.cell;
+                auto fallback = candidate.fallback;
+                const auto requiredCells = fallback ? 2u : 1u;
+                const auto requiredActors = u64( target->actors ) + ( fallback ? fallback->actors : 0 );
+                if( desired.size() + requiredCells > s.options.maximumResidentCells ||
+                    requiredActors > s.options.maximumResidentActors - actors )
                 {
                     if( candidate.pinned ) { error = "Pinned world demand exceeds resident capacity"; return false; }
-                    continue;
+                    if( !fallback ) continue;
+                    // The handoff's temporary pair must fit the same live actor
+                    // cap. Keep coarse/old coverage when there is no headroom.
+                    ++s.stats.hlodAdmissionFailures;
+                    if( !fallback->detailKey && !s.residents.count( fallback->key ) ) continue;
+                    target = fallback; fallback = nullptr;
+                    if( desired.size() >= s.options.maximumResidentCells ||
+                        target->actors > s.options.maximumResidentActors - actors ) continue;
                 }
-                desired.insert( candidate.cell->key ); actors += candidate.cell->actors;
+                desired.insert( target->key ); actors += target->actors;
+                admitted.push_back( { target, candidate.distance, candidate.pinned } );
+                const auto &detail = target->detailKey ? s.manifest.cells[s.index.byKey.at( target->detailKey )] : *target;
+                if( detail.proxyKey ) targets[detail.key] = target->key;
+                if( fallback )
+                {
+                    desired.insert( fallback->key ); actors += fallback->actors;
+                    admitted.push_back( { fallback, candidate.distance, false } );
+                }
             }
+            candidates = std::move( admitted );
+            // Publish the replacement before the obsolete representation can be
+            // retired. This runs even when demand itself has not changed.
+            s.representationTargets = std::move( targets );
+            s.publishRepresentations();
             // Compare full demand, not the set of unfinished jobs. A stationary
             // observer must not cancel/restart its reads on every update.
             if( desired != s.demand || s.refreshRequests )
@@ -404,7 +516,7 @@ namespace workphone::scene
                         s.ready.count( cell.key ) || s.failed.count( cell.key ) ) continue;
                     if( requests.size() >= s.requestLimit ) break;
                     WorldStreamRequest request;
-                    request.key = cell.key; request.priority = cell.id == "persistent" ? 100 : 0;
+                    request.key = cell.key; request.priority = cell.id == "persistent" ? 100 : cell.detailKey ? 10 : 0;
                     request.workingBytes = cell.bytes;
                     request.maximumResultBytes = cell.decodedBytes;
                     const auto path = s.path;
@@ -431,7 +543,8 @@ namespace workphone::scene
             {
                 if( !s.demand.count( it->first ) && retiredThisUpdate < s.options.maximumInstallsPerUpdate )
                 {
-                    if( !s.preserve( it->first, it->second, error ) ) return false;
+                    if( !s.manifest.cells[s.index.byKey.at( it->first )].detailKey &&
+                        !s.preserve( it->first, it->second, error ) ) return false;
                     s.retire( it->second ); it = s.residents.erase( it ); ++retiredThisUpdate;
                 }
                 else ++it;
@@ -489,6 +602,11 @@ namespace workphone::scene
                             pause = std::make_unique<TaskLock>( renderTask );
                     resident.actors = GameActorUtil::loadSceneActors(
                         resident.source->getChildrenByName( ApplicationUtil::actorsStr ), s.scene );
+                    if( cell.detailKey || cell.proxyKey )
+                    {
+                        resident.visible = false;
+                        for( const auto &actor : resident.actors ) s.setRepresentationVisible( actor, false );
+                    }
                     for( auto actor : resident.actors )
                     {
                         // Save the world reference, not a duplicate of whichever
@@ -519,6 +637,7 @@ namespace workphone::scene
                 if( s.stats.lastInstallMilliseconds > s.options.installMilliseconds ) ++s.stats.installBudgetOvershoots;
                 s.ready.erase( ready );
             }
+            s.publishRepresentations();
             // Once a bounded request batch drains, request the remainder without
             // cancelling active work or rereading cells which are already ready.
             auto state = s.producer->stats();
@@ -538,6 +657,7 @@ namespace workphone::scene
         Impl::PublishOnExit publish{ s };
         if( s.producer ) s.producer->drain();
         s.producer.reset(); s.ready.clear(); s.demand.clear(); s.failed.clear();
+        s.representationTargets.clear();
         s.refreshRequests = false; s.failure.clear(); s.overlays.clear();
         for( auto &resident : s.residents ) s.retire( resident.second );
         s.residents.clear(); s.reclaim();
@@ -587,6 +707,7 @@ namespace workphone::scene
             return false;
         };
         for( auto &resident : s.residents )
+            if( !s.manifest.cells[s.index.byKey.at( resident.first )].detailKey )
             for( const auto &actor : resident.second.actors )
                 if( contains( actor ) ) { resident.second.pinned = true; return true; }
         return false;

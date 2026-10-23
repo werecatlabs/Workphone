@@ -77,7 +77,7 @@ namespace workphone::scene
             {
                 byKey.emplace( manifest.cells[i].key, i );
                 if( manifest.cells[i].id == "persistent" ) persistent = i;
-                else m_order.push_back( i );
+                else if( !manifest.cells[i].detailKey ) m_order.push_back( i );
             }
             m_nodes.reserve( m_order.size() / 4 + 1 );
             if( !m_order.empty() ) buildNode( manifest.cells, 0, u32( m_order.size() ) );

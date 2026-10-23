@@ -14,13 +14,16 @@ namespace workphone::scene
         String id, file;
         Vector3F minimum, maximum;
         u64 key = 0, bytes = 0, decodedBytes = 0;
+        // A detail/proxy pair has one spatial owner. Proxies never own gameplay
+        // identities and are excluded from the spatial index's detail entries.
+        u64 detailKey = 0, proxyKey = 0;
         u32 actors = 0;
         double distanceSquared( const Vector3F &position ) const;
     };
 
     struct WorldManifest
     {
-        static constexpr u32 version = 1;
+        static constexpr u32 version = 2;
         Array<WorldCell> cells;
         float cellSize = 256;
         String generation;
@@ -35,6 +38,9 @@ namespace workphone::scene
         // Explicit authoring conversion, limited to render-only static candidates.
         // Scripted, animated, physical, or externally referenced groups stay persistent.
         bool convertRenderOnlyLeaves = false;
+        // Deliberately coarse skyline preview: one batched bounds-box mesh per
+        // detailed cell. Output must be below assetRoot for portable references.
+        bool generateHlod = false;
     };
 
     /** Offline conversion only. Runtime reads the manifest and demanded payloads.

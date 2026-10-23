@@ -2,6 +2,9 @@
 #include <Workphone/Mesh/IndexBuffer.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
+#include <limits>
+#include <memory>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -23,6 +26,8 @@ namespace workphone
             delete[] static_cast<u8 *>( m_indexData );
             m_indexData = nullptr;
         }
+        m_indexBudget.reset();
+        m_allocatedNumIndices = m_numIndices = 0;
     }
 
     void IndexBuffer::setIndexType( Type indexType )
@@ -65,10 +70,31 @@ namespace workphone
 
     auto IndexBuffer::createIndexData() -> void *
     {
-        auto replacement = new u8[size_t( m_numIndices ) * m_indexSize];
+        try
+        {
+        const auto numBytes = u64( m_numIndices ) * m_indexSize;
+        if( numBytes > std::numeric_limits<size_t>::max() )
+            throw std::length_error( "Index allocation exceeds the addressable size." );
+        String error;
+        auto lease = WorldStreamingScheduler::shared()->reserve(
+            StreamMemoryClass::SourceCpu, numBytes, error );
+        if( !lease ) throw std::runtime_error( error.c_str() );
+        std::unique_ptr<u8[]> replacement( new u8[size_t( numBytes )] );
         delete[] static_cast<u8 *>( m_indexData );
-        m_indexData = replacement;
+        m_indexData = replacement.release();
+        m_indexBudget = std::move( lease );
+        m_allocatedNumIndices = m_numIndices;
+        m_allocatedIndexSize = m_indexSize;
+        m_allocatedIndexType = m_indexType;
         return m_indexData;
+        }
+        catch( ... )
+        {
+            m_numIndices = m_allocatedNumIndices;
+            m_indexSize = m_allocatedIndexSize;
+            m_indexType = m_allocatedIndexType;
+            throw;
+        }
     }
 
     auto IndexBuffer::getIndexData() const -> void *

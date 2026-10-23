@@ -36,13 +36,15 @@ namespace workphone
     {
         if( m_vertexBuffer )
         {
-            m_vertexBuffer->unload( nullptr );
+            if( m_vertexBuffer->getReferences() == 1 && !m_vertexBuffer->getWeakReferences() )
+                m_vertexBuffer->unload( nullptr );
             m_vertexBuffer = nullptr;
         }
 
         if( m_indexBuffer )
         {
-            m_indexBuffer->unload( nullptr );
+            if( m_indexBuffer->getReferences() == 1 && !m_indexBuffer->getWeakReferences() )
+                m_indexBuffer->unload( nullptr );
             m_indexBuffer = nullptr;
         }
     }

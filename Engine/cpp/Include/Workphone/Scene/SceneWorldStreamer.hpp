@@ -9,6 +9,8 @@ namespace workphone::scene
     struct SceneWorldStreamOptions
     {
         float loadRadius = 512, retainRadius = 768;
+        bool enableHlod = false;
+        float proxyLoadRadius = 2048, proxyRetainRadius = 2304;
         u32 maximumResidentActors = 1024, maximumResidentCells = 32;
         u32 maximumPendingCells = 16, maximumInstallsPerUpdate = 1;
         double installMilliseconds = 2, minimumResidencySeconds = 2;
@@ -20,6 +22,8 @@ namespace workphone::scene
         u64 cellReads = 0, installedCells = 0, evictedCells = 0, failedCells = 0;
         u64 residentSourceBytes = 0, manifestBytes = 0, installBudgetOvershoots = 0;
         u64 releasedMeshResources = 0;
+        u32 residentProxyCells = 0, visibleProxyCells = 0;
+        u64 representationSwitches = 0, hlodAdmissionFailures = 0;
         u32 indexNodesVisited = 0, indexCellsTested = 0;
         double lastInstallMilliseconds = 0;
     };

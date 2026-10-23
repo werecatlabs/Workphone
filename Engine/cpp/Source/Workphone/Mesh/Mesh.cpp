@@ -30,7 +30,12 @@ namespace workphone
             try
             {
                 if( subMesh )
-                    subMesh->unload( nullptr );
+                {
+                    // The mesh and this loop hold two references. A retained
+                    // submesh keeps its buffers (and their budget leases) alive.
+                    if( subMesh->getReferences() == 2 && !subMesh->getWeakReferences() )
+                        subMesh->unload( nullptr );
+                }
                 else
                     WP_LOG_ERROR( "Null subMesh encountered during unload." );
             }
@@ -46,7 +51,9 @@ namespace workphone
         {
             try
             {
-                m_sharedVertexBuffer->unload( nullptr );
+                if( m_sharedVertexBuffer->getReferences() == 1 &&
+                    !m_sharedVertexBuffer->getWeakReferences() )
+                    m_sharedVertexBuffer->unload( nullptr );
             }
             catch( const std::exception &e )
             {

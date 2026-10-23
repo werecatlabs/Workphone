@@ -14,6 +14,7 @@
 
 namespace workphone
 {
+    namespace advanced { class ProductionSceneProfile; }
 
     class SampleVehicleAdvanced : public core::Application
     {
@@ -73,6 +74,8 @@ namespace workphone
             m_effectsCapture = capture;
         }
         void setCollisionSmokeTest( bool enabled ) { m_collisionSmokeTest = enabled; }
+        // The command-line harness owns this observer beyond application teardown.
+        void setSceneProfile( advanced::ProductionSceneProfile *profile ) { m_sceneProfile = profile; }
 
     protected:
         class InputListener : public IEventListener
@@ -129,6 +132,7 @@ namespace workphone
         std::string m_capturePath, m_captureView;
         std::string m_evidencePath, m_replayPath;
         std::string m_materialExportDirectory;
+        advanced::ProductionSceneProfile *m_sceneProfile = nullptr;
         std::vector<advanced::ReviewControl> m_replayControls;
         size_t m_replayTick = 0;
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;

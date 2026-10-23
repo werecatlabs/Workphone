@@ -152,6 +152,20 @@ namespace workphone
             return StringUtil::cleanupPath( absolutePath );
         }
 
+        String meshSourceKey( const String &path )
+        {
+            if( path.empty() || path.rfind( "__procedural/", 0 ) == 0 ) return path;
+            auto app = core::IApplicationManager::instancePtr();
+            auto project = app ? app->getProjectPath() : String();
+            if( project.empty() ) project = Path::getWorkingDirectory();
+            const auto absolute = Path::isPathAbsolute( path ) ? path : Path::getAbsolutePath( project, path );
+            auto key = String( std::filesystem::path( absolute.c_str() ).lexically_normal().generic_string().c_str() );
+#ifdef _WIN32
+            key = StringUtil::make_lower( key );
+#endif
+            return key;
+        }
+
         String resolveGeneratedCacheMeshPath( const String &filePath )
         {
             auto cleanFilePath = StringUtil::cleanupPath( filePath );
@@ -384,54 +398,15 @@ namespace workphone
             }
         }
 
-        auto fileId = StringUtil::getUUID( sFilePath );
-
-        if( auto resource = findCachedResource( m_meshResources, [&]( const auto &cached ) {
-                return cached->getFileSystemId() == fileId;
-            } ) )
+        if( ext == ".fbmeshbin" || ext == ".FBMESHBIN" || ApplicationUtil::isSupportedMesh( sFilePath ) )
         {
+            // Publish source identity before loading, then use the existing
+            // serialized cache loader. Concurrent/direct loads share one mesh
+            // allocation and its leases instead of publishing duplicate entries.
+            auto resource = dynamic_pointer_cast<IMeshResource>( createOrRetrieve( sFilePath ).first );
             resource = ensureCachedResourceLoaded( resource );
             MeshCacheLock lifecycleLock;
-            return resource->getMesh();
-        }
-
-        if( ext == ".fbmeshbin" || ext == ".FBMESHBIN" )
-        {
-            auto fileSystem = applicationManager->getFileSystem();
-            auto stream = fileSystem->open( sFilePath );
-            if( stream )
-            {
-                MeshSerializer serializer;
-                auto mesh = serializer.loadMesh( stream );
-
-                auto meshResource = workphone::make_ptr<MeshResource>();
-                meshResource->setFilePath( sFilePath );
-                meshResource->setMesh( mesh );
-
-                addMeshResource( meshResource );
-                return mesh;
-            }
-        }
-
-        if( ApplicationUtil::isSupportedMesh( sFilePath ) )
-        {
-            auto meshLoader = applicationManager->getMeshLoader();
-            if( !meshLoader )
-            {
-                WP_LOG_ERROR( "Mesh loader is not available." );
-            }
-
-            if( meshLoader )
-            {
-                auto mesh = meshLoader->loadMesh( sFilePath );
-
-                auto meshResource = workphone::make_ptr<MeshResource>();
-                meshResource->setFilePath( sFilePath );
-                meshResource->setMesh( mesh );
-
-                addMeshResource( meshResource );
-                return mesh;
-            }
+            return resource ? resource->getMesh() : nullptr;
         }
 
         return nullptr;
@@ -501,7 +476,8 @@ namespace workphone
                 // project-relative cache paths. Their persistent identity is the same.
                 const auto sameIdentity = hasIdentity &&
                                           meshResource->getHandle()->getUUID() == resourceId;
-                return sameIdentity || meshResource->getFileSystemId() == fileId;
+                return sameIdentity || meshResource->getFileSystemId() == fileId ||
+                       ( !sFilePath.empty() && meshSourceKey( meshResource->getFilePath() ) == meshSourceKey( sFilePath ) );
             };
             if( auto cached = findCachedResource( m_meshResources, matches ) )
                 return Pair<SmartPtr<IResource>, bool>( cached, false );
@@ -569,7 +545,11 @@ namespace workphone
             auto sFilePath = StringUtil::cleanupPath( path );
             auto fileId = StringUtil::getUUID( sFilePath );
 
-            const auto matches = [&]( const auto &cached ) { return cached->getFileSystemId() == fileId; };
+            const auto sourceKey = meshSourceKey( sFilePath );
+            const auto matches = [&]( const auto &cached ) {
+                return cached->getFileSystemId() == fileId ||
+                       ( !sourceKey.empty() && meshSourceKey( cached->getFilePath() ) == sourceKey );
+            };
             if( auto cached = findCachedResource( m_meshResources, matches ) )
                 return Pair<SmartPtr<IResource>, bool>( cached, false );
 
@@ -662,9 +642,11 @@ namespace workphone
             }
 
             auto fileId = StringUtil::getUUID( sFilePath );
+            const auto sourceKey = meshSourceKey( sFilePath );
 
             if( auto resource = findCachedResource( m_meshResources, [&]( const auto &cached ) {
-                    return cached->getFileSystemId() == fileId;
+                    return cached->getFileSystemId() == fileId ||
+                           meshSourceKey( cached->getFilePath() ) == sourceKey;
                 } ) ) return ensureCachedResourceLoaded( resource );
 
             FileInfo existingFileInfo;

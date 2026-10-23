@@ -615,7 +615,7 @@ namespace workphone::render
             auto native =
                 renderer.isLoaded() ? wp_renderer_get_dx11( renderer.getNativeRenderer() ) : nullptr;
             require( native != nullptr, "Cooked terrain staging requires a loaded DX11 renderer" );
-            u64 uploadedBytes = 0, retainedBytes = 4096;
+            u64 retainedBytes = 4096;
             for( size_t i = 0; i < decoded->textures.size(); ++i )
             {
                 const auto &texture = decoded->textures[i];
@@ -624,35 +624,18 @@ namespace workphone::render
                 retainedBytes += sizeof( BudgetedTerrainTexture ) +
                                  decoded->resource->dependencies[i]->header.resourceId.str().capacity() +
                                  1 + 512;
-                retainedBytes += texture.levels.size() * sizeof( TextureMipLevel );
-                for( const auto &level : texture.levels )
-                {
-                    uploadedBytes += level.bgra.size();
-                }
             }
-            retainedBytes += uploadedBytes;
-            StreamBudget gpuBudget, cpuBudget;
-            if( uploadedBytes )
-            {
-                gpuBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::Gpu,
-                                                                        uploadedBytes, error );
-                if( !gpuBudget )
-                {
-                    return {};
-                }
-                cpuBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu,
-                                                                        retainedBytes, error );
-                if( !cpuBudget )
-                {
-                    return {};
-                }
-            }
+            // ClawTexture admits and owns each retained mip copy and physical
+            // GPU allocation; this lease covers only resolver bookkeeping.
+            auto cpuBudget = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::SourceCpu, retainedBytes, error );
+            if( !cpuBudget ) return {};
             auto textures = std::make_shared<std::map<String, SmartPtr<ITexture>>>();
             for( size_t i = 0; i < decoded->textures.size(); ++i )
             {
                 const auto &dependency = decoded->resource->dependencies[i];
                 const auto &decodedTexture = decoded->textures[i];
-                auto texture = make_ptr<BudgetedTerrainTexture>( gpuBudget, cpuBudget );
+                auto texture = make_ptr<BudgetedTerrainTexture>( StreamBudget{}, cpuBudget );
                 if( !texture->uploadCookedMips( decodedTexture.levels, decodedTexture.mipSettings,
                                                 native, error ) )
                 {

@@ -7,7 +7,7 @@ The existing actor, component, prefab and scene APIs remain available. Static ac
 Build the `WorkphoneSceneWorld` target. Import the GLB normally once to produce the engine's prefab, meshes, materials and textures, then cook that prefab offline:
 
 ```powershell
-WorkphoneSceneWorld.exe INPUT.prefab OUTPUT_DIRECTORY --asset-root PROJECT_DIRECTORY --cell-size 256 --max-actors 64 --render-only-static
+WorkphoneSceneWorld.exe INPUT.prefab OUTPUT_DIRECTORY --asset-root PROJECT_DIRECTORY --cell-size 256 --max-actors 64 --render-only-static --hlod
 ```
 
 The tool writes `world.wpworld`, independent `.wpcell` payloads and `world-preview.fbscene`. It never changes the input prefab or GLB. `--render-only-static` explicitly permits converting render-only groups and flattening componentless grouping nodes while retaining world poses. Without it, only explicitly static render-only groups become disposable cells. Scripted, physical, animated, externally referenced and unknown-component groups stay in the persistent layer. An inseparable persistent group that exceeds the cell limits is rejected.
@@ -15,6 +15,8 @@ The tool writes `world.wpworld`, independent `.wpcell` payloads and `world-previ
 Geometry bounds determine cell ownership, including meshes with all actor positions at the origin. A building has one owner and expanded coverage bounds; it is not copied into every overlapping grid square. Actor/component UUIDs and existing asset references are retained. The manifest is published only after all new payloads are written, so a failed cook leaves the previously published generation usable. Repeated cooks currently leave older generated payload files on disk; remove obsolete generations only when no running world uses them.
 
 Use project-relative asset paths and place the output under the project directory for relocation. Package the manifest, its referenced payloads, the existing cooked mesh/material/texture dependencies and their resource catalog. Runtime consumes cooked files, not the source GLB. This version reads loose world files through the filesystem; world files inside archive packages require an additional I/O adapter.
+
+`--hlod` opts into coarse skyline proxies. The cooker emits one batched bounds-box mesh and a separate proxy cell for each eligible detail cell. This preserves building extents with a much smaller actor count; it does not preserve facade textures or detailed silhouettes. HLOD output must be under the asset root so generated mesh references remain portable. The version 2 manifest records explicit detail/proxy links, and the reader still accepts version 1 worlds.
 
 ## Editor and runtime
 
@@ -58,7 +60,11 @@ Scene membership events coalesce resource refresh into one pending Primary job p
 
 `SceneWorldStreamer::statistics()` reports actor/cell counts, read/install/eviction/failure counts, source payload reservations, pending work, commit overshoots and released CPU mesh resources. Readers receive the latest completed owner-operation snapshot, so UI inspection does not traverse mutable residency containers. `indexNodesVisited` and `indexCellsTested` describe the most recent observer query. The shared scheduler reports reservations by memory class and its queue capacities. Source/decoded payload sizes are conservative estimates, not measured total process memory.
 
-This implementation bounds participating actor/cell payload work. Existing global mesh/material/texture caches and backend GPU allocations do not yet participate in a complete shared resource residency budget. A native mesh object's unload releases its renderer-owned geometry, but this is not a guarantee that all global cached CPU/GPU assets are reclaimed. HLOD/proxy generation, shared resource leases, draw batching/instancing, persistent save overlays and floating-origin coordination remain separate phases of the design plan. Do not interpret cell actor limits as a cap on total process or GPU memory.
+Normal CPU mesh vertex/index storage and Claw texture payloads now participate in the existing scheduler's `SourceCpu` budget. Each actual buffer owns its lease; mesh/resource aliases do not add another charge. Retained buffer owners keep both data and reservation alive through mesh retirement. Mesh replacement reserves the overlapping old/new storage before committing, and rejected cooked reloads retain the last good mesh.
+
+Normal Claw DX11 mesh geometry and texture uploads participate in the shared `Gpu` budget alongside terrain and foliage. GPU leases are attached to the physical D3D resources, so native/context references retain the reservation after wrapper unload. Reusing cached geometry does not reserve again. Replacement admission includes both generations and keeps the previous allocation on failure. Existing terrain/foliage texture wrappers delegate physical texture accounting to ClawTexture to avoid duplicate reservations.
+
+Configure participating capacities with `WorldStreamingScheduler::shared()->setBudget(memoryClass, bytes, error)`. A limit cannot shrink below live reservations. `stats().used`, `limits`, `peakUsed` and `rejectedReservations` expose class usage, lifetime peaks and explicit allocation denials; worker retry polls do not inflate rejection counts. `SourceCpu`, working/result storage and GPU storage remain separate class limits. These are participating allocation bytes, not process RSS or driver-reported VRAM. Decoder internals, material/cache metadata, other backends and unrelated native allocations are not a complete shared ceiling. Automatic material/texture cache eviction, upload/fence scheduling, draw batching, persistent saves and floating-origin coordination remain unfinished. Do not interpret actor limits as a cap on total process or GPU memory.
 
 ## Validation
 

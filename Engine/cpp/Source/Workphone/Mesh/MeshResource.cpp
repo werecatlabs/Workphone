@@ -3,6 +3,8 @@
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/FileInfo.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/Core/Path.hpp>
+#include <Workphone/Mesh/MeshSerializer.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/Mesh/IMeshLoader.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
@@ -139,23 +141,32 @@ namespace workphone
 
                 if( isExistingFile )
                 {
-                    auto meshLoader = factoryManager->make_object<IMeshLoader>();
-                    if( !meshLoader )
+                    SmartPtr<IMesh> mesh;
+                    // The cooked path stages a new mesh even during reload.
+                    // Some import adapters return resource->getMesh() as a cache
+                    // hit; that must not turn a reload into a silent no-op.
+                    if( StringUtil::make_lower( Path::getFileExtension( meshPath ) ) == ".fbmeshbin" )
                     {
-                        WP_LOG_ERROR( "No mesh loader." );
-                    }
-
-                    if( meshLoader )
-                    {
-                        auto mesh = meshLoader->loadMesh( this );
-
-                        if( mesh )
+                        auto stream = fileSystem->open( meshPath, true, true, false, false, false );
+                        if( !stream ) stream = fileSystem->open( meshPath, true, true, false, true, true );
+                        if( stream )
                         {
-                            mesh->setName( meshPath );
+                            MeshSerializer serializer;
+                            mesh = serializer.loadMesh( stream );
                         }
-
+                    }
+                    else if( auto meshLoader = factoryManager->make_object<IMeshLoader>() )
+                    {
+                        mesh = meshLoader->loadMesh( this );
+                    }
+                    if( mesh )
+                    {
+                        mesh->setName( meshPath );
+                        // Commit only after every participating CPU allocation
+                        // has been admitted. Old direct owners keep their data.
                         setMesh( mesh );
                     }
+                    else WP_LOG_ERROR( "Could not load mesh: " + meshPath );
                 }
                 else
                 {
@@ -188,10 +199,11 @@ namespace workphone
                 }
             }
 
-            setLoadingState( LoadingState::Loaded );
+            setLoadingState( getMesh() ? LoadingState::Loaded : LoadingState::Unloaded );
         }
         catch( std::exception &e )
         {
+            setLoadingState( getMesh() ? LoadingState::Loaded : LoadingState::Unloaded );
             WP_LOG_EXCEPTION( e );
         }
     }
@@ -200,7 +212,6 @@ namespace workphone
     {
         try
         {
-            unload( nullptr );
             load( nullptr );
         }
         catch( std::exception &e )

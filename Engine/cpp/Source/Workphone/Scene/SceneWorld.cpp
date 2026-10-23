@@ -8,6 +8,7 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <WorkphoneGraphics/workphone_graphics_mesh_reader.h>
+#include <WorkphoneGraphics/workphone_graphics_mesh_writer.h>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -127,6 +128,41 @@ namespace workphone::scene
                 data->setProperty( "Scale", world.getScale() );
             }
         }
+        void writeProxyMesh( const fs::path &file,
+                             const Array<std::pair<Vector3F, Vector3F>> &boxes )
+        {
+            Array<wp_graphics_mesh_vertex_pnt> vertices;
+            Array<wp_u32> indices;
+            // Four independent vertices per face keep the building corners hard.
+            const unsigned faces[6][4] = { {0,4,6,2}, {1,3,7,5}, {0,1,5,4},
+                                           {2,6,7,3}, {0,2,3,1}, {4,5,7,6} };
+            const wp_vec3f normals[6] = { {-1,0,0}, {1,0,0}, {0,-1,0},
+                                          {0,1,0}, {0,0,-1}, {0,0,1} };
+            for( const auto &box : boxes )
+                for( unsigned face = 0; face < 6; ++face )
+                {
+                    const auto first = wp_u32( vertices.size() );
+                    for( unsigned corner = 0; corner < 4; ++corner )
+                    {
+                        const auto bits = faces[face][corner];
+                        vertices.push_back( { { bits & 1 ? box.second.x : box.first.x,
+                                                bits & 2 ? box.second.y : box.first.y,
+                                                bits & 4 ? box.second.z : box.first.z },
+                                              normals[face], { corner == 1 || corner == 2 ? 1.f : 0.f,
+                                                                corner >= 2 ? 1.f : 0.f } } );
+                    }
+                    for( auto index : { 0u, 1u, 2u, 0u, 2u, 3u } ) indices.push_back( first + index );
+                }
+            std::unique_ptr<wp_graphics_mesh, decltype( &wp_graphics_mesh_destroy )>
+                mesh( wp_graphics_mesh_create(), wp_graphics_mesh_destroy );
+            if( !mesh || !wp_graphics_mesh_set_vertices( mesh.get(), WORKPHONE_VERTEX_FORMAT_PNT,
+                                                        vertices.data(), wp_u32( vertices.size() ) ) ||
+                !wp_graphics_mesh_set_indices_u32( mesh.get(), indices.data(), wp_u32( indices.size() ) ) )
+                throw std::runtime_error( "Could not create HLOD proxy mesh" );
+            wp_graphics_mesh_compute_aabb( mesh.get() );
+            if( !wp_graphics_mesh_write( mesh.get(), file.string().c_str() ) )
+                throw std::runtime_error( "Could not write HLOD proxy mesh" );
+        }
     }
 
     u64 SceneWorld::keyFor( const String &text )
@@ -154,6 +190,15 @@ namespace workphone::scene
                 !options.maximumCellBytes || options.maximumCellBytes > ( 64ull << 20 ) )
                 throw std::runtime_error( "Invalid world cook limits" );
             fs::path output( directory.c_str() );
+            fs::path proxyDirectory;
+            if( options.generateHlod )
+            {
+                if( options.assetRoot.empty() ) throw std::runtime_error( "HLOD cooking requires an asset root" );
+                proxyDirectory = fs::absolute( output ).lexically_normal().lexically_relative(
+                    fs::absolute( options.assetRoot.c_str() ).lexically_normal() );
+                if( proxyDirectory.empty() || *proxyDirectory.begin() == ".." )
+                    throw std::runtime_error( "HLOD output must be inside the asset root" );
+            }
             fs::create_directories( output );
             auto manifest = make_ptr<Properties>();
             manifest->setProperty( "version", WorldManifest::version );
@@ -173,6 +218,7 @@ namespace workphone::scene
             } );
             std::map<std::pair<int,int>, Array<SmartPtr<Properties>>> groups;
             std::map<const Properties *, std::pair<Vector3F, Vector3F>> bounds;
+            std::set<const Properties *> proxyCandidates;
             Array<SmartPtr<Properties>> persistent;
             std::function<void( const Properties &, const Transform3F & )> partition;
             partition = [&]( const Properties &actor, const Transform3F &parent ) {
@@ -242,6 +288,15 @@ namespace workphone::scene
                 if( !referenced && renderOnly( actor ) &&
                     knownBounds && ( stationary || options.convertRenderOnlyLeaves ) )
                 {
+                    bool proxyVisible = enabled && visible;
+                    visit( actor, [&]( const Properties &node ) {
+                        bool on = true, shown = true;
+                        node.getPropertyValue( GameActorUtil::enabledStr, on ); node.getPropertyValue( "visible", shown );
+                        proxyVisible &= on && shown;
+                    } );
+                    if( proxyVisible && hasGeometryBounds && finite( low ) && finite( high ) &&
+                        high.x > low.x && high.y > low.y && high.z > low.z )
+                        proxyCandidates.insert( data.get() );
                     visit( *data, [&]( const Properties &node ) {
                         if( node.getName() == GameActorUtil::childStr || &node == data.get() )
                             const_cast<Properties &>( node ).setProperty( GameActorUtil::staticStr, true );
@@ -262,8 +317,10 @@ namespace workphone::scene
             if( scene.hasProperty( GameActorUtil::uuidStr ) )
                 partition( scene, Transform3F::identity() );
 
-            auto emit = [&]( const String &id, const Array<SmartPtr<Properties>> &actors,
-                             Vector3F minimum, Vector3F maximum ) {
+            std::function<void( const String &, const Array<SmartPtr<Properties>> &,
+                                Vector3F, Vector3F, const String & )> emit;
+            emit = [&]( const String &id, const Array<SmartPtr<Properties>> &actors,
+                        Vector3F minimum, Vector3F maximum, const String &proxyOf ) {
                 auto payload = make_ptr<Properties>();
                 payload->setProperty( "worldCellVersion", WorldManifest::version );
                 payload->setProperty( "id", id );
@@ -290,10 +347,40 @@ namespace workphone::scene
                 entry->setProperty( "bytes", u64( bytes.size() ) );
                 entry->setProperty( "decodedBytes", u64( bytes.size() ) * 8 + u64( count ) * 4096 );
                 entry->setProperty( "actors", count );
+                if( !proxyOf.empty() ) entry->setProperty( "proxyOf", proxyOf );
                 manifest->addChild( entry );
+                if( options.generateHlod && id != "persistent" && proxyOf.empty() )
+                {
+                    Array<std::pair<Vector3F, Vector3F>> boxes;
+                    for( const auto &actor : actors )
+                    {
+                        // A cell containing unbounded/degenerate content gets no
+                        // proxy: replacing only part of it would hide content.
+                        if( !proxyCandidates.count( actor.get() ) ) return;
+                        boxes.push_back( bounds.at( actor.get() ) );
+                    }
+                    const auto meshFile = "hlod_" + id + "_" + StringUtil::getUUID() + ".fbmeshbin";
+                    writeProxyMesh( output / meshFile.c_str(), boxes );
+                    auto proxy = make_ptr<Properties>(); proxy->setName( ApplicationUtil::actorsStr );
+                    proxy->setProperty( "label", "HLOD " + id );
+                    proxy->setProperty( GameActorUtil::uuidStr, StringUtil::getUUID() );
+                    proxy->setProperty( GameActorUtil::staticStr, true );
+                    setRootTransform( *proxy, Transform3F::identity() );
+                    for( const auto &type : { String( "Mesh" ), String( "MeshRenderer" ) } )
+                    {
+                        auto component = make_ptr<Properties>(); component->setName( GameActorUtil::componentStr );
+                        component->setProperty( GameActorUtil::uuidStr, StringUtil::getUUID() );
+                        component->setProperty( GameActorUtil::componentTypeStr, "workphone::scene::" + type );
+                        if( type == "Mesh" ) component->setProperty( "Mesh Path",
+                            ( proxyDirectory / meshFile.c_str() ).generic_string().c_str() );
+                        proxy->addChild( component );
+                    }
+                    bounds[proxy.get()] = { minimum, maximum };
+                    emit( "hlod_" + id, { proxy }, minimum, maximum, id );
+                }
             };
             // Persistent actors are admitted together so cross-root references resolve.
-            emit( "persistent", persistent, Vector3F::zero(), Vector3F::zero() );
+            emit( "persistent", persistent, Vector3F::zero(), Vector3F::zero(), "" );
             for( const auto &group : groups )
             {
                 Array<SmartPtr<Properties>> batch;
@@ -305,7 +392,7 @@ namespace workphone::scene
                     emit( "cell_" + StringUtil::toString( x ) + "_" + StringUtil::toString( z ) + "_" +
                               StringUtil::toString( page++ ), batch,
                           Vector3F( x * options.cellSize, -10000000, z * options.cellSize ),
-                          Vector3F( ( x + 1 ) * options.cellSize, 10000000, ( z + 1 ) * options.cellSize ) );
+                          Vector3F( ( x + 1 ) * options.cellSize, 10000000, ( z + 1 ) * options.cellSize ), "" );
                     batch.clear(); count = 0; batchBytes = 0;
                 };
                 for( const auto &actor : group.second )
@@ -349,10 +436,12 @@ namespace workphone::scene
             WorldManifest candidate;
             data->getPropertyValue( "cellSize", candidate.cellSize );
             data->getPropertyValue( "generation", candidate.generation );
-            if( version != WorldManifest::version || candidate.generation.empty() ||
+            if( ( version != 1 && version != WorldManifest::version ) || candidate.generation.empty() ||
                 !std::isfinite( candidate.cellSize ) || candidate.cellSize <= 0 )
                 throw std::runtime_error( "Unsupported or invalid world manifest" );
             std::set<u64> keys;
+            std::map<u64, String> proxies;
+            std::map<String, u32> byId;
             for( const auto &entry : data->getChildrenByName( "cell" ) )
             {
                 WorldCell cell;
@@ -369,15 +458,33 @@ namespace workphone::scene
                 };
                 cell.bytes = parseSize( encoded ); cell.decodedBytes = parseSize( decoded );
                 entry->getPropertyValue( "actors", cell.actors ); cell.key = keyFor( cell.id );
+                String proxyOf; entry->getPropertyValue( "proxyOf", proxyOf );
+                if( !proxyOf.empty() )
+                {
+                    if( version < 2 || proxyOf == "persistent" || cell.id == "persistent" )
+                        throw std::runtime_error( "Invalid HLOD proxy ownership" );
+                    cell.detailKey = keyFor( proxyOf ); proxies.emplace( cell.key, proxyOf );
+                }
                 if( cell.id.empty() || !cellFile( cell.file ) || !finite( cell.minimum ) || !finite( cell.maximum ) ||
                     cell.minimum.x > cell.maximum.x || cell.minimum.y > cell.maximum.y || cell.minimum.z > cell.maximum.z ||
                     !cell.bytes || cell.bytes > ( 64ull << 20 ) || cell.decodedBytes < cell.bytes ||
                     cell.decodedBytes > ( 512ull << 20 ) || !cell.actors || cell.actors > WP_MAX_ACTORS ||
                     !keys.insert( cell.key ).second || candidate.cells.size() >= 65536 )
                     throw std::runtime_error( "Invalid or duplicate world cell" );
+                byId.emplace( cell.id, u32( candidate.cells.size() ) );
                 candidate.cells.push_back( std::move( cell ) );
             }
             if( candidate.cells.empty() ) throw std::runtime_error( "World manifest has no cells" );
+            for( auto &proxy : candidate.cells ) if( proxy.detailKey )
+            {
+                auto found = byId.find( proxies.at( proxy.key ) );
+                if( found == byId.end() ) throw std::runtime_error( "HLOD proxy references an unknown detail cell" );
+                auto &detail = candidate.cells[found->second];
+                if( detail.detailKey || detail.proxyKey ||
+                    proxy.minimum != detail.minimum || proxy.maximum != detail.maximum )
+                    throw std::runtime_error( "HLOD proxy must reference one unique detail cell with matching coverage" );
+                detail.proxyKey = proxy.key;
+            }
             result = std::move( candidate );
             return true;
         }
@@ -398,7 +505,7 @@ namespace workphone::scene
             String id;
             data->getPropertyValue( "worldCellVersion", version ); data->getPropertyValue( "id", id );
             for( const auto &actor : data->getChildrenByName( ApplicationUtil::actorsStr ) ) count += countActors( *actor );
-            if( version != WorldManifest::version || id != cell.id || count != cell.actors )
+            if( ( version != 1 && version != WorldManifest::version ) || id != cell.id || count != cell.actors )
                 throw std::runtime_error( "Cell identity, version or actor count mismatch" );
             return data;
         }

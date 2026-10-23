@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/Mesh/IVertexBuffer.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 
 namespace workphone
 {
@@ -55,6 +56,13 @@ namespace workphone
 
         // The vertex data.
         Array<u8 *> m_vertexData;
+
+        // Each allocation owns its lease. Mesh/resource aliases share the same
+        // buffer and cannot duplicate or prematurely release its reservation.
+        Array<StreamBudget> m_vertexBudgets;
+        Array<u64> m_vertexBytes;
+        SmartPtr<IVertexDeclaration> m_allocatedDeclaration;
+        u32 m_allocatedNumVertices = 0;
 
         // The number of vertices.
         u32 m_numVertices = 0;
