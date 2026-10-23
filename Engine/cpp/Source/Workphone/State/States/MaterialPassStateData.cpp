@@ -267,7 +267,7 @@ namespace workphone
 
     MaterialPassStateData::MaterialPassStateData() : StateData( MaterialPassStateData::typeInfo() )
     {
-        auto initial = std::make_shared<MaterialRenderState>();
+        auto initial = MaterialRenderState::create();
         initial->flags = receiveShadowsFlag | castShadowsFlag;
         initial->revision = 1;
         m_renderState = std::move( initial );
@@ -461,7 +461,7 @@ namespace workphone
     MaterialRenderState &MaterialPassStateData::writableSurfaceState()
     {
         if( !m_pendingSurface )
-            m_pendingSurface = std::make_shared<MaterialRenderState>( *m_renderState );
+            m_pendingSurface = MaterialRenderState::create( m_renderState.get() );
         return *m_pendingSurface;
     }
 

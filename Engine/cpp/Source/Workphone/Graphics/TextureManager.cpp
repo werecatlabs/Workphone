@@ -12,6 +12,14 @@
 #include <Workphone/Interface/System/IState.hpp>
 #include <Workphone/Core/DebugTrace.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
+#include <mutex>
+
+namespace
+{
+    // Headless/offline caches still need atomic create-or-retrieve and eviction.
+    std::recursive_mutex g_headlessTextureLifecycle;
+}
 
 namespace workphone
 {
@@ -31,11 +39,13 @@ namespace workphone
 
         void TextureManager::load( SmartPtr<ISharedObject> data )
         {
+            ScopedLock<TextureManager> lifecycle( this );
             m_textures.reserve( 1024 );
         }
 
         void TextureManager::unload( SmartPtr<ISharedObject> data )
         {
+            ScopedLock<TextureManager> lifecycle( this );
             m_textures.clear();
         }
 
@@ -51,6 +61,8 @@ namespace workphone
 
         void TextureManager::destroyResource( SmartPtr<IResource> resource )
         {
+            ScopedLock<TextureManager> lifecycle( this );
+            if( !resource ) return;
             if( resource->isDerived<ITexture>() )
             {
                 auto texture = workphone::static_pointer_cast<ITexture>( resource );
@@ -66,6 +78,7 @@ namespace workphone
 
         void TextureManager::destroyAll()
         {
+            ScopedLock<TextureManager> lifecycle( this );
             auto textures = m_textures.snapshot();
             for( auto &texture : textures )
             {
@@ -82,12 +95,13 @@ namespace workphone
 
         SmartPtr<IResource> TextureManager::getByName( const String &name )
         {
+            ScopedLock<TextureManager> lifecycle( this );
             try
             {
-                auto textures = m_textures.snapshot();
-                for( auto &texture : textures )
+                ScopedLock<decltype( m_textures )> texturesLock( &m_textures );
+                for( const auto &texture : m_textures )
                 {
-                    if( texture->getName() == name )
+                    if( texture && texture->getName() == name )
                     {
                         return texture;
                     }
@@ -103,16 +117,17 @@ namespace workphone
 
         SmartPtr<IResource> TextureManager::getById( const String &uuid )
         {
+            ScopedLock<TextureManager> lifecycle( this );
             try
             {
-                auto textures = m_textures.snapshot();
-                for( auto &texture : textures )
+                ScopedLock<decltype( m_textures )> texturesLock( &m_textures );
+                for( const auto &texture : m_textures )
                 {
                     if( texture )
                     {
                         auto handle = texture->getHandle();
 
-                        if( handle->getUUIDAsString() == uuid )
+                        if( handle && handle->getUUIDAsString() == uuid )
                         {
                             return texture;
                         }
@@ -217,7 +232,13 @@ namespace workphone
 
         Array<SmartPtr<ITexture>> TextureManager::getTextures() const
         {
+            ScopedLock<TextureManager> lifecycle( this );
             return m_textures.snapshot();
+        }
+
+        u32 TextureManager::releaseUnusedResources( u32 /*maximumCandidates*/ )
+        {
+            return 0;
         }
 
         SmartPtr<IStateContext> TextureManager::getStateContext() const
@@ -272,34 +293,24 @@ namespace workphone
         void TextureManager::lock()
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
-            WP_ASSERT( graphicsSystem );
-
-            graphicsSystem->lock();
+            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            if( graphicsSystem ) graphicsSystem->lock();
+            else g_headlessTextureLifecycle.lock();
         }
 
         bool TextureManager::try_lock()
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
-            WP_ASSERT( graphicsSystem );
-
-            return graphicsSystem->try_lock();
+            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            return graphicsSystem ? graphicsSystem->try_lock() : g_headlessTextureLifecycle.try_lock();
         }
 
         void TextureManager::unlock()
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
-            WP_ASSERT( graphicsSystem );
-
-            graphicsSystem->unlock();
+            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            if( graphicsSystem ) graphicsSystem->unlock();
+            else g_headlessTextureLifecycle.unlock();
         }
 
         TextureManager::StateListener::StateListener() = default;

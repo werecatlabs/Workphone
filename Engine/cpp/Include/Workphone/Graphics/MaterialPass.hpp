@@ -32,6 +32,8 @@ namespace workphone
             // Authoring facade lookup by verified membership, including null bindings.
             bool getRenderTextureBinding( const IMaterialTexture *unit, SmartPtr<ITexture> &texture ) const;
             void refreshRenderTextures();
+            /** Inspect existing authoring facades without materializing empty slots. */
+            Array<SmartPtr<IMaterialTexture>> getMaterializedTextureUnits() const;
             void setMaterial( SmartPtr<IMaterial> material ) override;
             /**
              * @brief Set the state context for this pass.

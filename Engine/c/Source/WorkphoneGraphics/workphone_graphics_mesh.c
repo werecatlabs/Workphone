@@ -6,6 +6,7 @@
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_renderer.h"
+#include "workphone_graphics_mesh_memory.h"
 #include <limits.h>
 #include <float.h>
 #include <math.h>
@@ -18,6 +19,7 @@
 
 typedef struct wp_graphics_mesh
 {
+    wp_mesh_memory_callbacks memory;
     wp_vertex_format vertex_format;
     wp_primitive_type primitive_type;
     wp_index_format index_format;
@@ -42,6 +44,16 @@ typedef struct wp_graphics_mesh
     wp_vertex_pntc *lit_vertices;
     uint64_t content_generation;
 } wp_graphics_mesh;
+
+static const wp_mesh_memory_callbacks *wp_mesh_callbacks( const wp_graphics_mesh *mesh )
+{
+    return mesh->memory.reserve ? &mesh->memory : NULL;
+}
+
+void *wp_mesh_memory_allocate_working( wp_graphics_mesh *mesh, size_t bytes )
+{
+    return mesh ? wp_mesh_memory_allocate( wp_mesh_callbacks( mesh ), bytes, 1 ) : NULL;
+}
 
 static const wp_u32 WORKPHONE_SUBMESH_INITIAL_CAP = 4u;
 /* Match the C90-compatible lifetime-ID atomics used by native physics. Meshes
@@ -78,7 +90,7 @@ static uint64_t wp_mesh_next_generation( void )
 #endif
 static void wp_mesh_invalidate_lit( wp_graphics_mesh *mesh )
 {
-    free( mesh->lit_vertices );
+    wp_mesh_memory_free( mesh->lit_vertices );
     mesh->lit_vertices = NULL;
     mesh->content_generation = wp_mesh_next_generation();
 }
@@ -121,13 +133,20 @@ wp_u32 wp_vertex_format_stride( wp_vertex_format fmt )
 
 wp_graphics_mesh *wp_graphics_mesh_create( void )
 {
-    wp_graphics_mesh *mesh = (wp_graphics_mesh *)malloc( sizeof( wp_graphics_mesh ) );
+    return wp_graphics_mesh_create_budgeted( NULL );
+}
+
+wp_graphics_mesh *wp_graphics_mesh_create_budgeted( const wp_mesh_memory_callbacks *callbacks )
+{
+    wp_graphics_mesh *mesh = (wp_graphics_mesh *)wp_mesh_memory_allocate(
+        callbacks, sizeof( wp_graphics_mesh ), 0 );
     if( !mesh )
     {
         return NULL;
     }
 
     memset( mesh, 0, sizeof( wp_graphics_mesh ) );
+    if( callbacks ) mesh->memory = *callbacks;
 
     mesh->primitive_type = WORKPHONE_PRIMITIVE_TRIANGLE_LIST;
     mesh->vertex_format = WORKPHONE_VERTEX_FORMAT_P;
@@ -144,12 +163,12 @@ void wp_graphics_mesh_destroy( wp_graphics_mesh *mesh )
         return;
     }
 
-    free( mesh->vertices );
-    free( mesh->indices );
-    free( mesh->submeshes );
-    free( mesh->render_vertices );
-    free( mesh->lit_vertices );
-    free( mesh );
+    wp_mesh_memory_free( mesh->vertices );
+    wp_mesh_memory_free( mesh->indices );
+    wp_mesh_memory_free( mesh->submeshes );
+    wp_mesh_memory_free( mesh->render_vertices );
+    wp_mesh_memory_free( mesh->lit_vertices );
+    wp_mesh_memory_free( mesh );
 }
 
 /* =========================================================================
@@ -177,14 +196,14 @@ wp_s32 wp_graphics_mesh_set_vertices( wp_graphics_mesh *mesh, wp_vertex_format f
     {
         return 0;
     }
-    copy = malloc( (size_t)stride * count );
+    copy = wp_mesh_memory_allocate( wp_mesh_callbacks( mesh ), (size_t)stride * count, 0 );
     if( !copy )
     {
         return 0;
     }
 
     memcpy( copy, data, (size_t)stride * count );
-    free( mesh->vertices );
+    wp_mesh_memory_free( mesh->vertices );
 
     mesh->has_obb = 0;
     if( !mesh->aabb_authored )
@@ -257,14 +276,14 @@ wp_s32 wp_graphics_mesh_set_indices_u16( wp_graphics_mesh *mesh, const uint16_t 
     {
         return 0;
     }
-    copy = malloc( sizeof( uint16_t ) * (size_t)count );
+    copy = wp_mesh_memory_allocate( wp_mesh_callbacks( mesh ), sizeof( uint16_t ) * (size_t)count, 0 );
     if( !copy )
     {
         return 0;
     }
 
     memcpy( copy, data, sizeof( uint16_t ) * (size_t)count );
-    free( mesh->indices );
+    wp_mesh_memory_free( mesh->indices );
 
     mesh->indices = copy;
     mesh->index_count = count;
@@ -288,14 +307,14 @@ wp_s32 wp_graphics_mesh_set_indices_u32( wp_graphics_mesh *mesh, const wp_u32 *d
     {
         return 0;
     }
-    copy = malloc( sizeof( wp_u32 ) * (size_t)count );
+    copy = wp_mesh_memory_allocate( wp_mesh_callbacks( mesh ), sizeof( wp_u32 ) * (size_t)count, 0 );
     if( !copy )
     {
         return 0;
     }
 
     memcpy( copy, data, sizeof( wp_u32 ) * (size_t)count );
-    free( mesh->indices );
+    wp_mesh_memory_free( mesh->indices );
 
     mesh->indices = copy;
     mesh->index_count = count;
@@ -383,7 +402,8 @@ wp_s32 wp_graphics_mesh_add_submesh( wp_graphics_mesh *mesh, wp_u32 index_start,
         if( mesh->submesh_cap > (wp_u32)-1 / 2u ) return -1;
         new_cap = ( mesh->submesh_cap == 0u ) ? WORKPHONE_SUBMESH_INITIAL_CAP : mesh->submesh_cap * 2u;
         if( (size_t)new_cap > (size_t)-1 / sizeof( wp_submesh ) ) return -1;
-        new_submeshes = (wp_submesh *)realloc( mesh->submeshes, (size_t)new_cap * sizeof( wp_submesh ) );
+        new_submeshes = (wp_submesh *)wp_mesh_memory_reallocate( wp_mesh_callbacks( mesh ),
+            mesh->submeshes, (size_t)new_cap * sizeof( wp_submesh ), 0 );
         if( !new_submeshes )
         {
             return -1;
@@ -1183,7 +1203,8 @@ static wp_s32 wp_graphics_mesh_rebuild_render_vertices( wp_graphics_mesh *mesh )
         return 0;
     }
 
-    vertices = (wp_vertex_ptc *)malloc( (size_t)mesh->vertex_count * sizeof( wp_vertex_ptc ) );
+    vertices = (wp_vertex_ptc *)wp_mesh_memory_allocate( wp_mesh_callbacks( mesh ),
+        (size_t)mesh->vertex_count * sizeof( wp_vertex_ptc ), 0 );
     if( !vertices )
     {
         return 0;
@@ -1193,7 +1214,7 @@ static wp_s32 wp_graphics_mesh_rebuild_render_vertices( wp_graphics_mesh *mesh )
         vertices[i] = wp_graphics_mesh_read_ptc( mesh, i );
     }
 
-    free( mesh->render_vertices );
+    wp_mesh_memory_free( mesh->render_vertices );
     mesh->render_vertices = vertices;
     mesh->is_dirty = 0;
     return 1;
@@ -1293,11 +1314,13 @@ const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *m
     {
         return NULL;
     }
-    vertices = (wp_vertex_pntc *)calloc( mesh->vertex_count, sizeof( *vertices ) );
+    vertices = (wp_vertex_pntc *)wp_mesh_memory_allocate( wp_mesh_callbacks( mesh ),
+        (size_t)mesh->vertex_count * sizeof( *vertices ), 0 );
     if( !vertices )
     {
         return NULL;
     }
+    memset( vertices, 0, (size_t)mesh->vertex_count * sizeof( *vertices ) );
     has_normals = mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PN ||
                   mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNT ||
                   mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNTC;
@@ -1354,7 +1377,7 @@ const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *m
                 }
                 if( a >= mesh->vertex_count || b >= mesh->vertex_count || c >= mesh->vertex_count )
                 {
-                    free( vertices );
+                    wp_mesh_memory_free( vertices );
                     return NULL;
                 }
                 ab.x = vertices[b].position.x - vertices[a].position.x;

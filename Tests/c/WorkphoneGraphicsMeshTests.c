@@ -4,6 +4,7 @@
 #include <workphone_graphics_mesh.h>
 #include <workphone_graphics_mesh_reader.h>
 #include <workphone_graphics_mesh_writer.h>
+#include "WorkphoneGraphicsMeshBudgetContracts.h"
 
 static int test_wpm1_round_trip( void )
 {
@@ -237,6 +238,11 @@ static int test_native_lit_preparation( void )
 int main( int argc, char **argv )
 {
     int i;
+    if( !test_mesh_budget_lifetimes() || !test_mesh_budget_decoding() )
+    {
+        fprintf( stderr, "Native mesh CPU allocation budget contracts failed\n" );
+        return 1;
+    }
     if( !test_wpm_corruption_and_streams() || !test_wpm_nonindexed_spans() ) return 1;
     if( !test_native_lit_preparation() )
     {

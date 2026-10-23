@@ -739,6 +739,11 @@ namespace workphone::render
         return m_textures.snapshot();
     }
 
+    Array<SmartPtr<IMaterialTexture>> MaterialPass::getMaterializedTextureUnits() const
+    {
+        return m_textures.snapshot();
+    }
+
     size_Num MaterialPass::getMaterializedTextureUnitCount() const
     {
         const auto units = m_textures.snapshot();

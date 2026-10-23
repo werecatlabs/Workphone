@@ -52,6 +52,7 @@
 #include "MaterialRenderCacheBenchmark.hpp"
 #include "MaterialPassStorageReference.hpp"
 #include "MaterialTextureColdStorageContracts.hpp"
+#include "ClawMaterialResidencyContracts.hpp"
 
 namespace
 {
@@ -518,6 +519,7 @@ namespace
             states = nullptr;
             Thread::setCurrentTask( previousTask );
             TypeManager::setInstance( nullptr );
+            WorldStreamingScheduler::shutdownShared();
             types.unload();
             if( !root.empty() && root.parent_path() == fs::temp_directory_path() &&
                 root.filename().string().find( "workphone_material_sequence_" ) == 0 )
@@ -3761,6 +3763,7 @@ int main( int argc, char **argv )
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         Fixture fixture;
         material_texture_cold_contracts::run();
+        claw_material_residency_contracts::run( fixture );
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-owned-storage" )
         {
             runOwnedStorageInventory( fixture, 10000 );

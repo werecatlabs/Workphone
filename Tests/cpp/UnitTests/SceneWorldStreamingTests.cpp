@@ -9,6 +9,8 @@
 #include <Workphone/Graphics/GraphicsMesh.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Graphics/MaterialManager.hpp>
+#include <Workphone/Graphics/TextureManager.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
@@ -100,6 +102,39 @@ namespace
     {
     public:
         void loadObject( SmartPtr<ISharedObject> object, bool ) override { object->load( nullptr ); }
+    };
+    class MaterialSweepProbe : public render::MaterialManager
+    {
+    public:
+        u32 releaseUnusedResources( u32 maximumCandidates ) override
+        { events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
+        Array<u32> *events = nullptr;
+        Array<u32> allowances;
+    };
+    class TextureSweepProbe : public render::TextureManager
+    {
+    public:
+        SmartPtr<IResource> loadFromFile( const String & ) override { return nullptr; }
+        void _getObject( void **object ) const override { if( object ) *object = nullptr; }
+        u32 releaseUnusedResources( u32 maximumCandidates ) override
+        { events->push_back( 2 ); allowances.push_back( maximumCandidates ); return 5; }
+        Array<u32> *events = nullptr;
+        Array<u32> allowances;
+    };
+    class AssetSweepGraphicsProbe : public render::GraphicsSystem
+    {
+    public:
+        SmartPtr<render::IMaterialManager> getMaterialManager() const override { return materials; }
+        SmartPtr<render::ITextureManager> getTextureManager() const override { return textures; }
+        SmartPtr<MaterialSweepProbe> materials;
+        SmartPtr<TextureSweepProbe> textures;
+    };
+    class AssetQueueOrderProbe : public DeferredGraphicsProbe
+    {
+    public:
+        void load( SmartPtr<ISharedObject> ) override { events->push_back( 3 ); setLoadingState( LoadingState::Loaded ); }
+        void unload( SmartPtr<ISharedObject> ) override { events->push_back( 0 ); setLoadingState( LoadingState::Unloaded ); }
+        Array<u32> *events = nullptr;
     };
     class StatisticsReader
     {
@@ -242,6 +277,57 @@ namespace
 }
 
 BOOST_AUTO_TEST_SUITE( SceneWorldStreamingTests )
+
+BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new_loads )
+{
+    TestGuard guard;
+    Array<u32> events;
+    auto graphics = make_ptr<AssetSweepGraphicsProbe>();
+    graphics->materials = make_ptr<MaterialSweepProbe>(); graphics->materials->events = &events;
+    graphics->textures = make_ptr<TextureSweepProbe>(); graphics->textures->events = &events;
+    auto oldObject = make_ptr<AssetQueueOrderProbe>(); oldObject->events = &events;
+    oldObject->setLoadingState( LoadingState::Loaded );
+    auto newObject = make_ptr<AssetQueueOrderProbe>(); newObject->events = &events;
+    graphics->unloadObject( oldObject, true ); graphics->loadObject( newObject, true );
+    graphics->update();
+    BOOST_REQUIRE_EQUAL( events.size(), 4u );
+    for( u32 i = 0; i < 4; ++i ) BOOST_CHECK_EQUAL( events[i], i );
+    BOOST_CHECK_EQUAL( graphics->materials->allowances.front(), 32u );
+    BOOST_CHECK_EQUAL( graphics->textures->allowances.front(), 32u );
+    events.clear();
+    const auto released = graphics->releaseUnusedAssets( 7 );
+    BOOST_CHECK_EQUAL( released.materials, 3u ); BOOST_CHECK_EQUAL( released.textures, 5u );
+    BOOST_CHECK_EQUAL( graphics->materials->allowances.back(), 7u );
+    BOOST_CHECK_EQUAL( graphics->textures->allowances.back(), 7u );
+    BOOST_REQUIRE_EQUAL( events.size(), 2u );
+    graphics->releaseUnusedAssets( 0 );
+    BOOST_CHECK_EQUAL( events.size(), 2u );
+}
+
+BOOST_AUTO_TEST_CASE( scene_retirement_uses_the_existing_graphics_cache_sweep )
+{
+    TestGuard guard; guard.scene->clear( true );
+    Array<u32> events;
+    auto graphics = make_ptr<AssetSweepGraphicsProbe>();
+    graphics->materials = make_ptr<MaterialSweepProbe>(); graphics->materials->events = &events;
+    graphics->textures = make_ptr<TextureSweepProbe>(); graphics->textures->events = &events;
+    const auto previousGraphics = guard.applicationManager->getGraphicsSystem();
+    guard.addCleanup( [app = guard.applicationManager, previousGraphics]() mutable { app->setGraphicsSystem( previousGraphics ); } );
+    guard.applicationManager->setGraphicsSystem( graphics );
+    auto data = make_ptr<Properties>(); auto actor = pointActor( "Asset sweep owner", 0 );
+    actor->removeChild( "component" ); data->addChild( actor );
+    String path, error;
+    BOOST_REQUIRE( SceneWorld::cook( *data, testDirectory( guard ), {}, path, error ) );
+    SceneWorldStreamer stream;
+    BOOST_REQUIRE( stream.open( path, guard.scene, {}, error ) );
+    pump( stream, Vector3F::zero(), 1 );
+    const auto before = stream.statistics();
+    stream.close();
+    const auto after = stream.statistics();
+    BOOST_CHECK_GT( after.releasedMaterialResources, before.releasedMaterialResources );
+    BOOST_CHECK_GT( after.releasedTextureResources, before.releasedTextureResources );
+    BOOST_CHECK( guard.scene->getActors().empty() );
+}
 
 BOOST_AUTO_TEST_CASE( hlod_cook_emits_portable_batched_meshes_and_validates_ownership )
 {

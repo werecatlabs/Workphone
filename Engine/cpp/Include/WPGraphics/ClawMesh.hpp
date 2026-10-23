@@ -13,6 +13,7 @@ struct wp_graphics_object;
 
 namespace workphone
 {
+    class StreamBudgetLease;
     namespace render
     {
         /**
@@ -125,7 +126,10 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void clearSkinningData();
+            std::shared_ptr<StreamBudgetLease> m_skinInputBudget;
             std::shared_ptr<const Array<wp_skin_vertex>> m_skinVertices;
+            std::shared_ptr<StreamBudgetLease> m_skinOutputBudget;
             Array<wp_skin_result> m_skinOutput;
             wp_graphics_mesh *m_mesh = nullptr;  ///< Pointer to the native Claw mesh structure.
             wp_graphics_object *m_renderObject =

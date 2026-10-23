@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <workphone_graphics_mesh.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <atomic>
@@ -8,6 +9,31 @@
 
 namespace workphone::render::asset_budget
 {
+    inline StreamBudget reserveCpuBytes( u64 bytes, bool working ) noexcept
+    {
+        try
+        {
+            String error;
+            return WorldStreamingScheduler::shared()->reserve(
+                working ? StreamMemoryClass::WorkingCpu : StreamMemoryClass::SourceCpu, bytes, error );
+        }
+        catch( ... ) { return {}; }
+    }
+    inline void *reserveCpu( void *, wp_u64 bytes, wp_s32 working ) noexcept
+    {
+        auto lease = reserveCpuBytes( bytes, working != 0 );
+        return lease ? new( std::nothrow ) StreamBudget( std::move( lease ) ) : nullptr;
+    }
+    inline void releaseCpu( void *reservation ) noexcept
+    {
+        delete static_cast<StreamBudget *>( reservation );
+    }
+    inline const wp_mesh_memory_callbacks meshMemoryCallbacks{ nullptr, reserveCpu, releaseCpu };
+    inline wp_graphics_mesh *createMesh()
+    {
+        return wp_graphics_mesh_create_budgeted( &meshMemoryCallbacks );
+    }
+
     // The physical D3D resource owns this lease, including references held by
     // the immediate context, native clients and views after wrapper retirement.
     inline const GUID resourceBudgetId =

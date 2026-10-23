@@ -303,6 +303,12 @@ namespace workphone
              */
             Array<SmartPtr<ITexture>> getTextures() const override;
 
+            /** Release reloadable cache data from at most maximumCandidates entries.
+             * Implementations must preserve externally referenced or load-locked textures.
+             * The default backend keeps its resources resident.
+             */
+            virtual u32 releaseUnusedResources( u32 maximumCandidates = 32 );
+
             /**
              * @brief Get the raw pointer to the attached IStateContext.
              * Useful when C-style pointer access is required. The returned pointer is not

@@ -33,10 +33,16 @@ namespace workphone::render
         /** @copydoc MaterialManager::create */
         SmartPtr<IResource> create( const String &uuid, const String &name ) override;
 
+        SmartPtr<IResource> loadFromFile( const String &filePath ) override;
+        u32 releaseUnusedResources( u32 maximumCandidates = 32 ) override;
+
         /** @copydoc MaterialManager::_getObject */
         void _getObject( void **ppObject ) const override;
 
         WP_CLASS_REGISTER_DECL;
+
+    private:
+        size_t m_evictionCursor = 0;
     };
 }  // namespace workphone::render
 

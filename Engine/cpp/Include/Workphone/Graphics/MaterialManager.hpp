@@ -232,6 +232,10 @@ namespace workphone
              */
             void destroyAll() override;
 
+            /** Retire a bounded number of unowned, reloadable resident materials.
+             * Called on the graphics owner thread. Identity metadata stays cached. */
+            virtual u32 releaseUnusedResources( u32 maximumCandidates = 32 );
+
             /**
              * @brief Save a resource to disk.
              *

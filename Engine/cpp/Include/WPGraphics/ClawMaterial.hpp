@@ -3,6 +3,7 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/Material.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 
 struct wp_graphics_material;
 
@@ -68,6 +69,10 @@ namespace workphone
             ~ClawMaterial() override;
 
             void load( SmartPtr<ISharedObject> data ) override;
+            void unload( SmartPtr<ISharedObject> data ) override;
+            void loadFromFile( const String &filePath ) override;
+            /** Caller holds the sole manager and candidate references. */
+            bool releaseUnusedResources();
             void createMaterialByType() override;
 
             ClawMaterial( const ClawMaterial & ) = delete;
@@ -160,6 +165,13 @@ namespace workphone
             mutable MaterialRenderState::Ptr m_syncedRenderState;
             mutable u32 m_syncedNativeRevision = 0;
             wp_graphics_material *m_material;  ///< Underlying Claw material handle.
+
+        private:
+            String authoringDocument() const;
+            String m_residentDocument;
+            StreamBudget m_documentBudget;
+            u64 m_documentWorkingBytes = 0;
+            bool m_fileResident = false;
         };
     }  // namespace render
 }  // namespace workphone

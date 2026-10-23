@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <cmath>
 #include <type_traits>
+#include <memory>
 
 namespace
 {
@@ -258,9 +259,23 @@ namespace
             return false;
         }
 
+        // Reserve header/codec metadata before asking a plugin to inspect input.
+        // Full bitmap and converted BGRA payloads are admitted after the header.
+        auto headerBudget = WorldStreamingScheduler::shared()->reserve(
+            StreamMemoryClass::WorkingCpu, 64u * 1024u, budgetError );
+        if( !headerBudget )
+        {
+            std::scoped_lock lock( g_textureMutex );
+            g_textureData[texture].decodeAttempted = false;
+            WP_LOG_WARNING( budgetError );
+            return false;
+        }
         // The decoder's plugin registry must be released before this DLL unloads.
         static FreeImageLifetime freeImageLifetime;
-        auto memory = FreeImage_OpenMemory( encoded.data(), static_cast<DWORD>( encoded.size() ) );
+        using MemoryOwner = std::unique_ptr<FIMEMORY, decltype( &FreeImage_CloseMemory )>;
+        using BitmapOwner = std::unique_ptr<FIBITMAP, decltype( &FreeImage_Unload )>;
+        MemoryOwner memory( FreeImage_OpenMemory( encoded.data(), static_cast<DWORD>( encoded.size() ) ),
+                            &FreeImage_CloseMemory );
         if( !memory )
         {
             WP_LOG_ERROR( "WPGraphics/Texture: failed to allocate decoder stream for '" + filePath +
@@ -268,47 +283,60 @@ namespace
             return false;
         }
 
-        auto format = FreeImage_GetFileTypeFromMemory( memory, 0 );
+        auto format = FreeImage_GetFileTypeFromMemory( memory.get(), 0 );
         if( format == FIF_UNKNOWN )
         {
             format = FreeImage_GetFIFFromFilename( filePath.c_str() );
         }
 
-        auto bitmap = format != FIF_UNKNOWN ? FreeImage_LoadFromMemory( format, memory, 0 ) : nullptr;
-        auto converted = bitmap ? FreeImage_ConvertTo32Bits( bitmap ) : nullptr;
-        if( bitmap )
+        if( format == FIF_UNKNOWN || !FreeImage_FIFSupportsNoPixels( format ) )
         {
-            FreeImage_Unload( bitmap );
-        }
-        FreeImage_CloseMemory( memory );
-
-        if( !converted )
-        {
-            WP_LOG_ERROR( "WPGraphics/Texture: failed to decode '" + filePath +
-                          "'; file format is unsupported or image data is invalid." );
+            WP_LOG_ERROR( "WPGraphics/Texture: format cannot provide a bounded header preflight for '" +
+                          filePath + "'; use a cooked texture or convert to PNG/JPEG/BMP/TGA/TIFF/WebP." );
             return false;
         }
-
-        const auto width = FreeImage_GetWidth( converted );
-        const auto height = FreeImage_GetHeight( converted );
-        if( width == 0 || height == 0 || width > 16384 || height > 16384 ||
-            u64( width ) * height * 4u > render::graphicsTextureByteLimit ||
-            static_cast<size_t>( width ) >
-                std::numeric_limits<size_t>::max() / ( static_cast<size_t>( height ) * 4u ) )
+        FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
+        BitmapOwner header( FreeImage_LoadFromMemory( format, memory.get(), FIF_LOAD_NOPIXELS ),
+                            &FreeImage_Unload );
+        const auto width = header ? FreeImage_GetWidth( header.get() ) : 0u;
+        const auto height = header ? FreeImage_GetHeight( header.get() ) : 0u;
+        const auto pitch = header ? FreeImage_GetPitch( header.get() ) : 0u;
+        const auto bgraBytes = u64( width ) * height * 4u;
+        if( !width || !height || width > 16384 || height > 16384 || !pitch ||
+            bgraBytes > render::graphicsTextureByteLimit ||
+            u64( pitch ) * height > render::graphicsTextureByteLimit * 4u )
         {
-            FreeImage_Unload( converted );
-            WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image dimensions in '" + filePath +
-                          "'." );
+            WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image header in '" + filePath + "'." );
             return false;
         }
-
-        auto sourceBudget = reserveTextureCpu( u64( width ) * height * 4u, budgetError );
-        if( !sourceBudget )
+        auto sourceBudget = reserveTextureCpu( bgraBytes, budgetError );
+        auto decoderBudget = sourceBudget ? WorldStreamingScheduler::shared()->reserve(
+            StreamMemoryClass::WorkingCpu, u64( pitch ) * height + bgraBytes + 64u * 1024u,
+            budgetError ) : StreamBudget{};
+        if( !sourceBudget || !decoderBudget )
         {
-            FreeImage_Unload( converted );
             std::scoped_lock lock( g_textureMutex );
             g_textureData[texture].decodeAttempted = false;
             WP_LOG_WARNING( budgetError );
+            return false;
+        }
+        header.reset();
+        FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
+        BitmapOwner bitmap( FreeImage_LoadFromMemory( format, memory.get(), 0 ), &FreeImage_Unload );
+        if( !bitmap || FreeImage_GetWidth( bitmap.get() ) != width ||
+            FreeImage_GetHeight( bitmap.get() ) != height || FreeImage_GetPitch( bitmap.get() ) > pitch )
+        {
+            WP_LOG_ERROR( "WPGraphics/Texture: decoded bitmap does not match its admitted header in '" +
+                          filePath + "'." );
+            return false;
+        }
+        BitmapOwner converted( FreeImage_ConvertTo32Bits( bitmap.get() ), &FreeImage_Unload );
+        bitmap.reset();
+        memory.reset();
+        if( !converted || FreeImage_GetWidth( converted.get() ) != width ||
+            FreeImage_GetHeight( converted.get() ) != height || FreeImage_GetPitch( converted.get() ) > u64( width ) * 4u )
+        {
+            WP_LOG_ERROR( "WPGraphics/Texture: failed bounded BGRA conversion for '" + filePath + "'." );
             return false;
         }
         Array<u8> pixels( static_cast<size_t>( width ) * static_cast<size_t>( height ) * 4u );
@@ -316,10 +344,10 @@ namespace
         for( u32 y = 0; y < height; ++y )
         {
             // FreeImage scan lines are bottom-up; GPU uploads are top-down.
-            const auto source = FreeImage_GetScanLine( converted, height - 1u - y );
+            const auto source = FreeImage_GetScanLine( converted.get(), height - 1u - y );
             std::memcpy( pixels.data() + static_cast<size_t>( y ) * rowBytes, source, rowBytes );
         }
-        FreeImage_Unload( converted );
+        converted.reset();
 
         texture->setSize( Vector2I( static_cast<s32>( width ), static_cast<s32>( height ) ) );
         std::scoped_lock lock( g_textureMutex );
@@ -447,6 +475,55 @@ namespace workphone
     {
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawTexture, Texture );
 
+        // Backend-private observable admission path shared by copyData and
+        // createManual. A null input initializes the retained candidate to zero
+        // directly; it needs no second temporary image or unchecked void call.
+        bool replaceClawTexturePixels( ClawTexture *texture, const void *input,
+                                       const Vector2I &size, String &error )
+        {
+            error.clear();
+            if( !texture || size.x <= 0 || size.y <= 0 || size.x > 16384 || size.y > 16384 ||
+                u64( size.x ) * size.y * 4u > graphicsTextureByteLimit )
+            {
+                error = "Texture pixel replacement requires bounded positive dimensions.";
+                return false;
+            }
+            try
+            {
+                // The old candidate remains charged until its actual array dies.
+                StreamBudget retiredBudget;
+                const auto byteCount = static_cast<size_t>( size.x ) * size.y * 4u;
+                auto sourceBudget = reserveTextureCpu( byteCount, error );
+                if( !sourceBudget ) return false;
+                Array<u8> pixels( byteCount, 0 );
+                if( input ) std::memcpy( pixels.data(), input, byteCount );
+                {
+                    std::scoped_lock lock( g_textureMutex );
+                    auto &data = g_textureData[texture];
+                    retiredBudget = std::move( data.sourceBudget );
+                    data.sourceBudget = std::move( sourceBudget );
+                    data.pixels.swap( pixels );
+                    std::decay_t<decltype( data.floatPixels )>{}.swap( data.floatPixels );
+                    std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );
+                    std::decay_t<decltype( data.ddsBytes )>{}.swap( data.ddsBytes );
+                    data.cookedProfile.clear();
+                    // Pixel replacements are authored in memory and cannot be
+                    // evicted through a wrapper's earlier source file recipe.
+                    data.sourcePath.clear();
+                    data.decodeAttempted = true;
+                    data.pixelSize = size;
+                    data.uploadPending = true;
+                }
+                texture->setSize( size );
+                return true;
+            }
+            catch( const std::exception &exception )
+            {
+                error = String( "Texture pixel staging failed: " ) + exception.what();
+                return false;
+            }
+        }
+
         ClawTexture::ClawTexture() : m_size( 0, 0 ), m_usageFlags( 0 )
         {
         }
@@ -477,6 +554,8 @@ namespace workphone
                 !ensureTextureDecoded( this ) )
             {
                 WP_LOG_WARNING( "ClawTexture::load: could not decode texture: " + getFilePath() );
+                setLoadingState( LoadingState::Unloaded );
+                return;
             }
 
             setLoadingState( LoadingState::Loaded );
@@ -484,11 +563,9 @@ namespace workphone
 
         void ClawTexture::unload( SmartPtr<ISharedObject> data )
         {
-            if( getLoadingState() == LoadingState::Unloaded )
-            {
-                return;
-            }
-
+            // Lazy CPU/native access can acquire physical residency after a
+            // rejected load left the logical state Unloaded. Retire that data
+            // on every unload; the state alone does not prove cache emptiness.
             setLoadingState( LoadingState::Unloading );
             {
                 std::scoped_lock lock( g_textureMutex );
@@ -535,38 +612,46 @@ namespace workphone
         {
         }
 
+        bool ClawTexture::releaseUnusedCacheData()
+        {
+            if( isLoadLocked() || getRenderTarget() ||
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) ) return false;
+            std::scoped_lock lock( g_textureMutex );
+            const auto found = g_textureData.find( this );
+            if( found == g_textureData.end() ) return false;
+            auto &data = found->second;
+            // Source decoding is the only known reload recipe. Cooked/procedural
+            // uploads and authoring replacements intentionally retain their data.
+            auto filePath = getFilePath();
+            if( filePath.empty() ) filePath = getName();
+            if( data.sourcePath.empty() || data.sourcePath != filePath ||
+                !data.decodeAttempted || data.pixels.empty() || !data.floatPixels.empty() ||
+                !data.cookedLevels.empty() || !data.ddsBytes.empty() ) return false;
+            auto application = core::IApplicationManager::instancePtr();
+            auto files = application ? application->getFileSystemPtr() : nullptr;
+            auto source = files ? files->open( filePath, true, true, false, false, false ) : nullptr;
+            if( !source && files ) source = files->open( filePath, true, true, false, true, true );
+            if( !source || !source->size() ) return false;
+            destroyTextureView( data );
+            std::decay_t<decltype( data.pixels )>{}.swap( data.pixels );
+            data.sourceBudget.reset();
+            data.decodeAttempted = false;
+            data.uploadPending = true;
+            data.attemptedRenderer = nullptr;
+            data.attemptedDevice = nullptr;
+            setLoadingState( LoadingState::Unloaded );
+            return true;
+        }
+
         void ClawTexture::copyData( void *data, const Vector2I &size )
         {
-            if( data && size.x > 0 && size.y > 0 )
+            if( data )
             {
-                if( size.x > 16384 || size.y > 16384 ||
-                    u64( size.x ) * size.y * 4u > graphicsTextureByteLimit ) return;
-                const auto byteCount =
-                    static_cast<size_t>( size.x ) * static_cast<size_t>( size.y ) * 4u;
                 String error;
-                auto sourceBudget = reserveTextureCpu( byteCount, error );
-                if( !sourceBudget ) { WP_LOG_WARNING( error ); return; }
-                std::scoped_lock lock( g_textureMutex );
-                auto &textureData = g_textureData[this];
-                Array<u8> pixels( byteCount );
-                std::memcpy( pixels.data(), data, byteCount );
-                auto retiredBudget = std::move( textureData.sourceBudget );
-                textureData.sourceBudget = std::move( sourceBudget );
-                textureData.pixels = std::move( pixels );
-                std::decay_t<decltype( textureData.floatPixels )>{}.swap( textureData.floatPixels );
-                std::decay_t<decltype( textureData.cookedLevels )>{}.swap( textureData.cookedLevels );
-                std::decay_t<decltype( textureData.ddsBytes )>{}.swap( textureData.ddsBytes );
-                textureData.cookedProfile.clear();
-                textureData.pixelSize = size;
-                textureData.uploadPending = true;
+                if( !replaceClawTexturePixels( this, data, size, error ) ) WP_LOG_WARNING( error );
+                return;
             }
-
-            m_size = size;
-
-            if( auto renderTarget = getRenderTarget() )
-            {
-                renderTarget->setSize( size );
-            }
+            setSize( size );
         }
 
         bool ClawTexture::copyLinearFloatData( const Array<f32> &rgba, const Vector2I &size,

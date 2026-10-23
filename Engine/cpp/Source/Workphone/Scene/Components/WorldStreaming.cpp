@@ -141,6 +141,8 @@ namespace workphone::scene
         p->setProperty( "Pending Cells", stats.pendingCells, true );
         p->setProperty( "Resident Source Bytes", stats.residentSourceBytes, true );
         p->setProperty( "Released CPU Mesh Resources", stats.releasedMeshResources, true );
+        p->setProperty( "Released Material Resources", stats.releasedMaterialResources, true );
+        p->setProperty( "Released Texture Resources", stats.releasedTextureResources, true );
         p->setProperty( "Index Nodes Visited", stats.indexNodesVisited, true );
         p->setProperty( "Index Cells Tested", stats.indexCellsTested, true );
         return p;

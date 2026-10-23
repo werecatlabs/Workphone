@@ -13,6 +13,14 @@
 
 namespace workphone::render
 {
+    namespace
+    {
+        SmartPtr<IGraphicsSystem> materialGraphicsOwner()
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            return app ? app->getGraphicsSystem() : nullptr;
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::render, MaterialManager, IMaterialManager );
     WP_CLASS_REGISTER_DERIVED( workphone::render, MaterialManager::StateListener, IMaterialManager );
@@ -28,6 +36,7 @@ namespace workphone::render
 
     void MaterialManager::unload( SmartPtr<ISharedObject> data )
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
             auto materials = m_materials.snapshot();
@@ -178,6 +187,7 @@ namespace workphone::render
     auto MaterialManager::createOrRetrieve( const String &uuid, const String &path, const String &type )
         -> Pair<SmartPtr<IResource>, bool>
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         if( auto materialResource = getById( uuid ) )
         {
             return Pair<SmartPtr<IResource>, bool>( materialResource, false );
@@ -199,6 +209,7 @@ namespace workphone::render
 
     auto MaterialManager::createOrRetrieve( const String &path ) -> Pair<SmartPtr<IResource>, bool>
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         if( auto materialResource = getByName( path ) )
         {
             return Pair<SmartPtr<IResource>, bool>( materialResource, false );
@@ -329,6 +340,7 @@ namespace workphone::render
 
     auto MaterialManager::loadResource( const String &name ) -> SmartPtr<IResource>
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
             WP_ASSERT( !StringUtil::isNullOrEmpty( name ) );
@@ -349,16 +361,17 @@ namespace workphone::render
 
     auto MaterialManager::getByName( const String &name ) -> SmartPtr<IResource>
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
             WP_ASSERT( !StringUtil::isNullOrEmpty( name ) );
 
-            auto materials = m_materials.snapshot();
-            for( auto &material : materials )
+            ScopedLock<decltype( m_materials )> materialsLock( &m_materials );
+            for( const auto &material : m_materials )
             {
                 if( material )
                 {
-                    if( material->getName() == name )
+                    if( material->getName() == name || material->getFilePath() == name )
                     {
                         return material;
                     }
@@ -375,12 +388,13 @@ namespace workphone::render
 
     auto MaterialManager::getById( const String &uuid ) -> SmartPtr<IResource>
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
-            auto materials = m_materials.snapshot();
-            for( auto &material : materials )
+            ScopedLock<decltype( m_materials )> materialsLock( &m_materials );
+            for( const auto &material : m_materials )
             {
-                if( auto handle = material->getHandle() )
+                if( auto handle = material ? material->getHandle() : nullptr )
                 {
                     if( handle->getUUIDAsString() == uuid )
                     {
@@ -404,6 +418,7 @@ namespace workphone::render
 
     void MaterialManager::destroyAll()
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         auto materials = m_materials.snapshot();
         for( auto &material : materials )
         {
@@ -416,8 +431,14 @@ namespace workphone::render
         m_materials.clear();
     }
 
+    u32 MaterialManager::releaseUnusedResources( u32 )
+    {
+        return 0;
+    }
+
     void MaterialManager::destroyResource( SmartPtr<IResource> resource )
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         m_materials.erase( std::remove( m_materials.begin(), m_materials.end(), resource ),
                            m_materials.end() );
     }

@@ -58,6 +58,11 @@ namespace workphone
             /** @brief Destroys a previously created render texture. */
             void destroyRenderTexture( SmartPtr<ITexture> texture ) override;
 
+            /** Bounded rotating sweep of unreferenced, file-backed decoded texture data.
+             * Resource identity and authored metadata remain available for lazy reload.
+             */
+            u32 releaseUnusedResources( u32 maximumCandidates = 32 ) override;
+
             /** @brief Retrieves the underlying object pointer. */
             void _getObject( void **ppObject ) const override;
 
@@ -66,6 +71,7 @@ namespace workphone
         private:
             /** @brief Internal helper to create a texture instance. */
             SmartPtr<ITexture> createTexture( const String &uuid, const String &name );
+            size_t m_evictionCursor = 0;
         };
     }  // namespace render
 }  // namespace workphone

@@ -3,7 +3,9 @@
 #include <Workphone/Core/ColourF.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <memory>
+#include <stdexcept>
 namespace workphone
 {
     /** Immutable, material-only CPU values. Texture objects retain resource lifetime;
@@ -12,6 +14,18 @@ namespace workphone
     struct WPCore_API MaterialRenderState
     {
         using Ptr = std::shared_ptr<const MaterialRenderState>;
+        /** Reserve each physical snapshot before allocation. The deleter owns
+         * the lease so draw records remain charged after their material retires. */
+        static std::shared_ptr<MaterialRenderState> create( const MaterialRenderState *source = nullptr )
+        {
+            String error;
+            auto budget = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::SourceCpu, sizeof( MaterialRenderState ), error );
+            if( !budget ) throw std::runtime_error( error.c_str() );
+            return std::shared_ptr<MaterialRenderState>(
+                source ? new MaterialRenderState( *source ) : new MaterialRenderState(),
+                [budget]( MaterialRenderState *value ) mutable { delete value; budget.reset(); } );
+        }
         static constexpr u32 TextureCount = 32;
         ColourF specularColour = ColourF::White;
         ColourF ambientColour = ColourF::White;
