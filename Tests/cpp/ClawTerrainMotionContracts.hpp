@@ -127,7 +127,7 @@ namespace claw_terrain_motion_contracts
                 wp_scenenode_create(), &wp_scenenode_destroy );
             require( cameraNode != nullptr, "moving camera scene node must initialize" );
             wp_camera_attach_to_node( camera->getNativeCamera(), cameraNode.get() );
-            camera->setFOVy( 1.04719755f );
+            camera->setFOVy( 60.0f );
             camera->setAspectRatio( 1 );
             camera->setNearClipDistance( .1f );
             camera->setFarClipDistance( 1000 );

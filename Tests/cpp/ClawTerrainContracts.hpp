@@ -254,7 +254,7 @@ namespace claw_terrain_contracts
         renderer.setRenderTarget( target );
         renderer.setViewport( nullptr );
         auto camera = make_ptr<ClawCamera>();
-        camera->setFOVy( 1.04719755f );
+        camera->setFOVy( 60.0f );
         camera->setNearClipDistance( 0.1f );
         camera->setFarClipDistance( 10 );
         camera->setAspectRatio( 1 );
