@@ -121,6 +121,7 @@ namespace claw_foliage_world_contracts
         struct FactoryScope{SmartPtr<FactoryManager> factory;~FactoryScope(){factory->unload(nullptr);}}factoryScope{fixture.services.factory};
         auto plugin=make_ptr<ClawHammer>();plugin->load(nullptr);
         require(bool(getFoliageImpostorTextureResolver()),"graphics plugin must install the CPU foliage baker texture resolver");
+        const auto sourceBaseline=WorldStreamingScheduler::shared()->stats().used[size_t(StreamMemoryClass::SourceCpu)];
         auto texture=make_ptr<ClawTexture>();u32 bgra=0xff123456;texture->copyData(&bgra,{1,1});String error;
         const auto before=WorldStreamingScheduler::shared()->stats().used[size_t(StreamMemoryClass::SourceCpu)];
         auto pixels=texture->getCpuBaseMip(error);require(pixels&&pixels->width==1&&pixels->bgra[0]==0x56,"CPU baker must receive retained BGRA pixels");
@@ -131,7 +132,7 @@ namespace claw_foliage_world_contracts
         auto cookedPixels=texture->getCpuBaseMip(error);require(cookedPixels&&cookedPixels->bgra==cooked.bgra,"cooked base mip must be available without GPU readback");
         texture=nullptr;require(pixels->bgra[0]==0x56&&cookedPixels->bgra[0]==9,"bake inputs must outlive texture destruction");
         pixels.reset();cookedPixels.reset();
-        require(WorldStreamingScheduler::shared()->stats().used[size_t(StreamMemoryClass::SourceCpu)]==before,"last CPU pixel owner must return its reservation");
+        require(WorldStreamingScheduler::shared()->stats().used[size_t(StreamMemoryClass::SourceCpu)]==sourceBaseline,"last CPU pixel and texture owner must return their reservations");
         plugin->unload(nullptr);require(!getFoliageImpostorTextureResolver(),"plugin unload must remove callback into unloaded backend");
     }
     inline void sceneIntegration(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)

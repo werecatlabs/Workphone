@@ -69,8 +69,7 @@ namespace workphone
         SmartPtr<IMeshResource> ensureCachedResourceLoaded( SmartPtr<IMeshResource> resource,
                                                             Initialize initialize )
         {
-            if( !resource || resource->isLoaded() ||
-                resource->getLoadingState() == LoadingState::Loading ) return resource;
+            if( !resource || resource->isLoaded() ) return resource;
             // Retain the resource while waiting so unused-resource retirement
             // cannot discard it. Pause render before taking the lifecycle lock:
             // mesh loaders may themselves pause render while constructing data.
@@ -158,8 +157,15 @@ namespace workphone
             auto app = core::IApplicationManager::instancePtr();
             auto project = app ? app->getProjectPath() : String();
             if( project.empty() ) project = Path::getWorkingDirectory();
-            const auto absolute = Path::isPathAbsolute( path ) ? path : Path::getAbsolutePath( project, path );
-            auto key = String( std::filesystem::path( absolute.c_str() ).lexically_normal().generic_string().c_str() );
+            auto source = std::filesystem::path( path.c_str() );
+            if( !source.is_absolute() ) source = std::filesystem::path( project.c_str() ) / source;
+            // Canonicalize absolute and relative spellings alike. On Windows,
+            // TEMP may use an 8.3 user directory while canonical relative paths
+            // expand it; mixing canonical and lexical keys duplicates assets.
+            std::error_code error;
+            auto canonical = std::filesystem::weakly_canonical( source, error );
+            if( error ) canonical = std::filesystem::absolute( source ).lexically_normal();
+            auto key = String( canonical.generic_string().c_str() );
 #ifdef _WIN32
             key = StringUtil::make_lower( key );
 #endif
@@ -398,6 +404,18 @@ namespace workphone
             }
         }
 
+        const auto fileId = StringUtil::getUUID( sFilePath );
+        const auto sourceKey = meshSourceKey( sFilePath );
+        if( auto cached = findCachedResource( m_meshResources, [&]( const auto &resource ) {
+                return resource->getFileSystemId() == fileId ||
+                       ( !sourceKey.empty() && meshSourceKey( resource->getFilePath() ) == sourceKey );
+            } ) )
+        {
+            cached = ensureCachedResourceLoaded( cached );
+            MeshCacheLock lifecycleLock;
+            return cached->getMesh();
+        }
+
         if( ext == ".fbmeshbin" || ext == ".FBMESHBIN" || ApplicationUtil::isSupportedMesh( sFilePath ) )
         {
             // Publish source identity before loading, then use the existing
@@ -470,6 +488,7 @@ namespace workphone
             auto fileId = StringUtil::getUUID( sFilePath );
             const auto hasIdentity = !StringUtil::isNullOrEmpty( uuid );
             const auto resourceId = hasIdentity ? StringUtil::parseUUID( uuid ) : UUID();
+            const auto sourceKey = meshSourceKey( sFilePath );
 
             const auto matches = [&]( const auto &meshResource ) {
                 // Catalog loads use absolute paths, while imported prefabs retain
@@ -477,7 +496,7 @@ namespace workphone
                 const auto sameIdentity = hasIdentity &&
                                           meshResource->getHandle()->getUUID() == resourceId;
                 return sameIdentity || meshResource->getFileSystemId() == fileId ||
-                       ( !sFilePath.empty() && meshSourceKey( meshResource->getFilePath() ) == meshSourceKey( sFilePath ) );
+                       ( !sourceKey.empty() && meshSourceKey( meshResource->getFilePath() ) == sourceKey );
             };
             if( auto cached = findCachedResource( m_meshResources, matches ) )
                 return Pair<SmartPtr<IResource>, bool>( cached, false );

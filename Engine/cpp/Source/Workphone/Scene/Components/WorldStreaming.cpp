@@ -137,6 +137,7 @@ namespace workphone::scene
         p->setProperty( "Visible Proxy Cells", stats.visibleProxyCells, true );
         p->setProperty( "Representation Switches", stats.representationSwitches, true );
         p->setProperty( "HLOD Admission Failures", stats.hlodAdmissionFailures, true );
+        p->setProperty( "Graphics Retry Requests", stats.graphicsRetryRequests, true );
         p->setProperty( "Pending Cells", stats.pendingCells, true );
         p->setProperty( "Resident Source Bytes", stats.residentSourceBytes, true );
         p->setProperty( "Released CPU Mesh Resources", stats.releasedMeshResources, true );

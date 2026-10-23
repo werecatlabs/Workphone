@@ -844,6 +844,10 @@ namespace workphone::render
         m_pendingUnloadTickets.erase( graphicsObject.get() );
         if( forceQueue )
         {
+            // Retries and shared component requests use the existing queued
+            // entry. It reads the object's latest state when the owner drains
+            // it; superseding its ticket would retain another stale owner.
+            if( m_pendingLoadTickets.count( graphicsObject.get() ) ) return;
             const auto ticket = ++m_nextLoadTicket;
             m_pendingLoadTickets[graphicsObject.get()] = ticket;
             m_loadQueue.push( { graphicsObject, ticket } );
@@ -867,6 +871,7 @@ namespace workphone::render
             }
             else
             {
+                if( m_pendingLoadTickets.count( graphicsObject.get() ) ) return;
                 const auto ticket = ++m_nextLoadTicket;
                 m_pendingLoadTickets[graphicsObject.get()] = ticket;
                 m_loadQueue.push( { graphicsObject, ticket } );

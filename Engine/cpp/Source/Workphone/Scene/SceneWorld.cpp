@@ -6,9 +6,11 @@
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/ApplicationUtil.hpp>
+#include <Workphone/Mesh/Mesh.hpp>
+#include <Workphone/Mesh/MeshUtil.hpp>
+#include <Workphone/Mesh/MeshSerializer.hpp>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <WorkphoneGraphics/workphone_graphics_mesh_reader.h>
-#include <WorkphoneGraphics/workphone_graphics_mesh_writer.h>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -131,36 +133,36 @@ namespace workphone::scene
         void writeProxyMesh( const fs::path &file,
                              const Array<std::pair<Vector3F, Vector3F>> &boxes )
         {
-            Array<wp_graphics_mesh_vertex_pnt> vertices;
-            Array<wp_u32> indices;
+            Array<Vector3<real_Num>> vertices, normals;
+            Array<Vector2<real_Num>> uvs;
+            Array<u32> indices;
             // Four independent vertices per face keep the building corners hard.
             const unsigned faces[6][4] = { {0,4,6,2}, {1,3,7,5}, {0,1,5,4},
                                            {2,6,7,3}, {0,2,3,1}, {4,5,7,6} };
-            const wp_vec3f normals[6] = { {-1,0,0}, {1,0,0}, {0,-1,0},
-                                          {0,1,0}, {0,0,-1}, {0,0,1} };
+            const Vector3<real_Num> faceNormals[6] = { {-1,0,0}, {1,0,0}, {0,-1,0},
+                                                       {0,1,0}, {0,0,-1}, {0,0,1} };
             for( const auto &box : boxes )
                 for( unsigned face = 0; face < 6; ++face )
                 {
-                    const auto first = wp_u32( vertices.size() );
+                    const auto first = u32( vertices.size() );
                     for( unsigned corner = 0; corner < 4; ++corner )
                     {
                         const auto bits = faces[face][corner];
-                        vertices.push_back( { { bits & 1 ? box.second.x : box.first.x,
-                                                bits & 2 ? box.second.y : box.first.y,
-                                                bits & 4 ? box.second.z : box.first.z },
-                                              normals[face], { corner == 1 || corner == 2 ? 1.f : 0.f,
-                                                                corner >= 2 ? 1.f : 0.f } } );
+                        vertices.emplace_back( bits & 1 ? box.second.x : box.first.x,
+                                               bits & 2 ? box.second.y : box.first.y,
+                                               bits & 4 ? box.second.z : box.first.z );
+                        normals.push_back( faceNormals[face] );
+                        uvs.emplace_back( corner == 1 || corner == 2 ? 1.f : 0.f, corner >= 2 ? 1.f : 0.f );
                     }
                     for( auto index : { 0u, 1u, 2u, 0u, 2u, 3u } ) indices.push_back( first + index );
                 }
-            std::unique_ptr<wp_graphics_mesh, decltype( &wp_graphics_mesh_destroy )>
-                mesh( wp_graphics_mesh_create(), wp_graphics_mesh_destroy );
-            if( !mesh || !wp_graphics_mesh_set_vertices( mesh.get(), WORKPHONE_VERTEX_FORMAT_PNT,
-                                                        vertices.data(), wp_u32( vertices.size() ) ) ||
-                !wp_graphics_mesh_set_indices_u32( mesh.get(), indices.data(), wp_u32( indices.size() ) ) )
-                throw std::runtime_error( "Could not create HLOD proxy mesh" );
-            wp_graphics_mesh_compute_aabb( mesh.get() );
-            if( !wp_graphics_mesh_write( mesh.get(), file.string().c_str() ) )
+            auto mesh = dynamic_pointer_cast<workphone::Mesh>( MeshUtil::createMesh( vertices, normals, uvs, indices ) );
+            if( !mesh ) throw std::runtime_error( "Could not create HLOD proxy mesh" );
+            mesh->updateAABB( true );
+            // Use the established cooked serializer: both the CPU resource
+            // manager and the native renderer can reload this file directly.
+            MeshSerializer serializer; serializer.exportMesh( mesh.get(), String( file.generic_string().c_str() ) );
+            if( !fs::exists( file ) || !fs::file_size( file ) )
                 throw std::runtime_error( "Could not write HLOD proxy mesh" );
         }
     }

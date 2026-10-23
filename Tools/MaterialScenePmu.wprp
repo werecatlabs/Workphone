@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Strict, generic HAL counter names; CacheMisses has no asserted cache level.
+  https://learn.microsoft.com/windows-hardware/test/wpt/recording-pmu-events
+  ROI strings are emitted by the production-scene sample provider below.
+  Schema/profile parsing does not establish that hardware capture works.
+-->
+<WindowsPerformanceRecorder Version="1.0" Author="Workphone">
+  <Profiles>
+    <SystemCollector Id="MaterialSystemCollector" Name="WPMaterialPmuSystem">
+      <BufferSize Value="1024" />
+      <Buffers Value="128" />
+    </SystemCollector>
+    <EventCollector Id="MaterialEventCollector" Name="WPMaterialPmuEvents">
+      <BufferSize Value="64" />
+      <Buffers Value="64" />
+    </EventCollector>
+    <SystemProvider Id="MaterialSystemProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread" />
+        <Keyword Value="Loader" />
+        <Keyword Value="CSwitch" />
+      </Keywords>
+    </SystemProvider>
+    <HardwareCounter Id="MaterialHardwareCounters" Strict="true">
+      <Counters>
+        <Counter Value="InstructionRetired" />
+        <Counter Value="TotalCycles" />
+        <Counter Value="CacheMisses" />
+      </Counters>
+      <Events>
+        <Event Value="CSwitch" />
+      </Events>
+    </HardwareCounter>
+    <EventProvider Id="ProductionSceneProfile"
+                   Name="BB4D8875-7B47-4EDD-A325-06385E59DF1C"
+                   Level="5" Strict="true" />
+    <Profile Id="MaterialScenePmu.Verbose.File" Name="MaterialScenePmu"
+             Description="Strict scene counters on context switches and scene ROI markers"
+             DetailLevel="Verbose" LoggingMode="File">
+      <Collectors>
+        <SystemCollectorId Value="MaterialSystemCollector">
+          <SystemProviderId Value="MaterialSystemProvider" />
+          <HardwareCounterId Value="MaterialHardwareCounters" />
+        </SystemCollectorId>
+        <EventCollectorId Value="MaterialEventCollector">
+          <EventProviders>
+            <EventProviderId Value="ProductionSceneProfile" />
+          </EventProviders>
+        </EventCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

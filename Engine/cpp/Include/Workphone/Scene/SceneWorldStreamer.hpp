@@ -24,6 +24,7 @@ namespace workphone::scene
         u64 releasedMeshResources = 0;
         u32 residentProxyCells = 0, visibleProxyCells = 0;
         u64 representationSwitches = 0, hlodAdmissionFailures = 0;
+        u64 graphicsRetryRequests = 0;
         u32 indexNodesVisited = 0, indexCellsTested = 0;
         double lastInstallMilliseconds = 0;
     };

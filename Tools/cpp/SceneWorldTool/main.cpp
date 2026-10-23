@@ -7,6 +7,8 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Mesh/MeshManager.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -24,6 +26,10 @@ int main( int argc, char **argv )
     core::IApplicationManager::setInstance( application );
     auto factory = make_ptr<FactoryManager>(); factory->load( nullptr );
     application->setFactoryManager( factory );
+    // Mesh/SubMesh methods delegate lifecycle calls to the application's mesh
+    // manager, including offline proxy construction and serialization.
+    auto meshManager = make_ptr<MeshManager>();
+    application->setMeshManager( meshManager );
     int status = 0;
     try
     {
@@ -91,9 +97,11 @@ int main( int argc, char **argv )
                   << " proxies=" << proxies << '\n';
     }
     catch( const std::exception &e ) { std::cerr << e.what() << '\n'; status = 1; }
+    meshManager->unload( nullptr ); application->setMeshManager( nullptr ); meshManager = nullptr;
     factory->unload( nullptr ); application->setFactoryManager( nullptr );
     core::IApplicationManager::setInstance( nullptr );
     factory = nullptr; application = nullptr;
+    WorldStreamingScheduler::shutdownShared();
     TypeManager::setInstance( nullptr );
     return status;
 }

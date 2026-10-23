@@ -8,8 +8,11 @@
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <Workphone/Graphics/GraphicsMesh.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Mesh/MeshUtil.hpp>
+#include <Workphone/Mesh/MeshSerializer.hpp>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
 #include <chrono>
@@ -84,6 +87,19 @@ namespace
     {
     public:
         SmartPtr<render::IGraphicsObject> clone( const String & ) const override { return nullptr; }
+    };
+    class RetryGraphicsProbe : public DeferredGraphicsProbe
+    {
+    public:
+        void load( SmartPtr<ISharedObject> ) override
+        { ++loads; setLoadingState( admit ? LoadingState::Loaded : LoadingState::Unloaded ); }
+        bool admit = false;
+        u32 loads = 0;
+    };
+    class RetryGraphicsSystem : public render::GraphicsSystem
+    {
+    public:
+        void loadObject( SmartPtr<ISharedObject> object, bool ) override { object->load( nullptr ); }
     };
     class StatisticsReader
     {
@@ -162,9 +178,283 @@ namespace
         } while( std::chrono::steady_clock::now() < until );
         BOOST_FAIL( "Cell streaming did not converge" );
     }
+    void writeProperties( const std::filesystem::path &path, const Properties &data )
+    {
+        const auto bytes = PropertiesBinarySerializer::serialize( data );
+        std::ofstream file( path, std::ios::binary | std::ios::trunc );
+        file.write( reinterpret_cast<const char *>( bytes.data() ), bytes.size() ); file.close();
+        BOOST_REQUIRE( file );
+    }
+    SmartPtr<Properties> readProperties( const String &path )
+    {
+        std::ifstream file( path.c_str(), std::ios::binary | std::ios::ate ); BOOST_REQUIRE( file );
+        Array<u8> bytes( size_t( file.tellg() ) ); file.seekg( 0 );
+        file.read( reinterpret_cast<char *>( bytes.data() ), bytes.size() ); BOOST_REQUIRE( file );
+        auto data = make_ptr<Properties>(); String error;
+        BOOST_REQUIRE_MESSAGE( PropertiesBinarySerializer::deserialize( bytes, *data, &error ), error );
+        return data;
+    }
+    String cookHlodFixture( TestGuard &guard, bool actorOnly )
+    {
+        const auto directory = testDirectory( guard );
+        std::filesystem::create_directories( directory.c_str() );
+        Array<Vector3<real_Num>> vertices = { {0,0,0}, {10,0,0}, {10,20,0}, {0,20,0},
+                                             {0,0,10}, {10,0,10}, {10,20,10}, {0,20,10} };
+        Array<Vector3<real_Num>> normals( vertices.size(), Vector3<real_Num>( 0, 1, 0 ) );
+        Array<Vector2<real_Num>> uvs( vertices.size(), Vector2<real_Num>( 0, 0 ) );
+        Array<u32> indices = { 0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1,
+                               3,2,6, 3,6,7, 0,3,7, 0,7,4, 1,5,6, 1,6,2 };
+        auto mesh = dynamic_pointer_cast<workphone::Mesh>( MeshUtil::createMesh( vertices, normals, uvs, indices ) );
+        BOOST_REQUIRE( mesh ); mesh->updateAABB( true );
+        MeshSerializer serializer;
+        serializer.exportMesh( mesh.get(), String( ( std::filesystem::path( directory.c_str() ) / "building.fbmeshbin" ).generic_string().c_str() ) );
+        auto data = make_ptr<Properties>();
+        for( auto actor : { pointActor( "Building A", 0 ), pointActor( "Building B", 20 ) } )
+        { actor->getChild( "component" )->setProperty( "Mesh Path", "building.fbmeshbin" ); data->addChild( actor ); }
+        WorldCookOptions cook; cook.assetRoot = directory; cook.cellSize = 64;
+        cook.maximumActorsPerCell = 2; cook.generateHlod = true;
+        String path, error;
+        BOOST_REQUIRE_MESSAGE( SceneWorld::cook( *data, directory, cook, path, error ), error );
+        if( actorOnly )
+        {
+            // Exercise coordinator policy independently of a device. Geometry
+            // format/reload compatibility is checked by the cooker test below.
+            WorldManifest manifest; BOOST_REQUIRE( SceneWorld::readManifest( path, manifest, error ) );
+            auto index = readProperties( path );
+            for( const auto &cell : manifest.cells )
+            {
+                auto payload = SceneWorld::readCell( path, cell, error ); BOOST_REQUIRE( payload );
+                for( auto actor : payload->getChildrenByName( "actors" ) )
+                { while( actor->getChild( "component" ) ) actor->removeChild( "component" ); }
+                const auto bytes = PropertiesBinarySerializer::serialize( *payload );
+                writeProperties( std::filesystem::path( directory.c_str() ) / cell.file.c_str(), *payload );
+                for( auto entry : index->getChildrenByName( "cell" ) )
+                {
+                    String id; entry->getPropertyValue( "id", id ); if( id != cell.id ) continue;
+                    entry->setProperty( "bytes", u64( bytes.size() ) );
+                    entry->setProperty( "decodedBytes", u64( bytes.size() ) * 8 + u64( cell.actors ) * 4096 );
+                }
+            }
+            writeProperties( std::filesystem::path( path.c_str() ), *index );
+        }
+        return path;
+    }
 }
 
 BOOST_AUTO_TEST_SUITE( SceneWorldStreamingTests )
+
+BOOST_AUTO_TEST_CASE( hlod_cook_emits_portable_batched_meshes_and_validates_ownership )
+{
+    TestGuard guard;
+    const auto path = cookHlodFixture( guard, false ); String error;
+    WorldManifest manifest; BOOST_REQUIRE_MESSAGE( SceneWorld::readManifest( path, manifest, error ), error );
+    BOOST_REQUIRE_EQUAL( manifest.cells.size(), 2u );
+    auto detail = std::find_if( manifest.cells.begin(), manifest.cells.end(), []( const auto &c ) { return !c.detailKey; } );
+    auto proxy = std::find_if( manifest.cells.begin(), manifest.cells.end(), []( const auto &c ) { return c.detailKey != 0; } );
+    BOOST_REQUIRE( detail != manifest.cells.end() ); BOOST_REQUIRE( proxy != manifest.cells.end() );
+    BOOST_CHECK_EQUAL( detail->actors, 2u ); BOOST_CHECK_EQUAL( proxy->actors, 1u );
+    BOOST_CHECK_EQUAL( proxy->detailKey, detail->key ); BOOST_CHECK_EQUAL( detail->proxyKey, proxy->key );
+    auto payload = SceneWorld::readCell( path, *proxy, error ); BOOST_REQUIRE_MESSAGE( payload, error );
+    String meshPath;
+    for( const auto &component : payload->getChild( "actors" )->getChildrenByName( "component" ) )
+        component->getPropertyValue( "Mesh Path", meshPath );
+    BOOST_REQUIRE( !meshPath.empty() ); BOOST_CHECK( !std::filesystem::path( meshPath.c_str() ).is_absolute() );
+    const auto absoluteMesh = std::filesystem::path( path.c_str() ).parent_path() / meshPath.c_str();
+    auto stream = guard.fileSystem->open( absoluteMesh.generic_string().c_str(), true, true, false, false, false );
+    BOOST_REQUIRE( stream ); MeshSerializer serializer; auto mesh = serializer.loadMesh( stream );
+    BOOST_REQUIRE( mesh ); BOOST_REQUIRE_EQUAL( mesh->getSubMeshes().size(), 1u );
+    const auto section = mesh->getSubMeshes().front();
+    BOOST_CHECK_EQUAL( section->getVertexBuffer()->getNumVertices(), 48u );
+    BOOST_CHECK_EQUAL( section->getIndexBuffer()->getNumIndices(), 72u );
+    // Reload the proxy through the cooker's native mesh reader too.
+    WorldCookOptions recook; recook.assetRoot = std::filesystem::path( path.c_str() ).parent_path().generic_string().c_str();
+    String second;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::cook( *payload,
+        ( std::filesystem::path( path.c_str() ).parent_path() / "recooked" ).generic_string().c_str(), recook, second, error ), error );
+    WorldManifest recooked; BOOST_REQUIRE( SceneWorld::readManifest( second, recooked, error ) );
+    BOOST_CHECK_EQUAL( recooked.cells.front().id, "cell_0_0_0" );
+    auto invalid = readProperties( path );
+    for( auto entry : invalid->getChildrenByName( "cell" ) )
+        if( entry->hasProperty( "proxyOf" ) ) entry->setProperty( "proxyOf", "missing" );
+    writeProperties( std::filesystem::path( path.c_str() ), *invalid );
+    BOOST_CHECK( !SceneWorld::readManifest( path, recooked, error ) );
+    BOOST_CHECK( error.find( "unknown" ) != String::npos );
+}
+
+BOOST_AUTO_TEST_CASE( hlod_handoffs_preserve_edits_pins_and_bounded_residency )
+{
+    TestGuard guard; guard.scene->clear( true );
+    const auto path = cookHlodFixture( guard, true ); String error;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    SceneWorldStreamOptions options; options.enableHlod = true;
+    options.loadRadius = 4; options.retainRadius = 8;
+    options.proxyLoadRadius = 250; options.proxyRetainRadius = 300;
+    options.maximumResidentActors = 3; options.maximumResidentCells = 2;
+    options.minimumResidencySeconds = 0;
+    SceneWorldStreamer stream( scheduler ); BOOST_REQUIRE( stream.open( path, guard.scene, options, error ) );
+    pump( stream, { 150, 0, 0 }, 1 );
+    BOOST_CHECK_EQUAL( stream.statistics().residentProxyCells, 1u );
+    BOOST_CHECK_EQUAL( stream.statistics().visibleProxyCells, 1u );
+    BOOST_CHECK( !guard.scene->findActorByName( "Building A" ) );
+    for( int pass = 0; pass < 3; ++pass )
+    {
+        pump( stream, { 0, 0, 0 }, 2 );
+        BOOST_CHECK_EQUAL( stream.statistics().residentProxyCells, 0u );
+        BOOST_REQUIRE( guard.scene->findActorByName( "Building A" ) );
+        pump( stream, { 150, 0, 0 }, 1 );
+        BOOST_CHECK_EQUAL( stream.statistics().visibleProxyCells, 1u );
+        BOOST_CHECK_LE( stream.statistics().residentActors, 3u );
+    }
+    pump( stream, { 0, 0, 0 }, 2 );
+    auto edited = guard.scene->findActorByName( "Building A" ); BOOST_REQUIRE( edited );
+    edited->setName( "Edited A" ); edited->setLocalPosition( { 2, 0, 0 } ); edited = nullptr;
+    // A baked proxy is invalid after an authored edit. Keep detail at skyline
+    // range; outside both ranges its overlay can still evict and reload.
+    pump( stream, { 150, 0, 0 }, 2 );
+    BOOST_CHECK_EQUAL( stream.statistics().residentProxyCells, 0u );
+    pump( stream, { 10000, 0, 0 }, 0 );
+    pump( stream, { 150, 0, 0 }, 2 );
+    edited = guard.scene->findActorByName( "Edited A" ); BOOST_REQUIRE( edited );
+    BOOST_CHECK_EQUAL( edited->getLocalPosition().x, 2.f );
+    BOOST_REQUIRE( stream.pinActor( edited->getHandle()->getUUIDAsString() ) );
+    pump( stream, { 10000, 0, 0 }, 2 );
+    BOOST_CHECK( guard.scene->findActorByName( "Edited A" ) == edited ); edited = nullptr;
+    BOOST_CHECK_GT( stream.statistics().representationSwitches, 2u );
+    stream.close(); for( auto bytes : scheduler->stats().used ) BOOST_CHECK_EQUAL( bytes, 0u );
+}
+
+BOOST_AUTO_TEST_CASE( hlod_without_handoff_headroom_keeps_coarse_coverage )
+{
+    TestGuard guard; guard.scene->clear( true );
+    const auto path = cookHlodFixture( guard, true ); String error;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    SceneWorldStreamOptions options; options.enableHlod = true;
+    options.loadRadius = 4; options.retainRadius = 8;
+    options.proxyLoadRadius = 250; options.proxyRetainRadius = 300;
+    options.maximumResidentActors = 2; options.maximumResidentCells = 2; options.minimumResidencySeconds = 0;
+    SceneWorldStreamer stream( scheduler ); BOOST_REQUIRE( stream.open( path, guard.scene, options, error ) );
+    pump( stream, { 150, 0, 0 }, 1 );
+    for( int i = 0; i < 10; ++i ) BOOST_REQUIRE( stream.update( { Vector3F::zero() }, error ) );
+    BOOST_CHECK_EQUAL( stream.statistics().residentActors, 1u );
+    BOOST_CHECK_EQUAL( stream.statistics().visibleProxyCells, 1u );
+    BOOST_CHECK_GT( stream.statistics().hlodAdmissionFailures, 0u );
+    options.maximumResidentActors = 3;
+    BOOST_REQUIRE( stream.open( path, guard.scene, options, error ) );
+    pump( stream, Vector3F::zero(), 2 );
+    BOOST_CHECK_EQUAL( stream.statistics().residentProxyCells, 0u );
+    stream.close(); for( auto bytes : scheduler->stats().used ) BOOST_CHECK_EQUAL( bytes, 0u );
+}
+
+BOOST_AUTO_TEST_CASE( hlod_retries_failed_graphics_without_dropping_visible_proxy )
+{
+    TestGuard guard; guard.scene->clear( true );
+    const auto path = cookHlodFixture( guard, true ); String error;
+    SceneWorldStreamOptions options; options.enableHlod = true;
+    options.loadRadius = 4; options.retainRadius = 8;
+    options.proxyLoadRadius = 250; options.proxyRetainRadius = 300;
+    options.maximumResidentActors = 3; options.maximumResidentCells = 2; options.minimumResidencySeconds = 0;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    SceneWorldStreamer stream( scheduler ); BOOST_REQUIRE( stream.open( path, guard.scene, options, error ) );
+    pump( stream, { 150, 0, 0 }, 1 );
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
+    do
+    {
+        BOOST_REQUIRE_MESSAGE( stream.update( { Vector3F::zero() }, error ), error );
+        if( stream.statistics().residentActors == 3 ) break;
+        std::this_thread::yield();
+    } while( std::chrono::steady_clock::now() < until );
+    BOOST_REQUIRE_EQUAL( stream.statistics().residentActors, 3u );
+    auto detailed = guard.scene->findActorByName( "Building A" ); BOOST_REQUIRE( detailed );
+    auto object = make_ptr<RetryGraphicsProbe>(); object->setLoadingState( LoadingState::Unloaded );
+    auto renderer = make_ptr<DeferredRendererProbe>(); detailed->addComponentInstance( renderer );
+    renderer->setGraphicsObject( object ); renderer->setLoadingState( LoadingState::Loaded );
+    Array<SmartPtr<RetryGraphicsProbe>> otherObjects;
+    for( unsigned i = 0; i < 8; ++i )
+    {
+        auto denied = make_ptr<RetryGraphicsProbe>(); denied->setLoadingState( LoadingState::Unloaded );
+        auto probe = make_ptr<DeferredRendererProbe>(); detailed->addComponentInstance( probe );
+        probe->setGraphicsObject( denied ); probe->setLoadingState( LoadingState::Loaded );
+        otherObjects.push_back( denied );
+    }
+    WorldManifest manifest; BOOST_REQUIRE( SceneWorld::readManifest( path, manifest, error ) );
+    auto detailCell = std::find_if( manifest.cells.begin(), manifest.cells.end(), []( const auto &cell ) { return !cell.detailKey; } );
+    BOOST_REQUIRE( detailCell != manifest.cells.end() );
+    auto proxyActor = guard.scene->findActorByName( "HLOD " + detailCell->id ); BOOST_REQUIRE( proxyActor );
+    auto proxyObject = make_ptr<RetryGraphicsProbe>(); proxyObject->setLoadingState( LoadingState::Unloaded );
+    auto proxyRenderer = make_ptr<DeferredRendererProbe>(); proxyActor->addComponentInstance( proxyRenderer );
+    proxyRenderer->setGraphicsObject( proxyObject ); proxyRenderer->setLoadingState( LoadingState::Loaded );
+    auto previous = guard.applicationManager->getGraphicsSystem();
+    guard.addCleanup( [app = guard.applicationManager, previous]() mutable { app->setGraphicsSystem( previous ); } );
+    guard.applicationManager->setGraphicsSystem( make_ptr<RetryGraphicsSystem>() );
+    const auto retryUntil = std::chrono::steady_clock::now() + std::chrono::seconds( 3 );
+    do
+    {
+        const auto before = stream.statistics().graphicsRetryRequests;
+        BOOST_REQUIRE_MESSAGE( stream.update( { Vector3F::zero() }, error ), error );
+        BOOST_CHECK_LE( stream.statistics().graphicsRetryRequests - before, 8u );
+        BOOST_CHECK_EQUAL( stream.statistics().visibleProxyCells, 1u );
+        BOOST_CHECK_EQUAL( stream.statistics().residentActors, 3u );
+        if( object->loads && proxyObject->loads ) break;
+        // Slow updates expose starvation if every tick starts at the same cell:
+        // its nine denied renderers could consume the allowance indefinitely.
+        std::this_thread::sleep_for( std::chrono::milliseconds( 260 ) );
+    } while( std::chrono::steady_clock::now() < retryUntil );
+    BOOST_REQUIRE_GT( object->loads, 0u );
+    BOOST_REQUIRE_GT( proxyObject->loads, 0u );
+    // Capacity may become sufficient for the cheap fallback first. Both denied
+    // representations must retry so the skyline can recover independently.
+    proxyObject->admit = true;
+    const auto proxyUntil = std::chrono::steady_clock::now() + std::chrono::seconds( 3 );
+    do
+    {
+        BOOST_REQUIRE_MESSAGE( stream.update( { Vector3F::zero() }, error ), error );
+        if( proxyObject->isLoaded() ) break;
+        std::this_thread::sleep_for( std::chrono::milliseconds( 260 ) );
+    } while( std::chrono::steady_clock::now() < proxyUntil );
+    BOOST_REQUIRE( proxyObject->isLoaded() ); BOOST_CHECK( !object->isLoaded() );
+    BOOST_CHECK_EQUAL( stream.statistics().residentActors, 3u );
+    BOOST_CHECK_EQUAL( stream.statistics().visibleProxyCells, 1u );
+    // Returning capacity permits a bounded retry and eventual handoff while the
+    // observer remains stationary; no teleport/reopen is needed.
+    object->admit = true;
+    for( auto denied : otherObjects ) denied->admit = true;
+    pump( stream, Vector3F::zero(), 2 );
+    BOOST_CHECK_EQUAL( stream.statistics().visibleProxyCells, 0u );
+    BOOST_CHECK_GT( stream.statistics().graphicsRetryRequests, 1u );
+    object->setLoadingState( LoadingState::Unloaded );
+    proxyObject->setLoadingState( LoadingState::Unloaded );
+    for( auto denied : otherObjects ) denied->setLoadingState( LoadingState::Unloaded );
+    stream.close(); guard.applicationManager->setGraphicsSystem( previous );
+    for( auto bytes : scheduler->stats().used ) BOOST_CHECK_EQUAL( bytes, 0u );
+}
+
+BOOST_AUTO_TEST_CASE( hlod_failed_proxy_read_retains_detailed_coverage )
+{
+    TestGuard guard; guard.scene->clear( true );
+    const auto path = cookHlodFixture( guard, true ); String error;
+    SceneWorldStreamOptions options; options.enableHlod = true;
+    options.loadRadius = 4; options.retainRadius = 8;
+    options.proxyLoadRadius = 250; options.proxyRetainRadius = 300;
+    options.maximumResidentActors = 3; options.maximumResidentCells = 2; options.minimumResidencySeconds = 0;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    SceneWorldStreamer stream( scheduler ); BOOST_REQUIRE( stream.open( path, guard.scene, options, error ) );
+    pump( stream, Vector3F::zero(), 2 );
+    WorldManifest manifest; BOOST_REQUIRE( SceneWorld::readManifest( path, manifest, error ) );
+    for( const auto &cell : manifest.cells ) if( cell.detailKey )
+        std::filesystem::remove( std::filesystem::path( path.c_str() ).parent_path() / cell.file.c_str() );
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds( 5 );
+    bool failed = false;
+    do
+    {
+        failed = !stream.update( { Vector3F( 150, 0, 0 ) }, error );
+        BOOST_CHECK_EQUAL( stream.statistics().residentActors, 2u );
+        BOOST_CHECK( guard.scene->findActorByName( "Building A" ) );
+        if( failed ) break;
+        std::this_thread::yield();
+    } while( std::chrono::steady_clock::now() < until );
+    BOOST_CHECK( failed ); BOOST_CHECK_GT( stream.statistics().failedCells, 0u );
+    stream.close(); for( auto bytes : scheduler->stats().used ) BOOST_CHECK_EQUAL( bytes, 0u );
+}
 
 BOOST_AUTO_TEST_CASE( retirement_releases_cpu_geometry_only_after_all_owners_leave )
 {

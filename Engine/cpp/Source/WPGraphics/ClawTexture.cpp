@@ -23,6 +23,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <cmath>
+#include <type_traits>
 
 namespace
 {
@@ -54,6 +55,20 @@ namespace
     {
         return workphone::WorldStreamingScheduler::shared()->reserve(
             workphone::StreamMemoryClass::SourceCpu, bytes + sizeof( ClawTextureData ) + 4096, error );
+    }
+
+    workphone::u64 generatedMipBytes( workphone::u32 width, workphone::u32 height,
+                                      const workphone::render::TextureMipSettings &settings )
+    {
+        workphone::u64 bytes = workphone::u64( width ) * height * 4;
+        while( settings.filter != workphone::render::TextureMipFilter::None && ( width > 1 || height > 1 ) )
+        {
+            width = std::max( width / 2, 1u );
+            height = std::max( height / 2, 1u );
+            if( !settings.atlasColumns || width < settings.atlasColumns || width % settings.atlasColumns ) break;
+            bytes += workphone::u64( width ) * height * 4;
+        }
+        return bytes + 4096;
     }
 
     void *retainUploadedTexture( void *view, workphone::StreamBudget budget )
@@ -395,9 +410,9 @@ namespace
             else
             {
                 String error;
-                // A complete mip chain is smaller than twice its base level.
                 auto working = WorldStreamingScheduler::shared()->reserve(
-                    StreamMemoryClass::WorkingCpu, u64( data.pixels.size() ) * 2 + 4096, error );
+                    StreamMemoryClass::WorkingCpu,
+                    generatedMipBytes( data.pixelSize.x, data.pixelSize.y, data.mipSettings ), error );
                 if( !working ) { data.uploadPending = true; WP_LOG_WARNING( error ); return previousView; }
                 const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
                                                          data.pixelSize.y, data.mipSettings );

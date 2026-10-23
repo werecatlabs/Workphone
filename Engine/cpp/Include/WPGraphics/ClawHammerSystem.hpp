@@ -138,6 +138,57 @@ namespace workphone
             /** Current presentation setting, readable from the render thread. */
             bool getVSync() const;
 
+            /** Opt-in numeric telemetry for one completed graphics-owner update.
+             * Registered scenes are counted at frame start. Scene/view counts describe
+             * preparation pairs, not distinct scene owners or submitted shadow draws.
+             * Cull view bytes describe main-view indices. Publication byte sums may
+             * count a reused workspace in several views; they are not deduplicated
+             * heap residency. Material peak bytes are the largest workspace high-water
+             * mark observed in this frame. Failed passes remain visible in diagnostics.
+             * Cache and DX11 lifetime counters restart with their existing owners or
+             * statistics resets. No hardware/front-cache hit counter is available.
+             */
+            struct SceneProfileSnapshot
+            {
+                u64 serial = 0, generation = 0;
+                u32 nativeUpdateSerial = 0, nativeRenderSerial = 0;
+                u64 completedPasses = 0, skippedPasses = 0, failedPasses = 0;
+                u64 registeredScenes = 0, scenePreparations = 0, mainViews = 0, shadowViews = 0;
+                // Graphics update includes native rendering/Present, not the whole
+                // application's physics/game update. Preparation timings are nested.
+                u64 graphicsUpdateNs = 0, graphicsPrepareNs = 0, nativeFrameNs = 0;
+                u64 preparationTotalNs = 0, mainPrepareNs = 0, shadowDeriveNs = 0, materialPrepareNs = 0;
+                u64 candidates = 0, mainVisible = 0, transformDispatches = 0;
+                u64 cullPublicationBytesSum = 0, cullViewBytesSum = 0;
+                u64 cullCaptureNs = 0, cullTransformNs = 0, cullBoundsNs = 0;
+                u64 cullGroupsNs = 0, cullViewNs = 0, cullVisibilityNs = 0, cullSortNs = 0, cullPublishNs = 0;
+                u64 materialRecords = 0, materialBindings = 0, materialMeshes = 0, materialPreparations = 0;
+                u64 materialStorageAllocations = 0, materialStorageReusedViews = 0;
+                u64 materialDenseCapacityBytesSum = 0, materialRetainedBytesSum = 0, materialPeakBytesMax = 0;
+                // One renderer-owned persistent table, charged once after the frame.
+                u64 cachePreparationsLifetime = 0, cacheStorageAllocationsLifetime = 0;
+                u64 directStorageAllocationsLifetime = 0, cacheStorageBytes = 0;
+                u64 cacheSlots = 0, cacheResident = 0;
+                bool dx11Available = false;
+                u64 dx11FramesLifetime = 0, dx11DrawsLifetime = 0, dx11TrianglesLifetime = 0;
+                u64 dx11MaterialUploadsLifetime = 0, dx11TransformUploadsLifetime = 0;
+                u64 dx11StateBindingsLifetime = 0, dx11InstancesLifetime = 0, dx11GpuSamplesLifetime = 0;
+                u64 dx11PresentAttemptsLifetime = 0, dx11PresentOccludedLifetime = 0, dx11PresentFailuresLifetime = 0;
+                f64 dx11IntervalMs = 0, dx11P95IntervalMs = 0, dx11CpuFrameMs = 0;
+                f64 dx11PresentMs = 0, dx11GpuFrameMs = 0;
+            };
+
+            /** Thread-safe controls/readback. Disabled by default; disabled frames
+             * perform no additional timing or collection. Changes/reset immediately
+             * clear readback and reject publications already in flight. Reset does
+             * not alter renderer statistics, material caches or normal rendering.
+             * Read returns false and a zeroed value until a new update completes.
+             */
+            void setSceneProfilingEnabled( bool enabled );
+            bool getSceneProfilingEnabled() const;
+            void resetSceneProfile();
+            bool readSceneProfile( SceneProfileSnapshot &snapshot ) const;
+
             /**
              * @brief Set the renderer type to use.
              *
@@ -227,6 +278,17 @@ namespace workphone
             String m_renderStatistics;
             std::atomic<bool> m_statisticsResetRequested{ false };
             std::atomic<bool> m_statisticsSnapshotRequested{ false };
+
+            void beginSceneProfileFrame();
+            void publishSceneProfileFrame();
+            void invalidateSceneProfileFrame();
+            std::atomic<bool> m_sceneProfilingEnabled{ false };
+            mutable std::mutex m_sceneProfileMutex;
+            SceneProfileSnapshot m_publishedSceneProfile;
+            // The current frame is render-owner-only. Readers never inspect it.
+            SceneProfileSnapshot m_currentSceneProfile;
+            u64 m_sceneProfileGeneration = 0, m_sceneProfileSequence = 0;
+            bool m_sceneProfileFrameActive = false;
         };
     }  // namespace render
 }  // namespace workphone

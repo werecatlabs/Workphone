@@ -1,6 +1,7 @@
 #pragma once
 #include "ClawTerrainContracts.hpp"
 #include "ClawFoliageContracts.hpp"
+#include "ClawTextureMipContracts.hpp"
 #include <WPGraphics/Resources/TerrainResource.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
@@ -166,6 +167,18 @@ namespace cooked_terrain_contracts
             }
         } scope{ renderer };
         claw_terrain_contracts::MeshManagerScope meshManager;
+        // Earlier material contracts intentionally leave normal mesh/texture
+        // resources referenced by the immediate context after wrapper teardown.
+        // Establish this suite's baseline only after releasing those owners.
+        auto initialNative = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        auto initialContext = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( initialNative ) );
+        const auto incomingGpuBytes = WorldStreamingScheduler::shared()->stats().used[size_t( StreamMemoryClass::Gpu )];
+        initialContext->ClearState();
+        wp_renderer_dx11_invalidate_state( initialNative );
+        claw_texture_mip_contracts::completeGpuWork( initialContext );
+        std::printf( "Cooked terrain prior-context GPU retirement: before=%llu completed=%llu\n",
+            static_cast<unsigned long long>( incomingGpuBytes ), static_cast<unsigned long long>(
+                WorldStreamingScheduler::shared()->stats().used[size_t( StreamMemoryClass::Gpu )] ) );
         const auto folder = parent / "terrain-package", source = folder / "authoring",
                    compiled = folder / "compiled", package = folder / "package";
         fs::create_directories( source );
@@ -391,6 +404,12 @@ namespace cooked_terrain_contracts
                  "all cooked mip bytes must be reserved while their GPU owners are alive" );
         auto escapedTexture = candidate->resolver( authored.appearance.detailNormal, error );
         require( escapedTexture != nullptr, error );
+        u64 escapedGpuBytes = 0;
+        for( size_t i = 0; i < decoded->textures.size(); ++i )
+            if( decoded->resource->dependencies[i]->header.resourceId.str() == authored.appearance.detailNormal )
+                for( const auto &level : decoded->textures[i].levels ) escapedGpuBytes += level.bgra.size();
+        require( escapedGpuBytes > 0 && escapedGpuBytes < cookedGpuBytes,
+                 "escaped terrain texture must identify its own exact cooked GPU mip bytes" );
         auto terrain = make_ptr<ClawTerrain>();
         require( terrain->applyCookedTerrain( candidate, error ), error );
         auto target = make_ptr<ClawRenderTarget>();
@@ -474,10 +493,20 @@ namespace cooked_terrain_contracts
             "Source-free cooked terrain: 13 pinned textures; visible red=%zu green=%zu blue=%zu "
             "yellow=%zu; failure/lifetime checks PASS\n",
             red, green, blue, yellow );
+        const auto beforeTerrainUnload = scheduler->stats().used[gpuClass];
         terrain->unload( nullptr );
-        require( scheduler->stats().used[gpuClass] == beforeUpload.used[gpuClass] + cookedGpuBytes,
-                 "a texture returned by the resolver must retain its upload budget beyond terrain unload" );
+        auto retirementContext = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+        const auto queuedTerrainBytes = scheduler->stats().used[gpuClass];
+        claw_texture_mip_contracts::completeGpuWork( retirementContext );
+        std::printf( "Cooked terrain physical GPU retirement: beforeUnload=%llu afterUnload=%llu completed=%llu baseline=%llu escaped=%llu totalTextures=%llu\n",
+            static_cast<unsigned long long>( beforeTerrainUnload ), static_cast<unsigned long long>( queuedTerrainBytes ),
+            static_cast<unsigned long long>( scheduler->stats().used[gpuClass] ),
+            static_cast<unsigned long long>( beforeUpload.used[gpuClass] ),
+            static_cast<unsigned long long>( escapedGpuBytes ), static_cast<unsigned long long>( cookedGpuBytes ) );
+        require( scheduler->stats().used[gpuClass] == beforeUpload.used[gpuClass] + escapedGpuBytes,
+                 "an escaped resolver texture must retain exactly its own physical mip budget after terrain unload" );
         escapedTexture = nullptr;
+        claw_texture_mip_contracts::completeGpuWork( retirementContext );
         require( scheduler->stats().used[size_t(StreamMemoryClass::ResultCpu)] ==
                      budgetBefore.used[size_t(StreamMemoryClass::ResultCpu)] &&
                      scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)] ==

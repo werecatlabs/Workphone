@@ -6,6 +6,8 @@
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_mesh_reader.h"
 #include "workphone_graphics_object.h"
+#include <workphone_graphics_renderer.h>
+#include "ClawAssetBudget.hpp"
 #include <limits>
 #include <cstring>
 #include <memory>
@@ -42,6 +44,50 @@ namespace workphone
                 SmartPtr<IGraphicsSystem> m_graphics;
                 ScopedLock<IGraphicsSystem> m_lock;
             };
+
+            // City/HLOD activation observes Loaded only after actual GPU
+            // admission. Keep the previous native mesh until every candidate
+            // range has uploaded successfully on the current render owner.
+            wp_renderer_dx11 *activeNativeRenderer()
+            {
+                auto application = core::IApplicationManager::instancePtr();
+                auto graphics = application ? application->getGraphicsSystem() : nullptr;
+                auto renderer = graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
+                return renderer && renderer->isLoaded()
+                    ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
+            }
+
+            bool prepareNativeGeometry( wp_graphics_mesh *mesh )
+            {
+                auto native = activeNativeRenderer();
+                if( !native ) return true;
+                const auto count = wp_graphics_mesh_get_index_count( mesh )
+                    ? wp_graphics_mesh_get_index_count( mesh ) : wp_graphics_mesh_get_vertex_count( mesh );
+                const auto topology = wp_graphics_mesh_get_primitive_type( mesh );
+                if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST )
+                    return count >= 3 && asset_budget::prepareMesh( native, mesh, 0, count );
+                if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP )
+                {
+                    const auto sections = wp_graphics_mesh_get_submesh_count( mesh );
+                    if( !sections ) return count >= 3 && asset_budget::prepareMesh( native, mesh, 0, count );
+                    for( s32 i = 0; i < sections; ++i )
+                    {
+                        const auto section = wp_graphics_mesh_get_submesh( mesh, i );
+                        if( !section || section->index_count < 3 || !asset_budget::prepareMesh(
+                            native, mesh, section->index_start, section->index_count ) ) return false;
+                    }
+                }
+                return true;
+            }
+
+            void destroyNativeMesh( wp_graphics_mesh *mesh )
+            {
+                if( mesh )
+                {
+                    ClawRendererDX11::forgetMesh( mesh );
+                    wp_graphics_mesh_destroy( mesh );
+                }
+            }
 
             // Convert the registered CPU resource without creating a temporary mesh file.
             wp_graphics_mesh *createProceduralNativeMesh( SmartPtr<workphone::IMesh> mesh )
@@ -183,11 +229,13 @@ namespace workphone
 
         void ClawMesh::load( SmartPtr<ISharedObject> data )
         {
+            NativeMeshLifecycleLock lifecycleLock;
             // Meshes are initially queued by ClawScene before MeshRenderer supplies
             // their resource path. Permit the later queued load to populate an
             // already-created, but still empty, native mesh.
             if( m_mesh && wp_graphics_mesh_get_vertex_count( m_mesh ) > 0 )
             {
+                setLoadingState( prepareNativeGeometry( m_mesh ) ? LoadingState::Loaded : LoadingState::Unloaded );
                 return;
             }
 
@@ -206,7 +254,9 @@ namespace workphone
 
             if( StringUtil::isNullOrEmpty( m_meshName.str() ) )
             {
-                setLoadingState( LoadingState::Loaded );
+                // Scene creation may enqueue an empty placeholder before the
+                // component supplies its path; it is not GPU-ready geometry.
+                setLoadingState( activeNativeRenderer() ? LoadingState::Unloaded : LoadingState::Loaded );
                 return;
             }
 
@@ -263,6 +313,14 @@ namespace workphone
                 return;
             }
 
+            if( !prepareNativeGeometry( loadedMesh ) )
+            {
+                destroyNativeMesh( loadedMesh );
+                WP_LOG_WARNING( "ClawMesh::load: GPU asset budget or upload rejected: " + m_meshName.str() );
+                setLoadingState( LoadingState::Unloaded );
+                return;
+            }
+
             if( m_mesh )
             {
                 ClawRendererDX11::forgetMesh( m_mesh );
@@ -284,20 +342,30 @@ namespace workphone
 
         void ClawMesh::reload( SmartPtr<ISharedObject> data )
         {
+            NativeMeshLifecycleLock lifecycleLock;
+            auto previous = m_mesh;
+            const auto previousState = getLoadingState();
+            m_mesh = nullptr;
+            try { load( data ); }
+            catch( ... )
+            {
+                destroyNativeMesh( m_mesh );
+                m_mesh = previous;
+                setLoadingState( previousState );
+                if( m_renderObject ) wp_graphics_object_set_mesh( m_renderObject, m_mesh );
+                throw;
+            }
+            if( !isLoaded() )
+            {
+                destroyNativeMesh( m_mesh );
+                m_mesh = previous;
+                setLoadingState( previousState );
+                if( m_renderObject ) wp_graphics_object_set_mesh( m_renderObject, m_mesh );
+                return;
+            }
+            destroyNativeMesh( previous );
             m_skinVertices.reset();
             m_skinOutput.clear();
-            // Keep the scene's native render object attached while replacing its mesh.
-            if( m_renderObject )
-            {
-                wp_graphics_object_set_mesh( m_renderObject, nullptr );
-            }
-            if( m_mesh )
-            {
-                ClawRendererDX11::forgetMesh( m_mesh );
-                wp_graphics_mesh_destroy( m_mesh );
-                m_mesh = nullptr;
-            }
-            load( data );
         }
 
         void ClawMesh::unload( SmartPtr<ISharedObject> data )
@@ -633,15 +701,17 @@ namespace workphone
                     return false;
                 }
             }
-            if( !wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNTC, vertices.data(),
+            std::unique_ptr<wp_graphics_mesh, decltype( &destroyNativeMesh )> candidate(
+                wp_graphics_mesh_create(), &destroyNativeMesh );
+            if( !candidate || !wp_graphics_mesh_set_vertices( candidate.get(), WORKPHONE_VERTEX_FORMAT_PNTC, vertices.data(),
                                                 static_cast<u32>( vertices.size() ) ) ||
-                !wp_graphics_mesh_set_indices_u32( m_mesh, indices.data(),
+                !wp_graphics_mesh_set_indices_u32( candidate.get(), indices.data(),
                                                    static_cast<u32>( indices.size() ) ) )
             {
                 return false;
             }
-            wp_graphics_mesh_clear_submeshes( m_mesh );
-            if( wp_graphics_mesh_add_submesh( m_mesh, 0, static_cast<u32>( indices.size() ), 0 ) < 0 )
+            if( wp_graphics_mesh_add_submesh( candidate.get(), 0, static_cast<u32>( indices.size() ), 0 ) < 0 ||
+                !prepareNativeGeometry( candidate.get() ) )
             {
                 return false;
             }
@@ -649,13 +719,17 @@ namespace workphone
             // counts alone do not make the old skin indices/positions compatible.
             m_skinVertices.reset();
             m_skinOutput.clear();
+            auto previous = m_mesh;
+            m_mesh = candidate.release();
             wp_graphics_mesh_compute_aabb( m_mesh );
-            ClawRendererDX11::forgetMesh( m_mesh );
+            destroyNativeMesh( previous );
             if( m_renderObject )
             {
+                wp_graphics_object_set_mesh( m_renderObject, m_mesh );
                 wp_graphics_object_set_local_aabb( m_renderObject,
                                                    wp_graphics_mesh_get_local_aabb( m_mesh ) );
             }
+            setLoadingState( LoadingState::Loaded );
             return true;
         }
 
@@ -682,8 +756,8 @@ namespace workphone
             mesh->setVisibilityFlags( getVisibilityFlags() );
             if( m_mesh )
             {
-                std::unique_ptr<wp_graphics_mesh, decltype( &wp_graphics_mesh_destroy )> candidate(
-                    wp_graphics_mesh_create(), &wp_graphics_mesh_destroy );
+                std::unique_ptr<wp_graphics_mesh, decltype( &destroyNativeMesh )> candidate(
+                    wp_graphics_mesh_create(), &destroyNativeMesh );
                 const auto vertices = wp_graphics_mesh_get_vertex_count( m_mesh );
                 const auto indices = wp_graphics_mesh_get_index_count( m_mesh );
                 if( !candidate ||
@@ -724,6 +798,7 @@ namespace workphone
                     }
                 }
                 wp_graphics_mesh_compute_aabb( candidate.get() );
+                if( !prepareNativeGeometry( candidate.get() ) ) return nullptr;
                 mesh->m_mesh = candidate.release();
                 mesh->m_skinVertices = m_skinVertices;
                 mesh->m_skinOutput = m_skinOutput;

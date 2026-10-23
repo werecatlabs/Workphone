@@ -693,7 +693,9 @@ BOOST_AUTO_TEST_CASE( mesh_queued_resource_loads_reuse_completed_resources )
     auto graphics = make_ptr<GraphicsLoadQueueProbe>();
     auto resource = make_ptr<QueuedMeshLoadProbe>();
     graphics->loadObject( resource, true );
-    graphics->loadObject( resource, true );
+    const auto queuedOwners = resource->getReferences();
+    for( u32 retry = 0; retry < 1000; ++retry ) graphics->loadObject( resource, true );
+    BOOST_CHECK_EQUAL( resource->getReferences(), queuedOwners );
     graphics->updateLoadQueue();
     BOOST_CHECK_EQUAL( resource->loadRequests, 1u );
 

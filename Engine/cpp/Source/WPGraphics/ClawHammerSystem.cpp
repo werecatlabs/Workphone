@@ -432,6 +432,138 @@ namespace workphone
             return m_vsync.load( std::memory_order_relaxed );
         }
 
+        void ClawHammerSystem::setSceneProfilingEnabled( bool enabled )
+        {
+            std::lock_guard<std::mutex> lock( m_sceneProfileMutex );
+            if( m_sceneProfilingEnabled.load( std::memory_order_relaxed ) != enabled )
+            {
+                ++m_sceneProfileGeneration;
+                m_publishedSceneProfile = {};
+                m_sceneProfilingEnabled.store( enabled, std::memory_order_release );
+            }
+        }
+
+        bool ClawHammerSystem::getSceneProfilingEnabled() const
+        {
+            return m_sceneProfilingEnabled.load( std::memory_order_acquire );
+        }
+
+        void ClawHammerSystem::resetSceneProfile()
+        {
+            std::lock_guard<std::mutex> lock( m_sceneProfileMutex );
+            ++m_sceneProfileGeneration;
+            m_publishedSceneProfile = {};
+        }
+
+        bool ClawHammerSystem::readSceneProfile( SceneProfileSnapshot &snapshot ) const
+        {
+            std::lock_guard<std::mutex> lock( m_sceneProfileMutex );
+            snapshot = {};
+            if( !m_sceneProfilingEnabled.load( std::memory_order_relaxed ) ||
+                !m_publishedSceneProfile.serial )
+            {
+                return false;
+            }
+            snapshot = m_publishedSceneProfile;
+            return true;
+        }
+
+        void ClawHammerSystem::beginSceneProfileFrame()
+        {
+            m_sceneProfileFrameActive = false;
+            if( !m_sceneProfilingEnabled.load( std::memory_order_acquire ) )
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock( m_sceneProfileMutex );
+            if( m_sceneProfilingEnabled.load( std::memory_order_relaxed ) )
+            {
+                m_currentSceneProfile = {};
+                m_currentSceneProfile.generation = m_sceneProfileGeneration;
+                m_currentSceneProfile.serial = ++m_sceneProfileSequence;
+                m_currentSceneProfile.registeredScenes = m_scenes.size();
+                m_sceneProfileFrameActive = true;
+            }
+        }
+
+        void ClawHammerSystem::publishSceneProfileFrame()
+        {
+            if( !m_sceneProfileFrameActive )
+            {
+                return;
+            }
+
+            // Native and renderer tables are inspected only by the graphics owner.
+            // Public readers receive this fixed-size copy after jobs have retired.
+            auto &snapshot = m_currentSceneProfile;
+            wp_graphics_system_frame_stats frame{};
+            if( m_sys && wp_graphics_system_get_frame_stats( m_sys, &frame ) )
+            {
+                snapshot.nativeUpdateSerial = frame.update_serial;
+                snapshot.nativeRenderSerial = frame.render_serial;
+                snapshot.completedPasses = frame.completed_pass_count > 0 ? frame.completed_pass_count : 0;
+                snapshot.skippedPasses = frame.skipped_pass_count > 0 ? frame.skipped_pass_count : 0;
+            }
+            for( const auto &pass : m_framePasses )
+            {
+                snapshot.failedPasses += pass.failed;
+            }
+            if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
+            {
+                const auto cache = renderer->getMaterialRecordStatistics();
+                snapshot.cachePreparationsLifetime = cache.preparations;
+                snapshot.cacheStorageAllocationsLifetime = cache.storageAllocations;
+                snapshot.directStorageAllocationsLifetime = cache.directStorageAllocations;
+                snapshot.cacheStorageBytes = cache.storageBytes;
+                snapshot.cacheSlots = cache.slots;
+                snapshot.cacheResident = cache.resident;
+                if( auto dx11 = wp_renderer_get_dx11( renderer->getNativeRenderer() ) )
+                {
+                    wp_render_statistics_dx11 stats{};
+                    // Profiling must not allocate or sort frame history every frame.
+                    wp_renderer_dx11_get_statistics_counters( dx11, &stats );
+                    snapshot.dx11Available = true;
+                    snapshot.dx11FramesLifetime = stats.frames;
+                    snapshot.dx11DrawsLifetime = stats.draws;
+                    snapshot.dx11TrianglesLifetime = stats.triangles;
+                    snapshot.dx11MaterialUploadsLifetime = stats.material_uploads;
+                    snapshot.dx11TransformUploadsLifetime = stats.transform_uploads;
+                    snapshot.dx11StateBindingsLifetime = stats.state_bindings;
+                    snapshot.dx11InstancesLifetime = stats.instances;
+                    snapshot.dx11GpuSamplesLifetime = stats.gpu_samples;
+                    snapshot.dx11PresentAttemptsLifetime = stats.present_attempts;
+                    snapshot.dx11PresentOccludedLifetime = stats.present_occluded;
+                    snapshot.dx11PresentFailuresLifetime = stats.present_failures;
+                    snapshot.dx11IntervalMs = stats.interval_ms;
+                    snapshot.dx11P95IntervalMs = stats.interval_p95_ms;
+                    snapshot.dx11CpuFrameMs = stats.cpu_frame_ms;
+                    snapshot.dx11PresentMs = stats.present_ms;
+                    snapshot.dx11GpuFrameMs = stats.gpu_frame_ms;
+                }
+            }
+
+            std::lock_guard<std::mutex> lock( m_sceneProfileMutex );
+            if( m_sceneProfilingEnabled.load( std::memory_order_relaxed ) &&
+                snapshot.generation == m_sceneProfileGeneration )
+            {
+                m_publishedSceneProfile = snapshot;
+            }
+            m_sceneProfileFrameActive = false;
+        }
+
+        void ClawHammerSystem::invalidateSceneProfileFrame()
+        {
+            if( m_sceneProfileFrameActive )
+            {
+                std::lock_guard<std::mutex> lock( m_sceneProfileMutex );
+                if( m_currentSceneProfile.generation == m_sceneProfileGeneration )
+                {
+                    m_publishedSceneProfile = {};
+                }
+                m_sceneProfileFrameActive = false;
+            }
+        }
+
         void ClawHammerSystem::load( SmartPtr<ISharedObject> data )
         {
             if( isLoaded() && m_sys )
@@ -549,12 +681,14 @@ namespace workphone
 
         void ClawHammerSystem::unload( SmartPtr<ISharedObject> data )
         {
+            setSceneProfilingEnabled( false );
             if( getLoadingState() == LoadingState::Unloaded && !m_sys )
             {
                 return;
             }
 
             ScopedLock lock( this );
+            m_sceneProfileFrameActive = false;
             setLoadingState( LoadingState::Unloading );
 
             m_preparationProfile = nullptr;
@@ -674,12 +808,19 @@ namespace workphone
         {
             if( !isLoaded() || !m_sys )
             {
+                if( getSceneProfilingEnabled() )
+                {
+                    resetSceneProfile();
+                }
                 return;
             }
 
             try
             {
                 ScopedLock lock( this );
+                beginSceneProfileFrame();
+                using ProfileClock = std::chrono::steady_clock;
+                const auto profileStart = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 MaterialPublicationScope materialUpdates;
                 RenderPhaseProfile preparation( m_preparationProfile, "Graphics preparation" );
                 if( m_statisticsResetRequested.exchange( false ) )
@@ -733,10 +874,12 @@ namespace workphone
                     throw std::runtime_error( "Native graphics frame is already executing." );
                 }
                 preparation.end();
+                const auto nativeStart = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 // The C89 system owns native update and the complete ordered frame.
                 // Keep the engine's update-only scheduling contract at this boundary.
                 wp_graphics_system_update( m_sys );
                 wp_graphics_system_render( m_sys );
+                const auto nativeEnd = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 publishRenderStatistics();
 
                 for( auto &scene : m_scenes.snapshot() )
@@ -746,9 +889,19 @@ namespace workphone
                         scene->postUpdate();
                     }
                 }
+                if( m_sceneProfileFrameActive )
+                {
+                    const auto finished = ProfileClock::now();
+                    auto &snapshot = m_currentSceneProfile;
+                    snapshot.graphicsPrepareNs = std::chrono::duration_cast<std::chrono::nanoseconds>( nativeStart - profileStart ).count();
+                    snapshot.nativeFrameNs = std::chrono::duration_cast<std::chrono::nanoseconds>( nativeEnd - nativeStart ).count();
+                    snapshot.graphicsUpdateNs = std::chrono::duration_cast<std::chrono::nanoseconds>( finished - profileStart ).count();
+                    publishSceneProfileFrame();
+                }
             }
             catch( std::exception &e )
             {
+                invalidateSceneProfileFrame();
                 WP_LOG_EXCEPTION( e );
             }
         }
@@ -892,7 +1045,7 @@ namespace workphone
                             if( auto clawScene = dynamic_pointer_cast<ClawScene>( scene ) )
                             {
                                 pass.preparedScenes.push_back( clawScene );
-                                if( !clawScene->prepareRenderJobs( camera, owner->m_statisticsSnapshotRequested.load(),
+                                if( !clawScene->prepareRenderJobs( camera, owner->m_statisticsSnapshotRequested.load() || owner->m_sceneProfileFrameActive,
                                         dynamic_cast<ClawRendererDX11 *>( renderer.get() ) ) )
                                 {
                                     throw std::runtime_error(
@@ -924,6 +1077,46 @@ namespace workphone
                                     pass.work.addPhases( phases );
                                 }
                                 clawScene->getPreparedStorageStatistics( &storage );
+                                if( owner->m_sceneProfileFrameActive )
+                                {
+                                    auto &snapshot = owner->m_currentSceneProfile;
+                                    ++snapshot.scenePreparations;
+                                    ++snapshot.mainViews;
+                                    ++snapshot.shadowViews;
+                                    snapshot.candidates += candidates;
+                                    snapshot.mainVisible += visible;
+                                    snapshot.transformDispatches += clawScene->getPreparedTransformDispatchCount();
+                                    snapshot.preparationTotalNs += timing.total_ns;
+                                    snapshot.mainPrepareNs += timing.main_prepare_ns;
+                                    snapshot.shadowDeriveNs += timing.shadow_derive_ns;
+                                    snapshot.materialPrepareNs += timing.material_prepare_ns;
+                                    snapshot.cullPublicationBytesSum += storage.publication_bytes;
+                                    snapshot.cullViewBytesSum += storage.view_index_bytes;
+                                    snapshot.cullCaptureNs += phases.capture_ns;
+                                    snapshot.cullTransformNs += phases.transform_ns;
+                                    snapshot.cullBoundsNs += phases.bounds_ns;
+                                    snapshot.cullGroupsNs += phases.groups_ns;
+                                    snapshot.cullViewNs += phases.view_ns;
+                                    snapshot.cullVisibilityNs += phases.visibility_ns;
+                                    snapshot.cullSortNs += phases.sort_ns;
+                                    snapshot.cullPublishNs += phases.publish_ns;
+                                    ClawScene::MaterialPreparationStatistics materials;
+                                    if( clawScene->getPreparedMaterialStatistics( materials ) )
+                                    {
+                                        snapshot.materialRecords += materials.records;
+                                        snapshot.materialBindings += materials.bindings;
+                                        snapshot.materialMeshes += materials.meshes;
+                                        snapshot.materialPreparations += materials.preparations;
+                                        snapshot.materialStorageAllocations += materials.storage_allocations;
+                                        snapshot.materialStorageReusedViews += materials.reused_storage;
+                                        snapshot.materialDenseCapacityBytesSum += materials.dense_capacity_bytes;
+                                        snapshot.materialRetainedBytesSum += materials.retained_storage_bytes;
+                                        if( materials.peak_storage_bytes > snapshot.materialPeakBytesMax )
+                                        {
+                                            snapshot.materialPeakBytesMax = materials.peak_storage_bytes;
+                                        }
+                                    }
+                                }
                                 pass.work.cullSharedBytes += storage.publication_bytes;
                                 pass.work.cullEntryBytes += storage.entry_bytes;
                                 pass.work.ancestorBytes += storage.ancestor_bytes;

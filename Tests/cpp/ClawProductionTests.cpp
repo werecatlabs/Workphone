@@ -97,6 +97,129 @@ namespace
         { return m_materialRecordWorkspace ? m_materialRecordWorkspace->getStorageAllocationCount() : 0; }
     };
 
+    class ProfileGraphics : public claw_rtt_contracts::Graphics
+    {
+    public:
+        void markLoaded() { setLoadingState( LoadingState::Loaded ); }
+        void startPublication() { beginSceneProfileFrame(); }
+        void finishPublication() { publishSceneProfileFrame(); }
+        void abortPublication() { invalidateSceneProfileFrame(); }
+    };
+
+    bool testSceneProfile( SmartPtr<IGraphicsWindow> window )
+    {
+        claw_foliage_scene_contracts::Fixture services;
+        auto renderer = make_ptr<claw_rtt_contracts::Renderer>();
+        renderer->load( window );
+        if( !check( renderer->isLoaded(), "scene profile renderer must initialize" ) ) return false;
+        auto target = make_ptr<ClawRenderTarget>();
+        target->setSize( { 32, 32 } ); target->setActive( true );
+        auto camera = make_ptr<ClawCamera>();
+        for( u32 index = 0; index < 2; ++index )
+        {
+            auto viewport = target->addViewport( 19 + index, camera );
+            if( !check( viewport != nullptr, "scene profile multiview fixture" ) ) return false;
+            viewport->setActive( true ); viewport->setEnableSceneRender( true );
+            viewport->setEnableUI( false );
+            viewport->setClearEveryFrame( true, WORKPHONE_CLEAR_FLAG_ALL );
+        }
+        auto texture = make_ptr<claw_rtt_contracts::Texture>(); texture->output = target;
+        auto textures = make_ptr<claw_rtt_contracts::Textures>(); textures->values.push_back( texture );
+        ProfileGraphics graphics; graphics.initialise( renderer, textures ); graphics.markLoaded();
+        auto scene = make_ptr<ClawScene>(); scene->setEnableShadows( false );
+        auto mesh = make_ptr<claw_rtt_contracts::SnapshotMesh>();
+        wp_graphics_mesh_compute_aabb( mesh->getNativeMesh() );
+        auto object = wp_graphics_scene_create_object( scene->getNativeScene() );
+        auto node = wp_graphics_scene_create_node( scene->getNativeScene() );
+        wp_scenenode_attach_object( node, object );
+        mesh->bindNativeRenderObject( object ); mesh->setVisibilityFlags( ~u32( 0 ) );
+        auto material = make_ptr<ClawMaterial>();
+        auto technique = make_ptr<ClawMaterialTechnique>();
+        technique->setMaterial( material.get() ); technique->createPass();
+        material->setTechniques( { technique } ); material->setMaterialType( MaterialType::UI );
+        mesh->setMaterial( material );
+        graphics.nativeMesh = mesh; graphics.attachScene( scene );
+
+        ClawHammerSystem::SceneProfileSnapshot snapshot;
+        snapshot.serial = 99; snapshot.materialRecords = 99;
+        bool ok = check( !graphics.getSceneProfilingEnabled() && !graphics.readSceneProfile( snapshot ) &&
+                         !snapshot.serial && !snapshot.materialRecords,
+                         "scene telemetry is disabled and clears caller output by default" );
+        graphics.update();
+        ok &= check( graphics.unprofiledPreparations == 2 && !graphics.readSceneProfile( snapshot ),
+                     "disabled graphics updates leave preparation timing and readback unavailable" );
+        graphics.setSceneProfilingEnabled( true );
+        ok &= check( !graphics.readSceneProfile( snapshot ), "enabling telemetry does not publish old frames" );
+        graphics.update();
+        ok &= check( graphics.readSceneProfile( snapshot ) && snapshot.serial && snapshot.registeredScenes == 1 &&
+                     snapshot.scenePreparations == 2 && snapshot.mainViews == 2 && snapshot.shadowViews == 2 &&
+                     snapshot.candidates == 2 && snapshot.mainVisible == 2 && snapshot.transformDispatches == 2 &&
+                     snapshot.completedPasses == 2 && snapshot.skippedPasses == 1 && !snapshot.failedPasses,
+                     "typed telemetry aggregates actual scene/view pairs and completed native passes once" );
+        ok &= check( snapshot.dx11Available && snapshot.dx11DrawsLifetime && snapshot.materialRecords == 2 &&
+                     snapshot.materialBindings == 2 && snapshot.materialMeshes == 2 &&
+                     snapshot.materialStorageReusedViews == 2 && !snapshot.materialStorageAllocations &&
+                     snapshot.materialDenseCapacityBytesSum && snapshot.cacheResident == 1 && snapshot.cacheSlots >= 1,
+                     "typed telemetry copies warmed material publications and one persistent renderer table" );
+        ok &= check( snapshot.graphicsUpdateNs >= snapshot.graphicsPrepareNs + snapshot.nativeFrameNs &&
+                     snapshot.preparationTotalNs >= snapshot.mainPrepareNs + snapshot.shadowDeriveNs + snapshot.materialPrepareNs &&
+                     snapshot.nativeFrameNs >= snapshot.preparationTotalNs,
+                     "typed nested owner timings fit their measured graphics update" );
+        ClawScene::MaterialPreparationStatistics retired;
+        ok &= check( !scene->getPreparedMaterialStatistics( retired ) && !retired.records && snapshot.materialRecords == 2,
+                     "published material telemetry survives native job retirement without retaining jobs" );
+        const auto first = snapshot;
+        const auto cache = renderer->getMaterialRecordStatistics();
+        graphics.resetSceneProfile();
+        ok &= check( graphics.getSceneProfilingEnabled() && !graphics.readSceneProfile( snapshot ) && !snapshot.serial &&
+                     renderer->getMaterialRecordStatistics().preparations == cache.preparations,
+                     "telemetry reset invalidates readback without resetting material owners" );
+        graphics.update();
+        ok &= check( graphics.readSceneProfile( snapshot ) && snapshot.serial > first.serial &&
+                     snapshot.generation > first.generation && snapshot.nativeUpdateSerial > first.nativeUpdateSerial,
+                     "a fresh owner update publishes a later serial in the reset generation" );
+
+        // Exercise the same publication guard used when another thread resets
+        // controls while a graphics-owner frame is still in flight.
+        graphics.startPublication();
+        std::thread resetter( [&] { graphics.resetSceneProfile(); } ); resetter.join();
+        graphics.finishPublication();
+        ok &= check( !graphics.readSceneProfile( snapshot ), "reset rejects an already captured generation" );
+        graphics.startPublication(); graphics.setSceneProfilingEnabled( false );
+        graphics.setSceneProfilingEnabled( true ); graphics.finishPublication();
+        ok &= check( !graphics.readSceneProfile( snapshot ), "disable/re-enable rejects an in-flight old frame" );
+        graphics.update(); graphics.startPublication(); graphics.abortPublication();
+        ok &= check( !graphics.readSceneProfile( snapshot ), "aborted owner work clears prior completed readback" );
+        graphics.fail = true; graphics.update(); graphics.fail = false;
+        ok &= check( graphics.readSceneProfile( snapshot ) && snapshot.failedPasses == 2 &&
+                     snapshot.scenePreparations == 2,
+                     "failed native passes remain explicit in fresh frame diagnostics" );
+
+        graphics.removeScenes();
+        graphics.update();
+        ok &= check( graphics.readSceneProfile( snapshot ) && !snapshot.registeredScenes &&
+                     !snapshot.scenePreparations && !snapshot.materialRecords && !snapshot.preparationTotalNs &&
+                     snapshot.completedPasses == 2,
+                     "an empty-scene update publishes fresh zero preparation values" );
+        graphics.detach();
+        graphics.update();
+        ok &= check( graphics.readSceneProfile( snapshot ) && !snapshot.dx11Available &&
+                     !snapshot.cacheResident && !snapshot.cacheStorageBytes && !snapshot.dx11DrawsLifetime &&
+                     !snapshot.completedPasses && !snapshot.scenePreparations,
+                     "detaching the renderer clears unavailable owner counters in the next update" );
+        graphics.unload( nullptr );
+        snapshot.serial = 99; snapshot.dx11DrawsLifetime = 99;
+        ok &= check( !graphics.getSceneProfilingEnabled() && !graphics.readSceneProfile( snapshot ) &&
+                     !snapshot.serial && !snapshot.dx11DrawsLifetime,
+                     "unload disables telemetry and clears every published counter" );
+        graphics.setSceneProfilingEnabled( true ); graphics.update();
+        ok &= check( !graphics.readSceneProfile( snapshot ), "unloaded updates cannot republish retired frame values" );
+        graphics.setSceneProfilingEnabled( false );
+        mesh->setMaterial( nullptr ); mesh = nullptr; material = nullptr; technique = nullptr;
+        renderer->unload( nullptr );
+        return ok;
+    }
+
     class TestLightNode : public GraphicsSceneNode
     {
     public:
@@ -966,6 +1089,7 @@ int main( int argc, char **argv )
             ok &= claw_foliage_world_contracts::run(renderer);
             ok &= claw_animation_contracts::run(renderer);
             try {
+                ok &= testSceneProfile(window);
                 claw_foliage_scene_contracts::Fixture services;
                 ok &= claw_rtt_contracts::integration(window, true, true);
             } catch(const std::exception &e) { ok &= check(false,e.what()); }

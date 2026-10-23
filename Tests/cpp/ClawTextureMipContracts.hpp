@@ -3,11 +3,15 @@
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/ClawMesh.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/IO/FileSystem.hpp>
+#include <Workphone/IO/MemoryFile.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
 #include <workphone_graphics_renderer.h>
@@ -20,6 +24,8 @@
 #include <cstdio>
 #include <stdexcept>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 namespace claw_texture_mip_contracts
 {
@@ -31,6 +37,32 @@ namespace claw_texture_mip_contracts
     {
         if( !condition )
             throw std::runtime_error( message );
+    }
+
+    inline void completeGpuWork( ID3D11DeviceContext *context )
+    {
+        ComPtr<ID3D11Device> device;
+        context->GetDevice( device.GetAddressOf() );
+        const D3D11_QUERY_DESC description{ D3D11_QUERY_EVENT, 0 };
+        ComPtr<ID3D11Query> completion;
+        require( SUCCEEDED( device->CreateQuery( &description, completion.GetAddressOf() ) ),
+                 "GPU retirement validation must create a completion event" );
+        context->End( completion.Get() );
+        context->Flush();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 5 );
+        for( ;; )
+        {
+            BOOL completed = FALSE;
+            const auto status = context->GetData( completion.Get(), &completed, sizeof( completed ),
+                                                  D3D11_ASYNC_GETDATA_DONOTFLUSH );
+            require( SUCCEEDED( status ), "GPU retirement completion query must remain valid" );
+            if( status == S_OK && completed ) break;
+            require( std::chrono::steady_clock::now() < deadline,
+                     "GPU retirement completion must finish within five seconds" );
+            std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+        }
+        // Final external releases may queue destruction after prior draw work.
+        context->Flush();
     }
 
     class Window : public GraphicsWindow
@@ -303,6 +335,208 @@ namespace claw_texture_mip_contracts
         texture.unload( nullptr );
     }
 
+    inline void assetBudgetContracts( Fixture &fixture )
+    {
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto gpu = size_t( StreamMemoryClass::Gpu );
+        const auto baseline = scheduler->stats();
+        auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+        String error;
+        Array<TextureMipLevel> levels( 1 );
+        levels[0].width = levels[0].height = 2;
+        levels[0].bgra.resize( 16, 255 );
+        TextureMipSettings settings;
+        settings.filter = TextureMipFilter::None;
+        ComPtr<ID3D11ShaderResourceView> retainedView;
+        ComPtr<ID3D11Resource> retainedResource;
+        {
+            ClawTexture texture;
+            require( texture.uploadCookedMips( levels, settings, native, error ),
+                     "ordinary cooked texture upload must admit its own CPU/GPU allocations" );
+            retainedView = view( texture );
+            retainedView->GetResource( retainedResource.GetAddressOf() );
+            const auto resident = scheduler->stats();
+            require( resident.used[gpu] == baseline.used[gpu] + 16 &&
+                         resident.used[source] >= baseline.used[source] + 16 &&
+                         view( texture ) == retainedView.Get() &&
+                         scheduler->stats().used[gpu] == resident.used[gpu],
+                     "texture allocation must charge exact GPU mip bytes once and retain CPU pixels" );
+            require( scheduler->setBudget( StreamMemoryClass::Gpu, resident.used[gpu], error ),
+                     "texture rejection test must constrain available GPU capacity" );
+            require( !texture.uploadCookedMips( levels, settings, native, error ) &&
+                         view( texture ) == retainedView.Get() &&
+                         scheduler->stats().used[source] == resident.used[source] &&
+                         scheduler->stats().used[gpu] == resident.used[gpu],
+                     "GPU budget rejection must preserve previous texture and release candidate CPU bytes" );
+            require( scheduler->setBudget( StreamMemoryClass::Gpu, baseline.limits[gpu], error ) &&
+                         scheduler->setBudget( StreamMemoryClass::SourceCpu, resident.used[source], error ),
+                     "texture rejection test must constrain available source capacity" );
+            auto replacement = levels[0].bgra;
+            replacement[1] = 20;
+            texture.copyData( replacement.data(), { 2, 2 } );
+            require( view( texture ) == retainedView.Get() && greenPixel( retainedView.Get() ) == 255 &&
+                         scheduler->stats().used[source] == resident.used[source],
+                     "source budget rejection must preserve retained pixels and the published view" );
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline.limits[source], error ),
+                     "texture source capacity must restore" );
+            texture.unload( nullptr );
+            require( scheduler->stats().used[gpu] == resident.used[gpu],
+                     "wrapper unload must keep GPU budget while a native view/resource survives" );
+        }
+        require( scheduler->stats().used[source] == baseline.used[source],
+                 "texture destruction must release retained source storage" );
+        retainedView.Reset();
+        require( scheduler->stats().used[gpu] == baseline.used[gpu] + 16,
+                 "a retained native texture resource must retain the GPU lease after its view dies" );
+        retainedResource.Reset();
+        require( scheduler->stats().used[gpu] == baseline.used[gpu],
+                 "the last native resource release must return its GPU capacity" );
+
+        class BudgetMesh final : public ClawMesh
+        {
+        public:
+            BudgetMesh()
+            {
+                m_mesh = wp_graphics_mesh_create();
+                const wp_graphics_mesh_vertex_pnt vertices[] = {
+                    { { -.2f, -.2f, .5f }, { 0, 0, -1 }, { 0, 0 } },
+                    { { .2f, -.2f, .5f }, { 0, 0, -1 }, { 1, 0 } },
+                    { { 0, .2f, .5f }, { 0, 0, -1 }, { .5f, 1 } }
+                };
+                const wp_u32 indices[] = { 0, 1, 2 };
+                require( m_mesh && wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNT,
+                             vertices, 3 ) && wp_graphics_mesh_set_indices_u32( m_mesh, indices, 3 ),
+                         "mesh budget fixture must create a native triangle" );
+            }
+        } mesh;
+        auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+        context->ClearState();
+        wp_renderer_dx11_invalidate_state( native );
+        const auto meshBaseline = scheduler->stats().used[gpu];
+        require( scheduler->setBudget( StreamMemoryClass::Gpu, meshBaseline, error ),
+                 "mesh admission test must exhaust GPU capacity" );
+        fixture.renderer->renderMesh( &mesh, Matrix4F::identity() );
+        require( scheduler->stats().used[gpu] == meshBaseline,
+                 "denied ordinary mesh geometry must not allocate unbudgeted fallback buffers" );
+        mesh.load( nullptr );
+        require( !mesh.isLoaded() && scheduler->stats().used[gpu] == meshBaseline,
+                 "active-renderer mesh load must remain Unloaded until GPU geometry is admitted" );
+        require( scheduler->setBudget( StreamMemoryClass::Gpu, baseline.limits[gpu], error ),
+                 "mesh capacity must restore" );
+        mesh.load( nullptr );
+        require( mesh.isLoaded(), "mesh load must retry admission after GPU capacity returns" );
+        fixture.renderer->renderMesh( &mesh, Matrix4F::identity() );
+        const auto expected = 3 * sizeof( wp_vertex_pntc ) + 3 * sizeof( wp_u32 );
+        require( scheduler->stats().used[gpu] == meshBaseline + expected,
+                 "ordinary Claw mesh must charge normalized GPU vertices and u32 indices" );
+        fixture.renderer->renderMesh( &mesh, Matrix4F::identity() );
+        require( scheduler->stats().used[gpu] == meshBaseline + expected,
+                 "cached mesh draw must share its existing allocation lease" );
+        const auto previousMesh = mesh.getNativeMesh();
+        Array<wp_graphics_mesh_vertex_pntc> replacementVertices( 3 );
+        replacementVertices[0] = { { -.3f, -.3f, .5f }, { 0, 0, -1 }, { 0, 0 }, 0xffffffffu };
+        replacementVertices[1] = { { .3f, -.3f, .5f }, { 0, 0, -1 }, { 1, 0 }, 0xffffffffu };
+        replacementVertices[2] = { { 0, .3f, .5f }, { 0, 0, -1 }, { .5f, 1 }, 0xffffffffu };
+        const Array<u32> replacementIndices{ 0, 1, 2 };
+        require( scheduler->setBudget( StreamMemoryClass::Gpu, meshBaseline + expected, error ),
+                 "mesh replacement test must exhaust candidate capacity" );
+        require( !mesh.updateGeometry( replacementVertices, replacementIndices ) && mesh.isLoaded() &&
+                     mesh.getNativeMesh() == previousMesh && scheduler->stats().used[gpu] == meshBaseline + expected,
+                 "denied geometry replacement must retain the last loaded native mesh and its GPU allocation" );
+        context->ClearState();
+        wp_renderer_dx11_invalidate_state( native );
+        const wp_u32 changedIndices[] = { 0, 2, 1 };
+        require( wp_graphics_mesh_set_indices_u32( mesh.getNativeMesh(), changedIndices, 3 ) != 0,
+                 "native generation test must mutate indices without wrapper retirement" );
+        fixture.renderer->renderMesh( &mesh, Matrix4F::identity() );
+        require( scheduler->stats().used[gpu] == meshBaseline + expected,
+                 "denied native generation replacement must keep the old cached physical buffers" );
+        require( scheduler->setBudget( StreamMemoryClass::Gpu, baseline.limits[gpu], error ),
+                 "native replacement candidate capacity must restore" );
+        fixture.renderer->renderMesh( &mesh, Matrix4F::identity() );
+        // D3D may defer resource destruction while earlier draws remain in its
+        // command buffer. Submit those commands before checking retired owners.
+        context->Flush();
+        require( scheduler->stats().used[gpu] == meshBaseline + expected,
+                 "successful generation replacement must retire old cache storage after publication" );
+        ComPtr<ID3D11Buffer> retainedVertices;
+        UINT stride = 0, offset = 0;
+        context->IAGetVertexBuffers( 0, 1, retainedVertices.GetAddressOf(), &stride, &offset );
+        require( retainedVertices != nullptr, "mesh budget test must retain a submitted native buffer" );
+        mesh.unload( nullptr );
+        context->ClearState();
+        wp_renderer_dx11_invalidate_state( native );
+        context->Flush();
+        require( scheduler->stats().used[gpu] == meshBaseline + expected,
+                 "retained native buffer must keep the mesh allocation lease after cache retirement" );
+        const auto heldMeshBytes = scheduler->stats().used[gpu];
+        retainedVertices.Reset();
+        const auto queuedMeshBytes = scheduler->stats().used[gpu];
+        completeGpuWork( context );
+        std::printf( "Mesh physical GPU retirement: held=%llu afterRelease=%llu completed=%llu baseline=%llu\n",
+            static_cast<unsigned long long>( heldMeshBytes ), static_cast<unsigned long long>( queuedMeshBytes ),
+            static_cast<unsigned long long>( scheduler->stats().used[gpu] ),
+            static_cast<unsigned long long>( meshBaseline ) );
+        require( scheduler->stats().used[gpu] == meshBaseline,
+                 "mesh GPU reservation must retire with its last physical buffer reference" );
+
+        // Decode the ordinary raw-file path without disk or GPU allocations.
+        class BitmapFiles final : public FileSystem
+        {
+        public:
+            std::array<u8, 58> bitmap{};
+            BitmapFiles()
+            {
+                bitmap[0] = 'B'; bitmap[1] = 'M'; bitmap[2] = 58;
+                bitmap[10] = 54; bitmap[14] = 40;
+                bitmap[18] = bitmap[22] = bitmap[26] = 1;
+                bitmap[28] = 24; bitmap[34] = 4;
+                bitmap[54] = 11; bitmap[55] = 37; bitmap[56] = 59;
+            }
+            SmartPtr<workphone::IStream> open( const String &name, bool, bool, bool, bool, bool ) override
+            {
+                return make_ptr<MemoryFile>( bitmap.data(), long( bitmap.size() ), name, false );
+            }
+        };
+        const auto working = size_t( StreamMemoryClass::WorkingCpu );
+        const auto decodeBaseline = scheduler->stats();
+        auto previousFiles = fixture.application->getFileSystem();
+        auto bitmapFiles = make_ptr<BitmapFiles>();
+        fixture.application->setFileSystem( bitmapFiles );
+        {
+            ClawTexture encodedDenied;
+            encodedDenied.setFilePath( "retry-working.bmp" );
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu, decodeBaseline.used[working], error ),
+                     "raw decode test must exhaust encoded working capacity" );
+            require( !encodedDenied.getCpuBaseMip( error ),
+                     "raw texture decode must reject its encoded buffer when working capacity is exhausted" );
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu, decodeBaseline.limits[working], error ),
+                     "raw decode working capacity must restore" );
+            auto pixels = encodedDenied.getCpuBaseMip( error );
+            require( pixels && pixels->width == 1 && pixels->bgra[1] == 37,
+                     "raw decode must retry after encoded working-budget rejection without a source change" );
+        }
+        {
+            ClawTexture sourceDenied;
+            sourceDenied.setFilePath( "retry-source.bmp" );
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, decodeBaseline.used[source], error ),
+                     "raw decode test must exhaust retained-source capacity" );
+            require( !sourceDenied.getCpuBaseMip( error ),
+                     "raw texture decode must reject retained pixels when source capacity is exhausted" );
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, decodeBaseline.limits[source], error ),
+                     "raw decode source capacity must restore" );
+            auto pixels = sourceDenied.getCpuBaseMip( error );
+            require( pixels && pixels->width == 1 && pixels->bgra[1] == 37,
+                     "raw decode must retry after source-budget rejection without a source change" );
+        }
+        fixture.application->setFileSystem( previousFiles );
+        require( scheduler->stats().used[source] == decodeBaseline.used[source] &&
+                     scheduler->stats().used[working] == decodeBaseline.used[working],
+                 "raw decode retry fixtures must release all retained and working reservations" );
+        std::puts( "Shared texture/mesh asset budget and native allocation lifetime contracts passed." );
+    }
+
     inline void run()
     {
         Fixture fixture;
@@ -370,6 +604,7 @@ namespace claw_texture_mip_contracts
         checkSettings( texture, TextureMipFilter::Cutout, 3, .27f );
         require( view( texture ) == nullptr, "explicit unload must release the published view" );
         cookedContracts( fixture );
+        assetBudgetContracts( fixture );
         std::puts( "ClawTexture mip metadata, reload and last-good publication contracts passed." );
     }
 }  // namespace claw_texture_mip_contracts

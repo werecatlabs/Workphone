@@ -1,6 +1,7 @@
 #include "SampleVehicleAdvanced.h"
 #include "ProceduralScene.h"
 #include "FrameCapture.h"
+#include "ProductionSceneProfile.h"
 #include <WPProcedural/WPProcedural.hpp>
 #include <Workphone/Workphone.hpp>
 #include <iomanip>
@@ -54,6 +55,83 @@ namespace workphone
         constexpr real_Num vehicleSpawnHeight = static_cast<real_Num>( 0.42 );
         constexpr real_Num cameraDistance = static_cast<real_Num>( 8.0 );
         constexpr real_Num cameraHeight = static_cast<real_Num>( 3.0 );
+
+        advanced::ProductionSceneProfile::Workload describeProfileScene( const advanced::SceneAssets &assets )
+        {
+            advanced::ProductionSceneProfile::Workload result;
+            const auto unique = []( const auto &objects ) {
+                u64 count = 0;
+                for( size_t i = 0; i < objects.size(); ++i )
+                {
+                    if( !objects[i] ) continue;
+                    bool first = true;
+                    for( size_t j = 0; j < i; ++j )
+                        if( objects[j].get() == objects[i].get() ) { first = false; break; }
+                    count += first;
+                }
+                return count;
+            };
+            result.actors = unique( assets.actors );
+            result.materials = unique( assets.materials );
+            result.textures = unique( assets.textures );
+            result.meshes = unique( assets.meshes );
+            result.materialReferences = assets.materials.size();
+            result.textureReferences = assets.textures.size();
+            result.meshReferences = assets.meshes.size();
+            result.triangles = assets.triangles;
+            result.authoredTexturePayloadBytes = assets.textureBytes;
+            result.treeLodGroups = assets.treeLODs.size();
+            const auto hash = []( u64 &digest, const auto &value ) {
+                advanced::ProductionSceneProfile::hashBytes( digest, &value, sizeof( value ) );
+            };
+            for( const auto &sample : assets.circuit.samples )
+            {
+                hash( result.circuitDigest, sample.position.x ); hash( result.circuitDigest, sample.position.y );
+                hash( result.circuitDigest, sample.position.z ); hash( result.circuitDigest, sample.right.x );
+                hash( result.circuitDigest, sample.right.y ); hash( result.circuitDigest, sample.right.z );
+                hash( result.circuitDigest, sample.distance );
+            }
+            for( size_t resourceIndex = 0; resourceIndex < assets.meshes.size(); ++resourceIndex )
+            {
+                auto resource = assets.meshes[resourceIndex];
+                bool first = true;
+                for( size_t previous = 0; previous < resourceIndex; ++previous )
+                    if( assets.meshes[previous].get() == resource.get() ) { first = false; break; }
+                if( !first ) continue;
+                if( !resource || !resource->getMesh() ) continue;
+                for( auto section : resource->getMesh()->getSubMeshes() )
+                {
+                    ++result.meshSections;
+                    auto vertices = section->getVertexBuffer();
+                    auto indices = section->getIndexBuffer();
+                    auto declaration = vertices->getVertexDeclaration();
+                    const auto position = declaration->findElementBySemantic( VertexElementSemantic::VES_POSITION );
+                    const auto normal = declaration->findElementBySemantic( VertexElementSemantic::VES_NORMAL );
+                    const u32 vertexCount = vertices->getNumVertices(), indexCount = indices->getNumIndices();
+                    result.vertices += vertexCount; result.indices += indexCount;
+                    hash( result.geometryDigest, vertexCount ); hash( result.geometryDigest, indexCount );
+                    for( u32 i = 0; i < vertexCount; ++i )
+                    {
+                        for( auto element : { position, normal } )
+                        {
+                            if( !element ) continue;
+                            const auto value = reinterpret_cast<const f32 *>(
+                                static_cast<const u8 *>( vertices->getVertexData() ) +
+                                size_t( i ) * declaration->getSize() + element->getOffset() );
+                            for( u32 component = 0; component < 3; ++component ) hash( result.geometryDigest, value[component] );
+                        }
+                    }
+                    for( u32 i = 0; i < indexCount; ++i )
+                    {
+                        const u32 index = indices->getIndexType() == IIndexBuffer::Type::IT_16BIT
+                            ? static_cast<const u16 *>( indices->getIndexData() )[i]
+                            : static_cast<const u32 *>( indices->getIndexData() )[i];
+                        hash( result.geometryDigest, index );
+                    }
+                }
+            }
+            return result;
+        }
 
         bool checkSceneWinding( const advanced::SceneAssets &assets )
         {
@@ -220,6 +298,22 @@ namespace workphone
             applicationManager->setApplication( this );
 
             Application::load( data );
+#if WP_GRAPHICS_SYSTEM_CLAW
+            if( m_sceneProfile )
+            {
+                auto graphics = dynamic_pointer_cast<render::ClawHammerSystem>( applicationManager->getGraphicsSystem() );
+                if( !graphics ) throw std::runtime_error( "Scene profile requires the Claw graphics system." );
+                graphics->setSceneProfilingEnabled( true );
+#if defined( _WIN32 )
+                // Enable timing during the existing warmup so lazily created GPU
+                // query resources are resident before the warmed memory sample.
+                // The measurement boundary still resets statistics separately.
+                if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>( graphics->getRendererPtr() ) )
+                    wp_renderer_dx11_reset_statistics(
+                        wp_renderer_get_dx11( renderer->getNativeRenderer() ) );
+#endif
+            }
+#endif
             // Application::load logs scene exceptions instead of propagating them.
             // Do not enter Play with a partially generated vehicle/circuit.
             if( !m_raceScene || !m_raceScene->isGenerated() || m_assets.circuit.samples.empty() ||
@@ -437,6 +531,7 @@ namespace workphone
             if( m_reviewStart < 0 ) m_reviewStart = sceneTime;
             const auto profileNow = std::max( 0.0, sceneTime - m_reviewStart );
             ++m_reviewFrames;
+            bool profileStartedThisFrame = false;
             if( profileNow > 5 && m_reviewFrames >= 30 && !m_benchmarkStarted )
             {
                 m_benchmarkStarted = true;
@@ -447,15 +542,38 @@ namespace workphone
                     wp_renderer_dx11_reset_statistics(
                         wp_renderer_get_dx11( renderer->getNativeRenderer() ) );
 #endif
+                if( m_sceneProfile )
+                {
+#if WP_GRAPHICS_SYSTEM_CLAW
+                    if( auto graphics = dynamic_pointer_cast<render::ClawHammerSystem>( app->getGraphicsSystem() ) )
+                        graphics->resetSceneProfile();
+#endif
+                    m_sceneProfile->beginMeasurement();
+                    profileStartedThisFrame = true;
+                }
             }
             if( m_benchmarkStarted )
             {
                 ++m_profileFrames;
             }
+            if( m_sceneProfile && m_benchmarkStarted && !profileStartedThisFrame && !m_captureAttempted )
+            {
+#if WP_GRAPHICS_SYSTEM_CLAW
+                if( auto graphics = dynamic_pointer_cast<render::ClawHammerSystem>( app->getGraphicsSystem() ) )
+                {
+                    render::ClawHammerSystem::SceneProfileSnapshot snapshot;
+                    if( graphics->readSceneProfile( snapshot ) ) m_sceneProfile->observeTelemetry( snapshot );
+                }
+#endif
+                m_sceneProfile->frame();
+            }
             if( ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && !m_captureAttempted &&
-                m_benchmarkStarted && m_profileFrames >= 30 &&
+                m_benchmarkStarted && m_profileFrames >= ( m_sceneProfile ? 31 : 30 ) &&
                 profileNow - m_profileStart > ( m_benchmarkSeconds > 0 ? m_benchmarkSeconds : 3 ) )
             {
+                // Stop ROI before logging, owner inventories, GPU readbacks or
+                // formatting validation evidence can perturb the measurement.
+                if( m_sceneProfile ) m_sceneProfile->endMeasurement();
                 bool linearSceneValid = true;
                 size_t treeMeshes = 0, treeImposters = 0;
                 bool treeLODValid = m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
@@ -658,7 +776,9 @@ namespace workphone
                 evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
                          << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
                          << "  \"limits\": \"Control replay is physics-tick based; settings and source hashes are recorded by the capture runner. Timings do not certify image quality.\"\n}\n";
-                if( !m_evidencePath.empty() && !advanced::writeReviewEvidence( m_evidencePath, evidence.str() ) )
+                if( m_sceneProfile )
+                    m_sceneProfile->setValidationEvidence( evidence.str(), m_evidencePath, m_capturePassed, nativeFrameValid );
+                else if( !m_evidencePath.empty() && !advanced::writeReviewEvidence( m_evidencePath, evidence.str() ) )
                 {
                     WP_LOG_ERROR( "VehicleAdvanced: could not write evidence manifest." );
                     m_capturePassed = false;
@@ -1368,6 +1488,7 @@ namespace workphone
 
     void SampleVehicleAdvanced::createScene()
     {
+        if( m_sceneProfile ) m_sceneProfile->checkpoint( "runtime_before_scene_generation" );
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
@@ -1465,6 +1586,11 @@ namespace workphone
                 debug->drawText( 1, Vector2F( 0.02f, 0.06f ), "Mouse wheel: camera zoom", 0 );
             }
         }
+        if( m_sceneProfile )
+        {
+            m_sceneProfile->setWorkload( describeProfileScene( m_assets ) );
+            m_sceneProfile->checkpoint( "scene_generated" );
+        }
     }
 
     void SampleVehicleAdvanced::updateRenderCamera()
@@ -1517,7 +1643,7 @@ namespace workphone
             {
                 scene::LODSystem::View view;
                 view.position = m_cameraActor->getWorldTransform().getPosition();
-                view.verticalFovRadians = m_camera->getFOVy();
+                view.verticalFovRadians = Math<f32>::DegToRad( m_camera->getFOVy() );
                 view.nearClipDistance = m_camera->getNearClipDistance();
                 view.lodBias = m_camera->getLodBias();
                 system->setViewOverride( view );
@@ -1640,6 +1766,8 @@ int main( int argc, char **argv )
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
                    "  --benchmark SECONDS [--orbit] Measure after five seconds of warmup\n"
+                   "  --scene-profile NEW.json      Profile the existing scene; requires --benchmark\n"
+                   "  --scene-profile-mode memory|cpu  Heap checkpoints or CPU accounting (default memory)\n"
                    "  --evidence PATH.json          Write machine-readable review results\n"
                    "  --replay PATH.csv             Apply 120 Hz tick,throttle,brake,steering inputs\n"
                    "  --foliage-world               Use paged instanced broadleaf vegetation\n"
@@ -1665,6 +1793,10 @@ int main( int argc, char **argv )
     std::string evidencePath, replayPath;
     std::vector<advanced::ReviewControl> replayControls;
     std::string materialExportDirectory;
+    std::string sceneProfilePath, sceneProfileError;
+    auto sceneProfileMode = advanced::ProductionSceneProfile::Mode::Memory;
+    bool sceneProfileModeExplicit = false;
+    std::unique_ptr<advanced::ProductionSceneProfile> sceneProfile;
     u32 seed = 7;
     auto quality = procedural::VehicleAppearanceQuality::High;
     bool hud = true, orbit = false;
@@ -1742,6 +1874,17 @@ int main( int argc, char **argv )
                 capturePath = argv[++i];
             else if( String( argv[i] ) == "--evidence" && i + 1 < argc )
                 evidencePath = argv[++i];
+            else if( String( argv[i] ) == "--scene-profile" && i + 1 < argc )
+                sceneProfilePath = argv[++i];
+            else if( String( argv[i] ) == "--scene-profile-mode" && i + 1 < argc )
+            {
+                const std::string mode = argv[++i];
+                if( mode != "memory" && mode != "cpu" )
+                    throw std::runtime_error( "Scene profile mode must be memory or cpu." );
+                sceneProfileMode = mode == "memory" ? advanced::ProductionSceneProfile::Mode::Memory
+                                                      : advanced::ProductionSceneProfile::Mode::Cpu;
+                sceneProfileModeExplicit = true;
+            }
             else if( String( argv[i] ) == "--replay" && i + 1 < argc )
                 replayPath = argv[++i];
             else if( String( argv[i] ) == "--export-materials" && i + 1 < argc )
@@ -1783,6 +1926,31 @@ int main( int argc, char **argv )
         if( advanced::reviewPathsAlias( evidencePath, capturePath ) || advanced::reviewPathsAlias( evidencePath, replayPath ) ||
             advanced::reviewPathsAlias( capturePath, replayPath ) )
             throw std::runtime_error( "Evidence output must differ from capture and replay paths." );
+        if( sceneProfileModeExplicit && sceneProfilePath.empty() )
+            throw std::runtime_error( "--scene-profile-mode requires --scene-profile." );
+        if( !sceneProfilePath.empty() )
+        {
+            if( benchmarkSeconds <= 0 ) throw std::runtime_error( "--scene-profile requires --benchmark." );
+#if !defined( _WIN32 ) || !WP_GRAPHICS_SYSTEM_CLAW
+            throw std::runtime_error( "Production scene profiling requires Windows and Claw graphics." );
+#endif
+            const auto output = std::filesystem::absolute( sceneProfilePath );
+            if( std::filesystem::exists( output ) )
+                throw std::runtime_error( "Choose a new scene profile output; existing evidence is preserved." );
+            if( !std::filesystem::is_directory( output.parent_path() ) )
+                throw std::runtime_error( "Scene profile output directory must already exist." );
+            for( const auto &otherOutput : { evidencePath, capturePath, effectsCapture } )
+                if( !otherOutput.empty() && std::filesystem::exists( std::filesystem::path( otherOutput ) ) )
+                    throw std::runtime_error( "Choose new profile capture/evidence outputs; existing files are preserved." );
+            for( const auto &other : { evidencePath, capturePath, replayPath, effectsCapture,
+                    materialExportDirectory, std::string( pluginsConfig.empty() ? "wp_plugins_samples.cfg" : pluginsConfig.c_str() ) } )
+                if( advanced::reviewPathsAlias( sceneProfilePath, other ) )
+                    throw std::runtime_error( "Scene profile output must differ from every input and other output." );
+            sceneProfile = std::make_unique<advanced::ProductionSceneProfile>( output.string(), sceneProfileMode );
+            sceneProfile->configure( seed, int( quality ), width, height, captureView, orbit,
+                foliageWorld, audioEnabled, effectsEnabled, benchmarkSeconds, replayPath,
+                pluginsConfig.empty() ? "wp_plugins_samples.cfg" : pluginsConfig.c_str(), forcedLOD, forcedVehicleLOD );
+        }
         if( !replayPath.empty() ) replayControls = advanced::loadReviewReplay( replayPath );
     }
     catch( const std::exception &e )
@@ -1792,21 +1960,23 @@ int main( int argc, char **argv )
     }
     int exitCode = 1;
 
-    auto unloadApplication = [&app]() {
+    auto unloadApplication = [&app, &sceneProfile]() {
         if( app )
         {
+            if( sceneProfile ) sceneProfile->endMeasurement();
             if( app->getLoadingState() != LoadingState::Unloaded )
             {
                 app->unload( nullptr );
             }
 
             app = nullptr;
+            if( sceneProfile ) sceneProfile->checkpoint( "application_unloaded" );
         }
 
         core::IApplicationManager::setInstance( nullptr );
     };
 
-    auto unloadTypeManager = [&typeManager, &ownsTypeManager]() {
+    auto unloadTypeManager = [&typeManager, &ownsTypeManager, &sceneProfile]() {
         if( ownsTypeManager && typeManager )
         {
             typeManager->unload();
@@ -1814,6 +1984,7 @@ int main( int argc, char **argv )
             TypeManager::setInstance( nullptr );
             typeManager = nullptr;
             ownsTypeManager = false;
+            if( sceneProfile ) sceneProfile->checkpoint( "type_manager_destroyed" );
         }
     };
 
@@ -1829,6 +2000,7 @@ int main( int argc, char **argv )
         }
 
         app = workphone::make_ptr<SampleVehicleAdvanced>();
+        app->setSceneProfile( sceneProfile.get() );
         app->setActiveThreads( activeThreadCount );
         app->setSmokeTest( smokeTest );
         app->setTrackSmokeTest( trackSmokeTest );
@@ -1851,27 +2023,45 @@ int main( int argc, char **argv )
                            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() )
                        ? 1
                        : 0;
+        if( sceneProfile && !sceneProfile->invariantsPassed() )
+        {
+            sceneProfileError = "Production scene profile did not complete its rendering/telemetry invariants.";
+            std::cerr << sceneProfileError << '\n';
+            exitCode = 1;
+        }
 
         unloadApplication();
         unloadTypeManager();
     }
     catch( Exception &e )
     {
+        sceneProfileError = e.what();
         unloadApplication();
         unloadTypeManager();
-        MessageBoxUtil::show( e.what() );
+        if( sceneProfile ) std::cerr << sceneProfileError << '\n';
+        else MessageBoxUtil::show( e.what() );
     }
     catch( std::exception &e )
     {
+        sceneProfileError = e.what();
         unloadApplication();
         unloadTypeManager();
-        MessageBoxUtil::show( e.what() );
+        if( sceneProfile ) std::cerr << sceneProfileError << '\n';
+        else MessageBoxUtil::show( e.what() );
     }
     catch( ... )
     {
+        sceneProfileError = "Unknown error";
         unloadApplication();
         unloadTypeManager();
-        MessageBoxUtil::show( "Unknown error" );
+        if( sceneProfile ) std::cerr << sceneProfileError << '\n';
+        else MessageBoxUtil::show( "Unknown error" );
+    }
+
+    if( sceneProfile )
+    {
+        try { sceneProfile->write( exitCode, sceneProfileError ); }
+        catch( const std::exception &e ) { std::cerr << e.what() << '\n'; exitCode = 1; }
     }
 
     return exitCode;

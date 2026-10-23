@@ -248,6 +248,12 @@ typedef struct wp_render_statistics_dx11
 /** Call after external code (e.g. ImGui) changes the immediate context state. */
 void wp_renderer_dx11_invalidate_state( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_reset_statistics( wp_renderer_dx11 *renderer );
+/** Fixed-cost numeric readback: copies counters and computes aggregate means,
+ * without allocating, sorting or traversing frame history. interval_p95_ms is
+ * zero/unavailable in this path; use get_statistics for the history percentile.
+ * The same render-thread/graphics-lock ownership requirement applies. */
+void wp_renderer_dx11_get_statistics_counters( const wp_renderer_dx11 *renderer,
+                                               wp_render_statistics_dx11 *statistics );
 void wp_renderer_dx11_get_statistics( const wp_renderer_dx11 *renderer,
                                       wp_render_statistics_dx11 *statistics );
 

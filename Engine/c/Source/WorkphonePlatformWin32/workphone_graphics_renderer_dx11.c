@@ -2550,15 +2550,14 @@ static int compare_frame_interval( const void *a, const void *b )
     return x < y ? -1 : x > y;
 }
 
-void wp_renderer_dx11_get_statistics( const wp_renderer_dx11 *r,
-                                      wp_render_statistics_dx11 *out )
+void wp_renderer_dx11_get_statistics_counters( const wp_renderer_dx11 *r,
+                                               wp_render_statistics_dx11 *out )
 {
-    double *sorted;
-    size_t count;
     if( !out ) return;
     memset( out, 0, sizeof( *out ) );
     if( !r ) return;
     *out = r->statistics;
+    out->interval_p95_ms = 0; /* History is deliberately unavailable in this path. */
     out->flip_model = r->flip_model;
     if( out->frames )
     {
@@ -2568,6 +2567,15 @@ void wp_renderer_dx11_get_statistics( const wp_renderer_dx11 *r,
     if( out->gpu_samples ) out->gpu_frame_ms = r->gpu_total / out->gpu_samples;
     if( !out->interval_samples ) return;
     out->interval_ms = r->interval_total / out->interval_samples;
+}
+
+void wp_renderer_dx11_get_statistics( const wp_renderer_dx11 *r,
+                                      wp_render_statistics_dx11 *out )
+{
+    double *sorted;
+    size_t count;
+    wp_renderer_dx11_get_statistics_counters( r, out );
+    if( !r || !out || !out->interval_samples ) return;
     count = out->interval_samples < WP_DX11_FRAME_SAMPLES ?
         (size_t)out->interval_samples : WP_DX11_FRAME_SAMPLES;
     sorted = (double *)malloc( count * sizeof( double ) );

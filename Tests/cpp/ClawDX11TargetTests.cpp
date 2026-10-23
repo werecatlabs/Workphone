@@ -50,6 +50,72 @@ namespace
         return value;
     }
 
+    bool sameStatisticsCounters( const wp_render_statistics_dx11 &actual,
+                                 const wp_render_statistics_dx11 &expected )
+    {
+        bool ok = true;
+        // Compare public values, not padding bytes or the intentionally omitted
+        // history percentile. Both getters observe one unchanged native frame.
+#define WP_CHECK_COUNTER( field ) \
+        ok &= check( actual.field == expected.field, "numeric statistics must preserve " #field )
+        WP_CHECK_COUNTER( frames );
+        WP_CHECK_COUNTER( interval_samples );
+        WP_CHECK_COUNTER( gpu_samples );
+        WP_CHECK_COUNTER( draws );
+        WP_CHECK_COUNTER( triangles );
+        WP_CHECK_COUNTER( material_uploads );
+        WP_CHECK_COUNTER( transform_uploads );
+        WP_CHECK_COUNTER( geometry_creations );
+        WP_CHECK_COUNTER( state_bindings );
+        WP_CHECK_COUNTER( instanced_draws );
+        WP_CHECK_COUNTER( instances );
+        WP_CHECK_COUNTER( instance_uploads );
+        WP_CHECK_COUNTER( instance_upload_bytes );
+        WP_CHECK_COUNTER( instance_buffer_creations );
+        WP_CHECK_COUNTER( interval_ms );
+        WP_CHECK_COUNTER( cpu_frame_ms );
+        WP_CHECK_COUNTER( present_ms );
+        WP_CHECK_COUNTER( gpu_frame_ms );
+        WP_CHECK_COUNTER( flip_model );
+        WP_CHECK_COUNTER( present_attempts );
+        WP_CHECK_COUNTER( present_occluded );
+        WP_CHECK_COUNTER( present_failures );
+        WP_CHECK_COUNTER( last_present_hresult );
+#undef WP_CHECK_COUNTER
+        return ok;
+    }
+
+    bool testStatisticsReadback( wp_renderer_dx11 *renderer )
+    {
+        wp_render_statistics_dx11 empty{}, missing;
+        std::memset( &missing, 0xA5, sizeof( missing ) );
+        wp_renderer_dx11_get_statistics_counters( nullptr, &missing );
+        bool ok = sameStatisticsCounters( missing, empty );
+        ok &= check( missing.interval_p95_ms == 0,
+                     "missing numeric statistics must clear the percentile" );
+        wp_renderer_dx11_get_statistics_counters( renderer, nullptr );
+        wp_renderer_dx11_get_statistics( renderer, nullptr );
+
+        wp_render_statistics_dx11 full{}, counters, unchanged{};
+        wp_renderer_dx11_get_statistics( renderer, &full );
+        for( int read = 0; read < 64; ++read )
+        {
+            std::memset( &counters, 0xA5, sizeof( counters ) );
+            wp_renderer_dx11_get_statistics_counters( renderer, &counters );
+            ok &= sameStatisticsCounters( counters, full );
+            ok &= check( counters.interval_p95_ms == 0,
+                         "numeric readback must leave p95 unavailable even with retained intervals" );
+        }
+        wp_renderer_dx11_get_statistics( renderer, &unchanged );
+        ok &= sameStatisticsCounters( unchanged, full );
+        ok &= check( unchanged.interval_p95_ms == full.interval_p95_ms,
+                     "repeated numeric readback must preserve percentile history" );
+        if( full.interval_samples > 0 )
+            ok &= check( full.interval_p95_ms > 0,
+                         "the full getter must retain a positive percentile for completed intervals" );
+        return ok;
+    }
+
     ID3D11DepthStencilView *depthTarget( ID3D11DeviceContext *context )
     {
         ID3D11DepthStencilView *view = nullptr;
@@ -972,6 +1038,7 @@ int main()
                                  afterPresent.present_attempts,
                          "wrapper must present once and count only S_OK as a completed frame" );
         }
+        ok &= testStatisticsReadback( native );
         renderer.setRenderTarget( nullptr );
         renderer.beginRender();
         renderer.endRender();

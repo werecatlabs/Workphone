@@ -4,6 +4,7 @@
 #include <Workphone/Core/FileInfo.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Path.hpp>
+#include <Workphone/Mesh/Mesh.hpp>
 #include <Workphone/Mesh/MeshSerializer.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/Mesh/IMeshLoader.hpp>
@@ -152,7 +153,9 @@ namespace workphone
                         if( stream )
                         {
                             MeshSerializer serializer;
-                            mesh = serializer.loadMesh( stream );
+                            auto candidate = make_ptr<Mesh>();
+                            serializer.importMesh( stream, candidate.get() );
+                            mesh = candidate;
                         }
                     }
                     else if( auto meshLoader = factoryManager->make_object<IMeshLoader>() )
