@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
@@ -13,6 +14,49 @@
 
 namespace workphone
 {
+    namespace
+    {
+        struct SourceStorageHeader
+        {
+            StreamBudget budget;
+            size_t allocationAlignment;
+        };
+        size_t sourceStorageOffset( size_t alignment )
+        {
+            if( !alignment || ( alignment & ( alignment - 1 ) ) ||
+                alignment - 1 > std::numeric_limits<size_t>::max() - sizeof( SourceStorageHeader ) )
+                throw std::bad_alloc();
+            return ( sizeof( SourceStorageHeader ) + alignment - 1 ) & ~( alignment - 1 );
+        }
+    }
+    size_t sourceBudgetStorageBytes( size_t bytes, size_t alignment )
+    {
+        const auto offset = sourceStorageOffset( alignment );
+        if( bytes > std::numeric_limits<size_t>::max() - offset ) throw std::bad_alloc();
+        return offset + bytes;
+    }
+    void *allocateSourceBudgetStorage( size_t bytes, size_t alignment )
+    {
+        const auto total = sourceBudgetStorageBytes( bytes, alignment );
+        String error;
+        auto budget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu, total, error );
+        if( !budget ) throw std::bad_alloc();
+        const auto allocationAlignment = std::max( alignment, alignof( SourceStorageHeader ) );
+        auto pointer = ::operator new( total, std::align_val_t( allocationAlignment ) );
+        ::new( pointer ) SourceStorageHeader{ std::move( budget ), allocationAlignment };
+        return static_cast<char *>( pointer ) + sourceStorageOffset( alignment );
+    }
+    void freeSourceBudgetStorage( void *pointer, size_t alignment ) noexcept
+    {
+        if( !pointer ) return;
+        auto header = reinterpret_cast<SourceStorageHeader *>(
+            static_cast<char *>( pointer ) - sourceStorageOffset( alignment ) );
+        auto budget = std::move( header->budget );
+        const auto allocationAlignment = header->allocationAlignment;
+        header->~SourceStorageHeader();
+        ::operator delete( header, std::align_val_t( allocationAlignment ) );
+        // Physical storage is gone before the reservation becomes available.
+    }
     namespace
     {
         thread_local const void *streamWorker = nullptr;

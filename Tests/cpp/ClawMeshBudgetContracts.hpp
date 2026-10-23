@@ -187,11 +187,13 @@ namespace claw_mesh_budget_contracts
         auto scheduler = WorldStreamingScheduler::shared();
         const auto baseline = scheduler->stats();
         const auto working = size_t( StreamMemoryClass::WorkingCpu );
+        const auto source = size_t( StreamMemoryClass::SourceCpu );
         const auto gpu = size_t( StreamMemoryClass::Gpu );
         auto app = core::IApplicationManager::instance();
         struct Restore
         {
             std::shared_ptr<WorldStreamingScheduler> scheduler;
+            u64 sourceLimit;
             u64 workingLimit;
             u64 gpuLimit;
             SmartPtr<core::IApplicationManager> application;
@@ -200,6 +202,7 @@ namespace claw_mesh_budget_contracts
             ~Restore()
             {
                 String error;
+                scheduler->setBudget( StreamMemoryClass::SourceCpu, sourceLimit, error );
                 scheduler->setBudget( StreamMemoryClass::WorkingCpu, workingLimit, error );
                 scheduler->setBudget( StreamMemoryClass::Gpu, gpuLimit, error );
                 application->setFileSystem( files );
@@ -209,7 +212,7 @@ namespace claw_mesh_budget_contracts
                 wp_renderer_dx11_invalidate_state( native );
                 context->Flush();
             }
-        } restore{ scheduler, baseline.limits[working], baseline.limits[gpu], app, app->getFileSystem(), renderer };
+        } restore{ scheduler, baseline.limits[source], baseline.limits[working], baseline.limits[gpu], app, app->getFileSystem(), renderer };
         try
         {
             app->setFileSystem( make_ptr<MeshFiles>() );
@@ -218,6 +221,16 @@ namespace claw_mesh_budget_contracts
             mesh.load( nullptr );
             require( mesh.isLoaded(), "native conversion scratch test must load CPU geometry" );
             String error;
+            const auto beforeMetadata = scheduler->stats();
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, beforeMetadata.used[source], error ),
+                "direct draw metadata test must exhaust retained CPU capacity" );
+            renderer.renderMesh( &mesh, Matrix4F::identity() );
+            require( scheduler->stats().used[gpu] == baseline.used[gpu] &&
+                scheduler->stats().used[source] == beforeMetadata.used[source] &&
+                scheduler->stats().rejectedReservations[source] > beforeMetadata.rejectedReservations[source],
+                "denied cold material metadata must defer a direct draw without false GPU admission or leaks" );
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline.limits[source], error ),
+                "direct draw material metadata capacity must restore" );
             require( scheduler->setBudget( StreamMemoryClass::WorkingCpu, baseline.used[working], error ),
                 "native index conversion test must constrain working capacity" );
             const auto rejectedBefore = scheduler->stats().rejectedReservations[working];

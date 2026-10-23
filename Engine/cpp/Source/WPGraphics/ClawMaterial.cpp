@@ -9,6 +9,7 @@
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
+#include "ClawAssetBudget.hpp"
 
 namespace workphone
 {
@@ -28,7 +29,7 @@ namespace workphone
         const String ClawMaterial::textureNamesStr = "textureNames";
         const String ClawMaterial::dirtyStr = "dirty";
 
-        ClawMaterial::ClawMaterial() : m_material( wp_graphics_material_create() )
+        ClawMaterial::ClawMaterial() : m_material( asset_budget::createMaterial() )
         {
             if( !m_material )
             {
@@ -49,7 +50,7 @@ namespace workphone
         {
             if( !m_material )
             {
-                m_material = wp_graphics_material_create();
+                m_material = asset_budget::createMaterial();
                 if( !m_material )
                 {
                     WP_LOG_ERROR( "ClawMaterial::loadResource: failed to create native material." );
@@ -95,6 +96,7 @@ namespace workphone
             {
                 setLoadingState( LoadingState::Loading );
                 loadResource( nullptr );
+                if( !m_material ) throw std::bad_alloc();
                 createMaterialByType();
                 Material::load( data );
                 syncNativeMaterial();

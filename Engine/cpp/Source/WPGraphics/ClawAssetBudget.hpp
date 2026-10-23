@@ -2,6 +2,7 @@
 
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <workphone_graphics_mesh.h>
+#include <workphone_graphics_material.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <atomic>
@@ -29,6 +30,11 @@ namespace workphone::render::asset_budget
         delete static_cast<StreamBudget *>( reservation );
     }
     inline const wp_mesh_memory_callbacks meshMemoryCallbacks{ nullptr, reserveCpu, releaseCpu };
+    inline const wp_material_memory_callbacks materialMemoryCallbacks{ nullptr, reserveCpu, releaseCpu };
+    inline wp_graphics_material *createMaterial()
+    {
+        return wp_graphics_material_create_budgeted( &materialMemoryCallbacks );
+    }
     inline wp_graphics_mesh *createMesh()
     {
         return wp_graphics_mesh_create_budgeted( &meshMemoryCallbacks );

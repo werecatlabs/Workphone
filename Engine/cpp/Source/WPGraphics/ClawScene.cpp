@@ -955,7 +955,15 @@ namespace workphone
             {
                 return false;
             }
-            if( materialRenderer ) jobs->captureMaterials( *materialRenderer, m_materialRecordWorkspace );
+            try
+            {
+                if( materialRenderer ) jobs->captureMaterials( *materialRenderer, m_materialRecordWorkspace );
+            }
+            catch( const std::bad_alloc & )
+            {
+                WP_LOG_WARNING( "Scene material record CPU budget denied; deferring publication." );
+                return false;
+            }
             const auto materialEnd = profile ? Clock::now() : Clock::time_point{};
             if( profile )
             {
@@ -1131,7 +1139,12 @@ namespace workphone
                 {
                     // Normally prepared with culling. A caller that explicitly
                     // disabled capture can still switch to DX11 before drawing.
-                    jobs->captureMaterials( *dx11Renderer, m_materialRecordWorkspace );
+                    try { jobs->captureMaterials( *dx11Renderer, m_materialRecordWorkspace ); }
+                    catch( const std::bad_alloc & )
+                    {
+                        WP_LOG_WARNING( "Scene material record CPU budget denied; deferring draw." );
+                        return;
+                    }
                     const auto foliage = getFoliageBatches();
                     const auto foliageMask =
                         m_scene->visibility_mask &

@@ -2,6 +2,7 @@
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_renderer.h"
 #include "workphone_graphics_shader.h"
+#include "workphone_graphics_memory_internal.h"
 #include <float.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@ typedef struct wp_material_callbacks
 
 struct wp_graphics_material
 {
+    wp_material_memory_callbacks memory;
     wp_graphics_material_values values;
     wp_u32 texture_name_mask[WP_MAT_NAME_MASK_WORDS];
     wp_c8 **texture_names;
@@ -32,13 +34,16 @@ struct wp_graphics_material
     wp_s32 is_dirty;
 };
 
+static const wp_material_memory_callbacks *wp_mat_memory( const wp_graphics_material *mat )
+{ return mat->memory.reserve ? &mat->memory : NULL; }
+
 /* Callback registration is an optional adapter. A failed allocation leaves the
    previous registration/revision intact; clearing callbacks never allocates. */
 static wp_material_callbacks *wp_mat_callbacks( wp_graphics_material *mat )
 {
     wp_material_callbacks *callbacks;
     if( mat->callbacks ) return mat->callbacks;
-    callbacks = (wp_material_callbacks *)malloc( sizeof( *callbacks ) );
+    callbacks = (wp_material_callbacks *)wp_graphics_memory_allocate( wp_mat_memory( mat ), sizeof( *callbacks ), 0 );
     if( !callbacks ) return NULL;
     memset( callbacks, 0, sizeof( *callbacks ) );
     mat->callbacks = callbacks;
@@ -50,7 +55,7 @@ static void wp_mat_trim_callbacks( wp_graphics_material *mat )
     if( mat->callbacks && !mat->callbacks->sync_func && !mat->callbacks->bind_func &&
         !mat->callbacks->release_func )
     {
-        free( mat->callbacks );
+        wp_graphics_memory_free( mat->callbacks );
         mat->callbacks = NULL;
     }
 }
@@ -218,12 +223,16 @@ static void wp_mat_sanitise( wp_graphics_material_values *out, const wp_graphics
 }
 
 wp_graphics_material *wp_graphics_material_create( void )
+{ return wp_graphics_material_create_budgeted( NULL ); }
+
+wp_graphics_material *wp_graphics_material_create_budgeted( const wp_material_memory_callbacks *callbacks )
 {
     wp_graphics_material *m;
-    m = (wp_graphics_material *)malloc( sizeof( *m ) );
+    m = (wp_graphics_material *)wp_graphics_memory_allocate( callbacks, sizeof( *m ), 0 );
     if( !m )
         return NULL;
     memset( m, 0, sizeof( *m ) );
+    if( callbacks ) m->memory = *callbacks;
     wp_graphics_material_values_init( &m->values );
     m->revision = 1u;
     m->is_dirty = 1;
@@ -247,7 +256,7 @@ wp_graphics_material *wp_graphics_material_clone( const wp_graphics_material *so
     wp_graphics_material *clone;
     if( !source )
         return NULL;
-    clone = wp_graphics_material_create();
+    clone = wp_graphics_material_create_budgeted( wp_mat_memory( source ) );
     if( clone && !wp_graphics_material_copy( clone, source ) )
     { wp_graphics_material_destroy( clone ); return NULL; }
     if( clone )
@@ -263,8 +272,8 @@ void wp_graphics_material_destroy( wp_graphics_material *mat )
     if( mat )
     {
         count = wp_mat_name_count( mat );
-        for( i = 0; i < count; ++i ) free( mat->texture_names[i] );
-        free( mat->texture_names );
+        for( i = 0; i < count; ++i ) wp_graphics_memory_free( mat->texture_names[i] );
+        wp_graphics_memory_free( mat->texture_names );
     }
     if( mat && mat->shader_program )
         wp_shader_program_destroy( mat->shader_program );
@@ -275,8 +284,8 @@ void wp_graphics_material_destroy( wp_graphics_material *mat )
         release_user_data = mat->callbacks->release_user_data;
         release_func( mat->native, release_user_data );
     }
-    if( mat ) free( mat->callbacks );
-    free( mat );
+    if( mat ) wp_graphics_memory_free( mat->callbacks );
+    wp_graphics_memory_free( mat );
 }
 
 wp_s32 wp_graphics_material_get_values( const wp_graphics_material *mat, wp_graphics_material_values *v )
@@ -363,7 +372,7 @@ wp_s32 wp_graphics_material_set_desc( wp_graphics_material *mat, const wp_graphi
             changed = 1;
             if( input.texture_names[i][0] )
             {
-                candidates[i] = (wp_c8 *)malloc( strlen( input.texture_names[i] ) + 1u );
+                candidates[i] = (wp_c8 *)wp_graphics_memory_allocate( wp_mat_memory( mat ), strlen( input.texture_names[i] ) + 1u, 0 );
                 if( !candidates[i] ) goto allocation_failed;
                 strcpy( candidates[i], input.texture_names[i] );
             }
@@ -371,7 +380,7 @@ wp_s32 wp_graphics_material_set_desc( wp_graphics_material *mat, const wp_graphi
     }
     if( changed && count )
     {
-        table = (wp_c8 **)malloc( count * sizeof( *table ) );
+        table = (wp_c8 **)wp_graphics_memory_allocate( wp_mat_memory( mat ), count * sizeof( *table ), 0 );
         if( !table ) goto allocation_failed;
         rank = 0u;
         for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
@@ -385,16 +394,16 @@ wp_s32 wp_graphics_material_set_desc( wp_graphics_material *mat, const wp_graphi
     {
         for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
             if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) )
-                free( wp_mat_texture_name( mat, i ) );
-        free( mat->texture_names );
+                wp_graphics_memory_free( wp_mat_texture_name( mat, i ) );
+        wp_graphics_memory_free( mat->texture_names );
         mat->texture_names = table;
         memcpy( mat->texture_name_mask, mask, sizeof( mask ) );
         wp_mat_touch( mat );
     }
     return 1;
 allocation_failed:
-    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) free( candidates[i] );
-    free( table );
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) wp_graphics_memory_free( candidates[i] );
+    wp_graphics_memory_free( table );
     return 0;
 }
 
@@ -588,14 +597,14 @@ void wp_graphics_material_set_texture_name( wp_graphics_material *m, wp_s32 laye
     candidate = NULL;
     if( clean[0] )
     {
-        candidate = (wp_c8 *)malloc( strlen( clean ) + 1u );
+        candidate = (wp_c8 *)wp_graphics_memory_allocate( wp_mat_memory( m ), strlen( clean ) + 1u, 0 );
         if( !candidate ) return;
         strcpy( candidate, clean );
     }
     rank = wp_mat_name_rank( m, layer );
     if( old && candidate )
     {
-        free( old );
+        wp_graphics_memory_free( old );
         m->texture_names[rank] = candidate;
         wp_mat_touch( m );
         return;
@@ -605,8 +614,8 @@ void wp_graphics_material_set_texture_name( wp_graphics_material *m, wp_s32 laye
     table = NULL;
     if( next_count )
     {
-        table = (wp_c8 **)malloc( next_count * sizeof( *table ) );
-        if( !table ) { free( candidate ); return; }
+        table = (wp_c8 **)wp_graphics_memory_allocate( wp_mat_memory( m ), next_count * sizeof( *table ), 0 );
+        if( !table ) { wp_graphics_memory_free( candidate ); return; }
     }
     if( rank ) memcpy( table, m->texture_names, rank * sizeof( *table ) );
     if( candidate )
@@ -620,8 +629,8 @@ void wp_graphics_material_set_texture_name( wp_graphics_material *m, wp_s32 laye
         tail = count - rank - 1u;
         if( tail ) memcpy( table + rank, m->texture_names + rank + 1u, tail * sizeof( *table ) );
     }
-    free( old );
-    free( m->texture_names );
+    wp_graphics_memory_free( old );
+    wp_graphics_memory_free( m->texture_names );
     m->texture_names = table;
     bit = (wp_u32)1u << ( layer % 32 );
     if( candidate ) m->texture_name_mask[layer / 32] |= bit;

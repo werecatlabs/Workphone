@@ -16,6 +16,7 @@
 #define WORKPHONE_GRAPHICS_MESH_H
 
 #include <stdint.h>
+#include "workphone_graphics_memory.h"
 #include "workphone_vector.h"
 #include "workphone_graphics_vertex.h"
 #include "workphone_graphics_object.h"
@@ -37,12 +38,7 @@ typedef struct wp_graphics_material wp_graphics_material;
  * scratch, zero for storage retained by the mesh. The reservation is released
  * only after its physical allocation is freed, including replacement overlap.
  * Callbacks must not throw. user must outlive decoding and all resulting meshes. */
-typedef struct wp_mesh_memory_callbacks
-{
-    void *user;
-    void *( *reserve )( void *user, wp_u64 bytes, wp_s32 working );
-    void ( *release )( void *reservation );
-} wp_mesh_memory_callbacks;
+typedef wp_graphics_memory_callbacks wp_mesh_memory_callbacks;
 
 /* -------------------------------------------------------------------------
  * Vertex structs

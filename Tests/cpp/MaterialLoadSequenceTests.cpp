@@ -53,6 +53,7 @@
 #include "MaterialPassStorageReference.hpp"
 #include "MaterialTextureColdStorageContracts.hpp"
 #include "ClawMaterialResidencyContracts.hpp"
+#include "ClawMaterialMetadataBudgetContracts.hpp"
 
 namespace
 {
@@ -3764,6 +3765,7 @@ int main( int argc, char **argv )
         Fixture fixture;
         material_texture_cold_contracts::run();
         claw_material_residency_contracts::run( fixture );
+        claw_material_metadata_budget_contracts::run();
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-owned-storage" )
         {
             runOwnedStorageInventory( fixture, 10000 );
