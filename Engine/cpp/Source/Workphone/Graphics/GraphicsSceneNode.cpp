@@ -134,7 +134,14 @@ namespace workphone::render
 
     Transform3<real_Num> GraphicsSceneNode::getTransform() const
     {
-        if( SafeReadPtr<TransformStateData> transformStateData = m_transformStateData.load() )
+        auto data = m_transformStateData.load();
+        if( !data )
+            if( auto context = getStateContext() )
+            {
+                auto stateData = context->getStateDataById<TransformStateData>( getId() );
+                data = stateData.get();
+            }
+        if( SafeReadPtr<TransformStateData> transformStateData = data )
         {
             return transformStateData->localTransform;
         }
@@ -144,12 +151,19 @@ namespace workphone::render
 
     void GraphicsSceneNode::setTransform( const Transform3<real_Num> &t )
     {
-        if( SafePtr<TransformStateData> transformStateData = m_transformStateData.load() )
+        auto data = m_transformStateData.load();
+        if( !data )
+            if( auto context = getStateContext() )
+            {
+                auto stateData = context->getStateDataById<TransformStateData>( getId() );
+                data = stateData.get();
+            }
+        if( SafePtr<TransformStateData> transformStateData = data )
         {
             transformStateData->localTransform = t;
 
             auto state = transformStateData->getOwner();
-            state->setDirty( true );
+            if( state ) state->setDirty( true );
         }
     }
 

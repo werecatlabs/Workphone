@@ -48,13 +48,20 @@ namespace workphone::scene
             if( m_manifestPath.empty() ) { m_streamer.reset(); return; }
             const auto path = Path::isPathAbsolute( m_manifestPath ) ? m_manifestPath :
                 Path::lexically_normal( app->getProjectPath(), m_manifestPath );
-            auto candidate = std::make_unique<SceneWorldStreamer>();
             String error;
-            if( !candidate->open( path, actor->getScene(), m_options, error ) )
+            if( m_streamer && m_streamer->isOpen() && m_openPath == path )
             {
-                m_error = error; WP_LOG_ERROR( "WorldStreaming: " + error ); return;
+                if( !m_streamer->open( path, actor->getScene(), m_options, error ) )
+                { m_error = error; WP_LOG_ERROR( "WorldStreaming: " + error ); return; }
             }
-            m_streamer = std::move( candidate ); m_openPath = path;
+            else
+            {
+                auto candidate = std::make_unique<SceneWorldStreamer>();
+                if( !candidate->open( path, actor->getScene(), m_options, error ) )
+                { m_error = error; WP_LOG_ERROR( "WorldStreaming: " + error ); return; }
+                m_streamer = std::move( candidate );
+            }
+            m_openPath = path;
         }
         if( !m_streamer || !m_streamer->isOpen() ) return;
         auto observer = m_observer.lock();
@@ -80,12 +87,12 @@ namespace workphone::scene
         p->setProperty( "Install Milliseconds", m_options.installMilliseconds );
         p->setProperty( "Preview Editor Camera", m_previewEditorCamera );
         p->setPropertyAsType( "Observer", m_observer.lock() );
-        p->setProperty( "Streaming Error", m_error );
+        p->setProperty( "Streaming Error", m_error, true );
         auto stats = statistics();
-        p->setProperty( "Resident Actors", stats.residentActors );
-        p->setProperty( "Resident Cells", stats.residentCells );
-        p->setProperty( "Pending Cells", stats.pendingCells );
-        p->setProperty( "Resident Source Bytes", stats.residentSourceBytes );
+        p->setProperty( "Resident Actors", stats.residentActors, true );
+        p->setProperty( "Resident Cells", stats.residentCells, true );
+        p->setProperty( "Pending Cells", stats.pendingCells, true );
+        p->setProperty( "Resident Source Bytes", stats.residentSourceBytes, true );
         return p;
     }
 

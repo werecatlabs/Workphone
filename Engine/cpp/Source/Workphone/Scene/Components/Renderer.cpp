@@ -87,10 +87,11 @@ namespace workphone::scene
                 {
                     updateVisibility();
                 }
-                else if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagStatic ) !=
-                         BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagStatic ) )
+                if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagStatic ) !=
+                    BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagStatic ) )
                 {
                     updateStatic();
+                    updateTransform();
                 }
             }
         }
@@ -497,6 +498,7 @@ namespace workphone::scene
             else if( eventValue == staticChanged )
             {
                 updateStatic();
+                updateTransform();
             }
         }
 
@@ -608,6 +610,11 @@ namespace workphone::scene
     void Renderer::setGraphicsNode( SmartPtr<render::IGraphicsSceneNode> graphicshNode )
     {
         m_graphicsNode = graphicshNode;
+        if( graphicshNode )
+        {
+            updateStatic();
+            updateTransform();
+        }
     }
 
     AABB3<real_Num> Renderer::getBoundingBox() const

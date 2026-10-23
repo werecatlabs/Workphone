@@ -43,6 +43,12 @@ namespace workphone
 
             void setWorldTransform( const Transform3<real_Num> &transform ) override;
             Transform3<real_Num> getWorldTransform() const override;
+            void setPosition( const Vector3<real_Num> &position ) override;
+            void setOrientation( const Quaternion<real_Num> &orientation ) override;
+            void setScale( const Vector3<real_Num> &scale ) override;
+            Vector3<real_Num> getWorldPosition() const override;
+            Quaternion<real_Num> getWorldOrientation() const override;
+            Vector3<real_Num> getWorldScale() const override;
 
             void setParent( SmartPtr<IGraphicsSceneNode> parent ) override;
 

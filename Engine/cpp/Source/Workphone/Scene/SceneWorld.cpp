@@ -81,6 +81,9 @@ namespace workphone::scene
         {
             bool safe = true, mesh = false;
             visit( node, [&]( const Properties &p ) {
+                bool smooth = false;
+                p.getPropertyValue( GameActorUtil::smoothMotionStr, smooth );
+                if( smooth ) safe = false;
                 String type;
                 if( p.getPropertyValue( GameActorUtil::componentTypeStr, type ) && !type.empty() )
                 {
@@ -160,6 +163,10 @@ namespace workphone::scene
             // layer. Do not replace a working UUID graph with unresolved pointers.
             std::unordered_map<std::string, u32> references;
             visit( scene, [&]( const Properties &p ) {
+                String type;
+                if( p.getPropertyValue( GameActorUtil::componentTypeStr, type ) &&
+                    ( type == "WorldStreaming" || type == "workphone::scene::WorldStreaming" ) )
+                    throw std::runtime_error( "Cook the source scene, not an existing world streaming bootstrap" );
                 for( const auto &property : p.getPropertiesAsArray() )
                     if( property.getName() != GameActorUtil::uuidStr )
                         ++references[property.getValue().c_str()];
@@ -180,11 +187,16 @@ namespace workphone::scene
                         references.count( uuid.c_str() ) ) referenced = true;
                 } );
                 const auto children = actor.getChildrenByName( GameActorUtil::childStr );
+                bool enabled = true, visible = true, smooth = false;
+                actor.getPropertyValue( GameActorUtil::enabledStr, enabled );
+                actor.getPropertyValue( "visible", visible );
+                actor.getPropertyValue( GameActorUtil::smoothMotionStr, smooth );
                 const bool componentless = actor.getChildrenByName( GameActorUtil::componentStr ).empty() &&
                                            actor.getChildrenByName( GameActorUtil::componentsStr ).empty();
                 // Explicit conversion may flatten render-only grouping nodes;
                 // unknown components, references and gameplay groups stay intact.
-                if( options.convertRenderOnlyLeaves && componentless && !children.empty() && !referenced )
+                if( options.convertRenderOnlyLeaves && componentless && !children.empty() && !referenced &&
+                    enabled && visible && !smooth )
                 {
                     for( const auto &child : children ) partition( *child, world );
                     return;

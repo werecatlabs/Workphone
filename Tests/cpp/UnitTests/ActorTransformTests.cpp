@@ -70,6 +70,10 @@ namespace
 
         actor->setName( name );
         guard.scene->addActor( actor );
+        // These are synchronous transform contracts. Task FPS gates must not
+        // decide whether a newly created actor has left its creation state.
+        setupPrimaryThread();
+        actor->setState( scene::IGameActor::State::Play );
         return actor;
     }
 

@@ -277,14 +277,6 @@ namespace workphone::scene
                         {
                             try
                             {
-                                for( auto &t : m_transforms )
-                                {
-                                    if( t )
-                                    {
-                                        t->update();
-                                    }
-                                }
-
                                 if( !m_loadingActors.empty() )
                                 {
                                     SmartPtr<IGameActor> actor;
@@ -414,7 +406,17 @@ namespace workphone::scene
                                 for( u32 count = 0; count < 2048 &&
                                      m_dirtyActorTransforms.try_pop( pendingTransform ); ++count )
                                 {
-                                    if( pendingTransform ) queueTransform( pendingTransform->getActor() );
+                                    if( pendingTransform && pendingTransform->isLoaded() &&
+                                        ( pendingTransform->isDirty() || pendingTransform->isLocalDirty() ) )
+                                    {
+                                        auto actor = pendingTransform->getActor();
+                                        if( actor && actor->isLoaded() &&
+                                            ( actor->getState() == IGameActor::State::Edit ||
+                                              actor->getState() == IGameActor::State::Play ) )
+                                            queueTransform( actor );
+                                        else
+                                            pendingTransform->update();
+                                    }
                                 }
 
                                 if( !m_dirtyActors.empty() )
@@ -447,7 +449,9 @@ namespace workphone::scene
                                     auto parent = actor->getParent();
                                     for( u32 depth = 0; parent && depth < WP_MAX_ACTORS; ++depth )
                                     {
-                                        if( queuedTransforms.count( parent.get() ) )
+                                        const auto parentState = parent->getState();
+                                        if( queuedTransforms.count( parent.get() ) && parent->isLoaded() &&
+                                            ( parentState == IGameActor::State::Edit || parentState == IGameActor::State::Play ) )
                                         {
                                             covered = true;
                                             break;

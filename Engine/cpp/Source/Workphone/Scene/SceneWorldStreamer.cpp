@@ -172,11 +172,24 @@ namespace workphone::scene
             limits.maximumReadyBytes = options.maximumDecodedCellBytes * 4;
             auto producer = s.scheduler->createProducer( limits, error );
             if( !producer ) return false;
+            auto concrete = dynamic_cast<GameScene *>( scene.get() );
+            const auto generation = concrete ? concrete->getLoadGeneration() : 0;
+            if( s.producer && s.path == path && s.scene == scene && s.sceneGeneration == generation &&
+                s.manifest.generation == manifest.generation )
+            {
+                // Editing radii/budgets is not a new world session. Retain live
+                // actors, promoted cells and state overlays across configuration.
+                s.producer->drain(); s.producer = std::move( producer );
+                s.ready.clear(); s.demand.clear(); s.failed.clear(); s.failure.clear();
+                s.refreshRequests = false; s.options = options;
+                s.manifest = std::move( manifest ); s.manifestBudget = std::move( budget );
+                s.stats.manifestBytes = size;
+                return true;
+            }
             close();
             s.path = path; s.manifest = std::move( manifest ); s.options = options;
             s.manifestBudget = std::move( budget ); s.producer = std::move( producer ); s.scene = scene;
-            auto concrete = dynamic_cast<GameScene *>( scene.get() );
-            s.sceneGeneration = concrete ? concrete->getLoadGeneration() : 0;
+            s.sceneGeneration = generation;
             s.stats = {}; s.stats.manifestBytes = size;
             return true;
         }
@@ -337,7 +350,13 @@ namespace workphone::scene
                             pause = std::make_unique<TaskLock>( renderTask );
                     resident.actors = GameActorUtil::loadSceneActors(
                         resident.source->getChildrenByName( ApplicationUtil::actorsStr ), s.scene );
-                    for( const auto &actor : resident.actors ) s.scene->addActor( actor );
+                    for( auto actor : resident.actors )
+                    {
+                        // Save the world reference, not a duplicate of whichever
+                        // neighborhood happened to be resident in the Editor.
+                        actor->setFlag( IGameActor::ActorFlagDontSave, true );
+                        s.scene->addActor( actor );
+                    }
                     resident.baseline = fingerprint( *s.snapshot( resident ) );
                     s.residents.emplace( cell.key, std::move( resident ) );
                     ++s.stats.installedCells; ++installed;

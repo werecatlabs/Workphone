@@ -148,6 +148,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::Material::MaterialStateListener>();
         FactoryUtil::addFactory<scene::Mesh>();
         FactoryUtil::addFactory<scene::MeshRenderer>();
+        FactoryUtil::addFactory<scene::WorldStreaming>();
         FactoryUtil::addFactory<scene::NetworkListener>();
         FactoryUtil::addFactory<scene::NetworkView>();
         FactoryUtil::addFactory<scene::ParticleSystem>();

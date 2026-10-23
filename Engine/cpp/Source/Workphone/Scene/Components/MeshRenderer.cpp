@@ -343,12 +343,7 @@ namespace workphone::scene
 
     void MeshRenderer::setMeshNode( SmartPtr<render::IGraphicsSceneNode> meshNode )
     {
-        m_graphicsNode = meshNode;
-        if( meshNode )
-        {
-            updateStatic();
-            updateTransform();
-        }
+        setGraphicsNode( meshNode );
     }
 
     Parameter MeshRenderer::handleEvent( EventType eventType, hash_type eventValue,

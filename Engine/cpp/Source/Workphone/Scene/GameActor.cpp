@@ -1016,24 +1016,20 @@ namespace workphone::scene
 
             if( m_childrenHead )
             {
-                ScopedLock lock( &m_childrenMutex, false );
-
-                for( auto child = m_childrenHead; child != nullptr; child = child->nextChild.load() )
-                {
-                    child->updateTransform();
-                }
+                // Callbacks can acquire the graphics lock, while render/editor
+                // capture reads this hierarchy. Retain a snapshot and release
+                // membership locks before crossing that ownership boundary.
+                auto children = snapshotChildren();
+                for( auto child : children )
+                    if( child->getParentPtr() == this ) child->updateTransform();
             }
 
             const auto worldRevision = storage.revisions( handle ).world;
             if( m_componentsHead && ( !stationary || dirty || m_staticWorldRevision != worldRevision ) )
             {
-                ScopedLock lock( &m_componentsMutex, false );
-
-                for( auto component = m_componentsHead; component != nullptr;
-                     component = component->m_next.load() )
-                {
-                    component->updateTransform();
-                }
+                auto components = snapshotComponents();
+                for( auto component : components )
+                    if( component->getActorPtr() == this ) component->updateTransform();
             }
             m_staticWorldRevision = worldRevision;
             storage.acknowledgeSubtree( handle, before.subtree );
@@ -1306,6 +1302,15 @@ namespace workphone::scene
                 parentTransform ? parentTransform->storageHandle() : TransformSystem::Handle{} );
             concrete->setDirty( true, false );
         }
+        auto concrete = dynamic_cast<Transform *>( transform.get() );
+        const auto handle = concrete ? concrete->storageHandle() : TransformSystem::Handle{};
+        ScopedLock childrenLock( &m_childrenMutex, false );
+        for( auto child = m_childrenHead; child != nullptr; child = child->nextChild.load() )
+            if( auto childTransform = dynamic_cast<Transform *>( child->getTransformPtr() ) )
+            {
+                TransformSystem::instance().setParent( childTransform->storageHandle(), handle );
+                childTransform->setDirty( true, false );
+            }
     }
 
     void GameActor::applyCollisionMaskToComponent( SmartPtr<IComponent> component, bool force )
