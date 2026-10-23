@@ -1934,6 +1934,160 @@ namespace
         material->setCubicTextures({});
     }
 
+    void runTextureNameStorage( Fixture &fixture )
+    {
+        using namespace render;
+        class UnitProbe : public ClawMaterialTexture
+        {
+        public:
+            const String *pendingName() const { return m_unresolvedTextureName.get(); }
+        };
+        class TextureProbe : public ClawTexture
+        {
+        public:
+            unsigned loads = 0;
+            void load( SmartPtr<ISharedObject> ) override
+            {
+                ++loads;
+                setLoadingState( LoadingState::Loaded );
+            }
+        };
+        class DatabaseProbe : public ResourceDatabase
+        {
+        public:
+            SmartPtr<ITexture> resolved;
+            unsigned lookups = 0;
+            SmartPtr<IResource> loadResource( const String & ) override
+            {
+                ++lookups;
+                return resolved;
+            }
+            SmartPtr<IResource> loadResourceById( const workphone::UUID & ) override { return resolved; }
+        };
+        struct RestoreServices
+        {
+            Fixture &fixture;
+            ~RestoreServices()
+            {
+                fixture.app->setResourceDatabase( fixture.resources );
+                fixture.app->setGraphicsSystem( fixture.graphics );
+            }
+        } restore{ fixture };
+        auto database = make_ptr<DatabaseProbe>();
+        fixture.app->setResourceDatabase( database );
+        auto unit = make_ptr<UnitProbe>();
+        require( sizeof( ClawMaterialTexture ) == sizeof( MaterialTexture ) &&
+                 unit->getTextureName().empty() && unit->getUnresolvedTextureNameObjectBytes() == 0,
+                 "empty texture units have no derived name copy or cold name allocation" );
+        for( const auto &name : { String( "missing.png" ), String( 512, 'x' ),
+                                  String( u8"Textures/石/é.png" ), String( "a\0b", 3 ) } )
+        {
+            unit->setTextureName( name );
+            auto pending = unit->pendingName();
+            const auto lookups = database->lookups;
+            unit->setTextureName( name );
+            require( unit->getTextureName() == name && !unit->getTexture() &&
+                     unit->getUnresolvedTextureNameObjectBytes() == sizeof( String ) &&
+                     unit->pendingName() == pending && database->lookups == lookups + 1,
+                     "unresolved names retain exact bytes and retry lookup without replacing cold storage" );
+            auto properties = unit->getProperties();
+            require( properties->getProperty( IMaterialTexture::texturePathStr ) == name,
+                     "Claw properties preserve unresolved texture names" );
+            auto cloned = make_ptr<ClawMaterialTexture>();
+            cloned->fromData( unit->toData() );
+            require( cloned->getTextureName() == name && !cloned->getTexture(),
+                     "Claw texture descriptors round-trip unresolved names" );
+            auto base = make_ptr<MaterialTexture>();
+            base->fromData( unit->MaterialTexture::toData() );
+            require( base->getTextureName() == name && !base->getTexture(),
+                     "base descriptors preserve unresolved texture path fallbacks" );
+            unit->load( nullptr ); unit->unload( nullptr );
+            require( unit->getTextureName() == name, "unresolved authoring survives load/unload" );
+        }
+        auto texture = make_ptr<TextureProbe>();
+        texture->setFilePath( "Textures/Resolved.png" );
+        texture->setName( "ResolvedTexture" );
+        database->resolved = texture;
+        unit->setTextureName( unit->getTextureName() );
+        require( unit->getTexture() == texture && texture->loads == 1 &&
+                 !unit->pendingName() && unit->getTextureName() == texture->getFilePath(),
+                 "later resource availability resolves pending names and retires cold storage" );
+        auto pass = make_ptr<ClawMaterialPass>();
+        pass->addTextureUnit( unit ); pass->load( nullptr );
+        auto snapshot = [&] {
+            return pass->getStateContext()->getStateDataById<MaterialPassStateData>( pass->getId() )->getRenderState();
+        };
+        const auto bound = snapshot();
+        for( int i = 0; i < 32; ++i ) unit->setTextureName( "Textures/Resolved.png" );
+        require( snapshot() == bound && texture->loads == 1 && !unit->pendingName(),
+                 "repeated resolved names retain one binding without intermediate null publications" );
+        texture->setFilePath( "Textures/Renamed.png" );
+        require( unit->getTextureName() == "Textures/Renamed.png" &&
+                 static_pointer_cast<Properties>( unit->MaterialTexture::toData() )->getProperty( "texturePath" ) == "Textures/Renamed.png" &&
+                 unit->getProperties()->getProperty( MaterialTexture::textureStr ) == texture->getHandle()->getUUIDAsString() &&
+                 snapshot() == bound, "bound names follow the resource without changing the render binding" );
+        texture->setFilePath( "" );
+        require( unit->getTextureName() == "ResolvedTexture", "bound names fall back to the resource name" );
+        auto baseProperties = unit->MaterialTexture::getProperties();
+        require( baseProperties->getProperty( IMaterialTexture::texturePathStr ) == texture->getHandle()->getUUIDAsString(),
+                 "base editor resource-identifier property schema is preserved" );
+        auto replacement = make_ptr<TextureProbe>();
+        replacement->setFilePath( "Textures/Replacement.png" );
+        database->resolved = replacement;
+        unit->setTextureName( "Textures/Replacement.png" );
+        const auto replaced = snapshot();
+        require( replaced->revision == bound->revision + 1 && replaced->textures[0] == replacement &&
+                 bound->textures[0] == texture && !unit->pendingName(),
+                 "named replacement publishes once and preserves retained resource ownership" );
+        database->resolved = nullptr;
+        unit->setTextureName( "Textures/Unavailable.png" );
+        const auto missing = snapshot();
+        unit->setTextureName( "Textures/Unavailable.png" );
+        require( missing->revision == replaced->revision + 1 && !missing->textures[0] &&
+                 replaced->textures[0] == replacement && snapshot() == missing,
+                 "unresolved replacement clears the binding once and keeps retained snapshots valid" );
+        unit->MaterialTexture::setTexture( texture );
+        require( !unit->pendingName() && unit->getTextureName() == "ResolvedTexture",
+                 "base-qualified binding clears the same unresolved name owner" );
+        unit->MaterialTexture::setTexture( nullptr );
+        require( unit->getTextureName().empty() && !unit->pendingName(),
+                 "base-qualified clear cannot resurrect an obsolete authored name" );
+        unit->setTextureName( "Pending" ); unit->setTextureName( "" );
+        require( !unit->pendingName() && unit->getTextureName().empty(), "empty name releases cold storage" );
+        auto base = make_ptr<MaterialTexture>();
+        database->resolved = texture; texture->setLoadingState( LoadingState::Unloaded );
+        base->setTextureName( "ResolvedTexture" );
+        require( base->getTexture() == texture && texture->loads == 1 &&
+                 base->getUnresolvedTextureNameObjectBytes() == 0, "base name adapter preserves deferred loading" );
+        auto descriptor = unit->MaterialTexture::textureToData( texture );
+        base->setTexture( nullptr ); base->fromData( descriptor );
+        require( base->getTexture() == texture && texture->loads == 2 &&
+                 base->getUnresolvedTextureNameObjectBytes() == 0, "UUID restore retains resource ownership without a name copy" );
+        auto unloaded = make_ptr<ClawMaterialTexture>();
+        unloaded->setTexture( texture ); unloaded->setLoadingState( LoadingState::Loaded );
+        unloaded->unload( nullptr );
+        require( !unloaded->getTexture() && unloaded->getTextureName() == "ResolvedTexture" &&
+                 unloaded->getUnresolvedTextureNameObjectBytes() == sizeof( String ),
+                 "released resolved resources hand their authoring name to cold storage during unload" );
+        unloaded->setTexture( texture );
+        require( unloaded->getUnresolvedTextureNameObjectBytes() == 0,
+                 "rebinding after unload retires the retained authoring name" );
+        unloaded->setTexture( nullptr );
+        fixture.app->setResourceDatabase( nullptr ); fixture.app->setGraphicsSystem( nullptr );
+        base->setTextureName( "Offline/Pending.png" );
+        auto offline = make_ptr<MaterialTexture>();
+        offline->fromData( base->toData() );
+        require( offline->getTextureName() == "Offline/Pending.png" && !offline->getTexture(),
+                 "detached descriptors preserve unresolved paths before graphics/database startup" );
+        // Restore graphics before releasing the attached pass.
+        fixture.app->setGraphicsSystem( fixture.graphics );
+        pass->unload( nullptr );
+        std::cout << "texture_name_storage base_unit_bytes=" << sizeof( MaterialTexture )
+                  << " claw_unit_bytes=" << sizeof( ClawMaterialTexture )
+                  << " empty_or_resolved_cold_object_bytes=0 unresolved_string_object_bytes=" << sizeof( String )
+                  << " string_capacity_and_allocator_overhead_excluded=1\n";
+    }
+
     void runLazyTextureUnits(Fixture &fixture)
     {
         using namespace render;
@@ -3364,6 +3518,7 @@ int main( int argc, char **argv )
             benchmarkCubicTexturePublications();
             return 0;
         }
+        runTextureNameStorage(fixture);
         runLazyTextureUnits(fixture);
         runCapturedMaterialRecords( fixture );
         runCapturedDrawSorting( fixture );

@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Graphics/IMaterialTexture.hpp>
 #include <Workphone/Graphics/MaterialNode.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
+#include <memory>
 
 namespace workphone
 {
@@ -118,6 +119,9 @@ namespace workphone
              * @param name Texture asset name or path.
              */
             void setTextureName( const String &name ) override;
+
+            /** Cold unresolved-name object bytes; excludes string capacity and allocator overhead. */
+            size_t getUnresolvedTextureNameObjectBytes() const;
 
             /**
              * @copydoc IMaterialTexture::getTexture
@@ -238,6 +242,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            /** Resolve before publishing; Claw also requests an immediate resource load. */
+            void setTextureNameImpl( const String &name, bool loadResource );
+
             /**
              * @brief Create renderer-specific texture unit state.
              *
@@ -259,6 +266,9 @@ namespace workphone
 
             /** @brief The texture resource assigned to this material texture node. */
             AtomicSmartPtr<ITexture> m_texture;
+
+            /** Bound names belong to the resource. Only unresolved authoring names need storage. */
+            std::unique_ptr<String> m_unresolvedTextureName;
 
             /**
              * @brief Renderer-specific texture type identifier.

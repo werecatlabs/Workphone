@@ -21,7 +21,7 @@ namespace workphone::scene
     class WPCore_API TransformSystem final
     {
     public:
-        struct Handle
+        struct WPCore_API Handle
         {
             static constexpr u32 invalidIndex = static_cast<u32>( -1 );
 

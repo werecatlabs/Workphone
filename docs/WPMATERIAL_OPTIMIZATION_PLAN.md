@@ -24,6 +24,8 @@ Native name storage continuation: the C material's descriptor-slot name pointers
 
 Pass string continuation: optional shader names, path and keywords now use a single packed text allocation rather than five maximum-sized fixed buffers. Empty fields use schema defaults and the last clear frees the allocation; existing bounded accessors and serialized keys remain. See implementation status for storage and validation evidence.
 
+Texture-unit name continuation: bound names now come from the texture resource rather than a second inline Claw string. Only unresolved paths retain an optional string in the shared base owner. Named resolution publishes the resulting resource directly, and base-qualified binding/clear calls retire pending names consistently. Unresolved descriptors and unload paths retain authoring names; base resource-picker properties and Claw path properties keep their existing schemas. See implementation status for object inventory, cold-allocation tradeoffs and validation; M4 remains partial.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.

@@ -87,9 +87,7 @@ namespace workphone::render
 
         WP_CLASS_REGISTER_DECL;
 
-    protected:
-        String m_textureName;          ///< Path or name of the texture resource.
-        // Texture, transform, tint, type and animator have one owner in MaterialTexture.
+        // Resource, unresolved name, transform, tint, type and animator belong to MaterialTexture.
     };
 }  // namespace workphone::render
 

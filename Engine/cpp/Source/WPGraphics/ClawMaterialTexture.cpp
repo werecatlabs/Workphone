@@ -15,33 +15,12 @@ namespace workphone::render
 
     String ClawMaterialTexture::getTextureName() const
     {
-        return m_textureName;
+        return MaterialTexture::getTextureName();
     }
 
     void ClawMaterialTexture::setTextureName( const String &name )
     {
-        m_textureName = name;
-        MaterialTexture::setTexture( nullptr );
-        if( StringUtil::isNullOrEmpty( name ) )
-        {
-            return;
-        }
-
-        if( auto applicationManager = core::IApplicationManager::instancePtr() )
-        {
-            if( auto database = applicationManager->getResourceDatabase() )
-            {
-                auto texture = database->loadResourceByType<ITexture>( name );
-                if( texture && !texture->isLoaded() )
-                {
-                    texture->load( nullptr );
-                }
-                if( texture )
-                {
-                    setTexture( texture );
-                }
-            }
-        }
+        setTextureNameImpl( name, true );
     }
 
     SmartPtr<ITexture> ClawMaterialTexture::getTexture() const
@@ -52,18 +31,6 @@ namespace workphone::render
     void ClawMaterialTexture::setTexture( SmartPtr<ITexture> texture )
     {
         MaterialTexture::setTexture( texture );
-        if( texture )
-        {
-            m_textureName = texture->getFilePath();
-            if( StringUtil::isNullOrEmpty( m_textureName ) )
-            {
-                m_textureName = texture->getName();
-            }
-        }
-        else
-        {
-            m_textureName = String();
-        }
     }
 
     void ClawMaterialTexture::setScale( const Vector3<real_Num> &scale )
@@ -110,7 +77,7 @@ namespace workphone::render
     SmartPtr<Properties> ClawMaterialTexture::getProperties() const
     {
         auto props = workphone::make_ptr<Properties>();
-        props->setProperty( IMaterialTexture::texturePathStr, m_textureName );
+        props->setProperty( IMaterialTexture::texturePathStr, getTextureName() );
         props->setProperty( IMaterialTexture::scaleStr, m_scale );
         props->setProperty( IMaterialTexture::tintStr, m_tint );
         props->setProperty( IMaterialTexture::textureTypeStr, m_textureType );

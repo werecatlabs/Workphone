@@ -82,6 +82,14 @@ namespace workphone::render
             const auto &loadingState = getLoadingState();
             if( loadingState != LoadingState::Unloaded )
             {
+                // Once the resource reference is released, retain its authoring path
+                // as an unresolved name, matching Claw's previous unload behavior.
+                if( m_texture )
+                {
+                    auto name = getTextureName();
+                    if( !name.empty() )
+                        m_unresolvedTextureName = std::make_unique<String>( name );
+                }
                 m_animator = nullptr;
                 m_texture = nullptr;
                 MaterialNode<IMaterialTexture>::unload( data );
@@ -97,23 +105,48 @@ namespace workphone::render
     {
         if( auto texture = getTexture() )
         {
-            return texture->getFilePath();
+            auto path = texture->getFilePath();
+            return path.empty() ? texture->getName() : path;
         }
 
-        return {};
+        return m_unresolvedTextureName ? *m_unresolvedTextureName : String();
     }
 
     void MaterialTexture::setTextureName( const String &texturePath )
+    {
+        setTextureNameImpl( texturePath, false );
+    }
+
+    size_t MaterialTexture::getUnresolvedTextureNameObjectBytes() const
+    {
+        return m_unresolvedTextureName ? sizeof( String ) : 0;
+    }
+
+    void MaterialTexture::setTextureNameImpl( const String &texturePath, bool loadResource )
     {
         if( texturePath.empty() )
         {
             setTexture( nullptr );
             return;
         }
-        auto applicationManager = core::IApplicationManager::instance();
+        auto applicationManager = core::IApplicationManager::instancePtr();
         auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
-        setTexture( resourceDatabase ? resourceDatabase->loadResourceByType<ITexture>( texturePath )
-                                     : nullptr );
+        auto texture = resourceDatabase ? resourceDatabase->loadResourceByType<ITexture>( texturePath )
+                                        : nullptr;
+        if( texture )
+        {
+            if( loadResource && !texture->isLoaded() )
+                texture->load( nullptr );
+            // Do not publish an intermediate null binding when resolution succeeds.
+            setTexture( texture );
+            return;
+        }
+        // Retry resource resolution above even for unchanged unresolved names.
+        if( m_unresolvedTextureName && *m_unresolvedTextureName == texturePath )
+            return;
+        auto unresolved = std::make_unique<String>( texturePath );
+        setTexture( nullptr );
+        m_unresolvedTextureName = std::move( unresolved );
     }
 
     auto MaterialTexture::getTexture() const -> SmartPtr<ITexture>
@@ -123,6 +156,7 @@ namespace workphone::render
 
     void MaterialTexture::setTexture( SmartPtr<ITexture> texture )
     {
+        m_unresolvedTextureName.reset();
         m_texture = texture;
         if( auto parent = dynamic_pointer_cast<MaterialPass>( getParent() ) )
             parent->updateRenderTexture( this, texture );
@@ -160,7 +194,10 @@ namespace workphone::render
 
     auto MaterialTexture::toData() const -> SmartPtr<ISharedObject>
     {
-        return textureToData(getTexture());
+        auto properties = textureToData( getTexture() );
+        if( properties )
+            properties->setProperty( "texturePath", getTextureName() );
+        return properties;
     }
 
     SmartPtr<Properties> MaterialTexture::textureToData(SmartPtr<ITexture> texture)
@@ -195,60 +232,41 @@ namespace workphone::render
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-            WP_ASSERT( graphicsSystem );
-
+            auto properties = workphone::dynamic_pointer_cast<Properties>( data );
+            if( !properties )
+                return;
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystem() : nullptr;
             ScopedLock lock( graphicsSystem );
-
-            auto properties = workphone::static_pointer_cast<Properties>( data );
-
-            auto resourceDatabase = applicationManager->getResourceDatabase();
-            if( !resourceDatabase )
+            auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
+            auto sTextureUUID = properties->getProperty( MaterialTexture::textureStr );
+            // Older material files stored a texture path in the texture field.
+            // Only parse identifiers here; retain legacy paths as a fallback.
+            const auto isUUID = sTextureUUID.size() == 36u && sTextureUUID[8] == '-' &&
+                                sTextureUUID[13] == '-' && sTextureUUID[18] == '-' &&
+                                sTextureUUID[23] == '-';
+            if( resourceDatabase && isUUID )
             {
-                WP_LOG( "Resource database null." );
+                auto uuid = StringUtil::parseUUID( sTextureUUID );
+                if( auto textureResource = resourceDatabase->loadResourceById( uuid ) )
+                {
+                    auto texture = workphone::static_pointer_cast<ITexture>( textureResource );
+
+                    if( !texture->isLoaded() )
+                    {
+                        texture->load( nullptr );
+                    }
+
+                    setTexture( texture );
+                }
             }
-
-            if( resourceDatabase )
+            if( !getTexture() )
             {
-                auto sTextureUUID = properties->getProperty( MaterialTexture::textureStr );
-                // Older material files stored a texture path in the texture field.
-                // Only parse identifiers here; retain legacy paths as a fallback.
-                const auto isUUID = sTextureUUID.size() == 36u && sTextureUUID[8] == '-' &&
-                                    sTextureUUID[13] == '-' && sTextureUUID[18] == '-' &&
-                                    sTextureUUID[23] == '-';
-                if( isUUID )
-                {
-                    auto uuid = StringUtil::parseUUID( sTextureUUID );
-                    if( auto textureResource = resourceDatabase->loadResourceById( uuid ) )
-                    {
-                        auto texture = workphone::static_pointer_cast<ITexture>( textureResource );
-
-                        if( !texture->isLoaded() )
-                        {
-                            texture->load( nullptr );
-                        }
-
-                        setTexture( texture );
-                    }
-                }
-                if( !getTexture() )
-                {
-                    auto path = properties->getProperty( "texturePath" );
-                    if( path.empty() && !isUUID )
-                        path = sTextureUUID;
-                    if( !path.empty() )
-                    {
-                        if( auto texture = resourceDatabase->loadResourceByType<ITexture>( path ) )
-                        {
-                            if( !texture->isLoaded() )
-                                texture->load( nullptr );
-                            setTexture( texture );
-                        }
-                    }
-                }
+                auto path = properties->getProperty( "texturePath" );
+                if( path.empty() && !isUUID )
+                    path = sTextureUUID;
+                if( !path.empty() )
+                    setTextureNameImpl( path, true );
             }
         }
         catch( std::exception &e )
