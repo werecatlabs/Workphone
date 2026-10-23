@@ -1,0 +1,89 @@
+diff --git a/Tests/cpp/CMakeLists.txt b/Tests/cpp/CMakeLists.txt
+index 534f7e17ec1fe62d2d4b1e887e778ca0637bd98c..a1b96a85d99d58b952f9930fc9848fc776ff1582 100644
+--- a/Tests/cpp/CMakeLists.txt
++++ b/Tests/cpp/CMakeLists.txt
+@@ -481,3 +481,7 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
+         target_compile_definitions(${lua_host_target} PRIVATE WPLua_EXPORTS)
+     endforeach()
+ endif()
++
++if(TARGET WPMaterialLoadSequenceTests)
++    target_compile_definitions(WPMaterialLoadSequenceTests PRIVATE WP_MATERIAL_MEMORY_PROFILE_BASELINE=1)
++endif()
+diff --git a/Tests/cpp/MaterialLoadSequenceTests.cpp b/Tests/cpp/MaterialLoadSequenceTests.cpp
+index b533b725c4cd3d1727e8749ba51791e081161d82..bd5afc50d5e55e7a3e2e39b4833a6e8b7ea5c5bc 100644
+--- a/Tests/cpp/MaterialLoadSequenceTests.cpp
++++ b/Tests/cpp/MaterialLoadSequenceTests.cpp
+@@ -20,6 +20,23 @@
+ #include <iostream>
+ #include <stdexcept>
+ #include "workphone_graphics_material.h"
++#include <Workphone/Graphics/MaterialShader.hpp>
++#include <Workphone/State/States/MaterialStateData.hpp>
++#include <Workphone/State/States/MaterialPassStateData.hpp>
++#include <Workphone/System/FactoryTemplate.hpp>
++#include <Workphone/System/StateContext.hpp>
++#include <Workphone/State/States/State.hpp>
++#include <Workphone/System/StateQueue.hpp>
++#include <array>
++#include <memory>
++#include <algorithm>
++#include <cstdint>
++#include <optional>
++#include <cstring>
++#ifndef WP_MATERIAL_MEMORY_PROFILE_BASELINE
++#define WP_MATERIAL_MEMORY_PROFILE_BASELINE 1
++#endif
++#include "MaterialHeapProfile.hpp"
+ 
+ namespace
+ {
+@@ -152,6 +169,8 @@ namespace
+         }
+     };
+ 
++#include "MaterialFullMemoryProfile.hpp"
++
+     void runSpecularRestoration( Fixture &fixture )
+     {
+         // Scene loads can contain a stale legacy colour alongside the saved slider.
+@@ -327,10 +346,38 @@ namespace
+     }
+ }  // namespace
+ 
+-int main()
++int main( int argc, char **argv )
+ {
+     try
+     {
++        if( argc == 2 && std::strcmp( argv[1], "--heap-profile-self-test" ) == 0 )
++        {
++            material_heap_profile::runSelfTest();
++            std::cout << "PASS: CRT heap, aligned allocation and private commitment profiling\n";
++            return 0;
++        }
++        if( argc == 4 && std::strcmp( argv[1], "--profile-full-memory" ) == 0 )
++        {
++            size_t parsed = 0;
++            const auto count = std::stoull( argv[2], &parsed );
++            require( parsed == std::strlen( argv[2] ) && count > 0 && count <= 100000,
++                     "full profile requires 1..100000 materials" );
++            const auto parameters = std::stoul( argv[3], &parsed );
++            require( parsed == std::strlen( argv[3] ) &&
++                     ( parameters == 8 || parameters == 32 || parameters == 128 ),
++                     "full profile requires 8, 32 or 128 mixed parameters" );
++            const auto bootstrap = material_heap_profile::capture();
++            std::optional<FullMaterialMemoryProfileResult> result;
++            {
++                Fixture fixture;
++                result.emplace( runFullMaterialMemoryProfile( fixture, static_cast<size_t>( count ),
++                                                              static_cast<u32>( parameters ) ) );
++                result->sampleExternal( "fixture_inputs_released", material_heap_profile::capture() );
++            }
++            const auto retired = material_heap_profile::capture();
++            result->report( bootstrap, retired );
++            return 0;
++        }
+         Fixture fixture;
+         runSpecularRestoration( fixture );
+         run( fixture );

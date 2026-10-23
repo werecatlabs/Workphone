@@ -1362,6 +1362,13 @@ namespace workphone
                 f32 roughness = 0.0f;
                 u8 mask = 0;
             };
+            // Stage replacement handoff before mutating a parameter instance.
+            // A null result leaves the existing optional fallback untouched.
+            std::unique_ptr<LegacySurfaceData> prepareShaderSurfaceHandoff(
+                const MaterialShaderParameterLayout::Ptr &nextLayout ) const;
+            std::unique_ptr<LegacySurfaceData> prepareShaderSurfaceHandoff(
+                const MaterialShaderParameterLayout::Ptr &nextLayout, bool nextActive, bool nextPbr ) const;
+            void commitShaderSurfaceHandoff( std::unique_ptr<LegacySurfaceData> values ) noexcept;
             std::unique_ptr<LegacySurfaceData> m_legacySurface;
 
             /** Cube texture used for environment mapping or reflections */

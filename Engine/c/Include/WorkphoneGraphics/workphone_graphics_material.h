@@ -221,6 +221,8 @@ WORKPHONE_API wp_shader_program *wp_graphics_material_get_shader_program(
 WORKPHONE_API void wp_graphics_material_set_shader_program( wp_graphics_material *mat,
                                                             wp_shader_program *program );
 
+/* Callback registrations share optional storage. Allocation failure retains the
+   previous registration; clearing a callback requires no allocation. */
 WORKPHONE_API void wp_graphics_material_set_sync_func( wp_graphics_material *mat,
                                                        wp_graphics_material_sync_func sync_func,
                                                        void *user_data );

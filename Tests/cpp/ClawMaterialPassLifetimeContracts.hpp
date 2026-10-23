@@ -84,12 +84,49 @@ namespace claw_material_pass_lifetime_contracts
                     auto data =
                         context->invalidateStateDataById<MaterialPassStateData>( pass->getId(), false );
                     require( data != nullptr, "a standalone pass must create its state record" );
-                    data->textures[0] = make_ptr<TrackedTexture>( &ownedTextureDestroyed );
+                    data->setTextureBinding( 0u, make_ptr<TrackedTexture>( &ownedTextureDestroyed ) );
                 }
                 pass = nullptr;
                 require( ownedTextureDestroyed && !context->isLoaded() &&
                              fixture.states->getStateContexts().size() == baseline,
                          "retiring a pass must remove its managed context and release its texture" );
+            }
+
+            for( bool supplied : { false, true } )
+            {
+                auto pass = make_ptr<ClawMaterialPass>();
+                auto context = pass->getStateContext();
+                if( supplied )
+                {
+                    context = fixture.states->addStateContext();
+                    pass->setStateContext( context );
+                    auto external = make_ptr<State>();
+                    external->setId( pass->getId() );
+                    external->setData( make_ptr<MaterialPassStateData>() );
+                    context->addState( external );
+                    pass->load( nullptr );
+                }
+                auto record = context->getStateById( pass->getId() );
+                auto retainedData = static_pointer_cast<MaterialPassStateData>( record->getData() );
+                bool originalDestroyed = false, replacementDestroyed = false;
+                retainedData->setTextureBinding( 0u, make_ptr<TrackedTexture>( &originalDestroyed ) );
+                retainedData->publishRenderState();
+                auto retainedVersion = retainedData->getRenderState();
+                WeakPtr<IMaterialPass> retiredPass = pass;
+                context->removeState( record );
+                pass->unload( nullptr ); pass = nullptr;
+                require( !retiredPass.lock(), "removed state data must not keep a retired pass alive" );
+                retainedData->setTextureBinding( 0u, make_ptr<TrackedTexture>( &replacementDestroyed ) );
+                retainedData->publishRenderState();
+                require( !retiredPass.lock() && !originalDestroyed,
+                         "editing independently removed retained data does not call or resurrect its former pass" );
+                retainedVersion.reset();
+                require( originalDestroyed, "the final retained snapshot releases its original texture" );
+                retainedData->setTextureBinding( 0u, nullptr ); retainedData->publishRenderState();
+                require( replacementDestroyed, "clearing retired data releases its unretained replacement texture" );
+                if( supplied ) fixture.states->removeStateContext( context );
+                require( fixture.states->getStateContexts().size() == baseline,
+                         "independent record removal preserves managed/supplied context retirement" );
             }
 
             auto shared = fixture.states->addStateContext();
@@ -110,7 +147,7 @@ namespace claw_material_pass_lifetime_contracts
                         shared->invalidateStateDataById<MaterialPassStateData>( pass->getId(), false );
                     require( data && shared->getStates().size() == 2,
                              "a pass can create its own record within a supplied context" );
-                    data->textures[0] = make_ptr<TrackedTexture>( &sharedTextureDestroyed );
+                    data->setTextureBinding( 0u, make_ptr<TrackedTexture>( &sharedTextureDestroyed ) );
                 }
                 pass->unload( nullptr );
                 require( sharedTextureDestroyed,

@@ -9,9 +9,28 @@
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Interface/System/IStateMessage.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <cstring>
 
 namespace workphone::render
 {
+    namespace
+    {
+        template <class T> bool exactTextureValue( const T &a, const T &b )
+        {
+            return std::memcmp( &a, &b, sizeof( T ) ) == 0;
+        }
+        bool exactTextureValue( const Vector3<real_Num> &a, const Vector3<real_Num> &b )
+        {
+            return exactTextureValue( a.x, b.x ) && exactTextureValue( a.y, b.y ) &&
+                   exactTextureValue( a.z, b.z );
+        }
+        bool exactTextureValue( const ColourF &a, const ColourF &b )
+        {
+            return exactTextureValue( a.r, b.r ) && exactTextureValue( a.g, b.g ) &&
+                   exactTextureValue( a.b, b.b ) && exactTextureValue( a.a, b.a );
+        }
+    }
+
     const String MaterialTexture::textureStr = String( "texture" );
     const String MaterialTexture::generateStr = String( "Generate" );
 
@@ -82,16 +101,14 @@ namespace workphone::render
             const auto &loadingState = getLoadingState();
             if( loadingState != LoadingState::Unloaded )
             {
-                // Once the resource reference is released, retain its authoring path
-                // as an unresolved name, matching Claw's previous unload behavior.
-                if( m_texture )
-                {
-                    auto name = getTextureName();
-                    if( !name.empty() )
-                        m_unresolvedTextureName = std::make_unique<String>( name );
-                }
-                m_animator = nullptr;
-                m_texture = nullptr;
+                // Capture the live owner before clearing/detaching the slot.
+                // Unload retains its authoring path after releasing the resource.
+                auto name = getTextureName();
+                auto unresolved = name.empty() ? nullptr : std::make_unique<String>( name );
+                setTexture( nullptr );
+                setParent( nullptr );
+                m_unresolvedTextureName = std::move( unresolved );
+                setAnimator( nullptr );
                 MaterialNode<IMaterialTexture>::unload( data );
             }
         }
@@ -151,40 +168,97 @@ namespace workphone::render
 
     auto MaterialTexture::getTexture() const -> SmartPtr<ITexture>
     {
+        SmartPtr<ITexture> texture;
+        if( auto parent = dynamic_pointer_cast<MaterialPass>( getParent() ) )
+            if( parent->getRenderTextureBinding( this, texture ) ) return texture;
         return m_texture;
     }
 
     void MaterialTexture::setTexture( SmartPtr<ITexture> texture )
     {
         m_unresolvedTextureName.reset();
-        m_texture = texture;
         if( auto parent = dynamic_pointer_cast<MaterialPass>( getParent() ) )
+        {
+            SmartPtr<ITexture> current;
+            if( parent->getRenderTextureBinding( this, current ) )
+            {
+                m_texture = nullptr;
+                parent->updateRenderTexture( this, texture );
+                return;
+            }
+            m_texture = texture;
             parent->updateRenderTexture( this, texture );
+            return;
+        }
+        m_texture = texture;
+    }
+
+    void MaterialTexture::setParent( SmartPtr<IMaterialNode> parent )
+    {
+        // Detached/pre-state units retain a binding; verified attached slots use
+        // the pass owner. Capture before changing identity/context membership.
+        m_texture = getTexture();
+        MaterialNode<IMaterialTexture>::setParent( parent );
+        SmartPtr<ITexture> current;
+        if( auto pass = dynamic_pointer_cast<MaterialPass>( parent ) )
+            if( pass->getRenderTextureBinding( this, current ) ) m_texture = nullptr;
+    }
+
+    void MaterialTexture::onCanonicalBindingChanged()
+    {
+        m_texture = nullptr;
+        m_unresolvedTextureName.reset();
     }
 
     void MaterialTexture::setScale( const Vector3<real_Num> &scale )
     {
-        m_scale = scale;
+        if( exactTextureValue( getScale(), scale ) ) return;
+        if( !m_textureAuthoring ) m_textureAuthoring = std::make_unique<TextureAuthoringData>();
+        m_textureAuthoring->scale = scale;
+        releaseDefaultAuthoringData();
+    }
+
+    Vector3<real_Num> MaterialTexture::getScale() const
+    {
+        return m_textureAuthoring ? m_textureAuthoring->scale : Vector3<real_Num>::unit();
+    }
+
+    size_t MaterialTexture::getTextureAuthoringStorageBytes() const
+    {
+        return m_textureAuthoring ? sizeof( TextureAuthoringData ) : 0;
+    }
+
+    void MaterialTexture::releaseDefaultAuthoringData()
+    {
+        if( m_textureAuthoring && exactTextureValue( m_textureAuthoring->scale, Vector3<real_Num>::unit() ) &&
+            exactTextureValue( m_textureAuthoring->tint, ColourF::White ) && !m_textureAuthoring->animator )
+            m_textureAuthoring.reset();
     }
 
     auto MaterialTexture::getAnimator() const -> SmartPtr<IAnimator>
     {
-        return m_animator;
+        return m_textureAuthoring ? m_textureAuthoring->animator : nullptr;
     }
 
     void MaterialTexture::setAnimator( SmartPtr<IAnimator> animator )
     {
-        m_animator = animator;
+        if( getAnimator() == animator ) return;
+        if( !m_textureAuthoring ) m_textureAuthoring = std::make_unique<TextureAuthoringData>();
+        m_textureAuthoring->animator = animator;
+        releaseDefaultAuthoringData();
     }
 
     auto MaterialTexture::getTint() const -> ColourF
     {
-        return m_tint;
+        return m_textureAuthoring ? m_textureAuthoring->tint : ColourF::White;
     }
 
     void MaterialTexture::setTint( const ColourF &tint )
     {
-        m_tint = tint;
+        if( exactTextureValue( getTint(), tint ) ) return;
+        if( !m_textureAuthoring ) m_textureAuthoring = std::make_unique<TextureAuthoringData>();
+        m_textureAuthoring->tint = tint;
+        releaseDefaultAuthoringData();
     }
 
     void MaterialTexture::_getObject( void **ppObject )
@@ -281,8 +355,8 @@ namespace workphone::render
         {
             auto properties = MaterialNode<IMaterialTexture>::getProperties();
 
-            properties->setProperty( scaleStr, m_scale );
-            properties->setProperty( tintStr, m_tint );
+            properties->setProperty( scaleStr, getScale() );
+            properties->setProperty( tintStr, getTint() );
 
             auto texture = getTexture();
             properties->setProperty( texturePathStr, texture );
@@ -344,23 +418,16 @@ namespace workphone::render
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-            WP_ASSERT( graphicsSystem );
-
-            auto textureManager = graphicsSystem->getTextureManager();
-            WP_ASSERT( textureManager );
-
-            properties->getPropertyValue( scaleStr, m_scale );
-            properties->getPropertyValue( tintStr, m_tint );
+            if( !properties ) return;
+            Vector3<real_Num> scale;
+            if( properties->getPropertyValue( scaleStr, scale ) ) setScale( scale );
+            ColourF tint;
+            if( properties->getPropertyValue( tintStr, tint ) ) setTint( tint );
 
             auto texture = SmartPtr<ITexture>();
-            properties->getPropertyValue( texturePathStr, texture );
-
-            if( getTexture() != texture )
+            if( properties->hasProperty( texturePathStr ) )
             {
+                properties->getPropertyValue( texturePathStr, texture );
                 setTexture( texture );
             }
 
@@ -369,6 +436,10 @@ namespace workphone::render
                 auto &generateButton = properties->getPropertyObject( "Generate" );
                 if( generateButton.getAttribute( "click" ) == "true" )
                 {
+                    auto applicationManager = core::IApplicationManager::instance();
+                    auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystem() : nullptr;
+                    auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
+                    if( !textureManager ) return;
                     Array<SmartPtr<ITexture>> skyboxTextures;
 
                     auto parent = getParent();
@@ -398,8 +469,8 @@ namespace workphone::render
             auto objects = MaterialNode<IMaterialTexture>::getChildObjects();
             objects.reserve( 2 );
 
-            objects.emplace_back( m_animator );
-            objects.emplace_back( m_texture.load() );
+            objects.emplace_back( getAnimator() );
+            objects.emplace_back( getTexture() );
             return objects;
         }
         catch( std::exception &e )

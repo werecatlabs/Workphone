@@ -7,9 +7,14 @@
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
+#include <Workphone/Interface/Graphics/IMaterialPass.hpp>
+#include <Workphone/Memory/WeakPtr.hpp>
+#include <cstring>
+#include <type_traits>
 
 namespace workphone
 {
+    namespace render { class MaterialPass; }
     enum class MaterialFloatSetting : u32
     {
         alphaClip = 0,
@@ -129,6 +134,37 @@ namespace workphone
         // Call under the write lock (or while detached on the owning thread).
         void publishRenderState();
 
+        // Owner-side borrowed reads require the state lock/external ownership
+        // synchronization and expire at the next mutation/publication. Retain
+        // getRenderState() instead when values must outlive that scope.
+        const MaterialRenderState &getSurfaceState() const;
+        bool setSurfaceState( const MaterialRenderState &value );
+        template <class T>
+        bool setSurfaceValue( T MaterialRenderState::*member, const T &value )
+        {
+            static_assert( std::is_arithmetic_v<T> || std::is_enum_v<T> || std::is_same_v<T, ColourF>,
+                           "Use tracked texture binding or whole-surface setters for resources" );
+            if constexpr( std::is_same_v<T, u64> )
+                if( member == &MaterialRenderState::revision ) return false;
+            const auto &current = getSurfaceState().*member;
+            bool unchanged;
+            if constexpr( std::is_floating_point_v<T> || std::is_same_v<T, ColourF> )
+                unchanged = std::memcmp( &current, &value, sizeof( T ) ) == 0;
+            else
+                unchanged = current == value;
+            if( unchanged ) return false;
+            writableSurfaceState().*member = value;
+            return true;
+        }
+        SmartPtr<render::ITexture> getTextureBinding( u32 slot ) const;
+        bool setTextureBinding( u32 slot, SmartPtr<render::ITexture> texture );
+        size_t getPendingSurfaceStorageBytes() const;
+        size_t getSurfaceAuthoringStorageBytes() const;
+        ColourF getTintColour() const;
+        void setTintColour( const ColourF &value );
+        hash_type getRenderTechnique() const;
+        void setRenderTechnique( hash_type value );
+
         String getVertexShaderName() const;
         String getFragmentShaderName() const;
         String getGeometryShaderName() const;
@@ -175,61 +211,14 @@ namespace workphone
         void writeEditorSettings( Properties &floats, Properties &uints, Properties &bools,
                                   Properties &strings ) const;
 
-        // Extension slots avoid traversing texture-unit objects on the draw path.
-        FixedArray<SmartPtr<render::ITexture>, MaterialRenderState::TextureCount -
-                   static_cast<u32>( PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES )> extendedTextures = {};
         WP_CLASS_REGISTER_DECL;
-
-        ColourF tintColour = ColourF::White;
-        ColourF specularColour = ColourF::White;
-        ColourF ambientColour = ColourF::White;
-        ColourF diffuseColour = ColourF::White;
-        ColourF emissiveColour = ColourF::Black;
-
-        FixedArray<SmartPtr<render::ITexture>, (u32)PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES>
-            textures = {};
-
-        f32 alphaClip = 0.5f;
-        f32 opacity = 1.0f;
-        f32 refractionAmount = 0.0f;
-        f32 refractionIor = 1.45f;
-
-        f32 metalness = 0.0f;
-        f32 roughness = 0.5f;
-        f32 normalStrength = 1.0f;
-        f32 aoStrength = 1.0f;
-        f32 emissionIntensity = 1.0f;
-        f32 clearCoat = 0.0f;
-        f32 clearCoatRoughness = 0.1f;
-
-        f32 uvTilingX = 1.0f;
-        f32 uvTilingY = 1.0f;
-        f32 uvOffsetX = 0.0f;
-        f32 uvOffsetY = 0.0f;
-        f32 uvRotation = 0.0f;
-        f32 uvTriplanarScale = 1.0f;
-        f32 uvAniso = 1.0f;
-
-        u32 blendMode = 0; /**< Blending mode (implementation-specific). */
-        u32 cullMode = 2;  /**< Face culling mode (none=1, clockwise=2, anticlockwise=3). */
-        u32 uvProjection = 0u;
-        u32 uvWrapU = 0u;
-        u32 uvWrapV = 0u;
-        u32 uvFilter = 1u;
-        u32 metallicSource = 0u;
-        u32 roughnessSource = 0u;
-        u32 aoSource = 0u;
-        u32 opacitySource = 0u;
-        u32 depthTest = 2u;
-
-        u32 flags = 0;
-
-        MaterialType materialType = MaterialType::Standard;
-
-        hash_type renderTechnique = 0; /**< Render technique hash. */
 
     private:
         friend class MaterialPublicationScope;
+        friend class render::MaterialPass;
+        void setTextureBindingObserver( render::IMaterialPass *owner, void ( *observer )( void *, u32 ) );
+        void notifyTextureBindingChanged( u32 slot );
+        MaterialRenderState &writableSurfaceState();
         const char *getAuthoringText( u32 slot ) const;
         void setAuthoringText( u32 slot, const String &value, size_t limit );
         // One allocation: 64-bit presence mask followed by packed nondefault words.
@@ -240,6 +229,16 @@ namespace workphone
         // Five offsets followed by only the populated, null-terminated texts.
         std::unique_ptr<char[]> m_authoring;
         MaterialRenderState::Ptr m_renderState;
+        // Temporary next version only while an effective edit awaits publication.
+        std::shared_ptr<MaterialRenderState> m_pendingSurface;
+        struct SurfaceAuthoringData
+        {
+            ColourF tintColour = ColourF::White;
+            hash_type renderTechnique = 0;
+        };
+        std::unique_ptr<SurfaceAuthoringData> m_surfaceAuthoring;
+        WeakPtr<render::IMaterialPass> m_textureBindingOwner;
+        void ( *m_textureBindingObserver )( void *, u32 ) = nullptr;
         u32 m_writeDepth = 0;
     };
 }  // namespace workphone

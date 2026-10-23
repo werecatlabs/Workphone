@@ -122,6 +122,9 @@ namespace workphone
 
             /** Cold unresolved-name object bytes; excludes string capacity and allocator overhead. */
             size_t getUnresolvedTextureNameObjectBytes() const;
+            /** Optional texture-unit metadata, excluding allocator overhead. */
+            size_t getTextureAuthoringStorageBytes() const;
+            Vector3<real_Num> getScale() const;
 
             /**
              * @copydoc IMaterialTexture::getTexture
@@ -139,6 +142,7 @@ namespace workphone
              * @param texture Smart pointer to the texture to assign.
              */
             void setTexture( SmartPtr<ITexture> texture ) override;
+            void setParent( SmartPtr<IMaterialNode> parent ) override;
 
             /**
              * @copydoc IMaterialTexture::setScale
@@ -242,6 +246,10 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            friend class MaterialPass;
+            // The attached pass owns resolved bindings. Effective state changes
+            // retire detached fallback resources and obsolete pending paths.
+            void onCanonicalBindingChanged();
             /** Resolve before publishing; Claw also requests an immediate resource load. */
             void setTextureNameImpl( const String &name, bool loadResource );
 
@@ -254,15 +262,16 @@ namespace workphone
              */
             virtual void createTextureUnitState();
 
-            /** @brief UV scale applied when sampling the texture. Defaults to unit scale. */
-            Vector3<real_Num> m_scale = Vector3<real_Num>::unit();
-
-            /** @brief Colour tint applied to sampled texture (multiplied). Defaults to white (no tint).
-             */
-            ColourF m_tint = ColourF::White;
-
-            /** @brief Optional animator used for animated textures (frame changes, transforms, etc.). */
-            SmartPtr<IAnimator> m_animator;
+            // Only edited compatibility facades need per-unit metadata. Rendered
+            // bindings live in pass state; shared defaults need no allocation.
+            struct TextureAuthoringData
+            {
+                Vector3<real_Num> scale = Vector3<real_Num>::unit();
+                ColourF tint = ColourF::White;
+                SmartPtr<IAnimator> animator;
+            };
+            void releaseDefaultAuthoringData();
+            std::unique_ptr<TextureAuthoringData> m_textureAuthoring;
 
             /** @brief The texture resource assigned to this material texture node. */
             AtomicSmartPtr<ITexture> m_texture;
@@ -270,10 +279,8 @@ namespace workphone
             /** Bound names belong to the resource. Only unresolved authoring names need storage. */
             std::unique_ptr<String> m_unresolvedTextureName;
 
-            /**
-             * @brief Renderer-specific texture type identifier.
-             * Use to distinguish between 2D, cube map, volume textures, or other custom types.
-             */
+            // Pass creation assigns this ordinal for ordinary texture slots.
+            // Keep it inline so a bound/default slot needs no metadata block.
             u32 m_textureType = 0;
 
         };

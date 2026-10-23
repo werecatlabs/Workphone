@@ -14,6 +14,7 @@
 #include <thread>
 #include <atomic>
 #include <unordered_set>
+#include "MaterialPassStorageReference.hpp"
 
 using namespace workphone;
 using namespace workphone::render;
@@ -245,6 +246,97 @@ namespace
                  "registry growth/replacement preserves retained versions and rejects stale binding" );
     }
 
+    void layoutStorageAccountingContracts()
+    {
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+        Array<MaterialShaderParameterInfo> shortInfo = {{MaterialShaderParameterType::Scalar, "Short"}};
+        auto shortLayout = MaterialShaderParameterLayout::Create( shortInfo );
+        shortInfo[0].m_name = String( String::inline_capacity(), 's' );
+        auto fullInlineLayout = MaterialShaderParameterLayout::Create( shortInfo );
+        require( shortLayout->GetStorageBytes() == fullInlineLayout->GetStorageBytes(),
+                 "layout accounting includes inline characters only once in the parameter object" );
+        shortInfo[0].m_name = String( String::inline_capacity() + 1, 'l' );
+        auto longLayout = MaterialShaderParameterLayout::Create( shortInfo );
+        const auto &storedName = longLayout->GetParameterInfo()[0].m_name;
+        require( !storedName.using_inline_storage() && longLayout->GetStorageBytes() ==
+                     shortLayout->GetStorageBytes() + storedName.capacity() + 1,
+                 "layout accounting charges actual external string capacity in addition to the object" );
+#endif
+    }
+
+    void surfaceStorageContracts()
+    {
+        MaterialPassStateData state;
+        const auto original = state.getRenderState();
+        require( original && &state.getSurfaceState() == original.get() &&
+                     state.getPendingSurfaceStorageBytes() == 0 && state.getSurfaceAuthoringStorageBytes() == 0,
+                 "resting pass reads its published surface without an independently writable copy" );
+        require( sizeof( MaterialPassStateData ) < sizeof( InlinePassStateStorageBeforeSurfaceMigration ),
+                 "pass object retires its inline rendered-value and resource-owner copy" );
+        state.setFloatSetting( MaterialFloatSetting::roughness, original->roughness );
+        state.setSurfaceValue( &MaterialRenderState::roughness, original->roughness );
+        state.setSurfaceState( *original );
+        require( state.getPendingSurfaceStorageBytes() == 0 && state.getRenderState() == original,
+                 "typed and bulk no-op setters allocate no pending surface" );
+        state.lock();
+        state.setSurfaceValue( &MaterialRenderState::roughness, 0.2f );
+        require( state.getPendingSurfaceStorageBytes() == sizeof( MaterialRenderState ) &&
+                     &state.getSurfaceState() != original.get() && state.getSurfaceState().roughness == 0.2f &&
+                     state.getRenderState() == original,
+                 "effective writes stage one surface while immutable readers retain the original" );
+        state.lock();
+        state.setSurfaceValue( &MaterialRenderState::uvTilingX, 4.0f );
+        state.unlock();
+        require( state.getRenderState() == original && state.getPendingSurfaceStorageBytes() == sizeof( MaterialRenderState ),
+                 "nested writes share the existing pending allocation" );
+        state.unlock();
+        const auto edited = state.getRenderState();
+        require( edited != original && edited->roughness == 0.2f && edited->uvTilingX == 4.0f &&
+                     edited->revision == original->revision + 1 && &state.getSurfaceState() == edited.get() &&
+                     state.getPendingSurfaceStorageBytes() == 0 && original->roughness == 0.5f,
+                 "outer commit transfers complete values into the sole resting owner and retires staging" );
+        state.lock();
+        state.setSurfaceValue( &MaterialRenderState::roughness, 0.7f );
+        state.setSurfaceValue( &MaterialRenderState::roughness, 0.2f );
+        state.unlock();
+        require( state.getRenderState() == edited && state.getPendingSurfaceStorageBytes() == 0 &&
+                     &state.getSurfaceState() == edited.get(),
+                 "net-zero edits discard staging and retain the published identity" );
+        auto replacement = state.getSurfaceState();
+        replacement.roughness = 0.6f;
+        replacement.uvOffsetX = 0.25f;
+        replacement.revision = ~u64( 0 ); // Callers cannot forge the publication sequence.
+        state.lock(); state.setSurfaceState( replacement ); state.unlock();
+        const auto bulk = state.getRenderState();
+        require( bulk->roughness == 0.6f && bulk->uvOffsetX == 0.25f &&
+                     bulk->revision == edited->revision + 1 && edited->roughness == 0.2f &&
+                     state.getPendingSurfaceStorageBytes() == 0,
+                 "bulk edits copy values through the tracked boundary and own revision sequencing" );
+        const ColourF tint( 0.2f, 0.3f, 0.4f, 0.5f );
+        state.setTintColour( ColourF::White ); state.setRenderTechnique( 0 );
+        require( state.getSurfaceAuthoringStorageBytes() == 0,
+                 "default tint and technique metadata allocate nothing" );
+        state.setTintColour( tint );
+        const auto metadataBytes = state.getSurfaceAuthoringStorageBytes();
+        state.setRenderTechnique( hash_type( 71 ) );
+        require( metadataBytes > 0 && state.getSurfaceAuthoringStorageBytes() == metadataBytes &&
+                     state.getTintColour() == tint && state.getRenderTechnique() == hash_type( 71 ) &&
+                     state.getRenderState() == bulk && state.getPendingSurfaceStorageBytes() == 0,
+                 "tint and technique share cold storage without duplicating or publishing a render surface" );
+        state.setTintColour( ColourF::White );
+        require( state.getSurfaceAuthoringStorageBytes() == metadataBytes,
+                 "clearing one cold field preserves the other field" );
+        state.setRenderTechnique( 0 );
+        require( state.getSurfaceAuthoringStorageBytes() == 0 && state.getRenderState() == bulk,
+                 "clearing the final cold surface field retires its allocation" );
+        std::cout << "surface_storage before_inline_pass_bytes=" << sizeof( InlinePassStateStorageBeforeSurfaceMigration )
+                  << " resting_pass_bytes=" << sizeof( MaterialPassStateData )
+                  << " published_surface_bytes=" << sizeof( MaterialRenderState )
+                  << " pending_surface_bytes=" << state.getPendingSurfaceStorageBytes()
+                  << " cold_surface_metadata_bytes=" << metadataBytes
+                  << " allocator_and_control_blocks_excluded=1\n";
+    }
+
     void numericAuthoringContracts()
     {
         MaterialPassStateData state;
@@ -436,6 +528,7 @@ namespace
         types.load(); TypeManager::setInstance( &types );
         numericAuthoringContracts();
         stringAuthoringContracts();
+        surfaceStorageContracts();
         {
             MaterialPassStateData state;
             const auto original = state.getRenderState();
@@ -443,7 +536,7 @@ namespace
             state.lock();
             state.setFloatSetting( MaterialFloatSetting::roughness, 0.2f );
             state.lock();
-            state.uvTilingX = 4.0f;
+            state.setSurfaceValue( &MaterialRenderState::uvTilingX, 4.0f );
             state.unlock();
             require( state.getRenderState() == original, "nested edits remain unpublished" );
             state.unlock();
@@ -452,7 +545,7 @@ namespace
                      edited->revision == original->revision + 1, "coherent coalesced publication" );
             require( original->roughness == 0.5f && original->uvTilingX == 1.0f,
                      "retained old snapshot stays immutable" );
-            state.lock(); state.roughness = 0.2f; state.unlock();
+            state.lock(); state.setSurfaceValue( &MaterialRenderState::roughness, 0.2f ); state.unlock();
             require( state.getRenderState() == edited, "no-op edit reuses record" );
             state.setStringSetting( MaterialStringSetting::shaderPath, "Shaders/EditorOnly" );
             require( state.getRenderState() == edited, "cold edit reuses runtime record" );
@@ -463,12 +556,14 @@ namespace
                      state.getRenderState() == edited, "unknown setting preserves runtime record" );
             require( !state.setUIntSetting( MaterialUIntSetting::materialType, 999 ),
                      "typed material type validates enum" );
-            state.lock(); state.roughness = 0; state.uvOffsetX = 0; state.unlock();
+            state.lock(); state.setSurfaceValue( &MaterialRenderState::roughness, 0.0f );
+            state.setSurfaceValue( &MaterialRenderState::uvOffsetX, 0.0f ); state.unlock();
             std::atomic<bool> finished{ false }, coherent{ true };
             std::thread writer( [&] {
                 for( unsigned i = 1; i <= 1000; ++i )
                 {
-                    state.lock(); state.roughness = float( i ); state.uvOffsetX = float( i ); state.unlock();
+                    state.lock(); state.setSurfaceValue( &MaterialRenderState::roughness, float( i ) );
+                    state.setSurfaceValue( &MaterialRenderState::uvOffsetX, float( i ) ); state.unlock();
                 }
                 finished.store( true );
             } );
@@ -578,7 +673,13 @@ namespace
                 legacy[i].bytes = layout->GetDefaults();
                 legacyBytes += sizeof( LegacyInstance ) + legacy[i].bytes.capacity() +
                     legacy[i].info.capacity() * sizeof( MaterialShaderParameterInfo );
-                for( const auto &p : legacy[i].info ) legacyBytes += p.m_name.capacity() + 1;
+                for( const auto &p : legacy[i].info )
+                {
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+                    if( p.m_name.using_inline_storage() ) continue;
+#endif
+                    legacyBytes += p.m_name.capacity() + 1;
+                }
             }
             const auto name = info.back().m_name;
             const auto handle = compact.front().Resolve<f32>( name );
@@ -623,6 +724,7 @@ int main( int argc, char **argv )
     try
     {
         contracts();
+        layoutStorageAccountingContracts();
         snapshotContracts();
         sharingContracts();
         if( argc > 1 && std::strcmp( argv[1], "--benchmark" ) == 0 ) benchmark();

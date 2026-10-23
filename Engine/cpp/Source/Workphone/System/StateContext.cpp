@@ -15,15 +15,26 @@
 #include <Workphone/System/DebugUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <unordered_set>
+#include <typeinfo>
 
 namespace workphone
 {
+    namespace
+    {
+        bool isCoreStateQueue( const IStateQueue *queue )
+        {
+            // Public StateQueue subclasses retain their virtual behavior just
+            // like other IStateQueue extensions. Only the exact engine class
+            // has a callback-free enqueue implementation.
+            return queue && typeid( *queue ) == typeid( StateQueue );
+        }
+    }
     WP_CLASS_REGISTER_DERIVED( workphone, StateContext, IStateContext );
     WP_CLASS_REGISTER_DERIVED( workphone, StateContext::SharedObjectListener, IEventListener );
 
     u32 StateContext::m_nextGeneratedNameExt = 1000;
 
-    StateContext::StateContext() : IStateContext(), m_isDirty( false ), m_removeCount( 0 )
+    StateContext::StateContext() : IStateContext(), m_isDirty( false )
     {
 #if WP_ENABLE_MEMORY_TRACKER
 #    if WP_ARCH_TYPE == WP_ARCHITECTURE_64
@@ -129,6 +140,12 @@ namespace workphone
     {
         try
         {
+            u32 loadGeneration;
+            {
+                auto queues = m_stateQueues.writeLocked();
+                m_acceptQueuedMessages = false;
+                loadGeneration = m_queueGeneration;
+            }
             setLoadingState( LoadingState::Loading );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -149,20 +166,8 @@ namespace workphone
 
             m_bUpdateState = true;
 
-            for( u32 i = 0; i < static_cast<u32>( TaskId::Count ); ++i )
-            {
-                auto queue = factoryManager->make_ptr<StateQueue>();
-                if( !queue )
-                {
-                    WP_LOG_ERROR( "StateContext::load: failed to create StateQueue for task slot " +
-                                  StringUtil::toString( i ) + "." );
-                    setLoadingState( LoadingState::Error );
-                    return;
-                }
-
-                queue->setTaskId( i );
-                appendStateQueue( queue );
-            }
+            // Most material contexts never receive messages. Keep their task
+            // queues absent until the first enqueue for that task.
 
             auto sharedObjectListener = factoryManager->make_ptr<SharedObjectListener>();
             if( !sharedObjectListener )
@@ -177,11 +182,23 @@ namespace workphone
 
             m_states.reserve( stateCapacity );
 
+            {
+                auto queues = m_stateQueues.writeLocked();
+                if( m_queueGeneration != loadGeneration || getLoadingState() != LoadingState::Loading ) return;
+                // isLoaded() still rejects producers until the transition.
+                // Arm first so synchronous Loaded-event handlers can enqueue;
+                // an unload in that callback closes the gate without reopening.
+                m_acceptQueuedMessages = true;
+            }
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            {
+                auto queues = m_stateQueues.writeLocked();
+                m_acceptQueuedMessages = false;
+            }
             setLoadingState( LoadingState::Error );
         }
     }
@@ -191,9 +208,16 @@ namespace workphone
         try
         {
             const auto &loadingState = getLoadingState();
+            decltype( m_stateQueues )::storage_type stateQueues;
+            {
+                auto queues = m_stateQueues.writeLocked();
+                m_acceptQueuedMessages = false;
+                ++m_queueGeneration;
+                stateQueues = std::move( *queues );
+            }
             std::fprintf( stderr, "TRACE StateContext unload start %p state %u\n", this,
                           static_cast<u32>( loadingState ) );
-            if( loadingState == LoadingState::Unloaded )
+            if( loadingState == LoadingState::Unloaded && stateQueues.empty() )
             {
                 if( auto sharedObjectListener = m_sharedObjectListener.load() )
                 {
@@ -215,8 +239,9 @@ namespace workphone
 
             setLoadingState( LoadingState::Unloading );
 
-            // Drain and release all queued messages.
-            auto stateQueues = snapshotStateQueues();
+            // Queues were detached before the loading event. Producers cannot
+            // publish or append after that boundary, and callbacks/destruction
+            // below run without the nonrecursive queue-array lock.
             std::fprintf( stderr, "TRACE StateContext queues snapshotted %zu\n", stateQueues.size() );
             size_t stateQueueIndex = 0;
             for( auto &stateQueue : stateQueues )
@@ -300,7 +325,6 @@ namespace workphone
                 }
             }
 
-            clearStateQueues();
             std::fprintf( stderr, "TRACE StateContext queues cleared\n" );
 
             // Release the context-owned listener before dropping the weak owner reference. The
@@ -480,15 +504,23 @@ namespace workphone
 
     void StateContext::addMessage( TaskId taskId, SmartPtr<IStateMessage> message )
     {
-        if( !isLoaded() )
+        const auto iTask = static_cast<u32>( taskId );
+        if( iTask >= static_cast<u32>( TaskId::Count ) )
         {
-            WP_LOG_WARNING( "StateContext::addMessage: dropping message â€” context is not loaded." );
+            WP_LOG_WARNING( "StateContext::addMessage: invalid task id; message dropped." );
             return;
+        }
+
+        u32 entryGeneration;
+        {
+            auto queues = m_stateQueues.readLocked();
+            if( !isLoaded() || !m_acceptQueuedMessages ) return;
+            entryGeneration = m_queueGeneration;
         }
 
         if( !message )
         {
-            WP_LOG_WARNING( "StateContext::addMessage: dropping null message." );
+            WP_LOG_WARNING( "StateContext::addMessage: null message supplied; ignoring." );
             return;
         }
 
@@ -499,30 +531,148 @@ namespace workphone
                 "may indicate a logic error." );
         }
 
-        message->setStateContext( this );
-
         if( getEnableMessageQueues() )
         {
-            const auto iTask = static_cast<u32>( taskId );
-            auto stateQueue = getStateQueue( iTask );
-            if( stateQueue )
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            auto factoryManager = applicationManager ? applicationManager->getFactoryManager() : nullptr;
+            auto stateManager = applicationManager ? applicationManager->getStateManager() : nullptr;
+            if( !factoryManager || !stateManager )
             {
-                stateQueue->queueMessage( message );
-            }
-            else
-            {
-                WP_LOG_ERROR( "StateContext::addMessage: no queue for task id " +
-                              StringUtil::toString( iTask ) + "; message dropped." );
+                WP_LOG_ERROR( "StateContext::addMessage: missing factory/state manager; message dropped." );
                 return;
             }
+
+            // Retain previous owners and losing candidates until outside the
+            // queue lock: their destructors may re-enter this context.
+            auto previousContext = message->getStateContext();
+            message->setStateContext( this );
+            const auto enqueueExtension = [&]( SmartPtr<IStateQueue> queue ) {
+                bool accepted = false;
+                {
+                    auto queues = m_stateQueues.readLocked();
+                    if( isLoaded() && m_acceptQueuedMessages && m_queueGeneration == entryGeneration )
+                        for( const auto &registered : *queues )
+                            if( registered == queue ) { accepted = true; break; }
+                }
+                if( !accepted ) return false;
+                queue->queueMessage( message );
+                setDirtyFlag( 1u << iTask, true );
+                return true;
+            };
+            // Subclasses may install their own IStateQueue implementation.
+            // Preserve its existing virtual enqueue/lifecycle contract without
+            // running extension callbacks under the core queue-array lock.
+            auto extensionQueue = getStateQueue( iTask );
+            if( extensionQueue && !isCoreStateQueue( extensionQueue.get() ) )
+            {
+                if( !enqueueExtension( extensionQueue ) )
+                {
+                    message->setStateContext( previousContext );
+                    return;
+                }
+                stateManager->addDirty( this, taskId );
+                return;
+            }
+            SmartPtr<StateQueue> candidate;
+            SmartPtr<IStateQueue> stateQueue;
+            bool queued = false;
+            for( ;; )
+            {
+                if( candidate && !isCoreStateQueue( candidate.get() ) )
+                {
+                    // A factory-provided subclass has virtual task semantics.
+                    // Resolve outside the lock, then publish only if the exact
+                    // registration snapshot is still current. Concurrent first
+                    // writers retry and adopt the winner rather than installing
+                    // multiple queues for the same task.
+                    const auto observed = snapshotStateQueues();
+                    SmartPtr<IStateQueue> selected;
+                    for( const auto &queue : observed )
+                        if( queue && queue->getTaskId() == iTask ) { selected = queue; break; }
+                    {
+                        auto queues = m_stateQueues.writeLocked();
+                        if( !isLoaded() || !m_acceptQueuedMessages || m_queueGeneration != entryGeneration ) break;
+                        bool unchanged = queues->size() == observed.size();
+                        for( size_t i = 0; unchanged && i < observed.size(); ++i )
+                            unchanged = ( *queues )[i].get() == observed[i].get();
+                        if( !unchanged ) continue;
+                        if( selected ) stateQueue = selected;
+                        else { queues->push_back( candidate ); stateQueue = candidate; }
+                        if( isCoreStateQueue( stateQueue.get() ) )
+                        {
+                            static_cast<StateQueue *>( stateQueue.get() )->StateQueue::queueMessage( message );
+                            setDirtyFlag( 1u << iTask, true ); queued = true;
+                        }
+                    }
+                    break;
+                }
+                {
+                    auto queues = m_stateQueues.writeLocked();
+                    if( !isLoaded() || !m_acceptQueuedMessages || m_queueGeneration != entryGeneration ) break;
+                    for( const auto &queue : *queues )
+                        if( isCoreStateQueue( queue.get() ) &&
+                            static_cast<StateQueue *>( queue.get() )->StateQueue::getTaskId() == iTask )
+                        { stateQueue = queue; break; }
+                    if( !stateQueue && candidate )
+                    {
+                        queues->push_back( candidate );
+                        stateQueue = candidate;
+                    }
+                    if( stateQueue )
+                    {
+                        // Context-created queues are concrete StateQueues. The
+                        // qualified call has no user callbacks under this lock.
+                        if( !isCoreStateQueue( stateQueue.get() ) ) break;
+                        auto concrete = static_cast<StateQueue *>( stateQueue.get() );
+                        concrete->StateQueue::queueMessage( message );
+                        setDirtyFlag( 1u << iTask, true );
+                        queued = true;
+                        break;
+                    }
+                }
+                // Loading can trigger events, so construct and load before
+                // taking the queue lock again to publish the first queue.
+                candidate = factoryManager->make_ptr<StateQueue>();
+                if( !candidate ) break;
+                // The queue is an unpublished implementation detail. Suppress
+                // initialization events even if a factory enables them: a
+                // callback enqueueing this task must not recursively create
+                // another candidate before the first one can be published.
+                const auto loadingEvents = candidate->getObjectFlag( OBJECT_FLAG_LOADING_EVENTS );
+                candidate->setObjectFlag( OBJECT_FLAG_LOADING_EVENTS, false );
+                if( isCoreStateQueue( candidate.get() ) )
+                {
+                    candidate->StateQueue::setTaskId( iTask );
+                    candidate->StateQueue::load( nullptr );
+                }
+                else
+                {
+                    candidate->setTaskId( iTask );
+                    candidate->load( nullptr );
+                }
+                candidate->setObjectFlag( OBJECT_FLAG_LOADING_EVENTS, loadingEvents );
+                if( !candidate->isLoaded() ) break;
+            }
+            if( !queued && stateQueue && !isCoreStateQueue( stateQueue.get() ) )
+                queued = enqueueExtension( stateQueue );
+            if( !queued )
+            {
+                message->setStateContext( previousContext );
+                return;
+            }
+            // A concurrent unload may make this scheduling entry obsolete;
+            // dispatch already tolerates an unloaded/ownerless context. Keep
+            // the virtual manager callback outside the queue-array lock.
+            stateManager->addDirty( this, taskId );
+            return;
         }
         else
         {
+            message->setStateContext( this );
             sendMessage( message );
         }
 
-        setDirtyFlag( ( 1 << static_cast<u32>( taskId ) ), true );
-        m_removeCount = 0;
+        setDirtyFlag( 1u << iTask, true );
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
@@ -668,33 +818,33 @@ namespace workphone
 
     SmartPtr<IStateQueue> StateContext::getStateQueue( u32 taskId )
     {
-        auto queues = m_stateQueues.readLocked();
-        for( const auto &stateQueue : queues )
-        {
-            if( stateQueue->getTaskId() == taskId )
-            {
-                return stateQueue;
-            }
-        }
-
-        WP_LOG_WARNING( "StateContext::getStateQueue: no queue found for taskId " +
-                        StringUtil::toString( taskId ) + "." );
-        return nullptr;
+        return static_cast<const StateContext *>( this )->getStateQueue( taskId );
     }
 
     SmartPtr<IStateQueue> StateContext::getStateQueue( u32 taskId ) const
     {
-        auto queues = m_stateQueues.readLocked();
-        for( const auto &stateQueue : queues )
+        bool hasExtensions = false;
         {
-            if( stateQueue->getTaskId() == taskId )
+            auto queues = m_stateQueues.readLocked();
+            for( const auto &stateQueue : queues )
             {
-                return stateQueue;
+                if( isCoreStateQueue( stateQueue.get() ) )
+                {
+                    auto concrete = static_cast<StateQueue *>( stateQueue.get() );
+                    if( concrete->StateQueue::getTaskId() == taskId ) return stateQueue;
+                }
+                else if( stateQueue ) hasExtensions = true;
             }
         }
-
-        WP_LOG_WARNING( "StateContext::getStateQueue (const): no queue found for taskId " +
-                        StringUtil::toString( taskId ) + "." );
+        if( hasExtensions )
+        {
+            // Only the extension path takes an owning snapshot. Its virtual
+            // task getter may perform another context lookup or remove queues.
+            const auto queues = snapshotStateQueues();
+            for( const auto &stateQueue : queues )
+                if( stateQueue && !isCoreStateQueue( stateQueue.get() ) && stateQueue->getTaskId() == taskId )
+                    return stateQueue;
+        }
         return nullptr;
     }
 

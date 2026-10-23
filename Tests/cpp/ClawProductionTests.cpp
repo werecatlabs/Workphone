@@ -329,7 +329,7 @@ namespace
             material->setDiffuse(ColourF::White);
             {
                 auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(pass->getId());
-                data->textures[0] = streamed;
+                data->setTextureBinding( 0u, streamed );
             }
             const auto version = material->getRenderState();
             ClawMaterialDrawRecords retained;
@@ -351,7 +351,7 @@ namespace
                             "retained records resolve pending, completed, replaced and removed native texture views without stale bindings");
             }
             auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(pass->getId());
-            data->textures[0] = nullptr;
+            data->setTextureBinding( 0u, nullptr );
         }
         material->setMaterialType( MaterialType::Standard );
         material->setDiffuse( ColourF::White );
@@ -374,9 +374,9 @@ namespace
         auto packed = make_ptr<MaterialRoutingTexture>();
         {
             auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>( pass->getId() );
-            data->textures[2] = metallic;
-            data->textures[3] = roughness;
-            data->extendedTextures[25u - data->textures.size()] = packed;
+            data->setTextureBinding( 2u, metallic );
+            data->setTextureBinding( 3u, roughness );
+            data->setTextureBinding( 25u, packed );
         }
         material->setEditorUInt( "metallicSource", 0u );
         constexpr u32 roughnessSlots[] = { 3u, 3u, 2u, 25u, 2u, 3u };

@@ -10,6 +10,16 @@
 /* Keep configurable descriptor capacities without a fixed-width slot limit. */
 #define WP_MAT_NAME_MASK_WORDS ( ( WP_MATERIAL_MAX_TEXTURES + 31 ) / 32 )
 
+typedef struct wp_material_callbacks
+{
+    wp_graphics_material_sync_func sync_func;
+    void *sync_user_data;
+    wp_graphics_material_bind_func bind_func;
+    void *bind_user_data;
+    wp_graphics_material_release_func release_func;
+    void *release_user_data;
+} wp_material_callbacks;
+
 struct wp_graphics_material
 {
     wp_graphics_material_values values;
@@ -17,15 +27,33 @@ struct wp_graphics_material
     wp_c8 **texture_names;
     wp_shader_program *shader_program;
     void *native;
-    wp_graphics_material_sync_func sync_func;
-    void *sync_user_data;
-    wp_graphics_material_bind_func bind_func;
-    void *bind_user_data;
-    wp_graphics_material_release_func release_func;
-    void *release_user_data;
+    wp_material_callbacks *callbacks;
     wp_u32 revision;
     wp_s32 is_dirty;
 };
+
+/* Callback registration is an optional adapter. A failed allocation leaves the
+   previous registration/revision intact; clearing callbacks never allocates. */
+static wp_material_callbacks *wp_mat_callbacks( wp_graphics_material *mat )
+{
+    wp_material_callbacks *callbacks;
+    if( mat->callbacks ) return mat->callbacks;
+    callbacks = (wp_material_callbacks *)malloc( sizeof( *callbacks ) );
+    if( !callbacks ) return NULL;
+    memset( callbacks, 0, sizeof( *callbacks ) );
+    mat->callbacks = callbacks;
+    return callbacks;
+}
+
+static void wp_mat_trim_callbacks( wp_graphics_material *mat )
+{
+    if( mat->callbacks && !mat->callbacks->sync_func && !mat->callbacks->bind_func &&
+        !mat->callbacks->release_func )
+    {
+        free( mat->callbacks );
+        mat->callbacks = NULL;
+    }
+}
 
 static wp_u32 wp_mat_bit_count( wp_u32 mask )
 {
@@ -230,6 +258,8 @@ wp_graphics_material *wp_graphics_material_clone( const wp_graphics_material *so
 void wp_graphics_material_destroy( wp_graphics_material *mat )
 {
     wp_u32 i, count;
+    wp_graphics_material_release_func release_func;
+    void *release_user_data;
     if( mat )
     {
         count = wp_mat_name_count( mat );
@@ -238,8 +268,14 @@ void wp_graphics_material_destroy( wp_graphics_material *mat )
     }
     if( mat && mat->shader_program )
         wp_shader_program_destroy( mat->shader_program );
-    if( mat && mat->native && mat->release_func )
-        mat->release_func( mat->native, mat->release_user_data );
+    if( mat && mat->native && mat->callbacks && mat->callbacks->release_func )
+    {
+        /* A callback may unregister itself and free the optional block. */
+        release_func = mat->callbacks->release_func;
+        release_user_data = mat->callbacks->release_user_data;
+        release_func( mat->native, release_user_data );
+    }
+    if( mat ) free( mat->callbacks );
     free( mat );
 }
 
@@ -273,6 +309,7 @@ wp_u32 wp_graphics_material_get_storage_size( const wp_graphics_material *mat )
     if( !mat ) return 0;
     count = wp_mat_name_count( mat );
     bytes = (wp_u32)sizeof( *mat ) + count * (wp_u32)sizeof( *mat->texture_names );
+    if( mat->callbacks ) bytes += (wp_u32)sizeof( *mat->callbacks );
     for( i = 0; i < count; ++i )
         bytes += (wp_u32)strlen( mat->texture_names[i] ) + 1u;
     return bytes;
@@ -633,52 +670,76 @@ void wp_graphics_material_set_shader_program( wp_graphics_material *m, wp_shader
 void wp_graphics_material_set_sync_func( wp_graphics_material *m, wp_graphics_material_sync_func func,
                                          void *user_data )
 {
+    wp_material_callbacks *callbacks;
     if( !m )
         return;
-    if( m->sync_func != func || m->sync_user_data != user_data )
+    callbacks = m->callbacks;
+    user_data = func ? user_data : NULL;
+    if( !callbacks && !func ) return;
+    if( !callbacks ) callbacks = wp_mat_callbacks( m );
+    if( !callbacks ) return;
+    if( callbacks->sync_func != func || callbacks->sync_user_data != user_data )
     {
-        m->sync_func = func;
-        m->sync_user_data = func ? user_data : NULL;
+        callbacks->sync_func = func;
+        callbacks->sync_user_data = user_data;
         wp_mat_touch( m );
     }
+    wp_mat_trim_callbacks( m );
 }
 
 void wp_graphics_material_set_bind_func( wp_graphics_material *m, wp_graphics_material_bind_func func,
                                          void *user_data )
 {
+    wp_material_callbacks *callbacks;
     if( !m )
         return;
-    if( m->bind_func != func || m->bind_user_data != user_data )
+    callbacks = m->callbacks;
+    user_data = func ? user_data : NULL;
+    if( !callbacks && !func ) return;
+    if( !callbacks ) callbacks = wp_mat_callbacks( m );
+    if( !callbacks ) return;
+    if( callbacks->bind_func != func || callbacks->bind_user_data != user_data )
     {
-        m->bind_func = func;
-        m->bind_user_data = func ? user_data : NULL;
+        callbacks->bind_func = func;
+        callbacks->bind_user_data = user_data;
         wp_mat_touch( m );
     }
+    wp_mat_trim_callbacks( m );
 }
 
 void wp_graphics_material_set_release_func( wp_graphics_material *m,
                                             wp_graphics_material_release_func func, void *user_data )
 {
+    wp_material_callbacks *callbacks;
     if( !m )
         return;
-    m->release_func = func;
-    m->release_user_data = func ? user_data : NULL;
+    callbacks = m->callbacks;
+    if( !callbacks && !func ) return;
+    if( !callbacks ) callbacks = wp_mat_callbacks( m );
+    if( !callbacks ) return;
+    callbacks->release_func = func;
+    callbacks->release_user_data = func ? user_data : NULL;
+    wp_mat_trim_callbacks( m );
 }
 
 wp_s32 wp_graphics_material_update( wp_graphics_material *m )
 {
     wp_u32 revision;
+    wp_graphics_material_sync_func sync_func;
+    void *sync_user_data;
     if( !m )
         return 0;
     if( !m->is_dirty )
         return 1;
-    if( !m->sync_func )
+    if( !m->callbacks || !m->callbacks->sync_func )
     {
         m->is_dirty = 0;
         return 1;
     }
     revision = m->revision;
-    if( !m->sync_func( m, m->native, m->sync_user_data ) )
+    sync_func = m->callbacks->sync_func;
+    sync_user_data = m->callbacks->sync_user_data;
+    if( !sync_func( m, m->native, sync_user_data ) )
         return 0;
     if( m->revision == revision )
         m->is_dirty = 0;
@@ -689,6 +750,8 @@ wp_s32 wp_graphics_material_apply( wp_graphics_material *m, wp_renderer *rendere
 {
     wp_blend_mode blend;
     wp_s32 depth_write;
+    wp_graphics_material_bind_func bind_func;
+    void *bind_user_data;
     if( !m || !renderer || !wp_graphics_material_update( m ) )
         return 0;
     if( m->shader_program && !wp_shader_program_bind( m->shader_program, renderer ) )
@@ -708,8 +771,12 @@ wp_s32 wp_graphics_material_apply( wp_graphics_material *m, wp_renderer *rendere
     wp_renderer_set_depth_test_enabled( renderer,
                                         ( m->values.flags & WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK ) != 0u );
     wp_renderer_set_depth_write_enabled( renderer, depth_write );
-    if( m->bind_func )
-        return m->bind_func( m, renderer, m->native, m->bind_user_data ) != 0;
+    if( m->callbacks && m->callbacks->bind_func )
+    {
+        bind_func = m->callbacks->bind_func;
+        bind_user_data = m->callbacks->bind_user_data;
+        return bind_func( m, renderer, m->native, bind_user_data ) != 0;
+    }
     wp_renderer_set_texture_native( renderer, NULL );
     return 1;
 }
@@ -720,10 +787,16 @@ void *wp_graphics_material_get_native( const wp_graphics_material *m )
 }
 void wp_graphics_material_set_native( wp_graphics_material *m, void *native )
 {
+    wp_graphics_material_release_func release_func;
+    void *release_user_data;
     if( m && m->native != native )
     {
-        if( m->native && m->release_func )
-            m->release_func( m->native, m->release_user_data );
+        if( m->native && m->callbacks && m->callbacks->release_func )
+        {
+            release_func = m->callbacks->release_func;
+            release_user_data = m->callbacks->release_user_data;
+            release_func( m->native, release_user_data );
+        }
         m->native = native;
         wp_mat_touch( m );
     }

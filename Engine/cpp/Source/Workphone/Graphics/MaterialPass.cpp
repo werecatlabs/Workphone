@@ -46,7 +46,7 @@ namespace workphone::render
         {
             properties.setProperty(
                 MaterialTypeDataStr,
-                static_cast<s32>( static_cast<MaterialType>( state.materialType ) ) );
+                static_cast<s32>( static_cast<MaterialType>( state.getSurfaceState().materialType ) ) );
 
             auto editorProperties = workphone::make_ptr<Properties>();
             editorProperties->setName( EditorSettingsStr );
@@ -71,11 +71,11 @@ namespace workphone::render
 
         void readPassState( const Properties &properties, MaterialPassStateData &state )
         {
-            auto materialType = static_cast<s32>( static_cast<MaterialType>( state.materialType ) );
+            auto materialType = static_cast<s32>( static_cast<MaterialType>( state.getSurfaceState().materialType ) );
             if( properties.getPropertyValue( MaterialTypeDataStr, materialType ) && materialType >= 0 &&
                 materialType < static_cast<s32>( MaterialType::Count ) )
             {
-                state.materialType = static_cast<MaterialType>( materialType );
+                state.setSurfaceValue( &MaterialRenderState::materialType, static_cast<MaterialType>( materialType ) );
             }
 
             if( auto editorProperties = properties.getChild( EditorSettingsStr ) )
@@ -150,6 +150,7 @@ namespace workphone::render
         const bool pbr = material->m_shaderWorkflow == Material::ShaderWorkflow::Pbr;
         const bool colorOnly = material->m_shaderWorkflow == Material::ShaderWorkflow::ColorOnly;
         if( material->m_shaderWorkflow == Material::ShaderWorkflow::Legacy ) return;
+        auto surface = state.getSurfaceState();
         const auto &parameters = material->getShaderParameters();
         const auto seed = [&]( MaterialBuiltinParameter semantic, f32 &value ) {
             const auto handle = parameters.GetBuiltin( semantic );
@@ -158,9 +159,9 @@ namespace workphone::render
         };
         if( pbr )
         {
-            seed( MaterialBuiltinParameter::Metalness, state.metalness );
-            seed( MaterialBuiltinParameter::Roughness, state.roughness );
-            seed( MaterialBuiltinParameter::AlphaClip, state.alphaClip );
+            seed( MaterialBuiltinParameter::Metalness, surface.metalness );
+            seed( MaterialBuiltinParameter::Roughness, surface.roughness );
+            seed( MaterialBuiltinParameter::AlphaClip, surface.alphaClip );
         }
         const auto seedColour = [&]( MaterialBuiltinParameter semantic, ColourF &value ) {
             const auto handle = parameters.GetBuiltin( semantic );
@@ -169,31 +170,32 @@ namespace workphone::render
             value = parameters.GetColour( handle );
             return true;
         };
-        const auto hasAlbedo = pbr && seedColour( MaterialBuiltinParameter::Albedo, state.diffuseColour );
-        const auto hasColor = colorOnly && seedColour( MaterialBuiltinParameter::Color, state.diffuseColour );
-        if( hasColor ) state.emissiveColour = state.diffuseColour;
-        else if( !colorOnly ) seedColour( MaterialBuiltinParameter::Emissive, state.emissiveColour );
+        const auto hasAlbedo = pbr && seedColour( MaterialBuiltinParameter::Albedo, surface.diffuseColour );
+        const auto hasColor = colorOnly && seedColour( MaterialBuiltinParameter::Color, surface.diffuseColour );
+        if( hasColor ) surface.emissiveColour = surface.diffuseColour;
+        else if( !colorOnly ) seedColour( MaterialBuiltinParameter::Emissive, surface.emissiveColour );
         const auto opacity = parameters.GetBuiltin( MaterialBuiltinParameter::Opacity );
         const auto hasOpacity = parameters.IsHandleValid( opacity, MaterialShaderParameterType::Scalar, sizeof( f32 ) );
         if( hasOpacity || hasAlbedo || hasColor )
         {
-            state.opacity = Math<f32>::clamp( hasOpacity ? parameters.GetScalar( opacity ) :
-                                             ( colorOnly ? state.opacity : state.diffuseColour.a ),
+            surface.opacity = Math<f32>::clamp( hasOpacity ? parameters.GetScalar( opacity ) :
+                                             ( colorOnly ? surface.opacity : surface.diffuseColour.a ),
                                              0.0f, 1.0f );
-            state.diffuseColour.a = state.opacity;
-            if( state.opacity < 0.999f )
+            surface.diffuseColour.a = surface.opacity;
+            if( surface.opacity < 0.999f )
             {
-                state.setFlag( transparentFlag, true );
+                surface.flags = BitUtil::setFlagValue( surface.flags, static_cast<u32>( transparentFlag ), true );
                 u32 renderMode = 0;
                 state.getUIntSetting( MaterialUIntSetting::renderMode, renderMode );
                 if( renderMode < 2u )
                 {
                     state.setUIntSetting( MaterialUIntSetting::renderMode, 3u );
-                    state.blendMode = 1u;
-                    state.setFlag( cutoutFlag, false );
+                    surface.blendMode = 1u;
+                    surface.flags = BitUtil::setFlagValue( surface.flags, static_cast<u32>( cutoutFlag ), false );
                 }
             }
         }
+        state.setSurfaceState( surface );
     }
 
     void MaterialPass::setMaterial( SmartPtr<IMaterial> material )
@@ -226,6 +228,11 @@ namespace workphone::render
     void MaterialPass::releaseLocalStateContext()
     {
         if( auto material = getMaterial() ) material->setPass( nullptr );
+        // Retained facades must capture the live binding before the state retires.
+        detachTextureUnits();
+        if( auto context = getStateContextPtr() )
+            if( auto data = context->getStateDataById<MaterialPassStateData>( getId() ) )
+                data->setTextureBindingObserver( nullptr, nullptr );
         // SmartPtr's rvalue constructor retains its source; clear ownership
         // explicitly before cleanup or a later shared context could inherit it.
         auto context = m_createdStateContext;
@@ -237,6 +244,8 @@ namespace workphone::render
         m_localStateContext.store( nullptr );
         if( state )
         {
+            if( auto data = dynamic_pointer_cast<MaterialPassStateData>( state->getData() ) )
+                data->setTextureBindingObserver( nullptr, nullptr );
             if( context )
                 context->removeState( state );
             state->setOwner( nullptr );
@@ -320,11 +329,16 @@ namespace workphone::render
                             auto stateData = factoryManager->make_ptr<MaterialPassStateData>();
                             if( stateData )
                             {
+                                ScopedLock<MaterialPassStateData> seedScope( stateData );
                                 // State data owns the documented surface defaults.
                                 if( auto material = dynamic_pointer_cast<Material>( getMaterial() ) )
                                     material->seedLegacySurface( *stateData );
                                 seedShaderSurface( *stateData );
                                 stateData->setFlag( depthWriteFlag, true );
+                                for( u32 i = 0; i < m_textures.size() && i < MaterialRenderState::TextureCount; ++i )
+                                    if( auto unit = m_textures[i] )
+                                        if( !unit->getParent() || unit->getParent().get() == this )
+                                            stateData->setTextureBinding( i, unit->getTexture() );
                             }
                             state->setId( getId() );
                             state->setOwner( this );
@@ -337,6 +351,10 @@ namespace workphone::render
                 }
             }
 
+            if( auto context = getStateContextPtr() )
+                if( auto state = context->getStateDataById<MaterialPassStateData>( getId() ) )
+                    state->setTextureBindingObserver( this, &MaterialPass::textureBindingChanged );
+
             createTextureSlots();
 
             setupMaterial();
@@ -345,12 +363,17 @@ namespace workphone::render
 
             for( auto &t : m_textures )
             {
-                if(t) t->load( nullptr );
+                if( t && ( !t->getParent() || t->getParent().get() == this ) )
+                {
+                    t->setParent( this );
+                    t->load( nullptr );
+                }
             }
 
             // Authored texture units may precede the pass's state context.
             for(auto &unit : m_textures)
-                if(unit) updateRenderTexture(unit.get(), unit->getTexture());
+                if( unit && unit->getParent().get() == this )
+                    updateRenderTexture( unit.get(), unit->getTexture() );
 
             setLoadingState( LoadingState::Loaded );
             if( auto material = getMaterial() ) material->setPass( nullptr );
@@ -366,7 +389,7 @@ namespace workphone::render
         if(!getParent() || !getMaterial()) return;
         auto type = MaterialType::Standard;
         if(auto context = getStateContextPtr())
-            if(auto state = context->getStateDataById<MaterialPassStateData>(getId())) type = state->materialType;
+            if(auto state = context->getStateDataById<MaterialPassStateData>(getId())) type = state->getSurfaceState().materialType;
         size_t slots = 0;
         String passName;
         switch(type)
@@ -396,14 +419,15 @@ namespace workphone::render
         {
             // Logical empty slots need no authoring object. Keep authored units
             // when the schema changes size; texture bindings stay in state data.
+            for( size_t i = slots; i < m_textures.size(); ++i )
+                if( auto unit = m_textures[i] )
+                    if( unit->getParent().get() == this ) unit->setParent( nullptr );
             m_textures.resize(slots);
             if(auto context = getStateContextPtr())
                 if(auto state = context->invalidateStateDataById<MaterialPassStateData>(getId()))
                     for(u32 i = static_cast<u32>(slots); i < MaterialRenderState::TextureCount; ++i)
                     {
-                        if(i < state->textures.size())
-                        { state->textures[i] = nullptr; }
-                        else state->extendedTextures[i - state->textures.size()] = nullptr;
+                        state->setTextureBinding( i, nullptr );
                     }
             if(!passName.empty()) setName(passName);
         }
@@ -450,15 +474,35 @@ namespace workphone::render
 
     void MaterialPass::setTextureUnits( const Array<SmartPtr<IMaterialTexture>> &textures )
     {
+        FixedArray<SmartPtr<ITexture>, MaterialRenderState::TextureCount> bindings{};
+        for( u32 i = 0; i < textures.size() && i < bindings.size(); ++i )
+            if( textures[i] ) bindings[i] = textures[i]->getTexture();
+        for( const auto &unit : textures )
+            if( unit )
+                if( auto previous = dynamic_pointer_cast<MaterialPass>( unit->getParent() ) )
+                    if( previous.get() != this ) previous->removeTextureUnit( unit );
+        detachTextureUnits();
         m_textures = { textures.begin(), textures.end() };
+        if( auto context = getStateContextPtr() )
+            if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                for( u32 i = 0; i < bindings.size(); ++i ) state->setTextureBinding( i, bindings[i] );
         for( auto unit : textures ) if( unit ) unit->setParent( this );
-        refreshRenderTextures();
+    }
+
+    void MaterialPass::detachTextureUnits()
+    {
+        for( auto unit : m_textures )
+            if( unit && unit->getParent().get() == this ) unit->setParent( nullptr );
     }
 
     void MaterialPass::unload( SmartPtr<ISharedObject> data )
     {
         try
         {
+            Array<SmartPtr<IMaterialTexture>> ownedUnits;
+            for( const auto &unit : m_textures )
+                if( unit && ( !unit->getParent() || unit->getParent().get() == this ) )
+                    ownedUnits.push_back( unit );
             releaseLocalStateContext();
             const auto &loadingState = getLoadingState();
             if( loadingState != LoadingState::Unloaded )
@@ -468,8 +512,7 @@ namespace workphone::render
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
 
-                auto textures = m_textures.snapshot();
-                for( auto &t : textures )
+                for( auto &t : ownedUnits )
                 {
                     if(t) t->unload( nullptr );
                 }
@@ -492,7 +535,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->blendMode = blendType;
+                state->setSurfaceValue( &MaterialRenderState::blendMode, blendType );
             }
         }
     }
@@ -503,7 +546,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->depthTest != 0u;
+                return state->getSurfaceState().depthTest != 0u;
             }
         }
 
@@ -516,7 +559,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->depthTest = enabled ? ( state->depthTest != 0u ? state->depthTest : 2u ) : 0u;
+                state->setSurfaceValue( &MaterialRenderState::depthTest, enabled ? ( state->getSurfaceState().depthTest != 0u ? state->getSurfaceState().depthTest : 2u ) : 0u );
             }
         }
     }
@@ -527,7 +570,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return BitUtil::getFlagValue( state->flags, static_cast<u32>( render::depthWriteFlag ) );
+                return BitUtil::getFlagValue( state->getSurfaceState().flags, static_cast<u32>( render::depthWriteFlag ) );
             }
         }
 
@@ -540,8 +583,8 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = BitUtil::setFlagValue(
-                    state->flags, static_cast<u32>( render::depthWriteFlag ), enabled );
+                state->setSurfaceValue( &MaterialRenderState::flags, BitUtil::setFlagValue(
+                    state->getSurfaceState().flags, static_cast<u32>( render::depthWriteFlag ), enabled ) );
             }
         }
     }
@@ -552,7 +595,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->cullMode;
+                return state->getSurfaceState().cullMode;
             }
         }
 
@@ -565,7 +608,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->cullMode = mode;
+                state->setSurfaceValue( &MaterialRenderState::cullMode, mode );
             }
         }
     }
@@ -576,7 +619,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = BitUtil::setFlagValue( state->flags, LightingEnabledFlag, enabled );
+                state->setSurfaceValue( &MaterialRenderState::flags, BitUtil::setFlagValue( state->getSurfaceState().flags, LightingEnabledFlag, enabled ) );
             }
         }
     }
@@ -587,7 +630,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return BitUtil::getFlagValue( state->flags, LightingEnabledFlag );
+                return BitUtil::getFlagValue( state->getSurfaceState().flags, LightingEnabledFlag );
             }
         }
 
@@ -608,21 +651,58 @@ namespace workphone::render
 
     void MaterialPass::addTextureUnit( SmartPtr<IMaterialTexture> textureUnit )
     {
+        const auto texture = textureUnit ? textureUnit->getTexture() : nullptr;
+        if( textureUnit )
+            if( auto previous = dynamic_pointer_cast<MaterialPass>( textureUnit->getParent() ) )
+                if( previous.get() != this ) previous->removeTextureUnit( textureUnit );
         m_textures.push_back( textureUnit );
         if( textureUnit )
         {
+            updateRenderTexture( textureUnit.get(), texture );
             textureUnit->setParent( this );
-            updateRenderTexture( textureUnit.get(), textureUnit->getTexture() );
         }
     }
 
     void MaterialPass::removeTextureUnit( SmartPtr<IMaterialTexture> textureUnit )
     {
         // Preserve bindings while compacting the authoring slot sequence.
-        getTextureUnits();
-        m_textures.erase( std::remove( m_textures.begin(), m_textures.end(), textureUnit ),
-                          m_textures.end() );
-        refreshRenderTextures();
+        auto units = getTextureUnits();
+        detachTextureUnits();
+        units.erase( std::remove( units.begin(), units.end(), textureUnit ), units.end() );
+        setTextureUnits( units );
+    }
+
+    bool MaterialPass::getRenderTextureBinding( const IMaterialTexture *unit,
+                                                SmartPtr<ITexture> &texture ) const
+    {
+        u32 slot = MaterialRenderState::TextureCount;
+        {
+            ScopedLock<decltype( m_textures )> lock( &m_textures );
+            for( u32 i = 0; i < m_textures.size() && i < MaterialRenderState::TextureCount; ++i )
+                if( m_textures[i].get() == unit ) { slot = i; break; }
+        }
+        if( slot == MaterialRenderState::TextureCount ) return false;
+        if( auto context = getStateContextPtr() )
+            if( auto state = context->getStateDataById<MaterialPassStateData>( getId() ) )
+            {
+                texture = state->getTextureBinding( slot );
+                return true;
+            }
+        return false;
+    }
+
+    void MaterialPass::textureBindingChanged( void *owner, u32 slot )
+    {
+        auto pass = dynamic_cast<MaterialPass *>( static_cast<IMaterialPass *>( owner ) );
+        if( !pass ) return;
+        SmartPtr<IMaterialTexture> unit;
+        {
+            ScopedLock<decltype( m_textures )> lock( &pass->m_textures );
+            if( slot < pass->m_textures.size() ) unit = pass->m_textures[slot];
+        }
+        if( unit && unit->getParent().get() == pass )
+            if( auto concrete = dynamic_pointer_cast<MaterialTexture>( unit ) )
+                concrete->onCanonicalBindingChanged();
     }
 
     void MaterialPass::updateRenderTexture( IMaterialTexture *unit, SmartPtr<ITexture> texture )
@@ -634,11 +714,7 @@ namespace workphone::render
                 if( auto context = getStateContextPtr() )
                     if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                     {
-                        if( i < state->textures.size() )
-                        {
-                            state->textures[i] = texture;
-                        }
-                        else state->extendedTextures[i - state->textures.size()] = texture;
+                        state->setTextureBinding( i, texture );
                     }
                 return;
             }
@@ -652,11 +728,7 @@ namespace workphone::render
                 for( u32 i = 0; i < MaterialRenderState::TextureCount; ++i )
                 {
                     auto texture = i < units.size() && units[i] ? units[i]->getTexture() : nullptr;
-                    if( i < state->textures.size() )
-                    {
-                        state->textures[i] = texture;
-                    }
-                    else state->extendedTextures[i - state->textures.size()] = texture;
+                    state->setTextureBinding( i, texture );
                 }
     }
 
@@ -678,7 +750,13 @@ namespace workphone::render
         {
             ScopedLock<decltype(m_textures)> lock(&m_textures);
             if(index >= m_textures.size()) return nullptr;
-            if(m_textures[index]) return m_textures[index];
+            if( m_textures[index] )
+            {
+                if( m_textures[index]->getParent().get() == this ) return m_textures[index];
+                // A direct node reparent may leave an old membership behind.
+                // Replace that facade without changing its new parent's binding.
+                m_textures[index] = nullptr;
+            }
         }
         // Read state and run factory/resource callbacks outside the array lock.
         // State writers may already hold their write lock when accessing units.
@@ -687,10 +765,8 @@ namespace workphone::render
         if(auto context = getStateContextPtr())
             if(auto state = context->getStateDataById<MaterialPassStateData>(getId()))
             {
-                type = state->materialType;
-                if(index < state->textures.size()) texture = state->textures[index];
-                else if(index < MaterialRenderState::TextureCount)
-                    texture = state->extendedTextures[index - state->textures.size()];
+                type = state->getSurfaceState().materialType;
+                texture = state->getTextureBinding( index );
             }
         auto app = core::IApplicationManager::instancePtr();
         auto factory = app ? app->getFactoryManagerPtr() : nullptr;
@@ -703,7 +779,6 @@ namespace workphone::render
                 index < static_cast<u32>(TerrainTextureTypes::Count))
             unit->setName(GraphicsUtil::getTerrainTextureType(static_cast<TerrainTextureTypes>(index)));
         unit->setTexture(texture);
-        unit->setParent(const_cast<MaterialPass *>(this));
         SmartPtr<IMaterialTexture> result;
         {
             ScopedLock<decltype(m_textures)> lock(&m_textures);
@@ -713,6 +788,8 @@ namespace workphone::render
                 result = m_textures[index];
             }
         }
+        // Parent callbacks must run outside the array lock, after membership exists.
+        if( result ) result->setParent( const_cast<MaterialPass *>( this ) );
         return result;
     }
 
@@ -728,12 +805,7 @@ namespace workphone::render
             if(auto context = getStateContextPtr())
                 if(auto state = context->invalidateStateDataById<MaterialPassStateData>(getId()))
                 {
-                    if(layerIdx < state->textures.size())
-                    {
-                        state->textures[layerIdx] = tex;
-                    }
-                    else if(layerIdx < MaterialRenderState::TextureCount)
-                        state->extendedTextures[layerIdx - state->textures.size()] = tex;
+                    state->setTextureBinding( layerIdx, tex );
                 }
             if(layerIdx >= getNumTexturesNodes()) m_textures.resize(size_t(layerIdx) + 1);
             // Clearing an implicit slot needs no authoring object or upload job.
@@ -864,7 +936,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->renderTechnique;
+                return state->getRenderTechnique();
             }
         }
 
@@ -880,7 +952,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->renderTechnique = renderTechnique;
+                    state->setRenderTechnique( renderTechnique );
                 }
             }
         }
@@ -896,7 +968,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->ambientColour;
+                return state->getSurfaceState().ambientColour;
             }
         }
 
@@ -912,7 +984,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->ambientColour = ambient;
+                    state->setSurfaceValue( &MaterialRenderState::ambientColour, ambient );
                 }
             }
         }
@@ -928,7 +1000,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->diffuseColour;
+                return state->getSurfaceState().diffuseColour;
             }
         }
 
@@ -944,7 +1016,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->diffuseColour = diffuse;
+                    state->setSurfaceValue( &MaterialRenderState::diffuseColour, diffuse );
                 }
             }
         }
@@ -960,7 +1032,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->specularColour;
+                return state->getSurfaceState().specularColour;
             }
         }
 
@@ -976,7 +1048,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->specularColour = specular;
+                    state->setSurfaceValue( &MaterialRenderState::specularColour, specular );
                 }
             }
         }
@@ -992,7 +1064,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->emissiveColour;
+                return state->getSurfaceState().emissiveColour;
             }
         }
 
@@ -1008,7 +1080,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->emissiveColour = emissive;
+                    state->setSurfaceValue( &MaterialRenderState::emissiveColour, emissive );
                 }
             }
         }
@@ -1024,7 +1096,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->tintColour;
+                return state->getTintColour();
             }
         }
 
@@ -1040,7 +1112,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->tintColour = tint;
+                    state->setTintColour( tint );
                 }
             }
         }
@@ -1056,7 +1128,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->metalness;
+                return state->getSurfaceState().metalness;
             }
         }
 
@@ -1072,7 +1144,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->metalness = metalness;
+                    state->setSurfaceValue( &MaterialRenderState::metalness, metalness );
                 }
             }
         }
@@ -1088,7 +1160,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->roughness;
+                return state->getSurfaceState().roughness;
             }
         }
 
@@ -1104,7 +1176,7 @@ namespace workphone::render
                 if( auto state =
                         stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 {
-                    state->roughness = roughness;
+                    state->setSurfaceValue( &MaterialRenderState::roughness, roughness );
                 }
             }
         }
@@ -1159,7 +1231,7 @@ namespace workphone::render
         if(auto context = getStateContextPtr())
             if(auto data = context->getStateDataById<MaterialPassStateData>(getId()))
                 for(u32 i = 0; i < bindings.size(); ++i)
-                    bindings[i] = i < data->textures.size() ? data->textures[i] : data->extendedTextures[i - data->textures.size()];
+                    bindings[i] = data->getTextureBinding( i );
         for(u32 index = 0; index < textureUnits.size(); ++index)
         {
             const auto &unit = textureUnits[index];
@@ -1274,10 +1346,7 @@ namespace workphone::render
                     if( auto state =
                             stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                     {
-                        if( textureIndex < state->textures.size() )
-                        {
-                            state->textures[textureIndex] = pTexture->getTexture();
-                        }
+                        state->setTextureBinding( static_cast<u32>( textureIndex ), pTexture->getTexture() );
                     }
                 }
             }
@@ -1441,8 +1510,8 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = BitUtil::setFlagValue( state->flags,
-                                                      static_cast<u32>( render::cutoutFlag ), cutout );
+                state->setSurfaceValue( &MaterialRenderState::flags, BitUtil::setFlagValue( state->getSurfaceState().flags,
+                                                      static_cast<u32>( render::cutoutFlag ), cutout ) );
             }
         }
     }
@@ -1453,7 +1522,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return BitUtil::getFlagValue( state->flags, static_cast<u32>( render::cutoutFlag ) );
+                return BitUtil::getFlagValue( state->getSurfaceState().flags, static_cast<u32>( render::cutoutFlag ) );
             }
         }
 
@@ -1466,8 +1535,8 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = BitUtil::setFlagValue(
-                    state->flags, static_cast<u32>( render::transparentFlag ), transparent );
+                state->setSurfaceValue( &MaterialRenderState::flags, BitUtil::setFlagValue(
+                    state->getSurfaceState().flags, static_cast<u32>( render::transparentFlag ), transparent ) );
             }
         }
     }
@@ -1478,7 +1547,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return BitUtil::getFlagValue( state->flags,
+                return BitUtil::getFlagValue( state->getSurfaceState().flags,
                                               static_cast<u32>( render::transparentFlag ) );
             }
         }
@@ -1492,8 +1561,8 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = BitUtil::setFlagValue(
-                    state->flags, static_cast<u32>( render::emissionEnabledFlag ), enabled );
+                state->setSurfaceValue( &MaterialRenderState::flags, BitUtil::setFlagValue(
+                    state->getSurfaceState().flags, static_cast<u32>( render::emissionEnabledFlag ), enabled ) );
             }
         }
     }
@@ -1504,7 +1573,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return BitUtil::getFlagValue( state->flags,
+                return BitUtil::getFlagValue( state->getSurfaceState().flags,
                                               static_cast<u32>( render::emissionEnabledFlag ) );
             }
         }
@@ -1518,7 +1587,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return BitUtil::getFlagValue( state->flags,
+                return BitUtil::getFlagValue( state->getSurfaceState().flags,
                                               static_cast<u32>( render::refractionEnabledFlag ) );
             }
         }
@@ -1532,8 +1601,8 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = BitUtil::setFlagValue(
-                    state->flags, static_cast<u32>( render::refractionEnabledFlag ), enabled );
+                state->setSurfaceValue( &MaterialRenderState::flags, BitUtil::setFlagValue(
+                    state->getSurfaceState().flags, static_cast<u32>( render::refractionEnabledFlag ), enabled ) );
             }
         }
     }
@@ -1544,7 +1613,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->flags;
+                return state->getSurfaceState().flags;
             }
         }
 
@@ -1559,7 +1628,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->flags = flags;
+                state->setSurfaceValue( &MaterialRenderState::flags, flags );
             }
         }
     }

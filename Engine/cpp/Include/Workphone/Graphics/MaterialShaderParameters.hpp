@@ -102,6 +102,9 @@ namespace workphone::render
         ~MaterialShaderParametersInstance() = default;
         MaterialShaderParametersInstance( const MaterialShaderParametersInstance &other );
         MaterialShaderParametersInstance &operator=( const MaterialShaderParametersInstance &other );
+        // Owner fallback handoff is staged before moving. If its allocation
+        // fails, noexcept moves retain the source/destination; construction
+        // leaves the new detached instance empty.
         MaterialShaderParametersInstance( MaterialShaderParametersInstance &&other ) noexcept;
         MaterialShaderParametersInstance &operator=( MaterialShaderParametersInstance &&other ) noexcept;
 
@@ -122,6 +125,8 @@ namespace workphone::render
         };
         EditScope Edit() { return EditScope( *this ); }
 
+        // Invalid descriptor schemas preserve the previous instance. A null
+        // layout or Clear explicitly retires it; valid resets use new defaults.
         void Reset( const Array<MaterialShaderParameterInfo> &info );
         void Reset( MaterialShaderParameterLayout::Ptr layout );
         void Clear();

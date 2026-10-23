@@ -427,6 +427,9 @@ namespace workphone
         /// Flag controlling whether messages are queued or sent immediately
         atomic_bool m_enableMessageQueues = true;
 
+        /// Closed under the queue lock before teardown; loading events run outside that lock.
+        atomic_bool m_acceptQueuedMessages = false;
+
         /// Atomic flag for general dirty state tracking
         atomic_bool m_isDirty = false;
 
@@ -439,8 +442,8 @@ namespace workphone
         /// Counter for state updates (used for dirty tracking)
         atomic_u32 m_stateUpdateCount;
 
-        /// Counter for removal operations
-        atomic_u32 m_removeCount;
+        /// Invalidates first-queue candidates across unload/reload lifetimes.
+        atomic_u32 m_queueGeneration = 0;
 
         // Inline capacities; insertion beyond these limits throws std::length_error.
         static constexpr size_t stateCapacity = 12;

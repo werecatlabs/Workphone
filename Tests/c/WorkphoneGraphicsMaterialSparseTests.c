@@ -57,6 +57,161 @@ static int check( int condition, const char *message )
     return 0;
 }
 
+typedef struct callback_state
+{
+    int syncs;
+    int binds;
+    int releases;
+    int allow_sync;
+    int clear_sync;
+    int clear_bind;
+    wp_graphics_material *clear_release_owner;
+    void *last_native;
+} callback_state;
+
+static wp_s32 test_sync( const wp_graphics_material *material, void *native, void *user_data )
+{
+    callback_state *state;
+    state = (callback_state *)user_data;
+    ++state->syncs;
+    state->last_native = native;
+    if( state->clear_sync )
+        wp_graphics_material_set_sync_func( (wp_graphics_material *)material, NULL, NULL );
+    return state->allow_sync;
+}
+
+static wp_s32 test_bind( const wp_graphics_material *material, wp_renderer *renderer,
+                         void *native, void *user_data )
+{
+    callback_state *state;
+    (void)material;
+    (void)renderer;
+    state = (callback_state *)user_data;
+    ++state->binds;
+    state->last_native = native;
+    if( state->clear_bind )
+        wp_graphics_material_set_bind_func( (wp_graphics_material *)material, NULL, NULL );
+    return 1;
+}
+
+static void test_release( void *native, void *user_data )
+{
+    callback_state *state;
+    state = (callback_state *)user_data;
+    ++state->releases;
+    state->last_native = native;
+    if( state->clear_release_owner )
+        wp_graphics_material_set_release_func( state->clear_release_owner, NULL, NULL );
+}
+
+static int callback_storage_contracts( void )
+{
+    wp_graphics_material *material, *clone, *destination;
+    callback_state state, other;
+    wp_u32 revision, storage;
+    int ok, calls, first_native, second_native;
+    memset( &state, 0, sizeof( state ) );
+    memset( &other, 0, sizeof( other ) );
+    state.allow_sync = other.allow_sync = 1;
+    first_native = 1;
+    second_native = 2;
+    material = wp_graphics_material_create();
+    destination = wp_graphics_material_create();
+    if( !material || !destination )
+    {
+        wp_graphics_material_destroy( material );
+        wp_graphics_material_destroy( destination );
+        return 0;
+    }
+    ok = 1;
+    storage = wp_graphics_material_get_storage_size( material );
+    revision = wp_graphics_material_get_revision( material );
+    calls = allocation_calls;
+    wp_graphics_material_set_sync_func( material, NULL, &state );
+    wp_graphics_material_set_bind_func( material, NULL, &state );
+    wp_graphics_material_set_release_func( material, NULL, &state );
+    ok &= check( !material->callbacks && allocation_calls == calls &&
+                 wp_graphics_material_get_revision( material ) == revision,
+                 "empty callback clears use no allocation or revision" );
+    fail_after = 0;
+    wp_graphics_material_set_sync_func( material, test_sync, &state );
+    wp_graphics_material_set_bind_func( material, test_bind, &state );
+    wp_graphics_material_set_release_func( material, test_release, &state );
+    fail_after = -1;
+    ok &= check( !material->callbacks && wp_graphics_material_get_storage_size( material ) == storage &&
+                 wp_graphics_material_get_revision( material ) == revision,
+                 "failed first callback registrations preserve storage and revision" );
+    wp_graphics_material_set_sync_func( material, test_sync, &state );
+    calls = allocation_calls;
+    revision = wp_graphics_material_get_revision( material );
+    wp_graphics_material_set_sync_func( material, test_sync, &state );
+    wp_graphics_material_set_bind_func( material, test_bind, &state );
+    wp_graphics_material_set_release_func( material, test_release, &state );
+    ok &= check( allocation_calls == calls &&
+                 wp_graphics_material_get_storage_size( material ) == storage + sizeof( wp_material_callbacks ) &&
+                 wp_graphics_material_get_revision( material ) == revision + 1u,
+                 "callbacks share one block; unchanged registration and release registration preserve revision" );
+    wp_graphics_material_set_native( material, &first_native );
+    state.allow_sync = 0;
+    ok &= check( !wp_graphics_material_update( material ) && state.syncs == 1 &&
+                 wp_graphics_material_is_dirty( material ), "failed sync retains dirty state" );
+    state.allow_sync = 1;
+    ok &= check( wp_graphics_material_apply( material, (wp_renderer *)&state ) && state.syncs == 2 &&
+                 state.binds == 1 && state.last_native == &first_native &&
+                 !wp_graphics_material_is_dirty( material ), "registered sync and bind preserve native/user data" );
+    wp_graphics_material_set_native( material, &second_native );
+    ok &= check( state.releases == 1 && state.last_native == &first_native,
+                 "native replacement releases the outgoing object once" );
+    clone = wp_graphics_material_clone( material );
+    ok &= check( clone && !clone->callbacks && !wp_graphics_material_get_native( clone ),
+                 "clone retains value/program semantics without copying callbacks or native ownership" );
+    wp_graphics_material_destroy( clone );
+    wp_graphics_material_set_sync_func( destination, test_sync, &other );
+    ok &= check( wp_graphics_material_copy( destination, material ) && destination->callbacks &&
+                 destination->callbacks->sync_user_data == &other,
+                 "value copy preserves destination callback ownership" );
+    wp_graphics_material_reset( destination );
+    ok &= check( wp_graphics_material_update( destination ) && other.syncs == 1,
+                 "reset preserves registered callbacks" );
+    wp_graphics_material_destroy( destination );
+    calls = allocation_calls;
+    fail_after = 0;
+    wp_graphics_material_set_sync_func( material, NULL, NULL );
+    wp_graphics_material_set_bind_func( material, NULL, NULL );
+    fail_after = -1;
+    ok &= check( material->callbacks && allocation_calls == calls,
+                 "clearing some callbacks preserves release ownership without allocating" );
+    state.clear_release_owner = material;
+    wp_graphics_material_destroy( material );
+    ok &= check( state.releases == 2 && state.last_native == &second_native && live_allocations == 0,
+                 "destruction permits self-removal of final release callback and retires storage" );
+    state.clear_release_owner = NULL;
+
+    material = wp_graphics_material_create();
+    if( !material ) return 0;
+    wp_graphics_material_set_sync_func( material, test_sync, &state );
+    calls = allocation_calls;
+    fail_after = 0;
+    wp_graphics_material_set_sync_func( material, NULL, NULL );
+    fail_after = -1;
+    ok &= check( !material->callbacks && allocation_calls == calls &&
+                 wp_graphics_material_get_storage_size( material ) == storage,
+                 "clearing final callback frees optional block even under allocation failure" );
+    state.clear_sync = 1;
+    wp_graphics_material_set_sync_func( material, test_sync, &state );
+    ok &= check( wp_graphics_material_update( material ) && !material->callbacks &&
+                 wp_graphics_material_is_dirty( material ) && wp_graphics_material_update( material ) &&
+                 !wp_graphics_material_is_dirty( material ),
+                 "sync may remove its last callback while preserving revision-aware dirty handling" );
+    state.clear_bind = 1;
+    wp_graphics_material_set_bind_func( material, test_bind, &state );
+    ok &= check( wp_graphics_material_apply( material, (wp_renderer *)&state ) && !material->callbacks &&
+                 wp_graphics_material_is_dirty( material ) && wp_graphics_material_update( material ),
+                 "bind may remove its last callback without retaining the freed optional block" );
+    wp_graphics_material_destroy( material );
+    return ok;
+}
+
 int main( void )
 {
     wp_graphics_material *material;
@@ -66,6 +221,8 @@ int main( void )
     int ok, i, calls, allocations;
     material = wp_graphics_material_create();
     if( !material ) return 1;
+    printf( "native_material_object_bytes=%lu native_callback_block_bytes=%lu\n",
+            (unsigned long)sizeof( wp_graphics_material ), (unsigned long)sizeof( wp_material_callbacks ) );
     wp_graphics_material_set_texture_name( material, 39, "Last" );
     wp_graphics_material_set_texture_name( material, 0, "First" );
     borrowed = wp_graphics_material_get_texture_name( material, 39 );
@@ -131,6 +288,7 @@ int main( void )
     ok &= check( live_allocations == 1 && !wp_graphics_material_get_texture_name( material, 39 )[0],
                  "clearing the final name needs no allocation" );
     wp_graphics_material_destroy( material );
+    ok &= callback_storage_contracts();
     ok &= check( live_allocations == 0, "all material-owned allocations retire" );
     return ok ? 0 : 1;
 }

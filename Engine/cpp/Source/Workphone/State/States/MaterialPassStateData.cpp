@@ -42,6 +42,48 @@ namespace workphone
                    sameMaterialValue( a.b, b.b ) && sameMaterialValue( a.a, b.a );
         }
 
+        bool sameSurface( const MaterialRenderState &a, const MaterialRenderState &b )
+        {
+            if( !sameMaterialValue( a.specularColour, b.specularColour ) ) return false;
+            if( !sameMaterialValue( a.ambientColour, b.ambientColour ) ) return false;
+            if( !sameMaterialValue( a.diffuseColour, b.diffuseColour ) ) return false;
+            if( !sameMaterialValue( a.emissiveColour, b.emissiveColour ) ) return false;
+            if( !sameMaterialValue( a.alphaClip, b.alphaClip ) ) return false;
+            if( !sameMaterialValue( a.opacity, b.opacity ) ) return false;
+            if( !sameMaterialValue( a.refractionAmount, b.refractionAmount ) ) return false;
+            if( !sameMaterialValue( a.refractionIor, b.refractionIor ) ) return false;
+            if( !sameMaterialValue( a.metalness, b.metalness ) ) return false;
+            if( !sameMaterialValue( a.roughness, b.roughness ) ) return false;
+            if( !sameMaterialValue( a.normalStrength, b.normalStrength ) ) return false;
+            if( !sameMaterialValue( a.aoStrength, b.aoStrength ) ) return false;
+            if( !sameMaterialValue( a.emissionIntensity, b.emissionIntensity ) ) return false;
+            if( !sameMaterialValue( a.clearCoat, b.clearCoat ) ) return false;
+            if( !sameMaterialValue( a.clearCoatRoughness, b.clearCoatRoughness ) ) return false;
+            if( !sameMaterialValue( a.uvTilingX, b.uvTilingX ) ) return false;
+            if( !sameMaterialValue( a.uvTilingY, b.uvTilingY ) ) return false;
+            if( !sameMaterialValue( a.uvOffsetX, b.uvOffsetX ) ) return false;
+            if( !sameMaterialValue( a.uvOffsetY, b.uvOffsetY ) ) return false;
+            if( !sameMaterialValue( a.uvRotation, b.uvRotation ) ) return false;
+            if( !sameMaterialValue( a.uvTriplanarScale, b.uvTriplanarScale ) ) return false;
+            if( !sameMaterialValue( a.uvAniso, b.uvAniso ) ) return false;
+            if( !sameMaterialValue( a.blendMode, b.blendMode ) ) return false;
+            if( !sameMaterialValue( a.cullMode, b.cullMode ) ) return false;
+            if( !sameMaterialValue( a.uvProjection, b.uvProjection ) ) return false;
+            if( !sameMaterialValue( a.uvWrapU, b.uvWrapU ) ) return false;
+            if( !sameMaterialValue( a.uvWrapV, b.uvWrapV ) ) return false;
+            if( !sameMaterialValue( a.uvFilter, b.uvFilter ) ) return false;
+            if( !sameMaterialValue( a.metallicSource, b.metallicSource ) ) return false;
+            if( !sameMaterialValue( a.roughnessSource, b.roughnessSource ) ) return false;
+            if( !sameMaterialValue( a.aoSource, b.aoSource ) ) return false;
+            if( !sameMaterialValue( a.opacitySource, b.opacitySource ) ) return false;
+            if( !sameMaterialValue( a.depthTest, b.depthTest ) ) return false;
+            if( !sameMaterialValue( a.flags, b.flags ) ) return false;
+            if( !sameMaterialValue( a.materialType, b.materialType ) ) return false;
+            for( u32 i = 0; i < MaterialRenderState::TextureCount; ++i )
+                if( a.textures[i] != b.textures[i] ) return false;
+            return true;
+        }
+
         static_assert( static_cast<u32>( MaterialStringSetting::Count ) == 2, "packed editor string schema" );
         static_assert( ( u64( WP_MAX_CLASSNAME ) + 1 ) * 3 + ( u64( WP_MAX_PATH ) + 1 ) * 2 +
                            sizeof( u32 ) * 5 <= std::numeric_limits<u32>::max(),
@@ -81,7 +123,7 @@ namespace workphone
         struct EditorField
         {
             const char *name;
-            T MaterialPassStateData::*member;
+            T MaterialRenderState::*member;
             u32 coldIndex = 0;
             T defaultValue = {};
         };
@@ -93,28 +135,28 @@ namespace workphone
         };
 
         constexpr EditorField<f32> FloatFields[] = {
-            { "alphaClip", &MaterialPassStateData::alphaClip },
-            { "opacity", &MaterialPassStateData::opacity },
-            { "refractionAmount", &MaterialPassStateData::refractionAmount },
-            { "refractionIor", &MaterialPassStateData::refractionIor },
-            { "metalness", &MaterialPassStateData::metalness },
-            { "roughness", &MaterialPassStateData::roughness },
+            { "alphaClip", &MaterialRenderState::alphaClip },
+            { "opacity", &MaterialRenderState::opacity },
+            { "refractionAmount", &MaterialRenderState::refractionAmount },
+            { "refractionIor", &MaterialRenderState::refractionIor },
+            { "metalness", &MaterialRenderState::metalness },
+            { "roughness", &MaterialRenderState::roughness },
             { "specular", nullptr, 9u, 0.05f },
-            { "normalStrength", &MaterialPassStateData::normalStrength },
-            { "aoStrength", &MaterialPassStateData::aoStrength },
+            { "normalStrength", &MaterialRenderState::normalStrength },
+            { "aoStrength", &MaterialRenderState::aoStrength },
             { "heightScale", nullptr, 10u, 0.02f },
             { "parallaxSteps", nullptr, 11u, 16.0f },
-            { "emissionIntensity", &MaterialPassStateData::emissionIntensity },
-            { "clearCoat", &MaterialPassStateData::clearCoat },
-            { "clearCoatRoughness", &MaterialPassStateData::clearCoatRoughness },
+            { "emissionIntensity", &MaterialRenderState::emissionIntensity },
+            { "clearCoat", &MaterialRenderState::clearCoat },
+            { "clearCoatRoughness", &MaterialRenderState::clearCoatRoughness },
             { "anisotropy", nullptr, 12u, 0.0f },
-            { "uvTilingX", &MaterialPassStateData::uvTilingX },
-            { "uvTilingY", &MaterialPassStateData::uvTilingY },
-            { "uvOffsetX", &MaterialPassStateData::uvOffsetX },
-            { "uvOffsetY", &MaterialPassStateData::uvOffsetY },
-            { "uvRotation", &MaterialPassStateData::uvRotation },
-            { "uvTriplanarScale", &MaterialPassStateData::uvTriplanarScale },
-            { "uvAniso", &MaterialPassStateData::uvAniso },
+            { "uvTilingX", &MaterialRenderState::uvTilingX },
+            { "uvTilingY", &MaterialRenderState::uvTilingY },
+            { "uvOffsetX", &MaterialRenderState::uvOffsetX },
+            { "uvOffsetY", &MaterialRenderState::uvOffsetY },
+            { "uvRotation", &MaterialRenderState::uvRotation },
+            { "uvTriplanarScale", &MaterialRenderState::uvTriplanarScale },
+            { "uvAniso", &MaterialRenderState::uvAniso },
             { "detailTilingX", nullptr, 13u, 1.0f },
             { "detailTilingY", nullptr, 14u, 1.0f },
             { "detailOffsetX", nullptr, 15u, 0.0f },
@@ -137,22 +179,22 @@ namespace workphone
             { "preset", nullptr, 8u, 0u },
             { "renderMode", nullptr, 9u, 0u },
             { "workflow", nullptr, 10u, 0u },
-            { "cullMode", &MaterialPassStateData::cullMode },
+            { "cullMode", &MaterialRenderState::cullMode },
             { "uvSet", nullptr, 11u, 0u },
-            { "uvProjection", &MaterialPassStateData::uvProjection },
-            { "uvWrapU", &MaterialPassStateData::uvWrapU },
-            { "uvWrapV", &MaterialPassStateData::uvWrapV },
-            { "uvFilter", &MaterialPassStateData::uvFilter },
+            { "uvProjection", &MaterialRenderState::uvProjection },
+            { "uvWrapU", &MaterialRenderState::uvWrapU },
+            { "uvWrapV", &MaterialRenderState::uvWrapV },
+            { "uvFilter", &MaterialRenderState::uvFilter },
             { "detailBlendMode", nullptr, 12u, 0u },
-            { "metallicSource", &MaterialPassStateData::metallicSource },
-            { "roughnessSource", &MaterialPassStateData::roughnessSource },
-            { "aoSource", &MaterialPassStateData::aoSource },
-            { "opacitySource", &MaterialPassStateData::opacitySource },
+            { "metallicSource", &MaterialRenderState::metallicSource },
+            { "roughnessSource", &MaterialRenderState::roughnessSource },
+            { "aoSource", &MaterialRenderState::aoSource },
+            { "opacitySource", &MaterialRenderState::opacitySource },
             { "heightSource", nullptr, 13u, 0u },
-            { "blendMode", &MaterialPassStateData::blendMode },
+            { "blendMode", &MaterialRenderState::blendMode },
             { "srcBlend", nullptr, 14u, 0u },
             { "dstBlend", nullptr, 15u, 0u },
-            { "depthTest", &MaterialPassStateData::depthTest },
+            { "depthTest", &MaterialRenderState::depthTest },
             { "layerBlend", nullptr, 16u, 0u },
             { "materialVariant", nullptr, 0u, 0u },
             { "technique", nullptr, 1u, 0u },
@@ -225,8 +267,10 @@ namespace workphone
 
     MaterialPassStateData::MaterialPassStateData() : StateData( MaterialPassStateData::typeInfo() )
     {
-        flags = receiveShadowsFlag | castShadowsFlag;
-        publishRenderState();
+        auto initial = std::make_shared<MaterialRenderState>();
+        initial->flags = receiveShadowsFlag | castShadowsFlag;
+        initial->revision = 1;
+        m_renderState = std::move( initial );
     }
 
     MaterialPassStateData::~MaterialPassStateData()
@@ -408,96 +452,105 @@ namespace workphone
     MaterialRenderState::Ptr MaterialPassStateData::getRenderState() const
     { return std::atomic_load( &m_renderState ); }
 
-    void MaterialPassStateData::publishRenderState()
+
+    const MaterialRenderState &MaterialPassStateData::getSurfaceState() const
     {
-        // Construction always produces a valid initial snapshot. Access to this
-        // member is serialized by the owning write lock (or detached owner).
-        if( m_renderState && MaterialPublicationScope::defer( *this ) ) return;
-        auto previous = std::atomic_load( &m_renderState );
-        bool changed = !previous;
-        changed = changed || !sameMaterialValue( specularColour, previous->specularColour );
-        changed = changed || !sameMaterialValue( ambientColour, previous->ambientColour );
-        changed = changed || !sameMaterialValue( diffuseColour, previous->diffuseColour );
-        changed = changed || !sameMaterialValue( emissiveColour, previous->emissiveColour );
-        changed = changed || !sameMaterialValue( alphaClip, previous->alphaClip );
-        changed = changed || !sameMaterialValue( opacity, previous->opacity );
-        changed = changed || !sameMaterialValue( refractionAmount, previous->refractionAmount );
-        changed = changed || !sameMaterialValue( refractionIor, previous->refractionIor );
-        changed = changed || !sameMaterialValue( metalness, previous->metalness );
-        changed = changed || !sameMaterialValue( roughness, previous->roughness );
-        changed = changed || !sameMaterialValue( normalStrength, previous->normalStrength );
-        changed = changed || !sameMaterialValue( aoStrength, previous->aoStrength );
-        changed = changed || !sameMaterialValue( emissionIntensity, previous->emissionIntensity );
-        changed = changed || !sameMaterialValue( clearCoat, previous->clearCoat );
-        changed = changed || !sameMaterialValue( clearCoatRoughness, previous->clearCoatRoughness );
-        changed = changed || !sameMaterialValue( uvTilingX, previous->uvTilingX );
-        changed = changed || !sameMaterialValue( uvTilingY, previous->uvTilingY );
-        changed = changed || !sameMaterialValue( uvOffsetX, previous->uvOffsetX );
-        changed = changed || !sameMaterialValue( uvOffsetY, previous->uvOffsetY );
-        changed = changed || !sameMaterialValue( uvRotation, previous->uvRotation );
-        changed = changed || !sameMaterialValue( uvTriplanarScale, previous->uvTriplanarScale );
-        changed = changed || !sameMaterialValue( uvAniso, previous->uvAniso );
-        changed = changed || !sameMaterialValue( blendMode, previous->blendMode );
-        changed = changed || !sameMaterialValue( cullMode, previous->cullMode );
-        changed = changed || !sameMaterialValue( uvProjection, previous->uvProjection );
-        changed = changed || !sameMaterialValue( uvWrapU, previous->uvWrapU );
-        changed = changed || !sameMaterialValue( uvWrapV, previous->uvWrapV );
-        changed = changed || !sameMaterialValue( uvFilter, previous->uvFilter );
-        changed = changed || !sameMaterialValue( metallicSource, previous->metallicSource );
-        changed = changed || !sameMaterialValue( roughnessSource, previous->roughnessSource );
-        changed = changed || !sameMaterialValue( aoSource, previous->aoSource );
-        changed = changed || !sameMaterialValue( opacitySource, previous->opacitySource );
-        changed = changed || !sameMaterialValue( depthTest, previous->depthTest );
-        changed = changed || !sameMaterialValue( flags, previous->flags );
-        changed = changed || !sameMaterialValue( materialType, previous->materialType );
-        for( u32 i = 0; !changed && i < MaterialRenderState::TextureCount; ++i )
-        {
-            const auto &texture = i < textures.size() ? textures[i] : extendedTextures[i - textures.size()];
-            changed = texture != previous->textures[i];
-        }
-        if( !changed ) return;
-        auto next = std::make_shared<MaterialRenderState>();
-        next->specularColour = specularColour;
-        next->ambientColour = ambientColour;
-        next->diffuseColour = diffuseColour;
-        next->emissiveColour = emissiveColour;
-        next->alphaClip = alphaClip;
-        next->opacity = opacity;
-        next->refractionAmount = refractionAmount;
-        next->refractionIor = refractionIor;
-        next->metalness = metalness;
-        next->roughness = roughness;
-        next->normalStrength = normalStrength;
-        next->aoStrength = aoStrength;
-        next->emissionIntensity = emissionIntensity;
-        next->clearCoat = clearCoat;
-        next->clearCoatRoughness = clearCoatRoughness;
-        next->uvTilingX = uvTilingX;
-        next->uvTilingY = uvTilingY;
-        next->uvOffsetX = uvOffsetX;
-        next->uvOffsetY = uvOffsetY;
-        next->uvRotation = uvRotation;
-        next->uvTriplanarScale = uvTriplanarScale;
-        next->uvAniso = uvAniso;
-        next->blendMode = blendMode;
-        next->cullMode = cullMode;
-        next->uvProjection = uvProjection;
-        next->uvWrapU = uvWrapU;
-        next->uvWrapV = uvWrapV;
-        next->uvFilter = uvFilter;
-        next->metallicSource = metallicSource;
-        next->roughnessSource = roughnessSource;
-        next->aoSource = aoSource;
-        next->opacitySource = opacitySource;
-        next->depthTest = depthTest;
-        next->flags = flags;
-        next->materialType = materialType;
-        for( u32 i = 0; i < MaterialRenderState::TextureCount; ++i )
-            next->textures[i] = i < textures.size() ? textures[i] : extendedTextures[i - textures.size()];
-        next->revision = previous ? previous->revision + 1 : 1;
-        std::atomic_store( &m_renderState, MaterialRenderState::Ptr( std::move( next ) ) );
+        return m_pendingSurface ? *m_pendingSurface : *m_renderState;
     }
 
+    MaterialRenderState &MaterialPassStateData::writableSurfaceState()
+    {
+        if( !m_pendingSurface )
+            m_pendingSurface = std::make_shared<MaterialRenderState>( *m_renderState );
+        return *m_pendingSurface;
+    }
+
+    bool MaterialPassStateData::setSurfaceState( const MaterialRenderState &value )
+    {
+        static_assert( MaterialRenderState::TextureCount <= 32, "binding change mask capacity" );
+        if( sameSurface( getSurfaceState(), value ) ) return false;
+        u32 changedBindings = 0;
+        for( u32 i = 0; i < MaterialRenderState::TextureCount; ++i )
+            if( getSurfaceState().textures[i] != value.textures[i] ) changedBindings |= u32( 1 ) << i;
+        auto &next = writableSurfaceState();
+        next = value;
+        next.revision = m_renderState->revision;
+        for( u32 i = 0; i < MaterialRenderState::TextureCount; ++i )
+            if( changedBindings & ( u32( 1 ) << i ) ) notifyTextureBindingChanged( i );
+        return true;
+    }
+
+    SmartPtr<ITexture> MaterialPassStateData::getTextureBinding( u32 slot ) const
+    {
+        return slot < MaterialRenderState::TextureCount ? getSurfaceState().textures[slot] : nullptr;
+    }
+
+    bool MaterialPassStateData::setTextureBinding( u32 slot, SmartPtr<ITexture> texture )
+    {
+        if( slot >= MaterialRenderState::TextureCount ||
+            getSurfaceState().textures[slot] == texture ) return false;
+        writableSurfaceState().textures[slot] = texture;
+        notifyTextureBindingChanged( slot );
+        return true;
+    }
+
+    void MaterialPassStateData::setTextureBindingObserver( render::IMaterialPass *owner,
+                                                          void ( *observer )( void *, u32 ) )
+    {
+        m_textureBindingOwner = owner;
+        m_textureBindingObserver = observer;
+    }
+
+    void MaterialPassStateData::notifyTextureBindingChanged( u32 slot )
+    {
+        if( m_textureBindingObserver )
+            if( auto owner = m_textureBindingOwner.lock() ) m_textureBindingObserver( owner.get(), slot );
+    }
+
+    size_t MaterialPassStateData::getPendingSurfaceStorageBytes() const
+    { return m_pendingSurface ? sizeof( MaterialRenderState ) : 0; }
+
+    size_t MaterialPassStateData::getSurfaceAuthoringStorageBytes() const
+    { return m_surfaceAuthoring ? sizeof( SurfaceAuthoringData ) : 0; }
+
+    ColourF MaterialPassStateData::getTintColour() const
+    { return m_surfaceAuthoring ? m_surfaceAuthoring->tintColour : ColourF::White; }
+
+    void MaterialPassStateData::setTintColour( const ColourF &value )
+    {
+        if( sameMaterialValue( getTintColour(), value ) ) return;
+        if( !m_surfaceAuthoring ) m_surfaceAuthoring = std::make_unique<SurfaceAuthoringData>();
+        m_surfaceAuthoring->tintColour = value;
+        if( sameMaterialValue( value, ColourF::White ) && !m_surfaceAuthoring->renderTechnique )
+            m_surfaceAuthoring.reset();
+    }
+
+    hash_type MaterialPassStateData::getRenderTechnique() const
+    { return m_surfaceAuthoring ? m_surfaceAuthoring->renderTechnique : 0; }
+
+    void MaterialPassStateData::setRenderTechnique( hash_type value )
+    {
+        if( getRenderTechnique() == value ) return;
+        if( !m_surfaceAuthoring ) m_surfaceAuthoring = std::make_unique<SurfaceAuthoringData>();
+        m_surfaceAuthoring->renderTechnique = value;
+        if( !value && sameMaterialValue( m_surfaceAuthoring->tintColour, ColourF::White ) )
+            m_surfaceAuthoring.reset();
+    }
+
+    void MaterialPassStateData::publishRenderState()
+    {
+        if( !m_pendingSurface ) return;
+        if( MaterialPublicationScope::defer( *this ) ) return;
+        auto previous = std::atomic_load( &m_renderState );
+        if( sameSurface( *m_pendingSurface, *previous ) )
+        {
+            m_pendingSurface.reset();
+            return;
+        }
+        m_pendingSurface->revision = previous->revision + 1;
+        MaterialRenderState::Ptr next = std::move( m_pendingSurface );
+        std::atomic_store( &m_renderState, std::move( next ) );
+    }
 
     MaterialFloatSetting MaterialPassStateData::resolveFloatSetting( const String &name )
     {
@@ -511,7 +564,7 @@ namespace workphone
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( FloatFields ) / sizeof( FloatFields[0] ) ) return false;
         const auto &field = FloatFields[i];
-        if( field.member ) this->*( field.member ) = value;
+        if( field.member ) setSurfaceValue( field.member, value );
         else
         {
             setNumericWord( field.coldIndex, floatWord( value ), floatWord( field.defaultValue ) );
@@ -525,7 +578,7 @@ namespace workphone
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( FloatFields ) / sizeof( FloatFields[0] ) ) return false;
         const auto &field = FloatFields[i];
-        value = field.member ? this->*( field.member ) :
+        value = field.member ? getSurfaceState().*( field.member ) :
             wordFloat( getNumericWord( field.coldIndex, floatWord( field.defaultValue ) ) );
         return true;
     }
@@ -549,14 +602,14 @@ namespace workphone
         if( id == MaterialUIntSetting::materialType )
         {
             if( value >= static_cast<u32>( MaterialType::Count ) ) return false;
-            materialType = static_cast<MaterialType>( value );
+            setSurfaceValue( &MaterialRenderState::materialType, static_cast<MaterialType>( value ) );
             if( !m_writeDepth ) publishRenderState();
             return true;
         }
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( UIntFields ) / sizeof( UIntFields[0] ) ) return false;
         const auto &field = UIntFields[i];
-        if( field.member ) this->*( field.member ) = value;
+        if( field.member ) setSurfaceValue( field.member, value );
         else
         {
             setNumericWord( ColdFloatCount + field.coldIndex, value, field.defaultValue );
@@ -568,11 +621,11 @@ namespace workphone
     bool MaterialPassStateData::getUIntSetting( MaterialUIntSetting id, u32 &value ) const
     {
         if( id == MaterialUIntSetting::materialType )
-        { value = static_cast<u32>( materialType ); return true; }
+        { value = static_cast<u32>( getSurfaceState().materialType ); return true; }
         const auto i = static_cast<u32>( id );
         if( i >= sizeof( UIntFields ) / sizeof( UIntFields[0] ) ) return false;
         const auto &field = UIntFields[i];
-        value = field.member ? this->*( field.member ) :
+        value = field.member ? getSurfaceState().*( field.member ) :
             getNumericWord( ColdFloatCount + field.coldIndex, field.defaultValue );
         return true;
     }
@@ -646,13 +699,14 @@ namespace workphone
 
     void MaterialPassStateData::setFlag( u32 flag, bool value )
     {
-        flags = BitUtil::setFlagValue( flags, flag, value );
+        setSurfaceValue( &MaterialRenderState::flags,
+                         BitUtil::setFlagValue( getSurfaceState().flags, flag, value ) );
         if( !m_writeDepth ) publishRenderState();
     }
 
     bool MaterialPassStateData::getFlag( u32 flag ) const
     {
-        return BitUtil::getFlagValue( flags, flag );
+        return BitUtil::getFlagValue( getSurfaceState().flags, flag );
     }
 
     u32 MaterialPassStateData::getNumericWord( u32 index, u32 defaultValue ) const

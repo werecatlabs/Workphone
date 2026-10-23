@@ -29,6 +29,8 @@ namespace workphone
         public:
             /** Mirror texture-unit edits to the immutable render snapshot at edit time. */
             void updateRenderTexture( IMaterialTexture *unit, SmartPtr<ITexture> texture );
+            // Authoring facade lookup by verified membership, including null bindings.
+            bool getRenderTextureBinding( const IMaterialTexture *unit, SmartPtr<ITexture> &texture ) const;
             void refreshRenderTextures();
             void setMaterial( SmartPtr<IMaterial> material ) override;
             /**
@@ -545,6 +547,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            static void textureBindingChanged( void *owner, u32 slot );
+            void detachTextureUnits();
             void seedShaderSurface( MaterialPassStateData &state ) const;
             /** Retire only the state/context created by this pass. */
             void releaseLocalStateContext();

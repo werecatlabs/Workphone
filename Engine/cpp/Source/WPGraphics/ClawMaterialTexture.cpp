@@ -35,37 +35,37 @@ namespace workphone::render
 
     void ClawMaterialTexture::setScale( const Vector3<real_Num> &scale )
     {
-        m_scale = scale;
+        MaterialTexture::setScale( scale );
     }
 
     SmartPtr<IAnimator> ClawMaterialTexture::getAnimator() const
     {
-        return m_animator;
+        return MaterialTexture::getAnimator();
     }
 
     void ClawMaterialTexture::setAnimator( SmartPtr<IAnimator> animator )
     {
-        m_animator = animator;
+        MaterialTexture::setAnimator( animator );
     }
 
     ColourF ClawMaterialTexture::getTint() const
     {
-        return m_tint;
+        return MaterialTexture::getTint();
     }
 
     void ClawMaterialTexture::setTint( const ColourF &tint )
     {
-        m_tint = tint;
+        MaterialTexture::setTint( tint );
     }
 
     u32 ClawMaterialTexture::getTextureType() const
     {
-        return m_textureType;
+        return MaterialTexture::getTextureType();
     }
 
     void ClawMaterialTexture::setTextureType( u32 textureType )
     {
-        m_textureType = textureType;
+        MaterialTexture::setTextureType( textureType );
     }
 
     void ClawMaterialTexture::_getObject( void **ppObject )
@@ -78,9 +78,9 @@ namespace workphone::render
     {
         auto props = workphone::make_ptr<Properties>();
         props->setProperty( IMaterialTexture::texturePathStr, getTextureName() );
-        props->setProperty( IMaterialTexture::scaleStr, m_scale );
-        props->setProperty( IMaterialTexture::tintStr, m_tint );
-        props->setProperty( IMaterialTexture::textureTypeStr, m_textureType );
+        props->setProperty( IMaterialTexture::scaleStr, getScale() );
+        props->setProperty( IMaterialTexture::tintStr, getTint() );
+        props->setProperty( IMaterialTexture::textureTypeStr, getTextureType() );
         if( auto texture = getTexture() )
         {
             if( auto handle = texture->getHandle() )

@@ -101,7 +101,14 @@ namespace workphone::render
     {
         size_t bytes = sizeof( *this ) + m_info.capacity() * sizeof( MaterialShaderParameterInfo ) +
                        m_lookup.capacity() * sizeof( Lookup ) + m_defaults.capacity();
-        for( const auto &p : m_info ) bytes += p.m_name.capacity() + 1;
+        for( const auto &p : m_info )
+        {
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+            // The string object above already includes its inline characters.
+            if( p.m_name.using_inline_storage() ) continue;
+#endif
+            bytes += p.m_name.capacity() + 1;
+        }
         return bytes;
     }
 
@@ -115,21 +122,37 @@ namespace workphone::render
     {
         if( this == &other ) return *this;
         if( m_layout == other.m_layout && GetParameterMemory() == other.GetParameterMemory() ) return *this;
+        auto handoff = m_owner && !m_owner->m_synchronizingShaderParameters ?
+            m_owner->prepareShaderSurfaceHandoff( other.m_layout ) : nullptr;
         auto bytes = other.m_parametersMemory;
         m_layout = other.m_layout;
         m_parametersMemory = std::move( bytes );
         ++m_revision;
+        if( m_owner ) m_owner->commitShaderSurfaceHandoff( std::move( handoff ) );
         NotifyOwner( 0xffu );
         return *this;
     }
 
     MaterialShaderParametersInstance::MaterialShaderParametersInstance(
-        MaterialShaderParametersInstance &&other ) noexcept :
-        m_layout( std::move( other.m_layout ) ), m_parametersMemory( std::move( other.m_parametersMemory ) ),
-        m_revision( other.m_revision ), m_nameLookups( other.m_nameLookups )
+        MaterialShaderParametersInstance &&other ) noexcept
     {
-        ++other.m_revision;
-        other.NotifyOwner( 0xffu );
+        try
+        {
+            auto handoff = other.m_owner && !other.m_owner->m_synchronizingShaderParameters ?
+                other.m_owner->prepareShaderSurfaceHandoff( MaterialShaderParameterLayout::Ptr{} ) : nullptr;
+            m_layout = std::move( other.m_layout );
+            m_parametersMemory = std::move( other.m_parametersMemory );
+            m_revision = other.m_revision;
+            m_nameLookups = other.m_nameLookups;
+            if( other.m_owner ) other.m_owner->commitShaderSurfaceHandoff( std::move( handoff ) );
+            ++other.m_revision;
+            other.NotifyOwner( 0xffu );
+        }
+        catch( ... )
+        {
+            // Staging is the only allocating step. On failure the physical
+            // source retains its values/observer; this new instance stays empty.
+        }
     }
 
     MaterialShaderParametersInstance &MaterialShaderParametersInstance::operator=(
@@ -137,17 +160,40 @@ namespace workphone::render
     {
         if( this == &other ) return *this;
         const bool changed = m_layout != other.m_layout || GetParameterMemory() != other.GetParameterMemory();
-        m_layout = std::move( other.m_layout );
-        m_parametersMemory = std::move( other.m_parametersMemory );
-        if( changed ) { ++m_revision; NotifyOwner( 0xffu ); }
-        ++other.m_revision;
-        other.NotifyOwner( 0xffu );
+        try
+        {
+            auto destinationHandoff = changed && m_owner && !m_owner->m_synchronizingShaderParameters ?
+                m_owner->prepareShaderSurfaceHandoff( other.m_layout ) : nullptr;
+            auto sourceHandoff = other.m_owner && !other.m_owner->m_synchronizingShaderParameters ?
+                other.m_owner->prepareShaderSurfaceHandoff( MaterialShaderParameterLayout::Ptr{} ) : nullptr;
+            // Stage both physical owners before changing either instance.
+            m_layout = std::move( other.m_layout );
+            m_parametersMemory = std::move( other.m_parametersMemory );
+            if( m_owner ) m_owner->commitShaderSurfaceHandoff( std::move( destinationHandoff ) );
+            if( other.m_owner ) other.m_owner->commitShaderSurfaceHandoff( std::move( sourceHandoff ) );
+            if( changed ) { ++m_revision; NotifyOwner( 0xffu ); }
+            ++other.m_revision;
+            other.NotifyOwner( 0xffu );
+        }
+        catch( ... )
+        {
+            // A failed fallback allocation leaves both instances and owners
+            // unchanged while preserving the existing noexcept move contract.
+        }
         return *this;
     }
 
     void MaterialShaderParametersInstance::NotifyOwner( u8 mask ) noexcept
     {
         if( !m_owner || !mask || m_owner->m_synchronizingShaderParameters ) return;
+        if( mask == 0xffu )
+        {
+            // Replacement supersedes edits queued for the old schema. Reapply
+            // compatible declared semantics, leaving missing/wrong-type fallback
+            // and independent pass overrides in their existing owners.
+            m_owner->m_pendingShaderSemantics = 0;
+            mask = static_cast<u8>( ( 1u << static_cast<u32>( MaterialBuiltinParameter::Count ) ) - 1u );
+        }
         m_owner->shaderParametersChanged( mask );
     }
 
@@ -163,12 +209,18 @@ namespace workphone::render
     }
 
     void MaterialShaderParametersInstance::Reset( const Array<MaterialShaderParameterInfo> &info )
-    { Reset( MaterialShaderParameterLayout::Create( info ) ); }
+    {
+        auto layout = MaterialShaderParameterLayout::Create( info );
+        if( layout ) Reset( std::move( layout ) );
+    }
     void MaterialShaderParametersInstance::Reset( MaterialShaderParameterLayout::Ptr layout )
     {
+        auto handoff = m_owner && !m_owner->m_synchronizingShaderParameters ?
+            m_owner->prepareShaderSurfaceHandoff( layout ) : nullptr;
         m_parametersMemory.reset();
         m_layout = std::move( layout );
         ++m_revision;
+        if( m_owner ) m_owner->commitShaderSurfaceHandoff( std::move( handoff ) );
         NotifyOwner( 0xffu );
     }
     void MaterialShaderParametersInstance::Clear() { Reset( MaterialShaderParameterLayout::Ptr{} ); }

@@ -35,11 +35,23 @@
 #include <functional>
 #include <chrono>
 #include <unordered_set>
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <algorithm>
+#include <cstring>
+#include <Workphone/System/FactoryTemplate.hpp>
+#include <Workphone/System/StateContext.hpp>
+#include <Workphone/State/States/State.hpp>
+#include <Workphone/System/StateQueue.hpp>
+#include "MaterialHeapProfile.hpp"
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_camera.h"
 #include "workphone_graphics_scenenode.h"
 #include "MaterialRenderCacheBenchmark.hpp"
+#include "MaterialPassStorageReference.hpp"
+#include "MaterialTextureColdStorageContracts.hpp"
 
 namespace
 {
@@ -512,6 +524,9 @@ namespace
                 fs::remove_all( root );
         }
     };
+
+#include "MaterialSurfaceHandoffContracts.hpp"
+#include "MaterialFullMemoryProfile.hpp"
 
     void runSpecularRestoration( Fixture &fixture )
     {
@@ -1509,6 +1524,8 @@ namespace
             require( snapshot->revision == before[i]->revision + 1 && snapshot->metalness == 0.25f &&
                      snapshot->roughness == 0.75f && snapshot->uvOffsetY == 0.3f,
                      "inline and overflow pass scopes each publish one complete version" );
+            require( data[i]->getPendingSurfaceStorageBytes() == 0 && &data[i]->getSurfaceState() == snapshot.get(),
+                     "multi-pass material adapters retire every staged surface at commit" );
             before[i] = snapshot;
             states[i]->setDirty( false );
         }
@@ -1522,7 +1539,8 @@ namespace
             m.setMetalness( 0.5f ); m.setMetalness( 0.25f );
         } );
         for( size_t i = 0; i < data.size(); ++i )
-            require( data[i]->getRenderState() == before[i], "net-zero batches retain each existing snapshot" );
+            require( data[i]->getRenderState() == before[i] && data[i]->getPendingSurfaceStorageBytes() == 0,
+                     "net-zero batches retain each existing snapshot and retire staging" );
         std::atomic<bool> finished{ false }, coherent{ true };
         std::thread reader( [&] {
             while( !finished.load() )
@@ -2130,7 +2148,7 @@ namespace
         require(material->getTexture(31) == second && !previous->textures[31], "extension facade edits publish through canonical state");
         {
             auto state = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>(pass->getId());
-            state->extendedTextures[25 - state->textures.size()] = second;
+            state->setTextureBinding( 25, second );
         }
         auto data = static_pointer_cast<Properties>(pass->toData());
         const auto descriptors = data->getChildrenByName("textures");
@@ -2246,7 +2264,7 @@ namespace
         auto before = firstData->getRenderState();
         auto second = material->createTechnique()->createPass(); second->load( nullptr ); auto secondData = stateFor( second );
         require( firstData->getRenderState() == before && second->getDiffuse() == rendered( glow, 0.7f ) &&
-                 second->getEmissive() == glow && secondData->opacity == 0.7f,
+                 second->getEmissive() == glow && secondData->getSurfaceState().opacity == 0.7f,
                  "ColorOnly graph additions seed both colours and opacity without replaying old copies over overrides" );
         material->setOpacity( 0.4f );
         require( first->getDiffuse() == rendered( localDiffuse, 0.4f ) && first->getEmissive() == localEmission,
@@ -2378,20 +2396,20 @@ namespace
         };
         auto first = material->getTechnique( 0 )->getPass( 0 );
         auto firstData = stateFor( first );
-        require( first->getEmissive() == glow && firstData->opacity == 0.6f &&
+        require( first->getEmissive() == glow && firstData->getSurfaceState().opacity == 0.6f &&
                  first->getDiffuse().a == 0.6f && firstData->getRenderState()->getFlag( transparentFlag ),
                  "initial Unlit passes seed canonical colour, opacity and transparent normalization" );
         first->setEmissive( localGlow ); first->setDiffuse( ColourF( 1, 0, 0, 0.2f ) );
         auto before = firstData->getRenderState();
         auto second = material->createTechnique()->createPass(); second->load( nullptr );
         auto secondData = stateFor( second );
-        require( firstData->getRenderState() == before && second->getEmissive() == glow && secondData->opacity == 0.6f,
+        require( firstData->getRenderState() == before && second->getEmissive() == glow && secondData->getSurfaceState().opacity == 0.6f,
                  "new Unlit passes read the canonical owner without replaying values over local overrides" );
         material->setEmissive( glow );
         require( first->getEmissive() == glow && first->getDiffuse() == ColourF( 1, 0, 0, 0.2f ),
                  "same-authored Unlit emission restores only emission overrides" );
         material->setOpacity( 0.6f );
-        require( first->getDiffuse() == ColourF( 1, 0, 0, 0.6f ) && secondData->opacity == 0.6f,
+        require( first->getDiffuse() == ColourF( 1, 0, 0, 0.6f ) && secondData->getSurfaceState().opacity == 0.6f,
                  "same-authored Unlit opacity restores alpha while preserving local RGB" );
         before = firstData->getRenderState(); const auto secondBefore = secondData->getRenderState();
         auto retained = parameters;
@@ -2436,7 +2454,7 @@ namespace
             auto edit = parameters.Edit();
             material->setEmissive( localGlow ); material->setOpacity( 0.3f );
             auto pending = material->createTechnique()->createPass(); pending->load( nullptr );
-            require( pending->getEmissive() == localGlow && stateFor( pending )->opacity == 0.3f,
+            require( pending->getEmissive() == localGlow && stateFor( pending )->getSurfaceState().opacity == 0.3f,
                      "Unlit graph additions seed pending canonical edits before publication closes" );
         }
         material->unload( nullptr ); material->load( nullptr );
@@ -2456,7 +2474,7 @@ namespace
         mixed->load( nullptr );
         auto mixedPass = mixed->createTechnique()->createPass(); mixedPass->load( nullptr );
         require( mixed->getLegacySurfaceStorageBytes() > 0 && mixedPass->getMetalness() == 0.2f &&
-                 stateFor( mixedPass )->opacity == 0.7f,
+                 stateFor( mixedPass )->getSurfaceState().opacity == 0.7f,
                  "Unlit opacity transfer retains unrelated legacy fields in the optional block" );
         mixed->unload( nullptr );
 
@@ -2520,7 +2538,7 @@ namespace
         auto addedData = static_pointer_cast<MaterialPassStateData>(
             added->getStateContext()->getStateById( added->getId() )->getData() );
         require( added->getMetalness() == 0.25f && added->getRoughness() == 0.75f &&
-                 added->getDiffuse().a == 0.6f && addedData->opacity == 0.6f && readUIntSetting( *addedData, MaterialUIntSetting::renderMode ) == 3u &&
+                 added->getDiffuse().a == 0.6f && addedData->getSurfaceState().opacity == 0.6f && readUIntSetting( *addedData, MaterialUIntSetting::renderMode ) == 3u &&
                  addedData->getRenderState()->getFlag( transparentFlag ),
                  "newly attached legacy passes inherit cached values and opacity normalization" );
         added->setMetalness( 0.9f ); added->setMaterial( material ); added->load( nullptr );
@@ -2642,6 +2660,232 @@ namespace
         std::cout << "legacy_surface_storage material_core_bytes=" << sizeof( ClawMaterial )
                   << " optional_block_bytes=" << legacyBytes << " canonical_pbr_block_bytes=0\n";
         fixture.graphics->pending.clear();
+    }
+
+    size_t inventoryStringBytes( const String &text )
+    {
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+        if( text.using_inline_storage() ) return 0;
+#endif
+        return text.capacity() + 1;
+    }
+
+    class StorageInventoryMaterial : public render::ClawMaterial
+    {
+    public:
+        size_t optionalOwnerBytes() const
+        {
+            size_t bytes = m_techniques.capacity() * sizeof( SmartPtr<render::IMaterialTechnique> );
+            if( m_legacySurface ) bytes += sizeof( LegacySurfaceData );
+            if( m_primaryPassSelection ) bytes += sizeof( PrimaryPassSelection );
+            if( m_cubicTextures ) bytes += sizeof( Array<SmartPtr<render::ITexture>> ) +
+                m_cubicTextures->capacity() * sizeof( SmartPtr<render::ITexture> );
+            if( m_shaderAuthoring )
+            {
+                bytes += sizeof( ShaderAuthoringData ) + inventoryStringBytes( m_shaderAuthoring->shaderID ) +
+                    m_shaderAuthoring->textureRefs.capacity() * sizeof( ShaderTextureRef ) +
+                    m_shaderAuthoring->textureBindings.capacity() * sizeof( ShaderTextureBinding );
+                for( const auto &reference : m_shaderAuthoring->textureRefs )
+                    bytes += inventoryStringBytes( reference.paramName ) + inventoryStringBytes( reference.texturePath );
+            }
+            return bytes;
+        }
+    };
+
+    // A scoped owned-payload inventory of real loaded graphs. It deliberately
+    // reports its exclusions instead of treating object arithmetic as process
+    // allocation profiling. The frozen comparison changes only the old inline
+    // pass representation; every other measured owner has the same charge.
+    void runOwnedStorageInventory( Fixture &fixture, size_t count )
+    {
+        using namespace render;
+        MaterialShader schema( "OwnedStorageInventory" );
+        for( u32 i = 0; i < 128; ++i )
+            schema.addParameter( i % 4 == 0 ? MaterialShaderParameterType::Scalar :
+                                 i % 4 == 1 ? MaterialShaderParameterType::Colour :
+                                 i % 4 == 2 ? MaterialShaderParameterType::Matrix :
+                                              MaterialShaderParameterType::Texture,
+                                 "Value" + String( std::to_string( i ) ) );
+        auto &registry = MaterialShaderRegistry::instance();
+        registry.registerBuiltinShaders();
+        registry.registerShader( schema );
+        const auto layout = registry.find( schema.getShaderID() )->getLayout();
+        MaterialShaderParametersInstance prototype;
+        prototype.Reset( layout );
+        const auto scalar = prototype.Resolve<f32>( "Value0" );
+        prototype.Set( scalar, 0.75f );
+        std::vector<SmartPtr<StorageInventoryMaterial>> materials;
+        std::vector<SmartPtr<MaterialPassStateData>> states;
+        std::vector<std::unique_ptr<CapturedMaterialMesh>> meshes;
+        materials.reserve( count ); states.reserve( count ); meshes.reserve( count );
+        for( size_t i = 0; i < count; ++i )
+        {
+            auto material = make_ptr<StorageInventoryMaterial>();
+            material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+            material->getShaderParameters() = prototype;
+            material->load( nullptr );
+            auto technique = material->getTechnique( 0 );
+            require( material->getTechniques().size() == 1 && technique->getPasses().size() == 1,
+                     "storage fixture uses the same one-technique one-pass graph for every instance" );
+            auto pass = technique->getPass( 0 );
+            require( static_pointer_cast<ClawMaterialPass>( pass )->getMaterializedTextureUnitCount() == 0,
+                     "storage inventory does not materialize empty authoring facades" );
+            auto state = pass->getStateContext()->getStateDataById<MaterialPassStateData>( pass->getId() );
+            states.emplace_back( state.get() );
+            auto mesh = std::make_unique<CapturedMaterialMesh>();
+            mesh->setMaterial( material, 0 ); mesh->setMaterial( material, 1 );
+            meshes.push_back( std::move( mesh ) ); materials.push_back( material );
+        }
+        ClawMaterialRenderCache cache;
+        ClawMaterialDrawRecords oldView, currentView;
+        std::unique_ptr<ClawMaterialDrawRecords> updatedView;
+        const auto capture = [&]( ClawMaterialDrawRecords &view ) {
+            view.clear();
+            for( const auto &mesh : meshes ) view.capture( mesh.get() );
+            view.seal( &cache );
+        };
+        capture( oldView ); capture( currentView );
+        require( oldView.getPersistentTableIdentity() == currentView.getPersistentTableIdentity(),
+                 "independent storage-fixture views share one persistent record table" );
+        size_t peakSubtotal = 0;
+        const auto inventory = [&]( const char *phase ) {
+            size_t inlineBytes = count * ( sizeof( StorageInventoryMaterial ) + sizeof( ClawMaterialTechnique ) +
+                sizeof( ClawMaterialPass ) + sizeof( MaterialStateData ) + sizeof( MaterialPassStateData ) );
+            size_t optionalBytes = 0, nativeBytes = 0, pendingBytes = 0, valuesBytes = prototype.GetValueStorageBytes();
+            std::unordered_set<const void *> values{prototype.GetValueStorageIdentity()};
+            std::unordered_set<const MaterialRenderState *> current, retired;
+            double checksum = 0;
+            for( size_t i = 0; i < count; ++i )
+            {
+                auto &material = materials[i]; auto &state = states[i];
+                optionalBytes += material->optionalOwnerBytes() + state->getSurfaceAuthoringStorageBytes() +
+                    state->getNumericAuthoringStorageBytes() + state->getStringAuthoringStorageBytes();
+                nativeBytes += wp_graphics_material_get_storage_size( material->getNativeMaterial() );
+                pendingBytes += state->getPendingSurfaceStorageBytes();
+                const auto &parameters = material->getShaderParameters();
+                require( parameters.GetLayout() == layout, "owned inventory charges a truly shared shader layout once" );
+                if( auto identity = parameters.GetValueStorageIdentity(); identity && values.insert( identity ).second )
+                    valuesBytes += parameters.GetValueStorageBytes();
+                const auto snapshot = state->getRenderState(); current.insert( snapshot.get() );
+                checksum += snapshot->roughness + parameters.GetScalar( scalar.handle );
+                if( !state->getPendingSurfaceStorageBytes() ) require( &state->getSurfaceState() == snapshot.get(),
+                    "resting graph has no second writable surface owner" );
+            }
+            size_t views = 0;
+            for( const auto *view : {&oldView, &currentView, updatedView.get()} )
+                if( view )
+                {
+                    if( view->getRecordCount() ) ++views;
+                    for( const auto &mesh : meshes )
+                        if( const auto binding = view->find( mesh.get() ) )
+                            if( const auto record = view->get( *binding, 0 ); record && !current.count( record->state ) )
+                                retired.insert( record->state );
+                }
+            const auto *publishedSchema = registry.find( schema.getShaderID() );
+            size_t descriptorBytes = sizeof( MaterialShader ) +
+                publishedSchema->getParameterInfo().capacity() * sizeof( MaterialShaderParameterInfo ) +
+                inventoryStringBytes( publishedSchema->getShaderID() );
+            for( const auto &parameter : publishedSchema->getParameterInfo() ) descriptorBytes += inventoryStringBytes( parameter.m_name );
+            const auto sharedBytes = layout->GetStorageBytes() + descriptorBytes + valuesBytes;
+            const auto currentBytes = current.size() * sizeof( MaterialRenderState );
+            const auto retiredBytes = retired.size() * sizeof( MaterialRenderState );
+            const auto tableBytes = cache.getStorageBytes(); // Includes table/front object; charge once across all views.
+            const auto viewBytes = sizeof( oldView ) + sizeof( currentView ) +
+                oldView.getRetainedStorageBytes() + currentView.getRetainedStorageBytes() +
+                ( updatedView ? sizeof( *updatedView ) + updatedView->getRetainedStorageBytes() : 0 );
+            const auto subtotal = inlineBytes + optionalBytes + nativeBytes + sharedBytes + currentBytes +
+                retiredBytes + pendingBytes + tableBytes + viewBytes;
+            peakSubtotal = std::max( peakSubtotal, subtotal );
+            // The preceding representation already had writable inline values;
+            // it did not allocate a separate pending surface during these edits.
+            const auto beforeReference = subtotal + count * ( sizeof( InlinePassStateStorageBeforeSurfaceMigration ) -
+                sizeof( MaterialPassStateData ) ) - pendingBytes;
+            std::cout << "owned_storage phase=" << phase << " materials=" << count << " parameters=128 views=" << views
+                << " view_workspaces=" << ( updatedView ? 3 : 2 )
+                << " inline_graph_object_bytes=" << inlineBytes << " optional_graph_payload_bytes=" << optionalBytes
+                << " native_material_bytes=" << nativeBytes << " shared_schema_and_value_bytes=" << sharedBytes
+                << " distinct_value_payloads=" << values.size() << " current_snapshot_bytes=" << currentBytes
+                << " retired_snapshot_bytes=" << retiredBytes << " pending_surface_bytes=" << pendingBytes
+                << " persistent_table_bytes=" << tableBytes << " view_storage_bytes=" << viewBytes
+                << " measured_subtotal_bytes=" << subtotal << " sampled_peak_subtotal_bytes=" << peakSubtotal
+                << " frozen_inline_pass_reference_subtotal_bytes=" << beforeReference
+                << " source_payload_included=1"
+                << " checksum=" << checksum
+                << " context_listener_resource_handle_graph_child_capacity_control_blocks_allocator_gpu_tls_publication_queue_registry_spare_capacity_and_fixture_inputs_excluded=1\n";
+            if( !pendingBytes ) require( subtotal < beforeReference,
+                "resting loaded graphs reduce the scoped owned-storage subtotal after inline surface retirement" );
+            return std::make_pair( pendingBytes, retiredBytes );
+        };
+        require( inventory( "shared_authored_resting" ).first == 0,
+                 "shared authored population has no resting pending surfaces" );
+        const auto sparseCount = std::max<size_t>( 1, count / 100 );
+        for( size_t i = 0; i < sparseCount; ++i )
+        {
+            states[i]->lock(); states[i]->setSurfaceValue( &MaterialRenderState::roughness, 0.25f );
+            materials[i]->getShaderParameters().Set( scalar, 0.25f );
+        }
+        require( inventory( "one_percent_pending" ).first == sparseCount * sizeof( MaterialRenderState ),
+                 "sparse writes allocate one pending surface only for each changed pass" );
+        for( size_t i = 0; i < sparseCount; ++i ) states[i]->unlock();
+        capture( currentView );
+        require( inventory( "one_percent_published_old_view_retained" ).second == sparseCount * sizeof( MaterialRenderState ),
+                 "old views retain only the replaced immutable surface versions" );
+        for( size_t i = 0; i < count; ++i )
+        {
+            states[i]->lock(); states[i]->setSurfaceValue( &MaterialRenderState::roughness, 0.75f );
+            materials[i]->getShaderParameters().Set( scalar, 0.5f );
+        }
+        require( inventory( "all_pending_two_old_views" ).first == count * sizeof( MaterialRenderState ),
+                 "all-edited peak reports pending copies separately from current and retired publications" );
+        for( auto state : states ) state->unlock();
+        require( inventory( "all_published_two_old_views" ).second ==
+                     ( count + sparseCount ) * sizeof( MaterialRenderState ),
+                 "independent old views account for both distinct generations without double counting" );
+        updatedView = std::make_unique<ClawMaterialDrawRecords>();
+        const auto beforeUpdatedPreparations = cache.getPreparationCount();
+        capture( *updatedView );
+        require( updatedView->getPersistentTableIdentity() == oldView.getPersistentTableIdentity() &&
+                     updatedView->getPersistentTableIdentity() == currentView.getPersistentTableIdentity() &&
+                     cache.getPreparationCount() == beforeUpdatedPreparations + count &&
+                     cache.getResidentCount() == count * 2 + sparseCount,
+                 "fully updated view prepares every latest version while both previous generations remain resident" );
+        for( size_t i = 0; i < count; ++i )
+        {
+            const auto binding = updatedView->find( meshes[i].get() );
+            const auto record = binding ? updatedView->get( *binding, 0 ) : nullptr;
+            require( record && record->state == states[i]->getRenderState().get() &&
+                         record->prepared->constants.surface.y == 0.75f,
+                     "third view consumes the latest current surface and its freshly prepared constants" );
+        }
+        require( inventory( "all_updated_view_prepared_two_old_views_retained" ).second ==
+                     ( count + sparseCount ) * sizeof( MaterialRenderState ),
+                 "third-view peak charges all workspaces while deduplicating its current snapshots" );
+        const auto currentHandle = cache.resolve( states.front()->getRenderState() );
+        std::weak_ptr<const MaterialRenderState> currentLifetime = states.front()->getRenderState();
+        oldView.clear(); cache.collectExpired();
+        require( inventory( "oldest_view_released" ).second == count * sizeof( MaterialRenderState ) &&
+                     cache.getResidentCount() == count * 2,
+                 "oldest-view retirement releases only versions no longer retained by the other two views" );
+        currentView.clear(); cache.collectExpired();
+        require( inventory( "intermediate_view_released" ).second == 0 && cache.getResidentCount() == count,
+                 "retiring the second old view releases the final obsolete versions and preserves current records" );
+        updatedView->clear(); cache.collectExpired();
+        require( inventory( "all_views_released_current_graphs_alive" ).second == 0 &&
+                     cache.getResidentCount() == count && !currentLifetime.expired() && cache.lookup( currentHandle ),
+                 "releasing the final captured view preserves versions still owned by current material graphs" );
+        updatedView.reset();
+        inventory( "updated_workspace_destroyed" );
+        for( const auto &state : states ) require( state->getPendingSurfaceStorageBytes() == 0 &&
+            state->getSurfaceState().roughness == 0.75f, "published graph retains its final surface without staging" );
+        meshes.clear(); states.clear();
+        for( auto &material : materials ) material->unload( nullptr );
+        materials.clear(); fixture.graphics->pending.clear();
+        cache.collectExpired();
+        require( currentLifetime.expired() && cache.getResidentCount() == 0 && !cache.lookup( currentHandle ),
+                 "current versions and their prepared handles retire after the final graph owners unload" );
+        std::cout << "owned_storage_retirement materials=" << count
+                  << " current_graph_versions_alive_after_view_release=1 resident_records_after_graph_unload=0"
+                  << " persistent_table_retained_bytes=" << cache.getStorageBytes() << '\n';
     }
 
     void runSchemaRebindContracts( Fixture &fixture )
@@ -2832,7 +3076,7 @@ namespace
         auto firstData = stateFor( first ), secondData = stateFor( second );
         const ColourF initialRendered( initial.r, initial.g, initial.b, 0.35f );
         require( material->getDiffuse() == initialRendered && second->getDiffuse() == initialRendered &&
-                 second->getEmissive() == glow && secondData->opacity == 0.35f && readUIntSetting( *secondData, MaterialUIntSetting::renderMode ) == 3u &&
+                 second->getEmissive() == glow && secondData->getSurfaceState().opacity == 0.35f && readUIntSetting( *secondData, MaterialUIntSetting::renderMode ) == 3u &&
                  secondData->getRenderState()->getFlag( transparentFlag ),
                  "new passes seed canonical colour, opacity and transparent render state" );
 
@@ -2852,7 +3096,7 @@ namespace
                  first->getEmissive() == red && second->getEmissive() == blue &&
                  firstData->getRenderState()->revision == before->revision + 1 &&
                  secondData->getRenderState()->revision == secondBefore->revision + 1 &&
-                 readUIntSetting( *secondData, MaterialUIntSetting::renderMode ) == 3u && secondData->blendMode == 1u && !second->isCutout(),
+                 readUIntSetting( *secondData, MaterialUIntSetting::renderMode ) == 3u && secondData->getSurfaceState().blendMode == 1u && !second->isCutout(),
                  "opacity-only edits preserve each pass RGB/emission and normalize each pass render mode" );
         before = firstData->getRenderState();
         auto shared = parameters;
@@ -2930,7 +3174,7 @@ namespace
             material->setDiffuse( initial ); material->setOpacity( 0.25f ); material->setEmissive( glow );
             auto added = technique->createPass(); added->load( nullptr );
             require( added->getDiffuse() == ColourF( initial.r, initial.g, initial.b, 0.25f ) &&
-                     added->getEmissive() == glow && stateFor( added )->opacity == 0.25f,
+                     added->getEmissive() == glow && stateFor( added )->getSurfaceState().opacity == 0.25f,
                      "new passes read pending canonical colours while parameter publication is deferred" );
         }
         material->unload( nullptr ); material->load( nullptr );
@@ -2997,16 +3241,16 @@ namespace
         auto secondPass = technique->createPass(); secondPass->load( nullptr );
         auto secondData = static_pointer_cast<MaterialPassStateData>(
             secondPass->getStateContext()->getStateById( secondPass->getId() )->getData() );
-        require( material->getRenderState()->metalness == 0.2f && secondData->roughness == 0.8f &&
-                 secondData->alphaClip == 0.3f, "loaded and newly added passes seed canonical PBR scalars" );
+        require( material->getRenderState()->metalness == 0.2f && secondData->getSurfaceState().roughness == 0.8f &&
+                 secondData->getSurfaceState().alphaClip == 0.3f, "loaded and newly added passes seed canonical PBR scalars" );
         firstPass->setMetalness( 0.9f ); secondPass->setMetalness( 0.7f );
         secondPass->setMaterial( material ); secondPass->load( nullptr );
         material->setRoughness( 0.6f );
-        require( material->getMetalness() == 0.9f && secondData->metalness == 0.7f &&
+        require( material->getMetalness() == 0.9f && secondData->getSurfaceState().metalness == 0.7f &&
                  parameters.GetScalar( metal.handle ) == 0.2f,
                  "direct pass overrides remain local and unrelated canonical edits preserve them" );
         material->setMetalness( 0.2f );
-        require( material->getMetalness() == 0.2f && secondData->metalness == 0.2f,
+        require( material->getMetalness() == 0.2f && secondData->getSurfaceState().metalness == 0.2f,
                  "same-authored-value material assignment restores all pass overrides" );
         auto before = material->getRenderState();
         auto secondBefore = secondData->getRenderState();
@@ -3044,7 +3288,7 @@ namespace
             material->setAlphaClip( 0.45f ); material->setMetalness( 0.15f );
             auto added = technique->createPass(); added->load( nullptr );
             auto addedData = added->getStateContext()->getStateDataById<MaterialPassStateData>( added->getId() );
-            require( addedData->alphaClip == 0.45f && addedData->metalness == 0.15f,
+            require( addedData->getSurfaceState().alphaClip == 0.45f && addedData->getSurfaceState().metalness == 0.15f,
                      "new passes read canonical values while publication is deferred" );
         }
         material->unload( nullptr );
@@ -3348,12 +3592,17 @@ namespace
         {
             auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>( pass->getId() );
             require( bool( data ), "owned pass data" );
-            data->roughness = 0.8f;
-            data->uvOffsetX = 0.25f;
+            data->setSurfaceValue( &MaterialRenderState::roughness, 0.8f );
+            data->setSurfaceValue( &MaterialRenderState::uvOffsetX, 0.25f );
         }
         auto direct = material->getRenderState();
         require( direct->roughness == 0.8f && direct->uvOffsetX == 0.25f,
                  "existing SafePtr writes publish coherently" );
+        {
+            auto data = pass->getStateContext()->getStateDataById<MaterialPassStateData>( pass->getId() );
+            require( &data->getSurfaceState() == direct.get() && data->getPendingSurfaceStorageBytes() == 0,
+                     "direct, typed and native adapters leave one immutable surface owner at rest" );
+        }
         auto texture = make_ptr<render::ClawTexture>();
         auto detached = make_ptr<render::ClawMaterialPass>();
         auto detachedUnit = make_ptr<render::ClawMaterialTexture>();
@@ -3459,6 +3708,35 @@ int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 2 && std::strcmp( argv[1], "--heap-profile-self-test" ) == 0 )
+        {
+            material_heap_profile::runSelfTest();
+            std::cout << "PASS: CRT heap, aligned allocation and private commitment profiling\n";
+            return 0;
+        }
+        if( argc == 4 && std::strcmp( argv[1], "--profile-full-memory" ) == 0 )
+        {
+            size_t parsed = 0;
+            const auto count = std::stoull( argv[2], &parsed );
+            require( parsed == std::strlen( argv[2] ) && count > 0 && count <= 100000,
+                     "full profile requires 1..100000 materials" );
+            const auto parameters = std::stoul( argv[3], &parsed );
+            require( parsed == std::strlen( argv[3] ) &&
+                     ( parameters == 8 || parameters == 32 || parameters == 128 ),
+                     "full profile requires 8, 32 or 128 mixed parameters" );
+            // Separate mode: no preceding contracts may pre-grow material pools.
+            const auto bootstrap = material_heap_profile::capture();
+            std::optional<FullMaterialMemoryProfileResult> result;
+            {
+                Fixture fixture;
+                result.emplace( runFullMaterialMemoryProfile( fixture, static_cast<size_t>( count ),
+                                                              static_cast<u32>( parameters ) ) );
+                result->sampleExternal( "fixture_inputs_released", material_heap_profile::capture() );
+            }
+            const auto retired = material_heap_profile::capture();
+            result->report( bootstrap, retired );
+            return 0;
+        }
         std::cout << "root_material_state_bytes=" << sizeof( MaterialStateData )
                   << " base_state_bytes=" << sizeof( StateData ) << '\n';
         if( argc == 2 && std::string( argv[1] ) == "--root-state-storage" ) return 0;
@@ -3482,6 +3760,12 @@ int main( int argc, char **argv )
                   << " authoring_texture_unit_bytes=" << sizeof(render::ClawMaterialTexture)
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         Fixture fixture;
+        material_texture_cold_contracts::run();
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-owned-storage" )
+        {
+            runOwnedStorageInventory( fixture, 10000 );
+            return 0;
+        }
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-schema-rebind" )
         {
             benchmarkSchemaRebind();
@@ -3528,9 +3812,11 @@ int main( int argc, char **argv )
         runSchemaRebindContracts( fixture );
         runNamedPbrOwnership( fixture );
         runLegacySurfaceStorage( fixture );
+        runMaterialSurfaceHandoff( fixture );
         runUnlitSurfaceOwnership( fixture );
         runColorOnlySurfaceOwnership( fixture );
         runRootMaterialStateStorage( fixture );
+        runOwnedStorageInventory( fixture, 64 );
         runNumericControls( fixture );
         runTextureBindings();
         runLegacyBatchScopes( fixture );
