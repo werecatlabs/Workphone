@@ -87,7 +87,11 @@ typedef enum wp_uniform_type
     WORKPHONE_UNIFORM_TYPE_VEC2 = 2,
     WORKPHONE_UNIFORM_TYPE_VEC3 = 3,
     WORKPHONE_UNIFORM_TYPE_VEC4 = 4,
-    WORKPHONE_UNIFORM_TYPE_MAT4 = 5
+    WORKPHONE_UNIFORM_TYPE_MAT4 = 5,
+    WORKPHONE_UNIFORM_TYPE_UINT = 6,
+    WORKPHONE_UNIFORM_TYPE_BOOL = 7,
+    WORKPHONE_UNIFORM_TYPE_IVEC2 = 8,
+    WORKPHONE_UNIFORM_TYPE_IVEC4 = 9
 } wp_uniform_type;
 
 /* =========================================================================
@@ -391,6 +395,13 @@ const wp_shader_param_def *wp_shader_program_get_param_def( const wp_shader_prog
 /** Resolve a stable handle for a named parameter (no per-call string lookup). */
 wp_shader_param_handle wp_shader_program_find_param( const wp_shader_program *program,
                                                      const wp_c8 *name );
+/** Resolve an indexed parameter, including resources. Invalid indices return an empty handle. */
+wp_shader_param_handle wp_shader_program_get_param_handle( const wp_shader_program *program,
+                                                           wp_s32 index );
+/** Validate ownership and the complete current definition identity, including resource parameters. */
+wp_s32 wp_shader_program_validate_param_handle( const wp_shader_program *program,
+                                                 wp_shader_param_handle handle );
+/** Test only whether a handle is populated; use validate_param_handle before accessing a program. */
 wp_s32 wp_shader_param_handle_is_valid( wp_shader_param_handle handle );
 
 /* =========================================================================

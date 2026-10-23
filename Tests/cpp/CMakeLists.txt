@@ -37,6 +37,22 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
+    if(WP_BUILD_RENDERER_DX11)
+        add_executable(WPMaterialProgramBindingTests MaterialProgramBindingTests.cpp)
+        target_include_directories(WPMaterialProgramBindingTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+            ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+            ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics ${WP_ROOT}/Dependencies/boost)
+        target_compile_definitions(WPMaterialProgramBindingTests PRIVATE BOOST_ALL_NO_LIB)
+        target_link_libraries(WPMaterialProgramBindingTests PRIVATE
+            WPGraphics Workphone WorkphoneGraphics WorkphoneCore d3d11 d3dcompiler dxguid)
+        target_link_directories(WPMaterialProgramBindingTests PRIVATE
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        set_target_properties(WPMaterialProgramBindingTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPGraphics.material_program_binding COMMAND WPMaterialProgramBindingTests)
+        set_tests_properties(WPGraphics.material_program_binding PROPERTIES
+            LABELS "graphics;material;gpu;packing" TIMEOUT 60)
+    endif()
     # Keep the active wrapper/backend regression suite buildable. Retained
     # executables cannot validate changes to the native renderer boundary.
     foreach(graphics_contract IN ITEMS ClawRendererContract ClawDX11Target ClawProduction)

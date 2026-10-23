@@ -170,9 +170,8 @@ namespace workphone
         {
             if( !StringUtil::isNullOrEmpty( queryStr ) )
             {
-                auto query = m_database->execQuery( queryStr.c_str() );
-
                 auto pQuery = workphone::make_ptr<SQLiteQuery>();
+                auto query = m_database->execQuery( queryStr.c_str() );
                 pQuery->setQuery( query );
                 return pQuery;
             }
@@ -183,6 +182,7 @@ namespace workphone
             WP_LOG_ERROR( message );
         }
 
+        catch( const std::bad_alloc & ) {} // Denial needs no diagnostic allocation.
         catch( const std::exception &e ) { WP_LOG_EXCEPTION(e); }
         return nullptr;
     }
@@ -194,6 +194,10 @@ namespace workphone
         {
             std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
             if( !m_database || !isLoaded() || sql.empty() ) return nullptr;
+            // Admit generic ownership metadata before any SQL side effects.
+            // A successful mutation must never lose its acknowledgement because
+            // creating the empty result wrapper afterwards exceeded SourceCpu.
+            auto result = workphone::make_ptr<SQLiteQuery>();
             if( values.empty() )
             {
                 // Legacy runScript can submit several mutation statements at
@@ -219,7 +223,7 @@ namespace workphone
                         }
                         return nullptr;
                     }
-                    return workphone::make_ptr<SQLiteQuery>();
+                    return result;
                 }
             }
             auto statement = m_database->compileStatement( sql.c_str() );
@@ -229,7 +233,6 @@ namespace workphone
                 statement.bind( static_cast<int>(i + 1), values[i].c_str() );
             }
             auto query = statement.execQuery();
-            auto result = workphone::make_ptr<SQLiteQuery>();
             result->setQuery( query );
             return result;
         }
@@ -237,6 +240,7 @@ namespace workphone
         {
             WP_LOG_ERROR( e.errorMessage() );
         }
+        catch( const std::bad_alloc & ) {}
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
@@ -254,9 +258,8 @@ namespace workphone
             if( !StringUtilW::isNullOrEmpty( queryStr ) )
             {
                 auto str = StringUtilW::toUTF16to8( queryStr );
-                auto query = m_database->execQuery( str.c_str() );
-
                 auto pQuery = workphone::make_ptr<SQLiteQuery>();
+                auto query = m_database->execQuery( str.c_str() );
                 pQuery->setQuery( query );
                 return pQuery;
             }
@@ -266,7 +269,8 @@ namespace workphone
             String message = e.errorMessage();
             WP_LOG_ERROR( message );
         }
-
+        catch( const std::bad_alloc & ) {}
+        catch( const std::exception &e ) { WP_LOG_EXCEPTION(e); }
         return nullptr;
     }
 

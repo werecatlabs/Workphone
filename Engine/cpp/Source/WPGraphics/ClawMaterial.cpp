@@ -131,8 +131,10 @@ namespace workphone
         {
             auto application = core::IApplicationManager::instance();
             auto files = application->getFileSystem();
-            auto stream = files->open( filePath, true, false, false, false, false );
-            if( !stream ) stream = files->open( filePath, true, false, false, true, true );
+            // The preparation guard compares physical byte counts. Binary reads
+            // preserve CRLF bytes on Windows so a stable text file is not rejected.
+            auto stream = files->open( filePath, true, true, false, false, false );
+            if( !stream ) stream = files->open( filePath, true, true, false, true, true );
             if( !stream ) return; // Procedural names are not reloadable assets.
             const u64 bytes = stream->size();
             // Bound descriptor parsing independently of the city cell count.

@@ -83,7 +83,10 @@ namespace workphone
     struct StreamBudgetState
     {
         mutable std::mutex mutex;
-        std::condition_variable wake;
+        // Retained service generations can share this ledger while each owns
+        // its own queue mutex. condition_variable requires one common mutex;
+        // condition_variable_any supports these independent queue locks.
+        std::condition_variable_any wake;
         std::array<u64, size_t( StreamMemoryClass::Count )> used{}, limits{};
         std::array<u64, size_t( StreamMemoryClass::Count )> peakUsed{}, rejectedReservations{};
     };

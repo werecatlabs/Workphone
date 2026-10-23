@@ -64,6 +64,16 @@ namespace
         Vector3<real_Num> gravity = Vector3<real_Num>( 2, -9.8f, 3 );
     };
 
+    class SettingsPhysicsProbe : public physics::PhysicsManager
+    {
+    public:
+        SmartPtr<physics::IPhysicsShape3> addCollisionShapeByType(
+            hash64, SmartPtr<ISharedObject> ) override
+        {
+            return nullptr;
+        }
+    };
+
     struct SettingsRuntimeGuard
     {
         SmartPtr<core::IApplicationManager> previousApp = core::IApplicationManager::instance();
@@ -92,7 +102,7 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_subsystem_contract_test )
     SettingsRuntimeGuard guard;
     auto tasks = workphone::make_ptr<SettingsTasksProbe>();
     auto sound = workphone::make_ptr<SettingsSoundProbe>();
-    auto physics = workphone::make_ptr<physics::PhysicsManager>();
+    auto physics = workphone::make_ptr<SettingsPhysicsProbe>();
     auto scene = workphone::make_ptr<SettingsPhysicsSceneProbe>();
     physics->setPhysicsScene( scene );
     guard.app->setTaskManager( tasks );

@@ -262,7 +262,7 @@ namespace workphone::editor
                 }
                 else if( action == "reloadRenderer" )
                 {
-                    throw std::runtime_error( "Renderer hot reload is unavailable. Save settings and restart the Editor to switch graphics backends." );
+                    throw std::runtime_error( "Renderer hot reload is unavailable. Save settings and launch the game again to switch its graphics backend." );
                 }
                 else if( action == "applyProjectSettings" || action == "saveProjectSettings" )
                 {

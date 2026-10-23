@@ -12,6 +12,8 @@
 #include <Workphone/Memory/TypeManager.hpp>
 #include <WPGraphics/ClawTexture.hpp>
 #include <array>
+#include <chrono>
+#include <thread>
 #include <stdexcept>
 
 namespace generic_engine_catalog_budget_contracts
@@ -72,6 +74,26 @@ namespace generic_engine_catalog_budget_contracts
                 "service restart preserves live physical allocations and configured limits");
         require(restarted->setBudget(StreamMemoryClass::SourceCpu, before.limits[Capacity::source], error),
                 "startup limit restores");
+        {
+            auto oldProducer = first->createProducer({}, error);
+            auto newProducer = restarted->createProducer({}, error);
+            WorldStreamRequest request;
+            request.key = 7;
+            request.execute = [](const StreamCancellation &) { return WorldStreamResult{}; };
+            require(oldProducer && newProducer && oldProducer->replace({request}, error) &&
+                        newProducer->replace({request}, error), "retained service generations accept independent work");
+            bool oldReady = false, newReady = false;
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            WorldStreamResult result;
+            while ((!oldReady || !newReady) && std::chrono::steady_clock::now() < deadline)
+            {
+                if (!oldReady) oldReady = oldProducer->take(result);
+                if (!newReady) newReady = newProducer->take(result);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(oldReady && newReady, "independent service queues share ledger wakeups safely");
+            oldProducer->drain(); newProducer->drain();
+        }
         { WorldStreamingScheduler isolated;
           require(!isolated.stats().used[Capacity::source], "isolated scheduler retains its independent ledger"); }
         freeSourceBudgetStorage(storage, 64);
@@ -235,6 +257,7 @@ namespace generic_engine_catalog_budget_contracts
         for (int i = 0; i < 16; ++i)
             sql += (i ? " UNION ALL SELECT '" : "SELECT '") + value + "' AS value";
         const String one = "SELECT '" + value + "' AS value";
+        const auto wideSql = StringUtilW::toUTF8to16(sql);
         // Warm generic query control slots; their retained pool capacity has a
         // different lifetime from an individual query's rows and field strings.
         { auto a = bound->queryBound(one, {}); auto b = bound->queryBound(one, {});
@@ -256,6 +279,8 @@ namespace generic_engine_catalog_budget_contracts
         budget.set(resident);
         require(!database->query(sql) && budget.used() == resident,
                 "unbound query has the same denial contract");
+        require(!database->query(wideSql) && budget.used() == resident,
+                "wide query has the same denial contract");
         auto mutation = bound->queryBound("CREATE TEMP TABLE wp_memory_budget_probe(value INTEGER)", {});
         require(mutation && mutation->eof() && budget.used() == resident,
                 "successful SQL mutations are acknowledged at capacity without row storage");
@@ -280,6 +305,32 @@ namespace generic_engine_catalog_budget_contracts
         previous = nullptr;
         require(budget.used() == baseline, "all catalog result storage retires");
         database->queryDML("DROP TABLE wp_memory_budget_probe");
+
+        // Exhaust free generic object/control slots while keeping row storage
+        // empty. Every API must admit its acknowledgement before executing SQL.
+        database->queryDML("CREATE TEMP TABLE wp_ack_budget_probe(value INTEGER)");
+        const String emptyQuery("SELECT 1 WHERE 0");
+        const String insert("INSERT INTO wp_ack_budget_probe VALUES(1)");
+        const auto wideInsert = StringUtilW::toUTF8to16(insert);
+        std::vector<SmartPtr<IDatabaseQuery>> held;
+        budget.set(budget.used());
+        bool metadataDenied = false;
+        for (size_t i = 0; i < 4096; ++i)
+        {
+            auto empty = bound->queryBound(emptyQuery, {});
+            if (!empty) { metadataDenied = true; break; }
+            require(empty->eof(), "acknowledgement probe retains no row storage");
+            held.push_back(empty);
+        }
+        require(metadataDenied && !bound->queryBound(insert, {}) && !database->query(insert) &&
+                    !database->query(wideInsert), "generic control admission denies SQL before mutation");
+        budget.restore();
+        auto count = bound->queryBound("SELECT count(*) AS value FROM wp_ack_budget_probe", {});
+        require(count && count->getFieldValueAsInt("value") == 0,
+                "denied acknowledgement allocation has no SQL side effects");
+        count = nullptr;
+        held.clear();
+        database->queryDML("DROP TABLE wp_ack_budget_probe");
     }
 
     inline void queues()
