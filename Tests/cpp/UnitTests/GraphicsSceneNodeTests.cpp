@@ -1,8 +1,16 @@
 #include "UnitTests.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <future>
+#include <mutex>
+#include <set>
+#include <vector>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
+#    include <Workphone/Graphics/GraphicsSystem.hpp>
 #    include <WPGraphics/ClawCamera.hpp>
 #    include <WPGraphics/ClawLight.hpp>
 #    include <WPGraphics/ClawMesh.hpp>
@@ -36,6 +44,23 @@ using namespace workphone;
 // Helper function to run update loop
 namespace
 {
+#if WP_GRAPHICS_SYSTEM_CLAW
+    class MeshMutationLockProbe : public render::GraphicsSystem
+    {
+    public:
+        std::function<void()> beforeLock;
+
+        void lock() override
+        {
+            if( beforeLock )
+            {
+                beforeLock();
+            }
+            GraphicsSystem::lock();
+        }
+    };
+#endif
+
     void RunUpdateLoop( SmartPtr<core::IApplicationManager> appManager, int iterations = 5 )
     {
         auto taskManager = appManager->getTaskManager();
@@ -47,6 +72,159 @@ namespace
 }  // namespace
 
 #if WP_GRAPHICS_SYSTEM_CLAW
+BOOST_AUTO_TEST_CASE( claw_scene_mesh_native_mutations_wait_for_render_capture )
+{
+    TestGuard guard;
+    auto originalGraphics = guard.applicationManager->getGraphicsSystem();
+    auto graphics = make_ptr<MeshMutationLockProbe>();
+    auto mesh = make_ptr<render::ClawMesh>();
+    auto nativeObject = wp_graphics_object_create();
+    BOOST_REQUIRE( nativeObject );
+    guard.addCleanup( [app = guard.applicationManager, originalGraphics, graphics, mesh,
+                       nativeObject]() mutable {
+        graphics->beforeLock = {};
+        mesh->unload( nullptr );
+        wp_graphics_object_destroy( nativeObject );
+        app->setGraphicsSystem( originalGraphics );
+    } );
+    guard.applicationManager->setGraphicsSystem( graphics );
+    mesh->bindNativeRenderObject( nativeObject );
+
+    const auto checkMutation = [&]( const char *name, const std::function<void()> &mutate,
+                                    const std::function<bool()> &applied ) {
+        BOOST_TEST_CONTEXT( name )
+        {
+            std::promise<void> entered;
+            auto enteredFuture = entered.get_future();
+            std::atomic<bool> signalled{ false };
+            std::unique_lock<render::IGraphicsSystem> captureLock( *graphics );
+            const auto generationBefore = wp_graphics_object_get_generation( nativeObject );
+            // Signal immediately before attempting the real recursive graphics
+            // mutex. The worker must then wait for this simulated render capture.
+            graphics->beforeLock = [&]() {
+                if( !signalled.exchange( true ) )
+                {
+                    entered.set_value();
+                }
+            };
+            auto worker = std::async( std::launch::async, mutate );
+            const bool enteredLock = enteredFuture.wait_for( std::chrono::seconds( 2 ) ) ==
+                                     std::future_status::ready;
+            const bool blocked = worker.wait_for( std::chrono::milliseconds( 25 ) ) ==
+                                 std::future_status::timeout;
+            const auto generationDuring = enteredLock && blocked
+                                              ? wp_graphics_object_get_generation( nativeObject )
+                                              : generationBefore;
+            // Always release capture and join before assertions: a failed
+            // contention check must not strand a worker behind our mutex.
+            captureLock.unlock();
+            worker.get();
+            graphics->beforeLock = {};
+            BOOST_CHECK( enteredLock );
+            BOOST_CHECK( blocked );
+            BOOST_CHECK_EQUAL( generationDuring, generationBefore );
+            BOOST_CHECK_GT( wp_graphics_object_get_generation( nativeObject ), generationBefore );
+            BOOST_CHECK( applied() );
+        }
+    };
+
+    checkMutation( "material", [&]() { mesh->setMaterial( nullptr ); },
+                   [&]() { return wp_graphics_object_get_material( nativeObject ) == nullptr; } );
+    checkMutation( "visibility", [&]() { mesh->setVisible( false ); },
+                   [&]() { return wp_graphics_object_is_visible( nativeObject ) == 0; } );
+    checkMutation( "cast shadows", [&]() { mesh->setCastShadows( false ); },
+                   [&]() { return wp_graphics_object_get_cast_shadows( nativeObject ) == 0; } );
+    checkMutation( "receive shadows", [&]() { mesh->setReceiveShadows( false ); },
+                   [&]() { return wp_graphics_object_get_receive_shadows( nativeObject ) == 0; } );
+    checkMutation( "visibility flags", [&]() { mesh->setVisibilityFlags( 0x12345678u ); },
+                   [&]() {
+                       return wp_graphics_object_get_visibility_flags( nativeObject ) == 0x12345678u;
+                   } );
+    checkMutation( "detach native object", [&]() { mesh->bindNativeRenderObject( nullptr ); },
+                   [&]() { return mesh->getNativeRenderObject() == nullptr; } );
+}
+
+BOOST_AUTO_TEST_CASE( graphics_scene_node_concurrent_construction_preserves_identity_and_transform_state_isolation )
+{
+    TestGuard guard;
+    auto scene = guard.graphicsSystem->getGraphicsScene();
+    BOOST_REQUIRE( scene );
+    constexpr u32 workerCount = 4, nodesPerWorker = 32;
+    std::promise<void> start;
+    auto ready = start.get_future().share();
+    using Nodes = std::vector<SmartPtr<render::ClawSceneNode>>;
+    std::vector<std::future<Nodes>> workers;
+    for( u32 worker = 0; worker < workerCount; ++worker )
+    {
+        workers.push_back( std::async( std::launch::async, [scene, ready, nodesPerWorker]() {
+            ready.wait();
+            Nodes nodes;
+            nodes.reserve( nodesPerWorker );
+            // Constructors only: native allocation and attachment remain on
+            // the primary thread. Every node registers in the shared context.
+            for( u32 i = 0; i < nodesPerWorker; ++i )
+                nodes.push_back( make_ptr<render::ClawSceneNode>( scene ) );
+            return nodes;
+        } ) );
+    }
+    start.set_value();
+    Nodes nodes;
+    nodes.reserve( workerCount * nodesPerWorker );
+    for( auto &worker : workers )
+    {
+        auto created = worker.get();
+        nodes.insert( nodes.end(), created.begin(), created.end() );
+    }
+    // Keep every instance alive through all writes and reads, so one duplicate
+    // identity would alias another node's TransformStateData in this context.
+    std::set<hash_type> ids;
+    std::set<String> names;
+    for( u32 i = 0; i < nodes.size(); ++i )
+    {
+        auto &node = nodes[i];
+        BOOST_CHECK( ids.insert( node->getId() ).second );
+        BOOST_CHECK( names.insert( node->getName() ).second );
+        BOOST_CHECK( !node->getNativeNode() );
+        Transform3<real_Num> pose;
+        pose.setPosition( Vector3F( real_Num( i + 1 ), real_Num( i * 3 ), -real_Num( i + 5 ) ) );
+        pose.setScale( Vector3F( real_Num( i + 1 ), 2.0f, 3.0f ) );
+        node->setTransform( pose );
+    }
+    for( u32 i = 0; i < nodes.size(); ++i )
+    {
+        auto &node = nodes[i];
+        auto context = node->getStateContext();
+        BOOST_REQUIRE( context );
+        auto data = context->getStateDataById<TransformStateData>( node->getId() );
+        BOOST_REQUIRE( data );
+        auto state = data->getOwner();
+        BOOST_REQUIRE( state );
+        BOOST_CHECK( state->getOwnerPtr() == node.get() );
+        const auto pose = node->getTransform();
+        BOOST_CHECK( pose.getPosition().equals(
+            Vector3F( real_Num( i + 1 ), real_Num( i * 3 ), -real_Num( i + 5 ) ), 0.001f ) );
+        BOOST_CHECK( pose.getScale().equals( Vector3F( real_Num( i + 1 ), 2.0f, 3.0f ), 0.001f ) );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( claw_scene_camera_field_of_view_matches_degree_api_and_native_projection )
+{
+    TestGuard guard;
+    auto camera = make_ptr<render::ClawCamera>();
+    camera->setAspectRatio( 2.0f );
+    camera->setNearClipDistance( 0.5f );
+    camera->setFarClipDistance( 5000.0f );
+    camera->setFOVy( 45.0f );
+    BOOST_CHECK_CLOSE( camera->getFOVy(), 45.0f, 0.001f );
+    BOOST_CHECK_CLOSE( wp_camera_get_fov_y( camera->getNativeCamera() ), MathF::pi() / 4.0f, 0.001f );
+    auto projection = camera->getProjectionMatrix();
+    BOOST_CHECK_CLOSE( projection[1][1], 1.0f / MathF::Tan( MathF::pi() / 8.0f ), 0.001f );
+    BOOST_CHECK_CLOSE( projection[0][0], projection[1][1] / 2.0f, 0.001f );
+    camera->setFOVy( 90.0f );
+    BOOST_CHECK_CLOSE( wp_camera_get_fov_y( camera->getNativeCamera() ), MathF::pi() / 2.0f, 0.001f );
+    BOOST_CHECK_CLOSE( camera->getProjectionMatrix()[1][1], 1.0f, 0.001f );
+}
+
 BOOST_AUTO_TEST_CASE( claw_scene_clear_detaches_camera_and_invalidates_nodes )
 {
     TestGuard guard;

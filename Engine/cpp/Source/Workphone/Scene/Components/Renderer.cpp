@@ -519,9 +519,9 @@ namespace workphone::scene
             if( threadPool && threadPool->getNumThreads() > 0 && taskManager &&
                 taskManager->getNumTasks() > 0 )
             {
-                if( auto actor = getActorPtr() )
+                if( auto actor = getActor() )
                 {
-                    if( auto actorTransform = actor->getTransformPtr() )
+                    if( auto actorTransform = actor->getTransform() )
                     {
                         auto t = actorTransform->getWorldTransform();
 
@@ -534,9 +534,9 @@ namespace workphone::scene
             }
             else
             {
-                if( auto actor = getActorPtr() )
+                if( auto actor = getActor() )
                 {
-                    if( auto actorTransform = actor->getTransformPtr() )
+                    if( auto actorTransform = actor->getTransform() )
                     {
                         auto t = actorTransform->getWorldTransform();
                         if( auto node = getGraphicsNode() )
@@ -558,11 +558,11 @@ namespace workphone::scene
             // latest physics pose merely because there are no worker threads.
             if( taskManager && taskManager->getNumTasks() > 0 )
             {
-                if( auto actor = getActorPtr() )
+                if( auto actor = getActor() )
                 {
                     if( !actor->isSmoothMotion() )
                     {
-                        if( auto actorTransform = actor->getTransformPtr() )
+                        if( auto actorTransform = actor->getTransform() )
                         {
                             auto t = actorTransform->getWorldTransform();
 
@@ -576,9 +576,9 @@ namespace workphone::scene
             }
             else
             {
-                if( auto actor = getActorPtr() )
+                if( auto actor = getActor() )
                 {
-                    if( auto actorTransform = actor->getTransformPtr() )
+                    if( auto actorTransform = actor->getTransform() )
                     {
                         auto t = actorTransform->getWorldTransform();
                         if( auto node = getGraphicsNode() )

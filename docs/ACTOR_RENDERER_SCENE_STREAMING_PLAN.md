@@ -1,8 +1,10 @@
 # Actor, mesh renderer, scene node, and city streaming implementation plan
 
-Reviewed: 22 October 2026. Source baseline: `eeb6dfa80`.
+Reviewed: 22 October 2026. Original source audit: `eeb6dfa80`. Implementation progress updated 23 October 2026.
 
-Status: implementation plan based on a source audit. No runtime changes or new performance measurements were made for this review. Preserve the existing local `ResourceDatabase.cpp` modification.
+Status: implementation is in progress. Static subtree revisions, event-driven transform queues, targeted renderer initialization, native-node synchronization fixes, lifecycle cancellation tickets, independent cell cooking, and owner-thread actor streaming are implemented. The original findings below describe the audit baseline, not the current behavior. See [SCENE_WORLD_STREAMING.md](SCENE_WORLD_STREAMING.md) for usage and current limitations.
+
+The runtime now retains a bounds index for local cell queries and retires unused reloadable CPU meshes after graphics objects unload. Direct mesh/resource owners pin their data; procedural geometry is retained. Resource inventory publication and transform/state ownership are synchronized, and scene membership refreshes are coalesced to avoid repeated full-scene scans during activation. These improvements do not establish a complete CPU/GPU asset budget. Shared texture/material residency, upload/fence accounting, permanent save overlays, HLOD and draw batching remain unfinished.
 
 ## Recommended design
 

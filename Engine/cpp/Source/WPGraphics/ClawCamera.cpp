@@ -29,12 +29,13 @@ namespace workphone
 
         f32 ClawCamera::getFOVy() const
         {
-            return wp_camera_get_fov_y( m_camera );
+            return MathF::RadToDeg( wp_camera_get_fov_y( m_camera ) );
         }
 
         void ClawCamera::setFOVy( f32 fov )
         {
-            wp_camera_set_fov_y( m_camera, fov );
+            // The public graphics camera API uses degrees; the C renderer uses radians.
+            wp_camera_set_fov_y( m_camera, MathF::DegToRad( fov ) );
         }
 
         f32 ClawCamera::getNearClipDistance() const
@@ -93,7 +94,7 @@ namespace workphone
             const auto farClip = std::max( getFarClipDistance(), nearClip + 1.0f );
             const auto aspect = std::max( getAspectRatio(), MathF::epsilon() );
             Matrix4<real_Num> projection;
-            projection.makePerspective( getFOVy(), aspect, nearClip, farClip );
+            projection.makePerspective( MathF::DegToRad( getFOVy() ), aspect, nearClip, farClip );
             return projection;
         }
 

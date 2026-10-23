@@ -140,6 +140,9 @@ namespace workphone
     template <class T, class A>
     void Pool<T, A>::allocateData()
     {
+        // Share the existing recursive inventory lock with allocation. Publishing
+        // a block and claiming its first slot must be one transaction.
+        ScopedLock allocationLock( &m_elements, true );
         auto nextSize = getNextSize();
         if( nextSize == 0 )
             return;
@@ -156,22 +159,16 @@ namespace workphone
     template <class T, class A>
     RawPtr<T> Pool<T, A>::allocate_object()
     {
-        if( m_freeElements.empty() )
-        {
-            allocateData();
-        }
+        ScopedLock allocationLock( &m_elements, true );
+        RawPtr<T> ptr;
+        if( m_freeElements.try_pop( ptr ) ) return ptr;
 
-        if( !m_freeElements.empty() )
-        {
-            RawPtr<T> ptr;
-            while( !m_freeElements.try_pop( ptr ) )
-            {
-                Thread::yield();
-            }
-
-            return ptr;
-        }
-
+        // An empty() check does not reserve a slot. Competing allocators could
+        // previously drain the queue before this caller popped, making it return
+        // null after growth or spin forever waiting for a slot nobody would free.
+        // Claim a newly published slot before another allocator can consume it.
+        allocateData();
+        if( m_freeElements.try_pop( ptr ) ) return ptr;
         return nullptr;
     }
 
@@ -205,12 +202,14 @@ namespace workphone
     template <class T, class A>
     size_Num Pool<T, A>::getNextSize() const
     {
+        ScopedLock allocationLock( &m_elements, false );
         return m_nextSize;
     }
 
     template <class T, class A>
     void Pool<T, A>::setNextSize( size_Num nextSize )
     {
+        ScopedLock allocationLock( &m_elements, true );
         m_nextSize = nextSize;
     }
 

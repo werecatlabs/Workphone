@@ -77,7 +77,14 @@ namespace workphone
 
     void StateContext::clearStates()
     {
-        m_states.clear();
+        // Keep removed states alive until after the inventory lock is released;
+        // their destruction can reenter a context or another subsystem.
+        Array<SmartPtr<IState>> removed;
+        {
+            ScopedLock lock( &m_states );
+            removed = m_states.snapshot();
+            m_states.clear();
+        }
     }
 
     Array<SmartPtr<IStateListener>> StateContext::snapshotStateListeners() const
@@ -364,7 +371,11 @@ namespace workphone
             auto task = Thread::getCurrentTask();
 
             // --- Process dirty states ---
-            for( auto &state : m_states )
+            // Streaming can retire nodes from the shared scene context while
+            // state callbacks run. Retain entries without exposing array slots
+            // or holding the inventory lock across subsystem callbacks.
+            auto states = snapshotStates();
+            for( auto &state : states )
             {
                 if( !state )
                 {
@@ -919,15 +930,18 @@ namespace workphone
             return;
         }
 
+        bool duplicate = false;
         {
-            auto values = m_states.snapshot();
-            if( std::find( values.begin(), values.end(), state ) != values.end() )
-            {
-                WP_LOG_WARNING( "StateContext::addState: state is already in context." );
-                return;
-            }
-
-            m_states.push_back( state );
+            // Search and insertion form one transaction. A snapshot-only search
+            // allows concurrent publishers to insert the same state twice.
+            ScopedLock lock( &m_states );
+            duplicate = std::find( m_states.begin(), m_states.end(), state ) != m_states.end();
+            if( !duplicate ) m_states.push_back( state );
+        }
+        if( duplicate )
+        {
+            WP_LOG_WARNING( "StateContext::addState: state is already in context." );
+            return;
         }
 
         state->setStateContext( this );
@@ -944,6 +958,9 @@ namespace workphone
         bool removed = false;
 
         {
+            // ConcurrentArray iterators do not retain a lock. Keep lookup and
+            // erase together; the argument keeps the removed state alive.
+            ScopedLock lock( &m_states );
             auto it = std::find( m_states.begin(), m_states.end(), state );
             if( it != m_states.end() )
             {

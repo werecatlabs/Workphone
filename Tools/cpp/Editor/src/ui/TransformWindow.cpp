@@ -1,9 +1,22 @@
 #include <EditorPCH.hpp>
 #include "ui/TransformWindow.hpp"
 #include <Workphone/Workphone.hpp>
+#include <mutex>
 
 namespace workphone::editor
 {
+    namespace
+    {
+        std::mutex &inspectorTransformMutex()
+        {
+            // Selection jobs publish transforms while render/UI callbacks read
+            // them. Keep load+retain and replacement in the same transaction.
+            // This gate also remains available to late editor factory teardown.
+            static auto *gate = new std::mutex;
+            return *gate;
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone::editor, TransformWindow, EditorWindow );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, TransformWindow::VectorListener, IEventListener );
 
@@ -352,13 +365,21 @@ namespace workphone::editor
 
     SmartPtr<scene::ITransform> TransformWindow::getTransform() const
     {
+        std::lock_guard<std::mutex> lock( inspectorTransformMutex() );
         return m_transform;
     }
 
     void TransformWindow::setTransform( SmartPtr<scene::ITransform> transform )
     {
-        m_transform = transform;
+        SmartPtr<scene::ITransform> previous;
+        {
+            std::lock_guard<std::mutex> lock( inspectorTransformMutex() );
+            previous = m_transform;
+            m_transform = transform;
+        }
 
+        // UI refresh and final release of the previous facade happen after the
+        // ownership gate; neither can call back into the inspector under it.
         if( isLoaded() )
         {
             refreshTransformUI();

@@ -7,9 +7,23 @@
 #include <Workphone/State/States/TransformStateData.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/System/IStateMessage.hpp>
+#include <mutex>
 
 namespace workphone::render
 {
+    namespace
+    {
+        u32 allocateSceneNodeIndex( u32 &counter )
+        {
+            // Scene factories and direct constructors can run on different
+            // tasks. Shared state lookups require one identity per node, even
+            // when the nodes were allocated by different factories.
+            static auto *mutex = new std::mutex;
+            std::lock_guard<std::mutex> lock( *mutex );
+            return counter++;
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone::render, GraphicsSceneNode,
                                SharedGraphicsObject<IGraphicsSceneNode> );
 
@@ -25,7 +39,7 @@ namespace workphone::render
     {
         setEventTaskFlags( Thread::Render_Flag );
 
-        auto name = String( "SceneNode" ) + StringUtil::toString( m_idExt++ );
+        auto name = String( "SceneNode" ) + StringUtil::toString( allocateSceneNodeIndex( m_idExt ) );
         auto id = StringUtil::getHash( name );
 
         setName( name );
@@ -36,7 +50,7 @@ namespace workphone::render
     {
         setEventTaskFlags( Thread::Render_Flag );
 
-        auto name = String( "SceneNode" ) + StringUtil::toString( m_idExt++ );
+        auto name = String( "SceneNode" ) + StringUtil::toString( allocateSceneNodeIndex( m_idExt ) );
         auto id = StringUtil::getHash( name );
 
         setName( name );

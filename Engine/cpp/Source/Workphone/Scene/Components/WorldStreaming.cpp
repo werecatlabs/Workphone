@@ -7,12 +7,45 @@
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <array>
+#include <cstdint>
+#include <mutex>
 
 namespace workphone::scene
 {
+    namespace
+    {
+        std::mutex &streamerLifetimeMutex( const WorldStreaming *component )
+        {
+            // Inspector reads only hold this gate while copying the streamer's
+            // published statistics. Keep it alive through late factory teardown.
+            static auto *gates = new std::array<std::mutex, 64>();
+            const auto index = ( reinterpret_cast<std::uintptr_t>( component ) >> 4 ) % gates->size();
+            return ( *gates )[index];
+        }
+
+        std::unique_ptr<SceneWorldStreamer> replaceStreamer(
+            const WorldStreaming *component, std::unique_ptr<SceneWorldStreamer> &slot,
+            std::unique_ptr<SceneWorldStreamer> replacement = {} )
+        {
+            std::unique_ptr<SceneWorldStreamer> retired;
+            {
+                std::lock_guard<std::mutex> lock( streamerLifetimeMutex( component ) );
+                retired = std::move( slot );
+                slot = std::move( replacement );
+            }
+            // Closing a world can pause render or run actor/component callbacks.
+            // Return ownership so all of that happens after releasing the gate.
+            return retired;
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, WorldStreaming, Component );
     WorldStreaming::WorldStreaming() = default;
-    WorldStreaming::~WorldStreaming() = default;
+    WorldStreaming::~WorldStreaming()
+    {
+        auto retired = replaceStreamer( this, m_streamer );
+    }
 
     void WorldStreaming::load( SmartPtr<ISharedObject> data )
     {
@@ -30,7 +63,9 @@ namespace workphone::scene
         if( getLoadingState() == LoadingState::Unloaded ) return;
         if( auto app = core::IApplicationManager::instancePtr() )
             if( auto manager = app->getGameManager() ) manager->unregisterAllComponent( this );
-        m_streamer.reset(); m_openPath.clear(); m_observer = nullptr;
+        auto retired = replaceStreamer( this, m_streamer );
+        retired.reset();
+        m_openPath.clear(); m_observer = nullptr;
         Component::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
@@ -45,7 +80,11 @@ namespace workphone::scene
         if( m_reopen )
         {
             m_reopen = false;
-            if( m_manifestPath.empty() ) { m_streamer.reset(); return; }
+            if( m_manifestPath.empty() )
+            {
+                auto retired = replaceStreamer( this, m_streamer );
+                return;
+            }
             const auto path = Path::isPathAbsolute( m_manifestPath ) ? m_manifestPath :
                 Path::lexically_normal( app->getProjectPath(), m_manifestPath );
             String error;
@@ -59,7 +98,7 @@ namespace workphone::scene
                 auto candidate = std::make_unique<SceneWorldStreamer>();
                 if( !candidate->open( path, actor->getScene(), m_options, error ) )
                 { m_error = error; WP_LOG_ERROR( "WorldStreaming: " + error ); return; }
-                m_streamer = std::move( candidate );
+                auto retired = replaceStreamer( this, m_streamer, std::move( candidate ) );
             }
             m_openPath = path;
         }
@@ -93,6 +132,9 @@ namespace workphone::scene
         p->setProperty( "Resident Cells", stats.residentCells, true );
         p->setProperty( "Pending Cells", stats.pendingCells, true );
         p->setProperty( "Resident Source Bytes", stats.residentSourceBytes, true );
+        p->setProperty( "Released CPU Mesh Resources", stats.releasedMeshResources, true );
+        p->setProperty( "Index Nodes Visited", stats.indexNodesVisited, true );
+        p->setProperty( "Index Cells Tested", stats.indexCellsTested, true );
         return p;
     }
 
@@ -117,5 +159,8 @@ namespace workphone::scene
     }
 
     SceneWorldStreamStatistics WorldStreaming::statistics() const
-    { return m_streamer ? m_streamer->statistics() : SceneWorldStreamStatistics{}; }
+    {
+        std::lock_guard<std::mutex> lock( streamerLifetimeMutex( this ) );
+        return m_streamer ? m_streamer->statistics() : SceneWorldStreamStatistics{};
+    }
 }
