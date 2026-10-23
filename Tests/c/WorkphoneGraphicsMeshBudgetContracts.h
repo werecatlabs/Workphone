@@ -47,7 +47,7 @@ static int test_mesh_budget_lifetimes( void )
     const wp_graphics_mesh_vertex_p vertices[3] = { { {0,0,0} }, { {1,0,0} }, { {0,1,0} } };
     const wp_u32 indices[3] = {0,1,2}, invalid[3] = {0,1,99};
     mesh_budget_test_state state;
-    wp_mesh_memory_callbacks callbacks;
+    struct wp_mesh_memory_callbacks callbacks;
     wp_graphics_mesh *mesh;
     const void *previous;
     const wp_vertex_pntc *lit;

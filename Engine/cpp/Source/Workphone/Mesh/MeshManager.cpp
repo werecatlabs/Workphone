@@ -56,7 +56,7 @@ namespace workphone
 
         template <class Predicate>
         SmartPtr<IMeshResource> findCachedResource(
-            const ConcurrentArray<SmartPtr<IMeshResource>> &resources, Predicate matches )
+            const SourceBudgetConcurrentArray<SmartPtr<IMeshResource>> &resources, Predicate matches )
         {
             MeshCacheLock lifecycleLock;
             ScopedLock cacheLock( &resources, false );
@@ -282,14 +282,14 @@ namespace workphone
             {
                 mesh.get()->unload( nullptr );
             }
-            m_meshes.clear();
+            m_meshes.releaseStorage();
 
             auto resources = m_meshResources.snapshot();
             for( const auto &resource : resources )
             {
                 resource.get()->unload( nullptr );
             }
-            m_meshResources.clear();
+            m_meshResources.releaseStorage();
 
             setLoadingState( LoadingState::Unloaded );
         }

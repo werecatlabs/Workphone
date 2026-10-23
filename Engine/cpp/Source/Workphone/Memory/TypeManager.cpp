@@ -1659,8 +1659,6 @@ namespace workphone
     {
         if( m_size != size )
         {
-            m_size = size;
-
             baseObjectDataPools.resize( size );
             sharedObjectDataPools.resize( size );
 
@@ -1672,6 +1670,8 @@ namespace workphone
             m_baseType.resize( size );
             m_dataTypes.resize( size );
             m_numInstances.resize( size );
+            // Failed pool-state admission must leave reserve retryable.
+            m_size = size;
         }
     }
 

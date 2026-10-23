@@ -104,7 +104,7 @@ namespace workphone::render
                 // Capture the live owner before clearing/detaching the slot.
                 // Unload retains its authoring path after releasing the resource.
                 auto name = getTextureName();
-                auto unresolved = name.empty() ? nullptr : std::make_unique<String>( name );
+                auto unresolved = name.empty() ? nullptr : makeSourceBudgetUnique<SourceBudgetString>( name );
                 setTexture( nullptr );
                 setParent( nullptr );
                 m_unresolvedTextureName = std::move( unresolved );
@@ -126,7 +126,7 @@ namespace workphone::render
             return path.empty() ? texture->getName() : path;
         }
 
-        return m_unresolvedTextureName ? *m_unresolvedTextureName : String();
+        return m_unresolvedTextureName ? String(*m_unresolvedTextureName) : String();
     }
 
     void MaterialTexture::setTextureName( const String &texturePath )
@@ -136,7 +136,7 @@ namespace workphone::render
 
     size_t MaterialTexture::getUnresolvedTextureNameObjectBytes() const
     {
-        return m_unresolvedTextureName ? sizeof( String ) : 0;
+        return m_unresolvedTextureName ? sizeof( SourceBudgetString ) : 0;
     }
 
     void MaterialTexture::setTextureNameImpl( const String &texturePath, bool loadResource )
@@ -161,7 +161,7 @@ namespace workphone::render
         // Retry resource resolution above even for unchanged unresolved names.
         if( m_unresolvedTextureName && *m_unresolvedTextureName == texturePath )
             return;
-        auto unresolved = std::make_unique<String>( texturePath );
+        auto unresolved = makeSourceBudgetUnique<SourceBudgetString>( texturePath );
         setTexture( nullptr );
         m_unresolvedTextureName = std::move( unresolved );
     }
@@ -213,7 +213,7 @@ namespace workphone::render
     void MaterialTexture::setScale( const Vector3<real_Num> &scale )
     {
         if( exactTextureValue( getScale(), scale ) ) return;
-        if( !m_textureAuthoring ) m_textureAuthoring = std::make_unique<TextureAuthoringData>();
+        if( !m_textureAuthoring ) m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
         m_textureAuthoring->scale = scale;
         releaseDefaultAuthoringData();
     }
@@ -243,7 +243,7 @@ namespace workphone::render
     void MaterialTexture::setAnimator( SmartPtr<IAnimator> animator )
     {
         if( getAnimator() == animator ) return;
-        if( !m_textureAuthoring ) m_textureAuthoring = std::make_unique<TextureAuthoringData>();
+        if( !m_textureAuthoring ) m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
         m_textureAuthoring->animator = animator;
         releaseDefaultAuthoringData();
     }
@@ -256,7 +256,7 @@ namespace workphone::render
     void MaterialTexture::setTint( const ColourF &tint )
     {
         if( exactTextureValue( getTint(), tint ) ) return;
-        if( !m_textureAuthoring ) m_textureAuthoring = std::make_unique<TextureAuthoringData>();
+        if( !m_textureAuthoring ) m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
         m_textureAuthoring->tint = tint;
         releaseDefaultAuthoringData();
     }

@@ -575,7 +575,7 @@ namespace workphone::render
                     technique->unload( data );
                 }
 
-                m_techniques.clear();
+                m_techniques.releaseStorage();
 
                 ResourceGraphics<IMaterial>::unload( nullptr );
 
@@ -1092,8 +1092,8 @@ namespace workphone::render
 
     void Material::setTechniques( const Array<SmartPtr<IMaterialTechnique>> &techniques )
     {
-        invalidateRenderState();
-        m_techniques = { techniques.begin(), techniques.end() };
+        SourceBudgetConcurrentArray<SmartPtr<IMaterialTechnique>> next( techniques.begin(), techniques.end() );
+        m_techniques = std::move(next);
         for( auto technique : techniques ) if( technique )
         {
             technique->setMaterial( this );
@@ -1369,13 +1369,12 @@ namespace workphone::render
 
     void Material::addTechnique( SmartPtr<IMaterialTechnique> technique )
     {
-        invalidateRenderState();
+        m_techniques.push_back( technique );
         if( technique )
         {
             technique->setMaterial( this );
             for( auto pass : technique->getPasses() ) if( pass ) pass->setMaterial( this );
         }
-        m_techniques.push_back( technique );
         invalidateRenderState();
         applyPendingLegacySurface();
     }
@@ -2630,7 +2629,7 @@ namespace workphone::render
             return;
         CubicTextureSnapshot next;
         if( !cubicTextures.empty() )
-            next = std::make_shared<const Array<SmartPtr<ITexture>>>( cubicTextures );
+            next = copySourceBudgetArray( cubicTextures );
         // Build before publication; retained readers keep the complete old list.
         std::atomic_store( &m_cubicTextures, std::move( next ) );
     }
@@ -2859,14 +2858,14 @@ namespace workphone::render
         return m_legacySurface ? sizeof( LegacySurfaceData ) : 0;
     }
 
-    std::unique_ptr<Material::LegacySurfaceData> Material::prepareShaderSurfaceHandoff(
+    SourceBudgetUnique<Material::LegacySurfaceData> Material::prepareShaderSurfaceHandoff(
         const MaterialShaderParameterLayout::Ptr &nextLayout ) const
     {
         return prepareShaderSurfaceHandoff( nextLayout, m_shaderWorkflow != ShaderWorkflow::Legacy,
                                             m_shaderWorkflow == ShaderWorkflow::Pbr );
     }
 
-    std::unique_ptr<Material::LegacySurfaceData> Material::prepareShaderSurfaceHandoff(
+    SourceBudgetUnique<Material::LegacySurfaceData> Material::prepareShaderSurfaceHandoff(
         const MaterialShaderParameterLayout::Ptr &nextLayout, bool nextActive, bool nextPbr ) const
     {
         if( m_shaderWorkflow == ShaderWorkflow::Legacy ) return {};
@@ -2886,10 +2885,10 @@ namespace workphone::render
             *destination = value;
             values.mask |= mask;
         }
-        return changed ? std::make_unique<LegacySurfaceData>( values ) : nullptr;
+        return changed ? makeSourceBudgetUnique<LegacySurfaceData>( values ) : nullptr;
     }
 
-    void Material::commitShaderSurfaceHandoff( std::unique_ptr<LegacySurfaceData> values ) noexcept
+    void Material::commitShaderSurfaceHandoff( SourceBudgetUnique<LegacySurfaceData> values ) noexcept
     {
         if( values ) m_legacySurface = std::move( values );
     }
@@ -2898,7 +2897,7 @@ namespace workphone::render
     {
         const auto mask = legacySurfaceMask( semantic );
         if( !mask ) return;
-        if( !m_legacySurface ) m_legacySurface = std::make_unique<LegacySurfaceData>();
+        if( !m_legacySurface ) m_legacySurface = makeSourceBudgetUnique<LegacySurfaceData>();
         switch( semantic )
         {
         case MaterialBuiltinParameter::Opacity: m_legacySurface->opacity = value; break;
@@ -3189,12 +3188,18 @@ namespace workphone::render
 
     void Material::setShaderTexture( const String &paramName, const String &texturePath )
     {
-        if( !m_shaderAuthoring ) m_shaderAuthoring = std::make_unique<ShaderAuthoringData>();
+        if( !m_shaderAuthoring )
+        {
+            auto next = makeSourceBudgetUnique<ShaderAuthoringData>();
+            next->textureRefs.push_back( {paramName, texturePath} );
+            m_shaderAuthoring = std::move(next);
+            return;
+        }
         for( auto &ref : m_shaderAuthoring->textureRefs )
         {
             if( ref.paramName == paramName )
             {
-                ref.texturePath = texturePath;
+                if( ref.texturePath != texturePath ) ref.texturePath = texturePath;
                 return;
             }
         }
@@ -3225,7 +3230,7 @@ namespace workphone::render
         const auto &layout = m_shaderParameters.GetLayout();
         if( m_shaderAuthoring->bindingLayoutId != layout->GetId() )
         {
-            Array<ShaderTextureBinding> bindings;
+            SourceBudgetArray<ShaderTextureBinding> bindings;
             u32 layer = 0;
             for( const auto &parameter : layout->GetParameterInfo() )
             {
@@ -3399,18 +3404,17 @@ namespace workphone::render
     void Material::setShaderID( const String &shaderID )
     {
         const auto previousWorkflow = m_shaderWorkflow;
-        // During schema migration the old buffer has already handed off above;
-        // the replacement's defaults must not overwrite that retained value.
-        if( !m_synchronizingShaderParameters && m_shaderWorkflow != ShaderWorkflow::Legacy )
-        {
-            const bool nextActive = !shaderID.empty();
-            const bool nextPbr = nextActive && shaderID != unlitShaderIDStr && shaderID != colorOnlyShaderIDStr;
-            commitShaderSurfaceHandoff( prepareShaderSurfaceHandoff( m_shaderParameters.GetLayout(),
-                                                                    nextActive, nextPbr ) );
-        }
-        if( !shaderID.empty() && !m_shaderAuthoring )
-            m_shaderAuthoring = std::make_unique<ShaderAuthoringData>();
-        if( m_shaderAuthoring ) m_shaderAuthoring->shaderID = shaderID;
+        const bool idChanged = m_shaderAuthoring ? m_shaderAuthoring->shaderID != shaderID : !shaderID.empty();
+        SourceBudgetString nextID;
+        if( idChanged ) nextID = shaderID;
+        SourceBudgetUnique<ShaderAuthoringData> next;
+        if( !shaderID.empty() && !m_shaderAuthoring ) next = makeSourceBudgetUnique<ShaderAuthoringData>();
+        auto handoff = !m_synchronizingShaderParameters && m_shaderWorkflow != ShaderWorkflow::Legacy ?
+            prepareShaderSurfaceHandoff( m_shaderParameters.GetLayout(), !shaderID.empty(),
+                !shaderID.empty() && shaderID != unlitShaderIDStr && shaderID != colorOnlyShaderIDStr ) : nullptr;
+        if( next ) m_shaderAuthoring = std::move(next);
+        if( m_shaderAuthoring && idChanged ) m_shaderAuthoring->shaderID.swap(nextID);
+        commitShaderSurfaceHandoff(std::move(handoff));
         m_shaderWorkflow = shaderID.empty() ? ShaderWorkflow::Legacy :
                            shaderID == unlitShaderIDStr ? ShaderWorkflow::Unlit :
                            shaderID == colorOnlyShaderIDStr ? ShaderWorkflow::ColorOnly :
@@ -3424,7 +3428,7 @@ namespace workphone::render
 
     String Material::getShaderID() const
     {
-        return m_shaderAuthoring ? m_shaderAuthoring->shaderID : String();
+        return m_shaderAuthoring ? String(m_shaderAuthoring->shaderID) : String();
     }
 
     bool Material::isDataDriven() const
@@ -3450,7 +3454,7 @@ namespace workphone::render
         auto selection = std::atomic_load( &m_primaryPassSelection );
         if( !selection || selection->graphRevision != revision )
         {
-            auto next = std::make_shared<PrimaryPassSelection>();
+            auto next = std::allocate_shared<PrimaryPassSelection>( SourceBudgetAllocator<PrimaryPassSelection>{} );
             next->graphRevision = revision;
             for( const auto &technique : getTechniques() )
             {

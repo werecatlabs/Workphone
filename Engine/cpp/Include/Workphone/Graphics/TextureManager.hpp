@@ -1,6 +1,7 @@
 #ifndef TextureManager_h__
 #define TextureManager_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Graphics/ITextureManager.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
@@ -360,10 +361,10 @@ namespace workphone
             SmartPtr<IStateContext> m_stateContext;
 
             /** Internal storage for managed textures. */
-            ConcurrentArray<SmartPtr<ITexture>> m_textures;
+            SourceBudgetConcurrentArray<SmartPtr<ITexture>> m_textures;
 
             /** Internal storage for render target textures. */
-            ConcurrentArray<SmartPtr<ITexture>> m_renderTargets;
+            SourceBudgetConcurrentArray<SmartPtr<ITexture>> m_renderTargets;
         };
 
         inline IStateContext *TextureManager::getStateContextPtr() const

@@ -286,6 +286,11 @@ namespace workphone
             node_type *data = nullptr;
             size_type count = 0;
         };
+        // Stateless resource policies can admit the directory as well as nodes.
+        // Stateful node allocators keep the existing independent directory
+        // allocator, including its safe swap/copy behavior.
+        using BlockAllocator = std::conditional_t<allocator_traits::is_always_equal::value,
+            typename allocator_traits::template rebind_alloc<Block>, std::allocator<Block>>;
 
     public:
         MapBase() : m_allocator(), m_nodeAllocator( m_allocator )
@@ -699,6 +704,8 @@ namespace workphone
         // Lookup
         // --------------------------------------------------------------------
 
+        template<class K> iterator findAs( const K &key ) { return iterator(this, findNode(key)); }
+        template<class K> const_iterator findAs( const K &key ) const { return const_iterator(this, findNode(key)); }
         iterator find( const key_type &key )
         {
             return iterator( this, findNode( key ) );
@@ -961,7 +968,7 @@ namespace workphone
             return predecessor( const_cast<node_type *>( node ) );
         }
 
-        node_type *findNode( const key_type &key )
+        template<class K> node_type *findNode( const K &key )
         {
             node_type *current = m_root;
 
@@ -984,7 +991,7 @@ namespace workphone
             return nullptr;
         }
 
-        const node_type *findNode( const key_type &key ) const
+        template<class K> const node_type *findNode( const K &key ) const
         {
             const node_type *current = m_root;
 
@@ -1447,7 +1454,7 @@ namespace workphone
         allocator_type m_allocator{};
         node_allocator_type m_nodeAllocator;
 
-        std::vector<Block> m_blocks;
+        std::vector<Block, BlockAllocator> m_blocks;
 
         node_type *m_root = nullptr;
         node_type *m_freeHead = nullptr;

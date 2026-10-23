@@ -183,6 +183,7 @@ namespace workphone
             WP_LOG_ERROR( message );
         }
 
+        catch( const std::exception &e ) { WP_LOG_EXCEPTION(e); }
         return nullptr;
     }
 

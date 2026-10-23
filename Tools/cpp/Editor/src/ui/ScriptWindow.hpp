@@ -37,6 +37,10 @@ namespace workphone
 
             void setProperties( SmartPtr<Properties> properties ) override;
 
+            Parameter handleEvent( EventType eventType, hash_type eventValue,
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+
             WP_CLASS_REGISTER_DECL;
 
         protected:

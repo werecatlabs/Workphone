@@ -141,19 +141,22 @@ BOOST_AUTO_TEST_CASE( resource_retirement_keeps_direct_buffer_pins_charged )
     auto resource = dynamic_pointer_cast<IMeshResource>( manager->createOrRetrieve(
         "Cache/cpu-budget-pins.fbmeshbin" ).first );
     BOOST_REQUIRE( resource );
+    const auto inventory = budget.used();
+    BOOST_CHECK_GT( inventory, 0u );
+    budget.set( inventory + 96 );
     auto geometry = triangleMesh();
     auto submesh = geometry->getSubMesh( 0 );
     auto vertices = submesh->getVertexBuffer(); auto indices = submesh->getIndexBuffer();
     resource->setMesh( geometry ); resource->setLoadingState( LoadingState::Loaded );
-    BOOST_CHECK_EQUAL( budget.used(), 48u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
     BOOST_CHECK( !manager->releaseUnusedResource( resource ) );
     geometry = nullptr; submesh = nullptr;
     BOOST_REQUIRE( manager->releaseUnusedResource( resource ) );
-    BOOST_CHECK_EQUAL( budget.used(), 48u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
     BOOST_CHECK_EQUAL( static_cast<f32 *>( vertices->getVertexData() )[3], 1.f );
     BOOST_CHECK_EQUAL( static_cast<u32 *>( indices->getIndexData() )[2], 2u );
-    vertices = nullptr; BOOST_CHECK_EQUAL( budget.used(), 12u );
-    indices = nullptr; BOOST_CHECK_EQUAL( budget.used(), 0u );
+    vertices = nullptr; BOOST_CHECK_EQUAL( budget.used(), inventory + 12u );
+    indices = nullptr; BOOST_CHECK_EQUAL( budget.used(), inventory );
     resource->setFilePath( "__procedural/budget-pins" ); resource->setMesh( triangleMesh() );
     resource->setLoadingState( LoadingState::Loaded );
     auto procedural = manager->loadMesh( "__procedural/budget-pins" );
@@ -184,41 +187,46 @@ BOOST_AUTO_TEST_CASE( cooked_mesh_source_aliases_reload_and_eviction_share_exact
     guard.fileSystem->refreshPath( directory.generic_string().c_str(), true );
     auto manager = make_ptr<MeshManager>();
     auto resource = dynamic_pointer_cast<IMeshResource>( manager->createOrRetrieve( file.c_str() ).first );
-    BOOST_REQUIRE( resource ); resource->load( nullptr );
+    BOOST_REQUIRE( resource );
+    const auto inventory = budget.used();
+    BOOST_CHECK_GT( inventory, 0u );
+    budget.set( inventory + 48 );
+    resource->load( nullptr );
     BOOST_REQUIRE( resource->isLoaded() );
-    BOOST_CHECK_EQUAL( budget.used(), 48u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
     const auto aliasPath = Path::getRelativePath( guard.applicationManager->getProjectPath(), file.c_str() );
     BOOST_CHECK_MESSAGE( manager->createOrRetrieve( aliasPath ).first == resource,
                          "Source aliases must share one resource: " << file << " and " << aliasPath );
     auto old = manager->loadMesh( file.c_str() );
     BOOST_REQUIRE( old ); BOOST_CHECK( old == resource->getMesh() );
-    BOOST_CHECK_EQUAL( budget.used(), 48u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
 
     // Staging needs capacity for both generations. Refusal keeps the original
     // loaded mesh and its geometry, then a larger budget permits a real reload.
     resource->reload( nullptr );
     BOOST_CHECK( resource->isLoaded() ); BOOST_CHECK( resource->getMesh() == old );
-    BOOST_CHECK_EQUAL( budget.used(), 48u );
-    budget.set( 96 ); resource->reload( nullptr );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
+    budget.set( inventory + 96 ); resource->reload( nullptr );
     BOOST_REQUIRE( resource->isLoaded() ); BOOST_CHECK( resource->getMesh() != old );
-    BOOST_CHECK_EQUAL( budget.used(), 96u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 96u );
     BOOST_CHECK_EQUAL( old->getSubMesh( 0 )->getVertexBuffer()->getNumVertices(), 3u );
-    old = nullptr; BOOST_CHECK_EQUAL( budget.used(), 48u );
+    old = nullptr; BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
     const auto lastGood = resource->getMesh().get();
     { std::ofstream corrupt( file, std::ios::binary | std::ios::trunc ); corrupt << "invalid mesh"; }
     resource->reload( nullptr );
     BOOST_CHECK( resource->isLoaded() ); BOOST_CHECK( resource->getMesh().get() == lastGood );
-    BOOST_CHECK_EQUAL( budget.used(), 48u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
     BOOST_REQUIRE( manager->releaseUnusedResource( resource ) );
-    BOOST_CHECK_EQUAL( budget.used(), 0u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory );
     { std::ofstream restored( file, std::ios::binary | std::ios::trunc ); restored.write( original.data(), original.size() ); }
     auto reloaded = manager->loadMesh( aliasPath );
-    BOOST_REQUIRE( reloaded ); BOOST_CHECK_EQUAL( budget.used(), 48u );
+    BOOST_REQUIRE( reloaded ); BOOST_CHECK_EQUAL( budget.used(), inventory + 48u );
     BOOST_CHECK( reloaded == resource->getMesh() );
     reloaded = nullptr;
     BOOST_REQUIRE( manager->releaseUnusedResource( resource ) );
-    BOOST_CHECK_EQUAL( budget.used(), 0u );
+    BOOST_CHECK_EQUAL( budget.used(), inventory );
     manager->unload( nullptr );
+    BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
 BOOST_AUTO_TEST_SUITE_END()

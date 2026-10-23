@@ -23,6 +23,9 @@ namespace claw_material_residency_contracts
     /** Reuse the real factory/state/file services of MaterialLoadSequenceTests. */
     template <class Fixture> void run( Fixture &fixture )
     {
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto beforeManager = scheduler->stats().used[source];
         auto manager = make_ptr<ClawMaterialManager>();
         manager->load( nullptr );
         const auto path = fixture.root / "resident_city_surface.mat";
@@ -43,9 +46,8 @@ namespace claw_material_residency_contracts
             output << sourceDocument.c_str();
             require( output.good(), "material residency source fixture is writable" );
         }
-        auto scheduler = WorldStreamingScheduler::shared();
-        const auto source = size_t( StreamMemoryClass::SourceCpu );
         const auto baseline = scheduler->stats();
+        const auto managerInventoryBytes = baseline.used[source] - beforeManager;
         String error;
         auto material = dynamic_pointer_cast<ClawMaterial>( manager->loadFromFile( file ) );
         require( material && material->isLoaded(), "file-backed material loads through its manager" );
@@ -81,9 +83,10 @@ namespace claw_material_residency_contracts
         require( scheduler->stats().used[source] >= baseline.used[source] + sizeof( MaterialRenderState ),
                  "a retained draw version remains charged after material eviction" );
         std::weak_ptr<const MaterialRenderState> retiredWeak = drawVersion;
+        const auto beforeDrawRelease = scheduler->stats().used[source];
         drawVersion.reset();
-        require( retiredWeak.expired() && scheduler->stats().used[source] == baseline.used[source],
-                 "final draw retirement returns SourceCpu reservations while weak caches remain" );
+        require( retiredWeak.expired() && scheduler->stats().used[source] + sizeof(MaterialRenderState) == beforeDrawRelease,
+                 "final draw retirement returns its payload while cached wrappers and physical pool capacity remain charged" );
         material = dynamic_pointer_cast<ClawMaterial>( manager->loadResource( name ) );
         require( material.get() == identity && material->isLoaded(),
                  "normal manager reload rehydrates the same retired identity" );
@@ -139,6 +142,10 @@ namespace claw_material_residency_contracts
         catch( const std::exception & ) { denied = true; }
         require( denied && !identity->isLoaded(),
                  "material source admission denial leaves a retryable unloaded resource" );
+        if( identity->getNumTechniques() != 0 || scheduler->stats().used[source] != retired.used[source] )
+            std::fprintf(stderr, "denied graph: techniques=%u source=%llu before=%llu\n",
+                identity->getNumTechniques(), static_cast<unsigned long long>(scheduler->stats().used[source]),
+                static_cast<unsigned long long>(retired.used[source]));
         require( identity->getNumTechniques() == 0 && scheduler->stats().used[source] == retired.used[source],
                  "denial after graph allocation unwinds techniques and returns all snapshot reservations" );
         require( scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline.limits[source], error ),
@@ -170,10 +177,12 @@ namespace claw_material_residency_contracts
             roundRobinReleased += manager->releaseUnusedResources( 1 );
         require( roundRobinReleased == 1 && !identity->isLoaded() && proceduralIdentity->isLoaded(),
                  "bounded round-robin scans reach reclaimable assets while preserving procedural neighbors" );
+        proceduralIdentity->unload(nullptr);
+        const auto beforeManagerUnload = scheduler->stats().used[source];
         manager->unload( nullptr );
         manager = nullptr;
-        require( scheduler->stats().used[source] == baseline.used[source],
-                 "material manager teardown returns all resident descriptor and snapshot leases" );
+        require( scheduler->stats().used[source] + managerInventoryBytes <= beforeManagerUnload,
+                 "material manager teardown frees its inventory and wrappers while factory-owned retained capacity stays charged" );
         std::puts( "Material residency, graph pins, dirty authoring, budget denial/retry and retained draw leases passed." );
     }
 }

@@ -48,7 +48,7 @@ namespace workphone::render
                 }
             }
 
-            m_materials.clear();
+            m_materials.releaseStorage();
         }
         catch( std::exception &e )
         {

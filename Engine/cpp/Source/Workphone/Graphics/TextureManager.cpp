@@ -46,7 +46,7 @@ namespace workphone
         void TextureManager::unload( SmartPtr<ISharedObject> data )
         {
             ScopedLock<TextureManager> lifecycle( this );
-            m_textures.clear();
+            m_textures.releaseStorage();
         }
 
         SmartPtr<IResource> TextureManager::create( const String &name )

@@ -23,7 +23,9 @@ namespace luabind
     int luabind::default_converter<workphone::SmartPtr<B>>::compute_score( lua_State *L, int index )
     {
         auto type = lua_type( L, index );
-        return type == LUA_TUSERDATA ? 0 : -1;
+        // Match the null conversion supported by from(), including optional
+        // sender/event arguments on editor action callbacks.
+        return type == LUA_TUSERDATA || type == LUA_TNIL ? 0 : -1;
     }
 
     template <typename B>

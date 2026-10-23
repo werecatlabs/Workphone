@@ -1,6 +1,7 @@
 #ifndef CMaterialPass_h__
 #define CMaterialPass_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Graphics/IMaterialPass.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
@@ -582,7 +583,7 @@ namespace workphone
             // the virtual accessors rather than retaining another writable copy.
             // Logical slots: null entries have no authoring facade. Bindings live
             // in state data; getTextureUnits() materializes the legacy full view.
-            mutable ConcurrentArray<SmartPtr<IMaterialTexture>> m_textures;
+            mutable SourceBudgetConcurrentArray<SmartPtr<IMaterialTexture>> m_textures;
 
             /** Local state context storage.
              *  MaterialNode<T>::setStateContext is a no-op so we keep our own

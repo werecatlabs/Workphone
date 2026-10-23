@@ -1,6 +1,7 @@
 #ifndef ___AssetDatabaseManager_h__
 #define ___AssetDatabaseManager_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Database/DatabaseManager.hpp>
 #include <Workphone/Core/ConcurrentMap.hpp>
@@ -251,8 +252,8 @@ namespace workphone
         AtomicObject<FixedString<128>>
             m_componentsTableName;  ///< Name of the components table in the database
 
-        ConcurrentMap<FixedString<256>, SmartPtr<IBuildDirector>> m_resourceEntriesByUUID;
-        ConcurrentMap<FixedString<1024>, SmartPtr<IBuildDirector>> m_resourceEntriesByPath;
+        SourceBudgetConcurrentMap<FixedString<256>, SmartPtr<IBuildDirector>> m_resourceEntriesByUUID;
+        SourceBudgetConcurrentMap<FixedString<1024>, SmartPtr<IBuildDirector>> m_resourceEntriesByPath;
     };
 }  // namespace workphone
 

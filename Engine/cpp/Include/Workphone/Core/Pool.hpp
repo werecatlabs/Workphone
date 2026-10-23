@@ -2,6 +2,7 @@
 #define WP_POOL_H
 
 #include <Workphone/Core/Allocator.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
@@ -22,7 +23,7 @@ namespace workphone
      * @tparam T The type of objects to be stored in the pool
      * @tparam A The allocator type to use for memory allocation (defaults to std::allocator<T>)
      */
-    template <class T, class A = Allocator<T>>
+    template <class T, class A = std::conditional_t<std::is_base_of_v<SourceBudgetObject, T>, SourceBudgetAllocator<T>, Allocator<T>>>
     class Pool : public ISharedObject
     {
     public:
@@ -103,10 +104,10 @@ namespace workphone
 
     private:
         /// Array of PoolData objects that manage the actual memory blocks
-        ConcurrentArray<SmartPtr<PoolData<T, A>>> m_elements;
+        ConcurrentArray<SmartPtr<PoolData<T, A>>, typename std::allocator_traits<A>::template rebind_alloc<SmartPtr<PoolData<T, A>>>> m_elements;
 
         /// Queue of available (free) objects that can be allocated
-        ConcurrentQueue<RawPtr<T>> m_freeElements;
+        ConcurrentQueue<RawPtr<T>, typename std::allocator_traits<A>::template rebind_alloc<RawPtr<T>>> m_freeElements;
 
         /// Number of elements to allocate in the next allocation block
         size_Num m_nextSize = 32;
@@ -150,6 +151,9 @@ namespace workphone
         auto element = workphone::make_ptr<PoolData<T, A>>();
         element->setNumElements( nextSize );
         element->load( nullptr );
+        size_t totalSlots = element->getNumAllocated();
+        for( const auto &block : m_elements ) totalSlots += block->getNumAllocated();
+        m_freeElements.reserve( totalSlots );
         m_elements.push_back( element );
 
         for( size_t i = 0; i < element->getNumAllocated(); ++i )

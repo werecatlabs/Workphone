@@ -1,6 +1,7 @@
 #ifndef WPSQLiteQuery_h__
 #define WPSQLiteQuery_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Database/IDatabaseQuery.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <WPSQLite/extern/CppSQLite3.hpp>
@@ -138,14 +139,17 @@ namespace workphone
              * @param other The Field object to copy from
              */
             Field( const Field &other );
+            Field &operator=(const Field &) = default;
+            Field(Field &&) noexcept = default;
+            Field &operator=(Field &&) noexcept = default;
 
             /**
              * @brief Destructor
              */
             ~Field();
 
-            String name;   ///< The name of the field
-            String value;  ///< The value of the field
+            SourceBudgetString name;   ///< The name of the field
+            SourceBudgetString value;  ///< The value of the field
         };
 
         /**
@@ -165,17 +169,20 @@ namespace workphone
              * @param other The Rows object to copy from
              */
             Rows( const Rows &other );
+            Rows &operator=(const Rows &) = default;
+            Rows(Rows &&) noexcept = default;
+            Rows &operator=(Rows &&) noexcept = default;
 
             /**
              * @brief Destructor
              */
             ~Rows();
 
-            Array<Field> fields;  ///< Array of fields in the row
+            SourceBudgetArray<Field> fields;  ///< Array of fields in the row
         };
 
         s32 m_currentRow = 0;  ///< Current row index in the result set
-        Array<Rows> m_rows;    ///< Collection of rows in the result set
+        SourceBudgetArray<Rows> m_rows;    ///< Collection of rows in the result set
     };
 }  // namespace workphone
 

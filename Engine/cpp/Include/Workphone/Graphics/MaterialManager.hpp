@@ -1,6 +1,7 @@
 #ifndef CMaterialManager_h__
 #define CMaterialManager_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
@@ -374,7 +375,7 @@ namespace workphone
              * where supported. Elements are SmartPtr<IMaterial> instances
              * representing the managed materials.
              */
-            ConcurrentArray<SmartPtr<IMaterial>> m_materials;
+            SourceBudgetConcurrentArray<SmartPtr<IMaterial>> m_materials;
         };
 
         inline IStateContext *MaterialManager::getStateContextPtr() const

@@ -1,6 +1,7 @@
 #ifndef __WP_ResourceDatabase_h__
 #define __WP_ResourceDatabase_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/System/Job.hpp>
@@ -299,6 +300,10 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
+        // Publish a completely admitted identity registry; returned owners may
+        // reenter the database when the caller releases them after publication.
+        Array<SmartPtr<ISharedObject>> replaceObjectInventory( const Array<SmartPtr<ISharedObject>> &objects );
+
         /**
          * @brief Load asset properties for a node from the database.
          * @param[in] db Database manager used to query asset data.
@@ -351,7 +356,7 @@ namespace workphone
          *
          * This structure provides fast lookup of resources by type and path.
          */
-        ConcurrentMap<hash_type, ConcurrentMap<String, WeakPtr<IResource>>> m_resourceMap;
+        SourceBudgetConcurrentMap<hash_type, SourceBudgetConcurrentMap<SourceBudgetString, WeakPtr<IResource>, SourceBudgetStringLess>> m_resourceMap;
 
         /** Database manager used for persistence and queries. */
         SmartPtr<IDatabaseManager> m_databaseManager;
@@ -361,9 +366,9 @@ namespace workphone
         String m_filePath;
 
         /** Shared pointer to the array containing all resource instances. */
-        ConcurrentArray<SmartPtr<IResource>> m_instances;
+        SourceBudgetConcurrentArray<SmartPtr<IResource>> m_instances;
 
-        ConcurrentMap<UUID, SmartPtr<ISharedObject>> m_objects;
+        SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> m_objects;
 
         /** Recursive mutex protecting internal containers for multi-threaded use. */
         mutable RecursiveMutex m_mutex;

@@ -61,8 +61,8 @@ namespace workphone
                     texture->unload( nullptr );
                 }
             }
-            m_renderTargets.clear();
-            m_textures.clear();
+            m_renderTargets.releaseStorage();
+            m_textures.releaseStorage();
             m_evictionCursor = 0;
             TextureManager::unload( data );
             setLoadingState( LoadingState::Unloaded );

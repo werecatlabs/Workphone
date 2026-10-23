@@ -103,7 +103,7 @@ namespace workphone
                     }
                 }
 
-                m_stateContexts.clear();
+                m_stateContexts.releaseStorage();
 
                 auto numStateQueues = getNumStateQueues();
                 for( size_t i = 0; i < numStateQueues; ++i )
@@ -114,7 +114,7 @@ namespace workphone
                     }
                 }
 
-                m_stateQueues.clear();
+                m_stateQueues.releaseStorage();
 
                 setLoadingState( LoadingState::Unloaded );
             }
@@ -169,12 +169,21 @@ namespace workphone
             return false;
         }
 
-        const auto sizeBefore = m_stateContexts.size();
+        size_t sizeBefore;
+        bool removed;
+        {
+            ScopedLock inventoryLock(&m_stateContexts);
+            sizeBefore = m_stateContexts.size();
+            // Array::erase(value) rebuilds its entire buffer. Retirement must
+            // succeed with no admission headroom, so compact and erase the tail.
+            auto tail = std::remove(m_stateContexts.begin(), m_stateContexts.end(), stateContext);
+            m_stateContexts.erase(tail, m_stateContexts.end());
+            removed = m_stateContexts.size() != sizeBefore;
+        }
         std::fprintf( stderr, "TRACE StateManager context list size %zu\n", sizeBefore );
-        m_stateContexts.erase( stateContext );
         std::fprintf( stderr, "TRACE StateManager context erase complete\n" );
 
-        if( m_stateContexts.size() == sizeBefore )
+        if( !removed )
         {
             WP_LOG_WARNING( "StateManager::removeStateContext: context not found in managed list." );
             // A context can be removed from the list by a concurrent teardown after the caller

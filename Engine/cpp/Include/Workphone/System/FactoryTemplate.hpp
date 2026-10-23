@@ -205,7 +205,8 @@ namespace workphone
         InstancePool<T> m_instancePool;
 
         /// Instances tracked by the factory (thread-safe container).
-        ConcurrentArray<T *> m_instances;
+        std::conditional_t<std::is_base_of_v<SourceBudgetObject, T>,
+            SourceBudgetConcurrentArray<T *>, ConcurrentArray<T *>> m_instances;
     };
 
     WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, FactoryTemplate, T, Factory );
@@ -286,7 +287,8 @@ namespace workphone
             }
         }
 
-        m_instances.clear();
+        if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) m_instances.releaseStorage();
+        else m_instances.clear();
 
 #if WP_USE_MEMORY_POOL
         freePoolData();
@@ -346,21 +348,25 @@ namespace workphone
                     try
                     {
                         object = new( memory ) T;
+                        configureObject( object, true );
                     }
                     catch( ... )
                     {
+                        if( object ) object->~T();
                         pool->free_object( memory );
                         throw;
                     }
 
-                    configureObject( object, true );
                     return object;
                 }
             }
         }
 #endif
 
-        auto ptr = Factory::createObject();
+        void *ptr;
+        if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
+            ptr = allocateSourceBudgetStorage(sizeof(T), alignof(T));
+        else ptr = Factory::createObject();
         if( !ptr )
         {
             std::cout << "Out of memory." << std::endl;
@@ -372,21 +378,25 @@ namespace workphone
         try
         {
             object = new( ptr ) T;
+            configureObject( object, false );
         }
         catch( ... )
         {
-            Factory::freeMemory( ptr );
+            if( object ) object->~T();
+            if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(ptr, alignof(T));
+            else Factory::freeMemory( ptr );
             throw;
         }
 
-        configureObject( object, false );
         return object;
     }
 
     template <class T>
     void *FactoryTemplate<T>::allocateMemory()
     {
-        return Factory::allocateMemory();
+        if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
+            return allocateSourceBudgetStorage(sizeof(T), alignof(T));
+        else return Factory::allocateMemory();
     }
 
     template <class T>
@@ -433,7 +443,8 @@ namespace workphone
                 pObject->~T();
                 if( traceMessage )
                     std::fprintf( stderr, "TRACE FactoryTemplate destroy end\n" );
-                Factory::freeObject( object );
+                if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(object, alignof(T));
+                else Factory::freeObject( object );
                 if( traceMessage )
                     std::fprintf( stderr, "TRACE FactoryTemplate memory release end\n" );
             }
@@ -455,7 +466,8 @@ namespace workphone
                 return;
             }
 
-            Factory::freeMemory( object );
+            if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(object, alignof(T));
+            else Factory::freeMemory( object );
         }
         catch( std::exception &e )
         {
@@ -570,7 +582,8 @@ namespace workphone
             return;
         }
 
-        Factory::freeObject( object );
+        if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(object, alignof(T));
+        else Factory::freeObject( object );
     }
 
 }  // namespace workphone

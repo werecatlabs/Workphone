@@ -1,7 +1,7 @@
 #ifndef WP_SOURCE_BUDGET_ALLOCATOR_HPP
 #define WP_SOURCE_BUDGET_ALLOCATOR_HPP
 
-#include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/WorkphoneTypes.hpp>
 #include <limits>
 #include <new>
 #include <type_traits>
@@ -14,10 +14,28 @@ namespace workphone
     WPCore_API void freeSourceBudgetStorage( void *pointer, size_t alignment ) noexcept;
     WPCore_API size_t sourceBudgetStorageBytes( size_t bytes, size_t alignment );
 
+    // Opt-in policy for asset wrappers and authoring nodes. Factory and pool
+    // storage use the same marker, including unused slots retained by a pool.
+    struct SourceBudgetObject
+    {
+        static void *operator new( size_t bytes ) { return allocateSourceBudgetStorage(bytes, alignof(std::max_align_t)); }
+        static void operator delete( void *p ) noexcept { freeSourceBudgetStorage(p, alignof(std::max_align_t)); }
+        static void *operator new( size_t, void *p ) noexcept { return p; }
+        static void operator delete( void *, void * ) noexcept {}
+        static void *operator new( size_t bytes, int, const char *, int ) { return operator new(bytes); }
+        static void operator delete( void *p, int, const char *, int ) noexcept { operator delete(p); }
+        static void *operator new( size_t bytes, std::align_val_t a ) { return allocateSourceBudgetStorage(bytes, size_t(a)); }
+        static void operator delete( void *p, std::align_val_t a ) noexcept { freeSourceBudgetStorage(p, size_t(a)); }
+    };
+
     template <class T> class SourceBudgetAllocator
     {
     public:
         using value_type = T;
+        using size_type = size_t;
+        using difference_type = std::ptrdiff_t;
+        using pointer = T *;
+        using const_pointer = const T *;
         using is_always_equal = std::true_type;
         using propagate_on_container_move_assignment = std::true_type;
         template <class U> struct rebind { using other = SourceBudgetAllocator<U>; };

@@ -303,7 +303,7 @@ namespace workphone
             if( texts[i][0] ) bytes += std::strlen( texts[i] ) + 1;
         }
         if( bytes == sizeof( u32 ) * 5 ) { m_authoring.reset(); return; }
-        auto next = std::make_unique<char[]>( bytes );
+        auto next = makeSourceBudgetArray<char>( bytes );
         size_t cursor = sizeof( u32 ) * 5;
         for( u32 i = 0; i < 5; ++i )
         {
@@ -519,7 +519,7 @@ namespace workphone
     void MaterialPassStateData::setTintColour( const ColourF &value )
     {
         if( sameMaterialValue( getTintColour(), value ) ) return;
-        if( !m_surfaceAuthoring ) m_surfaceAuthoring = std::make_unique<SurfaceAuthoringData>();
+        if( !m_surfaceAuthoring ) m_surfaceAuthoring = makeSourceBudgetUnique<SurfaceAuthoringData>();
         m_surfaceAuthoring->tintColour = value;
         if( sameMaterialValue( value, ColourF::White ) && !m_surfaceAuthoring->renderTechnique )
             m_surfaceAuthoring.reset();
@@ -531,7 +531,7 @@ namespace workphone
     void MaterialPassStateData::setRenderTechnique( hash_type value )
     {
         if( getRenderTechnique() == value ) return;
-        if( !m_surfaceAuthoring ) m_surfaceAuthoring = std::make_unique<SurfaceAuthoringData>();
+        if( !m_surfaceAuthoring ) m_surfaceAuthoring = makeSourceBudgetUnique<SurfaceAuthoringData>();
         m_surfaceAuthoring->renderTechnique = value;
         if( !value && sameMaterialValue( m_surfaceAuthoring->tintColour, ColourF::White ) )
             m_surfaceAuthoring.reset();
@@ -734,7 +734,7 @@ namespace workphone
         if( !nextMask ) { m_numericAuthoring.reset(); return; }
         const auto count = numericWordCount( mask );
         const auto nextCount = remove ? count - 1 : count + 1;
-        auto next = std::make_unique<u32[]>( 2 + nextCount );
+        auto next = makeSourceBudgetArray<u32>( 2 + nextCount );
         std::memcpy( next.get(), &nextMask, sizeof( nextMask ) );
         if( rank ) std::memcpy( next.get() + 2, m_numericAuthoring.get() + 2, rank * sizeof( u32 ) );
         if( remove )

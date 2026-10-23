@@ -1,6 +1,7 @@
 #ifndef StateManagerStandard_h__
 #define StateManagerStandard_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/System/IStateManager.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
@@ -253,16 +254,18 @@ namespace workphone
         void destroyQueue( SmartPtr<IStateQueue> queue );
 
         /** @brief Concurrent queues for dirty state contexts, one per thread task. */
-        ConcurrentArray<ConcurrentQueue<SmartPtr<IStateContext>>> m_dirtyQueue;
+        // Scheduling a context follows message acceptance. Keep notification
+        // entries on the existing allocator until admission spans both steps.
+        SourceBudgetConcurrentArray<ConcurrentQueue<SmartPtr<IStateContext>>> m_dirtyQueue;
 
         /** @brief Atomic shared pointer to the array of state queues, one per thread task. */
-        ConcurrentArray<SmartPtr<IStateQueue>> m_stateQueues;
+        SourceBudgetConcurrentArray<SmartPtr<IStateQueue>> m_stateQueues;
 
         /** @brief Atomic shared pointer to the array of managed state contexts. */
-        ConcurrentArray<SmartPtr<IStateContext>> m_stateContexts;
+        SourceBudgetConcurrentArray<SmartPtr<IStateContext>> m_stateContexts;
 
         /** @brief Working array for processing dirty state contexts during updates. */
-        FixedArray<Array<SmartPtr<IStateContext>>, (u32)TaskId::Count> m_dirtyArray;
+        FixedArray<SourceBudgetArray<SmartPtr<IStateContext>>, (u32)TaskId::Count> m_dirtyArray;
 
         /** @brief Recursive mutex for thread-safe access to internal data structures. */
         mutable RecursiveMutex m_mutex;

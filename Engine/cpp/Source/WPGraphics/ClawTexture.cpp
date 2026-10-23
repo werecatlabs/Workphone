@@ -13,6 +13,7 @@
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <FreeImage.h>
@@ -36,8 +37,8 @@ namespace
         workphone::Array<workphone::f32> floatPixels;
         workphone::Array<workphone::render::TextureMipLevel> cookedLevels;
         std::vector<workphone::u8> ddsBytes;
-        workphone::String cookedProfile;
-        workphone::String sourcePath;
+        workphone::SourceBudgetString cookedProfile;
+        workphone::SourceBudgetString sourcePath;
         bool decodeAttempted = false;
         void *textureView = nullptr;
         wp_renderer_dx11 *renderer = nullptr;
@@ -50,12 +51,44 @@ namespace
     };
 
     std::mutex g_textureMutex;
-    std::unordered_map<const workphone::render::ClawTexture *, ClawTextureData> g_textureData;
+    using TextureCacheKey = const workphone::render::ClawTexture *;
+    using TextureCache = std::unordered_map<TextureCacheKey, ClawTextureData,
+        std::hash<TextureCacheKey>, std::equal_to<TextureCacheKey>,
+        workphone::SourceBudgetAllocator<std::pair<const TextureCacheKey, ClawTextureData>>>;
+    // MSVC unordered_map allocates its sentinel/buckets even when empty.
+    // Construct lazily, outside DLL initialization, and retire the entire empty
+    // map without creating a replacement allocation during teardown.
+    class TextureCacheStorage
+    {
+        workphone::SourceBudgetUnique<TextureCache> m_cache;
+    public:
+        ClawTextureData &operator[]( TextureCacheKey key )
+        {
+            if( !m_cache )
+            {
+                auto next = workphone::makeSourceBudgetUnique<TextureCache>();
+                auto &entry = (*next)[key];
+                m_cache = std::move(next);
+                return entry;
+            }
+            return (*m_cache)[key];
+        }
+        TextureCache::iterator find( TextureCacheKey key )
+        { return m_cache ? m_cache->find(key) : TextureCache::iterator{}; }
+        TextureCache::iterator end()
+        { return m_cache ? m_cache->end() : TextureCache::iterator{}; }
+        void erase( TextureCache::iterator entry )
+        {
+            m_cache->erase(entry);
+            if( m_cache->empty() ) m_cache.reset();
+        }
+    };
+    TextureCacheStorage g_textureData;
 
     workphone::StreamBudget reserveTextureCpu( workphone::u64 bytes, workphone::String &error )
     {
         return workphone::WorldStreamingScheduler::shared()->reserve(
-            workphone::StreamMemoryClass::SourceCpu, bytes + sizeof( ClawTextureData ) + 4096, error );
+            workphone::StreamMemoryClass::SourceCpu, bytes + 4096, error );
     }
 
     workphone::u64 generatedMipBytes( workphone::u32 width, workphone::u32 height,
@@ -214,6 +247,7 @@ namespace
             return false;
         }
 
+        try
         {
             std::scoped_lock lock( g_textureMutex );
             auto &data = g_textureData[texture];
@@ -221,9 +255,10 @@ namespace
             {
                 return !data.pixels.empty();
             }
-            data.sourcePath = filePath;
+            if( data.sourcePath != filePath ) data.sourcePath = filePath;
             data.decodeAttempted = true;
         }
+        catch( const std::bad_alloc & ) { return false; }
 
         auto stream =
             fileSystem ? fileSystem->open( filePath, true, true, false, false, false ) : nullptr;
@@ -675,7 +710,7 @@ namespace workphone
             try
             {
                 StreamBudget retiredBudget;
-                auto sourceBudget = reserveTextureCpu( rgba.size() * sizeof( f32 ), error );
+                auto sourceBudget = reserveTextureCpu( rgba.capacity() * sizeof( f32 ), error );
                 if( !sourceBudget ) return false;
                 auto candidate = rgba;
                 std::scoped_lock lock( g_textureMutex );
@@ -804,8 +839,8 @@ namespace workphone
             try
             {
                 StreamBudget retiredBudget;
-                u64 bytes = levels.size() * sizeof( TextureMipLevel );
-                for( const auto &level : levels ) bytes += level.bgra.size();
+                u64 bytes = levels.capacity() * sizeof( TextureMipLevel );
+                for( const auto &level : levels ) bytes += level.bgra.capacity();
                 auto sourceBudget = reserveTextureCpu( bytes, error );
                 if( !sourceBudget ) return false;
                 auto retainedLevels = levels;
@@ -873,10 +908,10 @@ namespace workphone
             try
             {
                 StreamBudget retiredBudget;
-                auto sourceBudget = reserveTextureCpu( input.ddsBytes.size() + input.target.size(), error );
+                auto sourceBudget = reserveTextureCpu( input.ddsBytes.size(), error );
                 if( !sourceBudget ) return false;
                 auto retained = input.ddsBytes;
-                auto profile = input.target;
+                SourceBudgetString profile( input.target );
                 const auto image = dds::inspect( retained );
                 std::scoped_lock lock( g_textureMutex );
                 auto &data = g_textureData[texture];
@@ -1022,7 +1057,7 @@ namespace workphone
             {
                 const auto image = dds::inspect( found->second.ddsBytes );
                 properties->setProperty( "cookedContainer", "DDS DX10" );
-                properties->setProperty( "cookedProfile", found->second.cookedProfile );
+                properties->setProperty( "cookedProfile", String(found->second.cookedProfile) );
                 properties->setProperty( "cookedDxgiFormat", image.format );
                 properties->setProperty( "cookedMipCount", static_cast<u32>( image.mips.size() ) );
                 properties->setProperty( "cookedEncodedBytes",
@@ -1048,6 +1083,11 @@ namespace workphone
             if( !properties )
             {
                 return;
+            }
+            // Admit cache metadata before base properties can publish edits.
+            {
+                std::scoped_lock lock( g_textureMutex );
+                (void)g_textureData[this];
             }
             Texture::setProperties( properties );
             std::scoped_lock lock( g_textureMutex );

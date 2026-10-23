@@ -1,6 +1,7 @@
 #ifndef StateObjectStandard_h__
 #define StateObjectStandard_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
@@ -450,9 +451,9 @@ namespace workphone
         static constexpr size_t listenerCapacity = 32;
 
         /// Owned registrations in insertion order, synchronized by each container.
-        ConcurrentArray<SmartPtr<IEventListener>> m_eventListeners;
-        ConcurrentArray<SmartPtr<IState>> m_states;
-        ConcurrentArray<SmartPtr<IStateListener>> m_stateListeners;
+        SourceBudgetConcurrentArray<SmartPtr<IEventListener>> m_eventListeners;
+        SourceBudgetConcurrentArray<SmartPtr<IState>> m_states;
+        SourceBudgetConcurrentArray<SmartPtr<IStateListener>> m_stateListeners;
         ConcurrentFixedArrayGrowable<SmartPtr<IStateQueue>, static_cast<size_t>( TaskId::Count )>
             m_stateQueues;
 

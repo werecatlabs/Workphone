@@ -1,6 +1,7 @@
 #ifndef MaterialPassState_h__
 #define MaterialPassState_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/State/States/StateData.hpp>
 #include <Workphone/Graphics/MaterialRenderState.hpp>
 #include <Workphone/Core/ColourF.hpp>
@@ -123,9 +124,11 @@ namespace workphone
         Count = 2
     };
 
-    class WPCore_API MaterialPassStateData : public StateData
+    class WPCore_API MaterialPassStateData : public StateData, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         MaterialPassStateData();
         ~MaterialPassStateData() override;
         void lock() override;
@@ -225,9 +228,9 @@ namespace workphone
         // Floats retain their exact bits; absent slots read shared schema defaults.
         u32 getNumericWord( u32 index, u32 defaultValue ) const;
         void setNumericWord( u32 index, u32 value, u32 defaultValue );
-        std::unique_ptr<u32[]> m_numericAuthoring;
+        SourceBudgetUniqueArray<u32> m_numericAuthoring;
         // Five offsets followed by only the populated, null-terminated texts.
-        std::unique_ptr<char[]> m_authoring;
+        SourceBudgetUniqueArray<char> m_authoring;
         MaterialRenderState::Ptr m_renderState;
         // Temporary next version only while an effective edit awaits publication.
         std::shared_ptr<MaterialRenderState> m_pendingSurface;
@@ -236,7 +239,7 @@ namespace workphone
             ColourF tintColour = ColourF::White;
             hash_type renderTechnique = 0;
         };
-        std::unique_ptr<SurfaceAuthoringData> m_surfaceAuthoring;
+        SourceBudgetUnique<SurfaceAuthoringData> m_surfaceAuthoring;
         WeakPtr<render::IMaterialPass> m_textureBindingOwner;
         void ( *m_textureBindingObserver )( void *, u32 ) = nullptr;
         u32 m_writeDepth = 0;

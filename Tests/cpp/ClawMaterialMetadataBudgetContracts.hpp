@@ -4,6 +4,18 @@
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <WPGraphics/ClawMaterialDrawRecords.hpp>
 #include <WPGraphics/ClawMesh.hpp>
+#include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/ClawMaterialTechnique.hpp>
+#include <WPGraphics/ClawMaterialPass.hpp>
+#include <WPGraphics/ClawTextureManager.hpp>
+#include <Workphone/Mesh/Mesh.hpp>
+#include <Workphone/Graphics/MaterialManager.hpp>
+#include <Workphone/Graphics/TextureManager.hpp>
+#include <Workphone/Graphics/MaterialTexture.hpp>
+#include <Workphone/Graphics/MaterialPass.hpp>
+#include <Workphone/Mesh/MeshManager.hpp>
+#include <Workphone/Core/Properties.hpp>
+#include <Workphone/System/FactoryTemplate.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <cstdint>
 #include <cstdio>
@@ -22,6 +34,29 @@ namespace claw_material_metadata_budget_contracts
     public:
         SmartPtr<IMaterial> surface;
         SmartPtr<IMaterial> getMaterial( s32 = -1 ) const override { return surface; }
+    };
+
+    class MaterialInventory final : public MaterialManager
+    {
+    public:
+        void grow() { m_materials.reserve(32); }
+        void clearRetained() { m_materials.clear(); }
+    };
+    class TextureInventory final : public ClawTextureManager
+    {
+    public:
+        void grow() { m_textures.reserve(32); m_renderTargets.reserve(16); }
+    };
+    class MeshInventory final : public MeshManager
+    {
+    public:
+        SmartPtr<IMesh> mesh = make_ptr<workphone::Mesh>();
+        void grow()
+        {
+            addMesh(mesh);
+            addMeshResource(nullptr);
+            removeMeshResource(nullptr); // retain inventory capacity, no invalid resource to unload
+        }
     };
 
     inline void run()
@@ -63,6 +98,196 @@ namespace claw_material_metadata_budget_contracts
             weak.reset();
         }
         require( scheduler->stats().used[source] == baseline.used[source], "final metadata allocation retirement returns all bytes" );
+
+        {
+            MaterialInventory materials;
+            TextureInventory textures;
+            MeshInventory meshes;
+            for( const auto &grow : { std::function<void()>([&]{ materials.grow(); }),
+                    std::function<void()>([&]{ textures.grow(); }),
+                    std::function<void()>([&]{ meshes.grow(); }) } )
+            {
+                const auto before = scheduler->stats().used[source];
+                limit(before); denied = false;
+                try { grow(); } catch(const std::bad_alloc &) { denied = true; }
+                require(denied && scheduler->stats().used[source] == before,
+                    "manager inventory admission denies before growth");
+                limit(baseline.limits[source]); grow();
+                require(scheduler->stats().used[source] > before,
+                    "material texture render-target and mesh inventories charge retained capacity");
+            }
+            const auto retained = scheduler->stats().used[source];
+            materials.clearRetained();
+            require(scheduler->stats().used[source] == retained, "empty reusable inventory stays charged");
+            materials.unload(nullptr); textures.unload(nullptr); meshes.unload(nullptr);
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "inventory destruction returns physical capacity");
+        {
+            limit(baseline.used[source]); denied = false;
+            try { auto node = make_ptr<MaterialTexture>(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && scheduler->stats().used[source] == baseline.used[source],
+                "direct authoring node allocation participates before construction");
+            limit(baseline.limits[source]);
+            FactoryTemplate<MaterialTexture> factory;
+            const auto before = scheduler->stats().used[source];
+            limit(before + sourceBudgetStorageBytes(sizeof(MaterialTexture), alignof(MaterialTexture)));
+            denied = false;
+            try { factory.createObject(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && factory.getInstances().empty() && scheduler->stats().used[source] == before,
+                "denied factory inventory publication destroys and frees its candidate object");
+            limit(baseline.limits[source]);
+            auto object = factory.createObject();
+            require(object && factory.getInstances().size() == 1, "factory admission retries");
+            factory.freeObject(object);
+            factory.unload(nullptr);
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "factory teardown returns storage");
+        {
+            Pool<MaterialTexture> pool(2);
+            limit(baseline.used[source]); denied = false;
+            try { pool.allocate_object(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && scheduler->stats().used[source] == baseline.used[source],
+                "asset pool denies backing storage without publishing a free slot");
+            limit(baseline.limits[source]);
+            MaterialTexture *slots[4];
+            for(auto &slot : slots) slot = pool.allocate_object();
+            const auto occupied = scheduler->stats().used[source];
+            limit(occupied);
+            for(auto slot : slots) pool.free_object(slot);
+            require(scheduler->stats().used[source] == occupied,
+                "pool return at the cap never allocates and retained unused slots remain charged");
+            for(auto &slot : slots) slot = pool.allocate_object();
+            require(scheduler->stats().used[source] == occupied, "warm pool reuse requires no new admission");
+            for(auto slot : slots) pool.free_object(slot);
+            limit(baseline.limits[source]);
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "pool teardown returns backing and free-list storage");
+        {
+            Material material;
+            const String name("AnAuthoredShaderWithALongNameThatRequiresHeapStorage");
+            const String path("Textures/City/VeryLongAuthoredTextureReferenceForBudgetCoverage.dds");
+            limit(baseline.used[source]); denied = false;
+            try { material.setShaderTexture(name, path); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && material.getShaderTexture(name).empty() && scheduler->stats().used[source] == baseline.used[source],
+                "cold shader authoring failure publishes no partial optional block");
+            limit(baseline.limits[source]); material.setShaderTexture(name, path);
+            const auto retained = scheduler->stats().used[source];
+            limit(retained); denied = false;
+            try { material.setShaderTexture(name, path + "/replacement"); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && material.getShaderTexture(name) == path && scheduler->stats().used[source] == retained,
+                "authoring path replacement admits old and new strings before publication");
+            limit(baseline.limits[source]);
+            MaterialTexture unit;
+            unit.setScale({2,3,4});
+            require(scheduler->stats().used[source] > retained, "optional texture facade metadata is charged");
+            unit.setScale(Vector3<real_Num>::unit());
+            require(scheduler->stats().used[source] == retained, "default facade restoration frees its optional storage");
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "authoring teardown returns storage");
+        {
+            Material material;
+            Array<SmartPtr<IMaterialTechnique>> techniques(3);
+            limit(baseline.used[source]); denied = false;
+            try { material.setTechniques(techniques); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && material.getNumTechniques() == 0, "denied authoring graph replacement preserves the previous graph");
+            limit(baseline.limits[source]); material.setTechniques(techniques);
+            require(material.getNumTechniques() == 3 && scheduler->stats().used[source] > baseline.used[source],
+                "technique graph collections retry with admitted capacity");
+            material.setTechniques({});
+            require(scheduler->stats().used[source] == baseline.used[source], "empty graph replacement retires its actual old buffer");
+            Array<SmartPtr<ITexture>> faces(6);
+            material.setCubicTextures(faces);
+            auto snapshot = material.getCubicTextureSnapshot();
+            const auto retained = scheduler->stats().used[source];
+            limit(retained); denied = false;
+            try { material.setCubicTextures(Array<SmartPtr<ITexture>>(4)); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && material.getCubicTextureSnapshot() == snapshot && scheduler->stats().used[source] == retained,
+                "denied cube authoring replacement preserves the published immutable face list");
+            material.setCubicTextures({});
+            require(scheduler->stats().used[source] == retained, "retained cube snapshot keeps its source capacity after owner clear");
+            snapshot.reset();
+            require(scheduler->stats().used[source] == baseline.used[source], "last cube snapshot owner releases its object and buffer");
+            limit(baseline.limits[source]);
+        }
+        {
+            auto sourceTechnique = make_ptr<ClawMaterialTechnique>();
+            auto targetTechnique = make_ptr<ClawMaterialTechnique>();
+            auto pass = make_ptr<ClawMaterialPass>();
+            sourceTechnique->addPass(pass);
+            const auto before = scheduler->stats().used[source];
+            limit(before); denied = false;
+            try { targetTechnique->addPass(pass); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && targetTechnique->getNumPasses() == 0 && pass->getParent() == sourceTechnique &&
+                scheduler->stats().used[source] == before,
+                "denied pass inventory growth preserves a caller-owned pass parent");
+            limit(baseline.limits[source]);
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "denied graph adoption teardown returns storage");
+        {
+            auto state = make_ptr<MaterialPassStateData>();
+            const auto snapshot = state->getRenderState();
+            const auto before = scheduler->stats().used[source];
+            limit(before); denied = false;
+            try { state->setVertexShaderName("CityBudgetShader"); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && state->getVertexShaderName().empty() && state->getStringAuthoringStorageBytes() == 0,
+                "denied packed pass text preserves the original authoring fields");
+            denied = false;
+            try { state->setFloatSetting(MaterialFloatSetting::heightScale, 0.3f); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && state->getNumericAuthoringStorageBytes() == 0 &&
+                state->getRenderState() == snapshot && scheduler->stats().used[source] == before,
+                "denied packed pass numeric metadata preserves the published render version");
+            limit(baseline.limits[source]);
+            state->setVertexShaderName("CityBudgetShader");
+            state->setFloatSetting(MaterialFloatSetting::heightScale, 0.3f);
+            require(state->getRenderState() == snapshot && scheduler->stats().used[source] > before,
+                "cold pass metadata retry charges its buffers without rebuilding rendered values");
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "pass authoring payload and state teardown returns storage");
+        {
+            Array<MaterialShaderParameterInfo> info(1);
+            info[0].m_name = "AUniqueLongShaderParameterNameForSharedBudgetCoverage";
+            info[0].m_type = MaterialShaderParameterType::Scalar;
+            limit(baseline.used[source]); denied = false;
+            try { MaterialShaderParameterLayout::Create(info); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && scheduler->stats().used[source] == baseline.used[source], "schema admission denies before cloning buffers");
+            limit(baseline.limits[source]);
+            MaterialShaderParametersInstance values;
+            values.Reset(info);
+            const auto handle = values.GetParameter(0);
+            values.SetScalar(handle, 1.0f);
+            auto copy = values;
+            const auto shared = scheduler->stats().used[source];
+            const auto revision = copy.GetRevision();
+            limit(shared); denied = false;
+            try { copy.SetScalar(handle, 2.0f); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && copy.GetScalar(handle) == 1.0f && values.GetScalar(handle) == 1.0f &&
+                copy.GetRevision() == revision && scheduler->stats().used[source] == shared,
+                "denied shader copy-on-write preserves both owners and revision");
+            limit(baseline.limits[source]); copy.SetScalar(handle, 2.0f);
+            require(values.GetScalar(handle) == 1.0f && copy.GetScalar(handle) == 2.0f &&
+                scheduler->stats().used[source] > shared, "shader copy-on-write retry charges independent values once");
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "shader schema and value teardown returns storage");
+        {
+            ClawTexture texture;
+            Array<f32> overallocated(4, 1.0f);
+            overallocated.reserve(16384);
+            limit(baseline.used[source] + 8192);
+            require(!texture.copyLinearFloatData(overallocated, {1,1}, error) &&
+                    scheduler->stats().used[source] == baseline.used[source],
+                "retained float texture admission includes copied capacity rather than only logical pixels");
+            auto settings = make_ptr<Properties>();
+            settings->setProperty("mipmapFilter", 1);
+            limit(baseline.used[source]); denied = false;
+            try { texture.setProperties(settings); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && scheduler->stats().used[source] == baseline.used[source],
+                "texture cache node and bucket admission denies without retained storage");
+            limit(baseline.limits[source]); texture.setProperties(settings);
+            require(scheduler->stats().used[source] > baseline.used[source], "empty texture cache metadata is charged without a pixel payload");
+            texture.unload(nullptr);
+            require(scheduler->stats().used[source] > baseline.used[source], "retained texture cache metadata stays charged after unload");
+        }
+        require(scheduler->stats().used[source] == baseline.used[source], "final texture cache erasure frees nodes and retained bucket capacity");
 
         {
             // Test-owned states bypass engine snapshot allocation so admission

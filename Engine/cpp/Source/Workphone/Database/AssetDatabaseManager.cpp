@@ -764,8 +764,8 @@ namespace workphone
     void AssetDatabaseManager::clearResourceEntryCache()
     {
         ScopedLock lock( this );
-        m_resourceEntriesByUUID.clear();
-        m_resourceEntriesByPath.clear();
+        m_resourceEntriesByUUID = decltype(m_resourceEntriesByUUID){};
+        m_resourceEntriesByPath = decltype(m_resourceEntriesByPath){};
     }
     bool AssetDatabaseManager::hasResourceEntry( SmartPtr<ISharedObject> object )
     {

@@ -1,6 +1,7 @@
 #ifndef TypeManager_h__
 #define TypeManager_h__
 
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/WorkphoneEnums.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/Array.hpp>
@@ -468,11 +469,11 @@ namespace workphone
                                ///< typeInfo).
         Array<atomic_u8>
             objectFlags;  ///< Per-object flags stored as atomic bytes (one per object slot).
-        GenericPool<BaseObjectData> baseObjectDataPool;      ///< Pool of base object data instances.
-        GenericPool<SharedObjectData> sharedObjectDataPool;  ///< Pool of shared object data instances.
-        Array<GenericPool<BaseObjectData>>
+        GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>> baseObjectDataPool;      ///< Pool of base object data instances.
+        GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>> sharedObjectDataPool;  ///< Pool of shared object data instances.
+        Array<GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>>>
             baseObjectDataPools;  ///< Array of base object data pools for different groups.
-        Array<GenericPool<SharedObjectData>>
+        Array<GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>>>
             sharedObjectDataPools;  ///< Array of shared object data pools for different groups.
         std::unordered_map<u32, SharedPtr<reflection::Type>>
             types;  ///< Map of runtime id -> reflection metadata. Use registerType / getType to modify.

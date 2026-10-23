@@ -2,6 +2,20 @@
 
 23 October 2026. Tracks [WPMATERIAL_OPTIMIZATION_PLAN.md](WPMATERIAL_OPTIMIZATION_PLAN.md).
 
+## Shared asset memory continuation (23 October 2026)
+
+Material authoring collections, cold surface/facade payloads, unresolved paths, shader authoring strings and reference/binding arrays now admit SourceCpu allocations. Shared schema/default/lookup storage and copy-on-write value buffers retain leases through their physical owners; primary selections and cube snapshots are also admitted. Denied shader/path/graph replacements stage allocation before publication.
+
+Direct and factory-created material/texture wrappers, material nodes and material state objects share the existing allocation policy. Factory pool blocks, free queues, block inventories and live-instance inventories remain charged while retained, including unused slots. Failed factory publication destroys the candidate; pool returns and warm reuse require no new admission. Material, texture/render-target and CPU mesh/resource manager arrays admit retained capacity and release it on unload.
+
+Claw texture cache metadata is separately admitted: map object, nodes, sentinel/buckets and path/profile string buffers. Lazy creation avoids DLL initialization work; final entry destruction frees the complete map without replacement allocation. Pixel eviction keeps metadata charged. Retained float/cooked Array copies include capacity in admission.
+
+The authoring/inventory/texture-map targets were rebuilt in RelWithDebInfo. All sixteen selected registered CTest groups passed across the final focused runs: native mesh/renderer/shader/sparse-material contracts; material layout/load/heap-profile/memory-profile contracts; Claw production rendering and lifecycle soak; cubemap/texture, cooked resources, terrain and foliage; state listeners and actor streaming/HLOD. The actor-streaming gate passed in 8.82 seconds after its exact geometry checks were separated from newly charged manager inventory capacity. Coverage includes cold authoring and packed pass metadata denial, foreign-pass parent preservation, factory-publication rollback, pool return/reuse at a full budget, shader copy-on-write, retained cube snapshots, texture map metadata without pixels, copied float capacity, retry, payload eviction and final physical-owner teardown. GPU coverage used DX11/WARP; this adds no live-city/hardware traversal, performance comparison or process RSS/driver VRAM measurement.
+
+The generic-engine/catalog continuation adds SourceCpu admission for TypeManager base-object/strong-weak control pools and their state, blocks, free lists and inventories; state-context and manager inventories, dispatch batches and message-queue capacities; ResourceDatabase UUID/path/instance registries; catalog director-cache maps; and SQLite eager rows, fields and retained strings. Registry and SQL result replacements stage complete admitted candidates before publication. Existing path lookups allocate no temporary budgeted keys. Failed message enqueueing restores its previous context. Dirty-notification entries keep their existing allocator until admission can span message acceptance and scheduling together. The shared allocation ledger can be used before application startup without starting streaming workers, and service shutdown/restart preserves live ownership and configured limits. Retained pool slots and reusable queue capacity remain charged until physical release.
+
+SQLite/codec internals, caller-owned and catalog scan/document snapshots, reflection/type tables, other generic payloads, global string-pool spare capacity, budget-ledger/OS/driver overhead and other backends remain outside a complete process/VRAM ceiling. See [SCENE_WORLD_STREAMING.md](SCENE_WORLD_STREAMING.md) for the current allocation boundaries.
+
 ## Implemented runtime changes
 
 - `MaterialShaderParameterLayout` owns immutable parameter metadata, defaults, a sorted stable-ID lookup table and cached built-in bindings. Registered shader instances retain this layout instead of copying names/descriptors. Instances borrow layout defaults; authored parameter copies share a value payload until an effective write detaches it, preserving independent value behavior.
@@ -764,6 +778,14 @@ python -B Tools/ProfileProductionScene.py --output project_x64/material_producti
 ```
 
 For a future failed set, add `--resume` and select its existing output directory; all original protocol settings and frozen runtime/configuration/asset hashes must still match. The resume guard rejects completed sets. Keep three CPU repetitions per view for a completed diagnostic protocol. Cache/frame-time acceptance additionally requires eligible hardware, original/current workload parity, validated PMU PID/TID/ROI/events, and repeated matched comparisons. The plan has no numeric cache-miss goal; its 50% CPU goal belongs to the full material stress fixture, while representative scenes require no statistically meaningful whole-frame p95 regression.
+
+## Shared CPU admission for native materials and render metadata (23 October 2026)
+
+Claw's native material descriptors, sparse name strings/tables and optional adapter callback blocks now admit allocation-local `SourceCpu` leases through the existing `WorldStreamingScheduler`. The C budgeted constructor is optional, clones inherit its policy, and copies use the destination policy. Mesh and material allocation helpers share admission/free logic; the original mesh callback struct tag and typedef remain source-compatible. Native allocation headers count toward reservations. This adds accounting metadata rather than claiming another storage reduction; payload-inventory figures above exclude those headers.
+
+Persistent material preparation stores now charge their shared allocation/control block, record pages, pointer capacity and identity-map nodes/buckets. Draw publications charge dense owners/records/bindings/sort buffers and upstream lookup/pool capacity, including retained chunks after clear. Physical aliases keep one reservation through the final owner; warm reuse requires no new reservation. Failed capture rolls back partial bindings while existing sealed publications stay usable. Direct and scene rendering defer denied metadata admission for retry.
+
+The RelWithDebInfo build passed all sixteen selected registered CTest groups in 64.59 seconds, including native sparse/shader, material layout/load/heap/memory, renderer production/lifecycle, texture/cooked resources, terrain/foliage and actor streaming/HLOD. New coverage exercises exact aligned allocation accounting, native staging/clone/copy failures, retained cache leases, page/node-growth denial, failed capture retry and cold direct-draw admission. DX11 coverage used WARP. These are ownership/correctness gates; earlier performance evidence remains historical, and no new hardware/Editor traversal or whole-process/VRAM measurement was recorded. This earlier gate preceded the authoring/inventory/texture-map continuation recorded above; other GPU/backend allocation families remain outside a complete ceiling; see [SCENE_WORLD_STREAMING.md](SCENE_WORLD_STREAMING.md).
 
 ## Remaining plan gates
 

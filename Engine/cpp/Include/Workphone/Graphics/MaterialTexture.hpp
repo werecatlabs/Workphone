@@ -271,13 +271,13 @@ namespace workphone
                 SmartPtr<IAnimator> animator;
             };
             void releaseDefaultAuthoringData();
-            std::unique_ptr<TextureAuthoringData> m_textureAuthoring;
+            SourceBudgetUnique<TextureAuthoringData> m_textureAuthoring;
 
             /** @brief The texture resource assigned to this material texture node. */
             AtomicSmartPtr<ITexture> m_texture;
 
             /** Bound names belong to the resource. Only unresolved authoring names need storage. */
-            std::unique_ptr<String> m_unresolvedTextureName;
+            SourceBudgetUnique<SourceBudgetString> m_unresolvedTextureName;
 
             // Pass creation assigns this ordinal for ordinary texture slots.
             // Keep it inline so a bound/default slot needs no metadata block.

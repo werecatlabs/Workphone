@@ -233,7 +233,7 @@ namespace workphone
         };
 
         Array<SmartPtr<ISharedObject>> snapshotObjects(
-            const ConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects )
+            const SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects )
         {
             Array<SmartPtr<ISharedObject>> snapshot;
             {
@@ -244,22 +244,20 @@ namespace workphone
             return snapshot;
         }
 
-        Array<SmartPtr<ISharedObject>> replaceObjects(
-            ConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
+        Array<SmartPtr<ISharedObject>> replaceObjectRegistry(
+            SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
             const Array<SmartPtr<ISharedObject>> &replacement )
         {
             // Scene traversal and object metadata access must not run under the
             // registry lock. Readers acquire their strong references under it.
-            Array<Pair<UUID, SmartPtr<ISharedObject>>> entries;
-            entries.reserve( replacement.size() );
+            SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>>::MapType candidate;
+            candidate.reserve(replacement.size());
             for( const auto &object : replacement )
                 if( object )
                     if( auto handle = object->getHandle() )
                     {
                         const auto uuid = handle->getUUID();
-                        // getObject rejects nil identities; caching them would
-                        // only replace unrelated objects under the same key.
-                        if( !uuid.is_nil() ) entries.emplace_back( uuid, object );
+                        if( !uuid.is_nil() ) candidate[uuid] = object;
                     }
 
             Array<SmartPtr<ISharedObject>> retired;
@@ -267,9 +265,9 @@ namespace workphone
                 auto registry = objects.writeLocked();
                 retired.reserve( registry.size() );
                 for( const auto &[id, object] : registry ) retired.push_back( object );
-                registry.clear();
-                registry.reserve( entries.size() );
-                for( const auto &entry : entries ) registry[entry.first] = entry.second;
+                // Allocation/copy completes before publication; destruction of
+                // replaced owners and physical storage stays outside this lock.
+                registry.get().swap(candidate);
             }
             // Destruction of replaced owners can re-enter the database. Keep
             // them alive until the complete publication transaction has ended.
@@ -279,8 +277,8 @@ namespace workphone
         // Count all database aliases before inspecting ownership. One temporary
         // strong reference per object keeps destruction outside the container locks.
         Array<ResourceCleanupCandidate> collectUnusedResources(
-            ConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
-            ConcurrentArray<SmartPtr<IResource>> &instances, bool remove )
+            SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
+            SourceBudgetConcurrentArray<SmartPtr<IResource>> &instances, bool remove )
         {
             Array<ResourceCleanupCandidate> candidates;
             std::unordered_map<ISharedObject *, size_t> indices;
@@ -678,13 +676,15 @@ namespace workphone
         {
             setLoadingState( LoadingState::Unloading );
 
-            auto objects = replaceObjects( m_objects, {} );
+            auto objects = replaceObjectInventory( {} );
             for( auto object : objects )
             {
                 if( object ) object->unload( nullptr );
             }
 
-            m_resourceMap.clear();
+            decltype(m_resourceMap) empty;
+            m_resourceMap = std::move(empty);
+            m_instances.releaseStorage();
             setDatabaseManager( nullptr );
             setMediaCatalog( nullptr );
 
@@ -905,7 +905,7 @@ namespace workphone
 
             objects = getSceneObjects();
         }
-        auto retired = replaceObjects( m_objects, objects );
+        auto retired = replaceObjectInventory( objects );
     }
 
     void ResourceDatabase::optimise()
@@ -2322,7 +2322,7 @@ namespace workphone
             auto it = m_resourceMap.find( type );
             if( it != m_resourceMap.end() )
             {
-                auto resIt = it->second.find( path );
+                auto resIt = it->second.findAs( path );
                 if( resIt != it->second.end() )
                 {
                     if( auto resource = resIt->second.lock() )
@@ -2351,7 +2351,7 @@ namespace workphone
 
             if( result.first )
             {
-                m_resourceMap[type][path] = result.first;
+                m_resourceMap[type][SourceBudgetString(path)] = result.first;
             }
 
             return result;
@@ -2378,7 +2378,7 @@ namespace workphone
             // Check if the resource already exists in the database.
             for( auto &[hash, map] : m_resourceMap )
             {
-                auto resIt = map.find( path );
+                auto resIt = map.findAs( path );
                 if( resIt != map.end() )
                 {
                     if( auto resource = resIt->second.lock() )
@@ -2425,7 +2425,7 @@ namespace workphone
 
             if( result.first )
             {
-                m_resourceMap[type][path] = result.first;
+                m_resourceMap[type][SourceBudgetString(path)] = result.first;
             }
 
             return result;
@@ -2946,6 +2946,11 @@ namespace workphone
     Array<SmartPtr<IResource>> ResourceDatabase::getInstances() const
     {
         return m_instances.snapshot();
+    }
+
+    Array<SmartPtr<ISharedObject>> ResourceDatabase::replaceObjectInventory( const Array<SmartPtr<ISharedObject>> &objects )
+    {
+        return replaceObjectRegistry(m_objects, objects);
     }
 
     void ResourceDatabase::setInstances( const Array<SmartPtr<IResource>> &instances )

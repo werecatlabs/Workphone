@@ -181,8 +181,8 @@ local ProjectSettingsDefaults =
 	version = "0.1.0",
 	bundleId = "com.company.lioncatgame",
 	defaultLanguage = 0,
-	startupScene = "Assets/Scenes/Main.scene",
-	sceneList = "Assets/Scenes/Main.scene;Assets/Scenes/Menu.scene",
+	startupScene = "",
+	sceneList = "",
 	autoLoadLastScene = false,
 
 	activePlatform = 0,
@@ -463,8 +463,8 @@ local ProjectSettingsStoreMap =
 	showAdvancedWarnings = { name = "editor.advancedWarnings", type = "bool" },
 }
 
-local PlatformNames = { "PC", "macOS", "iOS", "Android" };
-local PcRendererNames = { "Auto", "DirectX 11", "DirectX 12", "Vulkan", "OpenGL" };
+local PlatformNames = { "PC", "macOS (build unavailable)", "iOS (build unavailable)", "Android (build unavailable)" };
+local PcRendererNames = { "Auto", "DirectX 11", "DirectX 12 (unavailable)", "Vulkan (unavailable)", "OpenGL (unavailable)", "Software (CPU)" };
 local MacRendererNames = { "Auto", "Metal", "Vulkan / MoltenVK", "OpenGL" };
 local IosRendererNames = { "Auto", "Metal", "OpenGL ES" };
 local AndroidRendererNames = { "Auto", "Vulkan", "OpenGL ES" };
@@ -536,12 +536,6 @@ local function addDropdown(ui, parent, label, elementId, options, selected)
 	return dropdown;
 end
 
-local function clamp(value, minValue, maxValue)
-	if value < minValue then return minValue; end
-	if value > maxValue then return maxValue; end
-	return value;
-end
-
 local function round(value)
 	return math.floor(value + 0.5);
 end
@@ -562,6 +556,10 @@ function ProjectSettings:__init(window)
 	self.settings = {};
 	self.controlBindings = {};
 	self.actionLog = {};
+	self.capabilities = {};
+	self.unavailableReasons = {};
+	self.syncingControls = false;
+	self.statusMessage = "Ready.";
 end
 
 function ProjectSettings:__finalize()
@@ -601,72 +599,74 @@ function ProjectSettings:bind(control, key, kind)
 		return control;
 	end
 
-	table.insert(self.controlBindings, { control = control, key = key, kind = kind });
+	table.insert(self.controlBindings, { control = control, key = key, kind = kind, label = control:getLabel() });
 	self[key .. "Control"] = control;
 	return control;
 end
 
-function ProjectSettings:getSettingsStore()
-	local applicationManager = IApplicationManager.instance();
-	if applicationManager == nil then
-		return nil;
+local function readProperty(properties, name, valueType)
+	if valueType == "bool" then
+		return properties:getPropertyAsBool(name);
+	elseif valueType == "int" then
+		return properties:getPropertyAsInt(name);
+	elseif valueType == "float" then
+		return properties:getPropertyAsFloat(name);
 	end
-
-	local settings = applicationManager:getPlayerSettings();
-	if settings ~= nil then
-		return settings;
-	end
-
-	return applicationManager:getEditorSettings();
+	return properties:getPropertyAsString(name);
 end
 
-function ProjectSettings:readSetting(name, defaultValue, valueType)
-	local store = self:getSettingsStore();
-	if store == nil or not store:hasProperty(name) then
-		return defaultValue;
-	end
-
+local function writeProperty(properties, name, value, valueType)
 	if valueType == "bool" then
-		return store:getPropertyAsBool(name);
+		properties:setPropertyAsBool(name, value == true);
 	elseif valueType == "int" then
-		return store:getPropertyAsInt(name);
+		properties:setPropertyAsInt(name, round(value));
 	elseif valueType == "float" then
-		return store:getPropertyAsFloat(name);
-	end
-
-	local value = store:getPropertyAsString(name);
-	if value == nil or value == "" then
-		return defaultValue;
-	end
-	return value;
-end
-
-function ProjectSettings:writeSetting(name, value, valueType)
-	local store = self:getSettingsStore();
-	if store == nil then
-		return;
-	end
-
-	-- Keep these calls commented if your settings object does not expose writable bindings yet.
-	-- The in-memory table is still updated and exposed through getProperties().
-	if valueType == "bool" then
-		--store:setPropertyAsBool(name, value == true);
-	elseif valueType == "int" then
-		--store:setPropertyAsInt(name, round(value));
-	elseif valueType == "float" then
-		--store:setPropertyAsFloat(name, value);
+		properties:setPropertyAsFloat(name, value);
 	else
-		--store:setPropertyAsString(name, value or "");
+		properties:setPropertyAsString(name, value or "");
+	end
+end
+
+function ProjectSettings:setStatus(message)
+	self.statusMessage = message;
+	if self.statusText ~= nil then
+		self.statusText:setText(message);
+	end
+end
+
+function ProjectSettings:readSettingsProperties(properties)
+	for key, map in pairs(ProjectSettingsStoreMap) do
+		if properties:hasProperty(map.name) then
+			self.settings[key] = readProperty(properties, map.name, map.type);
+		elseif properties:hasProperty(key) then
+			-- Older window snapshots used the Lua field names.
+			self.settings[key] = readProperty(properties, key, map.type);
+		end
+		if properties:hasProperty("capability." .. map.name) then
+			self.capabilities[key] = properties:getPropertyAsBool("capability." .. map.name);
+		end
+		if properties:hasProperty("unavailable." .. map.name) then
+			self.unavailableReasons[key] = properties:getPropertyAsString("unavailable." .. map.name);
+		end
+	end
+end
+
+function ProjectSettings:writeSettingsProperties(properties)
+	for key, map in pairs(ProjectSettingsStoreMap) do
+		writeProperty(properties, map.name, self.settings[key], map.type);
 	end
 end
 
 function ProjectSettings:loadSettings()
+	self.capabilities = {};
+	self.unavailableReasons = {};
 	for key, defaultValue in pairs(ProjectSettingsDefaults) do
-		local map = ProjectSettingsStoreMap[key];
-		if map ~= nil then
-			self.settings[key] = self:readSetting(map.name, defaultValue, map.type);
-		else
-			self.settings[key] = defaultValue;
+		self.settings[key] = defaultValue;
+	end
+	if not self:performAction("readProjectSettings", false) then
+		for key, _ in pairs(ProjectSettingsDefaults) do
+			self.capabilities[key] = false;
+			self.unavailableReasons[key] = "Open a project before editing project settings.";
 		end
 	end
 end
@@ -747,14 +747,17 @@ function ProjectSettings:load()
 	self:bind(addToggle(ui, rendererHeader, "Allow Renderer Fallback", ProjectSettingsTypes.AllowRendererFallback, self.settings.allowRendererFallback), "allowRendererFallback", "toggle");
 
 	local profilesHeader = self:addHeader(ui, platformTab, "Platform Profiles");
-	self.applyPcProfileButton = addButton(ui, profilesHeader, "Apply PC Profile", ProjectSettingsTypes.ApplyPcProfile, false);
-	self.applyMacProfileButton = addButton(ui, profilesHeader, "Apply macOS Profile", ProjectSettingsTypes.ApplyMacProfile, true);
-	self.applyIosProfileButton = addButton(ui, profilesHeader, "Apply iOS Profile", ProjectSettingsTypes.ApplyIosProfile, false);
-	self.applyAndroidProfileButton = addButton(ui, profilesHeader, "Apply Android Profile", ProjectSettingsTypes.ApplyAndroidProfile, true);
+	addText(ui, profilesHeader, "Profiles stage target defaults for review. The current toolchain builds PC projects.");
+	self.applyPcProfileButton = addButton(ui, profilesHeader, "Use PC Profile", ProjectSettingsTypes.ApplyPcProfile, false);
+	self.applyMacProfileButton = addButton(ui, profilesHeader, "Use macOS Profile", ProjectSettingsTypes.ApplyMacProfile, true);
+	self.applyIosProfileButton = addButton(ui, profilesHeader, "Use iOS Profile", ProjectSettingsTypes.ApplyIosProfile, false);
+	self.applyAndroidProfileButton = addButton(ui, profilesHeader, "Use Android Profile", ProjectSettingsTypes.ApplyAndroidProfile, true);
 	self.rendererSummaryText = addText(ui, profilesHeader, "Renderer summary will appear here.");
 
 	-- Graphics -------------------------------------------------------------
 	local displayHeader = self:addHeader(ui, graphicsTab, "Display");
+	addText(ui, displayHeader, "Game graphics changes apply to the next standalone launch. Unavailable controls need engine support.");
+	addText(ui, displayHeader, "Post effects require the Software game renderer.");
 	self:bind(addDropdown(ui, displayHeader, "Resolution", ProjectSettingsTypes.Resolution,
 		{ "1920x1080", "1280x720", "2560x1440", "3840x2160", "Device Native", "Custom" }, self.settings.resolution), "resolution", "dropdown");
 	self:bind(addToggle(ui, displayHeader, "Fullscreen", ProjectSettingsTypes.Fullscreen, self.settings.fullscreen), "fullscreen", "toggle");
@@ -768,7 +771,7 @@ function ProjectSettings:load()
 	self:bind(addDropdown(ui, renderingHeader, "Render Pipeline", ProjectSettingsTypes.RenderPipeline,
 		{ "Forward", "Forward+", "Deferred", "Mobile Forward" }, self.settings.renderPipeline), "renderPipeline", "dropdown");
 	self:bind(addDropdown(ui, renderingHeader, "Anti-Aliasing", ProjectSettingsTypes.AntiAliasing,
-		{ "None", "FXAA", "TAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" }, self.settings.aa), "aa", "dropdown");
+		{ "None", "FXAA (unavailable)", "TAA", "MSAA 2x (unavailable)", "MSAA 4x (unavailable)", "MSAA 8x (unavailable)" }, self.settings.aa), "aa", "dropdown");
 	self:bind(addToggle(ui, renderingHeader, "Dynamic Resolution", ProjectSettingsTypes.DynamicResolution, self.settings.dynamicResolution), "dynamicResolution", "toggle");
 	self:bind(addToggle(ui, renderingHeader, "HDR", ProjectSettingsTypes.HDR, self.settings.hdr), "hdr", "toggle");
 	self:bind(addDropdown(ui, renderingHeader, "Color Space", ProjectSettingsTypes.ColorSpace,
@@ -778,8 +781,8 @@ function ProjectSettings:load()
 	self:bind(addSlider(ui, renderingHeader, "Anisotropy", ProjectSettingsTypes.Anisotropy, 1.0, 16.0, self.settings.anisotropy), "anisotropy", "intSlider");
 
 	local lightingHeader = self:addHeader(ui, graphicsTab, "Lighting / Shadows / Post FX");
-	self:bind(addDropdown(ui, lightingHeader, "Shadow Quality", ProjectSettingsTypes.ShadowQuality,
-		{ "Off", "Low", "Medium", "High", "Ultra" }, self.settings.shadowQuality), "shadowQuality", "dropdown");
+	self:bind(addDropdown(ui, lightingHeader, "Shadows", ProjectSettingsTypes.ShadowQuality,
+		{ "Off", "On" }, self.settings.shadowQuality > 0 and 1 or 0), "shadowQuality", "dropdown");
 	self:bind(addSlider(ui, lightingHeader, "Shadow Distance", ProjectSettingsTypes.ShadowDistance, 0.0, 300.0, self.settings.shadowDistance), "shadowDistance", "floatSlider");
 	self:bind(addDropdown(ui, lightingHeader, "Shadow Resolution", ProjectSettingsTypes.ShadowResolution,
 		{ "512", "1024", "2048", "4096" }, self.settings.shadowResolution), "shadowResolution", "dropdown");
@@ -870,7 +873,7 @@ function ProjectSettings:load()
 	self:bind(addDropdown(ui, buildHeader, "Build Config", ProjectSettingsTypes.BuildConfig,
 		{ "Debug", "Development", "Release", "Shipping" }, self.settings.buildConfig), "buildConfig", "dropdown");
 	self:bind(addDropdown(ui, buildHeader, "PC Architecture", ProjectSettingsTypes.ArchitecturePC,
-		{ "x86", "x64", "ARM64" }, self.settings.architecturePC), "architecturePC", "dropdown");
+		{ "x86 (unavailable)", "x64", "ARM64 (unavailable)" }, self.settings.architecturePC), "architecturePC", "dropdown");
 	self:bind(addDropdown(ui, buildHeader, "macOS Architecture", ProjectSettingsTypes.ArchitectureMac,
 		{ "Intel", "Apple Silicon", "Universal" }, self.settings.architectureMac), "architectureMac", "dropdown");
 	self:bind(addDropdown(ui, buildHeader, "iOS Architecture", ProjectSettingsTypes.ArchitectureIOS,
@@ -939,20 +942,20 @@ function ProjectSettings:load()
 
 	-- Advanced / actions ---------------------------------------------------
 	local actionsHeader = self:addHeader(ui, advancedTab, "Actions");
-	addText(ui, actionsHeader, "Some settings are saved immediately but renderer/backend changes usually require a renderer reload or app restart.");
+	addText(ui, actionsHeader, "Apply updates the current project. Save writes the project file. Startup and backend settings take effect after restart.");
 	self.applyButton = addButton(ui, actionsHeader, "Apply", ProjectSettingsTypes.Apply, false);
 	self.saveButton = addButton(ui, actionsHeader, "Save", ProjectSettingsTypes.Save, true);
 	self.resetButton = addButton(ui, actionsHeader, "Reset", ProjectSettingsTypes.Reset, true);
 	self.validateButton = addButton(ui, actionsHeader, "Validate", ProjectSettingsTypes.Validate, false);
-	self.reloadRendererButton = addButton(ui, actionsHeader, "Reload Renderer", ProjectSettingsTypes.ReloadRenderer, true);
-	self.buildSelectedButton = addButton(ui, actionsHeader, "Build Selected Platform", ProjectSettingsTypes.BuildSelected, true);
+	self.reloadRendererButton = addButton(ui, actionsHeader, "Renderer switch requires Editor restart", ProjectSettingsTypes.ReloadRenderer, true);
+	self.reloadRendererButton:setEnabled(false, false);
+	self.buildSelectedButton = addButton(ui, actionsHeader, "Build Desktop Plugin", ProjectSettingsTypes.BuildSelected, true);
 	self.exportJsonButton = addButton(ui, actionsHeader, "Export JSON", ProjectSettingsTypes.ExportJson, false);
 	self.importJsonButton = addButton(ui, actionsHeader, "Import JSON", ProjectSettingsTypes.ImportJson, true);
-	self.statusText = addText(ui, actionsHeader, "Ready.");
+	self.statusText = addText(ui, actionsHeader, self.statusMessage);
 
 	self:registerEventControls();
-	self:applySettings(false);
-	self:updateRendererSummary();
+	self:syncToControls();
 
 	print("ProjectSettings load end");
 end
@@ -1013,27 +1016,32 @@ end
 
 function ProjectSettings:syncFromControls()
 	for _, binding in ipairs(self.controlBindings) do
-		if binding.control ~= nil then
+		if binding.control ~= nil and self.capabilities[binding.key] ~= false then
 			self.settings[binding.key] = self:getControlValue(binding.control, binding.kind);
 		end
 	end
 end
 
 function ProjectSettings:syncToControls()
+	self.syncingControls = true;
 	for _, binding in ipairs(self.controlBindings) do
-		self:setControlValue(binding.control, binding.kind, self.settings[binding.key]);
+		local value = self.settings[binding.key];
+		if binding.key == "shadowQuality" then value = value > 0 and 1 or 0; end
+		self:setControlValue(binding.control, binding.kind, value);
+		local available = self.capabilities[binding.key] ~= false;
+		binding.control:setEnabled(available, false);
+		local suffix = "";
+		if not available then
+			suffix = " (Unavailable)";
+		end
+		binding.control:setLabel(binding.label .. suffix);
 	end
+	self.syncingControls = false;
 	self:updateRendererSummary();
 end
 
 function ProjectSettings:saveSettings()
-	self:syncFromControls();
-	for key, value in pairs(self.settings) do
-		local map = ProjectSettingsStoreMap[key];
-		if map ~= nil then
-			self:writeSetting(map.name, value, map.type);
-		end
-	end
+	return self:performAction("saveProjectSettings");
 end
 
 function ProjectSettings:updateRendererSummary()
@@ -1053,39 +1061,16 @@ function ProjectSettings:updateRendererSummary()
 end
 
 function ProjectSettings:validateSettings()
-	self:syncFromControls();
-	local warnings = {};
-
-	if self.settings.bundleId == nil or self.settings.bundleId == "" then
-		table.insert(warnings, "Bundle Identifier is empty");
-	end
-
-	if self.settings.activePlatform == 2 and self.settings.rendererIOS ~= 1 and self.settings.rendererIOS ~= 0 then
-		table.insert(warnings, "iOS should normally use Metal or Auto");
-	end
-
-	if self.settings.activePlatform == 3 and self.settings.rendererAndroid == 0 then
-		table.insert(warnings, "Android renderer is Auto; choose Vulkan or OpenGL ES for deterministic builds");
-	end
-
-	if self.settings.minAndroidSdk > self.settings.targetAndroidSdk then
-		table.insert(warnings, "Minimum Android SDK is higher than Target Android SDK");
-	end
-
-	if self.settings.renderScale < 0.5 and self.settings.activePlatform == 0 then
-		table.insert(warnings, "PC render scale is very low");
-	end
-
-	if #warnings == 0 then
-		return "Validation passed.";
-	end
-
-	return "Validation warnings: " .. table.concat(warnings, "; ");
+	return self:performAction("validateProjectSettings");
 end
 
 function ProjectSettings:applyPlatformProfile(platform)
 	-- 0=PC, 1=macOS, 2=iOS, 3=Android
 	self:syncFromControls();
+	local preserved = {};
+	for key, value in pairs(self.settings) do
+		if self.capabilities[key] == false then preserved[key] = value; end
+	end
 	self.settings.activePlatform = platform;
 
 	if platform == 0 then
@@ -1118,7 +1103,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.renderPipeline = 3;
 		self.settings.qualityPreset = 1;
 		self.settings.renderScale = 0.85;
-		self.settings.aa = 1;
+		self.settings.aa = 0;
 		self.settings.shadowQuality = 2;
 		self.settings.shadowDistance = 50;
 		self.settings.maxTextureSize = 2048;
@@ -1131,7 +1116,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.renderPipeline = 3;
 		self.settings.qualityPreset = 1;
 		self.settings.renderScale = 0.75;
-		self.settings.aa = 1;
+		self.settings.aa = 0;
 		self.settings.shadowQuality = 1;
 		self.settings.shadowDistance = 40;
 		self.settings.maxTextureSize = 2048;
@@ -1142,49 +1127,22 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.useAndroidAppBundle = true;
 	end
 
+	for key, value in pairs(preserved) do self.settings[key] = value; end
 	self:syncToControls();
-	self:applySettings(true);
+	self:setStatus(safeOption(PlatformNames, platform) .. " profile staged. Review settings, then Apply or Save. The current toolchain builds PC projects.");
 end
 
 function ProjectSettings:applySettings(updateStatus)
-	self:syncFromControls();
-	self:saveSettings();
-	self:updateRendererSummary();
-
-	local applicationManager = IApplicationManager.instance();
-	if applicationManager == nil then
-		return;
-	end
-
-	-- These are safe live-apply examples. Backend/renderer changes are saved and then picked up by a renderer reload/restart.
-	applicationManager:setEnableRenderer(true);
-
-	local soundManager = applicationManager:getSoundManager();
-	if soundManager ~= nil then
-		soundManager:setVolume(clamp(self.settings.masterVolume / 100.0, 0.0, 1.0));
-	end
-
-	-- The worker pool is sized when the application starts. Updating only its
-	-- reported thread count after load leaves its worker arrays inconsistent;
-	-- persist this setting now and apply it on the next restart instead.
-
-	if updateStatus ~= false and self.statusText then
-		local activePlatform = safeOption(PlatformNames, self.settings.activePlatform);
-		self.statusText:setText("Applied settings for " .. activePlatform .. ". Renderer/backend changes may require Reload Renderer or app restart.");
-	end
+	return self:performAction("applyProjectSettings", updateStatus);
 end
 
 function ProjectSettings:resetToDefaults()
 	for key, value in pairs(ProjectSettingsDefaults) do
-		self.settings[key] = value;
+		if self.capabilities[key] ~= false then self.settings[key] = value; end
 	end
 
 	self:syncToControls();
-	self:applySettings(false);
-
-	if self.statusText then
-		self.statusText:setText("Reset to production defaults and applied.");
-	end
+	self:setStatus("Defaults restored for available settings. Apply or Save to keep these changes.");
 end
 
 function ProjectSettings:unload()
@@ -1212,33 +1170,13 @@ end
 function ProjectSettings:getProperties(parameters)
 	local properties = parameters:at(0);
 	self:syncFromControls();
-	for key, value in pairs(self.settings) do
-		if type(value) == "boolean" then
-			properties:setPropertyAsBool(key, value);
-		elseif type(value) == "number" then
-			properties:setPropertyAsFloat(key, value);
-		else
-			properties:setPropertyAsString(key, value or "");
-		end
-	end
+	self:writeSettingsProperties(properties);
 end
 
 function ProjectSettings:setProperties(parameters)
 	local properties = parameters:at(0);
-	for key, defaultValue in pairs(ProjectSettingsDefaults) do
-		if properties:hasProperty(key) then
-			if type(defaultValue) == "boolean" then
-				self.settings[key] = properties:getPropertyAsBool(key);
-			elseif type(defaultValue) == "number" then
-				self.settings[key] = properties:getPropertyAsFloat(key);
-			else
-				self.settings[key] = properties:getPropertyAsString(key);
-			end
-		end
-	end
-
+	self:readSettingsProperties(properties);
 	self:syncToControls();
-	self:applySettings(false);
 end
 
 function ProjectSettings:show()
@@ -1255,13 +1193,58 @@ function ProjectSettings:hide()
 	end
 end
 
-function ProjectSettings:performAction(action)
+function ProjectSettings:performAction(action, updateStatus)
 	table.insert(self.actionLog, action);
-	print("ProjectSettings action: " .. action);
+	local ok, request = pcall(function()
+		local applicationManager = IApplicationManager.instance();
+		if applicationManager == nil or self.window == nil then
+			error("The Editor project settings service is unavailable.");
+		end
+		local factory = applicationManager:getFactoryManager();
+		if factory == nil then
+			error("The Editor object factory is unavailable.");
+		end
+		local properties = factory:make_object("Properties");
+		if properties == nil then
+			error("Could not create the project settings request.");
+		end
+		properties:setPropertyAsString("action", action);
+		if action ~= "readProjectSettings" and action ~= "importProjectSettingsJson" then
+			self:syncFromControls();
+			self:writeSettingsProperties(properties);
+		end
+		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("projectSettingsAction"),
+			Parameters(), nil, properties, nil);
+		return properties;
+	end);
+	if not ok then
+		self:setStatus("Project settings failed: " .. tostring(request));
+		print(self.statusMessage);
+		return false;
+	end
+	if not request:hasProperty("success") then
+		self:setStatus("Project settings action is unavailable. Restart the Editor after updating its binaries.");
+		print(self.statusMessage);
+		return false;
+	end
+	local success = request:getPropertyAsBool("success");
+	if success then
+		self:readSettingsProperties(request);
+		self:syncToControls();
+	end
+	if updateStatus ~= false or not success then
+		local message = request:getPropertyAsString("status");
+		if message == nil or message == "" then
+			message = success and "Project settings updated." or "Project settings action failed.";
+		end
+		self:setStatus(message);
+		if not success then print("Project settings: " .. message); end
+	end
+	return success;
 end
 
 function ProjectSettings:handleEvent(parameters, results)
-	if parameters == nil then
+	if parameters == nil or self.syncingControls then
 		return;
 	end
 
@@ -1277,24 +1260,18 @@ function ProjectSettings:handleEvent(parameters, results)
 			self:applySettings(true);
 		elseif elementId == ProjectSettingsTypes.Save then
 			self:saveSettings();
-			if self.statusText then self.statusText:setText("Saved project settings."); end
 		elseif elementId == ProjectSettingsTypes.Reset then
 			self:resetToDefaults();
 		elseif elementId == ProjectSettingsTypes.Validate then
-			local message = self:validateSettings();
-			if self.statusText then self.statusText:setText(message); end
+			self:validateSettings();
 		elseif elementId == ProjectSettingsTypes.ReloadRenderer then
 			self:performAction("reloadRenderer");
-			if self.statusText then self.statusText:setText("Renderer reload requested."); end
 		elseif elementId == ProjectSettingsTypes.BuildSelected then
 			self:performAction("buildSelectedPlatform");
-			if self.statusText then self.statusText:setText("Build requested for selected platform."); end
 		elseif elementId == ProjectSettingsTypes.ExportJson then
 			self:performAction("exportProjectSettingsJson");
-			if self.statusText then self.statusText:setText("Export JSON requested."); end
 		elseif elementId == ProjectSettingsTypes.ImportJson then
 			self:performAction("importProjectSettingsJson");
-			if self.statusText then self.statusText:setText("Import JSON requested."); end
 		elseif elementId == ProjectSettingsTypes.ApplyPcProfile then
 			self:applyPlatformProfile(0);
 		elseif elementId == ProjectSettingsTypes.ApplyMacProfile then
@@ -1303,10 +1280,27 @@ function ProjectSettings:handleEvent(parameters, results)
 			self:applyPlatformProfile(2);
 		elseif elementId == ProjectSettingsTypes.ApplyAndroidProfile then
 			self:applyPlatformProfile(3);
+		else
+			self:handleControlChanged(sender);
 		end
-	elseif eventHash == IEvent.handleValueChanged then
-		self:syncFromControls();
-		self:updateRendererSummary();
-		self:applySettings(true);
+	elseif eventHash == IEvent.handleValueChanged or eventHash == IEvent.handlePropertyChanged then
+		self:handleControlChanged(sender);
+	end
+end
+
+function ProjectSettings:handleControlChanged(sender)
+	local senderId = sender:getElementId();
+	for _, binding in ipairs(self.controlBindings) do
+		if binding.control:getElementId() == senderId then
+			if self.capabilities[binding.key] == false then
+				self:setStatus(self.unavailableReasons[binding.key] or "This setting is unavailable in the current Editor build.");
+				self:syncToControls();
+				return;
+			end
+			self:syncFromControls();
+			self:updateRendererSummary();
+			self:setStatus("Unsaved changes. Apply updates the current project; Save writes the project file.");
+			return;
+		end
 	end
 end
