@@ -8,6 +8,7 @@
 #include <ui/ObjectWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <editor/EditorManager.hpp>
+#include <editor/Project.hpp>
 #include <Workphone/System/FileSelection.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Input/Joystick.hpp>
@@ -136,6 +137,9 @@ BOOST_AUTO_TEST_CASE( editor_script_window_owner_binding_test )
             assert(window:getParent() == nil)
             assert(window:getParentWindow() == nil)
             assert(window:getDebugWindow() == nil)
+            window:setParent(nil)
+            window:setParentWindow(nil)
+            window:setDebugWindow(nil)
             window:setName("Editor owner methods verified")
         end
     )" );
@@ -174,6 +178,155 @@ BOOST_AUTO_TEST_CASE( editor_script_window_properties_bridge_test )
     properties->setProperty( "bridgeProbe", "setter reached Lua" );
     window->setProperties( properties );
     BOOST_CHECK_EQUAL( window->getName(), "setter reached Lua" );
+    window->unload( nullptr );
+}
+
+BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto application = core::IApplicationManager::instance();
+    BOOST_REQUIRE( application );
+    auto editor = EditorManager::getSingletonPtr();
+    BOOST_REQUIRE( editor );
+    auto scripts = application->getScriptManager();
+    BOOST_REQUIRE( scripts );
+
+    struct ProjectGuard
+    {
+        EditorManager *editor;
+        SmartPtr<Project> previous;
+        std::filesystem::path directory;
+
+        ~ProjectGuard()
+        {
+            editor->setProject( previous );
+            std::error_code ignored;
+            std::filesystem::remove_all( directory, ignored );
+        }
+    } guard{ editor, editor->getProject(),
+             std::filesystem::temp_directory_path() /
+                 std::string( ( "lioncat-project-settings-lua-" + StringUtil::getUUID() ).c_str() ) };
+    auto project = make_ptr<Project>();
+    project->create( guard.directory.u8string() );
+    auto initial = project->getProperties();
+    initial->setProperty( "project.name", "Lua settings project" );
+    initial->setProperty( "project.company", String() );
+    initial->setProperty( "sound.masterVolume", s32( 80 ) );
+    project->setProperties( initial );
+    project->save();
+    editor->setProject( project );
+    const auto beforeOpen = DataUtil::toString( project->getProperties().get(), true );
+
+    // This uses the real Properties factory, event enum/hash, UI bindings and
+    // ScriptWindow action bridge. The separate Lua suite checks every control.
+    auto window = make_ptr<ScriptWindow>();
+    struct WindowGuard
+    {
+        SmartPtr<ScriptWindow> window;
+        ~WindowGuard() { window->unload( nullptr ); }
+    } windowGuard{ window };
+    window->setClassName( "ProjectSettings" );
+    window->load( nullptr );
+    window->setWindowVisible( false );
+    scripts->loadScriptFromString( R"(
+        function ProjectSettings:projectSettingsIntegrationStatus()
+            self.window:setName(self.statusMessage)
+        end
+    )" );
+    BOOST_REQUIRE( window->getInvoker() );
+    window->getInvoker()->callObjectMember( "projectSettingsIntegrationStatus" );
+    auto snapshot = window->getProperties();
+    BOOST_REQUIRE( snapshot );
+    BOOST_REQUIRE( snapshot->hasProperty( "graphics.frameRateLimit" ) );
+    BOOST_REQUIRE_MESSAGE( snapshot->getProperty( "project.name" ) == "Lua settings project",
+                           "Project settings read failed: " << window->getName() );
+    BOOST_CHECK_EQUAL( snapshot->getProperty( "project.company" ), "" );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), beforeOpen );
+    BOOST_CHECK( !project->isDirty() );
+
+    scripts->loadScriptFromString( R"(
+        function ProjectSettings:projectSettingsIntegrationProbe()
+            assert(#self.controlBindings == 130)
+            assert(self.capabilities.cloudSave == false)
+            assert(not self.cloudSaveControl:isEnabled())
+            assert(not self.reloadRendererButton:isEnabled())
+            assert(self.cloudSaveControl:getLabel():find("(", 1, true))
+            self.projectNameControl:setText("Applied through Lua controls")
+            self.companyControl:setText("")
+            self.masterVolumeControl:setValue(25)
+            local changed = Parameters()
+            changed:add(IEvent.UI)
+            changed:add(IEvent.handlePropertyChanged)
+            changed:addAsInt(0)
+            changed:addAsObject(self.projectNameControl)
+            self:handleEvent(changed)
+            assert(self.settings.projectName == "Applied through Lua controls")
+            local click = Parameters()
+            click:add(IEvent.UI)
+            click:add(IEvent.handleSelection)
+            click:addAsInt(0)
+            click:addAsObject(self.applyButton)
+            local perform = self.performAction
+            local actionSucceeded = false
+            self.performAction = function(editor, action, ...)
+                actionSucceeded = perform(editor, action, ...)
+                return actionSucceeded
+            end
+            self:handleEvent(click)
+            self.performAction = perform
+            assert(actionSucceeded, self.statusMessage)
+            self.window:setName("Lua apply button dispatched")
+        end
+        function ProjectSettings:projectSettingsIntegrationSave()
+            self.projectNameControl:setText("Saved through Lua controls")
+            local click = Parameters()
+            click:add(IEvent.UI)
+            click:add(IEvent.handleSelection)
+            click:addAsInt(0)
+            click:addAsObject(self.saveButton)
+            local perform = self.performAction
+            local actionSucceeded = false
+            self.performAction = function(editor, action, ...)
+                actionSucceeded = perform(editor, action, ...)
+                return actionSucceeded
+            end
+            self:handleEvent(click)
+            self.performAction = perform
+            assert(actionSucceeded, self.statusMessage)
+            self.window:setName("Lua save button dispatched")
+        end
+    )" );
+    BOOST_REQUIRE( window->getInvoker() );
+    window->getInvoker()->callObjectMember( "projectSettingsIntegrationProbe" );
+    BOOST_REQUIRE_EQUAL( window->getName(), "Lua apply button dispatched" );
+    BOOST_CHECK_EQUAL( project->getLabel(), "Applied through Lua controls" );
+    BOOST_CHECK_EQUAL( project->getProperties()->getProperty( "project.company" ), "" );
+    BOOST_CHECK_EQUAL( project->getProperties()->getPropertyAsInt( "sound.masterVolume" ), 25 );
+    BOOST_CHECK( project->isDirty() );
+    BOOST_REQUIRE( application->getSoundManager() );
+    BOOST_CHECK_CLOSE( application->getSoundManager()->getVolume(), 0.25f, 0.01f );
+    Project beforeSave;
+    beforeSave.loadFromFile( project->getFilePath() );
+    BOOST_CHECK_EQUAL( beforeSave.getLabel(), "Lua settings project" );
+
+    window->getInvoker()->callObjectMember( "projectSettingsIntegrationSave" );
+    BOOST_REQUIRE_EQUAL( window->getName(), "Lua save button dispatched" );
+    BOOST_CHECK( !project->isDirty() );
+    Project saved;
+    saved.loadFromFile( project->getFilePath() );
+    BOOST_CHECK_EQUAL( saved.getLabel(), "Saved through Lua controls" );
+    BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "sound.masterVolume" ), 25 );
+
+    // Hidden settings windows must accept state restoration without applying
+    // edits to the current project or writing its file.
+    auto restored = window->getProperties();
+    restored->setProperty( "project.company", "Hidden snapshot company" );
+    window->setProperties( restored );
+    BOOST_CHECK_EQUAL( window->getProperties()->getProperty( "project.company" ),
+                       "Hidden snapshot company" );
+    BOOST_CHECK_EQUAL( project->getProperties()->getProperty( "project.company" ), "" );
+    BOOST_CHECK( !project->isDirty() );
     window->unload( nullptr );
 }
 

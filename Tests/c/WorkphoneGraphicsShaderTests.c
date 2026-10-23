@@ -194,6 +194,104 @@ static int material_storage_contracts( void )
     return ok;
 }
 
+static int parameter_definition_contracts( void )
+{
+    wp_shader_program *program;
+    wp_shader_program *other;
+    wp_shader_param_handle handle;
+    wp_shader_param_handle forged;
+    wp_shader_param_handle stale;
+    const wp_shader_param_def *def;
+    wp_s32 index;
+    int ok;
+
+    program = wp_shader_program_create();
+    other = wp_shader_program_create();
+    if( !program || !other )
+    {
+        wp_shader_program_destroy( program );
+        wp_shader_program_destroy( other );
+        return check( 0, "parameter definition program creation" );
+    }
+    ok = check( WORKPHONE_UNIFORM_TYPE_INT == 0 && WORKPHONE_UNIFORM_TYPE_MAT4 == 5 &&
+                    WORKPHONE_UNIFORM_TYPE_UINT == 6 && WORKPHONE_UNIFORM_TYPE_BOOL == 7 &&
+                    WORKPHONE_UNIFORM_TYPE_IVEC2 == 8 && WORKPHONE_UNIFORM_TYPE_IVEC4 == 9,
+                "new uniform kinds preserve existing enum values" );
+    index = wp_shader_program_register_uniform( program, "unsignedValue", WORKPHONE_UNIFORM_TYPE_UINT );
+    def = wp_shader_program_get_param_def( program, index );
+    ok &= check( index == 0 && def && def->type == WORKPHONE_UNIFORM_TYPE_UINT &&
+                     def->element_size == 16u && def->byte_size == 16u && def->byte_offset == 0u,
+                 "unsigned scalar keeps distinct metadata in a 16-byte native slot" );
+    index = wp_shader_program_register_uniform( program, "enabled", WORKPHONE_UNIFORM_TYPE_BOOL );
+    def = wp_shader_program_get_param_def( program, index );
+    ok &= check( index == 1 && def && def->type == WORKPHONE_UNIFORM_TYPE_BOOL &&
+                     def->element_size == 16u && def->byte_size == 16u && def->byte_offset == 16u,
+                 "boolean keeps distinct metadata in a 16-byte native slot" );
+    index = wp_shader_program_register_param( program, "indices", WORKPHONE_UNIFORM_TYPE_IVEC2,
+                3u, WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT, WORKPHONE_SHADER_AUTO_PARAM_NONE,
+                WORKPHONE_SHADER_RESOURCE_NONE );
+    def = wp_shader_program_get_param_def( program, index );
+    ok &= check( index == 2 && def && def->type == WORKPHONE_UNIFORM_TYPE_IVEC2 &&
+                     def->element_size == 16u && def->byte_size == 48u && def->byte_offset == 32u &&
+                     def->array_size == 3u,
+                 "signed two-component arrays retain 16-byte element strides" );
+    index = wp_shader_program_register_uniform( program, "rectangle", WORKPHONE_UNIFORM_TYPE_IVEC4 );
+    def = wp_shader_program_get_param_def( program, index );
+    ok &= check( index == 3 && def && def->type == WORKPHONE_UNIFORM_TYPE_IVEC4 &&
+                     def->element_size == 16u && def->byte_size == 16u && def->byte_offset == 80u &&
+                     wp_shader_program_get_param_buffer_size( program ) == 96u,
+                 "signed four-component vectors occupy a full native slot" );
+    ok &= check( wp_shader_program_register_uniform( program, "invalid", (wp_uniform_type)99 ) < 0,
+                 "unsupported uniform kinds are rejected" );
+
+    handle = wp_shader_program_get_param_handle( program, 2 );
+    ok &= check( wp_shader_program_validate_param_handle( program, handle ) &&
+                     handle.parameter_index == 2u && handle.byte_offset == 32u &&
+                     handle.element_size == 16u,
+                 "indexed handles validate against the exact current definition" );
+    forged = wp_shader_program_find_param( program, "indices" );
+    ok &= check( forged.owner == handle.owner && forged.definition_revision == handle.definition_revision &&
+                     forged.parameter_index == handle.parameter_index &&
+                     forged.byte_offset == handle.byte_offset && forged.element_size == handle.element_size,
+                 "named and indexed lookup resolve the same definition" );
+    ok &= check( !wp_shader_program_validate_param_handle( other, handle ) &&
+                     !wp_shader_program_validate_param_handle( NULL, handle ),
+                 "foreign and null programs reject indexed handles" );
+    forged = handle;
+    forged.parameter_index = (wp_u32)-1;
+    ok &= check( !wp_shader_program_validate_param_handle( program, forged ),
+                 "forged parameter indices are rejected before table access" );
+    forged = handle;
+    ++forged.byte_offset;
+    ok &= check( !wp_shader_program_validate_param_handle( program, forged ),
+                 "forged byte offsets are rejected" );
+    forged = handle;
+    ++forged.element_size;
+    ok &= check( !wp_shader_program_validate_param_handle( program, forged ),
+                 "forged element sizes are rejected" );
+    forged = handle;
+    ++forged.definition_revision;
+    ok &= check( !wp_shader_program_validate_param_handle( program, forged ),
+                 "forged definition revisions are rejected" );
+    forged = wp_shader_program_get_param_handle( program, -1 );
+    ok &= check( !wp_shader_param_handle_is_valid( forged ) &&
+                     !wp_shader_program_validate_param_handle( program, forged ) &&
+                     !wp_shader_param_handle_is_valid( wp_shader_program_get_param_handle( program, 4 ) ) &&
+                     !wp_shader_param_handle_is_valid( wp_shader_program_get_param_handle( NULL, 0 ) ),
+                 "invalid indexed lookups return empty handles" );
+    stale = handle;
+    index = wp_shader_program_register_param( program, "albedo", WORKPHONE_UNIFORM_TYPE_INT, 1u,
+                WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT, WORKPHONE_SHADER_AUTO_PARAM_NONE,
+                WORKPHONE_SHADER_RESOURCE_TEXTURE );
+    handle = wp_shader_program_get_param_handle( program, index );
+    ok &= check( index == 4 && wp_shader_program_validate_param_handle( program, handle ) &&
+                     !wp_shader_program_validate_param_handle( program, stale ),
+                 "resources expose valid indexed handles and new definitions invalidate older handles" );
+    wp_shader_program_destroy( other );
+    wp_shader_program_destroy( program );
+    return ok;
+}
+
 int main( void )
 {
     wp_shader *vertex;
@@ -222,6 +320,7 @@ int main( void )
     int ok;
 
     ok = material_storage_contracts();
+    ok &= parameter_definition_contracts();
     unbacked = wp_shader_create( WORKPHONE_SHADER_TYPE_VERTEX, WORKPHONE_SHADER_LANGUAGE_HLSL,
                                  "void main(){}", "main" );
     ok &= check( unbacked != NULL && wp_shader_compile( unbacked ) == 0 &&

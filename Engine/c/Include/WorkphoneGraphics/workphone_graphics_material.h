@@ -14,6 +14,7 @@
 #define WORKPHONE_GRAPHICS_MATERIAL_H
 
 #include <stdint.h>
+#include "workphone_graphics_memory.h"
 #include "workphone_color.h"
 #include "workphone_vector.h"
 
@@ -22,6 +23,13 @@ extern "C" {
 #endif
 
 typedef struct wp_graphics_material wp_graphics_material;
+typedef wp_graphics_memory_callbacks wp_material_memory_callbacks;
+
+/** Admit native descriptors, packed names and optional adapter callbacks before
+ * allocation. NULL preserves ordinary allocation. Clones inherit the policy;
+ * copy into an existing material uses the destination's policy. */
+WORKPHONE_API wp_graphics_material *wp_graphics_material_create_budgeted(
+    const wp_material_memory_callbacks *callbacks );
 typedef struct wp_renderer wp_renderer;
 typedef struct wp_shader_program wp_shader_program;
 
@@ -98,7 +106,8 @@ WORKPHONE_API wp_s32 wp_graphics_material_get_values( const wp_graphics_material
                                                      wp_graphics_material_values *values );
 WORKPHONE_API wp_s32 wp_graphics_material_set_values( wp_graphics_material *mat,
                                                      const wp_graphics_material_values *values );
-/** Live CPU storage, including allocated texture names (excludes backend allocations). */
+/** Payload CPU storage, including allocated texture names. Excludes allocator
+ * headers/padding and backend allocations; admission accounts native headers too. */
 WORKPHONE_API wp_u32 wp_graphics_material_get_storage_size( const wp_graphics_material *mat );
 
 /** Complete, serialisable CPU-side material description. */

@@ -4,6 +4,7 @@
 #include "ClawSceneLifetimeContracts.hpp"
 #include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
+#include "ClawMeshBudgetContracts.hpp"
 #include "ClawRTTJobContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Graphics/MaterialShader.hpp>
@@ -1053,7 +1054,8 @@ int main( int argc, char **argv )
         TypeManager::setInstance(nullptr); types.unload();
         return ok ? 0 : 1;
     }
-    bool ok = testParticleLifecycle();
+    bool ok = claw_mesh_budget_contracts::run();
+    ok &= testParticleLifecycle();
     ok &= claw_scene_node_transform_contracts::run();
     ok &= claw_material_pass_lifetime_contracts::run();
     ok &= claw_scene_lifetime_contracts::run();
@@ -1072,6 +1074,7 @@ int main( int argc, char **argv )
             ok &= check( recordDX11TestDevice( static_cast<ID3D11Device *>(
                              wp_renderer_dx11_get_device( native ) ) ),
                          "DX11 device evidence must be available" );
+            ok &= claw_mesh_budget_contracts::runRendered(renderer);
             ok &= testRenderedFeatures(renderer);
             ok &= testMaterialUploadWork(renderer);
             ok &= testRenderedFeatures(renderer); // Run the same pixel contracts with split constants.

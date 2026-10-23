@@ -1,5 +1,6 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <atomic>
 #include <limits>
 #include <memory_resource>
@@ -47,12 +48,12 @@ namespace workphone::render
         private:
             void *do_allocate(size_t count, size_t alignment) override
             {
-                auto result = std::pmr::new_delete_resource()->allocate(count, alignment);
+                auto result = allocateSourceBudgetStorage(count, alignment);
                 bytes += count; ++allocations; return result;
             }
             void do_deallocate(void *pointer, size_t count, size_t alignment) override
             {
-                std::pmr::new_delete_resource()->deallocate(pointer, count, alignment); bytes -= count;
+                freeSourceBudgetStorage(pointer, alignment); bytes -= count;
             }
             bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override
             { return this == &other; }
@@ -174,7 +175,7 @@ namespace workphone::render
         const MaterialRenderState::Ptr &state, size_t setIndex)
     {
         auto &set = m_sets[setIndex];
-        if(!m_store) m_store = std::make_shared<Store>();
+        if(!m_store) m_store = std::allocate_shared<Store>(SourceBudgetAllocator<Store>{});
         auto slot = m_store->find(state);
         if(!slot) { slot = &m_store->insert(state); ++m_preparations; }
         const auto way = set.next++ % Ways;

@@ -1,6 +1,7 @@
 #ifndef StateQueueStandard_h__
 #define StateQueueStandard_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/System/IStateQueue.hpp>
 #include <Workphone/Core/ConcurrentDeque.hpp>
@@ -57,10 +58,10 @@ namespace workphone
 
     protected:
         /// The message queue.
-        ConcurrentQueue<SmartPtr<IStateMessage>> m_messageQueue;
+        ConcurrentQueue<SmartPtr<IStateMessage>, SourceBudgetAllocator<SmartPtr<IStateMessage>>> m_messageQueue;
 
         /// The message queue.
-        ConcurrentDeque<SmartPtr<IState>> m_stateQueue;
+        ConcurrentDeque<SmartPtr<IState>, SourceBudgetAllocator<SmartPtr<IState>>> m_stateQueue;
 
         /// The state object that receives messages.
         AtomicSmartPtr<IStateContext> m_owner;

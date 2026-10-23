@@ -1,6 +1,7 @@
 #ifndef _CTexture_H
 #define _CTexture_H
 
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
@@ -21,9 +22,11 @@ namespace workphone
          * interface so textures can be managed by the resource system and used
          * by render code.
          */
-        class WPCore_API Texture : public ResourceGraphics<ITexture>
+        class WPCore_API Texture : public ResourceGraphics<ITexture>, public SourceBudgetObject
         {
         public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
             static const String sizeStr;
 
             class WPCore_API StateListener : public IStateListener

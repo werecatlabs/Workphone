@@ -16,6 +16,7 @@
 #define WORKPHONE_GRAPHICS_MESH_H
 
 #include <stdint.h>
+#include "workphone_graphics_memory.h"
 #include "workphone_vector.h"
 #include "workphone_graphics_vertex.h"
 #include "workphone_graphics_object.h"
@@ -31,6 +32,13 @@ extern "C" {
 typedef struct wp_graphics_mesh wp_graphics_mesh;
 typedef struct wp_renderer wp_renderer;
 typedef struct wp_graphics_material wp_graphics_material;
+
+/** Optional owner-supplied CPU allocation admission. A non-NULL reservation
+ * admits the allocation; NULL rejects it. working is non-zero for decoder
+ * scratch, zero for storage retained by the mesh. The reservation is released
+ * only after its physical allocation is freed, including replacement overlap.
+ * Callbacks must not throw. user must outlive decoding and all resulting meshes. */
+typedef wp_graphics_memory_callbacks wp_mesh_memory_callbacks;
 
 /* -------------------------------------------------------------------------
  * Vertex structs
@@ -196,6 +204,11 @@ uint64_t wp_graphics_mesh_get_content_generation( const wp_graphics_mesh *mesh )
  * @return Pointer to the created mesh, or NULL on allocation failure.
  */
 wp_graphics_mesh *wp_graphics_mesh_create( void );
+
+/** Creates a mesh with allocation callbacks copied into the mesh. NULL uses
+ * the ordinary allocator. Both function pointers must be supplied together.
+ * Covers the mesh object, geometry, submesh capacity and conversion caches. */
+wp_graphics_mesh *wp_graphics_mesh_create_budgeted( const wp_mesh_memory_callbacks *callbacks );
 
 /**
  * @brief Destroys a mesh and releases all owned vertex, index, and submesh memory.

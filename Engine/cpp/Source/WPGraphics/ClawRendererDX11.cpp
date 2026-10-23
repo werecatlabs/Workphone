@@ -931,9 +931,17 @@ namespace workphone::render
         } retireDirect{directRecords, m_directMaterialRecords};
         if(!records)
         {
-            if(!directRecords) directRecords = std::make_unique<ClawMaterialDrawRecords>();
-            directRecords->capture(mesh);
-            prepareMaterialRecords(*directRecords);
+            try
+            {
+                if(!directRecords) directRecords = std::make_unique<ClawMaterialDrawRecords>();
+                directRecords->capture(mesh);
+                prepareMaterialRecords(*directRecords);
+            }
+            catch( const std::bad_alloc & )
+            {
+                WP_LOG_WARNING( "Material record CPU budget denied; deferring draw." );
+                return 0;
+            }
             records = directRecords.get(); binding = records->find(mesh);
             if(!binding) return 0;
         }

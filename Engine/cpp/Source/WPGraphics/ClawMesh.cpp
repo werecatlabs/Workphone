@@ -96,12 +96,41 @@ namespace workphone
                 {
                     return nullptr;
                 }
+                StreamBudget workingBudget;
                 Array<wp_graphics_mesh_vertex_pnt> vertices;
                 Array<wp_u32> indices;
                 Array<Pair<wp_u32, wp_u32>> ranges;
                 Array<wp_u32> materials;
-                for( const auto &section : mesh->getSubMeshes() )
+                u64 vertexCount = 0, indexCount = 0, sectionCount = 0;
+                const auto sections = mesh->getNumSubMeshes();
+                for( u32 sectionIndex = 0; sectionIndex < sections; ++sectionIndex )
                 {
+                    const auto section = mesh->getSubMesh( sectionIndex );
+                    if( !section || section->getUseSharedVertices() ) return nullptr;
+                    auto vb = section->getVertexBuffer();
+                    auto ib = section->getIndexBuffer();
+                    if( !vb || !ib ) return nullptr;
+                    if( !vb->getNumVertices() || !ib->getNumIndices() ) continue;
+                    vertexCount += vb->getNumVertices();
+                    indexCount += ib->getNumIndices();
+                    ++sectionCount;
+                    if( vertexCount > std::numeric_limits<u32>::max() ||
+                        indexCount > std::numeric_limits<u32>::max() ) return nullptr;
+                }
+                if( !vertexCount || !indexCount ) return nullptr;
+                // Reserve all flattening scratch before vector growth. Native
+                // storage obtains independent SourceCpu leases for its copy.
+                workingBudget = asset_budget::reserveCpuBytes(
+                    vertexCount * sizeof( vertices[0] ) + indexCount * sizeof( indices[0] ) +
+                    sectionCount * ( sizeof( ranges[0] ) + sizeof( materials[0] ) ), true );
+                if( !workingBudget ) return nullptr;
+                vertices.reserve( static_cast<size_t>( vertexCount ) );
+                indices.reserve( static_cast<size_t>( indexCount ) );
+                ranges.reserve( static_cast<size_t>( sectionCount ) );
+                materials.reserve( static_cast<size_t>( sectionCount ) );
+                for( u32 sectionIndex = 0; sectionIndex < sections; ++sectionIndex )
+                {
+                    const auto section = mesh->getSubMesh( sectionIndex );
                     if( !section || section->getUseSharedVertices() )
                     {
                         return nullptr;
@@ -138,7 +167,8 @@ namespace workphone
                     const auto limit = std::numeric_limits<wp_u32>::max();
                     if( vertices.size() + vb->getNumVertices() > limit ||
                         indices.size() + ib->getNumIndices() > limit || ib->getNumIndices() % 3 != 0 ||
-                        !ib->getIndexData() )
+                        !ib->getIndexData() || vertices.size() + vb->getNumVertices() > vertexCount ||
+                        indices.size() + ib->getNumIndices() > indexCount || ranges.size() >= sectionCount )
                     {
                         return nullptr;
                     }
@@ -191,7 +221,7 @@ namespace workphone
                     return nullptr;
                 }
                 std::unique_ptr<wp_graphics_mesh, decltype( &wp_graphics_mesh_destroy )> result(
-                    wp_graphics_mesh_create(), &wp_graphics_mesh_destroy );
+                    asset_budget::createMesh(), &wp_graphics_mesh_destroy );
                 if( !result ||
                     !wp_graphics_mesh_set_vertices( result.get(), WORKPHONE_VERTEX_FORMAT_PNT,
                                                     vertices.data(),
@@ -243,7 +273,12 @@ namespace workphone
 
             if( !m_mesh )
             {
-                m_mesh = wp_graphics_mesh_create();
+                m_mesh = asset_budget::createMesh();
+                if( !m_mesh )
+                {
+                    setLoadingState( LoadingState::Unloaded );
+                    return;
+                }
             }
             if( m_renderObject )
             {
@@ -289,6 +324,13 @@ namespace workphone
                     return;
                 }
 
+                auto workingBudget = asset_budget::reserveCpuBytes( streamSize, true );
+                if( !workingBudget )
+                {
+                    WP_LOG_WARNING( "ClawMesh::load: CPU decode budget rejected: " + m_meshName.str() );
+                    setLoadingState( LoadingState::Unloaded );
+                    return;
+                }
                 Array<u8> bytes( streamSize );
                 if( stream->read( bytes.data(), streamSize ) != streamSize )
                 {
@@ -297,8 +339,8 @@ namespace workphone
                     return;
                 }
 
-                loadedMesh = wp_graphics_mesh_read_from_buffer( bytes.data(),
-                                                                static_cast<wp_u32>( bytes.size() ) );
+                loadedMesh = wp_graphics_mesh_read_from_buffer_budgeted( bytes.data(),
+                    static_cast<wp_u32>( bytes.size() ), &asset_budget::meshMemoryCallbacks );
             }
 
             if( !loadedMesh || wp_graphics_mesh_get_vertex_count( loadedMesh ) == 0 )
@@ -364,15 +406,13 @@ namespace workphone
                 return;
             }
             destroyNativeMesh( previous );
-            m_skinVertices.reset();
-            m_skinOutput.clear();
+            clearSkinningData();
         }
 
         void ClawMesh::unload( SmartPtr<ISharedObject> data )
         {
             NativeMeshLifecycleLock lifecycleLock;
-            m_skinVertices.reset();
-            m_skinOutput.clear();
+            clearSkinningData();
             setLoadingState( LoadingState::Unloading );
 
             bindNativeRenderObject( nullptr );
@@ -605,6 +645,13 @@ namespace workphone
             {
                 return false;
             }
+            auto workingBudget = asset_budget::reserveCpuBytes(
+                static_cast<u64>( WP_SKIN_MAX_JOINTS ) * sizeof( wp_mat4f ), true );
+            auto inputBudget = asset_budget::reserveCpuBytes(
+                static_cast<u64>( vertices.size() ) * sizeof( wp_skin_vertex ), false );
+            auto outputBudget = asset_budget::reserveCpuBytes(
+                static_cast<u64>( vertices.size() ) * sizeof( wp_skin_result ), false );
+            if( !workingBudget || !inputBudget || !outputBudget ) return false;
             // Validate indices/weights with an identity palette before publishing bind data.
             Array<wp_mat4f> identity( WP_SKIN_MAX_JOINTS );
             for( auto &matrix : identity )
@@ -622,7 +669,14 @@ namespace workphone
             {
                 return false;
             }
-            m_skinVertices = std::make_shared<const Array<wp_skin_vertex>>( vertices );
+            // Array's copy constructor preserves caller capacity. Allocate the
+            // exact bind size so unused caller capacity cannot bypass admission.
+            auto bind = std::make_shared<Array<wp_skin_vertex>>( vertices.size() );
+            std::copy( vertices.begin(), vertices.end(), bind->begin() );
+            clearSkinningData();
+            m_skinInputBudget = std::move( inputBudget );
+            m_skinVertices = std::move( bind );
+            m_skinOutputBudget = std::move( outputBudget );
             m_skinOutput = std::move( validated );
             return true;
         }
@@ -630,6 +684,14 @@ namespace workphone
         bool ClawMesh::hasSkinningData() const
         {
             return m_skinVertices && !m_skinVertices->empty();
+        }
+
+        void ClawMesh::clearSkinningData()
+        {
+            m_skinVertices.reset();
+            m_skinInputBudget.reset();
+            Array<wp_skin_result>().swap( m_skinOutput );
+            m_skinOutputBudget.reset();
         }
 
         bool ClawMesh::applySkinningPalette( const Array<wp_mat4f> &palette )
@@ -654,6 +716,8 @@ namespace workphone
             {
                 return false;
             }
+            auto workingBudget = asset_budget::reserveCpuBytes( static_cast<u64>( count ) * stride, true );
+            if( !workingBudget ) return false;
             Array<u8> vertices( static_cast<size_t>( count ) * stride );
             wp_graphics_obb previousBounds;
             const bool hasPreviousBounds =
@@ -671,8 +735,9 @@ namespace workphone
             {
                 return false;
             }
-            ClawRendererDX11::forgetMesh( m_mesh );
             // Reproject every deformed position; previous extents never constrain the new pose.
+            // Content generation drives transactional GPU replacement. Retain
+            // the old cache until the next generation is actually admitted.
             // Refresh a loose orientation when its surface proxy exceeds the current AABB by 50%.
             wp_graphics_mesh_refit_bounds_adaptive(
                 m_mesh, hasPreviousBounds ? &previousBounds : nullptr, 1.5 );
@@ -702,7 +767,7 @@ namespace workphone
                 }
             }
             std::unique_ptr<wp_graphics_mesh, decltype( &destroyNativeMesh )> candidate(
-                wp_graphics_mesh_create(), &destroyNativeMesh );
+                asset_budget::createMesh(), &destroyNativeMesh );
             if( !candidate || !wp_graphics_mesh_set_vertices( candidate.get(), WORKPHONE_VERTEX_FORMAT_PNTC, vertices.data(),
                                                 static_cast<u32>( vertices.size() ) ) ||
                 !wp_graphics_mesh_set_indices_u32( candidate.get(), indices.data(),
@@ -717,8 +782,7 @@ namespace workphone
             }
             // New authored geometry needs an explicit new binding; equal vertex
             // counts alone do not make the old skin indices/positions compatible.
-            m_skinVertices.reset();
-            m_skinOutput.clear();
+            clearSkinningData();
             auto previous = m_mesh;
             m_mesh = candidate.release();
             wp_graphics_mesh_compute_aabb( m_mesh );
@@ -735,6 +799,7 @@ namespace workphone
 
         SmartPtr<IGraphicsObject> ClawMesh::clone( const String &name ) const
         {
+            NativeMeshLifecycleLock lifecycleLock;
             auto mesh = workphone::make_ptr<ClawMesh>();
             mesh->setMeshName( name.empty() ? getMeshName() : name );
             mesh->setProgressiveMeshOptions( getProgressiveMeshOptions() );
@@ -757,7 +822,7 @@ namespace workphone
             if( m_mesh )
             {
                 std::unique_ptr<wp_graphics_mesh, decltype( &destroyNativeMesh )> candidate(
-                    wp_graphics_mesh_create(), &destroyNativeMesh );
+                    asset_budget::createMesh(), &destroyNativeMesh );
                 const auto vertices = wp_graphics_mesh_get_vertex_count( m_mesh );
                 const auto indices = wp_graphics_mesh_get_index_count( m_mesh );
                 if( !candidate ||
@@ -800,7 +865,12 @@ namespace workphone
                 wp_graphics_mesh_compute_aabb( candidate.get() );
                 if( !prepareNativeGeometry( candidate.get() ) ) return nullptr;
                 mesh->m_mesh = candidate.release();
+                auto outputBudget = asset_budget::reserveCpuBytes(
+                    static_cast<u64>( m_skinOutput.size() ) * sizeof( wp_skin_result ), false );
+                if( !m_skinOutput.empty() && !outputBudget ) return nullptr;
+                mesh->m_skinInputBudget = m_skinInputBudget;
                 mesh->m_skinVertices = m_skinVertices;
+                mesh->m_skinOutputBudget = std::move( outputBudget );
                 mesh->m_skinOutput = m_skinOutput;
                 mesh->setLoadingState( getLoadingState() );
             }

@@ -52,6 +52,9 @@
 #include "MaterialRenderCacheBenchmark.hpp"
 #include "MaterialPassStorageReference.hpp"
 #include "MaterialTextureColdStorageContracts.hpp"
+#include "ClawMaterialResidencyContracts.hpp"
+#include "ClawMaterialMetadataBudgetContracts.hpp"
+#include "GenericEngineCatalogBudgetContracts.hpp"
 
 namespace
 {
@@ -448,7 +451,7 @@ namespace
 
         Fixture()
         {
-            types.load();
+            generic_engine_catalog_budget_contracts::initializeTypes(types);
             TypeManager::setInstance( &types );
             app = make_ptr<core::ApplicationManager>();
             core::IApplicationManager::setInstance( app );
@@ -518,6 +521,7 @@ namespace
             states = nullptr;
             Thread::setCurrentTask( previousTask );
             TypeManager::setInstance( nullptr );
+            WorldStreamingScheduler::shutdownShared();
             types.unload();
             if( !root.empty() && root.parent_path() == fs::temp_directory_path() &&
                 root.filename().string().find( "workphone_material_sequence_" ) == 0 )
@@ -1958,7 +1962,7 @@ namespace
         class UnitProbe : public ClawMaterialTexture
         {
         public:
-            const String *pendingName() const { return m_unresolvedTextureName.get(); }
+            const SourceBudgetString *pendingName() const { return m_unresolvedTextureName.get(); }
         };
         class TextureProbe : public ClawTexture
         {
@@ -2005,7 +2009,7 @@ namespace
             const auto lookups = database->lookups;
             unit->setTextureName( name );
             require( unit->getTextureName() == name && !unit->getTexture() &&
-                     unit->getUnresolvedTextureNameObjectBytes() == sizeof( String ) &&
+                     unit->getUnresolvedTextureNameObjectBytes() == sizeof( SourceBudgetString ) &&
                      unit->pendingName() == pending && database->lookups == lookups + 1,
                      "unresolved names retain exact bytes and retry lookup without replacing cold storage" );
             auto properties = unit->getProperties();
@@ -2085,7 +2089,7 @@ namespace
         unloaded->setTexture( texture ); unloaded->setLoadingState( LoadingState::Loaded );
         unloaded->unload( nullptr );
         require( !unloaded->getTexture() && unloaded->getTextureName() == "ResolvedTexture" &&
-                 unloaded->getUnresolvedTextureNameObjectBytes() == sizeof( String ),
+                 unloaded->getUnresolvedTextureNameObjectBytes() == sizeof( SourceBudgetString ),
                  "released resolved resources hand their authoring name to cold storage during unload" );
         unloaded->setTexture( texture );
         require( unloaded->getUnresolvedTextureNameObjectBytes() == 0,
@@ -3759,8 +3763,12 @@ int main( int argc, char **argv )
                   << " authoring_material_bytes=" << sizeof(render::ClawMaterial)
                   << " authoring_texture_unit_bytes=" << sizeof(render::ClawMaterialTexture)
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
+        generic_engine_catalog_budget_contracts::bootstrap();
         Fixture fixture;
+        generic_engine_catalog_budget_contracts::run(fixture);
         material_texture_cold_contracts::run();
+        claw_material_residency_contracts::run( fixture );
+        claw_material_metadata_budget_contracts::run();
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-owned-storage" )
         {
             runOwnedStorageInventory( fixture, 10000 );

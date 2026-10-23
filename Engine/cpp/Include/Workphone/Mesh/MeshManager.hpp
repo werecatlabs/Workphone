@@ -1,6 +1,7 @@
 #ifndef __FBMeshManager__H
 #define __FBMeshManager__H
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/System/IResourceManager.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
@@ -468,7 +469,7 @@ namespace workphone
          * Contains all mesh objects currently managed by this manager.
          * Uses atomic shared pointer for thread-safe access.
          */
-        ConcurrentArray<SmartPtr<IMesh>> m_meshes;
+        SourceBudgetConcurrentArray<SmartPtr<IMesh>> m_meshes;
 
         /**
          * @brief Thread-safe collection of managed mesh resource objects.
@@ -476,7 +477,7 @@ namespace workphone
          * Contains all mesh resource objects currently managed by this manager.
          * Uses atomic shared pointer for thread-safe access.
          */
-        ConcurrentArray<SmartPtr<IMeshResource>> m_meshResources;
+        SourceBudgetConcurrentArray<SmartPtr<IMeshResource>> m_meshResources;
     };
 }  // namespace workphone
 

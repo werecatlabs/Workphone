@@ -576,6 +576,15 @@ namespace workphone
              */
             void loadObject( SmartPtr<ISharedObject> graphicsObject, bool forceQueue = false ) override;
 
+            struct AssetResidencyRelease
+            {
+                u32 materials = 0, textures = 0;
+            };
+            /** Inspect a bounded number of cache entries under graphics lifecycle
+             * ownership. Materials retire before textures so released bindings
+             * can make their source pixels eligible in the same pass. */
+            AssetResidencyRelease releaseUnusedAssets( u32 maximumCandidates = 32 );
+
             /**
              * @brief Reload a graphics object immediately or enqueue for reloading.
              */

@@ -1,6 +1,8 @@
 #include <EditorPCH.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
+#include <editor/ProjectSettingsRuntime.hpp>
+#include <editor/ProjectSettingsActions.hpp>
 #include <ui/ProjectWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <ui/ActorWindow.hpp>
@@ -85,6 +87,18 @@ namespace workphone::editor
             project->loadFromFile( filePath );
             setProjectPath( applicationManager->getProjectPath() );
             setCachePath( applicationManager->getCachePath() );
+
+            auto runtimeSettings = applyProjectSettingsRuntime( project->getProperties() );
+            if( !runtimeSettings->getPropertyAsBool( "success" ) )
+                WP_LOG_ERROR( runtimeSettings->getProperty( "status" ) );
+            if( auto settingsWindow = uiManager->getProjectSettingsWindow() )
+            {
+                auto settings = workphone::make_ptr<Properties>();
+                settings->setProperty( "action", String( "readProjectSettings" ) );
+                processProjectSettingsAction( settings );
+                if( settings->getPropertyAsBool( "success" ) )
+                    settingsWindow->setProperties( settings );
+            }
 
             if( auto editorSettings = applicationManager->getEditorSettings() )
             {

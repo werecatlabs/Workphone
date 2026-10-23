@@ -474,6 +474,7 @@ namespace workphone::render
 
     void MaterialPass::setTextureUnits( const Array<SmartPtr<IMaterialTexture>> &textures )
     {
+        SourceBudgetConcurrentArray<SmartPtr<IMaterialTexture>> next( textures.begin(), textures.end() );
         FixedArray<SmartPtr<ITexture>, MaterialRenderState::TextureCount> bindings{};
         for( u32 i = 0; i < textures.size() && i < bindings.size(); ++i )
             if( textures[i] ) bindings[i] = textures[i]->getTexture();
@@ -482,7 +483,7 @@ namespace workphone::render
                 if( auto previous = dynamic_pointer_cast<MaterialPass>( unit->getParent() ) )
                     if( previous.get() != this ) previous->removeTextureUnit( unit );
         detachTextureUnits();
-        m_textures = { textures.begin(), textures.end() };
+        m_textures = std::move(next);
         if( auto context = getStateContextPtr() )
             if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
                 for( u32 i = 0; i < bindings.size(); ++i ) state->setTextureBinding( i, bindings[i] );
@@ -517,7 +518,7 @@ namespace workphone::render
                     if(t) t->unload( nullptr );
                 }
 
-                m_textures.clear();
+                m_textures.releaseStorage();
 
                 MaterialNode<IMaterialPass>::unload( data );
                 setLoadingState( LoadingState::Unloaded );
@@ -652,6 +653,9 @@ namespace workphone::render
     void MaterialPass::addTextureUnit( SmartPtr<IMaterialTexture> textureUnit )
     {
         const auto texture = textureUnit ? textureUnit->getTexture() : nullptr;
+        // Denied inventory growth must not detach a foreign facade first.
+        if( m_textures.size() == m_textures.capacity() )
+            m_textures.reserve( std::max(size_t(1), m_textures.capacity() * 2) );
         if( textureUnit )
             if( auto previous = dynamic_pointer_cast<MaterialPass>( textureUnit->getParent() ) )
                 if( previous.get() != this ) previous->removeTextureUnit( textureUnit );
@@ -736,6 +740,11 @@ namespace workphone::render
     {
         const auto size = getNumTexturesNodes();
         for(u32 i = 0; i < size; ++i) getTextureUnit(i);
+        return m_textures.snapshot();
+    }
+
+    Array<SmartPtr<IMaterialTexture>> MaterialPass::getMaterializedTextureUnits() const
+    {
         return m_textures.snapshot();
     }
 

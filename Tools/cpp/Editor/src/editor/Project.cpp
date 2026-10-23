@@ -550,9 +550,16 @@ namespace workphone::editor
 
             if( auto scenes = app->getGameManager() )
             {
-                if( !m_currentScenePath.empty() )
+                // Preserve legacy projects' last-scene behavior until the explicit
+                // project preference is saved through Project Settings.
+                bool autoLoadLastScene = true;
+                properties->getPropertyValue( "project.autoLoadLastScene", autoLoadLastScene );
+                auto scenePath = autoLoadLastScene ? m_currentScenePath : String();
+                if( !autoLoadLastScene || scenePath.empty() )
+                    properties->getPropertyValue( "project.startupScene", scenePath );
+                if( !scenePath.empty() )
                 {
-                    scenes->loadScene( m_currentScenePath );
+                    scenes->loadScene( scenePath );
                 }
                 scenes->edit();
             }
@@ -567,10 +574,34 @@ namespace workphone::editor
         }
         const auto destination = checkedPath( filePath );
         auto properties = workphone::static_pointer_cast<Properties>( toData() );
-        writeProjectFile( destination, DataUtil::toString( properties.get(), true ) );
-        writeProjectFile(
-            destination.parent_path() / "GameGraphics.settings",
-            DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ) );
+        const auto graphicsPath = destination.parent_path() / "GameGraphics.settings";
+        const bool hadGraphics = fs::is_regular_file( graphicsPath );
+        String previousGraphics;
+        if( hadGraphics )
+        {
+            std::ifstream stream( graphicsPath, std::ios::binary );
+            if( !stream ) throw std::runtime_error( "Unable to read previous game graphics settings" );
+            std::ostringstream buffer;
+            buffer << stream.rdbuf();
+            if( stream.bad() ) throw std::runtime_error( "Unable to read previous game graphics settings" );
+            previousGraphics = buffer.str();
+        }
+        // Publish the main project only after its standalone graphics sidecar is
+        // writable. Restore that sidecar if publishing the main project fails.
+        writeProjectFile( graphicsPath,
+                          DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ) );
+        try
+        {
+            writeProjectFile( destination, DataUtil::toString( properties.get(), true ) );
+        }
+        catch( ... )
+        {
+            if( hadGraphics )
+                writeProjectFile( graphicsPath, previousGraphics );
+            else
+                fs::remove( graphicsPath );
+            throw;
+        }
         m_projectDirectory = destination.parent_path().u8string();
         m_projectPath = destination.u8string();
         m_selectedProjectPath = m_projectPath;
@@ -695,9 +726,23 @@ namespace workphone::editor
             copy->getPropertyValue( "version", m_version );
         }
         copy->getPropertyValue( "uuid", m_uuid );
-        copy->getPropertyValue( "label", m_label );
-        copy->getPropertyValue( "productName", m_productName );
-        copy->getPropertyValue( "companyName", m_companyName );
+        // The project settings panel uses namespaced keys. Keep the historical
+        // metadata in sync without treating the product version as the file schema.
+        const auto readIdentity = [&]( const char *legacyKey, const char *settingsKey, String &value ) {
+            auto legacyValue = value;
+            auto settingsValue = value;
+            const bool hasLegacy = copy->getPropertyValue( legacyKey, legacyValue );
+            const bool hasSettings = copy->getPropertyValue( settingsKey, settingsValue );
+            // A legacy inspector may edit a snapshot which also contains the new
+            // alias. Prefer the field which changed relative to the live value.
+            if( hasSettings && ( !hasLegacy || legacyValue == value || settingsValue != value ) )
+                value = settingsValue;
+            else if( hasLegacy )
+                value = legacyValue;
+        };
+        readIdentity( "label", "project.name", m_label );
+        readIdentity( "productName", "project.productName", m_productName );
+        readIdentity( "companyName", "project.company", m_companyName );
         copy->getPropertyValue( "currentScenePath", m_currentScenePath );
         copy->getPropertyValue( "workingDirectory", m_workingDirectory );
         copy->getPropertyValue( "applicationFilePath", m_applicationFilePath );
@@ -740,6 +785,9 @@ namespace workphone::editor
         properties->setProperty( "label", m_label );
         properties->setProperty( "productName", m_productName );
         properties->setProperty( "companyName", m_companyName );
+        properties->setProperty( "project.name", m_label );
+        properties->setProperty( "project.productName", m_productName );
+        properties->setProperty( "project.company", m_companyName );
         properties->setProperty( "currentScenePath", m_currentScenePath );
         properties->setProperty( "workingDirectory", m_workingDirectory );
         properties->setProperty( "applicationFilePath", m_applicationFilePath );
@@ -940,7 +988,8 @@ namespace workphone::editor
             }
             if( auto scripts = app->getScriptManager() )
             {
-                scripts->reload( nullptr );
+                // Defer Lua reload until its current callback has returned.
+                scripts->reloadScripts();
             }
         }
         catch( ... )

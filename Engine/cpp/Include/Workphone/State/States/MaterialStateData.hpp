@@ -1,6 +1,7 @@
 #ifndef __MaterialStateData_h__
 #define __MaterialStateData_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/State/States/StateData.hpp>
 
 namespace workphone
@@ -8,9 +9,11 @@ namespace workphone
     // Root lifecycle/type marker retained by the material's existing context.
     // Surface/texture values belong to MaterialPassStateData; resource identity
     // and paths belong to Material. Do not introduce a second value owner here.
-    class WPCore_API MaterialStateData : public StateData
+    class WPCore_API MaterialStateData : public StateData, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         MaterialStateData();
         ~MaterialStateData() override;
 

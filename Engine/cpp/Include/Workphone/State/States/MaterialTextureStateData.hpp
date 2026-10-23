@@ -1,14 +1,17 @@
 #ifndef MaterialTextureState_h__
 #define MaterialTextureState_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/State/States/StateData.hpp>
 
 namespace workphone
 {
 
-    class WPCore_API MaterialTextureStateData : public StateData
+    class WPCore_API MaterialTextureStateData : public StateData, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         MaterialTextureStateData();
         ~MaterialTextureStateData() override;
 

@@ -2,6 +2,8 @@
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Graphics/MaterialManager.hpp>
+#include <Workphone/Graphics/TextureManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/Graphics/IDebug.hpp>
@@ -139,9 +141,10 @@ namespace workphone::render
     void GraphicsSystem::update()
     {
         MaterialPublicationScope materialUpdates;
+        updateUnloadQueue();
+        releaseUnusedAssets();
         updateLoadQueue();
         updateReloadQueue();
-        updateUnloadQueue();
 
         for( auto &scene : m_scenes )
         {
@@ -229,6 +232,18 @@ namespace workphone::render
     SmartPtr<IFactoryManager> GraphicsSystem::getFactoryManager() const
     {
         return m_factoryManager;
+    }
+
+    GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssets( u32 maximumCandidates )
+    {
+        AssetResidencyRelease released;
+        if( !maximumCandidates ) return released;
+        ScopedLock lifecycleLock( this );
+        if( auto manager = dynamic_pointer_cast<MaterialManager>( getMaterialManager() ) )
+            released.materials = manager->releaseUnusedResources( maximumCandidates );
+        if( auto manager = dynamic_pointer_cast<TextureManager>( getTextureManager() ) )
+            released.textures = manager->releaseUnusedResources( maximumCandidates );
+        return released;
     }
 
     void GraphicsSystem::updateUnloadQueue()

@@ -12,6 +12,7 @@
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsObject.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <Workphone/ApplicationUtil.hpp>
@@ -342,6 +343,16 @@ namespace workphone::scene
                     meshCandidates[mesh->getHandle()->getUUIDAsString()] = mesh.get();
                 return true;
             } ), retired.end() );
+            // Native unload acknowledgement precedes cache reclamation. The
+            // existing graphics owner also sweeps on each update; this pass
+            // covers owner-thread/headless close and deferred Primary cleanup.
+            auto app = core::IApplicationManager::instancePtr();
+            if( auto graphics = app ? dynamic_pointer_cast<render::GraphicsSystem>( app->getGraphicsSystem() ) : nullptr )
+            {
+                const auto released = graphics->releaseUnusedAssets();
+                stats.releasedMaterialResources += released.materials;
+                stats.releasedTextureResources += released.textures;
+            }
             auto manager = retirementManager.lock();
             if( !manager ) { meshCandidates.clear(); return; }
             // Identity tickets add neither strong nor weak residency pins. This

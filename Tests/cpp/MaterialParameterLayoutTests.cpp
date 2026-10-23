@@ -721,6 +721,10 @@ namespace
 
 int main( int argc, char **argv )
 {
+    struct SchedulerShutdown
+    {
+        ~SchedulerShutdown() { workphone::WorldStreamingScheduler::shutdownShared(); }
+    } schedulerShutdown;
     try
     {
         contracts();

@@ -1,6 +1,7 @@
 #ifndef CMaterialManager_h__
 #define CMaterialManager_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
@@ -232,6 +233,10 @@ namespace workphone
              */
             void destroyAll() override;
 
+            /** Retire a bounded number of unowned, reloadable resident materials.
+             * Called on the graphics owner thread. Identity metadata stays cached. */
+            virtual u32 releaseUnusedResources( u32 maximumCandidates = 32 );
+
             /**
              * @brief Save a resource to disk.
              *
@@ -370,7 +375,7 @@ namespace workphone
              * where supported. Elements are SmartPtr<IMaterial> instances
              * representing the managed materials.
              */
-            ConcurrentArray<SmartPtr<IMaterial>> m_materials;
+            SourceBudgetConcurrentArray<SmartPtr<IMaterial>> m_materials;
         };
 
         inline IStateContext *MaterialManager::getStateContextPtr() const

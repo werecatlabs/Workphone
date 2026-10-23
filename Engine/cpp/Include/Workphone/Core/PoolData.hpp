@@ -149,7 +149,7 @@ namespace workphone
         size_Num m_numAllocated = 0;
 
         /// Queue of pointers to free elements available for allocation
-        Deque<T *> m_freeElements;
+        Deque<T *, typename std::allocator_traits<A>::template rebind_alloc<T *>> m_freeElements;
 
         /// The allocator used for memory management
         A m_alloc;

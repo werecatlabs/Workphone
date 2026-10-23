@@ -1,6 +1,7 @@
 #ifndef CMaterialNode_h__
 #define CMaterialNode_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Graphics/IMaterialNode.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
@@ -33,9 +34,11 @@ namespace workphone
          * platform-specific behaviour via the SharedGraphicsObject<T> base.
          */
         template <class T>
-        class MaterialNode : public T
+        class MaterialNode : public T, public SourceBudgetObject
         {
         public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
             /**
              * @brief Internal state listener used to tie node lifecycle to the state system.
              *
@@ -330,7 +333,7 @@ namespace workphone
             AtomicWeakPtr<IMaterialNode> m_parent;
 
             /// Child material nodes.
-            ConcurrentArray<SmartPtr<IMaterialNode>> m_children;
+            SourceBudgetConcurrentArray<SmartPtr<IMaterialNode>> m_children;
         };
 
         WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone::render, MaterialNode, T, T );
@@ -365,7 +368,7 @@ namespace workphone
         template <class T>
         void MaterialNode<T>::unload( SmartPtr<ISharedObject> data )
         {
-            m_children.clear();
+            m_children.releaseStorage();
             m_parent = nullptr;
         }
 

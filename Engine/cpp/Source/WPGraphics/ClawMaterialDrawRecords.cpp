@@ -1,6 +1,7 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/ClawMaterialDrawRecords.hpp>
 #include <Workphone/Graphics/Material.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include "ClawMeshMaterial.hpp"
 #include <atomic>
 #include <limits>
@@ -41,7 +42,7 @@ namespace workphone::render
         {
             const auto block = m_blocks;
             m_blocks = block->allNext;
-            std::pmr::new_delete_resource()->deallocate( block, block->total, block->allocationAlignment );
+            freeSourceBudgetStorage( block, block->allocationAlignment );
         }
     }
 
@@ -60,7 +61,7 @@ namespace workphone::render
         if( requested > std::numeric_limits<size_t>::max() - offset ) throw std::bad_alloc();
         const auto total = offset + requested;
         const auto allocationAlignment = std::max( alignment, alignof( Block ) );
-        auto pointer = std::pmr::new_delete_resource()->allocate( total, allocationAlignment );
+        auto pointer = allocateSourceBudgetStorage( total, allocationAlignment );
         auto block = ::new( pointer ) Block{ m_blocks, nullptr, requested, alignment, total, allocationAlignment };
         m_blocks = block;
         ++m_counters.allocations;
@@ -84,7 +85,7 @@ namespace workphone::render
             while( *link != block ) link = &( *link )->allNext;
             *link = block->allNext;
             const auto total = block->total, allocationAlignment = block->allocationAlignment;
-            std::pmr::new_delete_resource()->deallocate( block, total, allocationAlignment );
+            freeSourceBudgetStorage( block, allocationAlignment );
             m_counters.bytes -= total;
         }
     }
@@ -113,8 +114,13 @@ namespace workphone::render
         record.state = owner.state.get();
         const auto index = static_cast<u32>( m_records.size() );
         m_owners.push_back( std::move( owner ) );
-        m_records.push_back( record );
-        m_materials.emplace( record.material, index );
+        try
+        {
+            m_records.push_back( record );
+            try { m_materials.emplace( record.material, index ); }
+            catch(...) { m_records.pop_back(); throw; }
+        }
+        catch(...) { m_owners.pop_back(); throw; }
         return index;
     }
 
@@ -148,9 +154,13 @@ namespace workphone::render
         if( m_bindings.size() > std::numeric_limits<u32>::max() - count )
             throw std::length_error( "too many captured material bindings" );
         Binding binding{ m_publication, mesh, static_cast<u32>( m_bindings.size() ), count };
-        for( u32 section = 0; section < count; ++section )
-            m_bindings.push_back( captureMaterial( resolveMeshMaterial( mesh, section ) ) );
-        m_meshes.emplace( mesh, binding );
+        try
+        {
+            for( u32 section = 0; section < count; ++section )
+                m_bindings.push_back( captureMaterial( resolveMeshMaterial( mesh, section ) ) );
+            m_meshes.emplace( mesh, binding );
+        }
+        catch(...) { m_bindings.resize( binding.first ); throw; }
     }
 
     void ClawMaterialDrawRecords::clear()

@@ -134,7 +134,7 @@ namespace workphone
         size_t m_numAllocated = 0;
 
         /// List of pointers to free elements in the pool.
-        Deque<T *> m_freeElements;
+        Deque<T *, typename std::allocator_traits<A>::template rebind_alloc<T *>> m_freeElements;
 
         /// Allocator instance used for memory management.
         A m_alloc;
@@ -184,8 +184,7 @@ namespace workphone
             return;
         }
 
-        m_data = m_alloc.allocate( numElements );
-        freeAllElements();
+        setNumElements( numElements );
     }
 
     template <class T, class A>
@@ -203,38 +202,17 @@ namespace workphone
     template <class T, class A>
     void GenericPoolData<T, A>::setNumElements( size_t numElements )
     {
-        T *old_data = m_data;
-        m_freeElements.clear();
-
-        if( numElements > 0 )
-        {
-            m_data = m_alloc.allocate( numElements );
-
-            // Optionally copy old data if needed.
-            // auto numElementCopy = m_numAllocated < numElements ? m_numAllocated : numElements;
-            // for(size_t i = 0; i < numElementCopy; ++i)
-            // {
-            //     m_data[i] = old_data[i];
-            // }
-        }
-        else
-        {
-            m_data = nullptr;
-        }
-
-        if( old_data )
-        {
-            m_alloc.deallocate( old_data, m_numAllocated );
-        }
-
+        // Stage both allocations before changing the current block/free list.
+        decltype(m_freeElements) nextFree;
+        nextFree.resize(numElements);
+        T *next = numElements ? m_alloc.allocate(numElements) : nullptr;
+        for( size_t i = 0; i < numElements; ++i ) nextFree[i] = next + i;
+        auto old = m_data;
+        const auto oldCount = m_numAllocated;
+        m_data = next;
         m_numAllocated = numElements;
-
-        // Mark all elements as free.
-        auto element = getData();
-        for( size_t i = 0; element && i < m_numAllocated; ++i )
-        {
-            m_freeElements.push_back( element++ );
-        }
+        m_freeElements = std::move(nextFree);
+        if( old ) m_alloc.deallocate(old, oldCount);
     }
 
     template <class T, class A>

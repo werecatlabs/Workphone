@@ -1,5 +1,7 @@
 #ifndef __WP_MaterialShaderParameters_h__
 #define __WP_MaterialShaderParameters_h__
+#include <Workphone/System/SourceBudgetAllocator.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/WorkphoneTypes.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
@@ -63,6 +65,7 @@ namespace workphone::render
         size_t GetStorageBytes() const;
     private:
         struct Lookup { u64 id; u32 index; };
+        StreamBudget m_storageBudget;
         Array<MaterialShaderParameterInfo> m_info;
         Array<Lookup> m_lookup;
         Array<u8> m_defaults;

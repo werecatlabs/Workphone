@@ -239,10 +239,21 @@ namespace
         resources->setInstances( *instances );
         probe = nullptr;
         resources->unloadUnusedResources();
-        require( *calls == 1 && *unlocked && instances->size() == 1,
+        require( *calls == 0 && instances->size() == 1,
+                 "Caller-owned resource snapshots must pin their resources during cleanup" );
+        instances.reset();
+        resources->unloadUnusedResources();
+        if( *calls != 1 || !*unlocked )
+        {
+            auto retained = resources->getInstances();
+            std::cerr << "cleanup probe: calls=" << *calls << " unlocked=" << *unlocked
+                      << " inventory=" << retained.size() << " refs="
+                      << (retained.empty() ? 0 : retained[0]->getReferences()) << '\n';
+        }
+        require( *calls == 1 && *unlocked && resources->getInstances().size() == 1,
                  "Unload callbacks must run without holding the database mutex" );
         resources->removeUnusedResources();
-        require( *calls == 2 && *unlocked && instances->empty(),
+        require( *calls == 2 && *unlocked && resources->getInstances().empty(),
                  "Eviction must detach under lock and run callbacks after releasing it" );
         resources->setInstances( {} );
         Thread::setCurrentThreadId( originalThread );

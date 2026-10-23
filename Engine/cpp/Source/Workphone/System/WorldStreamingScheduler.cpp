@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
@@ -13,6 +14,48 @@
 
 namespace workphone
 {
+    namespace
+    {
+        struct SourceStorageHeader
+        {
+            StreamBudget budget;
+            size_t allocationAlignment;
+        };
+        size_t sourceStorageOffset( size_t alignment )
+        {
+            if( !alignment || ( alignment & ( alignment - 1 ) ) ||
+                alignment - 1 > std::numeric_limits<size_t>::max() - sizeof( SourceStorageHeader ) )
+                throw std::bad_alloc();
+            return ( sizeof( SourceStorageHeader ) + alignment - 1 ) & ~( alignment - 1 );
+        }
+    }
+    size_t sourceBudgetStorageBytes( size_t bytes, size_t alignment )
+    {
+        const auto offset = sourceStorageOffset( alignment );
+        if( bytes > std::numeric_limits<size_t>::max() - offset ) throw std::bad_alloc();
+        return offset + bytes;
+    }
+    void *allocateSourceBudgetStorage( size_t bytes, size_t alignment )
+    {
+        const auto total = sourceBudgetStorageBytes( bytes, alignment );
+        auto budget = WorldStreamingScheduler::reserveSharedSource( total );
+        if( !budget ) throw std::bad_alloc();
+        const auto allocationAlignment = std::max( alignment, alignof( SourceStorageHeader ) );
+        auto pointer = ::operator new( total, std::align_val_t( allocationAlignment ) );
+        ::new( pointer ) SourceStorageHeader{ std::move( budget ), allocationAlignment };
+        return static_cast<char *>( pointer ) + sourceStorageOffset( alignment );
+    }
+    void freeSourceBudgetStorage( void *pointer, size_t alignment ) noexcept
+    {
+        if( !pointer ) return;
+        auto header = reinterpret_cast<SourceStorageHeader *>(
+            static_cast<char *>( pointer ) - sourceStorageOffset( alignment ) );
+        auto budget = std::move( header->budget );
+        const auto allocationAlignment = header->allocationAlignment;
+        header->~SourceStorageHeader();
+        ::operator delete( header, std::align_val_t( allocationAlignment ) );
+        // Physical storage is gone before the reservation becomes available.
+    }
     namespace
     {
         thread_local const void *streamWorker = nullptr;
@@ -40,10 +83,42 @@ namespace workphone
     struct StreamBudgetState
     {
         mutable std::mutex mutex;
-        std::condition_variable wake;
+        // Retained service generations can share this ledger while each owns
+        // its own queue mutex. condition_variable requires one common mutex;
+        // condition_variable_any supports these independent queue locks.
+        std::condition_variable_any wake;
         std::array<u64, size_t( StreamMemoryClass::Count )> used{}, limits{};
         std::array<u64, size_t( StreamMemoryClass::Count )> peakUsed{}, rejectedReservations{};
     };
+    namespace
+    {
+        std::shared_ptr<StreamBudgetState> sharedAllocationLedger()
+        {
+            static auto state = [] {
+                auto value = std::make_shared<StreamBudgetState>();
+                value->limits = WorldStreamLimits{}.bytes;
+                return value;
+            }();
+            return state;
+        }
+    }
+    StreamBudget WorldStreamingScheduler::reserveSharedSource( u64 bytes )
+    {
+        auto state = sharedAllocationLedger();
+        auto lease = StreamBudget( new StreamBudgetLease(state, StreamMemoryClass::SourceCpu, 0) );
+        const auto index = size_t(StreamMemoryClass::SourceCpu);
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if( bytes > state->limits[index] || state->used[index] > state->limits[index] - bytes )
+        {
+            if( state->rejectedReservations[index] != std::numeric_limits<u64>::max() )
+                ++state->rejectedReservations[index];
+            return {};
+        }
+        state->used[index] += bytes;
+        state->peakUsed[index] = std::max(state->peakUsed[index], state->used[index]);
+        lease->m_bytes = bytes;
+        return lease;
+    }
     StreamBudgetLease::StreamBudgetLease( std::shared_ptr<StreamBudgetState> state,
                                           StreamMemoryClass category, u64 bytes ) :
         m_state( std::move( state ) ),
@@ -108,13 +183,14 @@ namespace workphone
         bool stopping = false;
         u64 nextId = 1, dispatch = 0, completed = 0, cancelled = 0;
         u32 pendingCount = 0, activeCount = 0, readyCount = 0, burst = 0;
-        explicit Impl( const WorldStreamLimits &settings ) : limits( settings )
+        explicit Impl( const WorldStreamLimits &settings, bool sharedLedger ) : limits( settings )
         {
             if( !limits.workers || limits.workers > 16 || !limits.maximumProducers ||
                 limits.maximumProducers > 4096 || !limits.maximumPending ||
                 limits.maximumPending > 65536 || !limits.maximumReady || limits.maximumReady > 256 )
                 throw std::invalid_argument( "Invalid world streaming worker/queue limits." );
-            budget->limits = limits.bytes;
+            if( sharedLedger ) budget = sharedAllocationLedger();
+            else budget->limits = limits.bytes;
         }
         bool reserveJob( u64 workBytes, u64 resultBytes, StreamBudget &work, StreamBudget &result )
         {
@@ -303,7 +379,9 @@ namespace workphone
     };
 
     WorldStreamingScheduler::WorldStreamingScheduler( const WorldStreamLimits &limits ) :
-        m_impl( std::make_shared<Impl>( limits ) )
+        WorldStreamingScheduler( limits, false ) {}
+    WorldStreamingScheduler::WorldStreamingScheduler( const WorldStreamLimits &limits, bool sharedLedger ) :
+        m_impl( std::make_shared<Impl>( limits, sharedLedger ) )
     {
         try
         {
@@ -355,7 +433,7 @@ namespace workphone
         auto &service = sharedScheduler();
         std::lock_guard<std::mutex> lock( service.mutex );
         if( !service.instance )
-            service.instance = std::make_shared<WorldStreamingScheduler>();
+            service.instance = std::shared_ptr<WorldStreamingScheduler>( new WorldStreamingScheduler({}, true) );
         return service.instance;
     }
     void WorldStreamingScheduler::shutdownShared()

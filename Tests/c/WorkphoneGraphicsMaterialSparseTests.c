@@ -212,6 +212,8 @@ static int callback_storage_contracts( void )
     return ok;
 }
 
+#include "WorkphoneGraphicsMaterialBudgetContracts.h"
+
 int main( void )
 {
     wp_graphics_material *material;
@@ -289,6 +291,7 @@ int main( void )
                  "clearing the final name needs no allocation" );
     wp_graphics_material_destroy( material );
     ok &= callback_storage_contracts();
+    ok &= material_budget_contracts();
     ok &= check( live_allocations == 0, "all material-owned allocations retire" );
     return ok ? 0 : 1;
 }

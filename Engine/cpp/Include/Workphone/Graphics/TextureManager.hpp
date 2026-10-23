@@ -1,6 +1,7 @@
 #ifndef TextureManager_h__
 #define TextureManager_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Graphics/ITextureManager.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
@@ -303,6 +304,12 @@ namespace workphone
              */
             Array<SmartPtr<ITexture>> getTextures() const override;
 
+            /** Release reloadable cache data from at most maximumCandidates entries.
+             * Implementations must preserve externally referenced or load-locked textures.
+             * The default backend keeps its resources resident.
+             */
+            virtual u32 releaseUnusedResources( u32 maximumCandidates = 32 );
+
             /**
              * @brief Get the raw pointer to the attached IStateContext.
              * Useful when C-style pointer access is required. The returned pointer is not
@@ -354,10 +361,10 @@ namespace workphone
             SmartPtr<IStateContext> m_stateContext;
 
             /** Internal storage for managed textures. */
-            ConcurrentArray<SmartPtr<ITexture>> m_textures;
+            SourceBudgetConcurrentArray<SmartPtr<ITexture>> m_textures;
 
             /** Internal storage for render target textures. */
-            ConcurrentArray<SmartPtr<ITexture>> m_renderTargets;
+            SourceBudgetConcurrentArray<SmartPtr<ITexture>> m_renderTargets;
         };
 
         inline IStateContext *TextureManager::getStateContextPtr() const

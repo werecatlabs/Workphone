@@ -41,7 +41,22 @@ namespace workphone::render
         const Array<MaterialShaderParameterInfo> &info )
     {
         static std::atomic<u64> nextId{ 1 };
-        auto layout = std::make_shared<MaterialShaderParameterLayout>();
+        u64 bufferBytes = info.capacity() * sizeof(MaterialShaderParameterInfo) + info.size() * sizeof(Lookup);
+        u64 valueBytes = 0;
+        for( const auto &p : info )
+        {
+            const auto stride = GetMaterialShaderParameterStride(p.m_type);
+            if( p.m_name.empty() || !stride ) return {};
+            valueBytes = ((valueBytes + 3ull) & ~3ull) + stride;
+            if( valueBytes > std::numeric_limits<u32>::max() ) return {};
+            // Includes inline names conservatively; a copied name never needs
+            // more heap capacity than the source string's retained capacity.
+            bufferBytes += p.m_name.capacity() + 1;
+        }
+        auto budget = reserveSourceBudgetBytes( static_cast<size_t>(bufferBytes + valueBytes) );
+        auto layout = std::allocate_shared<MaterialShaderParameterLayout>( SourceBudgetAllocator<MaterialShaderParameterLayout>{} );
+        layout->m_storageBudget = std::move(budget);
+        layout->m_lookup.reserve(info.size());
         layout->m_info = info;
         u64 offset = 0;
         for( u32 i = 0; i < layout->m_info.size(); ++i )
@@ -267,7 +282,7 @@ namespace workphone::render
             // Allocate before mutation/notification: failure leaves values and
             // revision intact. No-op and rejected writes never detach.
             if(!m_parametersMemory || !m_parametersMemory.unique())
-                m_parametersMemory = std::make_shared<Array<u8>>(memory);
+                m_parametersMemory = copySourceBudgetArray(memory);
             std::memcpy( m_parametersMemory->data() + h.m_offsetInBytes, value, size );
             ++m_revision;
             if( m_owner )

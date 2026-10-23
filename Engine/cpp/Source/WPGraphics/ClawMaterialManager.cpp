@@ -2,9 +2,18 @@
 #include <WPGraphics/ClawMaterialManager.hpp>
 #include <WPGraphics/ClawMaterial.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Core/Path.hpp>
 
 namespace workphone::render
 {
+    namespace
+    {
+        SmartPtr<IGraphicsSystem> materialGraphicsOwner()
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            return app ? app->getGraphicsSystem() : nullptr;
+        }
+    }
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMaterialManager, MaterialManager );
 
     ClawMaterialManager::ClawMaterialManager()
@@ -37,6 +46,7 @@ namespace workphone::render
 
     void ClawMaterialManager::load( SmartPtr<ISharedObject> data )
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         setLoadingState( LoadingState::Loading );
         MaterialManager::load( data );
         setLoadingState( LoadingState::Loaded );
@@ -44,6 +54,7 @@ namespace workphone::render
 
     void ClawMaterialManager::unload( SmartPtr<ISharedObject> data )
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
             if( getLoadingState() == LoadingState::Unloaded )
@@ -65,6 +76,7 @@ namespace workphone::render
     SmartPtr<IMaterial> ClawMaterialManager::cloneMaterial( SmartPtr<IMaterial> material,
                                                             const String &clonedMaterialName )
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
             if( !material )
@@ -110,8 +122,11 @@ namespace workphone::render
 
     SmartPtr<IResource> ClawMaterialManager::create( const String &uuid, const String &name )
     {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
+            if( !uuid.empty() ) if( auto existing = getById( uuid ) ) return existing;
+            if( !name.empty() ) if( auto existing = getByName( name ) ) return existing;
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
@@ -147,6 +162,54 @@ namespace workphone::render
         }
 
         return nullptr;
+    }
+
+    SmartPtr<IResource> ClawMaterialManager::loadFromFile( const String &filePath )
+    {
+        ScopedLock graphicsOwner( materialGraphicsOwner() );
+        // Keep one manager owner per identity. The base implementation appended
+        // the object twice and parsed again in load(), preventing retirement.
+        SmartPtr<IMaterial> material;
+        {
+            ScopedLock<decltype( m_materials )> lock( &m_materials );
+            for( const auto &entry : m_materials )
+                if( entry && entry->getFilePath() == filePath )
+                {
+                    material = entry;
+                    break;
+                }
+        }
+        if( !material )
+        {
+            material = dynamic_pointer_cast<IMaterial>( create( filePath ) );
+            if( material ) material->setName( Path::getFileNameWithoutExtension( filePath ) );
+        }
+        if( material && !material->isLoaded() ) material->load( nullptr );
+        return material;
+    }
+
+    u32 ClawMaterialManager::releaseUnusedResources( u32 maximumCandidates )
+    {
+        auto application = core::IApplicationManager::instancePtr();
+        auto graphics = application ? application->getGraphicsSystem() : nullptr;
+        if( !graphics || !maximumCandidates ) return 0;
+        ScopedLock graphicsLock( graphics );
+        const auto count = m_materials.size();
+        const auto candidates = std::min<size_t>( maximumCandidates, count );
+        u32 released = 0;
+        for( size_t i = 0; i < candidates; ++i )
+        {
+            SmartPtr<IMaterial> candidate;
+            {
+                ScopedLock<decltype( m_materials )> lock( &m_materials );
+                if( m_materials.empty() ) break;
+                m_evictionCursor %= m_materials.size();
+                candidate = m_materials[m_evictionCursor++];
+            }
+            if( auto material = dynamic_cast<ClawMaterial *>( candidate.get() ) )
+                if( material->releaseUnusedResources() ) ++released;
+        }
+        return released;
     }
 
     void ClawMaterialManager::_getObject( void **ppObject ) const

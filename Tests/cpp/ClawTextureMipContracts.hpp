@@ -3,12 +3,14 @@
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/ClawTextureManager.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
+#include <Workphone/Memory/WeakPtr.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/IO/FileSystem.hpp>
 #include <Workphone/IO/MemoryFile.hpp>
@@ -486,6 +488,7 @@ namespace claw_texture_mip_contracts
         {
         public:
             std::array<u8, 58> bitmap{};
+            bool available = true;
             BitmapFiles()
             {
                 bitmap[0] = 'B'; bitmap[1] = 'M'; bitmap[2] = 58;
@@ -496,6 +499,7 @@ namespace claw_texture_mip_contracts
             }
             SmartPtr<workphone::IStream> open( const String &name, bool, bool, bool, bool, bool ) override
             {
+                if( !available ) return nullptr;
                 return make_ptr<MemoryFile>( bitmap.data(), long( bitmap.size() ), name, false );
             }
         };
@@ -529,6 +533,135 @@ namespace claw_texture_mip_contracts
             auto pixels = sourceDenied.getCpuBaseMip( error );
             require( pixels && pixels->width == 1 && pixels->bgra[1] == 37,
                      "raw decode must retry after source-budget rejection without a source change" );
+        }
+        {
+            ClawTexture decoderDenied;
+            decoderDenied.setFilePath( "retry-decoder-working.bmp" );
+            const auto beforeDenied = scheduler->stats();
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                         decodeBaseline.used[working] + bitmapFiles->bitmap.size() + 64u * 1024u, error ),
+                     "decode test must admit encoded bytes/header while exhausting full bitmap capacity" );
+            decoderDenied.load( nullptr );
+            require( !decoderDenied.isLoaded() &&
+                         scheduler->stats().used[source] > beforeDenied.used[source] &&
+                         scheduler->stats().used[working] == beforeDenied.used[working],
+                     "bitmap payload denial retains charged cache metadata without publishing residency or retaining working buffers" );
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu, decodeBaseline.limits[working], error ),
+                     "decoder bitmap capacity must restore" );
+            decoderDenied.load( nullptr );
+            require( decoderDenied.isLoaded() && greenPixel( view( decoderDenied ) ) == 37,
+                     "full decode denial must retry through ordinary load without a source change" );
+        }
+        {
+            completeGpuWork( context );
+            const auto cacheBaseline = scheduler->stats();
+            ClawTextureManager manager;
+            manager.load( nullptr );
+            const String cacheUuid = "7d59fda4-9d40-4cd0-8e0e-59a73f0d9dbb";
+            auto resource = manager.create( cacheUuid, "cache-texture.bmp" );
+            auto *cached = dynamic_cast<ClawTexture *>( resource.get() );
+            require( cached != nullptr, "cache contract must create a Claw texture" );
+            require( cached->getHandle()->getUUIDAsString() == cacheUuid,
+                     "cache identity fixture must install a valid round-trippable UUID" );
+            resource->load( nullptr );
+            ComPtr<ID3D11ShaderResourceView> retained = view( *cached );
+            require( greenPixel( retained.Get() ) == 37, "cache source must upload expected pixels" );
+            const auto resident = scheduler->stats();
+            require( resident.used[source] > cacheBaseline.used[source] &&
+                         resident.used[gpu] > cacheBaseline.used[gpu],
+                     "decoded cache residency must participate in source and GPU budgets" );
+            require( manager.releaseUnusedResources() == 0,
+                     "external strong texture owners must prevent eviction" );
+            WeakPtr<IResource> weak = resource;
+            resource = nullptr;
+            require( manager.releaseUnusedResources() == 0,
+                     "weak texture clients must remain reload-safe and prevent eviction" );
+            weak = nullptr;
+            {
+                ISharedObject::ScopedLoadLock loadLock( cached );
+                require( manager.releaseUnusedResources() == 0,
+                         "explicit texture load locks must prevent eviction" );
+            }
+            bitmapFiles->available = false;
+            require( manager.releaseUnusedResources() == 0,
+                     "a missing reload source must preserve the sole resident texture data" );
+            bitmapFiles->available = true;
+            require( manager.releaseUnusedResources( 0 ) == 0 &&
+                         manager.releaseUnusedResources( 1 ) == 1 &&
+                         scheduler->stats().used[source] < resident.used[source] &&
+                         scheduler->stats().used[source] > cacheBaseline.used[source],
+                     "bounded eviction frees reloadable pixels while retaining charged wrapper inventory and cache metadata" );
+            require( scheduler->stats().used[gpu] == resident.used[gpu] &&
+                         greenPixel( retained.Get() ) == 37,
+                     "external native views must retain their physical GPU lease and pixels" );
+            resource = manager.getById( cacheUuid );
+            require( resource.get() == cached && !resource->isLoaded() &&
+                         cached->getHandle()->getUUIDAsString() == cacheUuid &&
+                         cached->getName() == "cache-texture.bmp" &&
+                         cached->getFilePath() == "cache-texture.bmp" &&
+                         manager.getByName( "cache-texture.bmp" ).get() == cached &&
+                         manager.getTextures().size() == 1,
+                     "eviction must retain the same UUID/path wrapper without creating duplicates" );
+            resource->load( nullptr );
+            require( view( *cached ) != retained.Get() && greenPixel( view( *cached ) ) == 37,
+                     "evicted textures must lazily decode and upload through the existing wrapper" );
+            std::array<u8, 4> authored{ 0, 99, 0, 255 };
+            cached->copyData( authored.data(), { 1, 1 } );
+            resource = nullptr;
+            require( manager.releaseUnusedResources() == 0,
+                     "authoring replacement pixels must remain pinned despite the original file path" );
+            require( greenPixel( view( *cached ) ) == 99,
+                     "a cache sweep must preserve in-memory authoring edits" );
+            retained.Reset();
+            manager.unload( nullptr );
+            completeGpuWork( context );
+            require( scheduler->stats().used[source] == cacheBaseline.used[source] &&
+                         scheduler->stats().used[gpu] == cacheBaseline.used[gpu],
+                     "cache fixture shutdown must release all physical texture storage" );
+        }
+        {
+            ClawTextureManager manager;
+            manager.load( nullptr );
+            for( const char *path : { "bounded-a.bmp", "bounded-b.bmp", "bounded-c.bmp" } )
+                manager.loadResource( path );
+            require( manager.releaseUnusedResources( 1 ) == 1 &&
+                         manager.releaseUnusedResources( 1 ) == 1 &&
+                         manager.releaseUnusedResources( 1 ) == 1 &&
+                         manager.releaseUnusedResources( 1 ) == 0,
+                     "rotating bounded sweeps must eventually visit each city texture exactly once" );
+            auto manual = manager.createManual( "manual.bmp", "", 0, 1, 1, 1, 0, 0 );
+            auto *manualIdentity = dynamic_cast<ClawTexture *>( manual.get() );
+            require( manualIdentity != nullptr, "manual texture contract must create its resource" );
+            std::array<u8, 4> authored{ 0, 91, 0, 255 };
+            manual->copyData( authored.data(), { 1, 1 } );
+            ComPtr<ID3D11ShaderResourceView> previousManualView = view( *manualIdentity );
+            const auto manualResident = scheduler->stats();
+            const auto previousUsage = manual->getUsageFlags();
+            const auto previousType = manualIdentity->getTextureType();
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, manualResident.used[source], error ),
+                     "manual replacement test must exhaust retained source capacity" );
+            require( !manager.createManual( "manual.bmp", "", u8( TextureType::TEX_TYPE_2D ),
+                         2, 2, 1, 0, 0, s32( TextureUsage::TU_DYNAMIC ) ) &&
+                         manual->getSize() == Vector2I( 1, 1 ) &&
+                         manual->getUsageFlags() == previousUsage && manualIdentity->getTextureType() == previousType &&
+                         view( *manualIdentity ) == previousManualView.Get() &&
+                         greenPixel( previousManualView.Get() ) == 91 &&
+                         scheduler->stats().used[source] == manualResident.used[source],
+                     "denied manual source admission must preserve dimensions, metadata, pixels and native view" );
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, decodeBaseline.limits[source], error ),
+                     "manual replacement source capacity must restore" );
+            auto replacement = manager.createManual( "manual.bmp", "", u8( TextureType::TEX_TYPE_2D ),
+                2, 2, 1, 0, 0, s32( TextureUsage::TU_DYNAMIC ) );
+            require( replacement.get() == manualIdentity && replacement->getSize() == Vector2I( 2, 2 ) &&
+                         replacement->getUsageFlags() == u32( TextureUsage::TU_DYNAMIC ) &&
+                         description( view( *manualIdentity ) ).Width == 2 && greenPixel( view( *manualIdentity ) ) == 0,
+                     "manual replacement must retry on the same identity after source capacity returns" );
+            replacement = nullptr;
+            previousManualView.Reset();
+            manual = nullptr;
+            require( manager.releaseUnusedResources() == 0,
+                     "procedural textures with file-like names must never become eviction candidates" );
+            manager.unload( nullptr );
         }
         fixture.application->setFileSystem( previousFiles );
         require( scheduler->stats().used[source] == decodeBaseline.used[source] &&

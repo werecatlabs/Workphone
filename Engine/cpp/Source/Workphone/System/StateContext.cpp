@@ -83,7 +83,7 @@ namespace workphone
         {
             ScopedLock lock( &m_states );
             removed = m_states.snapshot();
-            m_states.clear();
+            m_states.releaseStorage();
         }
     }
 
@@ -99,7 +99,7 @@ namespace workphone
         {
             ScopedLock lock( &m_stateListeners );
             removed = m_stateListeners.snapshot();
-            m_stateListeners.clear();
+            m_stateListeners.releaseStorage();
         }
     }
 
@@ -131,7 +131,7 @@ namespace workphone
         {
             ScopedLock lock( &m_eventListeners );
             removed = m_eventListeners.snapshot();
-            m_eventListeners.clear();
+            m_eventListeners.releaseStorage();
         }
     }
 
@@ -556,6 +556,19 @@ namespace workphone
             // Retain previous owners and losing candidates until outside the
             // queue lock: their destructors may re-enter this context.
             auto previousContext = message->getStateContext();
+            bool retainedByQueue = false;
+            struct RestoreMessageContext
+            {
+                SmartPtr<IStateMessage> message;
+                SmartPtr<IStateContext> previous;
+                bool &retained;
+                ~RestoreMessageContext()
+                {
+                    if( !retained )
+                        try { message->setStateContext(previous); }
+                        catch( ... ) {} // Extension callbacks cannot escape rollback.
+                }
+            } restoreMessageContext{message, previousContext, retainedByQueue};
             message->setStateContext( this );
             const auto enqueueExtension = [&]( SmartPtr<IStateQueue> queue ) {
                 bool accepted = false;
@@ -567,6 +580,7 @@ namespace workphone
                 }
                 if( !accepted ) return false;
                 queue->queueMessage( message );
+                retainedByQueue = true;
                 setDirtyFlag( 1u << iTask, true );
                 return true;
             };
@@ -578,7 +592,6 @@ namespace workphone
             {
                 if( !enqueueExtension( extensionQueue ) )
                 {
-                    message->setStateContext( previousContext );
                     return;
                 }
                 stateManager->addDirty( this, taskId );
@@ -612,6 +625,7 @@ namespace workphone
                         if( isCoreStateQueue( stateQueue.get() ) )
                         {
                             static_cast<StateQueue *>( stateQueue.get() )->StateQueue::queueMessage( message );
+                            retainedByQueue = true;
                             setDirtyFlag( 1u << iTask, true ); queued = true;
                         }
                     }
@@ -636,6 +650,7 @@ namespace workphone
                         if( !isCoreStateQueue( stateQueue.get() ) ) break;
                         auto concrete = static_cast<StateQueue *>( stateQueue.get() );
                         concrete->StateQueue::queueMessage( message );
+                        retainedByQueue = true;
                         setDirtyFlag( 1u << iTask, true );
                         queued = true;
                         break;
@@ -668,7 +683,6 @@ namespace workphone
                 queued = enqueueExtension( stateQueue );
             if( !queued )
             {
-                message->setStateContext( previousContext );
                 return;
             }
             // A concurrent unload may make this scheduling entry obsolete;
@@ -737,7 +751,8 @@ namespace workphone
             auto it = std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener );
             if( it != m_stateListeners.end() )
             {
-                m_stateListeners.erase( it );
+                std::move(std::next(it), m_stateListeners.end(), it);
+                m_stateListeners.pop_back();
                 removed = true;
             }
         }
@@ -788,7 +803,8 @@ namespace workphone
             auto it = std::find( m_eventListeners.begin(), m_eventListeners.end(), eventListener );
             if( it != m_eventListeners.end() )
             {
-                m_eventListeners.erase( it );
+                std::move(std::next(it), m_eventListeners.end(), it);
+                m_eventListeners.pop_back();
                 removed = true;
             }
         }
@@ -964,7 +980,8 @@ namespace workphone
             auto it = std::find( m_states.begin(), m_states.end(), state );
             if( it != m_states.end() )
             {
-                m_states.erase( it );
+                std::move(std::next(it), m_states.end(), it);
+                m_states.pop_back();
                 removed = true;
             }
         }

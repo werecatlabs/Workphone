@@ -2,6 +2,7 @@
 #include <ui/ScriptWindow.hpp>
 #include <editor/Project.hpp>
 #include <editor/EditorManager.hpp>
+#include <editor/ProjectSettingsActions.hpp>
 #include <ui/ProjectTreeData.hpp>
 #include <ui/UIManager.hpp>
 #include <commands/DragDropActorCmd.hpp>
@@ -158,7 +159,7 @@ namespace workphone::editor
 
     void ScriptWindow::setProperties( SmartPtr<Properties> properties )
     {
-        if( isWindowVisible() )
+        if( isWindowVisible() || getClassName() == "ProjectSettings" )
         {
             if( auto invoker = getInvoker() )
             {
@@ -175,7 +176,7 @@ namespace workphone::editor
 
     SmartPtr<Properties> ScriptWindow::getProperties() const
     {
-        if( isWindowVisible() )
+        if( isWindowVisible() || getClassName() == "ProjectSettings" )
         {
             auto properties = EditorWindow::getProperties();
 
@@ -194,6 +195,20 @@ namespace workphone::editor
         }
 
         return nullptr;
+    }
+
+    Parameter ScriptWindow::handleEvent( EventType eventType, hash_type eventValue,
+                                        const Array<Parameter> &arguments,
+                                        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
+                                        SmartPtr<IEvent> event )
+    {
+        if( getClassName() == "ProjectSettings" && eventType == EventType::UI &&
+            eventValue == static_cast<hash_type>( StringUtil::getHash32( "projectSettingsAction" ) ) )
+        {
+            processProjectSettingsAction( workphone::dynamic_pointer_cast<Properties>( object ) );
+            return {};
+        }
+        return EditorWindow::handleEvent( eventType, eventValue, arguments, sender, object, event );
     }
 
 }  // namespace workphone::editor

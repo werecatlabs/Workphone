@@ -31,6 +31,7 @@
 #    include "workphone.h"
 #    include "workphone_graphics_renderer_dx11.h"
 #    include "workphone_graphics_mesh.h"
+#    include "../WorkphoneGraphics/workphone_graphics_mesh_memory.h"
 #    include "workphone_graphics_dx11_pixel_shader.h"
 #    include "workphone_graphics_dx11_vertex_shader.h"
 
@@ -4155,7 +4156,7 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_d
     if( !vertices ) return NULL;
     output_count = strip ? ( count - 2u ) * 3u : count;
     if( (size_t)output_count > (size_t)-1 / sizeof( *indices ) ) return NULL;
-    indices = (wp_u32 *)malloc( (size_t)output_count * sizeof( *indices ) );
+    indices = (wp_u32 *)wp_mesh_memory_allocate_working( mesh, (size_t)output_count * sizeof( *indices ) );
     if( !indices ) return NULL;
     out = 0;
     for( i = 0; i <= count - 3u; i += strip ? 1u : 3u )
@@ -4168,7 +4169,7 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_d
             else
             { a = ( (const uint16_t *)source_indices )[a]; b = ( (const uint16_t *)source_indices )[b]; c = ( (const uint16_t *)source_indices )[c]; }
         }
-        if( a >= vertex_count || b >= vertex_count || c >= vertex_count ) { free( indices ); return NULL; }
+        if( a >= vertex_count || b >= vertex_count || c >= vertex_count ) { wp_mesh_memory_free( indices ); return NULL; }
         if( strip && ( i & 1u ) ) { swap = a; a = b; b = swap; }
         indices[out++] = a; indices[out++] = b; indices[out++] = c;
     }
@@ -4176,10 +4177,10 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_d
     {
         reservation = callbacks->reserve( callbacks->user,
             (wp_u64)vertex_count * sizeof( wp_vertex_pntc ) + (wp_u64)out * sizeof( wp_u32 ) );
-        if( !reservation ) { free( indices ); return NULL; }
+        if( !reservation ) { wp_mesh_memory_free( indices ); return NULL; }
     }
     geometry = wp_renderer_dx11_create_indexed_geometry_pntc( r, vertices, (wp_s32)vertex_count, indices, (wp_s32)out, 1 );
-    free( indices );
+    wp_mesh_memory_free( indices );
     if( reservation )
     {
         if( geometry && ( !callbacks->retain( reservation, geometry->vertex_buffer ) ||

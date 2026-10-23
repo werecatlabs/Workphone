@@ -16,35 +16,27 @@ namespace workphone
 
     void SQLiteQuery::setQuery( CppSQLite3Query &query )
     {
-        try
+        SourceBudgetArray<Rows> candidate;
+        while( !query.eof() )
         {
-            while( !query.eof() )
+            Rows currentRow;
+            const auto count = query.numFields();
+            currentRow.fields.reserve(count);
+            for( int index = 0; index < count; ++index )
             {
-                Rows currentRow;
-
-                int numFields = query.numFields();
-                currentRow.fields.reserve( numFields );
-
-                for( int index = 0; index < numFields; ++index )
-                {
-                    const char *pFieldName = query.fieldName( index );
-                    const char *pFieldValue = query.fieldValue( index );
-
-                    Field field;
-                    field.name = pFieldName ? pFieldName : "";
-                    field.value = pFieldValue ? pFieldValue : "";
-                    currentRow.fields.push_back( field );
-                }
-
-                m_rows.push_back( currentRow );
-
-                query.nextRow();
+                Field field;
+                const auto name = query.fieldName(index);
+                const auto value = query.fieldValue(index);
+                field.name = name ? name : "";
+                field.value = value ? value : "";
+                currentRow.fields.push_back(std::move(field));
             }
+            candidate.push_back(std::move(currentRow));
+            query.nextRow();
         }
-        catch( CppSQLite3Exception &e )
-        {
-            WP_LOG_ERROR( e.errorMessage() );
-        }
+        // No partial result is usable after denial or a sqlite read error.
+        m_rows.swap(candidate);
+        m_currentRow = 0;
     }
 
     SQLiteQuery::~SQLiteQuery()
@@ -293,7 +285,7 @@ namespace workphone
 
             for( auto &field : row.fields )
             {
-                child->setProperty( field.name, field.value );
+                child->setProperty( String(field.name), String(field.value) );
             }
         }
 

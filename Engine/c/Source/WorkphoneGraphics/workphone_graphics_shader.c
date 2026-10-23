@@ -28,14 +28,18 @@ static wp_u32 wp_uniform_type_size_bytes( wp_uniform_type type )
     switch( type )
     {
     case WORKPHONE_UNIFORM_TYPE_INT:
+    case WORKPHONE_UNIFORM_TYPE_UINT:
+    case WORKPHONE_UNIFORM_TYPE_BOOL:
         return 4u;
     case WORKPHONE_UNIFORM_TYPE_FLOAT:
         return 4u;
     case WORKPHONE_UNIFORM_TYPE_VEC2:
+    case WORKPHONE_UNIFORM_TYPE_IVEC2:
         return 8u;
     case WORKPHONE_UNIFORM_TYPE_VEC3:
         return 12u;
     case WORKPHONE_UNIFORM_TYPE_VEC4:
+    case WORKPHONE_UNIFORM_TYPE_IVEC4:
         return 16u;
     case WORKPHONE_UNIFORM_TYPE_MAT4:
         return 64u;
@@ -409,14 +413,9 @@ static wp_s32 wp_shader_program_valid_typed_index( const wp_shader_program *prog
 static wp_s32 wp_shader_program_handle_index( const wp_shader_program *program,
                                               wp_shader_param_handle handle, wp_uniform_type type )
 {
-    const wp_shader_param_def *def;
-    if( program == NULL || handle.element_size == 0u || handle.owner != program ||
-        handle.definition_revision != program->definition_revision ||
-        handle.parameter_index >= program->param_count )
+    if( !wp_shader_program_validate_param_handle( program, handle ) )
         return -1;
-    def = &program->param_defs[handle.parameter_index];
-    if( def->type != type || def->resource_kind != WORKPHONE_SHADER_RESOURCE_NONE ||
-        def->byte_offset != handle.byte_offset || def->element_size != handle.element_size )
+    if( !wp_shader_program_valid_typed_index( program, (wp_s32)handle.parameter_index, type ) )
         return -1;
     return (wp_s32)handle.parameter_index;
 }
@@ -1256,8 +1255,14 @@ const wp_shader_param_def *wp_shader_program_get_param_def( const wp_shader_prog
 wp_shader_param_handle wp_shader_program_find_param( const wp_shader_program *program,
                                                      const wp_c8 *name )
 {
+    return wp_shader_program_get_param_handle( program,
+                                                wp_shader_program_find_index( program, name ) );
+}
+
+wp_shader_param_handle wp_shader_program_get_param_handle( const wp_shader_program *program,
+                                                           wp_s32 index )
+{
     wp_shader_param_handle handle;
-    wp_s32 index;
 
     handle.owner = NULL;
     handle.element_size = 0u;
@@ -1265,8 +1270,7 @@ wp_shader_param_handle wp_shader_program_find_param( const wp_shader_program *pr
     handle.parameter_index = 0u;
     handle.definition_revision = 0u;
 
-    index = wp_shader_program_find_index( program, name );
-    if( index < 0 )
+    if( program == NULL || index < 0 || (wp_u32)index >= program->param_count )
     {
         return handle;
     }
@@ -1276,6 +1280,18 @@ wp_shader_param_handle wp_shader_program_find_param( const wp_shader_program *pr
     handle.parameter_index = (wp_u32)index;
     handle.definition_revision = program->definition_revision;
     return handle;
+}
+
+wp_s32 wp_shader_program_validate_param_handle( const wp_shader_program *program,
+                                                 wp_shader_param_handle handle )
+{
+    const wp_shader_param_def *def;
+    if( program == NULL || handle.element_size == 0u || handle.owner != program ||
+        handle.definition_revision != program->definition_revision ||
+        handle.parameter_index >= program->param_count )
+        return 0;
+    def = &program->param_defs[handle.parameter_index];
+    return def->byte_offset == handle.byte_offset && def->element_size == handle.element_size;
 }
 
 wp_s32 wp_shader_param_handle_is_valid( wp_shader_param_handle handle )

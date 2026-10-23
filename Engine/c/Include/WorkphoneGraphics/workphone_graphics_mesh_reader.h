@@ -53,6 +53,11 @@ wp_graphics_mesh *wp_graphics_mesh_read_from_file( FILE *file );
  */
 wp_graphics_mesh *wp_graphics_mesh_read_from_buffer( const void *data, wp_u32 size );
 
+/** Budgeted decoding; retained mesh allocations and temporary Ogre decode /
+ * flatten allocations use the callbacks before any physical allocation. */
+wp_graphics_mesh *wp_graphics_mesh_read_from_buffer_budgeted(
+    const void *data, wp_u32 size, const wp_mesh_memory_callbacks *callbacks );
+
 #ifdef __cplusplus
 }
 #endif

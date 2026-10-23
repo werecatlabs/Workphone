@@ -1042,6 +1042,11 @@ if (WP_EDITOR_TESTS)
         project_serialization_roundtrip_test
         project_legacy_defaults_and_dirty_test
         project_file_lifecycle_test
+        project_all_settings_file_roundtrip_test
+        project_settings_actions_test
+        project_settings_runtime_subsystem_contract_test
+        project_settings_runtime_graphics_director_test
+        project_settings_runtime_validation_and_capabilities_test
         project_loaded_cache_paths_test
         project_mesh_import_cache_test
         project_owner_and_unload_test
@@ -1049,6 +1054,7 @@ if (WP_EDITOR_TESTS)
         editor_script_manager_lua_support_test
         editor_script_window_owner_binding_test
         editor_script_window_properties_bridge_test
+        editor_project_settings_live_bridge_test
         editor_input_window_live_values_test
         editor_window_callbacks_disconnect_test
         editor_material_selection_visibility_test

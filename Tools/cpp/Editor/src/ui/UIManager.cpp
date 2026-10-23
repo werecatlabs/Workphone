@@ -937,15 +937,8 @@ namespace workphone::editor
 
         if( auto projectSettingsWindow = getProjectSettingsWindow() )
         {
-            auto properties = projectSettingsWindow->getProperties();
-            // Hidden script windows do not expose project properties. Closing the
-            // editor must still release the window and continue application teardown.
-            if( properties )
-            {
-                project->setProperties( properties );
-                project->save();
-            }
-
+            // Apply and Save own project mutations. Window teardown must not save
+            // an uncommitted draft or replace unrelated project metadata.
             projectSettingsWindow->unload( nullptr );
             setProjectSettingsWindow( nullptr );
         }

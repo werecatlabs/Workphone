@@ -67,6 +67,12 @@ static wp_s32 wpm_finite( float value )
 
 wp_graphics_mesh *wp_graphics_mesh_read_from_buffer( const void *data, wp_u32 size )
 {
+    return wp_graphics_mesh_read_from_buffer_budgeted( data, size, NULL );
+}
+
+wp_graphics_mesh *wp_graphics_mesh_read_from_buffer_budgeted(
+    const void *data, wp_u32 size, const wp_mesh_memory_callbacks *callbacks )
+{
     const uint8_t *p;
     uint32_t version;
     uint32_t vertex_format_u32;
@@ -102,7 +108,7 @@ wp_graphics_mesh *wp_graphics_mesh_read_from_buffer( const void *data, wp_u32 si
     /* Workphone's C++ serializer uses the Ogre chunked .mesh format. */
     if( size < 4u || memcmp( data, WP_MESH_FILE_MAGIC, 4u ) != 0 )
     {
-        return wp_graphics_mesh_read_ogre_from_buffer( data, size );
+        return wp_graphics_mesh_read_ogre_from_buffer_budgeted( data, size, callbacks );
     }
 
     if( size < WP_MESH_HEADER_SIZE )
@@ -201,7 +207,7 @@ wp_graphics_mesh *wp_graphics_mesh_read_from_buffer( const void *data, wp_u32 si
     }
 
     /* build the mesh */
-    mesh = wp_graphics_mesh_create();
+    mesh = wp_graphics_mesh_create_budgeted( callbacks );
     if( !mesh )
     {
         return NULL;

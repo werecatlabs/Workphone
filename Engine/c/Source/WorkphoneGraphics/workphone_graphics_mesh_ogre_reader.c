@@ -4,6 +4,7 @@
  */
 
 #include "workphone_graphics_mesh_ogre_reader.h"
+#include "workphone_graphics_mesh_memory.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,7 @@
 
 typedef struct mesh_cursor
 {
+    const wp_mesh_memory_callbacks *memory;
     const uint8_t *p;
     const uint8_t *end;
     wp_s32 swap;
@@ -91,6 +93,7 @@ typedef struct decoded_submesh
 
 typedef struct decoded_mesh
 {
+    const wp_mesh_memory_callbacks *memory;
     decoded_geometry shared_geometry;
     decoded_submesh *submeshes;
     wp_u32 submesh_count;
@@ -175,6 +178,7 @@ static wp_s32 read_chunk( mesh_cursor *cursor, mesh_chunk *chunk )
     chunk->payload.p = cursor->p;
     chunk->payload.end = cursor->p + payload_size;
     chunk->payload.swap = cursor->swap;
+    chunk->payload.memory = cursor->memory;
     cursor->p += payload_size;
     return 1;
 }
@@ -240,7 +244,7 @@ static wp_u32 material_hash( const uint8_t *name, size_t length )
 
 static void free_geometry( decoded_geometry *geometry )
 {
-    free( geometry->vertices );
+    wp_mesh_memory_free( geometry->vertices );
     memset( geometry, 0, sizeof( *geometry ) );
 }
 
@@ -250,25 +254,28 @@ static void free_decoded_mesh( decoded_mesh *mesh )
     free_geometry( &mesh->shared_geometry );
     for( i = 0u; i < mesh->submesh_count; ++i )
     {
-        free( mesh->submeshes[i].indices );
+        wp_mesh_memory_free( mesh->submeshes[i].indices );
         free_geometry( &mesh->submeshes[i].geometry );
     }
-    free( mesh->submeshes );
+    wp_mesh_memory_free( mesh->submeshes );
     memset( mesh, 0, sizeof( *mesh ) );
 }
 
-static wp_s32 allocate_geometry( decoded_geometry *geometry, wp_u32 count )
+static wp_s32 allocate_geometry( decoded_geometry *geometry, wp_u32 count,
+                                 const wp_mesh_memory_callbacks *memory )
 {
     wp_u32 i;
     if( count == 0u || (size_t)count > (size_t)-1 / sizeof( decoded_vertex ) )
     {
         return 0;
     }
-    geometry->vertices = (decoded_vertex *)calloc( count, sizeof( decoded_vertex ) );
+    geometry->vertices = (decoded_vertex *)wp_mesh_memory_allocate(
+        memory, (size_t)count * sizeof( decoded_vertex ), 1 );
     if( !geometry->vertices )
     {
         return 0;
     }
+    memset( geometry->vertices, 0, (size_t)count * sizeof( decoded_vertex ) );
     geometry->count = count;
     for( i = 0u; i < count; ++i )
     {
@@ -375,17 +382,17 @@ static wp_s32 parse_declaration( mesh_cursor cursor, vertex_element **out_elemen
         wp_u32 new_capacity;
         if( !read_chunk( &cursor, &chunk ) || chunk.id != CHUNK_VERTEX_ELEMENT )
         {
-            free( elements );
+            wp_mesh_memory_free( elements );
             return 0;
         }
         if( count == capacity )
         {
             new_capacity = capacity == 0u ? 8u : capacity * 2u;
-            grown =
-                (vertex_element *)realloc( elements, (size_t)new_capacity * sizeof( vertex_element ) );
+            grown = (vertex_element *)wp_mesh_memory_reallocate( cursor.memory,
+                elements, (size_t)new_capacity * sizeof( vertex_element ), 1 );
             if( !grown )
             {
-                free( elements );
+                wp_mesh_memory_free( elements );
                 return 0;
             }
             elements = grown;
@@ -413,7 +420,7 @@ static wp_s32 parse_declaration( mesh_cursor cursor, vertex_element **out_elemen
     return 1;
 
 declaration_error:
-    free( elements );
+    wp_mesh_memory_free( elements );
     return 0;
 }
 
@@ -503,7 +510,8 @@ static wp_s32 parse_geometry( mesh_cursor *cursor, decoded_geometry *geometry )
     elements = NULL;
     element_count = 0u;
     wp_u32 next_id;
-    if( !read_u32( cursor, &vertex_count ) || !allocate_geometry( geometry, vertex_count ) )
+    if( !read_u32( cursor, &vertex_count ) ||
+        !allocate_geometry( geometry, vertex_count, cursor->memory ) )
     {
         return 0;
     }
@@ -514,7 +522,7 @@ static wp_s32 parse_geometry( mesh_cursor *cursor, decoded_geometry *geometry )
             goto geometry_error;
         if( chunk.id == CHUNK_VERTEX_DECLARATION )
         {
-            free( elements );
+            wp_mesh_memory_free( elements );
             elements = NULL;
             element_count = 0u;
             if( !parse_declaration( chunk.payload, &elements, &element_count ) )
@@ -530,11 +538,11 @@ static wp_s32 parse_geometry( mesh_cursor *cursor, decoded_geometry *geometry )
                 goto geometry_error;
         }
     }
-    free( elements );
+    wp_mesh_memory_free( elements );
     return ( geometry->attributes & ATTR_POSITION ) != 0u;
 
 geometry_error:
-    free( elements );
+    wp_mesh_memory_free( elements );
     return 0;
 }
 
@@ -545,8 +553,8 @@ static wp_s32 add_submesh( decoded_mesh *mesh, decoded_submesh **submesh )
     if( mesh->submesh_count == mesh->submesh_capacity )
     {
         new_capacity = mesh->submesh_capacity == 0u ? 4u : mesh->submesh_capacity * 2u;
-        grown = (decoded_submesh *)realloc( mesh->submeshes,
-                                            (size_t)new_capacity * sizeof( decoded_submesh ) );
+        grown = (decoded_submesh *)wp_mesh_memory_reallocate( mesh->memory, mesh->submeshes,
+                                            (size_t)new_capacity * sizeof( decoded_submesh ), 1 );
         if( !grown )
         {
             return 0;
@@ -584,7 +592,8 @@ static wp_s32 parse_submesh( mesh_cursor *cursor, decoded_mesh *mesh )
     {
         if( (size_t)submesh->index_count > (size_t)-1 / sizeof( wp_u32 ) )
             return 0;
-        submesh->indices = (wp_u32 *)malloc( (size_t)submesh->index_count * sizeof( wp_u32 ) );
+        submesh->indices = (wp_u32 *)wp_mesh_memory_allocate( mesh->memory,
+            (size_t)submesh->index_count * sizeof( wp_u32 ), 1 );
         if( !submesh->indices )
             return 0;
         for( i = 0u; i < submesh->index_count; ++i )
@@ -779,12 +788,13 @@ static wp_graphics_mesh *build_mesh( const decoded_mesh *source )
     if( (size_t)total_vertices > (size_t)-1 / stride ||
         ( total_indices && (size_t)total_indices > (size_t)-1 / sizeof( wp_u32 ) ) )
         return NULL;
-    vertices = (uint8_t *)malloc( (size_t)total_vertices * stride );
-    indices = total_indices ? (wp_u32 *)malloc( (size_t)total_indices * sizeof( wp_u32 ) ) : NULL;
+    vertices = (uint8_t *)wp_mesh_memory_allocate( source->memory, (size_t)total_vertices * stride, 1 );
+    indices = total_indices ? (wp_u32 *)wp_mesh_memory_allocate(
+        source->memory, (size_t)total_indices * sizeof( wp_u32 ), 1 ) : NULL;
     if( !vertices || ( total_indices && !indices ) )
     {
-        free( vertices );
-        free( indices );
+        wp_mesh_memory_free( vertices );
+        wp_mesh_memory_free( indices );
         return NULL;
     }
 
@@ -826,33 +836,34 @@ static wp_graphics_mesh *build_mesh( const decoded_mesh *source )
         index_offset += source->submeshes[i].index_count;
     }
 
-    mesh = wp_graphics_mesh_create();
+    mesh = wp_graphics_mesh_create_budgeted( source->memory );
     if( !mesh || !wp_graphics_mesh_set_vertices( mesh, format, vertices, total_vertices ) )
     {
         wp_graphics_mesh_destroy( mesh );
         goto build_error;
     }
-    free( vertices );
+    wp_mesh_memory_free( vertices );
     vertices = NULL;
     if( total_indices && max_index <= 65535u )
     {
-        indices16 = (uint16_t *)malloc( (size_t)total_indices * sizeof( uint16_t ) );
+        indices16 = (uint16_t *)wp_mesh_memory_allocate(
+            source->memory, (size_t)total_indices * sizeof( uint16_t ), 1 );
         if( !indices16 )
             goto mesh_error;
         for( i = 0u; i < total_indices; ++i )
             indices16[i] = (uint16_t)indices[i];
         if( !wp_graphics_mesh_set_indices_u16( mesh, indices16, total_indices ) )
         {
-            free( indices16 );
+            wp_mesh_memory_free( indices16 );
             goto mesh_error;
         }
-        free( indices16 );
+        wp_mesh_memory_free( indices16 );
     }
     else if( total_indices && !wp_graphics_mesh_set_indices_u32( mesh, indices, total_indices ) )
     {
         goto mesh_error;
     }
-    free( indices );
+    wp_mesh_memory_free( indices );
     indices = NULL;
     index_offset = 0u;
     for( i = 0u; i < source->submesh_count; ++i )
@@ -875,12 +886,18 @@ static wp_graphics_mesh *build_mesh( const decoded_mesh *source )
 mesh_error:
     wp_graphics_mesh_destroy( mesh );
 build_error:
-    free( vertices );
-    free( indices );
+    wp_mesh_memory_free( vertices );
+    wp_mesh_memory_free( indices );
     return NULL;
 }
 
 wp_graphics_mesh *wp_graphics_mesh_read_ogre_from_buffer( const void *data, wp_u32 size )
+{
+    return wp_graphics_mesh_read_ogre_from_buffer_budgeted( data, size, NULL );
+}
+
+wp_graphics_mesh *wp_graphics_mesh_read_ogre_from_buffer_budgeted(
+    const void *data, wp_u32 size, const wp_mesh_memory_callbacks *callbacks )
 {
     mesh_cursor cursor;
     uint16_t raw_header;
@@ -889,7 +906,7 @@ wp_graphics_mesh *wp_graphics_mesh_read_ogre_from_buffer( const void *data, wp_u
     size_t version_length;
     decoded_mesh decoded;
     wp_graphics_mesh *mesh;
-    if( !data || size < 3u )
+    if( !data || size < 3u || !wp_mesh_memory_valid( callbacks ) )
         return NULL;
     memcpy( &raw_header, data, sizeof( raw_header ) );
     if( raw_header == CHUNK_HEADER )
@@ -899,6 +916,7 @@ wp_graphics_mesh *wp_graphics_mesh_read_ogre_from_buffer( const void *data, wp_u
     else
         return NULL;
     cursor.p = (const uint8_t *)data;
+    cursor.memory = callbacks;
     cursor.end = cursor.p + size;
     if( !read_u16( &cursor, &header ) || header != CHUNK_HEADER ||
         !read_line( &cursor, &version, &version_length ) )
@@ -911,6 +929,7 @@ wp_graphics_mesh *wp_graphics_mesh_read_ogre_from_buffer( const void *data, wp_u
         return NULL;
 
     memset( &decoded, 0, sizeof( decoded ) );
+    decoded.memory = callbacks;
     if( !skip_chunk_header( &cursor, CHUNK_MESH ) || !parse_mesh( cursor, &decoded ) )
     {
         free_decoded_mesh( &decoded );

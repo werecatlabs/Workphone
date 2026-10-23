@@ -3,6 +3,13 @@
 #include "WPGraphics/ClawUtil.hpp"
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_material.h"
+#include <Workphone/Graphics/MaterialPass.hpp>
+#include <Workphone/Graphics/MaterialTexture.hpp>
+#include <Workphone/Core/DataUtil.hpp>
+#include <Workphone/Core/Path.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/State/States/MaterialPassStateData.hpp>
+#include "ClawAssetBudget.hpp"
 
 namespace workphone
 {
@@ -22,7 +29,7 @@ namespace workphone
         const String ClawMaterial::textureNamesStr = "textureNames";
         const String ClawMaterial::dirtyStr = "dirty";
 
-        ClawMaterial::ClawMaterial() : m_material( wp_graphics_material_create() )
+        ClawMaterial::ClawMaterial() : m_material( asset_budget::createMaterial() )
         {
             if( !m_material )
             {
@@ -43,7 +50,7 @@ namespace workphone
         {
             if( !m_material )
             {
-                m_material = wp_graphics_material_create();
+                m_material = asset_budget::createMaterial();
                 if( !m_material )
                 {
                     WP_LOG_ERROR( "ClawMaterial::loadResource: failed to create native material." );
@@ -85,10 +92,226 @@ namespace workphone
             {
                 return;
             }
-            createMaterialByType();
-            Material::load( data );
-            syncNativeMaterial();
-            setLoadingState( LoadingState::Loaded );
+            try
+            {
+                setLoadingState( LoadingState::Loading );
+                loadResource( nullptr );
+                if( !m_material ) throw std::bad_alloc();
+                createMaterialByType();
+                Material::load( data );
+                syncNativeMaterial();
+                setLoadingState( LoadingState::Loaded );
+                if( m_documentWorkingBytes )
+                {
+                    String error;
+                    auto working = WorldStreamingScheduler::shared()->reserve(
+                        StreamMemoryClass::SourceCpu, m_documentWorkingBytes, error );
+                    if( !working ) throw std::runtime_error( error.c_str() );
+                    auto document = authoringDocument();
+                    if( document.capacity() + 1 > m_documentWorkingBytes )
+                        throw std::runtime_error( "Material authoring document exceeds its preparation allowance" );
+                    auto retained = WorldStreamingScheduler::shared()->reserve(
+                        StreamMemoryClass::SourceCpu, document.capacity() + 1, error );
+                    if( !retained ) throw std::runtime_error( error.c_str() );
+                    m_residentDocument.swap( document );
+                    m_documentBudget = std::move( retained );
+                    m_fileResident = true;
+                }
+            }
+            catch( ... )
+            {
+                // An admission failure must remain retryable by normal manager
+                // lookup/load after the owner thread retires other resources.
+                unload( nullptr );
+                throw;
+            }
+        }
+
+        void ClawMaterial::loadFromFile( const String &filePath )
+        {
+            auto application = core::IApplicationManager::instance();
+            auto files = application->getFileSystem();
+            // The preparation guard compares physical byte counts. Binary reads
+            // preserve CRLF bytes on Windows so a stable text file is not rejected.
+            auto stream = files->open( filePath, true, true, false, false, false );
+            if( !stream ) stream = files->open( filePath, true, true, false, true, true );
+            if( !stream ) return; // Procedural names are not reloadable assets.
+            const u64 bytes = stream->size();
+            // Bound descriptor parsing independently of the city cell count.
+            // This allowance covers text, parsed properties and serialization;
+            // immutable render versions carry their own exact reservations.
+            if( bytes > ( 1ull << 20 ) )
+                throw std::runtime_error( "Material source exceeds the 1 MiB descriptor limit" );
+            const u64 preparationBytes = bytes * 32 + ( 64ull << 10 );
+            String error;
+            auto preparation = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::SourceCpu, preparationBytes, error );
+            if( !preparation ) throw std::runtime_error( error.c_str() );
+            String text;
+            text.resize( static_cast<size_t>( bytes ) );
+            stream->seek( 0 );
+            size_t offset = 0;
+            while( offset < text.size() )
+            {
+                const auto read = stream->read( &text[offset], text.size() - offset );
+                if( !read ) throw std::runtime_error( "Material source changed during preparation" );
+                offset += read;
+            }
+            char extra;
+            if( stream->read( &extra, 1 ) )
+                throw std::runtime_error( "Material source grew during preparation" );
+            auto properties = make_ptr<Properties>();
+            DataUtil::parse( text, properties.get() );
+            fromData( properties );
+            FileInfo fileInfo;
+            if( files->findFileInfo( filePath, fileInfo ) ) setFileSystemId( fileInfo.fileId );
+            setFilePath( filePath );
+            m_documentWorkingBytes = Path::getFileExtension( filePath ) == ".mat" ? preparationBytes : 0;
+        }
+
+        String ClawMaterial::authoringDocument() const
+        {
+            auto properties = static_pointer_cast<Properties>( toData() );
+            if( !properties ) throw std::runtime_error( "Material serialization failed" );
+            // Include shader parameters and native/editor aliases as well as
+            // the pass graph. Equality protects every serialized authoring edit.
+            auto editor = getProperties();
+            if( !editor ) throw std::runtime_error( "Material properties serialization failed" );
+            editor->removeProperty( ISharedObject::referencesStr );
+            editor->removeProperty( ISharedObject::weakReferencesStr );
+            editor->removeProperty( ISharedObject::loadingStateStr );
+            editor->removeProperty( dirtyStr );
+            editor->setName( "residentEditorProperties" );
+            properties->addChild( editor );
+            const auto sanitize = [&]( const auto &self, Properties &node ) -> void {
+                node.removeProperty( ISharedObject::referencesStr );
+                node.removeProperty( ISharedObject::weakReferencesStr );
+                node.removeProperty( ISharedObject::loadingStateStr );
+                node.removeProperty( ISharedObject::loadedStr );
+                if( node.getName() == "textures" && node.getProperty( "texturePath" ).empty() )
+                    node.removeProperty( "texturePath" ); // Empty lazy facade equals an empty slot.
+                for( const auto &child : node.getChildren() ) if( child ) self( self, *child );
+            };
+            sanitize( sanitize, *properties );
+            return DataUtil::toString( properties.get(), false );
+        }
+
+        void ClawMaterial::unload( SmartPtr<ISharedObject> data )
+        {
+            Material::unload( data );
+            // The base class clears the list but also caches its primary graph.
+            m_pass = nullptr;
+            m_technique = nullptr;
+            m_cubeTexture = nullptr;
+            std::atomic_store( &m_cubicTextures, CubicTextureSnapshot{} );
+            m_syncedRenderState.reset();
+            m_syncedNativeRevision = 0;
+            if( m_material ) wp_graphics_material_destroy( m_material );
+            m_material = nullptr;
+            m_fileResident = false;
+            m_documentWorkingBytes = 0;
+            String().swap( m_residentDocument );
+            m_documentBudget.reset();
+        }
+
+        bool ClawMaterial::releaseUnusedResources()
+        {
+            if( !m_fileResident || !isLoaded() || isLoadLocked() || getReferences() != 2 || m_root.load() )
+                return false;
+            try
+            {
+                auto application = core::IApplicationManager::instance();
+                auto files = application->getFileSystem();
+                // Never destroy the sole copy after its backing source disappears.
+                auto source = files->open( getFilePath(), true, false, false, false, false );
+                if( !source ) source = files->open( getFilePath(), true, false, false, true, true );
+                if( !source || !source->size() || source->size() > ( 1ull << 20 ) ) return false;
+
+                s32 materialWeakOwners = 0;
+                if( auto context = getStateContext() )
+                {
+                    if( context->getOwnerPtr() == this ) ++materialWeakOwners;
+                    for( const auto &listener : context->getStateListeners() )
+                        if( auto owner = dynamic_cast<MaterialStateListener *>( listener.get() ) )
+                            if( owner->getOwner().get() == this ) ++materialWeakOwners;
+                }
+                const auto techniques = getTechniques();
+                for( const auto &technique : techniques )
+                {
+                    if( !technique ) continue;
+                    // One list owner, this bounded inspection and the optional
+                    // primary cache are the only permitted strong owners.
+                    const s32 techniqueOwners = 2 + ( m_technique.get() == technique.get() );
+                    if( technique->isLoadLocked() || !technique->isEnabled() ||
+                        technique->getReferences() != techniqueOwners ) return false;
+                    if( technique->getMaterial().get() == this ) ++materialWeakOwners;
+                    else return false;
+                    s32 techniqueWeakOwners = 0;
+                    const auto passes = technique->getPasses();
+                    for( const auto &pass : passes )
+                    {
+                        if( !pass ) continue;
+                        const s32 passOwners = 2 + ( m_pass.get() == pass.get() );
+                        if( pass->isLoadLocked() || !pass->isEnabled() ||
+                            pass->getReferences() != passOwners ) return false;
+                        if( pass->getMaterial().get() == this ) ++materialWeakOwners;
+                        else return false;
+                        if( pass->getParentPtr() == technique.get() ) ++techniqueWeakOwners;
+                        else return false;
+                        auto concretePass = dynamic_cast<MaterialPass *>( pass.get() );
+                        if( !concretePass ) return false;
+                        s32 passWeakOwners = 0;
+                        if( auto context = pass->getStateContext() )
+                        {
+                            auto state = context->getStateById( pass->getId() );
+                            if( !state || state->getOwnerPtr() != pass.get() ) return false;
+                            // The managed state and its texture binding observer
+                            // each retain an intrinsic weak back-reference.
+                            if( !state->getData() || !state->getData()->isDerived<MaterialPassStateData>() )
+                                return false;
+                            passWeakOwners += 2;
+                        }
+                        const auto units = concretePass->getMaterializedTextureUnits();
+                        for( const auto &unit : units )
+                        {
+                            if( !unit ) continue;
+                            auto concreteUnit = dynamic_cast<MaterialTexture *>( unit.get() );
+                            // Scale/tint/animation facades are not fully represented
+                            // by legacy .mat serialization; retain those edits.
+                            if( !concreteUnit || concreteUnit->getTextureAuthoringStorageBytes() ||
+                                unit->isLoadLocked() || !unit->isEnabled() ||
+                                unit->getReferences() != 2 || unit->getWeakReferences() != 0 )
+                                return false;
+                            if( unit->getMaterial().get() == this ) ++materialWeakOwners;
+                            else return false;
+                            if( unit->getParentPtr() == pass.get() ) ++passWeakOwners;
+                            else return false;
+                        }
+                        if( pass->getWeakReferences() != passWeakOwners ) return false;
+                    }
+                    if( technique->getWeakReferences() != techniqueWeakOwners ) return false;
+                }
+                if( getWeakReferences() != materialWeakOwners ) return false;
+                String error;
+                auto working = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::WorkingCpu, m_documentWorkingBytes, error );
+                if( !working ) return false;
+                if( authoringDocument() != m_residentDocument ) return false;
+                // All serialized authoring values still match the reload source.
+                // Independently retained draw snapshots keep their own textures
+                // and SourceCpu reservations through their final reader.
+                unload( nullptr );
+                m_shaderAuthoring.reset();
+                m_legacySurface.reset();
+                m_shaderParameters = MaterialShaderParametersInstance{};
+                m_shaderWorkflow = ShaderWorkflow::Legacy;
+                return true;
+            }
+            catch( const std::exception &error )
+            {
+                WP_LOG_WARNING( "Material eviction deferred: " + String( error.what() ) );
+                return false;
+            }
         }
 
         void ClawMaterial::syncNativeMaterial() const

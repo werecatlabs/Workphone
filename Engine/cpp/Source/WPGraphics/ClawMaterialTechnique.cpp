@@ -43,6 +43,9 @@ namespace workphone::render
     {
         if( pass )
         {
+            // Admit collection growth before changing a caller-owned pass.
+            if( m_passes.size() == m_passes.capacity() )
+                m_passes.reserve( std::max(size_t(1), m_passes.capacity() * 2) );
             pass->setMaterial( getMaterial() );
             pass->setParent( this );
             m_passes.push_back( pass );
@@ -76,12 +79,13 @@ namespace workphone::render
 
     Array<SmartPtr<IMaterialPass>> ClawMaterialTechnique::getPasses() const
     {
-        return m_passes;
+        return { m_passes.begin(), m_passes.end() };
     }
 
     void ClawMaterialTechnique::setPasses( Array<SmartPtr<IMaterialPass>> passes )
     {
-        m_passes = passes;
+        SourceBudgetArray<SmartPtr<IMaterialPass>> next( passes.begin(), passes.end() );
+        m_passes.swap( next );
         for( auto pass : passes ) if( pass )
         {
             pass->setMaterial( getMaterial() );

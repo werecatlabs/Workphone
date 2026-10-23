@@ -1,6 +1,7 @@
 #ifndef ClawMaterialTechnique_h__
 #define ClawMaterialTechnique_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/MaterialTechnique.hpp>
 
@@ -86,7 +87,7 @@ namespace workphone::render
 
     protected:
         hash32 m_scheme = 0;                      ///< Scheme hash identifier for this technique.
-        Array<SmartPtr<IMaterialPass>> m_passes;  ///< Collection of passes for this technique.
+        SourceBudgetArray<SmartPtr<IMaterialPass>> m_passes;  ///< Collection of passes for this technique.
     };
 }  // namespace workphone::render
 

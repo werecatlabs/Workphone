@@ -2,16 +2,20 @@
 #include <Workphone/Workphone.hpp>
 
 #include <editor/Project.hpp>
+#include <editor/ProjectSettingsActions.hpp>
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
 #    include <filesystem>
 #    include <fstream>
+#    include <regex>
+#    include <sstream>
 #    include <stdexcept>
 #    include <Workphone/System/ApplicationManager.hpp>
 #    include <Workphone/System/PluginManager.hpp>
 #    include <Workphone/Database/ResourceDatabase.hpp>
 #    include <Workphone/Mesh/MeshSerializer.hpp>
+#    include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
 #    include <EditorApplication.hpp>
 #    include <ui/SceneWindow.hpp>
 #    include <ui/UIManager.hpp>
@@ -133,6 +137,41 @@ namespace
             std::filesystem::remove_all( path, ignored );
         }
     };
+
+    struct ProjectSettingSchemaEntry
+    {
+        String name;
+        String type;
+    };
+
+    Array<ProjectSettingSchemaEntry> readProjectSettingsUiSchema()
+    {
+        auto root = std::filesystem::path( __FILE__ );
+        for( int i = 0; i < 6; ++i )
+        {
+            root = root.parent_path();
+        }
+        std::ifstream script( root / "bin/Media/Scripts/Lua/Editor/ProjectSettings.lua" );
+        BOOST_REQUIRE_MESSAGE( script, "Cannot read the project settings UI schema" );
+        std::ostringstream scriptBuffer;
+        scriptBuffer << script.rdbuf();
+        const auto source = scriptBuffer.str();
+        const auto schemaBegin = source.find( "local ProjectSettingsStoreMap" );
+        const auto schemaEnd = source.find( "local PlatformNames", schemaBegin );
+        BOOST_REQUIRE( schemaBegin != std::string::npos );
+        BOOST_REQUIRE( schemaEnd != std::string::npos );
+        const auto schema = source.substr( schemaBegin, schemaEnd - schemaBegin );
+        const std::regex pattern(
+            R"wp(\w+\s*=\s*\{\s*name\s*=\s*"([^"]+)"\s*,\s*type\s*=\s*"([^"]+)"\s*\})wp" );
+        Array<ProjectSettingSchemaEntry> definitions;
+        for( auto entry = std::sregex_iterator( schema.begin(), schema.end(), pattern );
+             entry != std::sregex_iterator(); ++entry )
+        {
+            definitions.push_back( { ( *entry )[1].str(), ( *entry )[2].str() } );
+        }
+        BOOST_REQUIRE_GE( definitions.size(), 120u );
+        return definitions;
+    }
 }  // namespace
 
 BOOST_AUTO_TEST_CASE( project_serialization_roundtrip_test )
@@ -192,6 +231,318 @@ BOOST_AUTO_TEST_CASE( project_serialization_roundtrip_test )
     result->getChild( "customGroup" )->setProperty( "setting", "snapshot mutation" );
     BOOST_CHECK_EQUAL( restored.getProperties()->getChild( "customGroup" )->getProperty( "setting" ),
                        "original" );
+}
+
+BOOST_AUTO_TEST_CASE( project_all_settings_file_roundtrip_test )
+{
+    // Read the actual UI schema so adding a control also extends persistence coverage.
+    auto settings = workphone::make_ptr<Properties>();
+    size_t settingCount = 0;
+    for( const auto &definition : readProjectSettingsUiSchema() )
+    {
+        const auto &name = definition.name;
+        const auto &type = definition.type;
+        BOOST_REQUIRE_MESSAGE( !settings->hasProperty( name ), "Duplicate setting: " << name );
+        if( type == "bool" )
+        {
+            settings->setProperty( name, settingCount % 2 == 0 );
+        }
+        else if( type == "int" )
+        {
+            settings->setProperty( name, static_cast<s32>( settingCount + 17 ) );
+        }
+        else if( type == "float" )
+        {
+            settings->setProperty( name, static_cast<f32>( settingCount ) + 0.375f );
+        }
+        else
+        {
+            BOOST_REQUIRE_EQUAL( type, "string" );
+            settings->setProperty( name, String( "kept; \"escaped\"\n" ) + name );
+        }
+        ++settingCount;
+    }
+    settings->setProperty( "project.name", "Settings Roundtrip" );
+    settings->setProperty( "project.company", String() );
+    settings->setProperty( "project.productName", "Settings Product" );
+    settings->setProperty( "project.version", "4.5.6" );
+    settings->setProperty( "graphics.fullscreen", false );
+    settings->setProperty( "sound.outputDevice", s32( 0 ) );
+    settings->setProperty( "build.signingProfile", String() );
+
+    ProjectTestDirectory temporary;
+    Project project;
+    project.create( ( temporary.path / "All settings" ).u8string() );
+    auto properties = project.getProperties();
+    const auto schemaVersion = properties->getProperty( "projectVersion" );
+    const auto uuid = properties->getProperty( "uuid" );
+    for( const auto &setting : settings->getPropertiesAsArray() )
+    {
+        properties->setProperty( setting );
+    }
+    properties->setProperty( "unrecognisedProjectSetting", "keep extension data" );
+    auto extension = workphone::make_ptr<Properties>();
+    extension->setName( "Custom Extension" );
+    auto nested = workphone::make_ptr<Properties>();
+    nested->setName( "Nested Settings" );
+    nested->setProperty( "enabled", false );
+    nested->setProperty( "empty", String() );
+    nested->setProperty( "count", s32( 0 ) );
+    extension->addChild( nested );
+    properties->addChild( extension );
+    project.setProperties( properties );
+    BOOST_CHECK( project.isDirty() );
+    project.save();
+    BOOST_CHECK( !project.isDirty() );
+
+    Project restored;
+    restored.loadFromFile( project.getFilePath() );
+    BOOST_CHECK( !restored.isDirty() );
+    auto result = restored.getProperties();
+    for( const auto &expected : settings->getPropertiesAsArray() )
+    {
+        BOOST_TEST_CONTEXT( "Project setting " << expected.getName() )
+        {
+            Property actual;
+            BOOST_REQUIRE( result->getProperty( expected.getName(), actual ) );
+            BOOST_CHECK_EQUAL( actual.getTypeName(), expected.getTypeName() );
+            BOOST_CHECK_EQUAL( actual.getValue(), expected.getValue() );
+        }
+    }
+    BOOST_CHECK_EQUAL( restored.getLabel(), "Settings Roundtrip" );
+    BOOST_CHECK_EQUAL( result->getProperty( "companyName" ), "" );
+    BOOST_CHECK_EQUAL( result->getProperty( "productName" ), "Settings Product" );
+    BOOST_CHECK_EQUAL( result->getProperty( "projectVersion" ), schemaVersion );
+    BOOST_CHECK_EQUAL( result->getProperty( "uuid" ), uuid );
+    BOOST_CHECK_EQUAL( result->getProperty( "unrecognisedProjectSetting" ), "keep extension data" );
+    auto restoredExtension = result->getChild( "Custom Extension" );
+    BOOST_REQUIRE( restoredExtension );
+    auto restoredNested = restoredExtension->getChild( "Nested Settings" );
+    BOOST_REQUIRE( restoredNested );
+    bool enabled = true;
+    s32 count = -1;
+    String empty = "not empty";
+    BOOST_REQUIRE( restoredNested->getPropertyValue( "enabled", enabled ) );
+    BOOST_REQUIRE( restoredNested->getPropertyValue( "count", count ) );
+    BOOST_REQUIRE( restoredNested->getPropertyValue( "empty", empty ) );
+    BOOST_CHECK( !enabled );
+    BOOST_CHECK_EQUAL( count, 0 );
+    BOOST_CHECK( empty.empty() );
+
+    result->setProperty( "project.name", "Changed snapshot" );
+    restoredNested->setProperty( "enabled", true );
+    BOOST_CHECK_EQUAL( restored.getLabel(), "Settings Roundtrip" );
+    BOOST_CHECK_EQUAL( restored.getProperties()->getProperty( "project.name" ), "Settings Roundtrip" );
+    BOOST_CHECK_EQUAL( restored.getProperties()->getChild( "Custom Extension" )
+                           ->getChild( "Nested Settings" )->getProperty( "enabled" ), "false" );
+}
+
+BOOST_AUTO_TEST_CASE( project_settings_actions_test )
+{
+    ProjectTestDirectory temporary;
+    struct EditorGuard
+    {
+        SmartPtr<EditorManager> previous = EditorManager::getSingleton();
+        SmartPtr<core::IApplicationManager> previousApp = core::IApplicationManager::instance();
+        SmartPtr<EditorManager> editor = workphone::make_ptr<EditorManager>();
+        SmartPtr<core::ApplicationManager> app = workphone::make_ptr<core::ApplicationManager>();
+
+        EditorGuard()
+        {
+            EditorManager::setSingletonPtr( editor );
+            core::IApplicationManager::setInstance( app );
+        }
+
+        ~EditorGuard()
+        {
+            EditorManager::setSingletonPtr( previous );
+            core::IApplicationManager::setInstance( previousApp );
+        }
+    } guard;
+    auto project = workphone::make_ptr<Project>();
+    project->create( ( temporary.path / "Command project" ).u8string() );
+    guard.editor->setProject( project );
+    const auto requestFor = []( const String &action ) {
+        auto request = workphone::make_ptr<Properties>();
+        request->setProperty( "action", action );
+        return request;
+    };
+    const auto checkSuccess = []( SmartPtr<Properties> request ) {
+        BOOST_REQUIRE_MESSAGE( request->getPropertyAsBool( "success" ),
+                               request->getProperty( "status" ) );
+    };
+
+    auto read = requestFor( "readProjectSettings" );
+    processProjectSettingsAction( read );
+    checkSuccess( read );
+    BOOST_CHECK_EQUAL( read->getProperty( "project.name" ), project->getLabel() );
+    for( const auto &definition : readProjectSettingsUiSchema() )
+    {
+        BOOST_TEST_CONTEXT( "Native schema for " << definition.name )
+        {
+            Property setting;
+            BOOST_REQUIRE( read->getProperty( definition.name, setting ) );
+            const auto nativeType = definition.type == "int"     ? String( "s32" ) :
+                                    definition.type == "float" ? String( "f32" ) : definition.type;
+            BOOST_CHECK_EQUAL( setting.getTypeName(), nativeType );
+            BOOST_CHECK( read->hasProperty( "capability." + definition.name ) );
+        }
+    }
+    size_t capabilityCount = 0;
+    for( const auto &property : read->getPropertiesAsArray() )
+    {
+        if( property.getName().find( "capability." ) == 0 )
+        {
+            ++capabilityCount;
+        }
+    }
+    BOOST_CHECK_GT( capabilityCount, 0u );
+    BOOST_CHECK( !project->isDirty() );
+
+    auto apply = requestFor( "applyProjectSettings" );
+    apply->setProperty( "project.name", "Applied via command" );
+    apply->setProperty( "project.company", String() );
+    apply->setProperty( "graphics.fullscreen", false );
+    apply->setProperty( "graphics.renderScale", 0.75f );
+    apply->setProperty( "quality.preset", s32( 0 ) );
+    apply->setProperty( "graphics.postProcessing", true );
+    apply->setProperty( "graphics.bloom", true );
+    apply->setProperty( "graphics.shadowResolution", s32( 3 ) );
+    apply->setProperty( "sound.outputDevice", s32( 0 ) );
+    processProjectSettingsAction( apply );
+    checkSuccess( apply );
+    BOOST_CHECK_EQUAL( project->getLabel(), "Applied via command" );
+    BOOST_CHECK( project->isDirty() );
+    auto appliedGraphics = project->getGraphicsSettingsDirector()->getProperties();
+    BOOST_CHECK_EQUAL( appliedGraphics->getPropertyAsInt( "Quality", -1 ), 0 );
+    BOOST_CHECK( appliedGraphics->getPropertyAsBool( "Bloom" ) );
+    BOOST_CHECK_EQUAL( appliedGraphics->getPropertyAsInt( "Shadow map size" ), 4096 );
+
+    auto save = requestFor( "saveProjectSettings" );
+    save->setProperty( "project.name", "Saved via command" );
+    processProjectSettingsAction( save );
+    checkSuccess( save );
+    BOOST_CHECK( !project->isDirty() );
+    Project saved;
+    saved.loadFromFile( project->getFilePath() );
+    BOOST_CHECK_EQUAL( saved.getLabel(), "Saved via command" );
+    BOOST_CHECK_EQUAL( saved.getProperties()->getProperty( "project.company" ), "" );
+    BOOST_CHECK( !saved.getProperties()->getPropertyAsBool( "graphics.fullscreen", true ) );
+    BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "sound.outputDevice", -1 ), 0 );
+    BOOST_CHECK_CLOSE( saved.getProperties()->getPropertyAsFloat( "graphics.renderScale" ), 0.75f,
+                       0.001f );
+    auto savedGraphics = saved.getGraphicsSettingsDirector()->getProperties();
+    BOOST_CHECK_EQUAL( savedGraphics->getPropertyAsInt( "Quality", -1 ), 0 );
+    BOOST_CHECK( savedGraphics->getPropertyAsBool( "Bloom" ) );
+    BOOST_CHECK_EQUAL( savedGraphics->getPropertyAsInt( "Shadow map size" ), 4096 );
+    const auto unchangedProject = DataUtil::toString( project->getProperties().get(), true );
+
+    auto validate = requestFor( "validateProjectSettings" );
+    processProjectSettingsAction( validate );
+    checkSuccess( validate );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
+    BOOST_CHECK( !project->isDirty() );
+
+    const auto exportedPath = temporary.path / "Exported settings.json";
+    auto exportRequest = requestFor( "exportProjectSettingsJson" );
+    exportRequest->setProperty( "path", exportedPath.u8string() );
+    exportRequest->setProperty( "project.name", "Export Only" );
+    exportRequest->setProperty( "build.signingProfile", String() );
+    processProjectSettingsAction( exportRequest );
+    checkSuccess( exportRequest );
+    BOOST_REQUIRE( std::filesystem::is_regular_file( exportedPath ) );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
+    BOOST_CHECK( !project->isDirty() );
+    std::ifstream exportedStream( exportedPath );
+    std::ostringstream exportedBuffer;
+    exportedBuffer << exportedStream.rdbuf();
+    auto exported = workphone::make_ptr<Properties>();
+    DataUtil::parse( exportedBuffer.str(), exported.get() );
+    BOOST_CHECK_EQUAL( exported->getPropertyAsInt( "projectSettingsVersion" ), 1 );
+    BOOST_CHECK_EQUAL( exported->getProperty( "project.name" ), "Export Only" );
+    BOOST_CHECK_EQUAL( exported->getProperty( "build.signingProfile" ), "" );
+
+    auto importRequest = requestFor( "importProjectSettingsJson" );
+    importRequest->setProperty( "path", exportedPath.u8string() );
+    processProjectSettingsAction( importRequest );
+    checkSuccess( importRequest );
+    BOOST_CHECK_EQUAL( importRequest->getProperty( "project.name" ), "Export Only" );
+    BOOST_CHECK_EQUAL( importRequest->getProperty( "build.signingProfile" ), "" );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
+    BOOST_CHECK( !project->isDirty() );
+
+    const auto invalidPath = temporary.path / "Invalid settings.json";
+    for( const auto &document : {
+             "{ malformed",
+             "{\"projectSettingsVersion\":1,\"unknown.setting\":1}",
+             "{\"projectSettingsVersion\":1,\"graphics.renderScale\":99}",
+             "{\"projectSettingsVersion\":1,\"graphics.fullscreen\":\"yes\"}",
+             "{\"projectSettingsVersion\":2,\"project.name\":\"Unsupported version\"}" } )
+    {
+        BOOST_TEST_CONTEXT( "Rejected import " << document )
+        {
+            std::ofstream( invalidPath ) << document;
+            auto invalid = requestFor( "importProjectSettingsJson" );
+            invalid->setProperty( "path", invalidPath.u8string() );
+            processProjectSettingsAction( invalid );
+            BOOST_CHECK( !invalid->getPropertyAsBool( "success", true ) );
+            BOOST_CHECK( !invalid->getProperty( "status" ).empty() );
+            BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ),
+                               unchangedProject );
+            BOOST_CHECK( !project->isDirty() );
+        }
+    }
+
+    auto invalidApply = requestFor( "applyProjectSettings" );
+    invalidApply->setProperty( "graphics.renderScale", 99.0f );
+    processProjectSettingsAction( invalidApply );
+    BOOST_CHECK( !invalidApply->getPropertyAsBool( "success", true ) );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
+    BOOST_CHECK( !project->isDirty() );
+
+    auto unavailableAA = requestFor( "applyProjectSettings" );
+    unavailableAA->setProperty( "graphics.antiAliasing", s32( 1 ) );
+    processProjectSettingsAction( unavailableAA );
+    BOOST_CHECK( !unavailableAA->getPropertyAsBool( "success", true ) );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
+    BOOST_CHECK( !project->isDirty() );
+
+    auto invalidValidate = requestFor( "validateProjectSettings" );
+    invalidValidate->setProperty( "build.android.minSdk", s32( 35 ) );
+    invalidValidate->setProperty( "build.android.targetSdk", s32( 26 ) );
+    processProjectSettingsAction( invalidValidate );
+    BOOST_CHECK( !invalidValidate->getPropertyAsBool( "success", true ) );
+    BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
+    BOOST_CHECK( !project->isDirty() );
+
+    const auto projectFile = std::filesystem::u8path( project->getFilePath().c_str() );
+    const auto projectDirectory = std::filesystem::weakly_canonical( projectFile.parent_path() );
+    BOOST_REQUIRE( projectDirectory ==
+                   std::filesystem::weakly_canonical( temporary.path / "Command project" ) );
+    std::ifstream previousProjectStream( projectFile, std::ios::binary );
+    BOOST_REQUIRE( previousProjectStream );
+    std::ostringstream previousProjectBuffer;
+    previousProjectBuffer << previousProjectStream.rdbuf();
+    previousProjectStream.close();
+    const auto previousProjectBytes = previousProjectBuffer.str();
+
+    // A failed companion-file write must not publish a new primary project file.
+    const auto graphicsFile = projectDirectory / "GameGraphics.settings";
+    BOOST_REQUIRE( graphicsFile.parent_path() == projectDirectory );
+    BOOST_REQUIRE( std::filesystem::remove( graphicsFile ) );
+    BOOST_REQUIRE( std::filesystem::create_directory( graphicsFile ) );
+    auto failedSave = requestFor( "saveProjectSettings" );
+    failedSave->setProperty( "project.name", "Failed Save remains dirty" );
+    processProjectSettingsAction( failedSave );
+    BOOST_CHECK( !failedSave->getPropertyAsBool( "success", true ) );
+    BOOST_CHECK( !failedSave->getProperty( "status" ).empty() );
+    BOOST_CHECK( project->isDirty() );
+    std::ifstream retainedProjectStream( projectFile, std::ios::binary );
+    BOOST_REQUIRE( retainedProjectStream );
+    std::ostringstream retainedProjectBuffer;
+    retainedProjectBuffer << retainedProjectStream.rdbuf();
+    BOOST_CHECK_EQUAL( retainedProjectBuffer.str(), previousProjectBytes );
+    BOOST_REQUIRE( std::filesystem::remove( graphicsFile ) );
 }
 
 BOOST_AUTO_TEST_CASE( project_legacy_defaults_and_dirty_test )

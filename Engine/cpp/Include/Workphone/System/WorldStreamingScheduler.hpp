@@ -113,6 +113,10 @@ namespace workphone
         /// Release the shared service after its consumers have been unloaded,
         /// while worker threads can still join (before DLL process teardown).
         static void shutdownShared();
+        // Allocation-only entry: the shared ledger predates the worker service.
+        // Core pools may use this during startup without constructing threads or
+        // allocating a diagnostic String on the budget-denial path.
+        static StreamBudget reserveSharedSource( u64 bytes );
         StreamBudget reserve( StreamMemoryClass memoryClass, u64 bytes, String &error );
         bool setBudget( StreamMemoryClass memoryClass, u64 bytes, String &error );
         std::shared_ptr<WorldStreamProducer> createProducer( const WorldStreamProducerLimits &,
@@ -123,6 +127,7 @@ namespace workphone
 
     private:
         friend class WorldStreamProducer;
+        WorldStreamingScheduler( const WorldStreamLimits &, bool sharedLedger );
         struct Impl;
         std::shared_ptr<Impl> m_impl;
     };

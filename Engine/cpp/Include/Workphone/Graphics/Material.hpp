@@ -1,6 +1,7 @@
 #ifndef CMaterial_h__
 #define CMaterial_h__
 
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
@@ -75,9 +76,11 @@ namespace workphone
          * @since Engine Version 1.0
          * @author Graphics Team
          */
-        class WPCore_API Material : public ResourceGraphics<IMaterial>
+        class WPCore_API Material : public ResourceGraphics<IMaterial>, public SourceBudgetObject
         {
         public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
             static const String materialTypeStr;
             static const String materialTypeDataStr;
             /** Property name used to persist the bound data-driven shader id. */
@@ -1351,7 +1354,7 @@ namespace workphone
             hash_type m_rendererType = 0;
 
             /** Collection of all techniques available for this material */
-            ConcurrentArray<SmartPtr<IMaterialTechnique>> m_techniques;
+            SourceBudgetConcurrentArray<SmartPtr<IMaterialTechnique>> m_techniques;
 
             // Legacy edits must survive graph creation/reload. Declared PBR
             // semantics seed directly from the shader owner without this mirror.
@@ -1364,12 +1367,12 @@ namespace workphone
             };
             // Stage replacement handoff before mutating a parameter instance.
             // A null result leaves the existing optional fallback untouched.
-            std::unique_ptr<LegacySurfaceData> prepareShaderSurfaceHandoff(
+            SourceBudgetUnique<LegacySurfaceData> prepareShaderSurfaceHandoff(
                 const MaterialShaderParameterLayout::Ptr &nextLayout ) const;
-            std::unique_ptr<LegacySurfaceData> prepareShaderSurfaceHandoff(
+            SourceBudgetUnique<LegacySurfaceData> prepareShaderSurfaceHandoff(
                 const MaterialShaderParameterLayout::Ptr &nextLayout, bool nextActive, bool nextPbr ) const;
-            void commitShaderSurfaceHandoff( std::unique_ptr<LegacySurfaceData> values ) noexcept;
-            std::unique_ptr<LegacySurfaceData> m_legacySurface;
+            void commitShaderSurfaceHandoff( SourceBudgetUnique<LegacySurfaceData> values ) noexcept;
+            SourceBudgetUnique<LegacySurfaceData> m_legacySurface;
 
             /** Cube texture used for environment mapping or reflections */
             CubicTextureSnapshot m_cubicTextures;
@@ -1401,8 +1404,8 @@ namespace workphone
             /** @brief A named texture slot and the resource path bound to it. */
             struct ShaderTextureRef
             {
-                String paramName;
-                String texturePath;
+                SourceBudgetString paramName;
+                SourceBudgetString texturePath;
             };
 
             // Sparse schema-order adapter bindings. Names/paths stay in authoring
@@ -1410,15 +1413,15 @@ namespace workphone
             struct ShaderTextureBinding { u32 layer; u32 reference; };
             struct ShaderAuthoringData
             {
-                String shaderID;
-                Array<ShaderTextureRef> textureRefs;
-                Array<ShaderTextureBinding> textureBindings;
+                SourceBudgetString shaderID;
+                SourceBudgetArray<ShaderTextureRef> textureRefs;
+                SourceBudgetArray<ShaderTextureBinding> textureBindings;
                 u64 bindingLayoutId = 0;
             };
             // Legacy materials and parameter-only instances pay only one pointer.
             // Keep this allocation across shader clears: unresolved references
             // must survive a later shader/schema selection.
-            std::unique_ptr<ShaderAuthoringData> m_shaderAuthoring;
+            SourceBudgetUnique<ShaderAuthoringData> m_shaderAuthoring;
         };
     }  // end namespace render
 }  // namespace workphone

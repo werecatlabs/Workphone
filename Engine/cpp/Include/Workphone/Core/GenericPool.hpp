@@ -11,6 +11,7 @@
 #include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <memory>
+#include <vector>
 #include <type_traits>
 #include <utility>
 
@@ -157,8 +158,11 @@ namespace workphone
             }
 
             // The queue is declared after the blocks so it is destroyed first.
-            Array<SharedPtr<GenericPoolData<T, A>>> elements;
-            ConcurrentQueue<RawPtr<T>> freeElements;
+            using Block = GenericPoolData<T, A>;
+            using BlockPtr = std::shared_ptr<Block>;
+            using BlockAllocator = typename std::allocator_traits<A>::template rebind_alloc<BlockPtr>;
+            std::vector<BlockPtr, BlockAllocator> elements;
+            ConcurrentQueue<RawPtr<T>, typename std::allocator_traits<A>::template rebind_alloc<RawPtr<T>>> freeElements;
             atomic_u32 nextSize;
             mutable RecursiveSpinMutex mutex;
         };
@@ -171,12 +175,12 @@ namespace workphone
     // -------------------------------------------------------------------------
 
     template <class T, class A>
-    GenericPool<T, A>::GenericPool() : m_state( std::make_shared<PoolState>() )
+    GenericPool<T, A>::GenericPool() : m_state( std::allocate_shared<PoolState>(typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}) )
     {
     }
 
     template <class T, class A>
-    GenericPool<T, A>::GenericPool( u32 nextSize ) : m_state( std::make_shared<PoolState>( nextSize ) )
+    GenericPool<T, A>::GenericPool( u32 nextSize ) : m_state( std::allocate_shared<PoolState>(typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}, nextSize) )
     {
     }
 
@@ -192,7 +196,7 @@ namespace workphone
     template <class T, class A>
     template <class U, class B>
     GenericPool<T, A>::GenericPool( const GenericPool<U, B> &other ) :
-        m_state( std::make_shared<PoolState>( other.getNextSize() ) )
+        m_state( std::allocate_shared<PoolState>(typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}, other.getNextSize()) )
     {
     }
 
@@ -209,7 +213,8 @@ namespace workphone
             return;
         }
 
-        auto element = workphone::make_shared<GenericPoolData<T, A>>();
+        auto element = std::allocate_shared<GenericPoolData<T, A>>(
+            typename std::allocator_traits<A>::template rebind_alloc<GenericPoolData<T, A>>{});
 
         element->setNumElements( nextSize );
 
@@ -221,6 +226,9 @@ namespace workphone
          */
         element->load( nullptr );
 
+        size_t totalSlots = element->getNumAllocated();
+        for( const auto &block : state->elements ) totalSlots += block->getNumAllocated();
+        state->freeElements.reserve(totalSlots);
         state->elements.push_back( element );
 
         const auto numAllocated = element->getNumAllocated();
@@ -236,40 +244,12 @@ namespace workphone
     template <class T, class A>
     RawPtr<T> GenericPool<T, A>::allocate_object()
     {
-        /*
-         * First try the common/fast case without taking the pool mutex.
-         */
-        RawPtr<T> ptr = nullptr;
-
         auto state = m_state;
-
-        if( state->freeElements.try_pop( ptr ) )
-        {
-            return ptr;
-        }
-
-        /*
-         * Nothing free, so grow the pool.
-         */
+        ScopedLock lock(&state->mutex);
+        RawPtr<T> ptr = nullptr;
+        if( state->freeElements.try_pop(ptr) ) return ptr;
         allocateData();
-
-        /*
-         * allocateData() has populated the state's free-element queue.
-         *
-         * Because this is a concurrent pool, another thread may obtain an
-         * element before this thread does. Keep trying while the queue
-         * reports that elements exist.
-         */
-        while( !state->freeElements.empty() )
-        {
-            if( state->freeElements.try_pop( ptr ) )
-            {
-                return ptr;
-            }
-
-            Thread::yield();
-        }
-
+        if( state->freeElements.try_pop(ptr) ) return ptr;
         return nullptr;
     }
 
@@ -300,7 +280,7 @@ namespace workphone
             // Intentionally empty.
         }
 
-        state->freeElements.clear();
+        state->freeElements = decltype(state->freeElements){};
 
         /*
          * GenericPoolData owns its allocation and its destructor calls
@@ -317,7 +297,7 @@ namespace workphone
             element = nullptr;
         }
 
-        state->elements.clear();
+        decltype(state->elements){}.swap(state->elements);
     }
 
     template <class T, class A>
