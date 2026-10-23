@@ -122,10 +122,11 @@ namespace workphone
         {
             auto application = core::IApplicationManager::instancePtr();
             auto graphics = application ? application->getGraphicsSystem() : nullptr;
-            ScopedLock graphicsLock( graphics );
+            const bool nativeOwner = isThreadSafe();
+            ScopedLock graphicsLock( nativeOwner ? graphics : nullptr );
             // Keep state authoritative so a later dirty-state update cannot restore
             // an old transform, and retain updates made before native-node creation.
-            if( m_node && isThreadSafe() )
+            if( m_node && nativeOwner )
             {
                 m_transformStateData->localTransform = transform;
 
@@ -141,9 +142,6 @@ namespace workphone
 
         void ClawSceneNode::setWorldTransform( const Transform3<real_Num> &worldTransform )
         {
-            auto application = core::IApplicationManager::instancePtr();
-            auto graphics = application ? application->getGraphicsSystem() : nullptr;
-            ScopedLock graphicsLock( graphics );
             auto local = worldTransform;
             if( auto parent = getParent() )
             {
@@ -156,7 +154,7 @@ namespace workphone
                 local.setScale( worldTransform.getScale() / scale );
             }
             setTransform( local );
-            if( m_transformStateData ) m_transformStateData->worldTransform = worldTransform;
+            if( SafePtr<TransformStateData> data = m_transformStateData.load() ) data->worldTransform = worldTransform;
         }
 
         Transform3<real_Num> ClawSceneNode::getWorldTransform() const
@@ -170,6 +168,25 @@ namespace workphone
             }
             return local;
         }
+
+        void ClawSceneNode::setPosition( const Vector3<real_Num> &position )
+        {
+            auto pose = getTransform(); pose.setPosition( position ); setTransform( pose );
+        }
+        void ClawSceneNode::setOrientation( const Quaternion<real_Num> &orientation )
+        {
+            auto pose = getTransform(); pose.setOrientation( orientation ); setTransform( pose );
+        }
+        void ClawSceneNode::setScale( const Vector3<real_Num> &scale )
+        {
+            auto pose = getTransform(); pose.setScale( scale ); setTransform( pose );
+        }
+        Vector3<real_Num> ClawSceneNode::getWorldPosition() const
+        { return getWorldTransform().getPosition(); }
+        Quaternion<real_Num> ClawSceneNode::getWorldOrientation() const
+        { return getWorldTransform().getOrientation(); }
+        Vector3<real_Num> ClawSceneNode::getWorldScale() const
+        { return getWorldTransform().getScale(); }
 
         void ClawSceneNode::setParent( SmartPtr<IGraphicsSceneNode> parent )
         {

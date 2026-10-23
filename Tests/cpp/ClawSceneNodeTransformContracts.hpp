@@ -73,11 +73,14 @@ namespace claw_scene_node_transform_contracts
         state->setData( make_ptr<TransformStateData>() );
         context->addState( state );
         node->setStateContext( context );
+        node->setPosition( { 3, 2, 1 } );
         node->load( nullptr );
         auto *native = node->getNativeNode();
         bool ok = check( native != nullptr, "transform fixture must create a native scene node" );
         if( native )
         {
+            ok &= check( matches( native, node->getTransform() ) && node->getTransform().getPosition().x == 3,
+                         "position authored before native creation must survive deferred load" );
             const auto initial = node->getTransform();
             auto desired = initial;
             desired.setPosition( { 7, -3, 2 } );
@@ -123,6 +126,9 @@ namespace claw_scene_node_transform_contracts
         ok &= check( ( observed.getScale() - worldPose.getScale() ).length() < 1e-4f &&
                      matches( native, node->getTransform() ),
                      "world setter must publish relative native scale, including negative parent scale" );
+        ok &= check( ( node->getWorldPosition() - worldPose.getPosition() ).length() < 1e-4f &&
+                     ( node->getWorldScale() - worldPose.getScale() ).length() < 1e-4f,
+                     "world channel getters must agree with the world transform" );
         node->setParent( nullptr );
         parent->unload( nullptr ); parent->setStateContext( nullptr );
         context->removeState( parentState ); parentState->setOwner( nullptr );

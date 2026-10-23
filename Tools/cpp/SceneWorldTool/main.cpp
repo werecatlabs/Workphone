@@ -5,6 +5,8 @@
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/ApplicationUtil.hpp>
+#include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/System/FactoryManager.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -16,6 +18,12 @@ int main( int argc, char **argv )
 {
     TypeManager types;
     types.load(); TypeManager::setInstance( &types );
+    // The legacy XML reader uses the application factory even for plain
+    // Properties. Supply that small service without starting an engine/device.
+    auto application = make_ptr<core::ApplicationManager>();
+    core::IApplicationManager::setInstance( application );
+    auto factory = make_ptr<FactoryManager>(); factory->load( nullptr );
+    application->setFactoryManager( factory );
     int status = 0;
     try
     {
@@ -80,6 +88,9 @@ int main( int argc, char **argv )
         std::cout << "manifest=" << manifest.c_str() << " cells=" << cooked.cells.size() << " actors=" << actors << '\n';
     }
     catch( const std::exception &e ) { std::cerr << e.what() << '\n'; status = 1; }
+    factory->unload( nullptr ); application->setFactoryManager( nullptr );
+    core::IApplicationManager::setInstance( nullptr );
+    factory = nullptr; application = nullptr;
     TypeManager::setInstance( nullptr );
     return status;
 }

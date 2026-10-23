@@ -623,6 +623,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::Material>();
         FactoryUtil::addFactory<scene::Mesh>();
         FactoryUtil::addFactory<scene::MeshRenderer>();
+        FactoryUtil::addFactory<scene::WorldStreaming>();
 
         FactoryUtil::addFactory<scene::ParticleSystem>();
 

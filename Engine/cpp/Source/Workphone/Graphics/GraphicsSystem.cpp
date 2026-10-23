@@ -882,6 +882,9 @@ namespace workphone::render
             return;
         }
 
+        m_pendingUnloadTickets.erase( graphicsObject.get() );
+        m_pendingLoadTickets.erase( graphicsObject.get() );
+        m_pendingReloadTickets.erase( graphicsObject.get() );
         if( forceQueue )
         {
             const auto ticket = ++m_nextLoadTicket;
@@ -918,6 +921,7 @@ namespace workphone::render
 
         m_pendingLoadTickets.erase( graphicsObject.get() );
         m_pendingReloadTickets.erase( graphicsObject.get() );
+        m_pendingUnloadTickets.erase( graphicsObject.get() );
 
         if( forceQueue )
         {

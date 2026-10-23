@@ -220,14 +220,19 @@ namespace workphone::scene
             return;
         }
 
+        const bool localChanged = makeTransform( m_localPositions[handle.index],
+            m_localOrientations[handle.index], m_localScales[handle.index] ) != localTransform;
+        const bool worldChanged = makeTransform( m_worldPositions[handle.index],
+            m_worldOrientations[handle.index], m_worldScales[handle.index] ) != worldTransform;
+        if( !localChanged && !worldChanged ) { ++m_statistics.unchangedWrites; return; }
         m_localPositions[handle.index] = localTransform.getPosition();
         m_localOrientations[handle.index] = localTransform.getOrientation();
         m_localScales[handle.index] = localTransform.getScale();
         m_worldPositions[handle.index] = worldTransform.getPosition();
         m_worldOrientations[handle.index] = worldTransform.getOrientation();
         m_worldScales[handle.index] = worldTransform.getScale();
-        touch( handle, true );
-        touch( handle, false );
+        if( localChanged ) touch( handle, true );
+        if( worldChanged ) touch( handle, false );
     }
 
     Vector3<real_Num> TransformSystem::getLocalPosition( Handle handle ) const
@@ -525,6 +530,7 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
+            if( flags & ( ITransform::dirtyFlag | ITransform::localDirtyFlag ) ) invalidateSubtree( handle );
             m_flags[handle.index] = flags;
         }
     }

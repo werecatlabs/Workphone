@@ -1370,7 +1370,8 @@ namespace workphone::scene
 
         for( auto &actor : m_actors )
         {
-            if( actor && !actor->getFlag( IGameActor::ActorFlagIsEditor ) )
+            if( actor && !actor->getFlag( IGameActor::ActorFlagIsEditor ) &&
+                !actor->getFlag( IGameActor::ActorFlagDontSave ) )
             {
                 auto pActorData = actor->toData();
                 auto actorProperties = workphone::static_pointer_cast<Properties>( pActorData );

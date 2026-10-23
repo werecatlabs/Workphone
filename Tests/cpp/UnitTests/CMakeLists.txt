@@ -803,5 +803,6 @@ set_target_properties(WPActorSceneTests PROPERTIES FOLDER Tests/Cpp)
 add_custom_command(TARGET WPActorSceneTests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Fixtures" "$<TARGET_FILE_DIR:WPActorSceneTests>")
 add_test(NAME Workphone.actor_scene_streaming COMMAND WPActorSceneTests
-    --run_test=SceneWorldStreamingTests,GameSceneAsyncLoadingTests,GameSceneLoadingTests)
-set_tests_properties(Workphone.actor_scene_streaming PROPERTIES TIMEOUT 120)
+    --run_test=SceneWorldStreamingTests,ActorTransformTests,GameSceneAsyncLoadingTests,GameSceneLoadingTests)
+set_tests_properties(Workphone.actor_scene_streaming PROPERTIES TIMEOUT 120
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;streaming;headless")

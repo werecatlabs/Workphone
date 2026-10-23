@@ -4,16 +4,27 @@
 #include <Workphone/Scene/SceneWorld.hpp>
 #include <Workphone/Scene/SceneWorldStreamer.hpp>
 #include <Workphone/Scene/Transform.hpp>
+#include <Workphone/Scene/Components/WorldStreaming.hpp>
+#include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
 #include <chrono>
 #include <thread>
+#include <fstream>
+#include <future>
 
 using namespace workphone;
 using namespace workphone::scene;
 
 namespace
 {
+    class TransformPublicationProbe : public Component
+    {
+    public:
+        void updateTransform() override { ++publications; if( callback ) callback(); }
+        u32 publications = 0;
+        std::function<void()> callback;
+    };
     SmartPtr<Properties> pointActor( const String &label, float x )
     {
         auto actor = make_ptr<Properties>();
@@ -83,6 +94,37 @@ BOOST_AUTO_TEST_CASE( cooked_cells_load_independently_and_preserve_ids )
     BOOST_CHECK( !SceneWorld::readCell( manifestPath, manifest.cells.back(), error ) );
 }
 
+BOOST_AUTO_TEST_CASE( serialized_streaming_component_installs_and_tears_down_its_world )
+{
+    TestGuard guard; guard.scene->clear( true );
+    auto data = make_ptr<Properties>(); data->addChild( pointActor( "Streamed child", 0 ) );
+    String path, error;
+    BOOST_REQUIRE( SceneWorld::cook( *data, testDirectory( guard ), {}, path, error ) );
+    auto bootstrap = make_ptr<Properties>(); bootstrap->setName( "actors" );
+    bootstrap->setProperty( "label", "Streaming owner" ); bootstrap->setProperty( "uuid", StringUtil::getUUID() );
+    auto settings = make_ptr<Properties>(); settings->setName( "component" );
+    settings->setProperty( "componentType", "workphone::scene::WorldStreaming" );
+    settings->setProperty( "uuid", StringUtil::getUUID() ); settings->setProperty( "World Manifest", path );
+    bootstrap->addChild( settings );
+    auto roots = GameActorUtil::loadSceneActors( { bootstrap }, guard.scene );
+    BOOST_REQUIRE_EQUAL( roots.size(), 1u ); guard.scene->addActor( roots.front() );
+    auto component = roots.front()->getComponent<WorldStreaming>();
+    BOOST_REQUIRE( component ); BOOST_REQUIRE( component->isLoaded() );
+    const auto oldTask = Thread::getCurrentTask();
+    guard.addCleanup( [oldTask] { Thread::setCurrentTask( oldTask ); } );
+    Thread::setCurrentTask( guard.sceneManager->getSceneTask() );
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
+    while( component->statistics().residentActors != 1 && std::chrono::steady_clock::now() < until )
+    { component->preUpdate(); std::this_thread::yield(); }
+    BOOST_REQUIRE_EQUAL( component->statistics().residentActors, 1u );
+    BOOST_CHECK( guard.scene->findActorByName( "Streamed child" ) );
+    auto saved = workphone::dynamic_pointer_cast<Properties>( guard.scene->toData() );
+    BOOST_REQUIRE( saved );
+    BOOST_CHECK_EQUAL( saved->getChildrenByName( "actors" ).size(), 1u );
+    guard.sceneManager->destroyActor( roots.front() );
+    BOOST_CHECK( !guard.scene->findActorByName( "Streamed child" ) );
+}
+
 BOOST_AUTO_TEST_CASE( streaming_traversal_is_bounded_and_releases_reservations )
 {
     TestGuard guard;
@@ -114,6 +156,32 @@ BOOST_AUTO_TEST_CASE( streaming_traversal_is_bounded_and_releases_reservations )
     stream.close();
     BOOST_CHECK( guard.scene->getActors().empty() );
     for( auto bytes : scheduler->stats().used ) BOOST_CHECK_EQUAL( bytes, 0u );
+}
+
+BOOST_AUTO_TEST_CASE( oversized_groups_and_unsupported_manifests_fail_without_publication )
+{
+    TestGuard guard;
+    auto data = make_ptr<Properties>(); auto actor = pointActor( "Animated", 0 );
+    actor->setProperty( "smoothMotion", true );
+    auto child = pointActor( "Child", 10 ); child->setName( "child" ); actor->addChild( child );
+    data->addChild( actor );
+    WorldCookOptions options; options.maximumActorsPerCell = 1; options.convertRenderOnlyLeaves = true;
+    String path, error;
+    const auto directory = testDirectory( guard );
+    BOOST_CHECK( !SceneWorld::cook( *data, directory, options, path, error ) );
+    BOOST_CHECK( !std::filesystem::exists( std::filesystem::path( directory.c_str() ) / "world.wpworld" ) );
+    options.maximumActorsPerCell = 2;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::cook( *data, directory, options, path, error ), error );
+    WorldManifest manifest;
+    BOOST_REQUIRE( SceneWorld::readManifest( path, manifest, error ) );
+    BOOST_REQUIRE_EQUAL( manifest.cells.size(), 1u );
+    BOOST_CHECK_EQUAL( manifest.cells.front().id, "persistent" );
+    auto invalid = make_ptr<Properties>(); invalid->setProperty( "version", WorldManifest::version + 1 );
+    const auto bytes = PropertiesBinarySerializer::serialize( *invalid );
+    std::ofstream file( path.c_str(), std::ios::binary | std::ios::trunc );
+    file.write( reinterpret_cast<const char *>( bytes.data() ), bytes.size() ); file.close();
+    BOOST_CHECK( !SceneWorld::readManifest( path, manifest, error ) );
+    BOOST_CHECK( !error.empty() );
 }
 
 BOOST_AUTO_TEST_CASE( cancelled_scene_cannot_publish_late_cells )
@@ -168,6 +236,9 @@ BOOST_AUTO_TEST_CASE( edits_survive_eviction_and_dynamic_actors_are_promoted )
     auto actor = guard.scene->findActorByName( "Editable" ); BOOST_REQUIRE( actor );
     const auto uuid = actor->getHandle()->getUUIDAsString();
     actor->setName( "Edited" ); actor->setLocalPosition( { 3, 0, 0 } );
+    options.retainRadius = 3;
+    BOOST_REQUIRE( stream.open( path, guard.scene, options, error ) );
+    BOOST_CHECK( guard.scene->findActorByName( "Edited" ) == actor );
     pump( stream, { 10000, 0, 0 }, 0 );
     actor = nullptr;
     pump( stream, Vector3F::zero(), 1 );
@@ -209,21 +280,26 @@ BOOST_AUTO_TEST_CASE( static_hierarchy_reuses_transforms_and_tracks_dirty_childr
     guard.scene->addActor( parent ); parent->addChild( child );
     parent->setState( IGameActor::State::Edit ); child->setState( IGameActor::State::Edit );
     parent->setStatic( true, true );
+    auto publications = make_ptr<TransformPublicationProbe>();
+    child->addComponentInstance( publications );
     parent->setLocalPosition( Vector3F( 10, 0, 0 ) );
     child->setLocalPosition( Vector3F( 2, 0, 0 ) );
     for( int i = 0; i < 3; ++i ) parent->updateTransform();
     auto &storage = TransformSystem::instance(); storage.resetStatistics();
+    const auto warmedPublications = publications->publications;
     for( int i = 0; i < 100; ++i )
     {
         parent->updateTransform();
         parent->setLocalPosition( Vector3F( 10, 0, 0 ) );
     }
     BOOST_CHECK_EQUAL( storage.statistics().worldBuilds, 0u );
+    BOOST_CHECK_EQUAL( publications->publications, warmedPublications );
     child->getTransform()->setLocalPosition( Vector3F( 7, 0, 0 ) );
     child->getTransform()->setDirty( true );
     parent->updateTransform();
     BOOST_CHECK_EQUAL( child->getPosition().x, 17.0f );
     BOOST_CHECK_EQUAL( storage.statistics().worldBuilds, 1u );
+    BOOST_CHECK_EQUAL( publications->publications, warmedPublications + 1 );
     parent->setLocalPosition( Vector3F( 20, 0, 0 ) );
     BOOST_CHECK_EQUAL( child->getPosition().x, 27.0f );
     child->setStatic( false );
@@ -243,11 +319,61 @@ BOOST_AUTO_TEST_CASE( transform_handle_reuse_does_not_reuse_parent_or_revisions 
     BOOST_CHECK_THROW( storage.setParent( parent, child ), std::logic_error );
     storage.destroyTransform( child );
     auto replacement = storage.createTransform();
-    BOOST_CHECK( replacement != child );
+    BOOST_CHECK( replacement.index != child.index || replacement.generation != child.generation );
     BOOST_CHECK_EQUAL( storage.revisions( child ).world, 0u );
     const auto detached = storage.revisions( parent ).subtree;
     storage.setLocalPosition( replacement, Vector3F( 9, 9, 9 ) );
     BOOST_CHECK_EQUAL( storage.revisions( parent ).subtree, detached );
     storage.destroyTransform( replacement ); storage.destroyTransform( parent );
+}
+
+BOOST_AUTO_TEST_CASE( dirty_transform_batch_limit_keeps_the_unprocessed_request )
+{
+    TestGuard guard; guard.scene->clear( true );
+    guard.scene->setSceneLoadingState( IGameScene::SceneLoadingState::Loaded );
+    const auto oldTask = Thread::getCurrentTask();
+    guard.addCleanup( [oldTask] { Thread::setCurrentTask( oldTask ); } );
+    Thread::setCurrentTask( guard.sceneManager->getStateTask() );
+    for( int i = 0; i < 4; ++i ) guard.sceneManager->preUpdate();
+    Array<SmartPtr<Transform>> transforms;
+    for( u32 i = 0; i < 2049; ++i )
+    {
+        auto transform = make_ptr<Transform>(); transform->load( nullptr );
+        transform->setLocalPosition( { float( i + 1 ), 0, 0 } );
+        transform->setDirty( true, false ); transforms.push_back( transform );
+    }
+    guard.sceneManager->preUpdate();
+    BOOST_CHECK( !transforms[2047]->isDirty() );
+    BOOST_CHECK( transforms[2048]->isDirty() );
+    guard.sceneManager->preUpdate();
+    BOOST_CHECK( !transforms[2048]->isDirty() );
+    BOOST_CHECK_EQUAL( transforms[2048]->getPosition().x, 2049.0f );
+    for( auto &transform : transforms ) transform->unload( nullptr );
+}
+
+BOOST_AUTO_TEST_CASE( transform_callbacks_allow_concurrent_hierarchy_capture )
+{
+    TestGuard guard; guard.scene->clear( true );
+    auto parent = guard.sceneManager->createActor(); auto child = guard.sceneManager->createActor();
+    guard.scene->addActor( parent ); parent->addChild( child );
+    parent->setState( IGameActor::State::Edit ); child->setState( IGameActor::State::Edit );
+    auto probe = make_ptr<TransformPublicationProbe>(); child->addComponentInstance( probe );
+    std::promise<void> start, captured;
+    auto trigger = start.get_future(); auto complete = captured.get_future();
+    std::thread capture( [&] {
+        trigger.wait();
+        auto children = parent->getChildren(); auto components = child->getComponents();
+        captured.set_value();
+    } );
+    bool completedInsideCallback = false;
+    probe->callback = [&] {
+        start.set_value();
+        completedInsideCallback = complete.wait_for( std::chrono::seconds( 2 ) ) == std::future_status::ready;
+    };
+    parent->updateTransform();
+    probe->callback = {};
+    capture.join();
+    BOOST_CHECK_MESSAGE( completedInsideCallback,
+                        "Render capture must not wait on hierarchy locks held across component callbacks" );
 }
 BOOST_AUTO_TEST_SUITE_END()

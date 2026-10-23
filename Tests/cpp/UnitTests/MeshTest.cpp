@@ -732,6 +732,12 @@ BOOST_AUTO_TEST_CASE( mesh_queued_lifecycle_discards_cancelled_work )
     BOOST_CHECK_EQUAL( resource->loadRequests, 1u );
     BOOST_CHECK_EQUAL( resource->unloadRequests, 1u );
     BOOST_CHECK( resource->isLoaded() );
+    graphics->unloadObject( resource, true );
+    graphics->reloadObject( resource, true );
+    graphics->updateReloadQueue(); graphics->updateUnloadQueue();
+    BOOST_CHECK_EQUAL( resource->reloadRequests, 1u );
+    BOOST_CHECK_EQUAL( resource->unloadRequests, 1u );
+    BOOST_CHECK( resource->isLoaded() );
 }
 
 BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )
