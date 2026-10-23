@@ -10,6 +10,22 @@
 
 namespace workphone
 {
+    namespace
+    {
+        // Lua's SmartPtr converter does not accept nil when matching overloads.
+        // The director is unused by these factories, so omit it from simple calls.
+        SmartPtr<scene::IGameActor> createSliderWithoutDirector( const String &label, bool addToScene )
+        {
+            return scene::UiUtil::createSlider( label, nullptr, "", addToScene );
+        }
+
+        SmartPtr<scene::IGameActor> createSliderVerticalWithoutDirector( const String &label,
+                                                                     bool addToScene )
+        {
+            return scene::UiUtil::createSliderVertical( label, nullptr, "", addToScene );
+        }
+    }  // namespace
+
     void bindComponentUI( lua_State *L )
     {
         using namespace scene;
@@ -58,7 +74,9 @@ namespace workphone
                            def( "createScrollView", &UiUtil::createScrollView ),
                            def( "createPanel", &UiUtil::createPanel ),
                            def( "createSlider", &UiUtil::createSlider ),
+                           def( "createSlider", &createSliderWithoutDirector ),
                            def( "createSliderVertical", &UiUtil::createSliderVertical ),
+                           def( "createSliderVertical", &createSliderVerticalWithoutDirector ),
                            def( "createScrollbar", &UiUtil::createScrollbar ),
                            def( "createScrollbarVertical", &UiUtil::createScrollbarVertical ),
                            def( "createScrollview", &UiUtil::createScrollview )]];

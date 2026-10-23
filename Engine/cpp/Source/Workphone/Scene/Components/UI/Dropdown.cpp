@@ -391,6 +391,9 @@ namespace workphone::scene
 
     FSMReturnType Dropdown::handleComponentEvent( u32 state, FSMEvent eventType )
     {
+        // Native widgets must leave/rejoin their canvas across Edit/Play changes.
+        UIComponent::handleComponentEvent( state, eventType );
+
         switch( eventType )
         {
         case FSMEvent::Enter:

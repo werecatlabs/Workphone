@@ -831,9 +831,7 @@ namespace workphone::scene
 
     void GameActor::setMine( bool mine )
     {
-        ScopedLock lock( &m_flags, true );
-        auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagMine, mine );
-        setFlags( newFlags );
+        setFlag( ActorFlagMine, mine, false );
     }
 
     auto GameActor::isStatic() const -> bool
@@ -844,9 +842,7 @@ namespace workphone::scene
 
     void GameActor::setStatic( bool isstatic, bool cacade )
     {
-        ScopedLock lock( &m_flags, true );
-        auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagStatic, isstatic );
-        setFlags( newFlags );
+        setFlag( ActorFlagStatic, isstatic, false );
 
         if( cacade )
         {
@@ -886,9 +882,7 @@ namespace workphone::scene
 
     void GameActor::setEnabled( bool enabled, bool cacade )
     {
-        ScopedLock lock( &m_flags, true );
-        auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagEnabled, enabled );
-        setFlags( newFlags );
+        setFlag( ActorFlagEnabled, enabled, false );
 
         updateVisibility();
 
@@ -913,9 +907,7 @@ namespace workphone::scene
 
     void GameActor::setVisible( bool visible, bool cacade )
     {
-        ScopedLock lock( &m_flags, true );
-        auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagVisible, visible );
-        setFlags( newFlags );
+        setFlag( ActorFlagVisible, visible, false );
 
         if( cacade )
         {
@@ -934,9 +926,7 @@ namespace workphone::scene
 
     void GameActor::setDirty( bool dirty, bool cacade )
     {
-        ScopedLock lock( &m_flags, true );
-        auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagDirty, dirty );
-        setFlags( newFlags );
+        setFlag( ActorFlagDirty, dirty, false );
 
         if( cacade )
         {
@@ -955,9 +945,7 @@ namespace workphone::scene
 
     void GameActor::setSmoothMotion( bool smoothMotion, bool cascade )
     {
-        ScopedLock lock( &m_flags, true );
-        auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagSmoothMotion, smoothMotion );
-        setFlags( newFlags );
+        setFlag( ActorFlagSmoothMotion, smoothMotion, false );
 
         if( auto transform = getTransform() )
         {
@@ -1546,10 +1534,7 @@ namespace workphone::scene
     {
         if( getPerpetual() != perpetual )
         {
-            ScopedLock lock( &m_flags, true );
-
-            auto newFlags = BitUtil::setFlagValue( m_flags.load(), ActorFlagPerpetual, perpetual );
-            setFlags( newFlags );
+            setFlag( ActorFlagPerpetual, perpetual, false );
 
             if( cascade )
             {
@@ -2408,14 +2393,24 @@ namespace workphone::scene
 
     void GameActor::setFlags( u32 flags )
     {
-        ScopedLock lock( &m_flags, true );
-
-        if( m_flags != flags )
+        u32 oldFlags = 0;
+        bool dirty = false;
         {
-            m_previousFlags = m_flags;
-            m_flags = flags;
+            ScopedLock lock( &m_flags, true );
+            oldFlags = m_flags.load();
+            if( oldFlags != flags )
+            {
+                m_previousFlags = oldFlags;
+                m_flags = flags;
+                dirty = true;
+            }
+        }
 
-            updateDirty( m_flags, m_previousFlags );
+        // UI callbacks can acquire the graphics lock; render/editor picking
+        // holds that lock while reading actor flags. Never notify under m_flags.
+        if( dirty )
+        {
+            updateDirty( flags, oldFlags );
         }
     }
 
@@ -2428,11 +2423,14 @@ namespace workphone::scene
     void GameActor::setFlag( u32 flag, bool value, bool cascade )
     {
         bool dirty = false;
+        u32 flags = 0;
+        u32 oldFlags = 0;
 
         {
             ScopedLock lock( &m_flags, true );
 
-            auto flags = m_flags.load();
+            oldFlags = m_flags.load();
+            flags = oldFlags;
             if( value )
             {
                 flags |= flag;
@@ -2442,9 +2440,9 @@ namespace workphone::scene
                 flags &= ~flag;
             }
 
-            if( m_flags != flags )
+            if( oldFlags != flags )
             {
-                m_previousFlags = m_flags;
+                m_previousFlags = oldFlags;
                 m_flags = flags;
 
                 dirty = true;
@@ -2453,7 +2451,7 @@ namespace workphone::scene
 
         if( dirty )
         {
-            updateDirty( m_flags, m_previousFlags );
+            updateDirty( flags, oldFlags );
         }
 
         if( cascade )

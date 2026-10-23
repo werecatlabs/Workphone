@@ -37,6 +37,27 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
+    if(TARGET WPImGui)
+        add_executable(ImGuiViewportInputTests ImGuiViewportInputTests.cpp)
+        target_include_directories(ImGuiViewportInputTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+            ${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+            ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32
+            ${WP_ROOT}/Dependencies/imgui ${WP_ROOT}/Dependencies/boost)
+        target_compile_definitions(ImGuiViewportInputTests PRIVATE BOOST_ALL_NO_LIB
+            WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR WORKPHONE_INCLUDE_FONT_BAKING
+            WORKPHONE_INCLUDE_DEFAULT_FONT WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
+            WORKPHONE_INCLUDE_STANDARD_IO)
+        target_link_libraries(ImGuiViewportInputTests PRIVATE WPImGui imgui WPGraphics Workphone
+            WorkphoneCore WorkphoneGraphics WorkphonePlatformWin32 d3d11 dxgi d3dcompiler dxguid)
+        target_link_directories(ImGuiViewportInputTests PRIVATE
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>
+            ${WP_ROOT}/Dependencies/lib/windows/boost)
+        set_target_properties(ImGuiViewportInputTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPImGui.viewport_input COMMAND ImGuiViewportInputTests)
+        set_tests_properties(WPImGui.viewport_input PROPERTIES
+            LABELS "ui;editor;headless" TIMEOUT 30)
+    endif()
     # Keep the active wrapper/backend regression suite buildable. Retained
     # executables cannot validate changes to the native renderer boundary.
     foreach(graphics_contract IN ITEMS ClawRendererContract ClawDX11Target ClawProduction)

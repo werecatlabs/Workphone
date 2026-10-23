@@ -2,6 +2,7 @@
 #include "UiUtilTestSupport.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -141,6 +142,12 @@ namespace
             bindCore( lua.get() );
             bindParam( lua.get() );
             bindParamList( lua.get() );
+            luabind::module( lua.get() )[
+                luabind::class_<scene::Script, SmartPtr<scene::Script>>( "NativeScript" )
+                    .def( "getProperties", &scene::Script::getProperties )
+                    .def( "setProperties", &scene::Script::setProperties )
+                    .def( "getUpdateInEditMode", &scene::Script::getUpdateInEditMode )
+                    .def( "getUpdateInPlayMode", &scene::Script::getUpdateInPlayMode )];
             loadScriptFromString( R"(
                 class 'BaseComponent'
                 function BaseComponent:__init(component) end
@@ -250,12 +257,15 @@ namespace
             component = make_ptr<scene::Script>();
             component->setActor( actor );
             component->setInvoker( make_ptr<ScriptInvoker>( component ) );
+            luabind::globals( manager->lua.get() )["nativeScript"] = component;
             BOOST_REQUIRE( component->getInvoker() );
         }
         ~ComponentScriptFixture()
         {
             auto application = core::IApplicationManager::instance();
+            guard.sceneManager->unregisterAllComponent( component );
             manager->destroyObject( component );
+            luabind::globals( manager->lua.get() )["nativeScript"] = luabind::object();
             component->setInvoker( nullptr );
             component->setActor( nullptr );
             component = nullptr;
@@ -267,6 +277,13 @@ namespace
             auto properties = make_ptr<Properties>();
             properties->setProperty( "className", name );
             component->setProperties( properties );
+        }
+        size_t updateRegistrationCount()
+        {
+            auto &registered = guard.sceneManager->getRegisteredComponents(
+                Thread::UpdateState::Update, TaskId::Application );
+            return std::count( registered.begin(), registered.end(),
+                               SmartPtr<scene::IComponent>( component ) );
         }
     };
 #endif
@@ -345,6 +362,84 @@ BOOST_FIXTURE_TEST_CASE( script_component_partial_properties_preserve_class, Com
     BOOST_REQUIRE_EQUAL( luabind::type( generated ), LUA_TNUMBER );
     BOOST_CHECK_EQUAL( luabind::object_cast<int>( generated ), 1 );
     BOOST_CHECK_EQUAL( manager->createdClasses.size(), 1 );
+}
+
+BOOST_FIXTURE_TEST_CASE( script_component_nested_property_updates_survive_outer_callback,
+                         ComponentScriptFixture )
+{
+    actor->setEnabled( true, false );
+    component->setEnabled( true );
+    manager->loadScriptFromString( R"(
+        class 'NestedUpdateProperties' (Application)
+        function NestedUpdateProperties:__init(component)
+            Application.__init(self, component)
+        end
+        function NestedUpdateProperties:setProperties(parameters)
+            local properties = parameters:at(0)
+            if properties:getPropertyAsBool("ConfigureNested") then
+                self.nestedCalls = (self.nestedCalls or 0) + 1
+                local nested = nativeScript:getProperties()
+                nested:setPropertyAsBool("ConfigureNested", false)
+                nested:setPropertyAsBool("updateInEditMode", true)
+                nested:setPropertyAsBool("updateInPlayMode", true)
+                nativeScript:setProperties(nested)
+            end
+        end
+    )" );
+
+    auto properties = make_ptr<Properties>();
+    properties->setProperty( "className", String( "NestedUpdateProperties" ) );
+    properties->setProperty( "ConfigureNested", true );
+    properties->setProperty( "updateInEditMode", false );
+    properties->setProperty( "updateInPlayMode", false );
+    for( int iteration = 1; iteration <= 2; ++iteration )
+    {
+        component->setProperties( properties );
+        BOOST_CHECK( component->getUpdateInEditMode() );
+        BOOST_CHECK( component->getUpdateInPlayMode() );
+        BOOST_CHECK_EQUAL( updateRegistrationCount(), 1 );
+        BOOST_CHECK_EQUAL( luabind::object_cast<int>( manager->instance["nestedCalls"] ), iteration );
+    }
+    BOOST_CHECK_EQUAL( manager->createdClasses.size(), 1 );
+
+    properties->setProperty( "ConfigureNested", false );
+    component->setProperties( properties );
+    BOOST_CHECK( !component->getUpdateInEditMode() );
+    BOOST_CHECK( !component->getUpdateInPlayMode() );
+    BOOST_CHECK_EQUAL( updateRegistrationCount(), 0 );
+}
+
+BOOST_FIXTURE_TEST_CASE( script_component_property_callback_observes_committed_update_flags,
+                         ComponentScriptFixture )
+{
+    actor->setEnabled( true, false );
+    component->setEnabled( true );
+    manager->loadScriptFromString( R"(
+        class 'ObserveUpdateProperties' (Application)
+        function ObserveUpdateProperties:__init(component)
+            Application.__init(self, component)
+        end
+        function ObserveUpdateProperties:setProperties(parameters)
+            self.observedEdit = nativeScript:getUpdateInEditMode()
+            self.observedPlay = nativeScript:getUpdateInPlayMode()
+        end
+    )" );
+
+    auto properties = make_ptr<Properties>();
+    properties->setProperty( "className", String( "ObserveUpdateProperties" ) );
+    properties->setProperty( "updateInEditMode", true );
+    properties->setProperty( "updateInPlayMode", true );
+    component->setProperties( properties );
+    BOOST_CHECK( luabind::object_cast<bool>( manager->instance["observedEdit"] ) );
+    BOOST_CHECK( luabind::object_cast<bool>( manager->instance["observedPlay"] ) );
+    BOOST_CHECK_EQUAL( updateRegistrationCount(), 1 );
+
+    // Disabled actors keep authored flags but must not register for updates.
+    actor->setEnabled( false, false );
+    component->setProperties( properties );
+    BOOST_CHECK( component->getUpdateInEditMode() );
+    BOOST_CHECK( component->getUpdateInPlayMode() );
+    BOOST_CHECK_EQUAL( updateRegistrationCount(), 0 );
 }
 
 BOOST_AUTO_TEST_CASE( script_workphone_string_binding_round_trip )
@@ -1006,6 +1101,16 @@ BOOST_AUTO_TEST_CASE( script_actor_components_support_ui_state_activation )
             -- Returned snapshots preserve their components and native interfaces.
             assert(rootComponents:size() == expectedRootComponents)
             assert(rootComponents:at(0):getState() == State.Edit)
+            -- Exercise the same two-argument slider calls used by project builders
+            -- through the loaded plugin and its complete component registrations.
+            for _, create in ipairs({UiUtil.createSlider, UiUtil.createSliderVertical}) do
+                local actor = create("Volume", false)
+                local slider = assert(actor:getComponent("Slider"))
+                slider:setMaxValue(100)
+                slider:setMinValue(0)
+                slider:setValue(75)
+                assert(slider:getValue() == 75)
+            end
             results:addAsBool(true)
         end
     )";
@@ -1073,6 +1178,10 @@ BOOST_AUTO_TEST_CASE( script_uiutil_factory_contracts )
         assert(dropdown:getName() == "Dropdown")
         assert(not pcall(UiUtil.createDropdownWithOptions, "Bad", {"Low", 42}, false))
         assert(not pcall(UiUtil.createDropdownWithOptions, "Bad", {[2] = "High"}, false))
+        horizontalSliderActor = UiUtil.createSlider("Volume", false)
+        verticalSliderActor = UiUtil.createSliderVertical("Balance", false)
+        assert(horizontalSliderActor:getName() == "Slider")
+        assert(verticalSliderActor:getName() == "Slider Vertical")
         local factories = {
             function() return UiUtil.createImage("", false) end,
             function() return UiUtil.createInputField("", "Name", false) end,
@@ -1094,7 +1203,36 @@ BOOST_AUTO_TEST_CASE( script_uiutil_factory_contracts )
         for _, create in ipairs(factories) do assert(create() ~= nil) end
     )";
     const auto status = luaL_dostring( state, script );
-    BOOST_CHECK_MESSAGE( status == LUA_OK, ( status == LUA_OK ? "" : lua_tostring( state, -1 ) ) );
+    BOOST_REQUIRE_MESSAGE( status == LUA_OK, ( status == LUA_OK ? "" : lua_tostring( state, -1 ) ) );
+    const auto horizontalActor = luabind::object_cast<SmartPtr<scene::IGameActor>>(
+        luabind::globals( state )["horizontalSliderActor"] );
+    const auto verticalActor = luabind::object_cast<SmartPtr<scene::IGameActor>>(
+        luabind::globals( state )["verticalSliderActor"] );
+    BOOST_REQUIRE( horizontalActor );
+    BOOST_REQUIRE( verticalActor );
+    auto horizontalSlider = horizontalActor->getComponent<scene::Slider>();
+    auto verticalSlider = verticalActor->getComponent<scene::Slider>();
+    BOOST_REQUIRE( horizontalSlider );
+    BOOST_REQUIRE( verticalSlider );
+    luabind::globals( state )["horizontalSlider"] = horizontalSlider;
+    luabind::globals( state )["verticalSlider"] = verticalSlider;
+    constexpr auto sliderScript = R"(
+        horizontalSlider:setMaxValue(100)
+        horizontalSlider:setMinValue(0)
+        horizontalSlider:setValue(75)
+        assert(horizontalSlider:getValue() == 75)
+        horizontalSlider:setValue(200)
+        assert(horizontalSlider:getValue() == 100)
+        verticalSlider:setMinValue(-100)
+        verticalSlider:setMaxValue(100)
+        verticalSlider:setValue(-25)
+        assert(verticalSlider:getValue() == -25)
+        verticalSlider:setValue(-200)
+        assert(verticalSlider:getValue() == -100)
+    )";
+    const auto sliderStatus = luaL_dostring( state, sliderScript );
+    BOOST_CHECK_MESSAGE( sliderStatus == LUA_OK,
+                         ( sliderStatus == LUA_OK ? "" : lua_tostring( state, -1 ) ) );
     BOOST_CHECK( guard.scene->getActors().empty() );
 }
 #endif
