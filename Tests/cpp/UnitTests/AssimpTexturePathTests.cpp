@@ -5,6 +5,7 @@
 #    include <boost/test/unit_test.hpp>
 #endif
 #include <WPAssimp/TexturePathResolver.hpp>
+#include <WPAssimp/EmbeddedTextureCache.hpp>
 #include <WPAssimp/MaterialImportDefaults.hpp>
 #include <limits>
 #include <chrono>
@@ -145,6 +146,68 @@ BOOST_AUTO_TEST_CASE( next_import_discovers_previously_missing_textures )
     const auto expected = folders.file( "Assets/Shared/new.png" );
     workphone::detail::TexturePathResolver nextImport( folders.local, folders.project );
     BOOST_CHECK( nextImport.resolve( "new.png" ) == expected );
+}
+
+BOOST_AUTO_TEST_CASE( embedded_image_cache_preserves_bytes_and_reuses_unchanged_images )
+{
+    TextureFolders folders;
+    const std::string image = "RIFFembedded image bytesWEBP";
+    std::string error;
+    const auto path = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp", image.data(), image.size(), error );
+    BOOST_REQUIRE_MESSAGE( !path.empty(), error );
+    BOOST_CHECK( path.parent_path() == folders.project / "Cache/EmbeddedTextures" );
+    BOOST_CHECK_EQUAL( path.extension().string(), ".webp" );
+    std::ifstream input( path, std::ios::binary );
+    BOOST_CHECK_EQUAL( std::string( std::istreambuf_iterator<char>( input ), {} ), image );
+    input.close();
+    const auto savedTime = fs::last_write_time( path ) - std::chrono::hours( 1 );
+    fs::last_write_time( path, savedTime );
+    const auto same = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp", image.data(), image.size(), error );
+    BOOST_CHECK( same == path );
+    BOOST_CHECK( fs::last_write_time( path ) == savedTime );
+}
+
+BOOST_AUTO_TEST_CASE( embedded_image_reimport_gets_new_identity_when_content_changes )
+{
+    TextureFolders folders;
+    std::string error;
+    const std::string original = "original image";
+    const std::string replacement = "changed image";
+    const auto first = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp",
+        original.data(), original.size(), error );
+    const auto next = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp",
+        replacement.data(), replacement.size(), error );
+    BOOST_REQUIRE_MESSAGE( !first.empty() && !next.empty(), error );
+    BOOST_CHECK( first != next );
+    BOOST_CHECK( fs::exists( first ) );
+    const auto otherModel = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/wheel.glb", 0, "webp",
+        original.data(), original.size(), error );
+    BOOST_CHECK( otherModel != first );
+}
+
+BOOST_AUTO_TEST_CASE( embedded_image_cache_repairs_incomplete_file_and_rejects_path_hints )
+{
+    TextureFolders folders;
+    std::string error;
+    const std::string image = "complete image";
+    const auto path = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp", image.data(), image.size(), error );
+    BOOST_REQUIRE_MESSAGE( !path.empty(), error );
+    std::ofstream( path, std::ios::binary | std::ios::trunc ) << "bad";
+    const auto repaired = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp", image.data(), image.size(), error );
+    BOOST_REQUIRE( repaired == path );
+    std::ifstream input( path, std::ios::binary );
+    BOOST_CHECK_EQUAL( std::string( std::istreambuf_iterator<char>( input ), {} ), image );
+    BOOST_CHECK( workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "../webp",
+        image.data(), image.size(), error ).empty() );
+    BOOST_CHECK( !error.empty() );
 }
 
 BOOST_AUTO_TEST_SUITE_END()

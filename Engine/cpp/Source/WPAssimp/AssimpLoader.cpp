@@ -2,6 +2,7 @@
 #include <WPAssimp/AssimpLoader.hpp>
 #include <WPAssimp/MaterialImportDefaults.hpp>
 #include <WPAssimp/TexturePathResolver.hpp>
+#include <WPAssimp/EmbeddedTextureCache.hpp>
 #include <WPAssimp/LogStream.hpp>
 #include <WPAssimp/IOSystem.hpp>
 #include <Workphone/Workphone.hpp>
@@ -639,9 +640,14 @@ namespace workphone
             u32 flags = getAssimpImportFlags( meshDirector );
 
             auto scene = importer.ReadFile( meshPath.c_str(), flags );
+            if( !scene || !scene->mRootNode )
+            {
+                WP_LOG_ERROR( "Mesh import failed for '" + meshPath + "': " +
+                              String( importer.GetErrorString() ) );
+            }
             if( scene && scene->mRootNode )
             {
-                importMaterialTextures( scene, Path::getFilePath( meshPath ) );
+                importMaterialTextures( scene, Path::getFilePath( meshPath ), meshPath );
                 auto hash = StringUtil::getUUID( getMeshCacheSourceKey( meshPath ) );
                 m_fileUUID = hash;
 
@@ -794,6 +800,16 @@ namespace workphone
             u32 flags = getAssimpImportFlags( getMeshDirector() );
 
             auto scene = importer.ReadFile( m_meshPath.c_str(), flags );
+            if( !scene || !scene->mRootNode )
+            {
+                WP_LOG_ERROR( "Mesh import failed for '" + m_meshPath + "': " +
+                              String( importer.GetErrorString() ) );
+                sceneManager->destroyActor( actor );
+                setRootActor( nullptr );
+                setMeshResource( nullptr );
+                setMeshDirector( nullptr );
+                return nullptr;
+            }
             if( scene && scene->mRootNode )
             {
                 importMaterialTextures( scene, Path::getFilePath( m_meshPath ) );
@@ -994,6 +1010,16 @@ namespace workphone
                 u32 flags = getAssimpImportFlags( getMeshDirector() );
 
                 auto scene = importer.ReadFile( meshFilePath.c_str(), flags );
+                if( !scene || !scene->mRootNode )
+                {
+                    WP_LOG_ERROR( "Mesh import failed for '" + meshFilePath + "': " +
+                                  String( importer.GetErrorString() ) );
+                    gameManager->destroyActor( actor );
+                    setRootActor( nullptr );
+                    setMeshResource( nullptr );
+                    setMeshDirector( nullptr );
+                    return nullptr;
+                }
                 if( scene && scene->mRootNode )
                 {
                     const auto materialFolder = Path::getFilePath( meshFilePath );
@@ -1165,6 +1191,14 @@ namespace workphone
             u32 flags = getAssimpImportFlags( getMeshDirector() );
 
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );
+            if( !scene || !scene->mRootNode )
+            {
+                WP_LOG_ERROR( "Mesh import failed for '" + absolutePath + "': " +
+                              String( importer.GetErrorString() ) );
+                setMeshResource( nullptr );
+                setMeshDirector( nullptr );
+                return nullptr;
+            }
             if( scene && scene->mRootNode )
             {
                 const auto materialFolder = Path::getFilePath( m_meshPath );
@@ -1329,6 +1363,14 @@ namespace workphone
             setAssimpImportOptions( importer, getMeshDirector() );
             u32 flags = getAssimpImportFlags( getMeshDirector() );
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );
+            if( !scene || !scene->mRootNode )
+            {
+                WP_LOG_ERROR( "Mesh import failed for '" + absolutePath + "': " +
+                              String( importer.GetErrorString() ) );
+                setMeshResource( nullptr );
+                setMeshDirector( nullptr );
+                return nullptr;
+            }
             if( scene && scene->mRootNode )
             {
                 const auto materialFolder = Path::getFilePath( meshName );
@@ -2274,7 +2316,8 @@ namespace workphone
         return result.first;
     }
 
-    void AssimpLoader::importMaterialTextures( const aiScene *scene, const String &folderPath )
+    void AssimpLoader::importMaterialTextures( const aiScene *scene, const String &folderPath,
+                                               const String &sourcePath )
     {
         m_importedTexturesByName.clear();
         m_importedMaterialsByPath.clear();
@@ -2324,12 +2367,56 @@ namespace workphone
 
                 // Cache missing references too, and retry them on the next import.
                 auto &texture = m_importedTexturesByName[name];
-                if( isEmbeddedTexturePath( name ) )
+                auto resolvedPath = std::filesystem::path();
+                if( const auto embedded = scene->GetEmbeddedTexture( name.c_str() ) )
                 {
-                    WP_LOG( "Skipping embedded Assimp texture " + name );
+                    if( embedded->mHeight != 0 )
+                    {
+                        WP_LOG_WARNING( "Unsupported uncompressed Assimp embedded texture " + name );
+                        continue;
+                    }
+                    u32 textureIndex = 0;
+                    while( textureIndex < scene->mNumTextures &&
+                           scene->mTextures[textureIndex] != embedded )
+                    {
+                        ++textureIndex;
+                    }
+                    auto cacheFolder = applicationManager->getCachePath();
+                    if( cacheFolder.empty() ) cacheFolder = "Cache";
+                    cacheFolder = Path::getAbsolutePath( projectFolder, cacheFolder );
+                    std::string formatHint;
+                    for( const auto c : embedded->achFormatHint )
+                    {
+                        if( !c ) break;
+                        formatHint += c;
+                    }
+                    if( formatHint.empty() )
+                    {
+                        formatHint = Path::getFileExtension( String( embedded->mFilename.C_Str() ) );
+                        if( !formatHint.empty() && formatHint.front() == '.' )
+                            formatHint.erase( formatHint.begin() );
+                    }
+                    std::string cacheError;
+                    resolvedPath = detail::cacheEmbeddedTexture(
+                        cacheFolder.c_str(),
+                        getMeshCacheSourceKey( sourcePath.empty() ? getMeshPath() : sourcePath ).c_str(),
+                        textureIndex, formatHint, embedded->pcData, embedded->mWidth, cacheError );
+                    if( resolvedPath.empty() )
+                    {
+                        WP_LOG_WARNING( "Failed to cache Assimp embedded texture " + name + ": " +
+                                        cacheError );
+                        continue;
+                    }
+                }
+                else if( isEmbeddedTexturePath( name ) )
+                {
+                    WP_LOG_WARNING( "Missing Assimp embedded texture " + name );
                     continue;
                 }
-                const auto resolvedPath = resolver.resolve( name.c_str() );
+                else
+                {
+                    resolvedPath = resolver.resolve( name.c_str() );
+                }
                 auto texturePath = String( resolvedPath.generic_string() );
                 if( texturePath.empty() && m_materialImportOptions.useFallbackTextureNames )
                 {

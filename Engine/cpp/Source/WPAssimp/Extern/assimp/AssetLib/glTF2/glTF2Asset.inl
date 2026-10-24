@@ -48,6 +48,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <rapidjson/document.h>
 #include <rapidjson/schema.h>
 #include <rapidjson/stringbuffer.h>
+#include <meshoptimizer/meshoptimizer.h>
+#include <limits>
 
 // clang-format off
 #ifdef ASSIMP_ENABLE_DRACO
@@ -574,8 +576,23 @@ inline void Buffer::Read(Value &obj, Asset &r) {
     size_t statedLength = MemberOrDefault<size_t>(obj, "byteLength", 0);
     byteLength = statedLength;
 
+    if (Value *extensions = FindObject(obj, "extensions")) {
+        if (Value *meshopt = FindObject(*extensions, "EXT_meshopt_compression")) {
+            meshoptFallback = MemberOrDefault(*meshopt, "fallback", false);
+            if (meshoptFallback) {
+                // The extension forbids reading this buffer as compressed source data.
+                // Each referencing view supplies its own compressed representation.
+                return;
+            }
+        }
+    }
+
     Value *it = FindString(obj, "uri");
     if (!it) {
+        if (r.extensionsRequired.EXT_meshopt_compression) {
+            meshoptFallback = true;
+            return;
+        }
         if (statedLength > 0) {
             throw DeadlyImportError("GLTF: buffer with non-zero length missing the \"uri\" attribute");
         }
@@ -776,12 +793,105 @@ inline void BufferView::Read(Value &obj, Asset &r) {
     byteStride = MemberOrDefault(obj, "byteStride", 0u);
 
     // Check length
-    if ((byteOffset + byteLength) > buffer->byteLength) {
+    if (byteOffset > buffer->byteLength || byteLength > buffer->byteLength - byteOffset) {
         throw DeadlyImportError("GLTF: Buffer view with offset/length (", byteOffset, "/", byteLength, ") is out of range.");
+    }
+
+    Value *extensions = FindObject(obj, "extensions");
+    Value *meshopt = extensions ? FindMember(*extensions, "EXT_meshopt_compression") : nullptr;
+    if (!meshopt) {
+        if (buffer->meshoptFallback) {
+            throw DeadlyImportError("GLTF: Meshopt fallback buffer referenced by an uncompressed view.");
+        }
+        return;
+    }
+    if (!meshopt->IsObject()) {
+        throw DeadlyImportError("GLTF: EXT_meshopt_compression must be an object.");
+    }
+
+    const auto readSize = [&](const char *property, bool required) -> size_t {
+        Value *value = FindMember(*meshopt, property);
+        if (!value && !required) {
+            return 0;
+        }
+        if (!value || !value->IsUint64() || value->GetUint64() > std::numeric_limits<size_t>::max()) {
+            throw DeadlyImportError("GLTF: Invalid EXT_meshopt_compression ", property, ".");
+        }
+        return static_cast<size_t>(value->GetUint64());
+    };
+    const auto readString = [&](const char *property, const char *defaultValue) -> std::string {
+        Value *value = FindMember(*meshopt, property);
+        if (!value && defaultValue) {
+            return defaultValue;
+        }
+        if (!value || !value->IsString()) {
+            throw DeadlyImportError("GLTF: Invalid EXT_meshopt_compression ", property, ".");
+        }
+        return std::string(value->GetString(), value->GetStringLength());
+    };
+
+    const size_t sourceIndex = readSize("buffer", true);
+    const size_t sourceOffset = readSize("byteOffset", false);
+    const size_t sourceLength = readSize("byteLength", true);
+    const size_t stride = readSize("byteStride", true);
+    const size_t count = readSize("count", true);
+    const std::string mode = readString("mode", nullptr);
+    const std::string filter = readString("filter", "NONE");
+    if (sourceIndex > std::numeric_limits<unsigned int>::max() || !sourceLength || !stride || !count ||
+            count > std::numeric_limits<size_t>::max() / stride || count * stride != byteLength ||
+            (byteStride && stride != byteStride)) {
+        throw DeadlyImportError("GLTF: Invalid EXT_meshopt_compression layout.");
+    }
+    if ((mode != "ATTRIBUTES" && mode != "TRIANGLES" && mode != "INDICES") ||
+            (mode == "ATTRIBUTES" && (stride % 4 != 0 || stride > 256)) ||
+            (mode != "ATTRIBUTES" && stride != 2 && stride != 4) ||
+            (mode == "TRIANGLES" && count % 3 != 0)) {
+        throw DeadlyImportError("GLTF: Invalid EXT_meshopt_compression mode or stride.");
+    }
+    if ((filter != "NONE" && filter != "OCTAHEDRAL" && filter != "QUATERNION" && filter != "EXPONENTIAL") ||
+            (mode != "ATTRIBUTES" && filter != "NONE") ||
+            (filter == "OCTAHEDRAL" && stride != 4 && stride != 8) ||
+            (filter == "QUATERNION" && stride != 8) ||
+            (filter == "EXPONENTIAL" && stride % 4 != 0)) {
+        throw DeadlyImportError("GLTF: Invalid EXT_meshopt_compression filter.");
+    }
+
+    auto source = r.buffers.Retrieve(static_cast<unsigned int>(sourceIndex));
+    if (!source || source->meshoptFallback || !source->GetPointer() ||
+            sourceOffset > source->byteLength || sourceLength > source->byteLength - sourceOffset) {
+        throw DeadlyImportError("GLTF: EXT_meshopt_compression source is out of range or missing.");
+    }
+    meshoptDecodedData.resize(byteLength);
+    const uint8_t *compressed = source->GetPointer() + sourceOffset;
+    int result;
+    if (mode == "ATTRIBUTES") {
+        result = meshopt_decodeVertexBuffer(meshoptDecodedData.data(), count, stride, compressed, sourceLength);
+    } else if (mode == "TRIANGLES") {
+        result = meshopt_decodeIndexBuffer(meshoptDecodedData.data(), count, stride, compressed, sourceLength);
+    } else {
+        result = meshopt_decodeIndexSequence(meshoptDecodedData.data(), count, stride, compressed, sourceLength);
+    }
+    if (result != 0) {
+        throw DeadlyImportError("GLTF: Invalid EXT_meshopt_compression bitstream (", result, ").");
+    }
+    if (filter == "OCTAHEDRAL") {
+        meshopt_decodeFilterOct(meshoptDecodedData.data(), count, stride);
+    } else if (filter == "QUATERNION") {
+        meshopt_decodeFilterQuat(meshoptDecodedData.data(), count, stride);
+    } else if (filter == "EXPONENTIAL") {
+        meshopt_decodeFilterExp(meshoptDecodedData.data(), count, stride);
     }
 }
 
 inline uint8_t *BufferView::GetPointerAndTailSize(size_t accOffset, size_t& outTailSize) {
+    if (accOffset > byteLength) {
+        outTailSize = 0;
+        return nullptr;
+    }
+    if (!meshoptDecodedData.empty()) {
+        outTailSize = meshoptDecodedData.size() - accOffset;
+        return meshoptDecodedData.data() + accOffset;
+    }
     if (!buffer) {
         outTailSize = 0;
         return nullptr;
@@ -807,7 +917,7 @@ inline uint8_t *BufferView::GetPointerAndTailSize(size_t accOffset, size_t& outT
         return nullptr;
     }
 
-    outTailSize = buffer->byteLength - offset;
+    outTailSize = std::min(byteLength - accOffset, buffer->byteLength - offset);
     return basePtr + offset;
 }
 
@@ -995,22 +1105,9 @@ inline uint8_t *Accessor::GetPointer() {
     if (sparse)
         return sparse->data.data();
 
-    if (!bufferView || !bufferView->buffer) return nullptr;
-    uint8_t *basePtr = bufferView->buffer->GetPointer();
-    if (!basePtr) return nullptr;
-
-    size_t offset = byteOffset + bufferView->byteOffset;
-
-    // Check if region is encoded.
-    if (bufferView->buffer->EncodedRegion_Current != nullptr) {
-        const size_t begin = bufferView->buffer->EncodedRegion_Current->Offset;
-        const size_t end = begin + bufferView->buffer->EncodedRegion_Current->DecodedData_Length;
-
-        if ((offset >= begin) && (offset < end))
-            return &bufferView->buffer->EncodedRegion_Current->DecodedData[offset - begin];
-    }
-
-    return basePtr + offset;
+    if (!bufferView) return nullptr;
+    size_t tailSize;
+    return bufferView->GetPointerAndTailSize(byteOffset, tailSize);
 }
 
 inline size_t Accessor::GetStride() {
@@ -1038,7 +1135,31 @@ inline size_t Accessor::GetMaxByteSize() {
 }
 
 template <class T>
-size_t Accessor::ExtractData(T *&outData, const std::vector<unsigned int> *remappingIndices) {
+inline ai_real ReadAccessorComponent(const uint8_t *data, bool normalized) {
+    T value;
+    // Interleaved attributes need not be aligned to the C++ component type.
+    memcpy(&value, data, sizeof(value));
+    if (normalized) {
+        const ai_real result = static_cast<ai_real>(value) / static_cast<ai_real>(std::numeric_limits<T>::max());
+        return std::max(result, ai_real(-1));
+    }
+    return static_cast<ai_real>(value);
+}
+
+inline ai_real ReadAccessorFloat(const uint8_t *data, ComponentType type, bool normalized) {
+    switch (type) {
+    case ComponentType_BYTE: return ReadAccessorComponent<int8_t>(data, normalized);
+    case ComponentType_UNSIGNED_BYTE: return ReadAccessorComponent<uint8_t>(data, normalized);
+    case ComponentType_SHORT: return ReadAccessorComponent<int16_t>(data, normalized);
+    case ComponentType_UNSIGNED_SHORT: return ReadAccessorComponent<uint16_t>(data, normalized);
+    case ComponentType_UNSIGNED_INT: return ReadAccessorComponent<uint32_t>(data, normalized);
+    case ComponentType_FLOAT: return ReadAccessorComponent<float>(data, false);
+    default: throw DeadlyImportError("GLTF: Unsupported vertex component type.");
+    }
+}
+
+template <class T>
+size_t Accessor::ExtractData(T *&outData, const std::vector<unsigned int> *remappingIndices, bool convertToFloat) {
     uint8_t *data = GetPointer();
     if (!data) {
         throw DeadlyImportError("GLTF2: data is null when extracting data from ", getContextForErrorMessages(id, name));
@@ -1052,7 +1173,8 @@ size_t Accessor::ExtractData(T *&outData, const std::vector<unsigned int> *remap
 
     const size_t targetElemSize = sizeof(T);
 
-    if (elemSize > targetElemSize) {
+    const size_t outputSize = convertToFloat ? GetNumComponents() * sizeof(ai_real) : elemSize;
+    if (outputSize > targetElemSize) {
         throw DeadlyImportError("GLTF: elemSize ", elemSize, " > targetElemSize ", targetElemSize, " in ", getContextForErrorMessages(id, name));
     }
 
@@ -1062,13 +1184,35 @@ size_t Accessor::ExtractData(T *&outData, const std::vector<unsigned int> *remap
         throw DeadlyImportError("GLTF: elemSize ", elemSize, " > maxSize ", maxSize, " in ", getContextForErrorMessages(id, name));
     }
 
+    if (!elemSize || stride < elemSize) {
+        throw DeadlyImportError("GLTF: Invalid accessor element size or stride in ", getContextForErrorMessages(id, name));
+    }
     const size_t maxCount = (maxSize - elemSize) / stride + 1;
 
     if (count > maxCount) {
         throw DeadlyImportError("GLTF: count ", count, " > maxCount ", maxCount, " in ", getContextForErrorMessages(id, name));
     }
 
-    outData = new T[usedCount];
+    // Validate remapping before allocation so malformed input cannot leak it.
+    if (remappingIndices != nullptr) {
+        for (unsigned int index : *remappingIndices) {
+            if (index >= count) {
+                throw DeadlyImportError("GLTF: index ", index, " >= count ", count, " in ", getContextForErrorMessages(id, name));
+            }
+        }
+    }
+    outData = new T[usedCount]();
+
+    if (convertToFloat) {
+        for (size_t i = 0; i < usedCount; ++i) {
+            const size_t srcIdx = remappingIndices ? (*remappingIndices)[i] : i;
+            for (size_t component = 0; component < GetNumComponents(); ++component) {
+                const ai_real value = ReadAccessorFloat(data + srcIdx * stride + component * GetBytesPerComponent(), componentType, normalized);
+                memcpy(reinterpret_cast<uint8_t *>(outData + i) + component * sizeof(ai_real), &value, sizeof(value));
+            }
+        }
+        return usedCount;
+    }
 
     if (remappingIndices != nullptr) {
         for (size_t i = 0; i < usedCount; ++i) {
@@ -1186,13 +1330,16 @@ inline void Image::Read(Value &obj, Asset &r) {
                 throw DeadlyImportError("GLTF2: ", getContextForErrorMessages(id, name), " does not have a URI, so it must have a valid bufferView and mimetype");
             }
 
-            Ref<Buffer> buffer = this->bufferView->buffer;
-
             this->mDataLength = this->bufferView->byteLength;
             // maybe this memcpy could be avoided if aiTexture does not delete[] pcData at destruction.
 
             this->mData.reset(new uint8_t[this->mDataLength]);
-            memcpy(this->mData.get(), buffer->GetPointer() + this->bufferView->byteOffset, this->mDataLength);
+            size_t tailSize;
+            const uint8_t *data = this->bufferView->GetPointerAndTailSize(0, tailSize);
+            if (!data || this->mDataLength > tailSize) {
+                throw DeadlyImportError("GLTF: Image buffer view is missing or truncated.");
+            }
+            memcpy(this->mData.get(), data, this->mDataLength);
         } else {
             throw DeadlyImportError("GLTF2: ", getContextForErrorMessages(id, name), " should have either a URI of a bufferView and mimetype");
         }
@@ -1576,7 +1723,11 @@ inline void Mesh::Read(Value &pJSON_Object, Asset &pAsset_Root) {
                         // Attempt to load indices and attributes using draco compression
                         auto bufferView = pAsset_Root.bufferViews.Retrieve(bufView->GetUint());
                         // Attempt to perform the draco decode on the buffer data
-                        const char *bufferViewData = reinterpret_cast<const char *>(bufferView->buffer->GetPointer() + bufferView->byteOffset);
+                        size_t bufferViewTailSize;
+                        const char *bufferViewData = reinterpret_cast<const char *>(bufferView->GetPointerAndTailSize(0, bufferViewTailSize));
+                        if (!bufferViewData || bufferViewTailSize < bufferView->byteLength) {
+                            throw DeadlyImportError("GLTF: Draco buffer view is missing or truncated.");
+                        }
                         draco::DecoderBuffer decoderBuffer;
                         decoderBuffer.Init(bufferViewData, bufferView->byteLength);
                         draco::Decoder decoder;
@@ -2224,6 +2375,7 @@ inline void Asset::ReadExtensionsRequired(Document &doc) {
     CHECK_REQUIRED_EXT(KHR_draco_mesh_compression);
     CHECK_REQUIRED_EXT(KHR_texture_basisu);
     CHECK_REQUIRED_EXT(EXT_texture_webp);
+    CHECK_REQUIRED_EXT(EXT_meshopt_compression);
 
 #undef CHECK_REQUIRED_EXT
 }
@@ -2255,6 +2407,7 @@ inline void Asset::ReadExtensionsUsed(Document &doc) {
     CHECK_EXT(KHR_draco_mesh_compression);
     CHECK_EXT(KHR_texture_basisu);
     CHECK_EXT(EXT_texture_webp);
+    CHECK_EXT(EXT_meshopt_compression);
 
 #undef CHECK_EXT
 }

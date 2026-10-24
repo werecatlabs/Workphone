@@ -1,6 +1,8 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/ScriptObjectUtil.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Interface/Scene/IGamePrefab.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
 #include <luabind/luabind.hpp>
 #include <luabind/detail/convert_to_lua.hpp>
@@ -118,6 +120,18 @@ namespace workphone
 
         if( scriptObj->isDerived<IResource>() )
         {
+            // Generic factory and resource returns must keep their registered
+            // interfaces when the concrete resource class is not bound to Lua.
+            if( scriptObj->isDerived<scene::IGamePrefab>() )
+            {
+                luabind::detail::convert_to_lua( L, SmartPtr<scene::IGamePrefab>( scriptObj ) );
+                return true;
+            }
+            if( scriptObj->isDerived<IMeshResource>() )
+            {
+                luabind::detail::convert_to_lua( L, SmartPtr<IMeshResource>( scriptObj ) );
+                return true;
+            }
             if( scriptObj->isDerived<IMaterial>() )
             {
                 luabind::detail::convert_to_lua( L, SmartPtr<IMaterial>( scriptObj ) );

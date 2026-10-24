@@ -440,6 +440,28 @@ if(TARGET Workphone)
         add_dependencies(WPAnimationImportTests WPAssimp Workphone)
         set_target_properties(WPAnimationImportTests PROPERTIES FOLDER Tests/Cpp)
         add_test(NAME WPAnimation.import_contracts COMMAND WPAnimationImportTests)
+        if(TARGET Meshopt)
+            add_executable(WPAssimpCompressedImportTests AssimpCompressedImportTests.cpp)
+            target_include_directories(WPAssimpCompressedImportTests PRIVATE
+                ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp)
+            if(WIN32)
+                target_include_directories(WPAssimpCompressedImportTests PRIVATE
+                    ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/vc142)
+            elseif(APPLE)
+                target_include_directories(WPAssimpCompressedImportTests PRIVATE
+                    ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/xcode)
+            else()
+                target_include_directories(WPAssimpCompressedImportTests PRIVATE
+                    ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/linux)
+            endif()
+            target_link_libraries(WPAssimpCompressedImportTests PRIVATE
+                $<TARGET_LINKER_FILE:WPAssimp> Meshopt)
+            add_dependencies(WPAssimpCompressedImportTests WPAssimp)
+            set_target_properties(WPAssimpCompressedImportTests PROPERTIES FOLDER Tests/Cpp)
+            add_test(NAME WPAssimp.compressed_import COMMAND WPAssimpCompressedImportTests)
+            set_tests_properties(WPAssimp.compressed_import PROPERTIES
+                LABELS "assets;import;headless" TIMEOUT 30)
+        endif()
     endif()
 
     add_executable(StateContextListenerTests StateContextListenerTests.cpp)
