@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadNetwork.hpp>
 
@@ -235,54 +236,7 @@ namespace workphone::procedural
             const float t=l2>1e-8f?std::clamp(((x-ax)*dx+(z-az)*dz)/l2,0.f,1.f):0;
             return std::hypot(x-ax-t*dx,z-az-t*dz);
         }
-        void generateNatural( std::uint32_t seed, int routeChoice )
-        {
-            roads=OpenCityRoadNetwork::generate(seed,blocks,routeChoice);
-            for(const auto &p:roads.route) route.push_back({p.x,p.z});
-            // A bounded parcel sampler follows the grown network. Each candidate
-            // owns one disjoint cell; only whole envelopes clear of roads survive.
-            struct Candidate { Lot lot; std::uint64_t rank; };
-            SourceBudgetVector<Candidate> candidates;
-            const float cell=30.f;
-            const int count=int(std::floor((extent-20)/cell));
-            for(int ix=-count;ix<count;++ix) for(int iz=-count;iz<count;++iz)
-            {
-                const auto identity=hash((std::uint64_t(seed)<<32)^std::uint32_t(ix)^
-                    (std::uint64_t(std::uint32_t(iz))<<16)^0x6c73797374656dULL);
-                Lot lot{};
-                lot.id=identity?identity:1;
-                lot.variant=std::uint32_t(hash(identity^17));
-                lot.x=lot.parcelX=(ix+.5f)*cell+(random(identity,1)-.5f)*3;
-                lot.z=lot.parcelZ=(iz+.5f)*cell+(random(identity,2)-.5f)*3;
-                lot.parcelWidth=lot.width=19+random(identity,3)*6;
-                lot.parcelDepth=lot.depth=19+random(identity,4)*6;
-                const float clearance=footprintRoadClearance(lot.x,lot.z,lot.width,lot.depth);
-                if(clearance<roadSetback || clearance>26) continue;
-                const float radius=std::hypot(lot.x,lot.z)/extent;
-                lot.district=radius<.4f?District::Commercial:identity%13==0?District::Civic:District::Residential;
-                // Frontage faces the closest graph segment; buildings keep the
-                // existing axis-aligned mass/collision contract in this first kit.
-                float nearest=1000,offsetX=0,offsetZ=0;
-                for(const auto &e:roads.edges) {
-                    const auto &a=roads.nodes[e.a],&b=roads.nodes[e.b];
-                    const float dx=b.x-a.x,dz=b.z-a.z,l2=dx*dx+dz*dz;
-                    const float t=l2>0?std::clamp(((lot.x-a.x)*dx+(lot.z-a.z)*dz)/l2,0.f,1.f):0;
-                    const float ox=a.x+t*dx-lot.x,oz=a.z+t*dz-lot.z,d=std::hypot(ox,oz);
-                    if(d<nearest){nearest=d;offsetX=ox;offsetZ=oz;}
-                }
-                lot.frontage=std::abs(offsetX)>std::abs(offsetZ)?
-                    (offsetX<0?Frontage::West:Frontage::East):(offsetZ<0?Frontage::North:Frontage::South);
-                const float floor=lot.district==District::Commercial?3.6f:3.2f;
-                lot.height=floor*std::floor((lot.district==District::Commercial?22+random(identity,5)*35:
-                    lot.district==District::Civic?10+random(identity,5)*10:8+random(identity,5)*14)/floor);
-                lot.park=random(identity,6)<.12f;
-                candidates.push_back({lot,hash(identity^0x70617263656cULL)});
-            }
-            std::sort(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){return a.rank<b.rank;});
-            const auto limit=std::min(candidates.size(),std::size_t(blocks*blocks*4));
-            lots.reserve(limit);
-            for(std::size_t i=0;i<limit;++i) lots.push_back(candidates[i].lot);
-        }
+        WPCore_API void generateNatural( std::uint32_t seed, int routeChoice );
         static std::uint64_t hash( std::uint64_t value )
         {
             value ^= value >> 30; value *= 0xbf58476d1ce4e5b9ULL;

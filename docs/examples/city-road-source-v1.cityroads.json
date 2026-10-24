@@ -1,0 +1,34 @@
+{
+  "schema": "workphone.city-road-source",
+  "version": 1,
+  "id": "c4ea2578-70f4-4d82-8e98-207d4f5c9a10",
+  "revision": 1,
+  "terrain": {
+    "resourceUuid": "24d53b66-8bbf-44db-b7ce-588e742e60e0",
+    "observedRevision": 0
+  },
+  "roads": [
+    {
+      "id": "f45db713-f086-4162-9ef6-92567c521001",
+      "width": 12,
+      "closed": false,
+      "heightMode": "Drape",
+      "maxGrade": 0.08,
+      "heightOffset": 0.012,
+      "knots": [
+        {
+          "id": "8d15fd63-e5b8-4d63-b3a9-6b99ddba1001",
+          "position": [0, 0, 0],
+          "inHandle": [0, 0, 0],
+          "outHandle": [0, 0, -25]
+        },
+        {
+          "id": "8d15fd63-e5b8-4d63-b3a9-6b99ddba1002",
+          "position": [0, 0, -80],
+          "inHandle": [-8, 0, 25],
+          "outHandle": [0, 0, 0]
+        }
+      ]
+    }
+  ]
+}

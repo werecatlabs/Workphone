@@ -133,6 +133,9 @@ namespace workphone::procedural
                 if( dz < 0 ) fraction = std::min( fraction, ( -bound - a.z ) / dz );
                 Point b{ float( a.x + dx * std::clamp( fraction, 0., 1. ) ),
                          float( a.z + dz * std::clamp( fraction, 0., 1. ) ) };
+                // Do not turn a clipped growth step into a road-width-sized whisker.
+                // Short pieces created by real junction splits retain their 4m policy.
+                if( fraction < 1 && squared( a, b ) < 18.f * 18.f ) return start;
                 std::uint32_t endNode = invalid;
                 std::size_t endEdge = maximumEdges;
                 double bestSnap = 64;
@@ -223,15 +226,16 @@ namespace workphone::procedural
             struct Turtle { std::uint32_t node; float heading, step; };
             SourceBudgetVector<Turtle> stack; stack.reserve( 8 );
             constexpr float pi = 3.14159265358979323846f;
-            const std::array<std::uint32_t, 12> anchors = { 0, 0, 0, loopNodes[2][1], loopNodes[2][7],
-                loopNodes[1][2], loopNodes[1][6], loopNodes[2][3], loopNodes[2][4], loopNodes[2][5],
-                loopNodes[0][2], loopNodes[0][6] };
-            const std::array<float, 12> headings = { pi, -2.55f, 2.55f, -pi * .5f, pi * .5f,
-                -2.05f, 2.05f, -.7f, 0, .75f, -1.2f, 1.2f };
+            // Fewer well-spaced arterials leave buildable blocks between branches.
+            // The eastern anchor grows inward through the ring roads rather than
+            // repeatedly clipping a fan of short roads against the city boundary.
+            const std::array<std::uint32_t, 6> anchors = { 0, loopNodes[2][1], loopNodes[2][7],
+                loopNodes[1][2], loopNodes[1][6], loopNodes[2][4] };
+            const std::array<float, 6> headings = { pi, -pi * .5f, pi * .5f, -2.2f, 2.2f, pi };
             for( std::size_t anchor = 0; anchor < anchors.size(); ++anchor )
             {
                 Turtle turtle{ anchors[anchor], headings[anchor],
-                    graph.extent * ( .20f + .04f * random( anchor * 313 + 91 ) ) };
+                    graph.extent * ( .25f + .05f * random( anchor * 313 + 91 ) ) };
                 stack.clear();
                 std::size_t token = 0;
                 for( const auto symbol : grammar )
@@ -242,11 +246,11 @@ namespace workphone::procedural
                         turtle.node = stroke( turtle.node, { p.x + std::cos( turtle.heading ) * turtle.step,
                             p.z + std::sin( turtle.heading ) * turtle.step } );
                     }
-                    else if( symbol == '[' ) { stack.push_back( turtle ); turtle.step *= .78f; }
+                    else if( symbol == '[' ) { stack.push_back( turtle ); turtle.step *= .88f; }
                     else if( symbol == ']' ) { turtle = stack.back(); stack.pop_back(); }
                     else
                     {
-                        const float turn = .42f + .35f * random( anchor * 1009 + token * 17 + 0x51u );
+                        const float turn = ( 55.f + 25.f * random( anchor * 1009 + token * 17 + 0x51u ) ) * pi / 180.f;
                         turtle.heading += symbol == '+' ? turn : -turn;
                     }
                     ++token;

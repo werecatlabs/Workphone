@@ -69,6 +69,13 @@ game:pauseRace(); game.menu.view.callbacks.Workshop()
 -- Native callbacks are deferred; use the normal update to finish the trial.
 game:update()
 assert(game.gameState=="results")
+properties.values["City Natural Roads"]=false
+root=game.generatedRoot
+game.cityNaturalRoads=true;game:startRace()
+assert(game.generatedRoot~=root and race.cityOptions["City Natural Roads"] and game.records:getBest(23)==0,
+    "Switching to natural roads must rebuild and use separate records")
+game.cityNaturalRoads=false;game:startRace()
+assert(not race.cityOptions["City Natural Roads"],"Switching back to grid must clear natural layout state")
 game:shutdown()
 assert(not app.paused and not game.started and not game.gameInitialized)
 -- Unsupported native builds must fail cleanly without leaving a generated subtree.

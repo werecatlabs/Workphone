@@ -186,6 +186,12 @@ int main()
         require( previewLamp == preview.furniture.size(), "Preview must contain only retained lamps" );
     }
     auto invalid = OpenCityLayout::generate( 42 );
+    auto natural = invalid;
+    natural.naturalRoads = true;
+    const auto noGrid = Details::generate( natural, 42 );
+    require( noGrid.corners.empty() && noGrid.sidewalks.empty() && noGrid.furniture.empty() &&
+             noGrid.collisionSurfaces( natural ).empty(),
+             "Natural roads must not receive grid-derived street detail or collision surfaces" );
     invalid.spacing = std::numeric_limits<float>::quiet_NaN();
     bool rejected = false;
     try { (void)Details::generate( invalid, 42 ); } catch( const std::invalid_argument & ) { rejected = true; }

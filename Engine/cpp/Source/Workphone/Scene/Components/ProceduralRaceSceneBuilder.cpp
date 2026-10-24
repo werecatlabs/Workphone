@@ -285,6 +285,44 @@ namespace workphone::scene::race
                         128 + ( int( asphalt.normal.pixels[i + channel] ) - 128 ) / 10 );
                 }
             }
+            if( assets.openCity )
+            {
+                // City streets use isotropic aggregate. The generic asphalt's
+                // repeated sinusoidal ruts read as a corrugated road at street level.
+                const auto noise = [seed]( u32 x, u32 y, u32 period ) {
+                    u32 value = ( x % period ) * 0x9e3779b9u ^
+                        ( y % period ) * 0x85ebca6bu ^ seed;
+                    value ^= value >> 16; value *= 0x7feb352du;
+                    value ^= value >> 15; value *= 0x846ca68bu;
+                    return float( ( value ^ ( value >> 16 ) ) >> 8 ) / 16777215.f;
+                };
+                const auto smoothNoise = [&]( u32 x, u32 y, u32 cells ) {
+                    const float u = float( x ) * cells / params.size, v = float( y ) * cells / params.size;
+                    const u32 ix = u32( u ), iy = u32( v );
+                    const float fx = u - ix, fy = v - iy;
+                    const float sx = fx * fx * ( 3 - 2 * fx ), sy = fy * fy * ( 3 - 2 * fy );
+                    const float a = noise( ix, iy, cells ) * ( 1 - sx ) + noise( ix + 1, iy, cells ) * sx;
+                    const float b = noise( ix, iy + 1, cells ) * ( 1 - sx ) + noise( ix + 1, iy + 1, cells ) * sx;
+                    return a * ( 1 - sy ) + b * sy;
+                };
+                for( u32 y = 0; y < params.size; ++y ) for( u32 x = 0; x < params.size; ++x )
+                {
+                    const float grain = noise( x, y, params.size );
+                    const float patch = smoothNoise( x, y, 3 ), aggregate = smoothNoise( x, y, 32 );
+                    const float linear = .064f + ( patch - .5f ) * .016f +
+                        ( aggregate - .5f ) * .009f + ( grain - .5f ) * .006f;
+                    auto pixel = asphalt.albedo.pixel( x, y );
+                    for( u32 channel = 0; channel < 3; ++channel )
+                    {
+                        const float colour = linear * ( channel == 2 ? 1.02f : 1.f );
+                        pixel[channel] = u8( std::clamp( ( 1.055f * std::pow( colour, 1.f / 2.4f ) - .055f ) * 255, 0.f, 255.f ) );
+                    }
+                    asphalt.height.values[size_t( y ) * params.size + x] = .5f + ( grain - .5f ) * .012f;
+                    auto orm = asphalt.orm.pixel( x, y );
+                    orm[0] = 255; orm[1] = u8( 224 + aggregate * 16 ); orm[2] = 0; orm[3] = 255;
+                }
+                forge->heightToNormal( asphalt.height, asphalt.normal, .25f );
+            }
             if( !assets.exportSourceDirectory.empty() )
             {
                 std::string error;
@@ -1360,7 +1398,7 @@ namespace workphone::scene::race
         void buildCityStreetDressing( SceneAssets &assets, const OpenCityLayout &city,
                                      VehicleAppearanceQuality quality )
         {
-            Geometry stone, metal, wood, dark, planting;
+            Geometry stone, metal, wood, dark, planting, joints;
             const bool preview = quality == VehicleAppearanceQuality::Preview;
             const auto horizontal = []( Geometry &g, Vector3F p, float width, float depth ) {
                 const auto h = Vector3F( width * .5f, 0, depth * .5f );
@@ -1387,7 +1425,7 @@ namespace workphone::scene::race
                 if( !lot.park ) { frontages.push_back( &lot ); continue; }
                 parkLots.push_back( &lot );
                 const float hx = lot.parcelWidth * .5f, hz = lot.parcelDepth * .5f;
-                const Vector3F centre( lot.parcelX, .161f, lot.parcelZ );
+                const Vector3F centre( lot.parcelX, .166f, lot.parcelZ );
                 // The perimeter loop stays inside the two-metre tree exclusion margin.
                 // Corners belong to the transverse strips only, avoiding coplanar overlaps.
                 for( int side : { -1, 1 } )
@@ -1412,7 +1450,7 @@ namespace workphone::scene::race
                     const bool xFace = std::abs( normal.x ) > .5f;
                     const auto front = centre + normal * ( xFace ? hx : hz );
                     auto inner = front - normal * .8f, outer = front + normal * 2.5f;
-                    inner.y = .163f; outer.y = .151f;
+                inner.y = .168f; outer.y = .156f;
                     stone.quad( inner - tangent * .6f, outer - tangent * .6f,
                                 outer + tangent * .6f, inner + tangent * .6f, { 0, 1, 0 } );
                 }
@@ -1521,13 +1559,13 @@ namespace workphone::scene::race
                 const float length = horizontalWalk ? walk.width : walk.depth;
                 const float step = preview ? 4.8f : 2.4f;
                 for( float t = -length * .5f + step; t < length * .5f - .2f; t += step )
-                    horizontal( dark, { walk.x + ( horizontalWalk ? t : 0 ), .151f,
-                        walk.z + ( horizontalWalk ? 0 : t ) }, horizontalWalk ? .018f : walk.width,
-                        horizontalWalk ? walk.depth : .018f );
-                horizontal( dark, { walk.x, .151f, walk.z },
-                    horizontalWalk ? length : .018f, horizontalWalk ? .018f : length );
+                    horizontal( joints, { walk.x + ( horizontalWalk ? t : 0 ), .156f,
+                        walk.z + ( horizontalWalk ? 0 : t ) }, horizontalWalk ? .025f : walk.width,
+                        horizontalWalk ? walk.depth : .025f );
+                horizontal( joints, { walk.x, .156f, walk.z },
+                    horizontalWalk ? length : .025f, horizontalWalk ? .025f : length );
                 if( i % 3 != 0 ) continue;
-                const Vector3F centre( walk.x, .152f, walk.z );
+                const Vector3F centre( walk.x, .158f, walk.z );
                 const auto vertex = [&]( Vector3F p, Vector3F uv ) {
                     const auto index = u32( metal.positions.size() );
                     metal.positions.push_back( p ); metal.normals.push_back( { 0, 1, 0 } );
@@ -1556,7 +1594,174 @@ namespace workphone::scene::race
             mesh( assets, "City bench frames bins and utility covers", metal, material( assets, { .12f, .15f, .16f, 1 }, .62f, .55f ) );
             mesh( assets, "City bench timber", wood, material( assets, { .36f, .21f, .10f, 1 }, .8f ) );
             mesh( assets, "City paving joints and planter soil", dark, material( assets, { .12f, .14f, .11f, 1 }, 1 ) );
+            mesh( assets, "City concrete paving joints", joints, material( assets, { .31f, .32f, .30f, 1 }, 1 ) );
             mesh( assets, "City ornamental planter grasses", planting, material( assets, { .24f, .36f, .13f, 1 }, .92f ) );
+        }
+
+        void buildNaturalCityStreets( SceneAssets &assets, const OpenCityLayout &city,
+                                      Geometry &asphalt, Geometry &pavement, Geometry &markings,
+                                      Geometry &streetMetal, Geometry &lampGlass,
+                                      VehicleAppearanceQuality quality )
+        {
+            const auto &network = city.roads;
+            if( network.nodes.empty() || network.edges.empty() || network.nodes.size() > 160 || network.edges.size() > 240 )
+                throw std::runtime_error( "Natural city requires a bounded connected road graph." );
+            const auto position = [&]( u32 node ) {
+                if( node >= network.nodes.size() ) throw std::runtime_error( "Natural road endpoint is out of range." );
+                const auto p = network.nodes[node];
+                if( !std::isfinite( p.x ) || !std::isfinite( p.z ) ) throw std::runtime_error( "Natural road endpoint is not finite." );
+                return Vector3F( p.x, 0, p.z );
+            };
+            SourceBudgetVector<u32> degree( network.nodes.size(), 0 );
+            for( const auto &edge : network.edges )
+            {
+                if( edge.a == edge.b || ( position( edge.b ) - position( edge.a ) ).lengthSquared() < .01f )
+                    throw std::runtime_error( "Natural road has an invalid segment." );
+                ++degree[edge.a]; ++degree[edge.b];
+            }
+            const auto stripe = []( Geometry &g, Vector3F a, Vector3F b, Vector3F across,
+                                     float width, float y ) {
+                a.y = b.y = y;
+                const auto half = across * ( width * .5f );
+                g.quad( a - half, b - half, b + half, a + half, { 0, 1, 0 } );
+            };
+            const auto trim = [&]( u32 node, u32 other, Vector3F direction, int side, bool paint ) {
+                float distance = paint ? 8.5f : 0;
+                for( const auto &edge : network.edges )
+                {
+                    const u32 neighbour = edge.a == node ? edge.b : edge.b == node ? edge.a : node;
+                    if( neighbour == node || neighbour == other ) continue;
+                    auto q = position( neighbour ) - position( node ); q.normalise();
+                    const float cosine = direction.dotProduct( q );
+                    const float sine = direction.x * q.z - direction.z * q.x;
+                    if( paint )
+                    {
+                        if( cosine > 0 && std::abs( sine ) > .001f )
+                            distance = std::max( distance, 6.f / std::abs( sine ) + .1f );
+                    }
+                    else if( sine * side > .001f )
+                    {
+                        // A branch on this side can cross the walk. Behind-facing
+                        // continuations use the inner offset, avoiding enormous trim
+                        // distances on gentle bends close to a straight continuation.
+                        const float offset = cosine >= 0 ? 8.5f : 6.f;
+                        distance = std::max( distance, ( 6.f + offset * cosine ) / std::abs( sine ) + .05f );
+                    }
+                }
+                return distance;
+            };
+            const auto ribbonClear = [&]( Vector3F a, Vector3F b, Vector3F across ) {
+                const auto centre = ( a + b ) * .5f;
+                auto along = b - a; const float halfLength = along.length() * .5f; along.normalise();
+                constexpr float halfWidth = 1.25f;
+                const auto point = [&]( Vector3F p ) {
+                    p -= centre; return Vector2F( p.dotProduct( along ), p.dotProduct( across ) );
+                };
+                const auto distanceToBox = [&]( Vector2F p ) {
+                    const float x = std::max( 0.f, std::abs( p.x ) - halfLength );
+                    const float y = std::max( 0.f, std::abs( p.y ) - halfWidth );
+                    return x * x + y * y;
+                };
+                for( const auto &edge : network.edges )
+                {
+                    const auto p = point( position( edge.a ) ), q = point( position( edge.b ) );
+                    const auto delta = q - p;
+                    float low = 0, high = 1;
+                    bool intersects = true;
+                    for( int axis = 0; axis < 2; ++axis )
+                    {
+                        const float start = axis ? p.y : p.x, direction = axis ? delta.y : delta.x;
+                        const float extent = axis ? halfWidth : halfLength;
+                        if( std::abs( direction ) < 1e-6f )
+                        { if( std::abs( start ) > extent ) { intersects = false; break; } }
+                        else
+                        {
+                            float t0 = ( -extent - start ) / direction, t1 = ( extent - start ) / direction;
+                            if( t0 > t1 ) std::swap( t0, t1 );
+                            low = std::max( low, t0 ); high = std::min( high, t1 );
+                            if( low > high ) { intersects = false; break; }
+                        }
+                    }
+                    if( intersects ) return false;
+                    float distanceSquared = std::min( distanceToBox( p ), distanceToBox( q ) );
+                    const float lengthSquared = delta.x * delta.x + delta.y * delta.y;
+                    for( int sx : { -1, 1 } ) for( int sy : { -1, 1 } )
+                    {
+                        const Vector2F corner( sx * halfLength, sy * halfWidth );
+                        const float t = std::clamp( ( ( corner.x - p.x ) * delta.x + ( corner.y - p.y ) * delta.y ) /
+                            std::max( lengthSquared, 1e-8f ), 0.f, 1.f );
+                        const auto offset = corner - ( p + delta * t );
+                        distanceSquared = std::min( distanceSquared, offset.x * offset.x + offset.y * offset.y );
+                    }
+                    if( distanceSquared < 5.998f * 5.998f ) return false;
+                }
+                return true;
+            };
+            u32 lampCount = 0;
+            for( const auto &edge : network.edges )
+            {
+                const auto a = position( edge.a ), b = position( edge.b );
+                auto direction = b - a; const float length = direction.length(); direction /= length;
+                const Vector3F across( -direction.z, 0, direction.x );
+                // Full segment rectangles and round node fans form the road's
+                // centreline-buffer union, including split crossings and dead ends.
+                stripe( asphalt, a, b, across, 12, .012f );
+                const float paintStart = trim( edge.a, edge.b, direction, 0, true );
+                const float paintEnd = trim( edge.b, edge.a, -direction, 0, true );
+                if( length > paintStart + paintEnd + 2 )
+                {
+                    const auto start = a + direction * paintStart, end = b - direction * paintEnd;
+                    for( int side : { -1, 1 } )
+                        stripe( markings, start + across * ( side * 5.7f ), end + across * ( side * 5.7f ), across, .13f, .018f );
+                    for( float t = paintStart; t + 2 < length - paintEnd; t += 5 )
+                        stripe( markings, a + direction * t, a + direction * ( t + 2 ), across, .15f, .018f );
+                }
+                for( int side : { -1, 1 } )
+                {
+                    const float start = trim( edge.a, edge.b, direction, side, false );
+                    const float end = trim( edge.b, edge.a, -direction, -side, false );
+                    if( length <= start + end + 1 ) continue;
+                    auto p = a + direction * start + across * ( side * 7.25f );
+                    auto q = b - direction * end + across * ( side * 7.25f );
+                    if( !ribbonClear( p, q, across ) ) continue;
+                    const auto half = across * 1.25f;
+                    const Vector3F up( 0, .15f, 0 );
+                    pavement.quad( p - half + up, q - half + up, q + half + up, p + half + up, { 0, 1, 0 } );
+                    pavement.quad( p - half, p + half, q + half, q - half, { 0, -1, 0 } );
+                    pavement.quad( p + half, p + half + up, q + half + up, q + half, across );
+                    pavement.quad( p - half, q - half, q - half + up, p - half + up, -across );
+                    pavement.quad( p - half, p - half + up, p + half + up, p + half, -direction );
+                    pavement.quad( q - half, q + half, q + half + up, q - half + up, direction );
+                    const auto centre = ( p + q ) * .5f;
+                    staticBox( assets, "City sidewalk", centre + Vector3F( 0, .075f, 0 ),
+                        { 2.5f, .15f, ( q - p ).length() }, QuaternionF::eulerDegrees( 0,
+                        std::atan2( direction.x, direction.z ) * 180 / pi, 0 ) );
+                    if( lampCount >= ( quality == VehicleAppearanceQuality::Preview ? 24u : 64u ) ||
+                        ( q - p ).lengthSquared() < 400 ) continue;
+                    const auto base = centre + Vector3F( 0, .15f, 0 ), top = base + Vector3F( 0, 6.2f, 0 );
+                    const auto arm = across * ( -side * 1.1f ) + Vector3F( 0, -.15f, 0 );
+                    streetMetal.beam( base, top, .055f ); streetMetal.beam( top, top + arm, .045f );
+                    lampGlass.box( top + arm, { .5f, .1f, .5f } );
+                    staticBox( assets, "City lamp post", base + Vector3F( 0, 3.1f, 0 ), { .12f, 6.2f, .12f } );
+                    ++lampCount;
+                }
+            }
+            for( u32 node = 0; node < network.nodes.size(); ++node )
+            {
+                if( !degree[node] ) continue;
+                const auto p = position( node ) + Vector3F( 0, .012f, 0 );
+                const auto base = u32( asphalt.positions.size() );
+                const auto vertex = [&]( Vector3F v ) {
+                    asphalt.positions.push_back( v ); asphalt.normals.push_back( { 0, 1, 0 } );
+                    asphalt.tangents.push_back( { 1, 0, 0, 1 } ); asphalt.uv.push_back( { v.x, v.z, 0 } );
+                };
+                vertex( p );
+                constexpr u32 slices = 24;
+                for( u32 i = 0; i <= slices; ++i )
+                    vertex( p + Vector3F( std::cos( i * 2 * pi / slices ) * 6, 0, std::sin( i * 2 * pi / slices ) * 6 ) );
+                for( u32 i = 0; i < slices; ++i )
+                { asphalt.indices.push_back( base ); asphalt.indices.push_back( base + i + 2 ); asphalt.indices.push_back( base + i + 1 ); }
+            }
         }
 
         void buildCity( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
@@ -1581,11 +1786,11 @@ namespace workphone::scene::race
             auto cityAsphalt = raceAsphalt( assets, forge, surfaceParams, seed );
             // World projection gives segments and intersections the same physical texture scale.
             cityAsphalt->setUVProjection( 3 );
-            cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 1.5f );
+            cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );
             Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
             struct CityPatch
             {
-                Geometry walls[3], farWalls[3], glass[2], farGlass, roofs, farRoofs, frames, accents;
+                Geometry walls[3], farWalls[3], glass[3], farGlass, roofs, farRoofs, frames, accents;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
             SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
@@ -1625,6 +1830,23 @@ namespace workphone::scene::race
             };
             const int half = city.blocks / 2;
             u32 segmentSeed = seed;
+            if( city.naturalRoads )
+            {
+                buildNaturalCityStreets( assets, city, asphalt, pavement, markings,
+                    streetMetal, lampGlass, quality );
+                // Natural parcels are already filtered against the entire road
+                // buffer. Their small raised courts anchor buildings and parks
+                // without recreating the old rectangular block grid.
+                for( const auto &lot : city.lots )
+                {
+                    const Vector3F centre( lot.parcelX, .075f, lot.parcelZ );
+                    const Vector3F size( lot.parcelWidth, .15f, lot.parcelDepth );
+                    courtyards.box( centre, size );
+                    staticBox( assets, "City parcel", centre, size );
+                }
+            }
+            else
+            {
             for( int row = -half; row <= half; ++row )
             {
                 for( int col = -half; col < half; ++col )
@@ -1695,6 +1917,7 @@ namespace workphone::scene::race
                     staticBox( assets, "City lamp post", p + Vector3F( 0, 3.1f, 0 ), { .12f, 6.2f, .12f } );
                 }
                 else streetMetal.box( p + Vector3F( 0, .45f, 0 ), { .13f, .9f, .13f } );
+            }
             }
             for( const auto &lot : city.lots )
             {
@@ -1801,7 +2024,19 @@ namespace workphone::scene::race
                                 panel( opaque, -span * .5f, low, left, high );
                                 panel( opaque, right, low, span * .5f, high );
                                 reveal( left, low, right, high, .085f );
-                                panel( glass, left, low, right, high, .085f );
+                                // Each pane shares the ribbon aperture but has restrained
+                                // seeded tint/roughness variation, including privacy glass.
+                                for( int bay = 0; bay < bays; ++bay )
+                                {
+                                    const float paneLeft = std::max( left, -span * .5f + bay * bayWidth );
+                                    const float paneRight = std::min( right, -span * .5f + ( bay + 1 ) * bayWidth );
+                                    u32 variation = lot.variant ^ ( u32( floor + 1 ) * 0x9e3779b9u ) ^
+                                        ( u32( bay + 1 ) * 0x85ebca6bu ) ^ u32( axis * 31 + sign );
+                                    variation ^= variation >> 16; variation *= 0x7feb352du;
+                                    variation ^= variation >> 15;
+                                    const int surface = variation % 19 == 0 ? 2 : variation % 7 < 2 ? 1 : 0;
+                                    panel( patch.glass[surface], paneLeft, low, paneRight, high, .085f );
+                                }
                                 panel( patch.farGlass, left, low, right, high, -.018f );
                                 for( int bay = 1; bay < bays; ++bay )
                                 {
@@ -1957,6 +2192,22 @@ namespace workphone::scene::race
                 auto surface = forge->bakeSurface( facadeSurfaces[i], surfaceParams );
                 if( surface.albedo.pixels.empty() || surface.normal.pixels.empty() || surface.orm.pixels.empty() )
                     throw std::runtime_error( "City facades require complete PBR maps." );
+                if( i != 0 )
+                {
+                    // Large mineral panels need restrained weathering. The forge's
+                    // full-range cracked plaster otherwise reads as mottled rock.
+                    const float base = i == 1 ? .58f : .42f;
+                    for( size_t pixel = 0; pixel < surface.albedo.pixels.size(); pixel += 4 )
+                        for( size_t channel = 0; channel < 3; ++channel )
+                        {
+                            const float encoded = surface.albedo.pixels[pixel + channel] / 255.f;
+                            const float source = encoded <= .04045f ? encoded / 12.92f :
+                                std::pow( ( encoded + .055f ) / 1.055f, 2.4f );
+                            const float linear = base * .85f + source * .15f;
+                            surface.albedo.pixels[pixel + channel] = u8( std::clamp(
+                                ( 1.055f * std::pow( linear, 1.f / 2.4f ) - .055f ) * 255, 0.f, 255.f ) );
+                        }
+                }
                 facades[i] = material( assets, colours[i], 1, 1 );
                 maps( assets, facades[i], surface.albedo, surface.normal, surface.orm );
                 facades[i]->setDiffuse( colours[i] );
@@ -1973,9 +2224,10 @@ namespace workphone::scene::race
             const auto roofMaterial = material( assets, { .18f, .21f, .23f, 1 }, .78f );
             const auto frameMaterial = material( assets, { .68f, .67f, .61f, 1 }, .8f );
             const auto accentMaterial = material( assets, { .18f, .28f, .30f, 1 }, .55f );
-            const std::array<SmartPtr<render::IMaterial>, 2> glassMaterials = {
+            const std::array<SmartPtr<render::IMaterial>, 3> glassMaterials = {
                 material( assets, { .12f, .18f, .23f, 1 }, .12f, 0 ),
-                material( assets, { .18f, .23f, .27f, 1 }, .18f, 0 ) };
+                material( assets, { .18f, .23f, .27f, 1 }, .22f, 0 ),
+                material( assets, { .36f, .40f, .41f, 1 }, .52f, 0 ) };
             for( const auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
@@ -1996,7 +2248,7 @@ namespace workphone::scene::race
                 {
                     for( int family = 0; family < 3; ++family )
                         add( "LOD0 city facade", patch.walls[family], facades[family], nearRenderers );
-                    for( int glass = 0; glass < 2; ++glass )
+                    for( int glass = 0; glass < 3; ++glass )
                         add( "LOD0 city glazing", patch.glass[glass], glassMaterials[glass], nearRenderers );
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
                     add( "LOD0 city facade frames", patch.frames, frameMaterial, nearRenderers );
@@ -2021,7 +2273,8 @@ namespace workphone::scene::race
             buildCityStreetDressing( assets, city, quality );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
-            mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
+            if( !city.naturalRoads )
+                mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
             // Bounded driving remains inside the collision walls. A surrounding ground
             // surface gives the skyline context instead of ending the city in the sky.
             Geometry hinterland;
@@ -2034,6 +2287,8 @@ namespace workphone::scene::race
             land->setDiffuse( { .34f, .48f, .25f, 1 } );
             land->setUVProjection( 3 ); land->setEditorFloat( "uvTriplanarScale", .1f );
             land->setNormalStrength( .15f );
+            land->setEditorFloat( "aoStrength", .4f );
+            if( city.naturalRoads ) mesh( assets, "City ground", ground, land );
             mesh( assets, "City surrounding landscape", hinterland, land );
             if( assets.useFoliageWorld )
             {

@@ -12,6 +12,7 @@ function RacingGameOpenCity:__init(component)
     self.generatedRootName = "RacingGameOpenCity.Generated"
     self.recordsFile = "RacingGameOpenCity.records"
     self.cityBlocks, self.cityRoute, self.mode = 8, 0, "freeDrive"
+    self.cityNaturalRoads = false
     -- Free driving still uses the shared loading/countdown/pause lifecycle, but
     -- never feeds movement into lap timing or awards records for exploration.
     local sample = self.progress.sample
@@ -30,12 +31,18 @@ function RacingGameOpenCity:configureRaceScene(scene)
     p:setPropertyAsBool("Open City", true)
     p:setPropertyAsInt("City Blocks", self.cityBlocks)
     p:setPropertyAsInt("City Route", self.cityRoute)
+    if p:hasProperty("City Natural Roads") then
+        p:setPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
+    else
+        assert(not self.cityNaturalRoads, "Rebuild Workphone: ProceduralRaceScene has no natural road support")
+    end
     scene:setProperties(p)
 end
 
 function RacingGameOpenCity:bindGeneratedScene()
     RacingGameFull.bindGeneratedScene(self)
     self.generatedBlocks, self.generatedRoute = self.cityBlocks, self.cityRoute
+    self.generatedNaturalRoads = self.cityNaturalRoads
     self.camera:setFarClipDistance(1400)
 end
 
@@ -70,7 +77,8 @@ function RacingGameOpenCity:savePreferences()
 end
 
 function RacingGameOpenCity:startRace()
-    if self.generatedBlocks ~= self.cityBlocks or self.generatedRoute ~= self.cityRoute then
+    if self.generatedBlocks ~= self.cityBlocks or self.generatedRoute ~= self.cityRoute or
+        self.generatedNaturalRoads ~= self.cityNaturalRoads then
         self.generatedQuality = nil
     end
     RacingGameFull.startRace(self)
@@ -78,6 +86,7 @@ function RacingGameOpenCity:startRace()
     local project = self.application:getProjectPath()
     if project == "" then project = "." end
     local path = string.format("%s/RacingGameOpenCity.%d.%d.records", project, self.generatedBlocks, self.generatedRoute)
+    if self.generatedNaturalRoads then path = path:gsub("%.records$", ".lsystem.records") end
     if self.routeRecordsPath ~= path then
         self.records = RacingRecords.new(path)
         self.records:load()
@@ -99,8 +108,10 @@ function RacingGameOpenCity:showMainMenu()
 end
 
 function RacingGameOpenCity:setupSummary()
-    return string.format("City seed %d | %d x %d blocks | %s\n%s | %s | Follow the cyan street arrows",
-        self.seed, self.cityBlocks, self.cityBlocks, routes[self.cityRoute + 1],
+    local layout = self.cityNaturalRoads and ("Natural streets | Size " .. self.cityBlocks) or
+        string.format("%d x %d blocks", self.cityBlocks, self.cityBlocks)
+    return string.format("City seed %d | %s | %s\n%s | %s | Follow the cyan street arrows",
+        self.seed, layout, routes[self.cityRoute + 1],
         self.mode == "freeDrive" and "Free drive" or self.mode == "timeTrial" and "Time trial" or "Street circuit",
         self.mode == "timeTrial" and "Unlimited timed laps" or tostring(self.totalLaps) .. " lap challenge")
 end
@@ -169,11 +180,15 @@ function RacingGameOpenCity:getProperties(parameters)
     local p = parameters:at(0)
     p:setPropertyAsInt("City Blocks", self.cityBlocks)
     p:setPropertyAsInt("City Route", self.cityRoute)
+    p:setPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
 end
 function RacingGameOpenCity:setProperties(parameters)
     local p = parameters:at(0)
     self.cityBlocks = math.max(6, math.min(10, math.floor(p:getPropertyAsInt("City Blocks", self.cityBlocks) / 2) * 2))
     self.cityRoute = math.max(0, math.min(2, p:getPropertyAsInt("City Route", self.cityRoute)))
+    if p:hasProperty("City Natural Roads") then
+        self.cityNaturalRoads = p:getPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
+    end
     RacingGameFull.setProperties(self, parameters)
 end
 

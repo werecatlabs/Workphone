@@ -1251,14 +1251,27 @@ namespace workphone
                     fail( "no shared-descriptor sidewalk collision was generated" );
                     return;
                 }
-                // buildCity creates this actor directly from the first shared sidewalk
-                // descriptor; use its centre without regenerating street dressing.
-                const auto walkPoint = citySidewalk->getPosition();
+                // Stay inside the retained walk but away from its centre lamp.
+                const auto walkSize = citySidewalk->getComponent<scene::CollisionBox>()->getExtents();
+                const auto walkPoint = citySidewalk->getPosition() + citySidewalk->getOrientation() *
+                    Vector3F( walkSize.x > walkSize.z ? walkSize.x * .2f : 0, 0,
+                              walkSize.z >= walkSize.x ? walkSize.z * .2f : 0 );
+                const auto isWalkBody = [&]( const SmartPtr<ISharedObject> &hit ) {
+                    if( !m_assets.cityNaturalRoads )
+                        return hit == citySidewalk->getComponent<scene::Rigidbody>()->getRigidStatic();
+                    // Equal-grade natural footways can overlap between close parallel
+                    // streets. Every body's placement was checked independently above.
+                    for( const auto &candidate : m_assets.actors )
+                        if( candidate && candidate->getName() == "Trackside collision: City sidewalk" )
+                            if( auto body = candidate->getComponent<scene::Rigidbody>() )
+                                if( hit == body->getRigidStatic() ) return true;
+                    return false;
+                };
                 object = nullptr;
                 if( !physics->intersects( { walkPoint.x, 2, walkPoint.z },
                                           { walkPoint.x, -1, walkPoint.z },
                                           hitPosition, hitNormal, object ) || !object ||
-                    object != citySidewalk->getComponent<scene::Rigidbody>()->getRigidStatic() ||
+                    !isWalkBody( object ) ||
                     !std::isfinite( hitPosition.y ) || std::abs( hitPosition.y - .15f ) > .015f )
                 {
                     fail( "sidewalk collision grade does not match Y=0.15" );

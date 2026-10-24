@@ -17,7 +17,7 @@ between free driving and races. Changes to city seed, size, route or appearance
 apply when starting the next drive. Retries reuse generated assets.
 
 Inspector options: Seed, Appearance Quality (0-3), Laps (1-10), City Blocks
-(6, 8 or 10 per side), City Route (0-2), and Generate. Streets are 88-104 metres
+(6, 8 or 10 per side), City Route (0-2), City Natural Roads, and Generate. Grid streets are 88-104 metres
 apart according to seed. Dense central buildings, quieter outer districts and
 park lots use the same deterministic CPU layout. Layout revision 2 gives parcels
 stable IDs, street frontages and coherent commercial, residential and civic
@@ -25,12 +25,22 @@ districts. Building footprints retain an 11 metre road-centre setback and a
 4 metre service gap through the block centre. Road and route coordinates remain
 independent of appearance quality and route selection does not reshuffle parcels.
 
-Roads and intersections reuse WPProcedural's IRoadSystem. A shared flat city
+**City Natural Roads** selects a bounded seeded L-system instead of the grid.
+Rewritten turtle branches connect to three shared trunk circuits; snapped crossings
+split graph edges. The graph is capped at 160 nodes/240 edges. Full footprint-to-road
+distance tests keep buildings and parks outside the 11 metre buffer. Route selection
+changes the chosen circuit without reshuffling the graph or parcels. Buildings remain
+axis aligned in this first kit. Acute/short segments can omit sidewalks where a safe
+raised ribbon will not fit; continuous pedestrian junction paving is not yet implemented.
+
+Grid roads and intersections reuse WPProcedural's IRoadSystem; natural streets
+render the buffered graph with matching conservative sidewalk prisms. A shared flat city
 street profile partitions the sidewalks and junction corners at a 15 cm grade;
 the same box descriptors build their rendered surfaces and collision. Interior
 block plazas meet that grade. Building geometry and collision consume identical
 one-to-three-tier mass descriptions. Facades are grouped into 128 metre LOD
-patches: nearby buildings use individual glazing bays, frames, entrance fascias
+patches: nearby buildings use recessed glazing apertures, district-specific masonry,
+mineral and office kits, mullions, entrances and canopies
 and roof details, while distant buildings retain the same stepped massing and
 simple glazing ribbons. Existing LODSystem selection and hysteresis manage the
 patches. City boundaries remain inside the shared ground collision plane.
@@ -40,20 +50,27 @@ junction clearance. Lamps have pole collision proxies; bollards are decorative
 in this tier. With foliage enabled, the existing foliage world distributes its
 bounded tree candidates across park parcels at the 16 cm turf surface, rather
 than sampling only the first portion of the lot array.
+Park paths, benches, planters, bins, utility covers and paving joints use batched
+geometry. Solid props have bounded matching collision proxies; decorative overlays
+remain close to the contact surface. Natural layouts retain parcel/park details and
+omit grid-derived street decorations. Glazing is an opaque approximation with outdoor
+HDR specular response; transmission and furnished interiors remain open.
 
 ## Native city showcase
 
 `SampleVehicleAdvanced` retains its circuit default. Pass `--city`, optionally
-`--city-blocks 6|8|10` and `--city-route 0|1|2`, to use the same city generation
+`--city-blocks 6|8|10`, `--city-route 0|1|2` and `--city-layout grid|lsystem`, to use the same city generation
 properties as the Lua/Editor workflow. `--view street` inspects a street frontage;
-`--view track` frames the city overview. City-only flags require `--city` and
+`--view boulevard` inspects the opposite street direction and `--view track` frames
+the city overview. Natural street cameras follow an actual central road segment.
+City-only flags require `--city` and
 invalid values are rejected before scene startup.
 
 After building the Debug sample, capture fresh runtime evidence with:
 
 ```powershell
 & .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
-    -CityBlocks 6 -CityRoute 0 -Quality high -Views street,track `
+    -CityLayout lsystem -CityBlocks 6 -CityRoute 0 -Quality high -Views street,track `
     -FoliageWorld -NoEffects -Seconds 3
 ```
 
@@ -65,10 +82,26 @@ structural checks do not certify image quality, drivability or hardware speed.
 Preferences use `RacingGameOpenCity.records` in the project directory. Lap records
 use separate `RacingGameOpenCity.<blocks>.<route>.records` files, keyed by city seed.
 Appearance quality does not change the street layout or lap record identity.
+Natural-layout records add `.lsystem` before `.records`, keeping grid records independent.
 City size and route are Inspector/session options; seed, quality and laps persist.
 
 This implementation is a bounded procedural city with solo racing and exploration.
 Traffic, opponents, interiors and streamed world sectors are not implemented.
+
+## Editable splines, terrain and connected transport
+
+[The authoring plan](WPPROCEDURAL_CITY_AUTHORING_PLAN.md) specifies drawing/editing
+splines through the existing Editor viewport and retaining source IDs and manual edits.
+[The transport/water plan](WPPROCEDURAL_CITY_TRANSPORT_WATER_PLAN.md) adds rivers,
+road/rail bridges and train tracks to that workflow. Those native authoring and world
+features are planned, not working runtime controls.
+
+`CityRoadSplineSource` provides a strict version-1 JSON/Bezier CPU foundation and a
+[valid hand-editable example](examples/city-road-source-v1.cityroads.json). Its terrain
+callback samples the centre and both edges, rejects grade/crossfall/local folding and
+keeps last-good outputs on failure. Sampling does not prove continuous terrain-cell or
+hole coverage. The city renderer still uses a flat physics plane; the codec does not
+yet load into `ProceduralRaceScene`, draw Editor handles, carve terrain or build bridges.
 
 Validation:
 
@@ -79,6 +112,10 @@ Validation:
   determinism, building clearance, route continuity, street alignment and bounds.
 - `Tests/cpp/OpenCityStreetDetailsTests.cpp` checks the shared sidewalk/corner
   partition, flat grade, furniture clearance, bounds and deterministic placement.
+- `Tests/cpp/OpenCityRoadNetworkTests.cpp` checks planar connected graph topology,
+  bounds, replay, route independence and closed sampled routes across the seed corpus.
+- `Tests/cpp/CityRoadSplineSourceTests.cpp` checks the real JSON example, retained edits,
+  bounded Bezier sampling, terrain fitting failures and allocation-denial cleanup.
 - The native sample's `--collision-smoke-test` supports `--city`: it checks native
   static shape attachment/poses and short face probes, the exact building-mass
   count, a road ray at Y=0 and a sidewalk ray at Y=0.15. It exits after those

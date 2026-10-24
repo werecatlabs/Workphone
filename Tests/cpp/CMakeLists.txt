@@ -539,6 +539,19 @@ if(TARGET Workphone)
     set_target_properties(OpenCityRoadNetworkTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME Workphone.open_city_road_network COMMAND OpenCityRoadNetworkTests)
     set_tests_properties(Workphone.open_city_road_network PROPERTIES TIMEOUT 60)
+    add_executable(CityRoadSplineSourceTests CityRoadSplineSourceTests.cpp)
+    target_compile_definitions(CityRoadSplineSourceTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(CityRoadSplineSourceTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
+    target_link_libraries(CityRoadSplineSourceTests PRIVATE Workphone)
+    if(WIN32)
+        target_link_directories(CityRoadSplineSourceTests PRIVATE
+            ${WP_ROOT}/Dependencies/lib/windows/boost
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    endif()
+    set_target_properties(CityRoadSplineSourceTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME Workphone.city_road_spline_source COMMAND CityRoadSplineSourceTests
+        ${WP_ROOT}/docs/examples/city-road-source-v1.cityroads.json)
+    set_tests_properties(Workphone.city_road_spline_source PROPERTIES TIMEOUT 60)
 endif()
 
 if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)

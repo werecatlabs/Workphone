@@ -148,20 +148,37 @@ int main()
         const auto natural=OpenCityLayout::generate(seed,blocks,0,true);
         const auto repeated=OpenCityLayout::generate(seed,blocks,0,true);
         const auto alternate=OpenCityLayout::generate(seed,blocks,2,true);
+        const auto parks=std::count_if(natural.lots.begin(),natural.lots.end(),
+            [](const OpenCityLayout::Lot &lot){return lot.park;});
+        std::cout << "Natural city seed=" << seed << " blocks=" << blocks << " nodes=" << natural.roads.nodes.size()
+            << " edges=" << natural.roads.edges.size() << " parcels=" << natural.lots.size()
+            << " buildings=" << natural.lots.size()-parks << " parks=" << parks << std::endl;
         require(natural.naturalRoads && !natural.roads.edges.empty() && natural.lots.size()>20,
             "L-system city failed to populate connected street frontages");
+        if(seed==42 && blocks==6) require(natural.lots.size()>=70,
+            "Representative natural city lost its populated street frontages");
         require(natural.lots.size()<=size_t(blocks*blocks*4),"Natural city exceeded parcel budget");
         require(natural.lots.size()==repeated.lots.size() && natural.lots.size()==alternate.lots.size(),
             "Natural route choice changed city parcels");
+        std::set<std::uint64_t> identities;
         for(size_t i=0;i<natural.lots.size();++i)
         {
             const auto &lot=natural.lots[i];
             require(sameLot(lot,repeated.lots[i]) && sameLot(lot,alternate.lots[i]),"Natural parcel determinism failed");
-            require(natural.footprintRoadClearance(lot.x,lot.z,lot.width,lot.depth)>=OpenCityLayout::roadSetback-.001f,
+            require(lot.id && identities.insert(lot.id).second,"Natural parcel identity collision");
+            require(lot.width>0 && lot.depth>0 && lot.parcelWidth>0 && lot.parcelDepth>0 &&
+                std::abs(lot.x-lot.parcelX)+lot.width*.5f<=lot.parcelWidth*.5f+.001f &&
+                std::abs(lot.z-lot.parcelZ)+lot.depth*.5f<=lot.parcelDepth*.5f+.001f,
+                "Natural building escaped its parcel envelope");
+            require(natural.footprintRoadClearance(lot.parcelX,lot.parcelZ,lot.parcelWidth,lot.parcelDepth)>=OpenCityLayout::roadSetback-.001f,
                 "Natural road crosses a building/park envelope");
+            require(std::abs(lot.parcelX)+lot.parcelWidth*.5f<=natural.extent-OpenCityLayout::roadSetback+.001f &&
+                std::abs(lot.parcelZ)+lot.parcelDepth*.5f<=natural.extent-OpenCityLayout::roadSetback+.001f,
+                "Natural parcel escaped city bounds");
             for(size_t j=0;j<i;++j) {const auto &other=natural.lots[j];
-                require(std::abs(lot.x-other.x)>=(lot.width+other.width)*.5f-.001f ||
-                    std::abs(lot.z-other.z)>=(lot.depth+other.depth)*.5f-.001f,"Natural parcels overlap");}
+                require(std::abs(lot.parcelX-other.parcelX)>=(lot.parcelWidth+other.parcelWidth)*.5f+.749f ||
+                    std::abs(lot.parcelZ-other.parcelZ)>=(lot.parcelDepth+other.parcelDepth)*.5f+.749f,
+                    "Natural parcel envelopes overlap or lose their service separation");}
             checkMasses(natural,lot);
         }
         require(natural.route.size()>10 && natural.route[0].x==0 && natural.route[0].z==0 &&
