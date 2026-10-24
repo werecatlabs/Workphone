@@ -488,13 +488,17 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
   separate symbols, package-relative media and a writable workspace; its actual
   release executable passes bounded software startup/Lua/catalog/teardown and
   missing-input checks. Complete interactive Editor and clean-machine acceptance,
-  cooked-content sample through the C++ catalog and dependency/media license
-  auditing before closing this work package. The separate `WorkphoneCppSDK`
+  dependency/media license auditing before closing this work package. The
+  cooked-content C++ catalog sample now exports an original material/texture
+  closure with Runtime policies and durable UUIDs, removes private authoring
+  inputs, and loads the pinned package through the installed typed runtime APIs.
+  This is a material/texture slice, not certification of all asset families.
+  The separate `WorkphoneCppSDK`
   development component now supplies headers/import libraries and relocatable
   Core/Claw CMake targets. Its extracted C++17 consumers pass in RelWithDebInfo
   and Release with restricted DLL loading; incompatible Debug/static CRT profiles
   are rejected. All 17,415 payload hashes remain unchanged in candidate
-  `cpp-sdk-validation-ec15973c923c4adcba2b72e5264847be`. This locally validates
+  `cpp-sdk-validation-ec15973c923c4adcba2b72e5264847be` at the 18 October checkpoint. This locally validates
   those exported APIs; optional plugin SDKs and all-public-header coverage remain
   separate from the demonstrated consumer scope.
   The Play activation default and worker camera-node retirement faults are now
@@ -508,8 +512,14 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
   now passes all 66 cases (628.80 seconds); focused Debug checks and release
   graphics/lifecycle/material sequencing also pass. The refreshed candidate is
   `editor-validation-a9d449faa7f04984bdf52b8dc98e6624`; its evidence preserves the
-  earlier failures. Interactive, clean-machine, cooked-content, broader SDK and
-  licensing gates above remain open.
+  earlier failures. The 24 October increment additionally fixes deep Windows
+  staging/runtime IO while preserving root containment and exclusive publication;
+  tests cover long roots, artifact reads, atomic writes and cleanup. Twelve
+  existing dependency notice texts and the resource CLI PDB now ship. All six
+  focused release suites pass (74.08 seconds); the 66-case Debug aggregate above
+  is historical and was not repeated in this increment. Current candidate IDs and
+  archive validation are in `WPGRAPHICS_IMPLEMENTATION_STATUS.md`. Interactive,
+  clean-machine, broader SDK/asset-family and complete licensing gates remain open.
 - **SHIP-04:** Document supported hardware/features/limits, setup, resource formats, quality tiers, recovery, migration, troubleshooting and profiling.
 - **SHIP-05:** Run long-duration mixed-scene soak, repeated scene/resource reload, device recovery, corrupted-asset and memory-pressure tests. Archive evidence per candidate/version/backend.
   The WPM1 decoder corruption/stream-boundary subset is covered by x64/Win32

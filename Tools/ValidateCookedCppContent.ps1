@@ -88,6 +88,7 @@ function Invoke-CookedCase([string]$Name, [string]$Package, [bool]$Reject, [stri
     $cases.Add($case)
     $start = [Diagnostics.ProcessStartInfo]::new($exe)
     $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
     $start.StandardOutputEncoding = [Text.Encoding]::UTF8
@@ -189,6 +190,15 @@ try {
     $report['sdkRoot'] = $sdk
     $report['payload'] = $before
     Invoke-CookedCase 'good' $good $false
+    # Exercise the runtime reader with both its root and artifact paths beyond
+    # MAX_PATH, using ordinary Unicode paths rather than caller-added prefixes.
+    $deepPackage = New-NegativePackage ('long-runtime-é/' + ('d' * 96) + '/' + ('e' * 96))
+    $deepest = @(Get-ChildItem -LiteralPath $deepPackage -File -Recurse | ForEach-Object { $_.FullName.Length } |
+        Measure-Object -Maximum).Maximum
+    if ($deepPackage.Length -le 260 -or $deepest -le 300) { throw 'Deep runtime probe did not cross the Windows path boundary' }
+    $report['deepRuntimeRootCharacters'] = $deepPackage.Length
+    $report['deepRuntimeArtifactCharacters'] = $deepest
+    Invoke-CookedCase 'deep-good' $deepPackage $false
     $missingManifest = New-NegativePackage 'missing-manifest'
     $removePath = Assert-OwnedPath (Join-Path $missingManifest 'runtime.wprm')
     Remove-Item -LiteralPath $removePath -Force

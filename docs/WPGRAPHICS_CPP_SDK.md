@@ -8,6 +8,11 @@ This candidate supports Windows x64, the producing MSVC compiler version, C++17
 and the release DLL CRT. Debug consumers are rejected because this distribution
 does not contain matching Debug DLLs. The package records the DLL's compile
 definitions, including its string, pointer, atomic and precision configuration.
+The examples embed `WorkphoneCppSDK_WINDOWS_MANIFEST` for Windows long-path
+awareness, as do the packaged Editor and resource CLI. Consumer applications
+using deep cooked paths should embed that manifest or declare the same setting
+in their own application manifest. Windows long-path support must also be enabled
+by the host; the validator records this prerequisite and does not change it.
 `Tools/ValidateCppSDK.ps1` builds and installs both components, creates a ZIP,
 extracts it outside the checkout, copies the installed sample, and builds/runs
 RelWithDebInfo and Release consumers against that extraction. It verifies hashes
@@ -29,13 +34,20 @@ texture mips, checks shared dependency identity, and retains resources across
 shutdown. It needs no application manager, compiler registry or SQLite plugin.
 `Tools/ValidateCookedCppContent.ps1` checks each build in fresh restricted processes,
 including missing/corrupt manifest, wrong target and missing/corrupt root/dependency
-containers. Negative tests use private copies; the good package stays read-only.
+containers. A second good copy also exercises Unicode runtime roots beyond 260
+characters and artifact paths beyond 300. Negative tests use private copies;
+the good package stays read-only.
 
 ```powershell
 cmake --install project_x64 --config RelWithDebInfo --component WorkphoneEditor --prefix <sdk>
 cmake --install project_x64 --config RelWithDebInfo --component WorkphoneCppSDK --prefix <sdk>
-cmake -S <sdk>/share/WorkphoneCppSDK/sample -B <external-build> -A x64 -DCMAKE_PREFIX_PATH=<sdk>
+cmake -S <sdk>/share/WorkphoneCppSDK/sample -B <external-build> -A x64 -DCMAKE_PREFIX_PATH=<sdk> -DCPP_SDK_BUILD_COOKER=ON
 cmake --build <external-build> --config RelWithDebInfo
+$env:PATH = '<sdk>/bin;' + $env:PATH
+if (-not (Test-Path '<sdk>/share/WorkphoneCppSDK/content/runtime.wprm')) {
+    & '<external-build>/RelWithDebInfo/cpp-sdk-cook-sample.exe' '<sdk>/share/WorkphoneCppSDK/content' '<private-authoring-work>'
+    if ($LASTEXITCODE -ne 0) { throw 'Sample cooking failed' }
+}
 ctest --test-dir <external-build> -C RelWithDebInfo --output-on-failure
 ```
 

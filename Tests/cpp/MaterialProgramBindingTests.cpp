@@ -59,8 +59,8 @@ namespace
 
     void materialStorageContracts()
     {
-        using detail::MaterialStorageAllocator;
-        using detail::MaterialStoragePool;
+        using workphone::render::detail::MaterialStorageAllocator;
+        using workphone::render::detail::MaterialStoragePool;
         StorageProbe resource;
         MaterialStorageAllocator<u64> allocator( &resource );
         MaterialStorageAllocator<u8> rebound( allocator );

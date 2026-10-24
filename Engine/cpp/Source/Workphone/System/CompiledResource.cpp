@@ -32,6 +32,30 @@ namespace workphone::resource
         constexpr u32 maxInstallDependencies = 4096;
         std::atomic<u64> temporaryFileCounter{ 0 };
 
+        // Keep caller paths and container identities unchanged. Only absolute
+        // Windows filesystem operations need the extended spelling; relative
+        // paths retain their current-directory semantics.
+        std::filesystem::path fileSystemIOPath( const std::filesystem::path &path )
+        {
+#if defined WP_PLATFORM_WIN32
+            if( path.is_absolute() )
+            {
+                auto native = path.native();
+                std::replace( native.begin(), native.end(), L'/', L'\\' );
+                if( native.rfind( L"\\\\?\\", 0 ) == 0 || native.rfind( L"\\\\.\\", 0 ) == 0 )
+                    return std::filesystem::path( native );
+                // Extended Win32 paths do not process dot segments. Normalize
+                // those before adding the prefix to preserve ordinary path IO.
+                native = path.lexically_normal().native();
+                std::replace( native.begin(), native.end(), L'/', L'\\' );
+                if( native.rfind( L"\\\\", 0 ) == 0 )
+                    return std::filesystem::path( L"\\\\?\\UNC\\" + native.substr( 2 ) );
+                return std::filesystem::path( L"\\\\?\\" + native );
+            }
+#endif
+            return path;
+        }
+
         bool validArtifactPath( const String &path )
         {
             ResourceID normalized;
@@ -288,7 +312,7 @@ namespace workphone::resource
     {
         hash = 14695981039346656037ull;
         size = 0;
-        std::ifstream stream( std::filesystem::u8path( path.c_str() ), std::ios::binary );
+        std::ifstream stream( fileSystemIOPath( std::filesystem::u8path( path.c_str() ) ), std::ios::binary );
         if( !stream )
         {
             error = String( "Failed to open file for hashing: " ) + path;
@@ -333,7 +357,7 @@ namespace workphone::resource
             return false;
         }
 
-        const auto destination = std::filesystem::u8path( outputPath.c_str() );
+        const auto destination = fileSystemIOPath( std::filesystem::u8path( outputPath.c_str() ) );
         std::error_code filesystemError;
         if( destination.has_parent_path() )
         {
@@ -347,7 +371,7 @@ namespace workphone::resource
         }
 
         const String temporaryPathString = makeTemporaryPath( outputPath );
-        const auto temporaryPath = std::filesystem::u8path( temporaryPathString.c_str() );
+        const auto temporaryPath = fileSystemIOPath( std::filesystem::u8path( temporaryPathString.c_str() ) );
         struct TemporaryFileGuard
         {
             std::filesystem::path path;
@@ -359,7 +383,7 @@ namespace workphone::resource
         } guard{ temporaryPath };
 
         std::ofstream output( temporaryPath, std::ios::binary | std::ios::trunc );
-        std::ifstream payload( std::filesystem::u8path( payloadPath.c_str() ), std::ios::binary );
+        std::ifstream payload( fileSystemIOPath( std::filesystem::u8path( payloadPath.c_str() ) ), std::ios::binary );
         if( !output || !payload || !writeHeader( output, header ) )
         {
             error = "Failed to create the compiled resource container";
@@ -385,7 +409,7 @@ namespace workphone::resource
     bool CompiledResourceIO::readHeader( const String &path, CompiledResourceHeader &header,
                                          String &error )
     {
-        std::ifstream stream( std::filesystem::u8path( path.c_str() ), std::ios::binary );
+        std::ifstream stream( fileSystemIOPath( std::filesystem::u8path( path.c_str() ) ), std::ios::binary );
         if( !stream )
         {
             error = String( "Failed to open compiled resource: " ) + path;
@@ -398,7 +422,8 @@ namespace workphone::resource
     bool CompiledResourceIO::validate( const String &path, CompiledResourceHeader &header,
                                        String &error )
     {
-        std::ifstream stream( std::filesystem::u8path( path.c_str() ), std::ios::binary );
+        const auto inputPath = fileSystemIOPath( std::filesystem::u8path( path.c_str() ) );
+        std::ifstream stream( inputPath, std::ios::binary );
         if( !stream )
         {
             error = String( "Failed to open compiled resource: " ) + path;
@@ -411,7 +436,7 @@ namespace workphone::resource
 
         std::error_code filesystemError;
         const u64 fileSize =
-            std::filesystem::file_size( std::filesystem::u8path( path.c_str() ), filesystemError );
+            std::filesystem::file_size( inputPath, filesystemError );
         if( filesystemError || fileSize != payloadOffset + header.payloadSize )
         {
             error = "Compiled resource payload size does not match the file";
@@ -448,7 +473,8 @@ namespace workphone::resource
                                    u64 maxPayloadBytes )
     {
         resource = RuntimeResource();
-        std::ifstream stream( std::filesystem::u8path( path.c_str() ), std::ios::binary );
+        const auto inputPath = fileSystemIOPath( std::filesystem::u8path( path.c_str() ) );
+        std::ifstream stream( inputPath, std::ios::binary );
         if( !stream )
         {
             error = String( "Failed to open compiled resource: " ) + path;
@@ -467,7 +493,7 @@ namespace workphone::resource
 
         std::error_code filesystemError;
         const u64 fileSize =
-            std::filesystem::file_size( std::filesystem::u8path( path.c_str() ), filesystemError );
+            std::filesystem::file_size( inputPath, filesystemError );
         if( filesystemError || fileSize != payloadOffset + resource.header.payloadSize )
         {
             error = "Compiled resource payload size does not match the file";

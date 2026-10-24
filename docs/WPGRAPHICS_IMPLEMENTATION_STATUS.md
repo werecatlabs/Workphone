@@ -1,5 +1,58 @@
 # WPGraphics implementation status
 
+## Catalog-cooked C++ SDK content and Windows path repair - 24 October 2026
+
+The installed SDK now includes a catalog-checked material/texture sample. Its
+authoring executable uses the exported Core/Claw/SQLite APIs, durable UUIDs and
+explicit Runtime policies to compile an original 4x4 TGA and material descriptor.
+Only the manifest and two pinned WPRS containers enter the distribution; private
+source files, catalog and compilation index are removed before the ZIP is made.
+The standalone runtime constructs `ResourceSystem(nullptr, nullptr)`, resolves
+the UUID closure, checks exact material values and three texture mips, verifies
+dependency cache identity and retains decoded resources across shutdown. Runtime
+module checks forbid loading the SQLite plugin.
+
+Installed compilation exposed missing direct Parameter/FixedString includes in
+IJob and AssetDatabaseManager; the public headers now compile without depending
+on a PCH. Deep packaging exposed Windows staging-copy and runtime-reader limits.
+ResourceSystem now uses extended paths at IO/canonicalization boundaries and
+removes only the namespace prefix before its existing containment comparisons.
+CompiledResourceIO applies the same IO spelling to hashing, readers and atomic
+writes. Logical IDs, relative artifact pins and exclusive publication semantics
+are unchanged. Regression coverage includes staging beyond 260 characters,
+runtime artifacts beyond 280, roots beyond 260, every reader API, atomic writes,
+competing destinations and cleanup. SDK examples, Editor and resource CLI also
+embed the shared Windows long-path manifest.
+
+Twelve existing dependency notice sources now accompany Editor and SDK packages,
+with explicit failure for missing notice sources and hash comparisons after
+installation. The resource CLI PDB joins the separate symbols package. This
+closes those concrete packaging omissions; the full licensing audit remains open.
+
+The six focused RelWithDebInfo resource/catalog/cooked-material/packaging suites
+pass in 74.08 seconds against captured unchanged binaries. The standalone deep
+resource regression also passes. The final SDK candidate is
+`project_graphics_sdk/cpp-sdk-validation-94874646f6a346af835ffe74fe0aeb46/`:
+both RelWithDebInfo and Release pass their two CTests and nine fresh-process
+cooked checks each. Deep-copy roots reach 322 characters and artifacts 441.
+All 17,465 extracted payload files retain their hashes after read-only use;
+private authoring inputs are absent and the source snapshot is unchanged.
+
+The matching Editor candidate is
+`project_graphics_sdk/editor-validation-23a4073bea8143fda9390d3819490eb9/`.
+Its six relocation/startup/CLI checks pass with 280 runtime files and 12 separate
+PDBs. It reuses the recorded normal release build; the Editor packager's own
+build is explicitly skipped. Five shared executable/DLL hashes match both
+candidates and the focused tests; all 112 WP_ ABI definitions match the installed
+interface. Embedded long-path declarations are verified in Editor and resource
+CLI. `release-gates.json` in either candidate links the detailed evidence and
+keeps releaseReady/releaseCertified false.
+
+This increment validates the typed material/texture installed-consumer slice.
+Interactive authoring, clean-machine acceptance, broader plugin/public-header
+coverage, representative hardware performance/recovery/soak and complete license
+auditing remain release gates.
+
 ## Shared C++ development SDK consumer - 18 October 2026
 
 `WorkphoneCppSDK` now overlays the existing Editor runtime component with

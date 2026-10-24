@@ -2,6 +2,9 @@ Workphone C++ Editor candidate - Lua notice
 
 The following notice is reproduced from Dependencies/lua/inc/lua.h.
 Other available notices are distributed as separate files in licenses/.
+The install also retains full bundled FreeImage/codecs, TinyXML, zlib,
+MiniZip and Luabind notice sources; filenames are declared in
+CMake/InstallWorkphoneEditorNotices.cmake.
 The complete dependency and media license audit remains outstanding.
 
 Copyright (C) 1994-2025 Lua.org, PUC-Rio.

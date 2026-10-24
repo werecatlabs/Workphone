@@ -52,5 +52,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/cpp-sdk/RelWithDebInfo/WorkphoneCppSD
     DESTINATION lib/cmake/WorkphoneCppSDK COMPONENT WorkphoneCppSDK)
 install(DIRECTORY "${WP_ROOT}/Tests/CppSDKConsumer/" DESTINATION share/WorkphoneCppSDK/sample
     COMPONENT WorkphoneCppSDK)
+install(FILES "${CMAKE_CURRENT_LIST_DIR}/WorkphoneWindows.manifest" DESTINATION share/WorkphoneCppSDK
+    COMPONENT WorkphoneCppSDK)
 install(FILES "${WP_ROOT}/docs/WPGRAPHICS_CPP_SDK.md" DESTINATION .
     COMPONENT WorkphoneCppSDK)

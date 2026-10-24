@@ -10,6 +10,7 @@ $stage = Join-Path $run 'WorkphoneCppSDK'
 $report = [ordered]@{schemaVersion=2;validationPassed=$false;releaseCertified=$false
     scope='Windows x64 C++17 installed Core/Claw consumer and catalog-cooked material/texture runtime closure; release DLL CRT'
     buildSkipped=[bool]$SkipBuild;incrementalBuild=$true;externalDirectory=$external}
+$report['windowsLongPathsEnabled']=Get-ItemPropertyValue 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $run,$external | Out-Null
 function Invoke-Checked([string]$Label, [string[]]$Arguments) {
     & cmake @Arguments *> (Join-Path $run "$Label.log")
@@ -27,6 +28,7 @@ function Get-Payload([string]$Root) {
 function Invoke-IsolatedTool([string]$Label, [string]$Executable, [string[]]$Arguments, [string]$BinDirectory) {
     $start = [Diagnostics.ProcessStartInfo]::new($Executable)
     $start.UseShellExecute=$false
+    $start.CreateNoWindow=$true
     $start.RedirectStandardOutput=$true
     $start.RedirectStandardError=$true
     $start.WorkingDirectory=$external
@@ -52,8 +54,8 @@ try {
         (Join-Path $repo 'Engine/cpp/Include/WPGraphics'), (Join-Path $repo 'Engine/cpp/Include/WPSQLite'),
         (Join-Path $repo 'Engine/cpp/Source/WPGraphics/Resources'),
         (Join-Path $repo 'Engine/cpp/Source/WPSQLite'), (Join-Path $repo 'Tests/CppSDKConsumer') -Recurse -File)
-    $inputFiles += @('CMakeLists.txt','CMake/InstallWorkphoneCppSDK.cmake','CMake/WorkphoneCppSDKConfig.cmake.in',
-        'CMake/InstallWorkphoneEditor.cmake','Tools/ValidateCppSDK.ps1','Tools/ValidateCookedCppContent.ps1',
+    $inputFiles += @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWorkphoneCppSDK.cmake','CMake/WorkphoneCppSDKConfig.cmake.in',
+        'CMake/InstallWorkphoneEditor.cmake','CMake/InstallWorkphoneEditorNotices.cmake','Tools/ValidateCppSDK.ps1','Tools/ValidateCookedCppContent.ps1',
         'docs/WPGRAPHICS_CPP_SDK.md','docs/WPGRAPHICS_EDITOR_PACKAGE.md',
         'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp','Engine/cpp/Source/Workphone/System/CompiledResource.cpp',
         'Engine/cpp/Source/Workphone/System/ResourceCompilerRegistry.cpp',
@@ -61,6 +63,8 @@ try {
         'Engine/cpp/Source/Workphone/Database/AssetPackagePolicy.cpp','Engine/cpp/Project/Workphone/CMakeLists.txt',
         'Engine/cpp/Project/WPGraphics/CMakeLists.txt','Engine/cpp/Project/WPSQLite/CMakeLists.txt') |
         ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_) }
+    $noticeEntries=[regex]::Matches((Get-Content (Join-Path $repo 'CMake/InstallWorkphoneEditorNotices.cmake') -Raw),'"(Dependencies/[^"|]+)\|([^"|]+)"')
+    $inputFiles += @($noticeEntries | ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_.Groups[1].Value) })
     $report['inputs'] = @($inputFiles | Sort-Object FullName -Unique | ForEach-Object {
         [ordered]@{path=$_.FullName;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
     })
@@ -70,6 +74,12 @@ try {
     }
     Invoke-Checked 'install-runtime' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneEditor','--prefix',$stage)
     Invoke-Checked 'install-sdk' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneCppSDK','--prefix',$stage)
+    $report['dependencyNotices']=@($noticeEntries | ForEach-Object {
+        $source=$_.Groups[1].Value; $name='licenses/'+$_.Groups[2].Value
+        $hash=(Get-FileHash -LiteralPath (Join-Path $repo $source)).Hash
+        if($hash -ne (Get-FileHash -LiteralPath (Join-Path $stage $name)).Hash) { throw "Dependency notice differs: $name" }
+        [ordered]@{source=$source;path=$name;sha256=$hash}
+    })
     & cmake --install $build --config Debug --component WorkphoneCppSDK --prefix (Join-Path $run 'rejected-debug') *> (Join-Path $run 'reject-debug-install.log')
     if ($LASTEXITCODE -eq 0 -or (Get-Content (Join-Path $run 'reject-debug-install.log') -Raw) -notlike '*SDK requires RelWithDebInfo*') { throw 'Debug SDK install was not rejected for the expected reason' }
     $report['debugInstallRejected'] = $true
@@ -132,6 +142,7 @@ try {
         $exe = Join-Path $consumerBuild "$config/cpp-sdk-consumer.exe"
         $start = [Diagnostics.ProcessStartInfo]::new($exe)
         $start.UseShellExecute=$false
+        $start.CreateNoWindow=$true
         $start.RedirectStandardOutput=$true
         $start.RedirectStandardError=$true
         $start.WorkingDirectory=$external

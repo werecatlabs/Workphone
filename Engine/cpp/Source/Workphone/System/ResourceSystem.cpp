@@ -332,6 +332,41 @@ namespace workphone::resource
             return path.u8string().c_str();
         }
 
+        // Apply only at filesystem IO boundaries, after canonical root admission.
+        // CopyFile2 can reject a deep staging artifact even when the executable
+        // opts into long paths. Logical IDs, manifest paths and containment
+        // comparisons retain their original portable spelling.
+        fs::path fileSystemIOPath( const fs::path &path )
+        {
+#if defined WP_PLATFORM_WIN32
+            if( path.is_absolute() )
+            {
+                auto native = path.native();
+                std::replace( native.begin(), native.end(), L'/', L'\\' );
+                if( native.rfind( L"\\\\?\\", 0 ) == 0 )
+                    return fs::path( native );
+                if( native.rfind( L"\\\\", 0 ) == 0 )
+                    return fs::path( L"\\\\?\\UNC\\" + native.substr( 2 ) );
+                return fs::path( L"\\\\?\\" + native );
+            }
+#endif
+            return path;
+        }
+
+        fs::path comparableFileSystemPath( const fs::path &path )
+        {
+#if defined WP_PLATFORM_WIN32
+            const auto native = path.native();
+            auto prefix = native.substr( 0, 8 );
+            std::transform( prefix.begin(), prefix.end(), prefix.begin(), ::towupper );
+            if( prefix == L"\\\\?\\UNC\\" )
+                return fs::path( L"\\\\" + native.substr( 8 ) );
+            if( native.rfind( L"\\\\?\\", 0 ) == 0 )
+                return fs::path( native.substr( 4 ) );
+#endif
+            return path;
+        }
+
         String normalizeLogicalDataPath( const String &input, String &error )
         {
             String path = input;
@@ -405,8 +440,9 @@ namespace workphone::resource
 
             std::error_code filesystemError;
             fs::path candidate = root / fs::u8path( normalized.substr( 7 ).c_str() );
-            candidate = mustExist ? fs::canonical( candidate, filesystemError )
-                                  : fs::weakly_canonical( candidate, filesystemError );
+            candidate = mustExist ? fs::canonical( fileSystemIOPath( candidate ), filesystemError )
+                                  : fs::weakly_canonical( fileSystemIOPath( candidate ), filesystemError );
+            candidate = comparableFileSystemPath( candidate );
             if( filesystemError )
             {
                 error = String( "Failed to resolve data path '" ) + normalized +
@@ -418,7 +454,7 @@ namespace workphone::resource
                 error = String( "Data path escapes the configured root: " ) + normalized;
                 return false;
             }
-            if( mustExist && !fs::is_regular_file( candidate, filesystemError ) )
+            if( mustExist && !fs::is_regular_file( fileSystemIOPath( candidate ), filesystemError ) )
             {
                 error = String( "Data dependency is not a regular file: " ) + normalized;
                 return false;
@@ -1686,8 +1722,10 @@ namespace workphone::resource
             return false;
         }
         std::error_code filesystemError;
-        auto compiled = fs::canonical( fs::u8path( config.compiledRoot.c_str() ), filesystemError );
-        if( filesystemError || !fs::is_directory( compiled, filesystemError ) )
+        auto compiled = fs::absolute( fs::u8path( config.compiledRoot.c_str() ), filesystemError );
+        if( !filesystemError )
+            compiled = comparableFileSystemPath( fs::canonical( fileSystemIOPath( compiled ), filesystemError ) );
+        if( filesystemError || !fs::is_directory( fileSystemIOPath( compiled ), filesystemError ) )
         {
             error = "Runtime compiled root must be an existing accessible directory";
             return false;
@@ -2019,7 +2057,7 @@ namespace workphone::resource
                 if( !path.empty() )
                 {
                     std::error_code ignored;
-                    fs::remove_all( path, ignored );
+                    fs::remove_all( fileSystemIOPath( path ), ignored );
                 }
             }
         } staging;
@@ -2031,7 +2069,7 @@ namespace workphone::resource
                   std::to_string(
                       std::chrono::high_resolution_clock::now().time_since_epoch().count() ) +
                   "-" + std::to_string( payloadTemporaryCounter.fetch_add( 1 ) ) );
-            if( fs::create_directory( candidate, ec ) )
+            if( fs::create_directory( fileSystemIOPath( candidate ), ec ) )
             {
                 staging.path = candidate;
                 break;
@@ -2122,16 +2160,17 @@ namespace workphone::resource
             if( !resolveUnderRoot( m_impl->compiledRoot, "data://" + relative, true, input, error ) )
                 return false;
             const auto output = staging.path / fs::u8path( relative.c_str() );
-            fs::create_directories( output.parent_path(), ec );
+            fs::create_directories( fileSystemIOPath( output.parent_path() ), ec );
             if( !ec )
-                fs::copy_file( input, output, fs::copy_options::none, ec );
+                fs::copy_file( fileSystemIOPath( input ), fileSystemIOPath( output ), fs::copy_options::none, ec );
             if( ec )
             {
-                error = "Cannot copy runtime package artifact: " + entry.first;
+                error = "Cannot copy runtime package artifact: " + entry.first + " (" +
+                        std::to_string( ec.value() ).c_str() + ": " + ec.message().c_str() + ")";
                 return false;
             }
             CompiledResourceHeader copied;
-            if( !CompiledResourceIO::validate( pathString( output ), copied, error ) )
+            if( !CompiledResourceIO::validate( pathString( fileSystemIOPath( output ) ), copied, error ) )
                 return false;
             if( !sameRuntimeHeader( copied, entry.second, false ) )
             {
@@ -2159,7 +2198,8 @@ namespace workphone::resource
         bool published = false;
 #if defined WP_PLATFORM_WIN32
         published =
-            MoveFileExW( staging.path.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
+            MoveFileExW( fileSystemIOPath( staging.path ).c_str(), fileSystemIOPath( destination ).c_str(),
+                         MOVEFILE_WRITE_THROUGH ) != 0;
 #elif defined( __linux__ ) && defined( SYS_renameat2 )
         published = syscall( SYS_renameat2, AT_FDCWD, staging.path.c_str(), AT_FDCWD,
                              destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;

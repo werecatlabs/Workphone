@@ -389,6 +389,152 @@ namespace resource_runtime_contracts
                 fs::create_directory(racingDestination); return true;
             },error) && fs::is_empty(racingDestination),
                 "A racing destination must be preserved by exclusive final publication");
+#if defined( _WIN32 )
+        // Keep published paths below MAX_PATH so this test does not require an
+        // executable manifest or machine long-path policy. The exporter's longer
+        // .wp-package-* staging component must still cross that boundary.
+        fs::path longestArtifact;
+        for( const auto &entry : fs::recursive_directory_iterator( exportedPackage ) )
+            if( entry.is_regular_file() && entry.path().filename() != "runtime.wprm" )
+            {
+                const auto relative = fs::relative( entry.path(), exportedPackage );
+                if( relative.native().size() > longestArtifact.native().size() )
+                    longestArtifact = relative;
+            }
+        constexpr size_t publishedArtifactLength = 247;
+        const auto rootLength = fixture.root.native().size();
+        require( !longestArtifact.empty() &&
+                     publishedArtifactLength > rootLength + longestArtifact.native().size() + 4,
+                 "Runtime long-path fixture needs room below MAX_PATH for its published closure" );
+        const auto parentLength = publishedArtifactLength - longestArtifact.native().size() - 3;
+        const auto longParent = fixture.root /
+            fs::path( std::wstring( parentLength - rootLength - 1, L'x' ) );
+        const auto longPackage = longParent / "p";
+        const auto stagingComponent = ".wp-package-" + std::to_string(
+            std::chrono::high_resolution_clock::now().time_since_epoch().count() ) + "-0";
+        require( longPackage.native().size() < 260 &&
+                     ( longPackage / longestArtifact ).native().size() == publishedArtifactLength &&
+                     ( longParent / stagingComponent / longestArtifact ).native().size() >= 260,
+                 "Runtime export regression must cross MAX_PATH only in its private staging tree" );
+        const RuntimePackageResolver longResolver = [&](const RuntimePackageContext &context,
+            RuntimePackageAdmission &admission, String &) {
+            for( const auto &id : context.resources )
+                admission.bindings.push_back( { id == rootId ? rootUUID :
+                    id == leafId ? leafUUID : StringUtil::getUUID(), id } );
+            admission.lifetime = std::make_shared<int>( 1 );
+            return true;
+        };
+        require( authoring.writeRuntimePackageChecked( pathText( longPackage ), { rootId },
+                                                       longResolver, error ), error );
+        const auto longPackageBefore = snapshot( longPackage );
+        ResourceSystem longRuntime( nullptr, nullptr );
+        RuntimeResourceConfig longConfig;
+        longConfig.compiledRoot = pathText( longPackage );
+        longConfig.manifestPath = pathText( longPackage / "runtime.wprm" );
+        longConfig.target = authoringConfig.target;
+        require( longRuntime.initializeRuntime( longConfig, error ), error );
+        const auto longRoot = longRuntime.loadUUID( rootUUID, error );
+        require( longRoot && longRoot->header.resourceId == rootId &&
+                     longRoot->dependencies[0]->dependencies[0] ==
+                         longRuntime.loadUUID( leafUUID, error ),
+                 "Long-staging checked export must retain its UUID-bound pinned runtime closure" );
+        longRuntime.shutdown();
+        require( snapshot( longPackage ) == longPackageBefore,
+                 "Long-staging package mount changed its published payload" );
+        const auto extendedIOPath = []( const fs::path &path ) {
+            auto native = path.lexically_normal().native();
+            std::replace( native.begin(), native.end(), L'/', L'\\' );
+            if( native.rfind( L"\\\\?\\", 0 ) == 0 )
+                return fs::path( native );
+            return native.rfind( L"\\\\", 0 ) == 0 ?
+                fs::path( L"\\\\?\\UNC\\" + native.substr( 2 ) ) : fs::path( L"\\\\?\\" + native );
+        };
+        const auto verifyDeepRuntimeCopy = [&]( const fs::path &directory ) {
+            const auto ioRoot = extendedIOPath( directory );
+            struct DeepCopyGuard
+            {
+                fs::path path;
+                ~DeepCopyGuard()
+                {
+                    std::error_code ignored;
+                    fs::remove_all( path, ignored );
+                }
+            } cleanup{ ioRoot };
+            // Test setup uses explicit extended IO, but the public runtime API
+            // receives the ordinary absolute path, independent of EXE manifest.
+            fs::create_directories( ioRoot );
+            for( const auto &entry : fs::recursive_directory_iterator( longPackage ) )
+            {
+                const auto target = extendedIOPath( directory / fs::relative( entry.path(), longPackage ) );
+                if( entry.is_directory() )
+                    fs::create_directories( target );
+                else if( entry.is_regular_file() )
+                {
+                    fs::create_directories( target.parent_path() );
+                    fs::copy_file( extendedIOPath( entry.path() ), target );
+                }
+            }
+            require( snapshot( ioRoot ) == longPackageBefore, "Deep runtime fixture copy changed bytes" );
+            ResourceSystem deepRuntime( nullptr, nullptr );
+            auto deepConfig = longConfig;
+            deepConfig.compiledRoot = pathText( directory );
+            deepConfig.manifestPath = pathText( directory / "runtime.wprm" );
+            require( deepRuntime.initializeRuntime( deepConfig, error ), error );
+            const auto deepRoot = deepRuntime.loadUUID( rootUUID, error );
+            require( deepRoot && deepRoot->dependencies[0]->dependencies[0] ==
+                         deepRuntime.loadUUID( leafUUID, error ),
+                     "Deep runtime mount lost its pinned UUID closure" );
+            const auto deepArtifact = directory / longestArtifact;
+            CompiledResourceHeader deepHeader;
+            RuntimeResource deepResource;
+            u64 deepHash = 0, deepSize = 0;
+            require( CompiledResourceIO::hashFile( pathText( deepArtifact ), deepHash, deepSize, error ) &&
+                         deepHash && deepSize &&
+                         CompiledResourceIO::readHeader( pathText( deepArtifact ), deepHeader, error ) &&
+                         CompiledResourceIO::validate( pathText( deepArtifact ), deepHeader, error ) &&
+                         CompiledResourceIO::read( pathText( deepArtifact ), deepResource, error ) &&
+                         deepResource.header.resourceId == deepHeader.resourceId,
+                     "Ordinary deep paths must work through every compiled-container reader" );
+            deepRuntime.shutdown();
+            const auto roundtripPayload = directory / "roundtrip.payload";
+            const auto roundtripContainer = directory / longestArtifact.parent_path() / "roundtrip.wprs";
+            write( extendedIOPath( roundtripPayload ),
+                   std::string( deepResource.payload.begin(), deepResource.payload.end() ) );
+            require( CompiledResourceIO::writeAtomic( pathText( roundtripContainer ), deepResource.header,
+                                                       pathText( roundtripPayload ), error ) &&
+                         CompiledResourceIO::validate( pathText( roundtripContainer ), deepHeader, error ),
+                     "Ordinary deep paths must support atomic compiled-container writes" );
+            fs::remove( extendedIOPath( roundtripContainer ) );
+            fs::remove( extendedIOPath( roundtripPayload ) );
+            require( snapshot( ioRoot ) == longPackageBefore, "Deep runtime mount changed its payload" );
+        };
+        constexpr size_t descendantRootLength = 185;
+        require( descendantRootLength > rootLength + 1,
+                 "Deep runtime fixture requires a root shorter than 185 characters" );
+        const auto deepDescendantPackage = fixture.root /
+            fs::path( std::wstring( descendantRootLength - rootLength - 1, L'y' ) );
+        require( deepDescendantPackage.native().size() < 200 &&
+                     ( deepDescendantPackage / longestArtifact ).native().size() > 280,
+                 "Deep runtime fixture must keep a short root with artifact descendants beyond 280" );
+        verifyDeepRuntimeCopy( deepDescendantPackage );
+        const auto deepRootPackage = fixture.root / fs::path( std::wstring( 120, L'z' ) ) /
+            fs::path( std::wstring( 120, L'w' ) );
+        require( deepRootPackage.native().size() > 260,
+                 "Deep runtime root fixture must itself exceed MAX_PATH" );
+        verifyDeepRuntimeCopy( deepRootPackage );
+        const auto longRacingDestination = longParent / "r";
+        require( !authoring.writeRuntimePackageChecked( pathText( longRacingDestination ), { rootId },
+            [&](const RuntimePackageContext &context, RuntimePackageAdmission &admission, String &diagnostic) {
+                if( !longResolver( context, admission, diagnostic ) )
+                    return false;
+                fs::create_directory( longRacingDestination );
+                return true;
+            }, error ) && fs::is_empty( longRacingDestination ),
+            "Long-staging export must preserve a racing destination without publishing over it" );
+        for( const auto &entry : fs::directory_iterator( longParent ) )
+            require( entry.path().filename().u8string().find( ".wp-package-" ) != 0,
+                     "Successful or failed long-staging export leaked its private directory" );
+#endif
         for( const auto &entry : fs::directory_iterator( fixture.root ) )
             require( entry.path().filename().u8string().find( ".wp-package-" ) != 0,
                      "Completed or failed export leaked its staging directory" );

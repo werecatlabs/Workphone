@@ -17,7 +17,7 @@ $evidence = [ordered]@{ schemaVersion = 1; validationPassed = $false; releaseCer
     buildDirectory = $build; incrementalBuild = $true; buildSkipped = [bool]$SkipBuild
     interactiveValidated = $false; cleanMachineValidated = $false; licenseAuditComplete = $false }
 $checks = [Collections.Generic.List[object]]::new()
-$inputs = @('CMakeLists.txt','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEditorPackage.ps1',
+$inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEditorPackage.ps1',
     'Tools/cpp/Editor/src/application/win32/Main.cpp','Tools/cpp/Editor/src/application/win32/EditorPackage.hpp',
     'Tools/cpp/Editor/src/EditorApplication.hpp','Tools/cpp/Editor/src/EditorApplication.cpp',
     'Engine/cpp/Source/Workphone/System/ApplicationManager.cpp','docs/WPGRAPHICS_EDITOR_PACKAGE.md',
@@ -27,6 +27,7 @@ $inputs = @('CMakeLists.txt','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEd
     'Engine/cpp/Include/Workphone/System/ResourcePackageRecovery.hpp',
     'Engine/cpp/Include/Workphone/System/ResourceSystem.hpp',
     'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp',
+    'Engine/cpp/Source/Workphone/System/CompiledResource.cpp',
     'Engine/cpp/Include/Workphone/Database/CatalogResourceAdapter.hpp',
     'Engine/cpp/Source/Workphone/Database/CatalogResourceAdapter.cpp',
     'Engine/cpp/Include/Workphone/System/PackageManager.hpp',
@@ -39,6 +40,13 @@ $inputs = @('CMakeLists.txt','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEd
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
 $evidence['packagingInputs'] = @($inputs)
+$noticeInstaller='CMake/InstallWorkphoneEditorNotices.cmake'
+$noticeSources=@($noticeInstaller)
+$noticeSources+=@([regex]::Matches((Get-Content (Join-Path $repo $noticeInstaller) -Raw),'"(Dependencies/[^"|]+)\|([^"|]+)"') |
+    ForEach-Object { $_.Groups[1].Value })
+$evidence.packagingInputs+=@($noticeSources | ForEach-Object {
+    [ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash}
+})
 function Invoke-CMake([string]$Name, [string[]]$Arguments) {
     & cmake @Arguments *> (Join-Path $output "$Name.log")
     if ($LASTEXITCODE -ne 0) { throw "CMake $Name failed; see $output/$Name.log" }
