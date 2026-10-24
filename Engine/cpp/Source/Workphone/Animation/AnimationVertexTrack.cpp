@@ -107,6 +107,14 @@ namespace workphone
 
     AnimationVertexTrack::~AnimationVertexTrack() = default;
 
+    void AnimationVertexTrack::unload( SmartPtr<ISharedObject> data )
+    {
+        m_morphKeyFrames = makeSourceBudgetSnapshot<SmartPtr<IAnimationMorphKeyFrame>>();
+        m_poseKeyFrames = makeSourceBudgetSnapshot<SmartPtr<IAnimationPoseKeyFrame>>();
+        m_vertexData = nullptr;
+        AnimationTrack<IAnimationVertexTrack>::unload( data );
+    }
+
     VertexAnimationType AnimationVertexTrack::getAnimationType() const
     {
         return m_animationType;
@@ -306,22 +314,26 @@ namespace workphone
     {
         if( m_animationType == VertexAnimationType::VAT_MORPH && index < m_morphKeyFrames.size() )
         {
-            m_morphKeyFrames.erase( m_morphKeyFrames.begin() + index );
+            std::move( m_morphKeyFrames.begin() + index + 1, m_morphKeyFrames.end(),
+                       m_morphKeyFrames.begin() + index );
+            m_morphKeyFrames.pop_back();
             _keyFrameDataChanged();
             return;
         }
 
         if( m_animationType == VertexAnimationType::VAT_POSE && index < m_poseKeyFrames.size() )
         {
-            m_poseKeyFrames.erase( m_poseKeyFrames.begin() + index );
+            std::move( m_poseKeyFrames.begin() + index + 1, m_poseKeyFrames.end(),
+                       m_poseKeyFrames.begin() + index );
+            m_poseKeyFrames.pop_back();
             _keyFrameDataChanged();
         }
     }
 
     void AnimationVertexTrack::removeAllKeyFrames()
     {
-        m_morphKeyFrames.clear();
-        m_poseKeyFrames.clear();
+        m_morphKeyFrames = makeSourceBudgetSnapshot<SmartPtr<IAnimationMorphKeyFrame>>();
+        m_poseKeyFrames = makeSourceBudgetSnapshot<SmartPtr<IAnimationPoseKeyFrame>>();
         _keyFrameDataChanged();
     }
 
@@ -381,11 +393,12 @@ namespace workphone
 
     void AnimationVertexTrack::_collectKeyFrameTimes( Array<f32> &keyFrameTimes )
     {
+        auto candidate = makeSourceBudgetSnapshot( keyFrameTimes );
         for( const auto &keyFrame : m_morphKeyFrames )
         {
             if( keyFrame )
             {
-                keyFrameTimes.push_back( keyFrame->getTime() );
+                candidate.push_back( keyFrame->getTime() );
             }
         }
 
@@ -393,9 +406,10 @@ namespace workphone
         {
             if( keyFrame )
             {
-                keyFrameTimes.push_back( keyFrame->getTime() );
+                candidate.push_back( keyFrame->getTime() );
             }
         }
+        keyFrameTimes = std::move( candidate );
     }
 
     void AnimationVertexTrack::_applyBaseKeyFrame( const SmartPtr<IAnimationKeyFrame> &base )
@@ -433,7 +447,9 @@ namespace workphone
     void AnimationVertexTrack::setMorphKeyFrames(
         const Array<SmartPtr<IAnimationMorphKeyFrame>> &keyFrames )
     {
-        m_morphKeyFrames = keyFrames;
+        auto candidate = makeSourceBudgetSnapshot( keyFrames );
+        sortKeyFrames( candidate );
+        m_morphKeyFrames = std::move( candidate );
         m_animationType = VertexAnimationType::VAT_MORPH;
         optimise();
     }
@@ -446,7 +462,9 @@ namespace workphone
     void AnimationVertexTrack::setPoseKeyFrames(
         const Array<SmartPtr<IAnimationPoseKeyFrame>> &keyFrames )
     {
-        m_poseKeyFrames = keyFrames;
+        auto candidate = makeSourceBudgetSnapshot( keyFrames );
+        sortKeyFrames( candidate );
+        m_poseKeyFrames = std::move( candidate );
         m_animationType = VertexAnimationType::VAT_POSE;
         optimise();
     }

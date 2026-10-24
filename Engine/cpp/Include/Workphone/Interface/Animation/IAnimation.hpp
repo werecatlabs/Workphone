@@ -5,6 +5,9 @@
 #include <Workphone/Interface/Animation/IAnimationState.hpp>
 #include <Workphone/Core/Set.hpp>
 #include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
+#include <map>
+#include <set>
 
 namespace workphone
 {
@@ -29,22 +32,25 @@ namespace workphone
         /**
          * @brief Map of node track handles to their corresponding animation tracks.
          */
-        typedef std::map<u16, IActorAnimationTrack *> NodeTrackList;
+        using NodeTrackList = std::map<u16, IActorAnimationTrack *, std::less<u16>,
+            SourceBudgetAllocator<std::pair<const u16, IActorAnimationTrack *>>>;
 
         /**
          * @brief Map of numeric track handles to their corresponding animation tracks.
          */
-        typedef std::map<u16, IAnimationNumericTrack *> NumericTrackList;
+        using NumericTrackList = std::map<u16, IAnimationNumericTrack *, std::less<u16>,
+            SourceBudgetAllocator<std::pair<const u16, IAnimationNumericTrack *>>>;
 
         /**
          * @brief Map of vertex track handles to their corresponding animation tracks.
          */
-        typedef std::map<u16, IAnimationVertexTrack *> VertexTrackList;
+        using VertexTrackList = std::map<u16, IAnimationVertexTrack *, std::less<u16>,
+            SourceBudgetAllocator<std::pair<const u16, IAnimationVertexTrack *>>>;
 
         /**
          * @brief Set of track handles.
          */
-        typedef Set<u16> TrackHandleList;
+        using TrackHandleList = std::set<u16, std::less<u16>, SourceBudgetAllocator<u16>>;
 
         /**
          * @brief Virtual destructor.

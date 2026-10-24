@@ -3,12 +3,15 @@
 
 #include <Workphone/Interface/Animation/IAnimationPoseKeyFrame.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
-    class AnimationPoseKeyFrame : public IAnimationPoseKeyFrame
+    class WPCore_API AnimationPoseKeyFrame : public IAnimationPoseKeyFrame, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /** Reference to a pose at a given influence level
          * @remarks
          *   Each keyframe can refer to many poses each at a given influence level.
@@ -33,9 +36,10 @@ namespace workphone
             }
         };
 
-        typedef std::vector<PoseRef> PoseRefList;
+        using PoseRefList = std::vector<PoseRef, SourceBudgetAllocator<PoseRef>>;
 
         AnimationPoseKeyFrame();
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         f32 getTime() const override;
         void setTime( f32 time ) override;
@@ -54,7 +58,7 @@ namespace workphone
             f32 influence = 0.0f;
         };
 
-        Array<PoseReference> m_poseReferences;
+        Array<PoseReference> m_poseReferences{Allocator<PoseReference>(sourceBudget)};
         f32 m_time = 0.0f;
     };
 }  // namespace workphone

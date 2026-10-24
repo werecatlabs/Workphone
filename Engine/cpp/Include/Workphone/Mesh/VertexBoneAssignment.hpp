@@ -11,6 +11,7 @@
  */
 
 #include <Workphone/Interface/Mesh/IVertexBoneAssignment.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -22,9 +23,11 @@ namespace workphone
      * during skinning. Multiple assignments can exist for the same vertex to
      * represent blended influences from several bones.
      */
-    class WPCore_API VertexBoneAssignment : public IVertexBoneAssignment
+    class WPCore_API VertexBoneAssignment : public IVertexBoneAssignment, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Default constructor.
          *

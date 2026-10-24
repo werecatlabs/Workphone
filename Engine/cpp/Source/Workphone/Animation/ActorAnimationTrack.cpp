@@ -52,6 +52,14 @@ namespace workphone
 
     ActorAnimationTrack::~ActorAnimationTrack() = default;
 
+    void ActorAnimationTrack::unload( SmartPtr<ISharedObject> data )
+    {
+        m_actor = nullptr;
+        m_bone = nullptr;
+        m_propertyName.release();
+        AnimationTrack<IActorAnimationTrack>::unload( data );
+    }
+
     void ActorAnimationTrack::setActor( SmartPtr<scene::IGameActor> actor )
     {
         m_actor = actor;

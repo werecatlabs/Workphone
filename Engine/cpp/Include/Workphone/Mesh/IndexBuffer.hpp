@@ -4,6 +4,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/IIndexBuffer.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -20,9 +21,11 @@ namespace workphone
      * @see IIndexBuffer
      * @author Workphone Engine Team
      */
-    class WPCore_API IndexBuffer : public IIndexBuffer
+    class WPCore_API IndexBuffer : public IIndexBuffer, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Default constructor.
          *

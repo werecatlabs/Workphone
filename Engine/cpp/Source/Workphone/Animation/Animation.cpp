@@ -13,6 +13,7 @@
 #include <cmath>
 #include <limits>
 #include <unordered_map>
+#include <memory>
 
 namespace workphone
 {
@@ -20,27 +21,97 @@ namespace workphone
 
     namespace
     {
+        void detachTrack( IAnimationTrack *track, IAnimation *owner )
+        {
+            if( !track || track->getParent() != owner ) return;
+            if( auto actor = dynamic_cast<ActorAnimationTrack *>( track ) ) actor->setParent( nullptr );
+            else if( auto vertex = dynamic_cast<AnimationVertexTrack *>( track ) ) vertex->setParent( nullptr );
+        }
         template <class T>
         void eraseOwnedTrack( Array<SmartPtr<T>> &tracks, T *track )
         {
-            tracks.erase( std::remove_if( tracks.begin(), tracks.end(),
-                                          [track]( const SmartPtr<T> &ownedTrack ) {
-                                              return ownedTrack.get() == track;
-                                          } ),
-                          tracks.end() );
+            auto found = std::find_if( tracks.begin(), tracks.end(),
+                [track]( const SmartPtr<T> &ownedTrack ) { return ownedTrack.get() == track; } );
+            if( found == tracks.end() ) return;
+            std::move( found + 1, tracks.end(), found );
+            tracks.pop_back();
         }
 
         template <class T>
         void eraseOwnedTrackByShared( Array<SmartPtr<T>> &tracks,
                                       const SmartPtr<IAnimationTrack> &track )
         {
-            tracks.erase( std::remove_if( tracks.begin(), tracks.end(),
-                                          [&track]( const SmartPtr<T> &ownedTrack ) {
-                                              return ownedTrack && track &&
-                                                     static_cast<IAnimationTrack *>(
-                                                         ownedTrack.get() ) == track.get();
-                                          } ),
-                          tracks.end() );
+            auto found = std::find_if( tracks.begin(), tracks.end(),
+                [&track]( const SmartPtr<T> &ownedTrack ) {
+                    return ownedTrack && track &&
+                           static_cast<IAnimationTrack *>( ownedTrack.get() ) == track.get();
+                } );
+            if( found == tracks.end() ) return;
+            std::move( found + 1, tracks.end(), found );
+            tracks.pop_back();
+        }
+
+        template <class Map, class T>
+        bool stillIndexed( const Map &index, T *track )
+        {
+            return std::any_of( index.begin(), index.end(),
+                [track]( const auto &entry ) { return entry.second == track; } );
+        }
+
+        template <class T>
+        void detachRetiredTracks( Array<SmartPtr<T>> &retired, const Array<SmartPtr<T>> &current,
+                                  IAnimation *owner )
+        {
+            if constexpr( std::is_base_of_v<IAnimationTrack, T> )
+                for( auto &track : retired )
+                    if( track && track->getParent() == owner &&
+                        std::none_of( current.begin(), current.end(), [&]( const SmartPtr<T> &active ) {
+                            return active.get() == track.get();
+                        } ) ) detachTrack( track.get(), owner );
+        }
+
+        template <class Map, class T, class U>
+        void publishTrack( Map &index, Array<SmartPtr<T>> &owners, const SmartPtr<U> &track,
+                           u16 handle, IAnimation *animation )
+        {
+            auto candidateIndex = index;
+            auto candidateOwners = makeSourceBudgetSnapshot( owners );
+            auto existing = candidateIndex.find( handle );
+            if( existing != candidateIndex.end() ) eraseOwnedTrack( candidateOwners, existing->second );
+            candidateIndex[handle] = track.get();
+            candidateOwners.push_back( track );
+            index.swap( candidateIndex );
+            owners.swap( candidateOwners );
+            detachRetiredTracks( candidateOwners, owners, animation );
+        }
+
+        template <class Map, class T>
+        void importTracks( Map &index, Array<SmartPtr<T>> &owners, const Array<SmartPtr<T>> &input,
+                           IAnimation *animation )
+        {
+            Map candidateIndex;
+            auto candidateOwners = makeSourceBudgetSnapshot<SmartPtr<T>>();
+            candidateOwners.reserve( input.capacity() );
+            size_t handle = 0;
+            for( const auto &track : input ) if( track )
+            {
+                if( handle >= std::numeric_limits<u16>::max() )
+                    throw std::length_error( "Animation track count exceeds the public handle range." );
+                candidateIndex.emplace( static_cast<u16>( handle++ ), track.get() );
+                candidateOwners.push_back( track );
+            }
+            index.swap( candidateIndex );
+            owners.swap( candidateOwners );
+            detachRetiredTracks( candidateOwners, owners, animation );
+        }
+
+        template <class Map, class T>
+        void retireTracks( Map &index, Array<SmartPtr<T>> &owners, IAnimation *animation )
+        {
+            index.clear();
+            auto retired = makeSourceBudgetSnapshot<SmartPtr<T>>();
+            retired.swap( owners );
+            detachRetiredTracks( retired, owners, animation );
         }
 
         f32 normaliseTime( f32 timePos, f32 length )
@@ -63,10 +134,20 @@ namespace workphone
         m_interpolationMode( InterpolationMode::LINEAR ),
         m_rotationInterpolationMode( RotationInterpolationMode::LINEAR ),
         m_length( 0.0f ),
+        m_ownedNodeTracks( Allocator<SmartPtr<IActorAnimationTrack>>( sourceBudget ) ),
+        m_ownedNumericTracks( Allocator<SmartPtr<IAnimationNumericTrack>>( sourceBudget ) ),
+        m_ownedVertexTracks( Allocator<SmartPtr<IAnimationVertexTrack>>( sourceBudget ) ),
         m_useBaseKeyFrame( false ),
         m_baseKeyFrameTime( 0.0f ),
         m_container( nullptr )
     {
+    }
+
+    void Animation::unload( SmartPtr<ISharedObject> data )
+    {
+        destroyAllTracks();
+        m_baseKeyFrameAnimationName.release();
+        m_container = nullptr;
     }
 
     void Animation::setInterpolationMode( InterpolationMode im )
@@ -99,8 +180,9 @@ namespace workphone
         {
             if( it->second == track.get() )
             {
-                eraseOwnedTrackByShared( m_ownedNodeTracks, track );
                 m_nodeTracks.erase( it );
+                if( !stillIndexed( m_nodeTracks, track.get() ) ) detachTrack( track.get(), this );
+                eraseOwnedTrackByShared( m_ownedNodeTracks, track );
                 return;
             }
         }
@@ -110,8 +192,9 @@ namespace workphone
         {
             if( it->second == track.get() )
             {
-                eraseOwnedTrackByShared( m_ownedVertexTracks, track );
                 m_vertexTracks.erase( it );
+                if( !stillIndexed( m_vertexTracks, track.get() ) ) detachTrack( track.get(), this );
+                eraseOwnedTrackByShared( m_ownedVertexTracks, track );
                 return;
             }
         }
@@ -131,16 +214,14 @@ namespace workphone
             auto actorTrack = workphone::make_ptr<ActorAnimationTrack>( this );
             actorTrack->setAnimationHandle( handle );
             actorTrack->setPropertyName( name );
-            m_nodeTracks[handle] = actorTrack.get();
-            m_ownedNodeTracks.push_back( actorTrack );
+            publishTrack( m_nodeTracks, m_ownedNodeTracks, actorTrack, handle, this );
             return workphone::static_pointer_cast<IAnimationTrack>( actorTrack );
         }
 
         if( type == numericTrackType || type == numericTrackNameType )
         {
             auto numericTrack = workphone::make_ptr<AnimationNumericTrack>();
-            m_numericTracks[handle] = numericTrack.get();
-            m_ownedNumericTracks.push_back( numericTrack );
+            publishTrack( m_numericTracks, m_ownedNumericTracks, numericTrack, handle, this );
             return nullptr;
         }
 
@@ -149,8 +230,7 @@ namespace workphone
             auto vertexTrack =
                 workphone::make_ptr<AnimationVertexTrack>( VertexAnimationType::VAT_NONE, this );
             vertexTrack->setAnimationHandle( handle );
-            m_vertexTracks[handle] = vertexTrack.get();
-            m_ownedVertexTracks.push_back( vertexTrack );
+            publishTrack( m_vertexTracks, m_ownedVertexTracks, vertexTrack, handle, this );
             return workphone::static_pointer_cast<IAnimationTrack>( vertexTrack );
         }
 
@@ -167,8 +247,7 @@ namespace workphone
             auto actorTrack = workphone::make_ptr<ActorAnimationTrack>( this );
             actorTrack->setAnimationHandle( handle );
             actorTrack->setBone( bone );
-            m_nodeTracks[handle] = actorTrack.get();
-            m_ownedNodeTracks.push_back( actorTrack );
+            publishTrack( m_nodeTracks, m_ownedNodeTracks, actorTrack, handle, this );
             return workphone::static_pointer_cast<IAnimationTrack>( actorTrack );
         }
 
@@ -238,8 +317,10 @@ namespace workphone
         auto it = m_nodeTracks.find( handle );
         if( it != m_nodeTracks.end() )
         {
-            eraseOwnedTrack( m_ownedNodeTracks, it->second );
+            const auto track = it->second;
             m_nodeTracks.erase( it );
+            if( !stillIndexed( m_nodeTracks, track ) ) detachTrack( track, this );
+            eraseOwnedTrack( m_ownedNodeTracks, track );
         }
     }
 
@@ -248,8 +329,9 @@ namespace workphone
         auto it = m_numericTracks.find( handle );
         if( it != m_numericTracks.end() )
         {
-            eraseOwnedTrack( m_ownedNumericTracks, it->second );
+            const auto track = it->second;
             m_numericTracks.erase( it );
+            eraseOwnedTrack( m_ownedNumericTracks, track );
         }
     }
 
@@ -258,8 +340,10 @@ namespace workphone
         auto it = m_vertexTracks.find( handle );
         if( it != m_vertexTracks.end() )
         {
-            eraseOwnedTrack( m_ownedVertexTracks, it->second );
+            const auto track = it->second;
             m_vertexTracks.erase( it );
+            if( !stillIndexed( m_vertexTracks, track ) ) detachTrack( track, this );
+            eraseOwnedTrack( m_ownedVertexTracks, track );
         }
     }
 
@@ -272,20 +356,17 @@ namespace workphone
 
     void Animation::destroyAllNodeTracks( void )
     {
-        m_nodeTracks.clear();
-        m_ownedNodeTracks.clear();
+        retireTracks( m_nodeTracks, m_ownedNodeTracks, this );
     }
 
     void Animation::destroyAllNumericTracks( void )
     {
-        m_numericTracks.clear();
-        m_ownedNumericTracks.clear();
+        retireTracks( m_numericTracks, m_ownedNumericTracks, this );
     }
 
     void Animation::destroyAllVertexTracks( void )
     {
-        m_vertexTracks.clear();
-        m_ownedVertexTracks.clear();
+        retireTracks( m_vertexTracks, m_ownedVertexTracks, this );
     }
 
     void Animation::apply( f32 timePos, f32 weight /*= 1.0*/, f32 scale /*= 1.0f */ )
@@ -366,13 +447,15 @@ namespace workphone
 
     void Animation::_collectIdentityNodeTracks( TrackHandleList &tracks ) const
     {
+        auto candidate = tracks;
         for( const auto &pair : m_nodeTracks )
         {
             if( pair.second && !pair.second->hasNonZeroKeyFrames() )
             {
-                tracks.insert( pair.first );
+                candidate.insert( pair.first );
             }
         }
+        tracks.swap( candidate );
     }
 
     void Animation::_destroyNodeTracks( const TrackHandleList &tracks )
@@ -387,7 +470,7 @@ namespace workphone
     {
         (void)newName;
 
-        auto clonedAnimation = new Animation();
+        auto clonedAnimation = std::make_unique<Animation>();
         clonedAnimation->setLength( m_length );
         clonedAnimation->setInterpolationMode( m_interpolationMode );
         clonedAnimation->setRotationInterpolationMode( m_rotationInterpolationMode );
@@ -397,7 +480,7 @@ namespace workphone
         clonedAnimation->setNumericTracks( getNumericTracks() );
         clonedAnimation->setVertexTracks( getVertexTracks() );
 
-        return clonedAnimation;
+        return clonedAnimation.release();
     }
 
     void Animation::_keyFrameListChanged( void )
@@ -415,9 +498,10 @@ namespace workphone
     void Animation::setUseBaseKeyFrame( bool useBaseKeyFrame, f32 keyframeTime /*= 0.0f*/,
                                         const String &baseAnimName /*= StringUtil::EmptyString */ )
     {
+        String candidate( baseAnimName );
+        m_baseKeyFrameAnimationName.swap( candidate );
         m_useBaseKeyFrame = useBaseKeyFrame;
         m_baseKeyFrameTime = normaliseTime( keyframeTime, m_length );
-        m_baseKeyFrameAnimationName = baseAnimName;
     }
 
     bool Animation::getUseBaseKeyFrame() const
@@ -538,7 +622,12 @@ namespace workphone
                     pair.second->setActor( SmartPtr<scene::IGameActor>( node ) );
                 }
 
-                pair.second->apply( timeIndex, weight, scale );
+                try { pair.second->apply( timeIndex, weight, scale ); }
+                catch( ... )
+                {
+                    if( node ) pair.second->setActor( previousActor );
+                    throw;
+                }
 
                 if( node )
                 {
@@ -561,17 +650,7 @@ namespace workphone
 
     void Animation::setVertexTracks( const Array<SmartPtr<IAnimationVertexTrack>> &vertexTracks )
     {
-        destroyAllVertexTracks();
-
-        u16 handle = 0;
-        for( const auto &track : vertexTracks )
-        {
-            if( track )
-            {
-                m_vertexTracks[handle++] = track.get();
-                m_ownedVertexTracks.push_back( track );
-            }
-        }
+        importTracks( m_vertexTracks, m_ownedVertexTracks, vertexTracks, this );
     }
 
     Array<SmartPtr<IActorAnimationTrack>> Animation::getNodeTracks() const
@@ -581,17 +660,7 @@ namespace workphone
 
     void Animation::setNodeTracks( const Array<SmartPtr<IActorAnimationTrack>> &nodeTracks )
     {
-        destroyAllNodeTracks();
-
-        u16 handle = 0;
-        for( const auto &track : nodeTracks )
-        {
-            if( track )
-            {
-                m_nodeTracks[handle++] = track.get();
-                m_ownedNodeTracks.push_back( track );
-            }
-        }
+        importTracks( m_nodeTracks, m_ownedNodeTracks, nodeTracks, this );
     }
 
     Array<SmartPtr<IAnimationNumericTrack>> Animation::getNumericTracks() const
@@ -601,16 +670,6 @@ namespace workphone
 
     void Animation::setNumericTracks( const Array<SmartPtr<IAnimationNumericTrack>> &numericTracks )
     {
-        destroyAllNumericTracks();
-
-        u16 handle = 0;
-        for( const auto &track : numericTracks )
-        {
-            if( track )
-            {
-                m_numericTracks[handle++] = track.get();
-                m_ownedNumericTracks.push_back( track );
-            }
-        }
+        importTracks( m_numericTracks, m_ownedNumericTracks, numericTracks, this );
     }
 }  // namespace workphone

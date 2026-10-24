@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -38,9 +39,11 @@ namespace workphone
      * @since 1.0
      * @author Workphone Engine Team
      */
-    class WPCore_API Mesh : public IMesh
+    class WPCore_API Mesh : public IMesh, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Default constructor.
          *

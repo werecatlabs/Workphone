@@ -2,6 +2,7 @@
 #define CAnimationKeyFrame_h__
 
 #include <Workphone/Interface/Animation/IAnimationKeyFrame.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -10,9 +11,11 @@ namespace workphone
      * @brief Base implementation of an animation keyframe, storing the timestamp for a specific point in
      * an animation sequence.
      */
-    class AnimationKeyFrame : public IAnimationKeyFrame
+    class WPCore_API AnimationKeyFrame : public IAnimationKeyFrame, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /** @brief Default constructor. */
         AnimationKeyFrame();
         ~AnimationKeyFrame() override;

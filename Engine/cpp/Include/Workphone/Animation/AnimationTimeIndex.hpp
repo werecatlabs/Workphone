@@ -2,6 +2,7 @@
 #define CAnimationTimeIndex_h__
 
 #include <Workphone/Interface/Animation/IAnimationTimeIndex.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -10,9 +11,11 @@ namespace workphone
      * @brief Represents a specific point in an animation's timeline, optionally caching a keyframe index
      * for optimization.
      */
-    class AnimationTimeIndex : public IAnimationTimeIndex
+    class WPCore_API AnimationTimeIndex : public IAnimationTimeIndex, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /** @brief Default constructor. */
         AnimationTimeIndex();
 

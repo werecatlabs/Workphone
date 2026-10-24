@@ -9,6 +9,13 @@ namespace workphone
 
     AnimationMorphKeyFrame::AnimationMorphKeyFrame() = default;
 
+    void AnimationMorphKeyFrame::unload( SmartPtr<ISharedObject> data )
+    {
+        // The buffer owns its geometry leases. Other keyframes/callers may
+        // retain that same allocation after this keyframe releases its pin.
+        m_vertexBuffer = nullptr;
+    }
+
     f32 AnimationMorphKeyFrame::getTime() const
     {
         return m_time;

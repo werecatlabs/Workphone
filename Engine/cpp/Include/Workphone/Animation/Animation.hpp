@@ -14,9 +14,12 @@ namespace workphone
      * length of the animation. It implements the IAnimation interface and supports
      * operations for adding, removing, and applying animation data to various targets.
      */
-    class WPCore_API Animation : public IAnimation
+    class WPCore_API Animation : public IAnimation, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Default constructor.
          *

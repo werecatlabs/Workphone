@@ -4,6 +4,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/System/Resource.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
@@ -20,9 +21,11 @@ namespace workphone
      * other mesh-related properties. It provides methods for loading, saving, importing, and managing
      * mesh resources, as well as controlling various mesh features.
      */
-    class MeshResource : public Resource<IMeshResource>
+    class WPCore_API MeshResource : public Resource<IMeshResource>, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         static const String scaleStr;
         static const String constraintsStr;
         static const String animationStr;

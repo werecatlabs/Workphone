@@ -435,17 +435,10 @@ namespace workphone
 #    endif
     }
 
-    void IObject::operator delete( void *ptr, void * )
+    void IObject::operator delete( void *, void * )
     {
-#    if WP_OBJECT_ALIGNED_ALLOC
-        Memory::ScalableAlignedFree( ptr );
-#    else
-        Memory::free( ptr );
-#    endif
-
-#    if WP_ENABLE_MEMORY_TRACKER
-        MemoryTracker::get().recordDealloc( ptr );
-#    endif
+        // Matching placement new borrows the caller's slot. Constructor
+        // failure leaves physical storage with its pool/stack/caller owner.
     }
 
     void IObject::operator delete[]( void *ptr )
@@ -477,12 +470,8 @@ namespace workphone
 
     void IObject::operator delete( void *ptr, void *, const c8 *file, s32 line, const c8 *func )
     {
-#    if WP_OBJECT_ALIGNED_ALLOC
-        Memory::ScalableAlignedFree( ptr );
-#    else
-        Memory::free( ptr );
-#    endif
-
+        // The diagnostic placement-new overload records this borrowed slot,
+        // but never allocates it. Retire bookkeeping without freeing storage.
 #    if WP_ENABLE_MEMORY_TRACKER
         MemoryTracker::get().recordDealloc( ptr );
 #    endif

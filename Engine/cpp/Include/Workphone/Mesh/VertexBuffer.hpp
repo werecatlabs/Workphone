@@ -4,14 +4,17 @@
 #include <Workphone/Interface/Mesh/IVertexBuffer.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
 
     /** Implementation of a vertex buffer. */
-    class WPCore_API VertexBuffer : public IVertexBuffer
+    class WPCore_API VertexBuffer : public IVertexBuffer, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /** Constructor. */
         VertexBuffer();
 

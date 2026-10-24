@@ -412,8 +412,14 @@ namespace mesh_serializer_staging_budget_contracts
         SmartPtr<workphone::IStream> stream = input;
         { auto warm = make_ptr<Mesh>(); serializer.importMesh( stream, warm.get() ); }
         const auto importBaseline = budget.used();
+        const auto submeshes = sourceBudgetStorageBytes( sizeof( SmartPtr<ISubMesh> ),
+                                                         alignof( SmartPtr<ISubMesh> ) );
         const auto floats = sourceBudgetStorageBytes( 6 * sizeof( float ), alignof( float ) );
-        for( auto headroom : { floats - 1, floats } )
+        const auto vectors = sourceBudgetStorageBytes( 2 * sizeof( Vector3F ), alignof( Vector3F ) );
+        // The index read arms the limit before readExtremes retains its submesh
+        // snapshot. That owner overlaps both independently admitted payloads.
+        for( auto headroom : { submeshes - 1, submeshes + floats - 1,
+                              submeshes + floats + vectors - 1 } )
         {
             input->seek( 0 ); input->armed = false; input->constrain = true;
             input->headroom = headroom; input->payloadPosition = 0;
@@ -422,9 +428,11 @@ namespace mesh_serializer_staging_budget_contracts
             try { serializer.importMesh( stream, candidate.get() ); }
             catch( const std::bad_alloc & ) { denied = true; }
             budget.restore();
-            require( denied && input->armed && ( headroom != floats ||
-                         input->usedAtPayload == input->usedAtHeader + floats ),
-                     "extrema input and vector staging each require independent physical admission" );
+            const auto beforePayload = headroom < submeshes + floats;
+            require( denied && input->armed && ( beforePayload ? input->payloadPosition == 0 :
+                         input->payloadPosition != 0 &&
+                         input->usedAtPayload == input->usedAtHeader + submeshes + floats ),
+                     "extrema snapshot, float input and vector staging require independent physical admission" );
             candidate = nullptr;
             require( budget.used() == importBaseline,
                      "failed extrema import retires partial mesh and both staging buffers" );

@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Animation/IAnimationNumericTrack.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/Pair.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -12,9 +13,12 @@ namespace workphone
      * @details Implements a numeric animation track for animating scalar values over time.
      * Stores keyframes as time-value pairs and provides interpolation between them.
      */
-    class AnimationNumericTrack : public IAnimationNumericTrack
+    class WPCore_API AnimationNumericTrack : public IAnimationNumericTrack, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         using KeyFrame = Pair<f32, f32>;
 
         /**

@@ -125,7 +125,7 @@ namespace workphone
         MeshSerializerListener *getListener();
 
     protected:
-        class MeshVersionData
+        class MeshVersionData : public SourceBudgetObject
         {
         public:
             MeshVersion version;

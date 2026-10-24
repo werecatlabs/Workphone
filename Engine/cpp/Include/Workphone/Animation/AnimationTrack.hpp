@@ -7,6 +7,7 @@
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Interface/Animation/IAnimationTimeIndex.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -20,12 +21,13 @@ namespace workphone
      * @tparam T The base class type that this animation track extends.
      */
     template <class T>
-    class AnimationTrack : public T
+    class AnimationTrack : public T, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         /** @brief Default constructor. */
-        AnimationTrack() = default;
-
         /**
          * @brief Constructs an animation track with an optional parent animation.
          * @param parent Pointer to the parent IAnimation object.
@@ -121,7 +123,7 @@ namespace workphone
         WP_CLASS_REGISTER_TEMPLATE_DECL( AnimationTrack, T );
 
     private:
-        Array<SmartPtr<IAnimationKeyFrame>> m_keyFrames;  ///< List of keyframes in this track.
+        Array<SmartPtr<IAnimationKeyFrame>> m_keyFrames{ Allocator<SmartPtr<IAnimationKeyFrame>>( sourceBudget ) };
         IEventListener *m_listener = nullptr;             ///< Listener for animation events.
         IAnimation *m_parent = nullptr;                   ///< Parent animation.
         u16 m_animationHandle = 0;                        ///< Unique animation handle.
@@ -141,6 +143,15 @@ namespace workphone
 
     template <class T>
     AnimationTrack<T>::~AnimationTrack() = default;
+
+    template <class T>
+    void AnimationTrack<T>::unload( SmartPtr<ISharedObject> data )
+    {
+        auto retired = makeSourceBudgetSnapshot<SmartPtr<IAnimationKeyFrame>>();
+        retired.swap( m_keyFrames );
+        m_parent = nullptr;
+        m_listener = nullptr;
+    }
 
     template <class T>
     u16 AnimationTrack<T>::getAnimationHandle() const
@@ -272,7 +283,8 @@ namespace workphone
     {
         if( index < m_keyFrames.size() )
         {
-            m_keyFrames.erase( m_keyFrames.begin() + index );
+            std::move( m_keyFrames.begin() + index + 1, m_keyFrames.end(), m_keyFrames.begin() + index );
+            m_keyFrames.pop_back();
             _keyFrameDataChanged();
         }
     }
@@ -344,16 +356,17 @@ namespace workphone
     template <class T>
     void AnimationTrack<T>::_collectKeyFrameTimes( Array<f32> &keyFrameTimes )
     {
+        auto candidate = makeSourceBudgetSnapshot( keyFrameTimes );
         for( const auto &kf : m_keyFrames )
         {
             if( kf )
             {
-                keyFrameTimes.push_back( kf->getTime() );
+                candidate.push_back( kf->getTime() );
             }
         }
-        std::sort( keyFrameTimes.begin(), keyFrameTimes.end() );
-        keyFrameTimes.erase( std::unique( keyFrameTimes.begin(), keyFrameTimes.end() ),
-                             keyFrameTimes.end() );
+        std::sort( candidate.begin(), candidate.end() );
+        candidate.erase( std::unique( candidate.begin(), candidate.end() ), candidate.end() );
+        keyFrameTimes.swap( candidate );
     }
 
     template <class T>
@@ -411,8 +424,18 @@ namespace workphone
     template <class T>
     void AnimationTrack<T>::setKeyFrames( const Array<SmartPtr<IAnimationKeyFrame>> &keyFrames )
     {
-        m_keyFrames = keyFrames;
-        optimise();
+        auto candidate = makeSourceBudgetSnapshot( keyFrames );
+        candidate.erase( std::remove( candidate.begin(), candidate.end(), nullptr ), candidate.end() );
+        std::sort( candidate.begin(), candidate.end(),
+                   []( const SmartPtr<IAnimationKeyFrame> &a, const SmartPtr<IAnimationKeyFrame> &b ) {
+                       return a->getTime() < b->getTime();
+                   } );
+        candidate.erase( std::unique( candidate.begin(), candidate.end(),
+            []( const SmartPtr<IAnimationKeyFrame> &a, const SmartPtr<IAnimationKeyFrame> &b ) {
+                return std::abs( a->getTime() - b->getTime() ) <= std::numeric_limits<f32>::epsilon();
+            } ), candidate.end() );
+        m_keyFrames.swap( candidate );
+        _keyFrameDataChanged();
     }
 
 }  // namespace workphone

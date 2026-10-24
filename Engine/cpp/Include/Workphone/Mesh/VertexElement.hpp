@@ -2,6 +2,7 @@
 #define VertexElement_h__
 
 #include <Workphone/Interface/Mesh/IVertexElement.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -14,9 +15,11 @@ namespace workphone
      * of the element, byte offset inside the vertex, semantic identifier, value type and an
      * optional index for elements that can have multiple entries (e.g. multiple texcoords).
      */
-    class WPCore_API VertexElement : public IVertexElement
+    class WPCore_API VertexElement : public IVertexElement, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Default-constructs a vertex element with sensible defaults.
          *

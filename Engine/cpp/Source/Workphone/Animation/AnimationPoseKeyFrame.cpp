@@ -9,6 +9,11 @@ namespace workphone
 
     AnimationPoseKeyFrame::AnimationPoseKeyFrame() = default;
 
+    void AnimationPoseKeyFrame::unload( SmartPtr<ISharedObject> data )
+    {
+        m_poseReferences = makeSourceBudgetSnapshot<PoseReference>();
+    }
+
     f32 AnimationPoseKeyFrame::getTime() const
     {
         return m_time;
@@ -26,6 +31,11 @@ namespace workphone
 
     void AnimationPoseKeyFrame::setNumPoses( size_t numPoses )
     {
+        if( numPoses == 0 )
+        {
+            m_poseReferences = makeSourceBudgetSnapshot<PoseReference>();
+            return;
+        }
         m_poseReferences.resize( numPoses );
     }
 
@@ -33,6 +43,8 @@ namespace workphone
     {
         if( index >= m_poseReferences.size() )
         {
+            if( index == std::numeric_limits<size_t>::max() )
+                throw std::length_error( "Pose reference index exceeds the addressable range." );
             m_poseReferences.resize( index + 1 );
         }
         m_poseReferences[index].poseIndex = poseIndex;

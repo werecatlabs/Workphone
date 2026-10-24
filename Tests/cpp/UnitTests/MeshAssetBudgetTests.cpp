@@ -9,6 +9,12 @@
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include "../MeshSerializerStagingBudgetContracts.hpp"
+#include "../MeshSerializerRegistryBudgetContracts.hpp"
+#include "../MeshInventoryBudgetContracts.hpp"
+#include "../MeshUtilBudgetContracts.hpp"
+#include "../MeshObjectBodyBudgetContracts.hpp"
+#include "../PoseVertexPayloadBudgetContracts.hpp"
+#include "../AnimationPayloadBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -74,17 +80,39 @@ namespace
         return storageBytes<Replacement>( streams );
     }
 
-    u64 vertexResidency( size_t streams, u64 geometryBytes )
+    template <class T> u64 directBody() { return mesh_object_body_budget_contracts::directBytes<T>(); }
+    template <class T> u64 managerBody() { return mesh_object_body_budget_contracts::managerBytes<T>(); }
+
+    u64 vertexResidency( size_t streams, u64 geometryBytes, size_t elements = 0 )
     {
-        return declarationBytes() + streamMetadataBytes( streams ) + geometryBytes;
+        return directBody<VertexBuffer>() + directBody<VertexDeclaration>() +
+               ( elements ? elements : streams ) * managerBody<VertexElement>() +
+               declarationBytes() + streamMetadataBytes( streams ) + geometryBytes;
+    }
+
+    u64 meshInventoryBytes()
+    {
+        return storageBytes<SmartPtr<ISubMesh>>( 1 );
     }
 
     u64 triangleBuildPeak( bool secondStream = false )
     {
-        const auto first = vertexResidency( 1, 36 ) + streamScratchBytes( 1 );
+        const auto first = vertexResidency( 1, 36, secondStream ? 2 : 1 ) + streamScratchBytes( 1 );
         if( !secondStream ) return first;
-        return std::max( first, vertexResidency( 1, 36 ) + streamMetadataBytes( 2 ) +
+        return std::max( first, vertexResidency( 1, 36, 2 ) + streamMetadataBytes( 2 ) +
                                    streamScratchBytes( 2 ) + 24 );
+    }
+
+    u64 triangleMeshResident()
+    {
+        return vertexResidency( 1, 36 ) + 12 + meshInventoryBytes() +
+               directBody<IndexBuffer>() + directBody<SubMesh>() + directBody<workphone::Mesh>();
+    }
+
+    u64 triangleMeshBuildPeak()
+    {
+        return std::max( directBody<IndexBuffer>() + directBody<SubMesh>() + triangleBuildPeak() + 12,
+                         triangleMeshResident() );
     }
 
     class VertexBufferProbe : public VertexBuffer
@@ -151,6 +179,8 @@ namespace
             declaration->addElement( 0, i * sizeof( f32 ), VertexElementSemantic::VES_TEXTURE_COORDINATES,
                                      VertexElementType::VET_FLOAT1, i );
         auto clone = declaration->clone();
+        auto manager = core::IApplicationManager::instance()->getFactoryManager();
+        auto resource = manager->make_ptr<MeshResource>();
     }
 }
 
@@ -161,30 +191,32 @@ BOOST_AUTO_TEST_CASE( cold_mesh_metadata_is_admitted_before_constructor_publicat
     TestGuard guard; MeshBudgetWindow budget( 0 );
     BOOST_CHECK_THROW( make_ptr<VertexBufferProbe>(), std::bad_alloc );
     BOOST_CHECK_EQUAL( budget.used(), 0u );
-    budget.set( storageBytes<u8 *>( 1 ) - 1 );
+    budget.set( directBody<VertexBufferProbe>() + storageBytes<u8 *>( 1 ) - 1 );
     BOOST_CHECK_THROW( make_ptr<VertexBufferProbe>(), std::bad_alloc );
     BOOST_CHECK_EQUAL( budget.used(), 0u );
-    budget.set( storageBytes<u8 *>( 1 ) );
+    budget.set( directBody<VertexBufferProbe>() + storageBytes<u8 *>( 1 ) );
     auto vertices = make_ptr<VertexBufferProbe>();
     BOOST_CHECK( vertices->sourceInventories() );
-    BOOST_CHECK_EQUAL( budget.used(), storageBytes<u8 *>( 1 ) );
+    BOOST_CHECK_EQUAL( budget.used(), directBody<VertexBufferProbe>() + storageBytes<u8 *>( 1 ) );
     vertices = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
-    budget.set( declarationBytes() - 1 );
+    budget.set( directBody<VertexDeclaration>() + declarationBytes() - 1 );
     BOOST_CHECK_THROW( make_ptr<VertexDeclaration>(), std::bad_alloc );
     BOOST_CHECK_EQUAL( budget.used(), 0u );
-    budget.set( declarationBytes() );
+    budget.set( directBody<VertexDeclaration>() + declarationBytes() );
     auto declaration = make_ptr<VertexDeclaration>();
     BOOST_CHECK( declaration->getElements().get_allocator().isSourceBudgeted() );
     BOOST_CHECK_EQUAL( declaration->getElements().capacity(), 4u );
-    BOOST_CHECK_EQUAL( budget.used(), declarationBytes() );
+    BOOST_CHECK_EQUAL( budget.used(), directBody<VertexDeclaration>() + declarationBytes() );
     declaration->unload( nullptr );
+    BOOST_CHECK_EQUAL( budget.used(), directBody<VertexDeclaration>() );
+    declaration = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
 BOOST_AUTO_TEST_CASE( stream_inventory_and_staging_denial_preserve_every_published_owner )
 {
-    TestGuard guard; warmMeshFactories(); MeshBudgetWindow budget( triangleBuildPeak() );
+    TestGuard guard; warmMeshFactories(); MeshBudgetWindow budget( triangleBuildPeak( true ) );
     auto declaration = make_ptr<VertexDeclaration>();
     declaration->addElement( 0, 0, VertexElementSemantic::VES_POSITION, VertexElementType::VET_FLOAT3 );
     declaration->addElement( 3, 0, VertexElementSemantic::VES_TEXTURE_COORDINATES,
@@ -194,7 +226,7 @@ BOOST_AUTO_TEST_CASE( stream_inventory_and_staging_denial_preserve_every_publish
     auto positions = static_cast<f32 *>( vertices->createVertexData() ); positions[0] = 19.f;
     const auto shape = vertices->shape();
     const auto lease = vertices->lease( 0 );
-    const auto resident = vertexResidency( 1, 36 );
+    const auto resident = vertexResidency( 1, 36, 2 );
     BOOST_CHECK_EQUAL( budget.used(), resident );
     const auto pointers = storageBytes<u8 *>( 4 );
     const auto leases = storageBytes<StreamBudget>( 4 );
@@ -223,7 +255,7 @@ BOOST_AUTO_TEST_CASE( stream_inventory_and_staging_denial_preserve_every_publish
     BOOST_CHECK_EQUAL( budget.used(), resident );
     budget.set( resident + growth + scratch + 24 );
     BOOST_REQUIRE( vertices->createVertexData( 3 ) );
-    BOOST_CHECK_EQUAL( budget.used(), vertexResidency( 4, 60 ) );
+    BOOST_CHECK_EQUAL( budget.used(), vertexResidency( 4, 60, 2 ) );
     BOOST_CHECK_EQUAL( vertices->shape()[0], 4u );
     BOOST_CHECK_EQUAL( vertices->shape()[2], 4u );
     BOOST_CHECK_EQUAL( vertices->shape()[4], 4u );
@@ -231,39 +263,47 @@ BOOST_AUTO_TEST_CASE( stream_inventory_and_staging_denial_preserve_every_publish
     BOOST_CHECK( vertices->lease( 0 ) == lease );
     budget.set( budget.used() );
     BOOST_CHECK_NO_THROW( vertices->unload( nullptr ) );
+    BOOST_CHECK_EQUAL( budget.used(), directBody<VertexBufferProbe>() + directBody<VertexDeclaration>() );
+    vertices = nullptr; declaration = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
 BOOST_AUTO_TEST_CASE( declaration_growth_refusal_keeps_elements_and_retries_without_partial_publication )
 {
-    TestGuard guard; warmMeshFactories(); MeshBudgetWindow budget( declarationBytes() );
+    TestGuard guard; warmMeshFactories();
+    const auto bodies = directBody<VertexDeclaration>() + 4 * managerBody<VertexElement>();
+    MeshBudgetWindow budget( bodies + declarationBytes() );
     auto declaration = make_ptr<VertexDeclaration>();
     for( u32 i = 0; i < 4; ++i )
         declaration->addElement( 0, i * sizeof( f32 ), VertexElementSemantic::VES_TEXTURE_COORDINATES,
                                  VertexElementType::VET_FLOAT1, i );
-    const auto first = declaration->getElements()[0];
+    auto first = declaration->getElements()[0];
+    // Admit the fifth element body, then refuse declaration array growth.
+    budget.set( bodies + declarationBytes() + managerBody<VertexElement>() );
     BOOST_CHECK_THROW( declaration->addElement( 0, 16, VertexElementSemantic::VES_TEXTURE_COORDINATES,
                                                VertexElementType::VET_FLOAT1, 4 ), std::bad_alloc );
     BOOST_CHECK_EQUAL( declaration->getElements().size(), 4u );
     BOOST_CHECK_EQUAL( declaration->getElements().capacity(), 4u );
     BOOST_CHECK( declaration->getElements()[0] == first );
     BOOST_CHECK_EQUAL( declaration->getSize( 0 ), 16u );
-    BOOST_CHECK_EQUAL( budget.used(), declarationBytes() );
-    budget.set( declarationBytes() + declarationBytes( 8 ) );
+    BOOST_CHECK_EQUAL( budget.used(), bodies + declarationBytes() );
+    budget.set( bodies + declarationBytes() + declarationBytes( 8 ) + managerBody<VertexElement>() );
     BOOST_REQUIRE( declaration->addElement( 0, 16, VertexElementSemantic::VES_TEXTURE_COORDINATES,
                                           VertexElementType::VET_FLOAT1, 4 ) );
     BOOST_CHECK_EQUAL( declaration->getElements().size(), 5u );
     BOOST_CHECK_EQUAL( declaration->getElements().capacity(), 8u );
-    BOOST_CHECK_EQUAL( budget.used(), declarationBytes( 8 ) );
+    BOOST_CHECK_EQUAL( budget.used(), bodies + managerBody<VertexElement>() + declarationBytes( 8 ) );
     budget.set( budget.used() );
     BOOST_CHECK_NO_THROW( declaration->unload( nullptr ) );
+    first = nullptr; declaration = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
 BOOST_AUTO_TEST_CASE( escaped_mesh_metadata_copies_keep_spare_capacity_charged_after_unload )
 {
     TestGuard guard; warmMeshFactories();
-    const auto owner = declarationBytes( 13 ) + storageBytes<u8 *>( 9 ) +
+    const auto bodies = directBody<VertexBufferProbe>() + directBody<VertexDeclaration>() + managerBody<VertexElement>();
+    const auto owner = bodies + declarationBytes( 13 ) + storageBytes<u8 *>( 9 ) +
                        storageBytes<StreamBudget>( 7 ) + storageBytes<u64>( 11 ) + 36;
     const auto escaped = storageBytes<u8 *>( 23 ) + declarationBytes( 37 ) + declarationBytes( 29 );
     MeshBudgetWindow budget( owner + escaped + triangleBuildPeak() + declarationBytes( 13 ) );
@@ -295,28 +335,29 @@ BOOST_AUTO_TEST_CASE( escaped_mesh_metadata_copies_keep_spare_capacity_charged_a
     BOOST_CHECK_EQUAL( budget.used(), owner + escaped );
     budget.set( budget.used() );
     BOOST_CHECK_NO_THROW( vertices->unload( nullptr ) );
-    BOOST_CHECK_EQUAL( budget.used(), escaped );
+    BOOST_CHECK_EQUAL( budget.used(), escaped + bodies );
     BOOST_CHECK( declaration->getElements().empty() );
     BOOST_CHECK_EQUAL( pointers.size(), 1u );
     BOOST_CHECK_EQUAL( elements.size(), 1u );
     BOOST_CHECK_EQUAL( filtered.size(), 1u );
     // Pointer snapshots retain metadata only; their payload pointer is borrowed.
     pointers = makeSourceBudgetSnapshot<u8 *>();
-    BOOST_CHECK_EQUAL( budget.used(), declarationBytes( 37 ) + declarationBytes( 29 ) );
+    BOOST_CHECK_EQUAL( budget.used(), bodies + declarationBytes( 37 ) + declarationBytes( 29 ) );
     elements = makeSourceBudgetSnapshot<SmartPtr<IVertexElement>>();
     filtered = makeSourceBudgetSnapshot<SmartPtr<IVertexElement>>();
+    vertices = nullptr; declaration = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
 BOOST_AUTO_TEST_CASE( admission_counts_real_allocations_and_preserves_failed_replacements )
 {
-    TestGuard guard; warmMeshFactories(); MeshBudgetWindow budget( triangleBuildPeak( true ) + 12 );
+    TestGuard guard; warmMeshFactories(); MeshBudgetWindow budget( triangleBuildPeak( true ) + directBody<IndexBuffer>() + 12 );
     auto vertices = triangleVertices( true );
     auto indices = make_ptr<IndexBuffer>(); indices->setNumIndices( 3 );
     auto indexData = static_cast<u32 *>( indices->createIndexData() ); indexData[0] = 17;
     auto positions = vertices->getVertexData(), uv = vertices->getVertexData( 1 );
-    const auto declaration = vertices->getVertexDeclaration();
-    const auto resident = vertexResidency( 2, 60 ) + 12;
+    auto declaration = vertices->getVertexDeclaration();
+    const auto resident = vertexResidency( 2, 60 ) + directBody<IndexBuffer>() + 12;
     BOOST_CHECK_EQUAL( budget.used(), resident );
     auto alias = vertices;
     BOOST_CHECK_EQUAL( budget.used(), resident );
@@ -330,14 +371,15 @@ BOOST_AUTO_TEST_CASE( admission_counts_real_allocations_and_preserves_failed_rep
     BOOST_CHECK_EQUAL( indices->getIndexSize(), 4u );
     BOOST_CHECK( indices->getIndexType() == IIndexBuffer::Type::IT_32BIT );
 
-    budget.set( resident + declarationBytes() );
+    const auto replacementBodies = directBody<VertexDeclaration>() + managerBody<VertexElement>();
+    budget.set( resident + replacementBodies + declarationBytes() );
     auto replacementDeclaration = make_ptr<VertexDeclaration>();
     replacementDeclaration->addElement( 0, 0, VertexElementSemantic::VES_POSITION,
                                        VertexElementType::VET_FLOAT4 );
     vertices->setNumVertices( std::numeric_limits<u32>::max() );
     vertices->setVertexDeclaration( replacementDeclaration );
     // Admit scratch, then refuse the enormous geometry reservation.
-    budget.set( resident + declarationBytes() + streamScratchBytes( 2 ) );
+    budget.set( resident + replacementBodies + declarationBytes() + streamScratchBytes( 2 ) );
     BOOST_CHECK_THROW( vertices->createVertexData(), std::runtime_error );
     BOOST_CHECK_EQUAL( vertices->getNumVertices(), 3u );
     BOOST_CHECK( vertices->getVertexDeclaration() == declaration );
@@ -348,6 +390,7 @@ BOOST_AUTO_TEST_CASE( admission_counts_real_allocations_and_preserves_failed_rep
     BOOST_CHECK( !vertices->getVertexData( 65536 ) );
     budget.set( resident );
     vertices->unload( nullptr ); indices->unload( nullptr );
+    alias = nullptr; vertices = nullptr; indices = nullptr; declaration = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
@@ -374,7 +417,8 @@ BOOST_AUTO_TEST_CASE( multistream_growth_commits_together_and_clones_reserve_dis
     const auto grown = vertexResidency( 2, 120 );
     BOOST_CHECK_EQUAL( budget.used(), grown );
     BOOST_CHECK_EQUAL( static_cast<f32 *>( vertices->getVertexData( 1 ) )[5], 5.f );
-    const auto cloneGrowth = declarationBytes() + streamMetadataBytes( 1 ) + 72 +
+    const auto cloneBodies = directBody<VertexBuffer>() + managerBody<VertexDeclaration>();
+    const auto cloneGrowth = cloneBodies + declarationBytes() + streamMetadataBytes( 1 ) + 72 +
                              streamMetadataBytes( 2 ) + streamScratchBytes( 2 );
     budget.set( grown + cloneGrowth + 47 );
     BOOST_CHECK_THROW( vertices->clone(), std::runtime_error );
@@ -382,7 +426,8 @@ BOOST_AUTO_TEST_CASE( multistream_growth_commits_together_and_clones_reserve_dis
     BOOST_CHECK_EQUAL( static_cast<f32 *>( vertices->getVertexData( 1 ) )[5], 5.f );
     budget.set( grown + cloneGrowth + 48 );
     auto clone = vertices->clone();
-    BOOST_CHECK_EQUAL( budget.used(), grown * 2 );
+    const auto cloneResident = cloneBodies + declarationBytes() + streamMetadataBytes( 2 ) + 120;
+    BOOST_CHECK_EQUAL( budget.used(), grown + cloneResident );
     BOOST_CHECK( clone->getVertexData() != vertices->getVertexData() );
     BOOST_CHECK( clone->getVertexData( 1 ) != vertices->getVertexData( 1 ) );
     BOOST_CHECK_EQUAL( static_cast<f32 *>( clone->getVertexData( 1 ) )[5], 5.f );
@@ -393,27 +438,29 @@ BOOST_AUTO_TEST_CASE( multistream_growth_commits_together_and_clones_reserve_dis
 
 BOOST_AUTO_TEST_CASE( resource_retirement_keeps_direct_buffer_pins_charged )
 {
-    TestGuard guard; warmMeshFactories(); MeshBudgetWindow budget( triangleBuildPeak() + 96 );
+    TestGuard guard; warmMeshFactories();
+    MeshBudgetWindow budget( managerBody<MeshResource>() + triangleMeshBuildPeak() + 96 );
     auto manager = make_ptr<MeshManager>();
     auto resource = dynamic_pointer_cast<IMeshResource>( manager->createOrRetrieve(
         "Cache/cpu-budget-pins.fbmeshbin" ).first );
     BOOST_REQUIRE( resource );
     const auto inventory = budget.used();
     BOOST_CHECK_GT( inventory, 0u );
-    budget.set( inventory + triangleBuildPeak() + 12 );
+    budget.set( inventory + triangleMeshBuildPeak() );
     auto geometry = triangleMesh();
     auto submesh = geometry->getSubMesh( 0 );
     auto vertices = submesh->getVertexBuffer(); auto indices = submesh->getIndexBuffer();
     resource->setMesh( geometry ); resource->setLoadingState( LoadingState::Loaded );
-    const auto meshResident = vertexResidency( 1, 36 ) + 12;
+    const auto pinnedBuffers = vertexResidency( 1, 36 ) + directBody<IndexBuffer>() + 12;
+    const auto meshResident = triangleMeshResident();
     BOOST_CHECK_EQUAL( budget.used(), inventory + meshResident );
     BOOST_CHECK( !manager->releaseUnusedResource( resource ) );
     geometry = nullptr; submesh = nullptr;
     BOOST_REQUIRE( manager->releaseUnusedResource( resource ) );
-    BOOST_CHECK_EQUAL( budget.used(), inventory + meshResident );
+    BOOST_CHECK_EQUAL( budget.used(), inventory + pinnedBuffers );
     BOOST_CHECK_EQUAL( static_cast<f32 *>( vertices->getVertexData() )[3], 1.f );
     BOOST_CHECK_EQUAL( static_cast<u32 *>( indices->getIndexData() )[2], 2u );
-    vertices = nullptr; BOOST_CHECK_EQUAL( budget.used(), inventory + 12u );
+    vertices = nullptr; BOOST_CHECK_EQUAL( budget.used(), inventory + directBody<IndexBuffer>() + 12u );
     indices = nullptr; BOOST_CHECK_EQUAL( budget.used(), inventory );
     resource->setFilePath( "__procedural/budget-pins" ); resource->setMesh( triangleMesh() );
     resource->setLoadingState( LoadingState::Loaded );
@@ -422,6 +469,8 @@ BOOST_AUTO_TEST_CASE( resource_retirement_keeps_direct_buffer_pins_charged )
     BOOST_CHECK( !manager->releaseUnusedResource( resource ) );
     procedural = nullptr;
     manager->unload( nullptr );
+    BOOST_CHECK_EQUAL( budget.used(), inventory - storageBytes<SmartPtr<IMeshResource>>( 1 ) );
+    resource = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
@@ -436,7 +485,12 @@ BOOST_AUTO_TEST_CASE( cooked_mesh_source_aliases_reload_and_eviction_share_exact
         BOOST_REQUIRE( factory );
         auto job = factory->make_object<ISharedObject>();
     }
-    MeshBudgetWindow budget( triangleBuildPeak() + 12 );
+    const auto meshResident = triangleMeshResident();
+    const auto registry = mesh_serializer_registry_budget_contracts::retainedBytes();
+    // Native export retains writeMesh's submesh snapshot alongside either its
+    // nested pointer snapshot or the extrema submesh traversal snapshot.
+    const auto exportPeak = meshResident + registry + meshInventoryBytes() * 2;
+    MeshBudgetWindow budget( std::max( triangleMeshBuildPeak(), exportPeak ) );
     const auto directory = std::filesystem::temp_directory_path() /
                            ( "wp-mesh-budget-" + std::string( StringUtil::getUUID().c_str() ) );
     std::filesystem::create_directories( directory );
@@ -457,12 +511,11 @@ BOOST_AUTO_TEST_CASE( cooked_mesh_source_aliases_reload_and_eviction_share_exact
     BOOST_REQUIRE( resource );
     const auto inventory = budget.used();
     BOOST_CHECK_GT( inventory, 0u );
-    const auto meshResident = vertexResidency( 1, 36 ) + 12;
     // Cooked import reads indices first. Stream scratch and the filtered
     // declaration snapshot are transient, so they need headroom beyond resident
     // geometry and all three stream inventories.
     const auto importScratch = std::max( streamScratchBytes( 1 ), declarationBytes( 1 ) );
-    const auto importPeak = meshResident + importScratch;
+    const auto importPeak = registry + meshResident + importScratch;
     budget.set( inventory + importPeak );
     resource->load( nullptr );
     BOOST_REQUIRE( resource->isLoaded() );
@@ -500,6 +553,7 @@ BOOST_AUTO_TEST_CASE( cooked_mesh_source_aliases_reload_and_eviction_share_exact
     BOOST_REQUIRE( manager->releaseUnusedResource( resource ) );
     BOOST_CHECK_EQUAL( budget.used(), inventory );
     manager->unload( nullptr );
+    resource = nullptr;
     BOOST_CHECK_EQUAL( budget.used(), 0u );
 }
 
@@ -507,6 +561,42 @@ BOOST_AUTO_TEST_CASE( serializer_staging_obeys_source_admission_and_unwinds )
 {
     TestGuard guard;
     mesh_serializer_staging_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( mesh_inventories_obey_source_admission_and_retained_capacity )
+{
+    TestGuard guard;
+    mesh_inventory_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( serializer_registry_obeys_source_admission_and_unwinds )
+{
+    TestGuard guard;
+    mesh_serializer_registry_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( mesh_util_staging_obeys_source_admission_and_unwinds )
+{
+    TestGuard guard;
+    mesh_util_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( mesh_object_bodies_obey_shared_source_admission )
+{
+    TestGuard guard;
+    mesh_object_body_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( pose_and_vertex_payloads_obey_shared_source_admission )
+{
+    TestGuard guard;
+    pose_vertex_payload_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( animation_payloads_obey_shared_source_admission )
+{
+    TestGuard guard;
+    animation_payload_budget_contracts::run();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -126,8 +126,9 @@ namespace workphone
     template <class T, class A>
     Pool<T, A>::~Pool()
     {
-        auto elements = m_elements.snapshot();
-        for( auto &element : elements )
+        // Destruction owns the inventory exclusively. A copied snapshot would
+        // require new admission while retiring an already admitted slab.
+        for( auto &element : m_elements )
         {
             if( element )
             {
@@ -153,8 +154,18 @@ namespace workphone
         element->load( nullptr );
         size_t totalSlots = element->getNumAllocated();
         for( const auto &block : m_elements ) totalSlots += block->getNumAllocated();
+        // Stage a growing block inventory before changing the free-slot queue.
+        // Once its reserve commits, every remaining publication is nonallocating.
+        decltype( m_elements ) replacements;
+        const auto replaceInventory = m_elements.capacity() < m_elements.size() + 1;
+        if( replaceInventory )
+        {
+            replacements = m_elements;
+            replacements.push_back( element );
+        }
         m_freeElements.reserve( totalSlots );
-        m_elements.push_back( element );
+        if( replaceInventory ) m_elements = std::move( replacements );
+        else m_elements.push_back( element );
 
         for( size_t i = 0; i < element->getNumAllocated(); ++i )
             m_freeElements.push( &( ( *element )[i] ) );
