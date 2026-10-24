@@ -21,7 +21,8 @@ namespace workphone
             auto page = catalog->queryEntries( query );
             if( !page.succeeded )
                 return false;
-            m_catalog = catalog;
+            try { m_catalog = catalog; }
+            catch(const std::bad_alloc &) { return false; }
             m_instance = page.next.catalogInstance;
             return true;
         }
@@ -62,9 +63,18 @@ namespace workphone
         bool refresh( SmartPtr<AssetDatabaseManager> catalog, const Query &query )
         {
             clear();
-            m_catalog = catalog;
-            m_query = query;
-            return read( catalog );
+            try
+            {
+                m_catalog = catalog;
+                m_query = query;
+                return read( catalog );
+            }
+            catch(const std::bad_alloc &)
+            {
+                clear();
+                m_page.error = "Budget exhausted";
+                return false;
+            }
         }
         bool next( SmartPtr<AssetDatabaseManager> activeCatalog )
         {

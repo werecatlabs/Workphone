@@ -8,7 +8,7 @@ namespace workphone
     // Captured only while a strong owner exists. Invalidated before destruction,
     // including factory teardown. No reads from released or recycled storage.
     WPCore_API std::weak_ptr<const void> observeObjectLifetime( ISharedObject *object );
-    WPCore_API void expireObjectLifetime( const ISharedObject *object );
+    WPCore_API void expireObjectLifetime( const ISharedObject *object ) noexcept;
 
     /** Non-owning observer for operations serialized with object destruction on
      * their owner thread. This is not a concurrent weak-to-strong promotion. */
@@ -49,8 +49,11 @@ namespace workphone
     private:
         void assign( T *object )
         {
+            // Admit a new token before replacing either part of the observer.
+            // Failure must not pair the old lifetime with a different pointer.
+            auto lifetime = object ? observeObjectLifetime( object ) : std::weak_ptr<const void>();
+            m_lifetime = std::move(lifetime);
             m_object = object;
-            m_lifetime = object ? observeObjectLifetime( object ) : std::weak_ptr<const void>();
         }
         T *m_object = nullptr;
         std::weak_ptr<const void> m_lifetime;

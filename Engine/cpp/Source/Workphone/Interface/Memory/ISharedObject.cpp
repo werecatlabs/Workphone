@@ -2,7 +2,7 @@
 #include <limits>
 #include <Workphone/Memory/ObjectObserver.hpp>
 #include <mutex>
-#include <unordered_map>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Interface/System/IEditorManager.hpp>
@@ -35,15 +35,24 @@ namespace workphone
     {
         struct ObservedLifetimes
         {
-            std::mutex mutex;
-            std::unordered_map<const ISharedObject *, std::shared_ptr<const void>> tokens;
+            using Tokens = SourceBudgetMap<const ISharedObject *, std::shared_ptr<const void>>;
+            Tokens tokens;
         };
 
-        ObservedLifetimes &observedLifetimes()
+        struct ObserverRegistryState
         {
-            // Survive static shutdown: factories can destroy objects very late.
-            static auto registry = new ObservedLifetimes;
-            return *registry;
+            std::mutex mutex;
+            SourceBudgetUnique<ObservedLifetimes> registry;
+        };
+
+        ObserverRegistryState &observerRegistryState() noexcept
+        {
+            // Static synchronization survives late factory destruction without a
+            // permanent heap allocation. All dynamic registry/token storage is
+            // lazy and admitted; expiration must never construct that storage.
+            alignas(ObserverRegistryState) static unsigned char storage[sizeof(ObserverRegistryState)];
+            static auto state = new(storage) ObserverRegistryState;
+            return *state;
         }
     }  // namespace
 
@@ -53,21 +62,37 @@ namespace workphone
         {
             return {};
         }
-        auto &registry = observedLifetimes();
-        std::lock_guard<std::mutex> lock( registry.mutex );
-        auto &token = registry.tokens[object];
-        if( !token )
+        auto &state = observerRegistryState();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if(state.registry)
         {
-            token = std::make_shared<const int>( 0 );
+            auto found = state.registry->tokens.find(object);
+            if(found != state.registry->tokens.end()) return found->second;
+            auto token = std::allocate_shared<const int>(SourceBudgetAllocator<const int>{}, 0);
+            state.registry->tokens.emplace(object, token);
+            return token;
         }
+
+        auto registry = makeSourceBudgetUnique<ObservedLifetimes>();
+        auto token = std::allocate_shared<const int>(SourceBudgetAllocator<const int>{}, 0);
+        registry->tokens.emplace(object, token);
+        state.registry = std::move(registry);
         return token;
     }
 
-    void expireObjectLifetime( const ISharedObject *object )
+    void expireObjectLifetime( const ISharedObject *object ) noexcept
     {
-        auto &registry = observedLifetimes();
-        std::lock_guard<std::mutex> lock( registry.mutex );
-        registry.tokens.erase( object );
+        auto &state = observerRegistryState();
+        SourceBudgetUnique<ObservedLifetimes> retired;
+        ObservedLifetimes::Tokens::node_type expired;
+        {
+            std::lock_guard<std::mutex> lock(state.mutex);
+            if(!state.registry) return;
+            expired = state.registry->tokens.extract(object);
+            if(state.registry->tokens.empty()) retired = std::move(state.registry);
+        }
+        // Retire nodes/control storage outside the registry lock. Expired weak
+        // observers keep their token control allocation charged until released.
     }
 
     namespace
@@ -412,7 +437,8 @@ namespace workphone
                     {
                         m_loadingState = state;
 
-                        auto args = Array<Parameter>();
+                        auto args = makeSourceBudgetSnapshot<Parameter>();
+                        args.reserve( 3 );
                         args.resize( 3 );
 
                         args[0] = Parameter( static_cast<s32>( oldState ) );

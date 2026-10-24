@@ -78,8 +78,16 @@ namespace workphone
             auto types = TypeManager::instance();
             if( !m_declaredType.empty() && !typeMatches( entry.type, referenceType( m_declaredType ) ) )
                 return fail( "Asset type does not match the property's declared reference type." );
-            m_catalog = catalog;
-            m_target = target;
+            ObjectObserver<AssetDatabaseManager> catalogObserver;
+            ObjectObserver<ISharedObject> targetObserver;
+            try
+            {
+                catalogObserver = catalog;
+                targetObserver = target;
+            }
+            catch(const std::bad_alloc &) { return fail("Budget exhausted"); }
+            m_catalog = std::move(catalogObserver);
+            m_target = std::move(targetObserver);
             m_entry = entry;
             m_property = property;
             m_before = properties->getProperty( property );

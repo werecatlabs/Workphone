@@ -12,7 +12,7 @@ namespace workphone
     WP_CLASS_REGISTER_DERIVED( workphone, Factory, IFactory );
     WP_CLASS_REGISTER_DERIVED( workphone, Factory::Listener, ISharedObjectListener );
 
-    Factory::Factory()
+    Factory::Factory() : m_tags(GrowthPolicy::Double, 1, Allocator<String>(sourceBudget))
     {
 #if WP_TRACK_REFERENCES
         setObjectFlag( OBJECT_FLAG_TRACK_REFERENCES, true );
@@ -39,7 +39,7 @@ namespace workphone
             m_listener = nullptr;
         }
 
-        m_tags.clear();
+        setTags({});
     }
 
     u32 Factory::getGrowSize() const
@@ -270,7 +270,12 @@ namespace workphone
 
     void Factory::setTags( const Array<String> &tags )
     {
-        m_tags = { tags.begin(), tags.end() };
+        // Import caller spare capacity and stage all String copies before
+        // replacing the published inventory, including raw caller containers.
+        decltype(m_tags) next(GrowthPolicy::Double, 1, Allocator<String>(sourceBudget));
+        next.reserve(tags.capacity());
+        for(const auto &tag : tags) next.push_back(tag);
+        m_tags = std::move(next);
     }
 
     bool Factory::hasPool() const

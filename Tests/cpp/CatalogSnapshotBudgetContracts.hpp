@@ -42,6 +42,19 @@ namespace
         }
         AssetDatabaseManager::EntryQuery query;
         query.pageSize = 24;
+        {
+            AssetCatalogBrowser browser;
+            AssetCatalogSession session;
+            const auto resident = budget.used(); budget.set(resident);
+            require(!browser.refresh(catalog, query) && !browser.page().succeeded &&
+                        browser.page().entries.empty() && browser.page().error == "Budget exhausted" &&
+                        !session.capture(catalog) && budget.used() == resident,
+                    "Denied catalog observer/browser admission reports complete boolean failure without retaining partial metadata");
+            budget.restore();
+            require(browser.refresh(catalog, query) && session.capture(catalog),
+                    "Catalog observer/browser bindings retry after admission returns");
+            browser.clear(); session.clear();
+        }
         { auto warm = catalog->queryEntries(query); require(warm.succeeded, "Warm detached page"); }
         auto page = catalog->queryEntries(query);
         require(page.succeeded && page.entries.size() == 24 && page.entries.get_allocator().isSourceBudgeted(),

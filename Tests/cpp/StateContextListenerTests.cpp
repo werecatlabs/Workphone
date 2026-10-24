@@ -9,6 +9,7 @@
 #include <Workphone/System/FactoryTemplate.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Jobs/EventJob.hpp>
+#include <Workphone/Memory/ObjectObserver.hpp>
 #include <atomic>
 #include <iostream>
 #include <stdexcept>
@@ -415,6 +416,186 @@ namespace
         object->removeReference();
         return result;
     }
+    void observerMetadataBudgetContracts()
+    {
+        LifecycleCapacity budget;
+        auto first = make_ptr<State>(), second = make_ptr<State>();
+        const auto baseline = budget.used();
+        budget.set(baseline);
+        const auto denials = sourceBudgetDenialCount();
+        expireObjectLifetime(first.get()); expireObjectLifetime(nullptr);
+        require(budget.used() == baseline && sourceBudgetDenialCount() == denials,
+                "Unobserved destruction does not initialize dynamic observer metadata at capacity");
+        unsigned rejected = 0, admitted = 0;
+        for(u64 headroom : {0ULL, 32ULL, 64ULL, 96ULL, 128ULL, 192ULL, 256ULL, 384ULL, 512ULL, 768ULL, 1024ULL})
+        {
+            budget.set(baseline + headroom);
+            {
+                ObjectObserver<State> observed;
+                try { observed = first; ++admitted; }
+                catch(const std::bad_alloc &) { ++rejected; require(observed.expired(), "Denied cold observer remains empty"); }
+                expireObjectLifetime(first.get());
+                require(observed.expired(), "Expiration invalidates admitted cold observer tokens");
+            }
+            require(budget.used() == baseline, "Cold token/map/control denial or retirement leaves no dynamic registry storage");
+        }
+        require(rejected >= 3 && admitted, "Cold observer sweep exercises staged failures and successful retry");
+        budget.restore();
+        ObjectObserver<State> observed(first);
+        auto alias = observed;
+        const auto resident = budget.used();
+        require(resident > baseline, "Observer registry, nodes and token controls are charged");
+        budget.set(resident);
+        ObjectObserver<State> cached(first);
+        require(cached.lock() == first && budget.used() == resident, "Repeated observer capture reuses its token at capacity");
+        bool denied = false;
+        try { observed = second; } catch(const std::bad_alloc &) { denied = true; }
+        require(denied && observed.lock() == first && budget.used() == resident,
+                "Denied observer reassignment preserves both its pointer and its previous lifetime");
+        std::array<std::weak_ptr<const void>, 8> readers;
+        std::vector<std::thread> workers;
+        for(size_t i = 0; i < readers.size(); ++i)
+            workers.emplace_back([&, i]() { for(unsigned n = 0; n < 64; ++n) readers[i] = observeObjectLifetime(first.get()); });
+        for(auto &worker : workers) worker.join();
+        for(auto &reader : readers)
+            require(!reader.expired() && !reader.owner_before(readers[0]) && !readers[0].owner_before(reader),
+                    "Concurrent captures share one admitted lifetime control");
+        require(budget.used() == resident, "Concurrent cached capture admits no duplicate registry nodes");
+        first = nullptr;
+        require(observed.expired() && alias.expired() && cached.expired() && !observed.lock(),
+                "Full-budget object destruction invalidates all observers without reading freed storage");
+        const auto expiredUsage = budget.used();
+        require(expiredUsage > baseline && expiredUsage < resident,
+                "Expired weak owners keep token control charged after registry object and nodes retire");
+        observed = nullptr; alias = nullptr; cached = nullptr;
+        for(auto &reader : readers) reader.reset();
+        require(budget.used() == baseline, "Final expired weak owner retires its physical token control");
+        budget.restore();
+        {
+            alignas(State) unsigned char storage[sizeof(State)];
+            auto oldObject = new(storage) State;
+            ObjectObserver<State> old(oldObject);
+            oldObject->~State();
+            auto replacement = new(storage) State;
+            ObjectObserver<State> current(replacement);
+            require(old.expired() && !old.lock() && !current.expired(), "Recycled object addresses never revive an old lifetime token");
+            replacement->~State();
+            require(current.expired(), "Placement/factory destruction expires replacement lifetime tokens");
+        }
+        require(budget.used() == baseline, "Recycled lifetime generations retire every token and registry allocation");
+        std::cout << "Observer token registry: physical admission, rollback, concurrent capture and full-budget expiration PASS\n";
+    }
+
+    void factoryTagBudgetContracts()
+    {
+        Factory factory;
+        Array<String> input{String("city"), String("streaming")}; input.reserve(17);
+        Array<String> replacement{String("replacement")}; replacement.reserve(33);
+        // Warm String slots, whose retained slab capacity has its own policy.
+        factory.setTags(input); { auto copy = factory.getTags(); } factory.setTags({});
+        LifecycleCapacity budget;
+        const auto baseline = budget.used();
+        factory.setTags(input);
+        const auto resident = budget.used();
+        const auto bytes = sourceBudgetStorageBytes(input.capacity() * sizeof(String), alignof(String));
+        require(resident == baseline + bytes, "Factory tag imports admit actual caller spare capacity");
+        budget.set(resident);
+        bool denied = false;
+        try { factory.setTags(replacement); } catch(const std::bad_alloc &) { denied = true; }
+        require(denied && budget.used() == resident, "Denied tag replacement retires staged storage before publication");
+        denied = false;
+        try { auto copy = factory.getTags(); } catch(const std::bad_alloc &) { denied = true; }
+        require(denied && budget.used() == resident, "Factory tag snapshots require separate admitted caller capacity");
+        budget.restore();
+        auto retained = factory.getTags();
+        require(retained.get_allocator().isSourceBudgeted() && retained.capacity() == input.capacity() && retained == input,
+                "Denied publication preserves complete tags and snapshot allocator/spare capacity");
+        const auto withSnapshot = budget.used(); budget.set(withSnapshot);
+        factory.unload(nullptr);
+        require(factory.getTags().empty() && retained == input && budget.used() + bytes == withSnapshot,
+                "Factory unload retires tag inventory at capacity while retained caller tags remain charged");
+        retained = {};
+        require(budget.used() == baseline, "Final tag snapshot owner retires its actual physical capacity");
+        budget.restore();
+        factory.setTags(replacement);
+        require(factory.getTags() == replacement, "Factory tag replacement retries after capacity restoration");
+        factory.setTags({});
+        std::cout << "Factory tags: imported spare capacity, atomic denial, retained snapshots and teardown PASS\n";
+    }
+
+    class LoadingScratchApplication : public core::ApplicationManager
+    {
+    public:
+        unsigned calls = 0;
+        bool admitted = true, stable = true, keep = false;
+        s32 oldState = 0, newState = 0;
+        u64 peak = 0;
+        std::function<void()> hook;
+        Array<Parameter> retained;
+        Parameter triggerEvent(EventType type, hash_type value, const Array<Parameter> &arguments,
+                               SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
+                               SmartPtr<IEvent>, bool, u32) override
+        {
+            ++calls;
+            admitted = admitted && type == EventType::Loading && value == IEvent::loadingStateChanged &&
+                arguments.get_allocator().isSourceBudgeted() && arguments.size() == 3 && arguments.capacity() == 3 &&
+                arguments[2].getPtr() == object.get() && sender == object;
+            const auto before = arguments[1].getS32();
+            oldState = arguments[0].getS32(); newState = before;
+            peak = std::max(peak, WorldStreamingScheduler::shared()->stats().used[LifecycleCapacity::source]);
+            if(keep) retained = arguments;
+            if(hook) { auto action = std::move(hook); action(); }
+            stable = stable && arguments[1].getS32() == before;
+            return {};
+        }
+    };
+
+    void loadingScratchBudgetContracts()
+    {
+        auto previous = core::IApplicationManager::instance();
+        struct RestoreApplication
+        {
+            SmartPtr<core::IApplicationManager> previous;
+            ~RestoreApplication() { core::IApplicationManager::setInstance(previous); }
+        } restore{previous};
+        auto app = make_ptr<LoadingScratchApplication>(); core::IApplicationManager::setInstance(app);
+        app->setLoadingState(LoadingState::Loaded);
+        auto object = make_ptr<State>();
+        object->setObjectFlag(OBJECT_FLAG_TRIGGER_EVENTS, true);
+        object->setObjectFlag(OBJECT_FLAG_LOADING_EVENTS, true);
+        LifecycleCapacity budget;
+        const auto resident = budget.used();
+        const auto bytes = sourceBudgetStorageBytes(3 * sizeof(Parameter), alignof(Parameter));
+        budget.set(resident + bytes - 1);
+        bool denied = false;
+        try { object->setLoadingState(LoadingState::Loading); } catch(const std::bad_alloc &) { denied = true; }
+        require(denied && object->getLoadingState() == LoadingState::Loading && !app->calls && budget.used() == resident,
+                "Loading state commits, but denied scratch publishes no partial notification and leaves no reservation");
+        budget.set(resident + bytes);
+        object->setLoadingState(LoadingState::Loaded);
+        require(app->calls == 1 && app->admitted && app->oldState == s32(LoadingState::Loading) &&
+                    app->newState == s32(LoadingState::Loaded) && app->peak == resident + bytes && budget.used() == resident,
+                "Loading notification admits exactly three physical parameters and retires scratch after dispatch");
+        budget.set(resident); object->setLoadingState(LoadingState::Loaded);
+        require(app->calls == 1 && budget.used() == resident, "Unchanged loading state needs no scratch or admission at capacity");
+        app->calls = 0; app->peak = 0;
+        app->hook = [&]() { object->setLoadingState(LoadingState::Unloaded); };
+        budget.set(resident + 2 * bytes);
+        object->setLoadingState(LoadingState::Loading);
+        require(app->calls == 2 && app->admitted && app->stable && app->peak == resident + 2 * bytes &&
+                    object->getLoadingState() == LoadingState::Unloaded && budget.used() == resident,
+                "Reentrant loading callbacks own distinct admitted scratch without corrupting an outer notification");
+        budget.restore(); app->keep = true;
+        object->setLoadingState(LoadingState::Loaded);
+        require(app->retained.get_allocator().isSourceBudgeted() && app->retained.size() == 3,
+                "Escaped loading arguments retain admitted caller storage");
+        const auto retained = budget.used(); budget.set(retained);
+        object = nullptr; app->retained = {};
+        require(budget.used() + bytes == retained, "Escaped argument storage retires at capacity after its producer is destroyed");
+        budget.restore(); app->setLoadingState(LoadingState::Unloaded);
+        std::cout << "Loading event scratch: exact admission, denial, reentry and escaped ownership PASS\n";
+    }
+
     void lifecycleBudgetContracts()
     {
         LifecycleCapacity budget;
@@ -927,6 +1108,9 @@ int main()
     int result = 0;
     try
     {
+        observerMetadataBudgetContracts();
+        factoryTagBudgetContracts();
+        loadingScratchBudgetContracts();
         StateContext context;
         context.setLoadingState(LoadingState::Loaded);
         std::vector<SmartPtr<Listener>> listeners;
