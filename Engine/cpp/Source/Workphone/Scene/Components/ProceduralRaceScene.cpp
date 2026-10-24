@@ -121,7 +121,10 @@ namespace workphone::scene
                 throw std::runtime_error( "ProceduralRaceScene requires WPVehiclePhysics." );
             }
 
+            // Admit the owner slot before publishing a new manager-owned actor.
+            m_assets.actors.reserve(m_assets.actors.size()+1);
             auto ground = app->getGameManager()->createActor();
+            if(!ground) throw std::runtime_error("Cannot create procedural collision actor");
             m_assets.actors.push_back( ground );
             m_assets.ground = ground;
             ground->setName( "Circuit collision plane" );
@@ -157,8 +160,9 @@ namespace workphone::scene
         }
         catch( const std::exception &e )
         {
-            m_generationError = e.what();
+            // Retire partial producers before admitting the diagnostic string.
             clearGeneratedScene();
+            m_generationError = e.what();
             return false;
         }
 
@@ -168,6 +172,13 @@ namespace workphone::scene
     void ProceduralRaceScene::clearGeneratedScene()
     {
         std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
+        race::SceneAssets retired;
+        m_assets.swap(retired);
+        // Drop producer pixels/path scratch before allocation-prone callbacks.
+        // Resource inventories remain owners through the entire retirement.
+        retired.vehicle = {};
+        retired.circuit = {};
+        m_cityLayout = {};
         m_vehicleAudio.unload();
         m_vehicleVisualEffects.unload();
         m_presentationInitialized = false;
@@ -181,72 +192,73 @@ namespace workphone::scene
         m_surfaceGrip = 1;
 
         auto app = core::IApplicationManager::instancePtr();
-        auto manager = app->getGameManager();
+        auto manager = app ? app->getGameManager() : nullptr;
 
-        if( m_assets.vehicleLOD )
+        if( retired.vehicleLOD )
         {
             if( auto system =
-                    dynamic_pointer_cast<LODSystem>( m_assets.vehicleLOD->getComponentSystem() ) )
+                    dynamic_pointer_cast<LODSystem>( retired.vehicleLOD->getComponentSystem() ) )
             {
                 system->clearViewOverride();
             }
         }
 
-        if( m_assets.vehicleLOD )
+        if( retired.vehicleLOD )
         {
             if( auto actor = getActor() )
             {
-                actor->removeComponentInstance( m_assets.vehicleLOD );
+                actor->removeComponentInstance( retired.vehicleLOD );
             }
         }
 
         if( manager )
         {
-            for( auto it = m_assets.actors.rbegin(); it != m_assets.actors.rend(); ++it )
+            for( auto it = retired.actors.rbegin(); it != retired.actors.rend(); ++it )
             {
-                manager->destroyActor( *it );
+                try { manager->destroyActor(*it); } catch(const std::bad_alloc &) {}
             }
         }
 
-        auto graphics = app->getGraphicsSystem();
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
         if( graphics )
         {
             auto scene = graphics->getGraphicsScene();
-            if( m_assets.foliageTerrain )
+            if( retired.foliageTerrain )
             {
                 String error;
-                m_assets.foliageTerrain->setFoliageSnapshot( {}, error );
+                retired.foliageTerrain->setFoliageSnapshot( {}, error );
                 if( scene )
                 {
-                    scene->removeGraphicsObject( m_assets.foliageTerrain );
+                    scene->removeGraphicsObject( retired.foliageTerrain );
                 }
             }
 
-            if( scene && m_assets.sky )
+            if( scene && retired.sky )
             {
-                scene->removeGraphicsObject( m_assets.sky );
+                scene->removeGraphicsObject( retired.sky );
             }
 
-            if( scene && m_assets.sun )
+            if( scene && retired.sun )
             {
-                scene->removeGraphicsObject( m_assets.sun );
+                scene->removeGraphicsObject( retired.sun );
             }
 
             auto materials = graphics->getMaterialManager();
             if( materials )
             {
-                for( auto material : m_assets.materials )
+                for( auto material : retired.materials )
                 {
-                    materials->destroyResource( material );
+                    try { materials->destroyResource(material); } catch(const std::bad_alloc &) {}
                 }
             }
 
             auto textures = graphics->getTextureManager();
             if( textures )
             {
-                for( auto texture : m_assets.textures )
+                for( auto texture : retired.textures )
                 {
-                    textures->destroyResource( texture );
+                    // TextureManager detaches the resource before notifying it.
+                    try { textures->destroyResource(texture); } catch(const std::bad_alloc &) {}
                 }
             }
         }
@@ -254,13 +266,11 @@ namespace workphone::scene
         auto meshes = app ? dynamic_pointer_cast<MeshManager>( app->getMeshManager() ) : nullptr;
         if( meshes )
         {
-            for( auto mesh : m_assets.meshes )
+            for( auto mesh : retired.meshes )
             {
-                meshes->removeMeshResource( mesh );
+                try { meshes->removeMeshResource(mesh); } catch(const std::bad_alloc &) {}
             }
         }
-
-        m_assets = {};
     }
 
     void ProceduralRaceScene::configurePhysics()

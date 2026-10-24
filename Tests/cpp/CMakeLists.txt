@@ -37,6 +37,22 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
+    if(WP_BUILD_RENDERER_DX11)
+        add_executable(WPMaterialProgramBindingTests MaterialProgramBindingTests.cpp)
+        target_include_directories(WPMaterialProgramBindingTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+            ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+            ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics ${WP_ROOT}/Dependencies/boost)
+        target_compile_definitions(WPMaterialProgramBindingTests PRIVATE BOOST_ALL_NO_LIB)
+        target_link_libraries(WPMaterialProgramBindingTests PRIVATE
+            WPGraphics Workphone WorkphoneGraphics WorkphoneCore d3d11 d3dcompiler dxguid)
+        target_link_directories(WPMaterialProgramBindingTests PRIVATE
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        set_target_properties(WPMaterialProgramBindingTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPGraphics.material_program_binding COMMAND WPMaterialProgramBindingTests)
+        set_tests_properties(WPGraphics.material_program_binding PROPERTIES
+            LABELS "graphics;material;gpu;packing" TIMEOUT 60)
+    endif()
     if(TARGET WPImGui)
         add_executable(ImGuiViewportInputTests ImGuiViewportInputTests.cpp)
         target_include_directories(ImGuiViewportInputTests PRIVATE
@@ -488,6 +504,18 @@ if(TARGET Workphone)
     endif()
     set_target_properties(MeshImposterTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME Workphone.mesh_imposters COMMAND MeshImposterTests)
+
+    add_executable(OpenCityLayoutTests OpenCityLayoutTests.cpp)
+    target_compile_definitions(OpenCityLayoutTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(OpenCityLayoutTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
+    target_link_libraries(OpenCityLayoutTests PRIVATE Workphone)
+    if(WIN32)
+        target_link_directories(OpenCityLayoutTests PRIVATE
+            ${WP_ROOT}/Dependencies/lib/windows/boost
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    endif()
+    set_target_properties(OpenCityLayoutTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME Workphone.open_city_layout COMMAND OpenCityLayoutTests)
 endif()
 
 if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)

@@ -24,8 +24,40 @@
 
 namespace workphone::scene::race
 {
+    SceneAssets::SceneAssets(const SceneAssets &other) :
+        openCity(other.openCity), useFoliageWorld(other.useFoliageWorld), foliageTerrain(other.foliageTerrain),
+        cityBlocks(other.cityBlocks), cityRoute(other.cityRoute), vehicle(other.vehicle), circuit(other.circuit),
+        wheels(other.wheels), body(other.body), shadow(other.shadow), reflectionActor(other.reflectionActor), ground(other.ground),
+        reflectionTexture(other.reflectionTexture), vehicleMaterials(other.vehicleMaterials), materials(other.materials),
+        textures(other.textures), meshes(other.meshes), actors(other.actors), treeLODs(makeSourceBudgetSnapshot(other.treeLODs)),
+        vehicleLOD(other.vehicleLOD), sky(other.sky), sun(other.sun), resourcePrefix(other.resourcePrefix),
+        exportSourceDirectory(other.exportSourceDirectory), triangles(other.triangles), textureBytes(other.textureBytes) {}
+
+    SceneAssets &SceneAssets::operator=(const SceneAssets &other)
+    { if(this!=&other){SceneAssets candidate(other);swap(candidate);} return *this; }
+
+    void SceneAssets::swap(SceneAssets &other) noexcept
+    {
+        using std::swap;
+        swap(openCity,other.openCity);swap(useFoliageWorld,other.useFoliageWorld);swap(foliageTerrain,other.foliageTerrain);
+        swap(cityBlocks,other.cityBlocks);swap(cityRoute,other.cityRoute);swap(vehicle,other.vehicle);circuit.swap(other.circuit);
+        wheels.swap(other.wheels);swap(body,other.body);swap(shadow,other.shadow);swap(reflectionActor,other.reflectionActor);swap(ground,other.ground);
+        swap(reflectionTexture,other.reflectionTexture);vehicleMaterials.swap(other.vehicleMaterials);materials.swap(other.materials);
+        textures.swap(other.textures);meshes.swap(other.meshes);actors.swap(other.actors);treeLODs.swap(other.treeLODs);
+        swap(vehicleLOD,other.vehicleLOD);swap(sky,other.sky);swap(sun,other.sun);swap(resourcePrefix,other.resourcePrefix);
+        swap(exportSourceDirectory,other.exportSourceDirectory);swap(triangles,other.triangles);swap(textureBytes,other.textureBytes);
+    }
+
     namespace
     {
+        template<class C> void reserveOwnerSlot(C &owners)
+        {
+            if(owners.size()!=owners.capacity()) return;
+            if(owners.size()==owners.max_size()) throw std::length_error("Scene inventory capacity overflow");
+            const auto next=owners.capacity()>owners.max_size()/2 ? owners.max_size() :
+                std::min(owners.max_size(),std::max<size_t>(8,owners.capacity()*2));
+            owners.reserve(next);
+        }
         using namespace procedural;
         constexpr float pi = 3.14159265358979323846f;
 
@@ -107,7 +139,10 @@ namespace workphone::scene::race
         SmartPtr<render::IMaterial> material( SceneAssets &assets, ColourF colour, float roughness,
                                               float metalness = 0 )
         {
+            reserveOwnerSlot(assets.materials);
             auto m = ApplicationUtil::createDefaultMaterial();
+            if(!m) throw std::runtime_error("Cannot create procedural material");
+            assets.materials.push_back(m);
             m->load( nullptr );
             m->setCullMode( 1 );
             m->setDepthTest( 2 );
@@ -115,7 +150,6 @@ namespace workphone::scene::race
             m->setDiffuse( colour );
             m->setRoughness( roughness );
             m->setMetalness( metalness );
-            assets.materials.push_back( m );
             return m;
         }
 
@@ -136,6 +170,7 @@ namespace workphone::scene::race
             for( size_t i = 0; i < bgra.size(); i += 4 ) std::swap( bgra[i], bgra[i + 2] );
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
             auto manager = graphics->getTextureManager();
+            reserveOwnerSlot(assets.textures);
             auto name =
                 assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
             // New sampled textures default to 2D/usage zero. Avoid allocating
@@ -175,18 +210,21 @@ namespace workphone::scene::race
                                                          Vector2I size )
         {
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
+            reserveOwnerSlot(assets.textures);
             const auto name =
                 assets.resourcePrefix + "/radiance/" + StringUtil::toString( assets.textures.size() );
-            auto texture = graphics->getTextureManager()->createManual( name, "General", 2, size.x,
-                                                                        size.y, 1, 0, 0 );
-            String error;
-            if( !texture || !texture->copyLinearFloatData( rgba, size, error ) )
+            auto manager=graphics->getTextureManager();
+            auto texture=dynamic_pointer_cast<render::ITexture>(manager->create(name));
+            if(!texture) throw std::runtime_error("Cannot create HDR reflection texture");
+            try
             {
-                throw std::runtime_error(
-                    ( String( "Cannot stage HDR reflection face: " ) + error ).c_str() );
+                String error;
+                if(!texture->copyLinearFloatData(rgba,size,error))
+                    throw std::runtime_error((String("Cannot stage HDR reflection face: ")+error).c_str());
+                assets.textures.push_back(texture);
+                assets.textureBytes+=rgba.size()*sizeof(f32);
             }
-            assets.textureBytes += rgba.size() * sizeof( f32 );
-            assets.textures.push_back( texture );
+            catch(...){try{manager->destroyResource(texture);}catch(...){}throw;}
             return texture;
         }
 
@@ -285,17 +323,21 @@ namespace workphone::scene::race
             generated->updateAABB( true );
             auto path = assets.resourcePrefix + "/mesh/" + StringUtil::toString( assets.meshes.size() ) +
                         ".meshbin";
+            reserveOwnerSlot(assets.meshes);
             auto resource =
                 dynamic_pointer_cast<IMeshResource>( manager->createOrRetrieve( path ).first );
+            if(!resource) throw std::runtime_error("Cannot create procedural mesh resource");
+            assets.meshes.push_back(resource);
             resource->setName( path );
             resource->setFilePath( path );
             resource->setMesh( generated );
             resource->setLoadingState( LoadingState::Loaded );
-            assets.meshes.push_back( resource );
             assets.triangles += g.indices.size() / 3;
+            reserveOwnerSlot(assets.actors);
             auto actor = app->getGameManager()->createActor();
+            if(!actor) throw std::runtime_error("Cannot create procedural actor");
+            assets.actors.push_back(actor);
             actor->setName( name );
-            assets.actors.push_back( actor );
             if( parent )
             {
                 parent->addChild( actor );
@@ -319,10 +361,12 @@ namespace workphone::scene::race
                         QuaternionF orientation = QuaternionF::identity() )
         {
             auto app = core::IApplicationManager::instance();
+            reserveOwnerSlot(assets.actors);
             auto actor = app->getGameManager()->createActor();
+            if(!actor) throw std::runtime_error("Cannot create procedural actor");
+            assets.actors.push_back(actor);
             // Own these independently of batched render meshes and tree LODs.
             // The normal generated-scene cleanup also removes their physics bodies.
-            assets.actors.push_back( actor );
             actor->setName( "Trackside collision: " + name );
             actor->setStatic( true );
             actor->setPosition( centre );
@@ -548,6 +592,7 @@ namespace workphone::scene::race
             std::array<SmartPtr<render::IMaterial>, size_t( VehicleMaterialSlot::Count )> materials;
             for( size_t i = 0; i < materials.size(); ++i )
             {
+                reserveOwnerSlot(assets.vehicleMaterials);
                 const auto &d = appearance.materials[i];
                 auto m = material( assets, { d.baseColor.r, d.baseColor.g, d.baseColor.b, d.opacity },
                                    d.roughness, d.metallic );
@@ -592,12 +637,14 @@ namespace workphone::scene::race
             for( size_t i = 0; i < 4; ++i )
             {
                 hubs[i] = vector( assets.vehicle.physics.wheels[i].hubPosition );
+                reserveOwnerSlot(assets.actors);
                 auto wheel = app->getGameManager()->createActor();
+                if(!wheel) throw std::runtime_error("Cannot create procedural actor");
+                assets.actors.push_back(wheel);
                 wheel->setName( String( "Generated wheel " ) + StringUtil::toString( i ) );
                 actor->addChild( wheel );
                 wheel->addComponent<scene::WheelController>();
                 assets.wheels[i] = wheel;
-                assets.actors.push_back( wheel );
             }
             auto vehicleLOD = actor->addComponent<scene::LODGroup>();
             assets.vehicleLOD = vehicleLOD;
@@ -607,7 +654,7 @@ namespace workphone::scene::race
             const size_t firstLOD = quality == VehicleAppearanceQuality::Preview ? 1 : 0;
             for( size_t lod = firstLOD; lod < assets.vehicle.geometry.lods.size(); ++lod )
             {
-                Array<SmartPtr<scene::Renderer>> renderers;
+                auto renderers=makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 for( const auto &section : assets.vehicle.geometry.lods[lod].sections )
                 {
                     auto m = materials[size_t( generator->materialSlotFor( section.material ) )];
@@ -965,9 +1012,11 @@ namespace workphone::scene::race
                 }
                 for( const auto &[key, patch] : patches )
                 {
+                    reserveOwnerSlot(assets.actors);
                     auto root = app->getGameManager()->createActor();
+                    if(!root) throw std::runtime_error("Cannot create procedural actor");
+                    assets.actors.push_back(root);
                     root->setName( "Tree LOD patch" );
-                    assets.actors.push_back( root );
                     root->setPosition( { key.first * 64.f + 32, 0, key.second * 64.f + 32 } );
                     app->getGameManager()->getCurrentScene()->addActor( root );
                     Geometry nearTrees;
@@ -991,6 +1040,7 @@ namespace workphone::scene::race
                     auto trees = mesh( assets, "LOD0 pine batch", nearTrees, nearTreeMaterial, root );
                     auto cards =
                         mesh( assets, "LOD1 pine imposters", patch.imposters, imposterMaterial, root );
+                    reserveOwnerSlot(assets.treeLODs);
                     auto lod = root->addComponent<scene::LODGroup>();
                     lod->setLocalReferencePoint( { 0, 3.5f, 0 } );
                     lod->setSize( 7 );
@@ -1389,8 +1439,10 @@ namespace workphone::scene::race
                 {
                     roofs.box( { lot.x, lot.height + .55f, lot.z }, { 2.4f, .9f, 1.6f } );
                 }
+                reserveOwnerSlot(assets.actors);
                 auto collision = app->getGameManager()->createActor();
-                assets.actors.push_back( collision );
+                if(!collision) throw std::runtime_error("Cannot create procedural actor");
+                assets.actors.push_back(collision);
                 collision->setName( "City building collision" );
                 collision->setStatic( true );
                 collision->setPosition( { lot.x, lot.height * .5f, lot.z } );
@@ -1433,8 +1485,10 @@ namespace workphone::scene::race
                     const Vector3F size =
                         axis ? Vector3F( boundary * 2, 1.2f, 1 ) : Vector3F( 1, 1.2f, boundary * 2 );
                     pavement.box( p, size );
+                    reserveOwnerSlot(assets.actors);
                     auto wall = app->getGameManager()->createActor();
-                    assets.actors.push_back( wall );
+                    if(!wall) throw std::runtime_error("Cannot create procedural actor");
+                    assets.actors.push_back(wall);
                     wall->setName( "City boundary" );
                     wall->setStatic( true );
                     wall->setPosition( p );
@@ -1520,8 +1574,8 @@ namespace workphone::scene::race
             const auto result = sky->getResults();
             auto graphicsScene = app->getGraphicsSystem()->getGraphicsScene();
 
-            Array<SmartPtr<render::ITexture>> faces;
-            Array<SmartPtr<render::ITexture>> reflectionFaces;
+            auto faces=makeSourceBudgetSnapshot<SmartPtr<render::ITexture>>();
+            auto reflectionFaces=makeSourceBudgetSnapshot<SmartPtr<render::ITexture>>();
             const auto probePosition = vehicle->getPosition() + Vector3F( 0, 2, 0 );
             const Vector3F corners[8] = { { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 }, { -1, 1, -1 },
                                           { -1, -1, 1 },  { 1, -1, 1 },  { 1, 1, 1 },  { -1, 1, 1 } };
@@ -1530,7 +1584,8 @@ namespace workphone::scene::race
             for( int face = 0; face < 6; ++face )
             {
                 TextureBuffer texture( 256, 256 );
-                Array<f32> reflectionFace( 256 * 256 * 4 );
+                auto reflectionFace=makeSourceBudgetSnapshot<f32>();
+                reflectionFace.resize(256*256*4);
                 for( u32 y = 0; y < texture.height; ++y )
                 {
                     for( u32 x = 0; x < texture.width; ++x )
@@ -1602,21 +1657,24 @@ namespace workphone::scene::race
             skyObject->setDistance( 500 );
             skyObject->setVisible( true );
 
+            reserveOwnerSlot(assets.textures);
             auto reflection =
                 app->getGraphicsSystem()->getTextureManager()->createCubeMap( reflectionFaces );
             if( reflection )
             {
-                reflection->setName( assets.resourcePrefix + "/reflection" );
-
                 assets.reflectionTexture = reflection;
                 assets.textures.push_back( reflection );
+                reflection->setName( assets.resourcePrefix + "/reflection" );
                 // Eight RGBA32F levels at 128px per face, generated by ClawCubemap.
                 assets.textureBytes += 6u * 21845u * 16u;
                 auto probeResource = make_ptr<render::GraphicsCubemap>();
                 probeResource->setTexture( reflection );
                 probeResource->setTextureName( reflection->getName() );
                 probeResource->setSceneManager( graphicsScene );
+                reserveOwnerSlot(assets.actors);
                 auto actor = app->getGameManager()->createActor();
+                if(!actor) throw std::runtime_error("Cannot create procedural actor");
+                assets.actors.push_back(actor);
                 actor->setName( "Vehicle Reflection Cubemap" );
                 actor->setPosition( probePosition );
                 auto component = actor->addComponent<scene::Cubemap>();
@@ -1639,7 +1697,6 @@ namespace workphone::scene::race
                 scene->addActor( actor );
                 scene->registerAllUpdates( actor );
                 assets.reflectionActor = actor;
-                assets.actors.push_back( actor );
                 WP_LOG(
                     "VehicleAdvanced: custom cubemap actor created; reflection applied to all vehicle "
                     "materials." );
@@ -1694,7 +1751,7 @@ namespace workphone::scene::race
 
     Circuit generateCircuit( u32 seed )
     {
-        std::vector<Vector3F> knots = { { 0, 0, 70 },    { 0, 0, 0 },     { 0, 0, -90 },
+        SourceBudgetVector<Vector3F> knots = { { 0, 0, 70 },    { 0, 0, 0 },     { 0, 0, -90 },
                                         { 20, 0, -165 }, { 80, 0, -180 }, { 140, 0, -150 },
                                         { 155, 0, -70 }, { 105, 0, -35 }, { 145, 0, 30 },
                                         { 135, 0, 105 }, { 50, 0, 130 },  { 0, 0, 95 } };
@@ -1706,7 +1763,7 @@ namespace workphone::scene::race
             knots[i].x += variation( rng );
             knots[i].z += variation( rng );
         }
-        std::vector<Vector3F> dense;
+        SourceBudgetVector<Vector3F> dense;
         for( size_t i = 0; i < knots.size(); ++i )
         {
             for( int step = 0; step < 100; ++step )
@@ -1719,7 +1776,7 @@ namespace workphone::scene::race
                                  .5f );
             }
         }
-        std::vector<float> distance( dense.size() + 1, 0 );
+        SourceBudgetVector<float> distance( dense.size() + 1, 0 );
         for( size_t i = 0; i < dense.size(); ++i )
         {
             distance[i + 1] = distance[i] + ( dense[( i + 1 ) % dense.size()] - dense[i] ).length();

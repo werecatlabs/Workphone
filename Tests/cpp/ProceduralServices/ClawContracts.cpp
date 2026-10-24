@@ -70,7 +70,28 @@ void checkClawContracts()
     else
         static_cast<u32 *>( ib->getIndexData() )[0] = 99;
     graphics->reload( nullptr );
-    check( !graphics->isLoaded(), "Claw accepted an out-of-range generated mesh index" );
+    check( graphics->isLoaded() && graphics->getNativeMesh() == native &&
+               wp_graphics_object_get_mesh( object.get() ) == native &&
+               static_cast<const wp_u32 *>( wp_graphics_mesh_get_indices( native ) )[0] == 0,
+           "Invalid generated replacement changed the last usable native mesh" );
+    auto invalid = workphone::make_ptr<render::ClawMesh>();
+    invalid->setMeshName( resource->getFilePath() );
+    invalid->load( nullptr );
+    check( !invalid->isLoaded() &&
+               ( !invalid->getNativeMesh() ||
+                 ( wp_graphics_mesh_get_vertex_count( invalid->getNativeMesh() ) == 0 &&
+                   wp_graphics_mesh_get_index_count( invalid->getNativeMesh() ) == 0 ) ),
+           "Claw accepted an out-of-range generated mesh index on cold load" );
+    invalid->unload( nullptr );
+    invalid = nullptr;
+    if( ib->getIndexType() == IIndexBuffer::Type::IT_16BIT )
+        static_cast<u16 *>( ib->getIndexData() )[0] = 0;
+    else
+        static_cast<u32 *>( ib->getIndexData() )[0] = 0;
+    graphics->reload( nullptr );
+    check( graphics->isLoaded() && graphics->getNativeMesh() != native &&
+               wp_graphics_object_get_mesh( object.get() ) == graphics->getNativeMesh(),
+           "Valid generated geometry did not replace the rejected candidate on retry" );
     graphics->unload( nullptr );
     graphics = nullptr;
     manager->removeMeshResource( resource );

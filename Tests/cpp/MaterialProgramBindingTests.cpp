@@ -1,4 +1,5 @@
 #include <WPGraphics/MaterialProgramBinding.hpp>
+#include <WPGraphics/ClawMaterialStorage.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -7,11 +8,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 using namespace workphone;
@@ -28,6 +32,137 @@ namespace
     { require( SUCCEEDED( result ), message ); }
     const wp_c8 *nativeText( const char *text )
     { return reinterpret_cast<const wp_c8 *>( text ); }
+
+    class StorageProbe final : public std::pmr::memory_resource
+    {
+    public:
+        size_t allocations = 0, liveBytes = 0, liveBlocks = 0;
+        size_t lastBytes = 0, lastAlignment = 0, freedBytes = 0, freedAlignment = 0;
+        bool reject = false;
+    private:
+        void *do_allocate( size_t bytes, size_t alignment ) override
+        {
+            if( reject ) throw std::bad_alloc();
+            auto result = std::pmr::new_delete_resource()->allocate( bytes, alignment );
+            ++allocations; ++liveBlocks; liveBytes += bytes;
+            lastBytes = bytes; lastAlignment = alignment;
+            return result;
+        }
+        void do_deallocate( void *pointer, size_t bytes, size_t alignment ) override
+        {
+            std::pmr::new_delete_resource()->deallocate( pointer, bytes, alignment );
+            --liveBlocks; liveBytes -= bytes; freedBytes = bytes; freedAlignment = alignment;
+        }
+        bool do_is_equal( const std::pmr::memory_resource &other ) const noexcept override
+        { return this == &other; }
+    };
+
+    void materialStorageContracts()
+    {
+        using detail::MaterialStorageAllocator;
+        using detail::MaterialStoragePool;
+        StorageProbe resource;
+        MaterialStorageAllocator<u64> allocator( &resource );
+        MaterialStorageAllocator<u8> rebound( allocator );
+        StorageProbe other;
+        require( rebound.resource() == &resource && rebound == allocator &&
+            rebound != MaterialStorageAllocator<u8>( &other ), "allocator rebind preserves resource ownership" );
+        auto values = allocator.allocate( 3 );
+        require( resource.lastBytes == 3 * sizeof( u64 ) && resource.lastAlignment == alignof( u64 ),
+            "typed material storage forwards exact payload size and alignment" );
+        allocator.deallocate( values, 3 );
+        require( !resource.liveBytes && !resource.liveBlocks && resource.freedBytes == 3 * sizeof( u64 ) &&
+            resource.freedAlignment == alignof( u64 ), "typed material storage releases the exact allocation" );
+        const auto beforeOverflow = resource.allocations;
+        bool denied = false;
+        try { allocator.allocate( std::numeric_limits<size_t>::max() / sizeof( u64 ) + 1 ); }
+        catch( const std::bad_alloc & ) { denied = true; }
+        require( denied && resource.allocations == beforeOverflow, "typed count overflow rejects before upstream allocation" );
+
+        resource.reject = true;
+        {
+            std::vector<u64, MaterialStorageAllocator<u64>> empty( &resource );
+            denied = false;
+            try { empty.push_back( 1 ); } catch( const std::bad_alloc & ) { denied = true; }
+            require( denied && empty.empty() && !resource.liveBlocks,
+                "denied typed vector payload propagates bad_alloc without a Debug proxy abort" );
+        }
+        denied = false;
+        try
+        {
+            using Pair = std::pair<const int, int>;
+            std::unordered_map<int, int, std::hash<int>, std::equal_to<int>, MaterialStorageAllocator<Pair>>
+                map( MaterialStorageAllocator<Pair>{ &resource } );
+            map.emplace( 1, 2 );
+        }
+        catch( const std::bad_alloc & ) { denied = true; }
+        require( denied && !resource.liveBlocks, "denied typed lookup construction/insertion unwinds safely" );
+        resource.reject = false;
+
+        const auto beforePool = resource.allocations;
+        {
+            MaterialStoragePool pool( resource );
+            require( resource.allocations == beforePool, "material pool construction allocates no bookkeeping" );
+            struct Request { size_t bytes, alignment; };
+            const Request requests[] = {{1,1},{7,2},{16,4},{17,8},{31,16},{40,8},{512,16},{513,8},{21,32},{64,64}};
+            std::array<void *, std::size( requests )> pointers{};
+            for( size_t index = 0; index < pointers.size(); ++index )
+            {
+                const auto request = requests[index];
+                pointers[index] = pool.allocate( request.bytes, request.alignment );
+                require( reinterpret_cast<std::uintptr_t>( pointers[index] ) % request.alignment == 0,
+                    "pooled and forwarded allocations satisfy their requested alignment" );
+                if( request.bytes > 512 || request.alignment > 16 )
+                    require( resource.lastBytes == request.bytes && resource.lastAlignment == request.alignment,
+                        "large and over-aligned payloads retain exact upstream requests" );
+                std::memset( pointers[index], int( index + 1 ), request.bytes );
+            }
+            for( size_t index = 0; index < pointers.size(); ++index )
+            {
+                const auto *bytes = static_cast<const u8 *>( pointers[index] );
+                require( std::all_of( bytes, bytes + requests[index].bytes,
+                    [index]( u8 byte ) { return byte == index + 1; } ), "live pool payloads never overlap" );
+                pool.deallocate( pointers[index], requests[index].bytes, requests[index].alignment );
+            }
+            std::array<void *, 96> warm{};
+            for( auto &pointer : warm ) pointer = pool.allocate( 40, 8 );
+            for( auto pointer : warm ) pool.deallocate( pointer, 40, 8 );
+            const auto warmed = resource.allocations;
+            resource.reject = true;
+            for( unsigned frame = 0; frame < 3; ++frame )
+            {
+                for( auto &pointer : warm ) pointer = pool.allocate( 40, 8 );
+                for( auto pointer : warm ) pool.deallocate( pointer, 40, 8 );
+            }
+            require( resource.allocations == warmed, "warm pool high-water reuse and returns allocate nothing upstream" );
+            resource.reject = false;
+        }
+        require( !resource.liveBytes && !resource.liveBlocks, "pool destruction retires every retained slab" );
+        {
+            MaterialStoragePool pool( resource );
+            std::array<void *, 256> held{};
+            size_t count = 0;
+            held[count++] = pool.allocate( 40, 8 );
+            std::memset( held[0], 0x5a, 40 );
+            const auto admitted = resource.allocations;
+            resource.reject = true; denied = false;
+            try { while( count < held.size() ) { auto pointer = pool.allocate( 40, 8 ); held[count++] = pointer; } }
+            catch( const std::bad_alloc & ) { denied = true; }
+            const auto *bytes = static_cast<const u8 *>( held[0] );
+            require( denied && resource.allocations == admitted &&
+                std::all_of( bytes, bytes + 40, []( u8 byte ) { return byte == 0x5a; } ),
+                "denied slab growth preserves admitted live payloads and upstream accounting" );
+            resource.reject = false;
+            auto retried = pool.allocate( 40, 8 );
+            std::memset( retried, 0x34, 40 );
+            require( std::all_of( bytes, bytes + 40, []( u8 byte ) { return byte == 0x5a; } ),
+                "successful retry also preserves the preceding live slab" );
+            pool.deallocate( retried, 40, 8 );
+            for( size_t index = 0; index < count; ++index ) pool.deallocate( held[index], 40, 8 );
+        }
+        require( !resource.liveBytes && !resource.liveBlocks, "retried pool growth retires all storage" );
+        std::cout << "Material storage: typed denial, alignment, live payloads, warm reuse and slab rollback passed\n";
+    }
 
     wp_uniform_type uniformType( Type type )
     {
@@ -689,7 +824,7 @@ int main()
     struct Shutdown { ~Shutdown() { WorldStreamingScheduler::shutdownShared(); } } shutdown;
     try
     {
-        genericContracts(); mapBudgetContracts(); reflectionContracts(); unsupportedReflectionContracts(); selectedReflectionContracts();
+        materialStorageContracts(); genericContracts(); mapBudgetContracts(); reflectionContracts(); unsupportedReflectionContracts(); selectedReflectionContracts();
         std::cout << "Material program binding and packing contracts passed\n";
         return 0;
     }

@@ -5,6 +5,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Database/DatabaseManager.hpp>
 #include <Workphone/Core/ConcurrentMap.hpp>
+#include <Workphone/Core/FixedString.hpp>
 
 namespace workphone
 {

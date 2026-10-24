@@ -4,6 +4,7 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <WPGraphics/ClawDrawSort.hpp>
+#include <WPGraphics/ClawMaterialStorage.hpp>
 #include <unordered_map>
 #include <vector>
 #include <memory_resource>
@@ -95,21 +96,24 @@ namespace workphone::render
             bool do_is_equal( const std::pmr::memory_resource &other ) const noexcept override
             { return this == &other; }
         };
-        // Declaration order keeps the resource alive until every container and
-        // pool allocation has been released. Only small blocks use the pool;
-        // large vector/bucket arrays retain their normal reusable capacities.
+        // Resources outlive their containers and the lazy node pool. Typed
+        // allocators keep Debug iterator proxies out of the budgeted PMR path;
+        // actual nodes, slabs, vectors and buckets remain admitted upstream.
         StorageCounters m_storage;
         StorageResource m_poolStorage{ m_storage, true }, m_vectorStorage{ m_storage, false };
-        std::pmr::unsynchronized_pool_resource m_pool{ std::pmr::pool_options{ 32, 512 }, &m_poolStorage };
+        detail::MaterialStoragePool m_pool{ m_poolStorage };
+        template<class T> using Storage = std::vector<T, detail::MaterialStorageAllocator<T>>;
+        template<class K, class V> using Lookup = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>,
+            detail::MaterialStorageAllocator<std::pair<const K, V>>>;
         // Large arrays bypass chunk caching: geometric growth must not retain
         // every former vector allocation alongside the current capacity.
-        std::pmr::vector<Record> m_records{ &m_vectorStorage };
-        std::pmr::vector<Owner> m_owners{ &m_vectorStorage };
-        std::pmr::vector<u32> m_bindings{ &m_vectorStorage };
-        std::pmr::vector<ClawDrawSortKey> m_sortKeys{ &m_vectorStorage };
-        std::pmr::vector<int32_t> m_sortOrder{ &m_vectorStorage };
-        std::pmr::unordered_map<const IMaterial *, u32> m_materials{ &m_pool };
-        std::pmr::unordered_map<const ClawMesh *, Binding> m_meshes{ &m_pool };
+        Storage<Record> m_records{ &m_vectorStorage };
+        Storage<Owner> m_owners{ &m_vectorStorage };
+        Storage<u32> m_bindings{ &m_vectorStorage };
+        Storage<ClawDrawSortKey> m_sortKeys{ &m_vectorStorage };
+        Storage<int32_t> m_sortOrder{ &m_vectorStorage };
+        Lookup<const IMaterial *, u32> m_materials{ &m_pool };
+        Lookup<const ClawMesh *, Binding> m_meshes{ &m_pool };
         u64 m_publication = 0, m_preparations = 0;
         bool m_sealed = false;
         ClawMaterialRenderCache::Lease m_preparedRecords;

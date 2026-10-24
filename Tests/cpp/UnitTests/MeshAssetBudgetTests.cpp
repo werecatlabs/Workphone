@@ -24,6 +24,7 @@
 #include "../ProgressiveMeshBudgetContracts.hpp"
 #include "../MeshImposterBudgetContracts.hpp"
 #include "../AnimatorPlaybackBudgetContracts.hpp"
+#include "../ProceduralBuffersBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -660,6 +661,18 @@ BOOST_AUTO_TEST_CASE( scene_animator_playback_and_inventories )
 {
     TestGuard guard;
     animator_playback_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( procedural_texture_and_height_buffers_share_source_admission )
+{
+    TestGuard guard;
+    procedural_buffers_budget_contracts::buffers();
+}
+
+BOOST_AUTO_TEST_CASE( procedural_city_inventories_share_source_admission )
+{
+    TestGuard guard;
+    procedural_buffers_budget_contracts::inventories();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

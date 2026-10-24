@@ -4,6 +4,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/Core/Parameter.hpp>
 
 namespace workphone
 {

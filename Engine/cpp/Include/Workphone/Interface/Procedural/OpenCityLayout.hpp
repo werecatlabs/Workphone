@@ -3,12 +3,13 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include <Workphone/System/SourceBudgetVector.hpp>
 
 namespace workphone::procedural
 {
     // CPU layout shared by city rendering, road queries and race routes. No engine
     // singleton is required, so tools can preview and validate the same layout.
-    struct OpenCityLayout
+    struct OpenCityLayout : SourceBudgetObject
     {
         struct Point
         {
@@ -19,10 +20,18 @@ namespace workphone::procedural
             float x, z, width, depth, height;
             bool park;
         };
-        int blocks;
-        float spacing, extent;
-        std::vector<Lot> lots;
-        std::vector<Point> route;
+        int blocks = 0;
+        float spacing = 0, extent = 0;
+        SourceBudgetVector<Lot> lots;
+        SourceBudgetVector<Point> route;
+        OpenCityLayout()=default;
+        OpenCityLayout(const OpenCityLayout&)=default;
+        OpenCityLayout(OpenCityLayout&&) noexcept=default;
+        OpenCityLayout &operator=(OpenCityLayout&&) noexcept=default;
+        OpenCityLayout &operator=(const OpenCityLayout &other)
+        { if(this!=&other){OpenCityLayout candidate(other);swap(candidate);} return *this; }
+        void swap(OpenCityLayout &other) noexcept
+        { using std::swap;swap(blocks,other.blocks);swap(spacing,other.spacing);swap(extent,other.extent);lots.swap(other.lots);route.swap(other.route); }
 
         static OpenCityLayout generate( std::uint32_t seed, int blocks = 8, int route = 0 )
         {

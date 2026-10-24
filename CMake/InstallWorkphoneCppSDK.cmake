@@ -1,13 +1,20 @@
 # Development files overlay the existing Editor runtime component. Keep the
 # installed interface independent of the build tree's private link dependencies.
 include(CMakePackageConfigHelpers)
+set(_sdk_build_artifacts "")
+foreach(_runtime_target IN LISTS _editor_runtime_targets)
+    string(APPEND _sdk_build_artifacts "bin/$<TARGET_FILE_NAME:${_runtime_target}>|$<TARGET_FILE:${_runtime_target}>\n")
+endforeach()
 install(CODE "if(NOT CMAKE_INSTALL_CONFIG_NAME STREQUAL \"RelWithDebInfo\")\n message(FATAL_ERROR \"C++ SDK requires RelWithDebInfo DLLs and release CRT\")\nendif()"
     COMPONENT WorkphoneCppSDK)
-foreach(_sdk_target Workphone WPGraphics)
+foreach(_sdk_target Workphone WPGraphics WPSQLite)
+    string(APPEND _sdk_build_artifacts "lib/$<TARGET_LINKER_FILE_NAME:${_sdk_target}>|$<TARGET_LINKER_FILE:${_sdk_target}>\n")
     install(FILES "$<TARGET_LINKER_FILE:${_sdk_target}>" DESTINATION lib
         COMPONENT WorkphoneCppSDK CONFIGURATIONS RelWithDebInfo)
 endforeach()
-install(DIRECTORY "${WP_ROOT}/Engine/cpp/Include/Workphone" "${WP_ROOT}/Engine/cpp/Include/WPGraphics"
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/cpp-sdk/$<CONFIG>/build-artifacts.txt"
+    CONTENT "${_sdk_build_artifacts}")
+install(DIRECTORY "${WP_ROOT}/Engine/cpp/Include/Workphone" "${WP_ROOT}/Engine/cpp/Include/WPGraphics" "${WP_ROOT}/Engine/cpp/Include/WPSQLite"
     DESTINATION include COMPONENT WorkphoneCppSDK
     FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h" PATTERN "*.inl")
 foreach(_native_headers WorkphoneCore WorkphoneGraphics WorkphonePlatformWin32 WorkphonePhysics)

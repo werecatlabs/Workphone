@@ -1,5 +1,6 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
+#include <WPGraphics/ClawMaterialStorage.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <atomic>
 #include <limits>
@@ -59,10 +60,12 @@ namespace workphone::render
             { return this == &other; }
         } memory;
         const u64 identity = tableIdentity();
-        std::pmr::vector<Slot *> pages{&memory};
+        std::vector<Slot *, detail::MaterialStorageAllocator<Slot *>> pages{&memory};
         // Values are chain heads: distinct shared ownership identities at the
         // same address must not alias (including externally aliased snapshots).
-        std::pmr::unordered_map<const MaterialRenderState *, u32> identities{&memory};
+        using Identity = const MaterialRenderState *;
+        std::unordered_map<Identity, u32, std::hash<Identity>, std::equal_to<Identity>,
+            detail::MaterialStorageAllocator<std::pair<const Identity, u32>>> identities{&memory};
         u32 size = 0, resident = 0, freeHead = noSlot, sweep = 0;
 
         ~Store()

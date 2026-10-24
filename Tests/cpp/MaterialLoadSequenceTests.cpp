@@ -767,6 +767,44 @@ namespace
         const int identity[] = { 0, 1, 2, 3, 4, 5, 6 };
         // Live edits must not affect the captured classification or query materials.
         materials[0]->setOpacity( 0.25f );
+        {
+            auto scheduler = WorldStreamingScheduler::shared();
+            const auto sourceMemory = size_t( StreamMemoryClass::SourceCpu );
+            const auto before = scheduler->stats();
+            struct RestoreSortLimit
+            {
+                std::shared_ptr<WorldStreamingScheduler> scheduler;
+                u64 limit;
+                ~RestoreSortLimit()
+                { String error; scheduler->setBudget( StreamMemoryClass::SourceCpu, limit, error ); }
+            } restore{ scheduler, before.limits[sourceMemory] };
+            auto view = wp_graphics_cull_result_create_ordered( source, identity, 7 );
+            require( view != nullptr, "sort denial fixture retains a native source view" );
+            const auto originalView = view;
+            const auto binding = *records.find( meshes.front().get() );
+            const auto published = records.get( binding, 0 );
+            String error;
+            const auto applied = scheduler->setBudget( StreamMemoryClass::SourceCpu, before.used[sourceMemory], error );
+            bool denied = false;
+            try { records.sortView( view, ClawDrawSortStrategy::MaterialFirst ); }
+            catch( const std::bad_alloc & ) { denied = true; }
+            const auto after = scheduler->stats();
+            scheduler->setBudget( StreamMemoryClass::SourceCpu, before.limits[sourceMemory], error );
+            bool unchanged = view == originalView;
+            for( int i = 0; i < 7; ++i )
+                unchanged = unchanged && wp_graphics_cull_result_get_object( view, i ) == objects[i];
+            require( applied && denied && unchanged &&
+                         after.used[sourceMemory] == before.used[sourceMemory] &&
+                         after.rejectedReservations[sourceMemory] > before.rejectedReservations[sourceMemory] &&
+                         records.get( binding, 0 ) == published && records.valid( binding, meshes.front().get(), 2 ),
+                     "denied cold sort growth preserves the source view order and sealed publication" );
+            require( records.sortView( view, ClawDrawSortStrategy::MaterialFirst ),
+                     "cold sort growth retries after SourceCpu capacity returns" );
+            for( int i = 0; i < 7; ++i )
+                require( wp_graphics_cull_result_get_object( view, i ) == objects[expected[2][i]],
+                         "sort retry applies the frozen material strategy" );
+            wp_graphics_cull_result_destroy( view );
+        }
         for( u32 mode = 0; mode < 4; ++mode )
         {
             auto view = wp_graphics_cull_result_create_ordered( source, identity, 7 );

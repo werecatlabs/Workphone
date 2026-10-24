@@ -11,6 +11,7 @@
 #include <array>
 #include <mutex>
 #include <vector>
+#include <Workphone/System/SourceBudgetVector.hpp>
 
 namespace workphone::scene::race
 {
@@ -36,10 +37,17 @@ namespace workphone::scene::race
      * path length computed from the samples. nearest() returns the index of the
      * sample closest to a given world-space position.
      */
-    struct WPCore_API Circuit
+    struct WPCore_API Circuit : SourceBudgetObject
     {
-        std::vector<CircuitSample> samples;
+        SourceBudgetVector<CircuitSample> samples;
         float length = 0;
+        Circuit()=default;
+        Circuit(const Circuit&)=default;
+        Circuit(Circuit&&) noexcept=default;
+        Circuit &operator=(Circuit&&) noexcept=default;
+        Circuit &operator=(const Circuit &other)
+        { if(this!=&other){Circuit candidate(other);swap(candidate);} return *this; }
+        void swap(Circuit &other) noexcept { samples.swap(other.samples);std::swap(length,other.length); }
 
         /**
          * Find the index of the nearest circuit sample to the provided position.
@@ -59,7 +67,7 @@ namespace workphone::scene::race
      * buildScene() and consumed by the scene component and physics configuration
      * code.
      */
-    struct SceneAssets
+    struct WPCore_API SceneAssets : SourceBudgetObject
     {
         bool openCity = false, useFoliageWorld = false;
         SmartPtr<render::Terrain> foliageTerrain;
@@ -69,17 +77,23 @@ namespace workphone::scene::race
         std::array<SmartPtr<IGameActor>, 4> wheels;
         SmartPtr<IGameActor> body, shadow, reflectionActor, ground;
         SmartPtr<render::ITexture> reflectionTexture;
-        std::vector<SmartPtr<render::IMaterial>> vehicleMaterials, materials;
-        std::vector<SmartPtr<render::ITexture>> textures;
-        std::vector<SmartPtr<IMeshResource>> meshes;
-        std::vector<SmartPtr<IGameActor>> actors;
-        Array<SmartPtr<LODGroup>> treeLODs;
+        SourceBudgetVector<SmartPtr<render::IMaterial>> vehicleMaterials, materials;
+        SourceBudgetVector<SmartPtr<render::ITexture>> textures;
+        SourceBudgetVector<SmartPtr<IMeshResource>> meshes;
+        SourceBudgetVector<SmartPtr<IGameActor>> actors;
+        Array<SmartPtr<LODGroup>> treeLODs{Allocator<SmartPtr<LODGroup>>(sourceBudget)};
         SmartPtr<LODGroup> vehicleLOD;
         SmartPtr<render::ISky> sky;
         SmartPtr<render::IGraphicsLight> sun;
         String resourcePrefix;
         String exportSourceDirectory;
         u64 triangles = 0, textureBytes = 0;
+        SceneAssets()=default;
+        SceneAssets(const SceneAssets &other);
+        SceneAssets &operator=(const SceneAssets &other);
+        SceneAssets(SceneAssets&&) noexcept=default;
+        SceneAssets &operator=(SceneAssets&&) noexcept=default;
+        void swap(SceneAssets &other) noexcept;
     };
 
     /**

@@ -48,9 +48,9 @@ namespace workphone::render
 
     void *ClawMaterialDrawRecords::StorageResource::do_allocate( size_t requested, size_t alignment )
     {
-        // MSVC's pool returns all but one empty chunk upstream on clear. Keep
-        // those chunks here until scene retirement so subsequent frames can
-        // reuse them too. The list contains pool chunks/arrays, not each node.
+        // Keep returned lookup/bucket allocations until scene retirement so
+        // later frames can reuse them. Small nodes are retained in lazy slabs;
+        // this list holds upstream blocks/arrays, rather than individual nodes.
         for( auto link = &m_free; m_cache && *link; link = &( *link )->freeNext )
             if( auto block = *link; block->requested == requested && block->alignment == alignment )
             {

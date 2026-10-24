@@ -33,7 +33,7 @@ install(RUNTIME_DEPENDENCY_SET WorkphoneEditorRuntime
     PRE_EXCLUDE_REGEXES "[Aa][Pp][Ii]-[Mm][Ss]-" "[Ee][Xx][Tt]-[Mm][Ss]-"
     POST_EXCLUDE_REGEXES "^[Cc]:[/\\\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\]"
     RUNTIME DESTINATION bin COMPONENT WorkphoneEditor CONFIGURATIONS RelWithDebInfo)
-foreach(_target Editor ${_editor_plugins} Workphone WPNetwork)
+foreach(_target Editor ${_editor_plugins} Workphone WPNetwork WorkphoneResourcePackage)
     if(TARGET ${_target})
         install(FILES "$<TARGET_PDB_FILE:${_target}>" DESTINATION symbols
             COMPONENT WorkphoneEditorSymbols CONFIGURATIONS RelWithDebInfo)

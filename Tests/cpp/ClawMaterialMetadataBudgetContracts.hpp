@@ -19,6 +19,7 @@
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -296,6 +297,38 @@ namespace claw_material_metadata_budget_contracts
             // below isolates persistent record pages, buckets, nodes and store.
             std::vector<MaterialRenderState::Ptr> states;
             for( u32 i = 0; i < 65; ++i ) states.push_back( std::make_shared<MaterialRenderState>() );
+            size_t coldDenials = 0, coldAdmissions = 0;
+            for( u64 headroom : { 0ull, 16ull, 32ull, 64ull, 96ull, 128ull, 192ull, 256ull,
+                                 512ull, 1024ull, 2048ull, 4096ull, 8192ull, 16384ull,
+                                 32768ull, 65536ull, 131072ull } )
+            {
+                const auto before = scheduler->stats().used[source];
+                {
+                    // resolve() constructs its Store lazily. Constrain admission
+                    // before that construction, including all container metadata.
+                    ClawMaterialRenderCache candidate;
+                    limit( before + headroom ); denied = false;
+                    ClawMaterialRenderCache::Handle handle;
+                    try { handle = candidate.resolve( states[0] ); }
+                    catch( const std::bad_alloc & ) { denied = true; }
+                    const auto resident = candidate.getResidentCount();
+                    const auto bounded = scheduler->stats().used[source] <= before + headroom;
+                    limit( baseline.limits[source] );
+                    require( bounded, "cold record-store construction never bypasses payload admission" );
+                    if( denied )
+                    {
+                        ++coldDenials;
+                        require( resident == 0, "denied cold store exposes no resident record" );
+                        handle = candidate.resolve( states[0] );
+                    }
+                    else ++coldAdmissions;
+                    require( candidate.lookup( handle ) && candidate.getResidentCount() == 1,
+                             "cold store construction and partial-growth denial retry coherently" );
+                }
+                require( scheduler->stats().used[source] == before,
+                         "cold store destruction returns every partial-construction reservation" );
+            }
+            require( coldDenials && coldAdmissions, "cold store sweep exercises both denied and admitted boundaries" );
             ClawMaterialRenderCache cache;
             limit( baseline.used[source] ); denied = false;
             try { cache.resolve( states[0] ); } catch( const std::bad_alloc & ) { denied = true; }
@@ -344,6 +377,73 @@ namespace claw_material_metadata_budget_contracts
                 records.capture( &mesh ); records.seal( &cache );
                 const auto binding = *records.find( &mesh );
                 require( records.get( binding, 0 ) != nullptr, "draw metadata fixture publishes a retained record" );
+                const auto published = records.get( binding, 0 );
+                size_t coldDenials = 0, coldAdmissions = 0;
+                for( u64 headroom : { 0ull, 16ull, 32ull, 64ull, 96ull, 128ull, 192ull, 256ull,
+                                     512ull, 1024ull, 2048ull, 4096ull, 8192ull, 16384ull,
+                                     32768ull, 65536ull, 131072ull } )
+                {
+                    const auto before = scheduler->stats().used[source];
+                    {
+                        std::optional<ClawMaterialDrawRecords> candidate;
+                        ClawMaterialRenderCache candidateCache;
+                        limit( before + headroom ); denied = false;
+                        try
+                        {
+                            // Construction itself must participate in the
+                            // constrained attempt; constructing before limit()
+                            // misses noexcept STL metadata allocation failures.
+                            candidate.emplace();
+                            candidate->capture( &mesh );
+                            candidate->seal( &candidateCache );
+                        }
+                        catch( const std::bad_alloc & ) { denied = true; }
+                        const auto bounded = scheduler->stats().used[source] <= before + headroom;
+                        const auto exposed = candidate ? candidate->find( &mesh ) : nullptr;
+                        limit( baseline.limits[source] );
+                        require( bounded, "cold publication construction and capture remain within admission" );
+                        require( records.get( binding, 0 ) == published && records.valid( binding, &mesh, 1 ),
+                                 "cold candidate construction failure preserves the previous sealed publication" );
+                        if( denied )
+                        {
+                            ++coldDenials;
+                            require( !exposed, "denied construction capture or seal exposes no incomplete binding" );
+                            if( !candidate ) candidate.emplace();
+                            candidate->capture( &mesh );
+                            candidate->seal( &candidateCache );
+                        }
+                        else ++coldAdmissions;
+                        const auto retried = candidate->find( &mesh );
+                        require( retried && candidate->valid( *retried, &mesh, 1 ) && candidate->get( *retried, 0 ),
+                                 "cold publication retries after every partial-construction boundary" );
+                    }
+                    require( scheduler->stats().used[source] == before,
+                             "cold publication and cache destruction return all partial-growth reservations" );
+                }
+                require( coldDenials && coldAdmissions, "cold publication sweep exercises denied and admitted boundaries" );
+                {
+                    const auto before = scheduler->stats().used[source];
+                    {
+                        ClawMaterialDrawRecords candidate;
+                        candidate.capture( &mesh );
+                        ClawMaterialRenderCache candidateCache;
+                        const auto captured = scheduler->stats().used[source];
+                        limit( captured ); denied = false;
+                        try { candidate.seal( &candidateCache ); }
+                        catch( const std::bad_alloc & ) { denied = true; }
+                        const auto exposed = candidate.find( &mesh );
+                        limit( baseline.limits[source] );
+                        require( denied && !exposed && candidateCache.getResidentCount() == 0 &&
+                                     records.get( binding, 0 ) == published && records.valid( binding, &mesh, 1 ),
+                                 "denied cold preparation leaves the candidate unpublished and old view valid" );
+                        candidate.seal( &candidateCache );
+                        const auto retried = candidate.find( &mesh );
+                        require( retried && candidate.get( *retried, 0 ),
+                                 "captured publication seals after preparation capacity returns" );
+                    }
+                    require( scheduler->stats().used[source] == before,
+                             "preparation-denial retry retires candidate and cache capacity" );
+                }
                 for( u64 headroom : { 0ull, 64ull, 128ull, 256ull, 512ull, 1024ull, 4096ull, 16384ull } )
                 {
                     ClawMaterialDrawRecords candidate;
