@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -617,7 +618,9 @@ namespace workphone
             if constexpr( propagate::value )
             {
                 releaseStorageUnlocked();
-                m_allocator = std::move( other.m_allocator );
+                m_allocator.~allocator_type();
+                ::new( static_cast<void *>( std::addressof( m_allocator ) ) )
+                    allocator_type( std::move( other.m_allocator ) );
                 stealStorageFromUnlocked( other );
                 return;
             }

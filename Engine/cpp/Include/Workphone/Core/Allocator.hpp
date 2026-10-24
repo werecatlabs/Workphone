@@ -105,7 +105,11 @@ namespace workphone
         explicit AllocatorBase( SourceBudgetTag ) noexcept :
             m_policy( &detail::sourceContainerPolicy() ) {}
         bool isSourceBudgeted() const noexcept { return m_policy != nullptr; }
-        AllocatorBase &operator=( const AllocatorBase & ) noexcept = default;
+        AllocatorBase &operator=( const AllocatorBase &other ) noexcept
+        {
+            m_policy = other.m_policy;
+            return *this;
+        }
 
         /**
          * @brief Copy constructor.
