@@ -6,7 +6,8 @@
 
 namespace workphone
 {
-    VertexDeclaration::VertexDeclaration()
+    VertexDeclaration::VertexDeclaration() :
+        m_elements( Allocator<SmartPtr<IVertexElement>>( sourceBudget ) )
     {
         m_elements.reserve( 4 );
     }
@@ -15,17 +16,19 @@ namespace workphone
 
     void VertexDeclaration::unload( SmartPtr<ISharedObject> data )
     {
+        // Transfer the inventory before callbacks, releasing its spare capacity
+        // even when a callback fails or reenters this declaration.
+        auto elements = makeSourceBudgetSnapshot<SmartPtr<IVertexElement>>();
+        elements.swap( m_elements );
         try
         {
-            for( auto e : m_elements )
+            for( auto e : elements )
             {
                 if( e )
                 {
                     e->unload( nullptr );
                 }
             }
-
-            m_elements.clear();
         }
         catch( std::exception &e )
         {
@@ -145,7 +148,7 @@ namespace workphone
 
     auto VertexDeclaration::findElementsBySource( u16 source ) const -> Array<SmartPtr<IVertexElement>>
     {
-        Array<SmartPtr<IVertexElement>> retList;
+        auto retList = makeSourceBudgetSnapshot<SmartPtr<IVertexElement>>();
         retList.reserve( m_elements.size() );
 
         for( auto element : m_elements )
@@ -167,7 +170,7 @@ namespace workphone
         WP_ASSERT( factoryManager );
 
         auto vertexDec = factoryManager->make_ptr<VertexDeclaration>();
-        vertexDec->m_elements = m_elements;
+        vertexDec->m_elements = makeSourceBudgetSnapshot( m_elements );
 
         return vertexDec;
     }
@@ -184,7 +187,7 @@ namespace workphone
 
     auto VertexDeclaration::compare( SmartPtr<IVertexDeclaration> other ) const -> bool
     {
-        auto otherElements = other->getElements();
+        const auto &otherElements = other->getElements();
         if( m_elements.size() != otherElements.size() )
         {
             return false;

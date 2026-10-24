@@ -58,7 +58,7 @@ namespace workphone
         {
             m_catalog = nullptr;
             m_page = {};
-            m_cursors.clear();
+            m_cursors = makeSourceBudgetSnapshot<AssetDatabaseManager::EntryCursor>();
         }
         bool refresh( SmartPtr<AssetDatabaseManager> catalog, const Query &query )
         {
@@ -82,8 +82,25 @@ namespace workphone
                 return changed();
             if( !m_page.succeeded || !m_page.hasMore )
                 return false;
-            m_cursors.push_back( m_page.next );
-            return read( activeCatalog );
+            const auto denials = sourceBudgetDenialCount();
+            try
+            {
+                // Both the navigation generation and its displayed rows must
+                // be admitted before either becomes visible. In particular,
+                // denied page materialization cannot consume a cursor.
+                auto cursors = makeSourceBudgetSnapshot( m_cursors );
+                cursors.push_back( m_page.next );
+                auto page = activeCatalog->queryEntries( m_query, &cursors.back() );
+                if( !page.succeeded )
+                    return failedNavigation( std::move( page ), denials );
+                m_cursors.swap( cursors );
+                m_page = std::move( page );
+                return true;
+            }
+            catch(const std::bad_alloc &)
+            {
+                return budgetExhausted();
+            }
         }
         bool previous( SmartPtr<AssetDatabaseManager> activeCatalog )
         {
@@ -91,11 +108,28 @@ namespace workphone
                 return changed();
             if( m_cursors.empty() )
                 return false;
-            // Validate the displayed generation even when returning to page one.
-            if( m_page.entries.empty() || !activeCatalog->isEntryCurrent( m_page.entries.front() ) )
-                return changed();
-            m_cursors.pop_back();
-            return read( activeCatalog );
+            try
+            {
+                // Validate the displayed generation even when returning to
+                // page one. A denied validation is retryable, not evidence
+                // that the catalog's generation actually changed.
+                const auto denials = sourceBudgetDenialCount();
+                if( m_page.entries.empty() )
+                    return changed();
+                if( !activeCatalog->isEntryCurrent( m_page.entries.front() ) )
+                    return sourceBudgetDenialCount() != denials ? budgetExhausted() : changed();
+                const auto cursor = m_cursors.size() > 1 ? &m_cursors[m_cursors.size() - 2] : nullptr;
+                auto page = activeCatalog->queryEntries( m_query, cursor );
+                if( !page.succeeded )
+                    return failedNavigation( std::move( page ), denials );
+                m_cursors.pop_back();
+                m_page = std::move( page );
+                return true;
+            }
+            catch(const std::bad_alloc &)
+            {
+                return budgetExhausted();
+            }
         }
         bool select( size_t index, SmartPtr<AssetDatabaseManager> activeCatalog, Entry &entry )
         {
@@ -134,6 +168,21 @@ namespace workphone
             m_page.error = "Catalog changed; refresh the first page.";
             return false;
         }
+        bool budgetExhausted()
+        {
+            // Keep the successful page usable and its cursor position intact.
+            // The inline diagnostic itself needs no allocation at the cap.
+            m_page.error = "Budget exhausted";
+            return false;
+        }
+        bool failedNavigation( Page &&page, u64 denials )
+        {
+            if( sourceBudgetDenialCount() != denials || page.error == "Budget exhausted" )
+                return budgetExhausted();
+            clear();
+            m_page = std::move( page );
+            return false;
+        }
         bool read( SmartPtr<AssetDatabaseManager> catalog )
         {
             if( !catalog )
@@ -144,13 +193,14 @@ namespace workphone
             }
             m_page = catalog->queryEntries( m_query, m_cursors.empty() ? nullptr : &m_cursors.back() );
             if( !m_page.succeeded )
-                m_cursors.clear();
+                m_cursors = makeSourceBudgetSnapshot<AssetDatabaseManager::EntryCursor>();
             return m_page.succeeded;
         }
         ObjectObserver<AssetDatabaseManager> m_catalog;
         Query m_query;
         Page m_page;
-        Array<AssetDatabaseManager::EntryCursor> m_cursors;
+        Array<AssetDatabaseManager::EntryCursor> m_cursors =
+            makeSourceBudgetSnapshot<AssetDatabaseManager::EntryCursor>();
     };
 }  // namespace workphone
 #endif

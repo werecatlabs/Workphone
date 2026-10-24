@@ -293,6 +293,12 @@ namespace workphone::editor
             ++count;
         }
         m_select->setEnabled( count != 0 && !m_targets.empty() );
+        if( !page.error.empty() )
+        {
+            // A denied navigation keeps the displayed page available for retry.
+            m_status->setText( page.error );
+            return;
+        }
         m_status->setText( String( m_showMedia ? "Bundled media | " : "Project assets | " ) +
                            StringUtil::toString( count ) + " compatible assets on catalog page " +
                            StringUtil::toString( m_browser.pageNumber() ) );

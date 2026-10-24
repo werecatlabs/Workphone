@@ -406,10 +406,15 @@ namespace workphone
     }
     bool AssetDatabaseManager::refreshDatabaseRevision()
     {
+        const auto denials = sourceBudgetDenialCount();
         auto row = queryCatalog( *this, "SELECT revision FROM wp_asset_catalog_changes WHERE id=1" );
         if( !row || row->eof() )
         {
-            invalidateCatalog();
+            // A backend may translate denied result-wrapper admission into a
+            // null result. No revision was observed in that case; preserving
+            // the published generation lets existing cursors retry unchanged.
+            if( sourceBudgetDenialCount() == denials )
+                invalidateCatalog();
             return false;
         }
         const auto revision = row->getFieldValue( "revision" );
