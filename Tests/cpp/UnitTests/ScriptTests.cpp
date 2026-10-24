@@ -10,6 +10,8 @@
 #include <Workphone/Script/ScriptInvoker.hpp>
 #include <Workphone/Interface/Script/IScriptManager.hpp>
 #include <Workphone/Interface/Script/IScriptData.hpp>
+#include <Workphone/Interface/Mesh/IMesh.hpp>
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <initializer_list>
 #include <limits>
 
@@ -1130,6 +1132,84 @@ BOOST_AUTO_TEST_CASE( script_actor_components_support_ui_state_activation )
         }
     }
     BOOST_CHECK( guard.scene->getActors().empty() );
+}
+
+BOOST_AUTO_TEST_CASE( script_resource_returns_preserve_prefab_and_mesh_interfaces )
+{
+    TestGuard guard;
+    auto scriptManager = guard.factoryManager->make_object<IScriptManager>( "Lua" );
+    BOOST_REQUIRE( scriptManager );
+    scriptManager->load( nullptr );
+    guard.addCleanup( [scriptManager]() mutable { scriptManager->unload( nullptr ); } );
+    BOOST_REQUIRE( scriptManager->isLoaded() );
+
+    auto source = guard.sceneManager->createActor();
+    BOOST_REQUIRE( source );
+    source->setName( "Lua prefab source" );
+    source->setEnabled( false, false );
+    auto visual = guard.sceneManager->createActor();
+    BOOST_REQUIRE( visual );
+    auto meshComponent = visual->addComponent<scene::Mesh>();
+    BOOST_REQUIRE( meshComponent );
+    auto resource = dynamic_pointer_cast<IMeshResource>(
+        guard.applicationManager->getMeshManager()->create( StringUtil::getUUID() ) );
+    auto mesh = guard.factoryManager->make_object<IMesh>( "Mesh" );
+    BOOST_REQUIRE( resource );
+    BOOST_REQUIRE( mesh );
+    mesh->setAABB( AABB3F( Vector3F( -1, -2, -3 ), Vector3F( 1, 2, 3 ) ) );
+    resource->setMesh( mesh );
+    meshComponent->setMeshResource( resource );
+
+    constexpr auto script = R"(
+        function verifyNativeResourceInterfaces(parameters, results)
+            local source = parameters:getAsObject(0)
+            local visual = parameters:getAsObject(1)
+            local sharedResource = parameters:getAsObject(2)
+            local componentResource = visual:getComponent("Mesh"):getMeshResource()
+            local sharedMeshAPI = type(sharedResource.getMesh) == "function"
+            local componentMeshAPI = type(componentResource.getMesh) == "function"
+            results:addAsBool(sharedMeshAPI)
+            results:addAsBool(componentMeshAPI)
+            local app = IApplicationManager.instance()
+            local prefab = assert(app:getFactoryManager():make_object("GamePrefab"))
+            local prefabAPI = type(prefab.setData) == "function" and type(prefab.createActor) == "function"
+            results:addAsBool(prefabAPI)
+            local manager = assert(app:getPrefabManager())
+            results:addAsBool(type(manager.loadPrefab) == "function")
+            if sharedMeshAPI and componentMeshAPI then
+                local low = sharedResource:getMesh():getAABB():getMinimum()
+                local high = componentResource:getMesh():getAABB():getMaximum()
+                assert(low.x == -1 and low.y == -2 and low.z == -3)
+                assert(high.x == 1 and high.y == 2 and high.z == 3)
+                results:addAsBool(true)
+            else results:addAsBool(false) end
+            if prefabAPI then
+                prefab:setData(source:toData())
+                local clone = assert(prefab:createActor())
+                assert(clone:getName() == source:getName())
+                assert(clone:getHandle():getInstanceId() ~= source:getHandle():getInstanceId())
+                assert(not clone:isEnabled())
+                clone:setName("Independent prefab clone")
+                assert(source:getName() == "Lua prefab source")
+                app:getGameManager():destroyActor(clone, true)
+                results:addAsBool(true)
+            else results:addAsBool(false) end
+        end
+    )";
+    scriptManager->loadScriptFromString( script );
+    const Parameters parameters{ Parameter( SmartPtr<ISharedObject>( source ) ),
+                                 Parameter( SmartPtr<ISharedObject>( visual ) ),
+                                 Parameter( SmartPtr<ISharedObject>( resource ) ) };
+    Parameters results;
+    scriptManager->callFunction( "verifyNativeResourceInterfaces", parameters, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 6 );
+    const char *contracts[] = { "shared mesh resource interface", "scene mesh resource return interface",
+                                "generic factory prefab interface", "native prefab manager interface",
+                                "native mesh bounds access", "native prefab clone independence" };
+    for( size_t index = 0; index < results.size(); ++index )
+    {
+        BOOST_CHECK_MESSAGE( results[index].getBool(), contracts[index] );
+    }
 }
 
 BOOST_AUTO_TEST_CASE( script_uiutil_factory_contracts )

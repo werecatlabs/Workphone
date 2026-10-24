@@ -178,6 +178,13 @@ else ()
     add_library(WPAssimp SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+# glTF buffer views use the bundled meshoptimizer decoder on every platform.
+if(NOT TARGET Meshopt)
+    add_subdirectory("${WP_ROOT}/Dependencies/meshoptimizer"
+                     "${CMAKE_BINARY_DIR}/Dependencies/meshoptimizer")
+endif()
+target_link_libraries(WPAssimp $<LINK_ONLY:Meshopt>)
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         target_link_libraries(WPAssimp Workphone)

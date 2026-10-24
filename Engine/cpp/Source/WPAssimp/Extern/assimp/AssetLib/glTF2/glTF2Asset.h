@@ -451,6 +451,7 @@ public:
     size_t byteLength; //!< The length of the buffer in bytes. (default: 0)
     //std::string type; //!< XMLHttpRequest responseType (default: "arraybuffer")
     size_t capacity = 0; //!< The capacity of the buffer in bytes. (default: 0)
+    bool meshoptFallback = false; //!< Placeholder storage supplied by EXT_meshopt_compression views.
 
     Type type;
 
@@ -534,6 +535,7 @@ struct BufferView : public Object {
     size_t byteOffset; //! The offset into the buffer in bytes. (required)
     size_t byteLength; //! The length of the bufferView in bytes. (default: 0)
     unsigned int byteStride; //!< The stride, in bytes, between attributes referenced by this accessor. (default: 0)
+    std::vector<uint8_t> meshoptDecodedData; //!< Owned decoded view; avoids allocating an entire fallback buffer.
 
     BufferViewTarget target; //! The target that the WebGL buffer should be bound to.
 
@@ -566,7 +568,16 @@ struct Accessor : public Object {
     inline size_t GetMaxByteSize();
 
     template <class T>
-    size_t ExtractData(T *&outData, const std::vector<unsigned int> *remappingIndices = nullptr);
+    size_t ExtractData(T *&outData, const std::vector<unsigned int> *remappingIndices = nullptr,
+            bool convertToFloat = false);
+
+    // Vertex attributes may use integer storage with KHR_mesh_quantization.
+    // Keep raw integer extraction available for joint indices and other callers.
+    template <class T>
+    size_t ExtractFloatData(T *&outData, const std::vector<unsigned int> *remappingIndices = nullptr) {
+        return ExtractData(outData, remappingIndices,
+                componentType != ComponentType_FLOAT || sizeof(ai_real) != sizeof(float));
+    }
 
     void WriteData(size_t count, const void *src_buffer, size_t src_stride);
     void WriteSparseValues(size_t count, const void *src_data, size_t src_dataStride);
@@ -1138,6 +1149,7 @@ public:
         bool FB_ngon_encoding{false};
         bool KHR_texture_basisu{false};
         bool EXT_texture_webp{false};
+        bool EXT_meshopt_compression{false};
 
         Extensions() = default;
         ~Extensions() = default;
@@ -1148,6 +1160,7 @@ public:
         bool KHR_draco_mesh_compression{false};
         bool KHR_texture_basisu{false};
         bool EXT_texture_webp{false};
+        bool EXT_meshopt_compression{false};
 
         RequiredExtensions() = default;
     } extensionsRequired;

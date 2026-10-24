@@ -389,7 +389,8 @@ namespace workphone
                                             s32 index, const String &folderPath );
 
         /// Resolve and register scene textures before any material is populated or saved.
-        void importMaterialTextures( const aiScene *scene, const String &folderPath );
+        void importMaterialTextures( const aiScene *scene, const String &folderPath,
+                                     const String &sourcePath = String() );
 
         std::map<String, SmartPtr<render::ITexture>> m_importedTexturesByName;
 

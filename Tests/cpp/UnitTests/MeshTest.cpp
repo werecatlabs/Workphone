@@ -1,6 +1,7 @@
 #include "UnitTests.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
@@ -747,130 +748,185 @@ BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )
     const auto source = std::getenv( "WP_MESH_BENCHMARK_ASSET" );
     if( !source || !*source )
     {
-        BOOST_TEST_MESSAGE( "Set WP_MESH_BENCHMARK_ASSET to benchmark a large model" );
+        BOOST_TEST_MESSAGE( "Set WP_MESH_BENCHMARK_ASSET to a model or a directory of GLB models" );
         return;
     }
-    BOOST_REQUIRE( std::filesystem::is_regular_file( source ) );
-    TestGuard guard;
-    auto app = guard.applicationManager;
-    auto loader = app->getMeshLoader();
-    BOOST_REQUIRE( loader );
-    const auto oldProject = app->getProjectPath();
-    const auto oldCache = app->getCachePath();
-    const auto oldSettings = app->getSettingsPath();
-    auto oldDatabase = app->getResourceDatabase();
-    const auto oldOverwrite = loader->getOverwrite();
-    const auto directory = std::filesystem::temp_directory_path() / StringUtil::getUUID().c_str();
-    std::filesystem::create_directories( directory / "Cache" );
-    std::filesystem::create_directories( directory / "SettingsCache" );
-    const auto model = directory / std::filesystem::path( source ).filename();
-    std::filesystem::copy_file( source, model );
-    guard.trackFilesystemPath( directory.generic_string() );
-    auto database = workphone::make_ptr<ResourceDatabase>();
-    guard.addCleanup( [app, loader, database, oldDatabase, oldProject, oldCache, oldSettings,
-                       oldOverwrite]() mutable {
-        database->unload( nullptr );
-        app->setResourceDatabase( oldDatabase );
-        app->setProjectPath( oldProject );
-        app->setCachePath( oldCache );
-        app->setSettingsPath( oldSettings );
-        loader->setOverwrite( oldOverwrite );
-    } );
-    app->setProjectPath( directory.generic_string() );
-    app->setCachePath( ( directory / "Cache" ).generic_string() + "/" );
-    app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
-    app->setResourceDatabase( database );
-    database->load( nullptr );
-    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
-    BOOST_REQUIRE( catalog );
-    BOOST_REQUIRE( catalog->setProjectRoot( directory.generic_string() ) );
-    const auto catalogPath = ( directory / "Cache" / "asset.db" ).generic_string();
-    database->setFilePath( catalogPath );
-    catalog->loadFromFile( catalogPath );
-    const auto folder = String( directory.generic_string() );
-    app->getFileSystem()->addFolder( folder, true );
-    guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
-    // The importer retains actors and meshes between calls. Release this large
-    // temporary graph before the guard restores the previous project and scene.
-    guard.addCleanup( [loader]() mutable {
-        loader->unload( nullptr );
-        loader->load( nullptr );
-    } );
-    loader->setOverwrite( true );
-    const auto start = std::chrono::steady_clock::now();
-    auto actor = loader->loadActor( model.generic_string() );
-    const auto seconds = std::chrono::duration<double>( std::chrono::steady_clock::now() - start ).count();
-    BOOST_REQUIRE( actor );
-    size_t nodes = 0, meshes = 0, vertices = 0;
-    std::vector<SmartPtr<scene::IGameActor>> pending{ actor };
-    while( !pending.empty() )
-    {
-        auto current = pending.back();
-        pending.pop_back();
-        ++nodes;
-        if( auto component = current->getComponent<scene::Mesh>() )
+    const auto benchmarkModel = []( const std::filesystem::path &sourcePath ) {
+        BOOST_TEST_MESSAGE( "Import asset=" << sourcePath.filename().string() );
+        TestGuard guard;
+        auto app = guard.applicationManager;
+        auto loader = app->getMeshLoader();
+        BOOST_REQUIRE( loader );
+        const auto oldProject = app->getProjectPath();
+        const auto oldCache = app->getCachePath();
+        const auto oldSettings = app->getSettingsPath();
+        auto oldDatabase = app->getResourceDatabase();
+        const auto oldOverwrite = loader->getOverwrite();
+        const auto directory = std::filesystem::temp_directory_path() / StringUtil::getUUID().c_str();
+        std::filesystem::create_directories( directory / "Cache" );
+        std::filesystem::create_directories( directory / "SettingsCache" );
+        const auto model = directory / sourcePath.filename();
+        std::filesystem::copy_file( sourcePath, model );
+        guard.trackFilesystemPath( directory.generic_string() );
+        auto database = workphone::make_ptr<ResourceDatabase>();
+        guard.addCleanup( [app, loader, database, oldDatabase, oldProject, oldCache, oldSettings,
+                           oldOverwrite]() mutable {
+            database->unload( nullptr );
+            app->setResourceDatabase( oldDatabase );
+            app->setProjectPath( oldProject );
+            app->setCachePath( oldCache );
+            app->setSettingsPath( oldSettings );
+            loader->setOverwrite( oldOverwrite );
+        } );
+        app->setProjectPath( directory.generic_string() );
+        app->setCachePath( ( directory / "Cache" ).generic_string() + "/" );
+        app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
+        app->setResourceDatabase( database );
+        database->load( nullptr );
+        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+        BOOST_REQUIRE( catalog );
+        BOOST_REQUIRE( catalog->setProjectRoot( directory.generic_string() ) );
+        const auto catalogPath = ( directory / "Cache" / "asset.db" ).generic_string();
+        database->setFilePath( catalogPath );
+        catalog->loadFromFile( catalogPath );
+        const auto folder = String( directory.generic_string() );
+        app->getFileSystem()->addFolder( folder, true );
+        guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
+        // The importer retains actors and meshes between calls. Release this large
+        // temporary graph before the guard restores the previous project and scene.
+        guard.addCleanup( [loader]() mutable {
+            loader->unload( nullptr );
+            loader->load( nullptr );
+        } );
+        loader->setOverwrite( true );
+        const auto start = std::chrono::steady_clock::now();
+        auto actor = loader->loadActor( model.generic_string() );
+        const auto seconds = std::chrono::duration<double>( std::chrono::steady_clock::now() - start ).count();
+        BOOST_REQUIRE( actor );
+        size_t nodes = 0, meshes = 0, vertices = 0;
+        std::vector<SmartPtr<scene::IGameActor>> pending{ actor };
+        while( !pending.empty() )
         {
-            auto resource = component->getMeshResource();
-            BOOST_REQUIRE( resource );
-            auto mesh = resource->getMesh();
-            BOOST_REQUIRE( mesh );
-            BOOST_REQUIRE_GT( mesh->getNumSubMeshes(), 0u );
-            ++meshes;
-            for( auto submesh : mesh->getSubMeshes() )
+            auto current = pending.back();
+            pending.pop_back();
+            ++nodes;
+            if( auto component = current->getComponent<scene::Mesh>() )
             {
-                BOOST_REQUIRE( submesh->getVertexBuffer() );
-                vertices += submesh->getVertexBuffer()->getNumVertices();
+                auto resource = component->getMeshResource();
+                BOOST_REQUIRE( resource );
+                auto mesh = resource->getMesh();
+                BOOST_REQUIRE( mesh );
+                BOOST_REQUIRE_GT( mesh->getNumSubMeshes(), 0u );
+                mesh->updateAABB( true );
+                BOOST_CHECK( mesh->getAABB().isFinite() && mesh->getAABB().isValid() );
+                ++meshes;
+                for( auto submesh : mesh->getSubMeshes() )
+                {
+                    BOOST_REQUIRE( submesh->getVertexBuffer() );
+                    BOOST_REQUIRE_GT( submesh->getVertexBuffer()->getNumVertices(), 0u );
+                    BOOST_REQUIRE( submesh->getVertexBuffer()->getVertexData() );
+                    vertices += submesh->getVertexBuffer()->getNumVertices();
+                }
+            }
+            for( auto child : current->getChildren() )
+            {
+                pending.push_back( child );
             }
         }
-        for( auto child : current->getChildren() )
+        BOOST_CHECK_GT( meshes, 0u );
+        BOOST_TEST_MESSAGE( "Import seconds=" << seconds << " nodes=" << nodes << " meshes=" << meshes
+                            << " vertices=" << vertices );
+        const auto imageFolder = directory / "Cache" / "EmbeddedTextures";
+        size_t decodedImages = 0;
+        if( std::filesystem::is_directory( imageFolder ) )
         {
-            pending.push_back( child );
+            for( const auto &image : std::filesystem::directory_iterator( imageFolder ) )
+            {
+                auto texture = database->loadResourceByType<render::ITexture>( image.path().generic_string() );
+                BOOST_REQUIRE_MESSAGE( texture, "Embedded image was not cataloged: " << image.path() );
+                texture->load( nullptr );
+                BOOST_REQUIRE_MESSAGE( texture->isLoaded(), "Embedded image did not decode: " << image.path() );
+                BOOST_CHECK_GT( texture->getSize().x, 0 );
+                BOOST_CHECK_GT( texture->getSize().y, 0 );
+                ++decodedImages;
+            }
         }
-    }
-    BOOST_CHECK_GT( meshes, 0u );
-    BOOST_TEST_MESSAGE( "Import seconds=" << seconds << " nodes=" << nodes << " meshes=" << meshes
-                        << " vertices=" << vertices );
-    const auto cacheStart = std::chrono::steady_clock::now();
-    auto converter = app->getGraphicsSystem()->getMeshConverter();
-    BOOST_REQUIRE( converter );
-    converter->writeMesh( actor );
-    BOOST_TEST_MESSAGE( "Cache write seconds=" << std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - cacheStart ).count() );
-    const auto prefabPath = ( directory / "benchmark.prefab" ).generic_string();
-    const auto prefabStart = std::chrono::steady_clock::now();
-    app->getPrefabManager()->savePrefab( prefabPath, actor );
-    const auto saved = std::chrono::steady_clock::now();
-    BOOST_REQUIRE( std::filesystem::is_regular_file( prefabPath ) );
-    auto prefab = app->getPrefabManager()->loadPrefab( prefabPath );
-    const auto parsed = std::chrono::steady_clock::now();
-    BOOST_REQUIRE( prefab );
-    auto instance = prefab->createActor();
-    BOOST_REQUIRE( instance );
-    BOOST_TEST_MESSAGE( "Prefab save/load seconds=" << std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - prefabStart ).count() );
-    BOOST_TEST_MESSAGE( "Prefab save=" << std::chrono::duration<double>( saved - prefabStart ).count()
-                        << " parse=" << std::chrono::duration<double>( parsed - saved ).count()
-                        << " instantiate=" << std::chrono::duration<double>(
-                            std::chrono::steady_clock::now() - parsed ).count() );
-    size_t instanceMeshes = 0;
-    pending = { instance };
-    while( !pending.empty() )
+        BOOST_TEST_MESSAGE( "Decoded embedded images=" << decodedImages );
+        const auto cacheStart = std::chrono::steady_clock::now();
+        auto converter = app->getGraphicsSystem()->getMeshConverter();
+        BOOST_REQUIRE( converter );
+        converter->writeMesh( actor );
+        BOOST_TEST_MESSAGE( "Cache write seconds=" << std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - cacheStart ).count() );
+        const auto prefabPath = ( directory / "benchmark.prefab" ).generic_string();
+        const auto prefabStart = std::chrono::steady_clock::now();
+        app->getPrefabManager()->savePrefab( prefabPath, actor );
+        const auto saved = std::chrono::steady_clock::now();
+        BOOST_REQUIRE( std::filesystem::is_regular_file( prefabPath ) );
+        auto prefab = app->getPrefabManager()->loadPrefab( prefabPath );
+        const auto parsed = std::chrono::steady_clock::now();
+        BOOST_REQUIRE( prefab );
+        auto instance = prefab->createActor();
+        BOOST_REQUIRE( instance );
+        BOOST_TEST_MESSAGE( "Prefab save/load seconds=" << std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - prefabStart ).count() );
+        BOOST_TEST_MESSAGE( "Prefab save=" << std::chrono::duration<double>( saved - prefabStart ).count()
+                            << " parse=" << std::chrono::duration<double>( parsed - saved ).count()
+                            << " instantiate=" << std::chrono::duration<double>(
+                                std::chrono::steady_clock::now() - parsed ).count() );
+        size_t instanceMeshes = 0, instanceVertices = 0;
+        pending = { instance };
+        while( !pending.empty() )
+        {
+            auto current = pending.back();
+            pending.pop_back();
+            if( auto component = current->getComponent<scene::Mesh>() )
+            {
+                auto resource = component->getMeshResource();
+                BOOST_REQUIRE( resource );
+                auto mesh = resource->getMesh();
+                BOOST_REQUIRE( mesh );
+                BOOST_REQUIRE_GT( mesh->getNumSubMeshes(), 0u );
+                mesh->updateAABB( true );
+                BOOST_CHECK( mesh->getAABB().isFinite() && mesh->getAABB().isValid() );
+                for( auto submesh : mesh->getSubMeshes() )
+                {
+                    BOOST_REQUIRE( submesh->getVertexBuffer() );
+                    BOOST_REQUIRE_GT( submesh->getVertexBuffer()->getNumVertices(), 0u );
+                    BOOST_REQUIRE( submesh->getVertexBuffer()->getVertexData() );
+                    instanceVertices += submesh->getVertexBuffer()->getNumVertices();
+                }
+                ++instanceMeshes;
+            }
+            for( auto child : current->getChildren() )
+            {
+                pending.push_back( child );
+            }
+        }
+        BOOST_CHECK_EQUAL( instanceMeshes, meshes );
+        BOOST_CHECK_EQUAL( instanceVertices, vertices );
+        guard.sceneManager->destroyActor( instance );
+        guard.sceneManager->destroyActor( actor );
+    };
+    if( std::filesystem::is_directory( source ) )
     {
-        auto current = pending.back();
-        pending.pop_back();
-        if( auto component = current->getComponent<scene::Mesh>() )
+        std::vector<std::filesystem::path> models;
+        for( const auto &entry : std::filesystem::directory_iterator( source ) )
         {
-            BOOST_REQUIRE( component->getMeshResource() );
-            ++instanceMeshes;
+            if( entry.is_regular_file() &&
+                StringUtil::make_lower( entry.path().extension().string() ) == ".glb" )
+                models.push_back( entry.path() );
         }
-        for( auto child : current->getChildren() )
-        {
-            pending.push_back( child );
-        }
+        std::sort( models.begin(), models.end() );
+        BOOST_REQUIRE( !models.empty() );
+        for( const auto &model : models ) benchmarkModel( model );
+        BOOST_TEST_MESSAGE( "Imported and instantiated " << models.size() << " GLB assets" );
     }
-    BOOST_CHECK_EQUAL( instanceMeshes, meshes );
-    guard.sceneManager->destroyActor( instance );
-    guard.sceneManager->destroyActor( actor );
+    else
+    {
+        BOOST_REQUIRE( std::filesystem::is_regular_file( source ) );
+        benchmarkModel( source );
+    }
 }
 
 BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_attempt )
@@ -984,6 +1040,13 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
         guard.sceneManager->destroyActor( instance );
         guard.sceneManager->destroyActor( actor );
     }
+
+    // A failed reimport must not be reported as a successful empty actor/prefab.
+    std::ofstream invalidSource( directory / "triangle.obj", std::ios::trunc );
+    invalidSource << "this is not a mesh";
+    invalidSource.close();
+    app->getFileSystem()->refreshPath( folder, false );
+    BOOST_CHECK( !loader->loadActor( String( "triangle.obj" ) ) );
 }
 
 BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_before_saving )
