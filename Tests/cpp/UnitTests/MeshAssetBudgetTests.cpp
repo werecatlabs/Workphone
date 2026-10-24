@@ -112,7 +112,12 @@ BOOST_AUTO_TEST_CASE( admission_counts_real_allocations_and_preserves_failed_rep
 
 BOOST_AUTO_TEST_CASE( multistream_growth_commits_together_and_clones_reserve_distinct_storage )
 {
-    TestGuard guard; MeshBudgetWindow budget( 155 );
+    TestGuard guard;
+    // Factory inventories/teardown capacity now share SourceCpu admission. Keep
+    // their retained metadata in the baseline so the exact geometry limits below
+    // still exercise first/second-stream staging and distinct clone buffers.
+    { auto warm = triangleVertices(true); auto clone = warm->clone(); }
+    MeshBudgetWindow budget( 155 );
     auto vertices = triangleVertices( true );
     auto positions = vertices->getVertexData(), uv = vertices->getVertexData( 1 );
     vertices->setNumVertices( 6 );

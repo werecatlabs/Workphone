@@ -344,10 +344,10 @@ namespace generic_engine_catalog_budget_contracts
     inline void queues()
     {
         auto message = make_ptr<StateMessage>();
-        auto queue = std::make_unique<StateQueue>();
-        queue->load(nullptr);
         Capacity budget;
         const auto baseline = budget.used();
+        auto queue = std::make_unique<StateQueue>();
+        queue->load(nullptr);
         {
             const auto empty = budget.used();
             budget.set(empty);
@@ -358,16 +358,24 @@ namespace generic_engine_catalog_budget_contracts
             budget.restore();
             queue->queueMessage(message);
             const auto resident = budget.used();
-            auto messages = queue->getMessagesAndClear();
-            require(resident > empty && messages.size() == 1 && messages[0] == message,
-                    "state queue storage is admitted and retains its message");
-            queue->queueMessage(message);
             budget.set(resident);
+            auto messages = queue->getMessagesAndClear();
+            require(resident > empty && messages.size() == 1 && messages[0] == message &&
+                        queue->isEmpty() && budget.used() == resident && messages.get_allocator().isSourceBudgeted(),
+                    "drained caller owns the actual admitted queue buffer at capacity");
+            denied = false;
+            try { queue->queueMessage(message); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && queue->isEmpty() && budget.used() == resident,
+                    "retained drain output requires independent admission for a new producer buffer");
+            messages = {};
+            require(budget.used() == empty, "caller release retires transferred queue capacity");
+            queue->queueMessage(message);
             queue->clear();
+            require(queue->isEmpty() && budget.used() == empty, "clear retires its detached batch without retaining a duplicate buffer");
             queue->queueMessage(message);
             messages = queue->getMessagesAndClear();
             require(budget.used() == resident && messages.size() == 1 && messages[0] == message,
-                    "state queue reuses retained capacity when the budget is full");
+                    "physical capacity can be readmitted after the prior caller relinquishes it");
             queue->unload(nullptr);
             budget.restore();
         }

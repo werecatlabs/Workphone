@@ -7,6 +7,7 @@
 #include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <limits>
+#include <memory>
 
 namespace workphone
 {
@@ -24,8 +25,10 @@ namespace workphone
 
         AtomicRawPtr<IEventListener> m_sharedEventListener;
 
-        ///< The shared event listeners.
-        ConcurrentArray<SmartPtr<IEventListener>> m_sharedEventListeners;
+        // Immutable dispatch generations. Registration admits object/control and
+        // element capacity before publication; retaining a generation is free.
+        std::shared_ptr<const Array<SmartPtr<IEventListener>>> m_sharedEventListeners;
+        RecursiveSpinMutex m_eventListenerMutex;
     };
 
 }  // namespace workphone

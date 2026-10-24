@@ -57,8 +57,11 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /// The message queue.
-        ConcurrentQueue<SmartPtr<IStateMessage>, SourceBudgetAllocator<SmartPtr<IStateMessage>>> m_messageQueue;
+        // Publication admits the actual drain buffer. Draining transfers this
+        // allocation, including spare capacity, without allocating after dequeue.
+        Array<SmartPtr<IStateMessage>> m_messageQueue{Allocator<SmartPtr<IStateMessage>>(sourceBudget)};
+        mutable RecursiveSpinMutex m_messageMutex;
+        bool m_acceptMessages = false;
 
         /// The message queue.
         ConcurrentDeque<SmartPtr<IState>, SourceBudgetAllocator<SmartPtr<IState>>> m_stateQueue;

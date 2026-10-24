@@ -7,4 +7,9 @@ namespace workphone
     WP_CLASS_REGISTER_DERIVED( workphone, IFactory, ISharedObject );
 
     IFactory::~IFactory() = default;
+
+    Array<SmartPtr<ISharedObject>> IFactory::takeInstanceObjectsForUnload()
+    {
+        return getInstanceObjects();
+    }
 }  // namespace workphone

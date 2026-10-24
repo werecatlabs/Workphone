@@ -5,6 +5,7 @@
 #include <Workphone/System/Job.hpp>
 #include <Workphone/Interface/System/IEvent.hpp>
 #include <Workphone/Core/Parameter.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -181,7 +182,7 @@ namespace workphone
         atomic_s64 m_eventValue = 0;
 
         /** @brief Optional arguments passed with the event. */
-        ConcurrentArray<Parameter> m_arguments;
+        std::shared_ptr<const Array<Parameter>> m_arguments;
     };
 
 }  // namespace workphone

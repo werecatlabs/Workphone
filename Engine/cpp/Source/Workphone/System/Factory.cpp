@@ -12,7 +12,7 @@ namespace workphone
     WP_CLASS_REGISTER_DERIVED( workphone, Factory, IFactory );
     WP_CLASS_REGISTER_DERIVED( workphone, Factory::Listener, ISharedObjectListener );
 
-    Factory::Factory()
+    Factory::Factory() : m_tags(GrowthPolicy::Double, 1, Allocator<String>(sourceBudget))
     {
 #if WP_TRACK_REFERENCES
         setObjectFlag( OBJECT_FLAG_TRACK_REFERENCES, true );
@@ -39,7 +39,7 @@ namespace workphone
             m_listener = nullptr;
         }
 
-        m_tags.clear();
+        setTags({});
     }
 
     u32 Factory::getGrowSize() const
@@ -246,12 +246,11 @@ namespace workphone
 
     Array<SmartPtr<ISharedObject>> Factory::getInstanceObjects() const
     {
-        Array<SmartPtr<ISharedObject>> result;
+        auto result = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
+        ScopedLock lock(&m_instances, false);
+        result.reserve( m_instances.size() );
 
-        auto instances = m_instances.snapshot();
-        result.reserve( instances.size() );
-
-        for( auto instance : instances )
+        for( auto instance : m_instances )
         {
             if( instance )
             {
@@ -271,7 +270,12 @@ namespace workphone
 
     void Factory::setTags( const Array<String> &tags )
     {
-        m_tags = { tags.begin(), tags.end() };
+        // Import caller spare capacity and stage all String copies before
+        // replacing the published inventory, including raw caller containers.
+        decltype(m_tags) next(GrowthPolicy::Double, 1, Allocator<String>(sourceBudget));
+        next.reserve(tags.capacity());
+        for(const auto &tag : tags) next.push_back(tag);
+        m_tags = std::move(next);
     }
 
     bool Factory::hasPool() const
@@ -323,15 +327,9 @@ namespace workphone
 
     bool Factory::Listener::destroy( void *ptr )
     {
-        //std::fprintf( stderr, "TRACE Factory::Listener::destroy this=%p object=%p factory-weak=%p\n",
-        //              this, ptr, m_factory.get() );
         if( auto factory = getFactory() )
         {
-            const auto objectType = factory->getObjectTypeName();
-            //std::fprintf( stderr, "TRACE Factory::Listener::destroy locked factory=%p type=%s\n",
-            //              factory.get(), objectType.c_str() );
             factory->freeObject( ptr );
-            //std::fprintf( stderr, "TRACE Factory::Listener::destroy freeObject returned\n" );
             return true;
         }
 

@@ -2,7 +2,7 @@
 #include <limits>
 #include <Workphone/Memory/ObjectObserver.hpp>
 #include <mutex>
-#include <unordered_map>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Interface/System/IEditorManager.hpp>
@@ -35,15 +35,24 @@ namespace workphone
     {
         struct ObservedLifetimes
         {
-            std::mutex mutex;
-            std::unordered_map<const ISharedObject *, std::shared_ptr<const void>> tokens;
+            using Tokens = SourceBudgetMap<const ISharedObject *, std::shared_ptr<const void>>;
+            Tokens tokens;
         };
 
-        ObservedLifetimes &observedLifetimes()
+        struct ObserverRegistryState
         {
-            // Survive static shutdown: factories can destroy objects very late.
-            static auto registry = new ObservedLifetimes;
-            return *registry;
+            std::mutex mutex;
+            SourceBudgetUnique<ObservedLifetimes> registry;
+        };
+
+        ObserverRegistryState &observerRegistryState() noexcept
+        {
+            // Static synchronization survives late factory destruction without a
+            // permanent heap allocation. All dynamic registry/token storage is
+            // lazy and admitted; expiration must never construct that storage.
+            alignas(ObserverRegistryState) static unsigned char storage[sizeof(ObserverRegistryState)];
+            static auto state = new(storage) ObserverRegistryState;
+            return *state;
         }
     }  // namespace
 
@@ -53,21 +62,37 @@ namespace workphone
         {
             return {};
         }
-        auto &registry = observedLifetimes();
-        std::lock_guard<std::mutex> lock( registry.mutex );
-        auto &token = registry.tokens[object];
-        if( !token )
+        auto &state = observerRegistryState();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if(state.registry)
         {
-            token = std::make_shared<const int>( 0 );
+            auto found = state.registry->tokens.find(object);
+            if(found != state.registry->tokens.end()) return found->second;
+            auto token = std::allocate_shared<const int>(SourceBudgetAllocator<const int>{}, 0);
+            state.registry->tokens.emplace(object, token);
+            return token;
         }
+
+        auto registry = makeSourceBudgetUnique<ObservedLifetimes>();
+        auto token = std::allocate_shared<const int>(SourceBudgetAllocator<const int>{}, 0);
+        registry->tokens.emplace(object, token);
+        state.registry = std::move(registry);
         return token;
     }
 
-    void expireObjectLifetime( const ISharedObject *object )
+    void expireObjectLifetime( const ISharedObject *object ) noexcept
     {
-        auto &registry = observedLifetimes();
-        std::lock_guard<std::mutex> lock( registry.mutex );
-        registry.tokens.erase( object );
+        auto &state = observerRegistryState();
+        SourceBudgetUnique<ObservedLifetimes> retired;
+        ObservedLifetimes::Tokens::node_type expired;
+        {
+            std::lock_guard<std::mutex> lock(state.mutex);
+            if(!state.registry) return;
+            expired = state.registry->tokens.extract(object);
+            if(state.registry->tokens.empty()) retired = std::move(state.registry);
+        }
+        // Retire nodes/control storage outside the registry lock. Expired weak
+        // observers keep their token control allocation charged until released.
     }
 
     namespace
@@ -134,8 +159,8 @@ namespace workphone
 
     u32 ISharedObject::getNumListeners() const
     {
-        auto &listeners = m_sharedObjectData->m_sharedEventListeners;
-        return static_cast<u32>( listeners.size() );
+        auto listeners = getObjectListenerSnapshot();
+        return listeners ? static_cast<u32>(listeners->size()) : 0;
     }
 
     ISharedObject::ScopedLoadstateWait::ScopedLoadstateWait( ISharedObject *object ) : m_object( object )
@@ -412,7 +437,8 @@ namespace workphone
                     {
                         m_loadingState = state;
 
-                        auto args = Array<Parameter>();
+                        auto args = makeSourceBudgetSnapshot<Parameter>();
+                        args.reserve( 3 );
                         args.resize( 3 );
 
                         args[0] = Parameter( static_cast<s32>( oldState ) );
@@ -567,19 +593,28 @@ namespace workphone
 
     auto ISharedObject::getObjectListeners() const -> Array<SmartPtr<IEventListener>>
     {
-        auto &listeners = m_sharedObjectData->m_sharedEventListeners;
-        return listeners.snapshot();
+        auto listeners = getObjectListenerSnapshot();
+        return listeners ? *listeners : makeSourceBudgetSnapshot<SmartPtr<IEventListener>>();
+    }
+
+    ISharedObject::ObjectListenerSnapshot ISharedObject::getObjectListenerSnapshot() const
+    {
+        // Serialize acquisition with exclusive-generation edits. Once retained,
+        // readers need no lock and prevent that generation from being modified.
+        ScopedLock lock(&m_sharedObjectData->m_eventListenerMutex);
+        return std::atomic_load(&m_sharedObjectData->m_sharedEventListeners);
     }
 
     void ISharedObject::getObjectListenersList( SmartPtr<IEventListener> *listeners, u32 *count,
                                                 u32 maxCount ) const
     {
-        auto &sharedListeners = m_sharedObjectData->m_sharedEventListeners;
-        u32 actualCount = std::min( static_cast<u32>( sharedListeners.size() ), maxCount );
+        auto sharedListeners = getObjectListenerSnapshot();
+        u32 actualCount = sharedListeners ?
+            std::min(static_cast<u32>(sharedListeners->size()), maxCount) : 0;
 
         for( u32 i = 0; i < actualCount; ++i )
         {
-            listeners[i] = sharedListeners[i];
+            listeners[i] = (*sharedListeners)[i];
         }
 
         if( count )
@@ -590,46 +625,73 @@ namespace workphone
 
     auto ISharedObject::hasObjectListener( SmartPtr<IEventListener> listener ) const -> bool
     {
-        auto &listeners = m_sharedObjectData->m_sharedEventListeners;
-
-        auto it = std::find( listeners.begin(), listeners.end(), listener );
-        if( it != listeners.end() )
-        {
-            return true;
-        }
-
-        return false;
+        auto listeners = getObjectListenerSnapshot();
+        return listeners && std::find(listeners->begin(), listeners->end(), listener) != listeners->end();
     }
 
     void ISharedObject::addObjectListener( SmartPtr<IEventListener> listener )
     {
         WP_ASSERT( listener != nullptr );
 
-        if( !hasObjectListener( listener ) )
+        if(!listener) return;
+        ObjectListenerSnapshot previous;
         {
-            auto &listeners = m_sharedObjectData->m_sharedEventListeners;
-            listeners.push_back( listener );
+            ScopedLock lock(&m_sharedObjectData->m_eventListenerMutex);
+            previous = getObjectListenerSnapshot();
+            if(previous && std::find(previous->begin(), previous->end(), listener) != previous->end()) return;
+            auto next = previous ? *previous : makeSourceBudgetSnapshot<SmartPtr<IEventListener>>();
+            next.push_back(listener);
+            ObjectListenerSnapshot published = std::allocate_shared<Array<SmartPtr<IEventListener>>>(
+                SourceBudgetAllocator<Array<SmartPtr<IEventListener>>>{}, std::move(next));
+            std::atomic_store(&m_sharedObjectData->m_sharedEventListeners, std::move(published));
         }
     }
 
     void ISharedObject::removeObjectListener( SmartPtr<IEventListener> listener )
     {
-        auto &listeners = m_sharedObjectData->m_sharedEventListeners;
-        ScopedLock lock( &listeners );
-        listeners.erase( std::remove( listeners.begin(), listeners.end(), listener ), listeners.end() );
+        ObjectListenerSnapshot previous;
+        {
+            ScopedLock lock(&m_sharedObjectData->m_eventListenerMutex);
+            previous = getObjectListenerSnapshot();
+            if(!previous || std::find(previous->begin(), previous->end(), listener) == previous->end()) return;
+            if(previous.use_count() == 2)
+            {
+                // Only the inventory and this local pin own the generation.
+                // There is no retained reader, so removal can reuse capacity
+                // at the cap. The allocation was constructed as a mutable Array.
+                auto &current = const_cast<Array<SmartPtr<IEventListener>> &>(*previous);
+                current.erase(std::remove(current.begin(), current.end(), listener), current.end());
+                if(current.empty())
+                    std::atomic_store(&m_sharedObjectData->m_sharedEventListeners, ObjectListenerSnapshot{});
+                return;
+            }
+            ObjectListenerSnapshot published;
+            if(previous->size() > 1)
+            {
+                auto next = *previous;
+                next.erase(std::remove(next.begin(), next.end(), listener), next.end());
+                published = std::allocate_shared<Array<SmartPtr<IEventListener>>>(
+                    SourceBudgetAllocator<Array<SmartPtr<IEventListener>>>{}, std::move(next));
+            }
+            std::atomic_store(&m_sharedObjectData->m_sharedEventListeners, std::move(published));
+        }
     }
 
     void ISharedObject::removeObjectListeners()
     {
-        ScopedLock lock( &m_sharedObjectData->m_sharedEventListeners );
-        m_sharedObjectData->m_sharedEventListeners.clear();
-        m_sharedObjectData->m_sharedEventListener = nullptr;
+        ObjectListenerSnapshot previous;
+        {
+            ScopedLock lock(&m_sharedObjectData->m_eventListenerMutex);
+            previous = std::atomic_exchange(&m_sharedObjectData->m_sharedEventListeners, ObjectListenerSnapshot{});
+            m_sharedObjectData->m_sharedEventListener = nullptr;
+        }
     }
 
     auto ISharedObject::findObjectListener( const String &name ) const -> SmartPtr<IEventListener>
     {
-        auto listeners = getObjectListeners();
-        for( auto &listener : listeners )
+        auto listeners = getObjectListenerSnapshot();
+        if(!listeners) return nullptr;
+        for( auto &listener : *listeners )
         {
             if( listener )
             {

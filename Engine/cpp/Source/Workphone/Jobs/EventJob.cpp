@@ -4,7 +4,7 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
-#include <unordered_set>
+#include <array>
 
 namespace workphone
 {
@@ -19,7 +19,7 @@ namespace workphone
         m_object = nullptr;
         m_sender = nullptr;
         m_owner = nullptr;
-        m_arguments.clear();
+        std::atomic_store(&m_arguments, std::shared_ptr<const Array<Parameter>>{});
     }
 
     void EventJob::load( SmartPtr<ISharedObject> data )
@@ -37,7 +37,7 @@ namespace workphone
         m_object = nullptr;
         m_sender = nullptr;
         m_owner = nullptr;
-        m_arguments.clear();
+        std::atomic_store(&m_arguments, std::shared_ptr<const Array<Parameter>>{});
 
         Job::unload( data );
 
@@ -58,18 +58,27 @@ namespace workphone
 
         auto eventType = getEventType();
         auto eventValue = getEventValue();
-        auto arguments = getArguments();
+        auto retainedArguments = std::atomic_load(&m_arguments);
+        const Array<Parameter> emptyArguments;
+        const auto &arguments = retainedArguments ? *retainedArguments : emptyArguments;
         auto event = getEvent();
 
         // A listener can be registered globally and on the sender/object at the same time. Treat
         // one EventJob execution as one delivery so those overlapping routes do not invoke it
         // repeatedly. Snapshots keep listener removal during a callback safe.
-        std::unordered_set<IEventListener *> dispatchedListeners;
-        auto dispatch = [&]( auto listeners ) {
-            Array<SmartPtr<IEventListener>> retainedListeners( listeners.begin(), listeners.end() );
-            for( auto &listener : retainedListeners )
+        std::array<ISharedObject::ObjectListenerSnapshot, 3> routes;
+        size_t routeCount = 0;
+        auto dispatch = [&]( ISharedObject::ObjectListenerSnapshot listeners ) {
+            const auto route = routeCount++;
+            routes[route] = std::move(listeners);
+            if(!routes[route]) return;
+            for( auto listener : *routes[route] )
             {
-                if( !listener || !dispatchedListeners.insert( listener.get() ).second )
+                bool delivered = false;
+                for(size_t previous = 0; previous < route && !delivered; ++previous)
+                    if(routes[previous]) delivered = std::find(routes[previous]->begin(),
+                        routes[previous]->end(), listener) != routes[previous]->end();
+                if( !listener || delivered )
                 {
                     continue;
                 }
@@ -95,20 +104,20 @@ namespace workphone
         // application-wide delivery with OBJECT_FLAG_GLOBAL_EVENTS.
         if( !sender || sender->getObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS ) )
         {
-            dispatch( applicationManager->getObjectListeners() );
+            dispatch( applicationManager->getObjectListenerSnapshot() );
         }
 
         if( sender )
         {
             if( sender->getObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS ) )
             {
-                dispatch( sender->getObjectListeners() );
+                dispatch( sender->getObjectListenerSnapshot() );
             }
         }
 
         if( object && object->getObjectFlag( OBJECT_FLAG_RECEIVE_EVENTS ) )
         {
-            dispatch( object->getObjectListeners() );
+            dispatch( object->getObjectListenerSnapshot() );
         }
     }
 
@@ -164,12 +173,17 @@ namespace workphone
 
     auto EventJob::getArguments() const -> Array<Parameter>
     {
-        return m_arguments.snapshot();
+        auto arguments = std::atomic_load(&m_arguments);
+        return arguments ? *arguments : makeSourceBudgetSnapshot<Parameter>();
     }
 
     void EventJob::setArguments( const Array<Parameter> &arguments )
     {
-        m_arguments = { arguments.begin(), arguments.end() };
+        std::shared_ptr<const Array<Parameter>> next;
+        if(!arguments.empty())
+            next = std::allocate_shared<Array<Parameter>>(SourceBudgetAllocator<Array<Parameter>>{},
+                                                          makeSourceBudgetSnapshot(arguments));
+        std::atomic_store(&m_arguments, std::move(next));
     }
 
     auto EventJob::getEvent() const -> SmartPtr<IEvent>

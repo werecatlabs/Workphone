@@ -42,7 +42,7 @@ namespace workphone
         {
             if( factory )
             {
-                auto objects = factory->getInstanceObjects();
+                auto objects = factory->takeInstanceObjectsForUnload();
                 for( auto &object : objects )
                 {
                     if( object && object->isAlive() && object->getReferences() > 0 )
