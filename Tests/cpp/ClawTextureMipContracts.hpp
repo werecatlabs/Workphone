@@ -718,7 +718,14 @@ namespace claw_texture_mip_contracts
                  texture.getSize() == Vector2I(2,2) && view(texture) == oldView.Get() &&
                  scheduler->stats().used[source] == resident && oldPixels->bgra[1] == 47,
                  "Source denial is returned through ITexture and preserves dimensions, owners and residency" );
-        limit( resident + replacement.size() );
+        // Existing Claw pixel leases include their 4096-byte cache metadata
+        // reservation. Both complete generations overlap until commit.
+        const auto candidateBytes = replacement.size() + 4096;
+        limit( resident + candidateBytes - 1 );
+        require( !bridge.copyByteData( replacement, {2,2}, error ) &&
+                 scheduler->stats().used[source] == resident && view(texture) == oldView.Get(),
+                 "one byte below complete pixel/cache admission preserves the last-good generation" );
+        limit( resident + candidateBytes );
         require( bridge.copyByteData( replacement, {2,2}, error ) &&
                  scheduler->stats().used[source] == resident,
                  "exact overlapping pixel admission commits and physically retires old source storage" );
