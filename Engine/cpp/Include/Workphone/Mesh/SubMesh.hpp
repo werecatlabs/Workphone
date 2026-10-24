@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/ISubMesh.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -14,9 +15,11 @@ namespace workphone
      * a set of vertex and index buffers. This allows for efficient rendering of
      * complex objects by breaking them down into smaller, material-specific parts.
      */
-    class WPCore_API SubMesh : public ISubMesh
+    class WPCore_API SubMesh : public ISubMesh, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Constructs a new SubMesh instance.
          */

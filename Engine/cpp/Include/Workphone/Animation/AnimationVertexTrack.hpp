@@ -18,12 +18,13 @@ namespace workphone
      * vertex deformation over time. It manages a collection of keyframes (either Morph or Pose)
      * and associates them with a vertex buffer.
      */
-    class AnimationVertexTrack : public AnimationTrack<IAnimationVertexTrack>
+    class WPCore_API AnimationVertexTrack : public AnimationTrack<IAnimationVertexTrack>
     {
     public:
         AnimationVertexTrack();
         AnimationVertexTrack( VertexAnimationType type, IAnimation *parent = nullptr );
         ~AnimationVertexTrack() override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         /** @brief Gets the current animation type (Morph or Pose). */
         VertexAnimationType getAnimationType() const override;
@@ -107,9 +108,9 @@ namespace workphone
         SmartPtr<IVertexBuffer> m_vertexData;               ///< Associated vertex buffer.
         // Use morph or pose keyframes depending on m_animationType
         Array<SmartPtr<IAnimationMorphKeyFrame>>
-            m_morphKeyFrames;  ///< Morph keyframes (used if type is VAT_MORPH).
+            m_morphKeyFrames{Allocator<SmartPtr<IAnimationMorphKeyFrame>>(sourceBudget)};
         Array<SmartPtr<IAnimationPoseKeyFrame>>
-            m_poseKeyFrames;  ///< Pose keyframes (used if type is VAT_POSE).
+            m_poseKeyFrames{Allocator<SmartPtr<IAnimationPoseKeyFrame>>(sourceBudget)};
     };
 }  // namespace workphone
 

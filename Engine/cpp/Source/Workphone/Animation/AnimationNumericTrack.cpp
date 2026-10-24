@@ -9,13 +9,18 @@ namespace workphone
 
     WP_CLASS_REGISTER_DERIVED( workphone, AnimationNumericTrack, IAnimationNumericTrack );
 
-    AnimationNumericTrack::AnimationNumericTrack()
+    AnimationNumericTrack::AnimationNumericTrack() : m_keyFrames( Allocator<KeyFrame>( sourceBudget ) )
     {
         // Initialize with a keyframe at time 0.0 with value 0.0
         m_keyFrames.emplace_back( 0.0f, 0.0f );
     }
 
     AnimationNumericTrack::~AnimationNumericTrack() = default;
+
+    void AnimationNumericTrack::unload( SmartPtr<ISharedObject> data )
+    {
+        m_keyFrames = makeSourceBudgetSnapshot<KeyFrame>();
+    }
 
     void AnimationNumericTrack::addKeyFrame( f32 time, f32 value )
     {
@@ -133,8 +138,10 @@ namespace workphone
 
     void AnimationNumericTrack::setKeyFrames( const Array<KeyFrame> &keyFrames )
     {
-        m_keyFrames = keyFrames;
-        sortKeyFrames();
+        auto candidate = makeSourceBudgetSnapshot( keyFrames );
+        std::sort( candidate.begin(), candidate.end(),
+                   []( const KeyFrame &a, const KeyFrame &b ) { return a.first < b.first; } );
+        m_keyFrames.swap( candidate );
     }
 
 }  // namespace workphone

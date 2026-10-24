@@ -15,7 +15,10 @@ namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, SubMesh, ISubMesh );
 
-    SubMesh::SubMesh() = default;
+    SubMesh::SubMesh() :
+        m_boneAssignments( Allocator<SmartPtr<IVertexBoneAssignment>>( sourceBudget ) )
+    {
+    }
 
     SubMesh::~SubMesh() = default;
 
@@ -34,18 +37,23 @@ namespace workphone
 
     void SubMesh::unload( SmartPtr<ISharedObject> data )
     {
-        if( m_vertexBuffer )
+        // Detach before callbacks so reentry cannot revisit this generation.
+        auto bones = makeSourceBudgetSnapshot<SmartPtr<IVertexBoneAssignment>>();
+        bones.swap( m_boneAssignments );
+        SmartPtr<IVertexBuffer> vertices;
+        std::swap( vertices, m_vertexBuffer );
+        SmartPtr<IIndexBuffer> indices;
+        std::swap( indices, m_indexBuffer );
+        if( vertices )
         {
-            if( m_vertexBuffer->getReferences() == 1 && !m_vertexBuffer->getWeakReferences() )
-                m_vertexBuffer->unload( nullptr );
-            m_vertexBuffer = nullptr;
+            if( vertices->getReferences() == 1 && !vertices->getWeakReferences() )
+                vertices->unload( nullptr );
         }
 
-        if( m_indexBuffer )
+        if( indices )
         {
-            if( m_indexBuffer->getReferences() == 1 && !m_indexBuffer->getWeakReferences() )
-                m_indexBuffer->unload( nullptr );
-            m_indexBuffer = nullptr;
+            if( indices->getReferences() == 1 && !indices->getWeakReferences() )
+                indices->unload( nullptr );
         }
     }
 
@@ -120,9 +128,12 @@ namespace workphone
 
         auto subMesh = factoryManager->make_ptr<SubMesh>();
 
+        subMesh->m_boneAssignments = makeSourceBudgetSnapshot( m_boneAssignments );
         subMesh->setMaterialName( m_materialName );
-        subMesh->setVertexBuffer( m_vertexBuffer->clone() );
-        subMesh->setIndexBuffer( m_indexBuffer->clone() );
+        if( m_vertexBuffer ) subMesh->setVertexBuffer( m_vertexBuffer->clone() );
+        if( m_indexBuffer ) subMesh->setIndexBuffer( m_indexBuffer->clone() );
+        subMesh->setUseSharedVertices( m_useSharedVertices );
+        subMesh->setRenderOperationType( m_renderOperationType );
         subMesh->setAABB( m_aabb );
 
         return subMesh;

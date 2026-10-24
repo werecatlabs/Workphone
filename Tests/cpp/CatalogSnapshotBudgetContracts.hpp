@@ -55,6 +55,87 @@ namespace
                     "Catalog observer/browser bindings retry after admission returns");
             browser.clear(); session.clear();
         }
+        {
+            AssetDatabaseManager::EntryQuery navigationQuery;
+            navigationQuery.pageSize = 1;
+            // Warm database/string-pool helpers independently of the measured
+            // cursor storage, including validation while returning to page one.
+            {
+                AssetCatalogBrowser warm;
+                require(warm.refresh(catalog, navigationQuery), "Warm navigation first page");
+                while(warm.page().hasMore)
+                    require(warm.next(catalog), "Warm navigation cursor growth");
+                while(warm.hasPrevious())
+                    require(warm.previous(catalog), "Warm navigation backtracking");
+                warm.clear();
+            }
+            const auto baseline = budget.used();
+            AssetCatalogBrowser browser;
+            require(browser.refresh(catalog, navigationQuery), "Open budgeted navigation");
+            const auto firstResident = budget.used();
+            require(browser.next(catalog) && browser.next(catalog) && browser.next(catalog) &&
+                        browser.pageNumber() == 4 && browser.page().entries.front().uuid == "snapshot-103",
+                    "Navigate with three retained continuation cursors");
+            const auto cursorBytes = sourceBudgetStorageBytes(
+                4 * sizeof(AssetDatabaseManager::EntryCursor), alignof(AssetDatabaseManager::EntryCursor));
+            require(budget.used() == firstResident + cursorBytes,
+                    "Cursor admission charges the physical four-slot buffer including its unused slot");
+            const auto resident = budget.used();
+            const auto rows = browser.page().entries.data();
+            const auto generation = browser.page().next.generation;
+            auto expectPreserved = [&]() {
+                require(browser.pageNumber() == 4 && browser.hasPrevious() &&
+                            browser.page().succeeded && browser.page().hasMore &&
+                            browser.page().entries.data() == rows &&
+                            browser.page().entries.front().uuid == "snapshot-103" &&
+                            browser.page().next.afterUuid == "snapshot-103" &&
+                            browser.page().error == "Budget exhausted" && budget.used() == resident,
+                        "Denied navigation preserves the complete displayed page and cursor position without partial storage");
+            };
+            budget.set(resident);
+            auto denials = sourceBudgetDenialCount();
+            require(!browser.next(catalog) && sourceBudgetDenialCount() != denials,
+                    "Next cursor candidate cannot bypass a full shared budget");
+            expectPreserved();
+            denials = sourceBudgetDenialCount();
+            require(!browser.previous(catalog) && sourceBudgetDenialCount() != denials,
+                    "Denied backtracking validation cannot consume the previous cursor");
+            expectPreserved();
+            budget.set(resident + cursorBytes);
+            denials = sourceBudgetDenialCount();
+            require(!browser.next(catalog) && sourceBudgetDenialCount() != denials,
+                    "A complete admitted cursor candidate is discarded when its new page cannot be admitted");
+            expectPreserved();
+            budget.restore();
+            require(catalog->getCatalogGeneration() == generation,
+                    "Denied revision reads preserve the catalog generation and retained continuation identities");
+            const auto backtracked = browser.previous(catalog);
+            require(backtracked, "Backtracking retries after navigation admission is restored");
+            require(browser.pageNumber() == 3 && browser.page().entries.front().uuid == "snapshot-102" &&
+                        browser.page().error.empty(),
+                    "Backtracking retry publishes the expected previous page and clears its transient error");
+            require(budget.used() == resident,
+                    "Backtracking retains its charged four-slot spare capacity");
+            require(browser.next(catalog) && browser.pageNumber() == 4 &&
+                        browser.page().entries.front().uuid == "snapshot-103" && budget.used() == resident,
+                    "Forward navigation retries without skipping a denied page");
+            auto retained = browser.page();
+            const auto pageBytes = sourceBudgetStorageBytes(
+                retained.entries.capacity() * sizeof(AssetDatabaseManager::EntrySnapshot),
+                alignof(AssetDatabaseManager::EntrySnapshot));
+            budget.set(budget.used());
+            denials = sourceBudgetDenialCount();
+            browser.clear();
+            require(sourceBudgetDenialCount() == denials && browser.pageNumber() == 1 &&
+                        !browser.hasPrevious() && browser.page().entries.empty() &&
+                        budget.used() == baseline + pageBytes &&
+                        retained.entries.front().uuid == "snapshot-103" &&
+                        retained.entries.get_allocator().isSourceBudgeted(),
+                    "Full-budget clear releases cursor and binding metadata while detached rows retain their own charge");
+            retained = {};
+            require(budget.used() == baseline, "Final detached navigation page retires its physical buffer");
+            budget.restore();
+        }
         { auto warm = catalog->queryEntries(query); require(warm.succeeded, "Warm detached page"); }
         auto page = catalog->queryEntries(query);
         require(page.succeeded && page.entries.size() == 24 && page.entries.get_allocator().isSourceBudgeted(),

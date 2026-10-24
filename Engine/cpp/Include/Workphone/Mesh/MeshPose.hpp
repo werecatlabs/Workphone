@@ -5,6 +5,7 @@
 #include <Workphone/Interface/Mesh/IMeshPose.hpp>
 #include <Workphone/Core/HashMap.hpp>
 #include <Workphone/Math/Vector3.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -14,9 +15,13 @@ namespace workphone
      * Represents a collection of vertex offsets that can be applied to a mesh
      * to create shape variations or morph targets for animation.
      */
-    class WPCore_API MeshPose : public IMeshPose
+    class WPCore_API MeshPose : public IMeshPose, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        using VertexOffsetMap = std::unordered_map<u32, Vector3F, std::hash<u32>, std::equal_to<u32>,
+            SourceBudgetAllocator<std::pair<const u32, Vector3F>>>;
         /**
          * @brief Constructor.
          * @param target The target index for this pose.
@@ -28,6 +33,7 @@ namespace workphone
          * @brief Destructor.
          */
         ~MeshPose() override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         /** @copydoc IMeshPose::getTarget */
         u16 getTarget() const override;
@@ -54,13 +60,13 @@ namespace workphone
          * @brief Gets all vertex offsets.
          * @return A map of vertex indices to position offsets.
          */
-        const HashMap<u32, Vector3F> &getVertexOffsets() const;
+        const VertexOffsetMap &getVertexOffsets() const;
 
         /**
          * @brief Gets all normal offsets.
          * @return A map of vertex indices to normal offsets.
          */
-        const HashMap<u32, Vector3F> &getNormalOffsets() const;
+        const VertexOffsetMap &getNormalOffsets() const;
 
         SmartPtr<IMeshPose> clone() const override;
 
@@ -77,10 +83,10 @@ namespace workphone
         bool m_includesNormals;
 
         /** Map of vertex indices to position offsets. */
-        HashMap<u32, Vector3F> m_vertexOffsets;
+        VertexOffsetMap m_vertexOffsets;
 
         /** Map of vertex indices to normal offsets. */
-        HashMap<u32, Vector3F> m_normalOffsets;
+        VertexOffsetMap m_normalOffsets;
     };
 
 }  // namespace workphone

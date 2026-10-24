@@ -227,20 +227,24 @@ namespace workphone
     {
         try
         {
-            setLoadingState( LoadingState::Unloading );
+            // Loading notifications are optional new allocations. Their
+            // denial must not strand an already admitted resource generation.
+            try { setLoadingState( LoadingState::Unloading ); }
+            catch( const std::bad_alloc & ) {}
 
-            if( auto mesh = getMesh() )
+            auto mesh = getMesh();
+            setMesh( nullptr );
+            if( mesh )
             {
                 mesh->unload( nullptr );
             }
 
-            setMesh( nullptr );
-
-            setLoadingState( LoadingState::Unloaded );
+            try { setLoadingState( LoadingState::Unloaded ); }
+            catch( const std::bad_alloc & ) {}
         }
         catch( std::exception &e )
         {
-            WP_LOG_EXCEPTION( e );
+            try { WP_LOG_EXCEPTION( e ); } catch( ... ) {}
         }
     }
 

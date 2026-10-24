@@ -5,33 +5,39 @@
 #include <Workphone/IO/FileDataStream.hpp>
 #include <Workphone/Mesh/Mesh.hpp>
 #include <fstream>
+#include <array>
+#include <memory>
 
 namespace workphone
 {
     const unsigned short HEADER_CHUNK_ID = 0x1000;
 
-    MeshSerializer::MeshSerializer() : mListener( nullptr )
+    MeshSerializer::MeshSerializer() :
+        mVersionData( Allocator<MeshVersionData *>( sourceBudget ) ), mListener( nullptr )
     {
         // Init implementations
         // String identifiers have not always been 100% unified with OGRE version
 
-        // Note MUST be added in reverse order so latest is first in the list
-        mVersionData.push_back(
-            new MeshVersionData( MESH_VERSION_1_8, "[MeshSerializer_v1.8]", new MeshSerializerImpl() ) );
+        // Keep owners on the stack until every allocation has succeeded. The
+        // serializer destructor does not run when this constructor throws.
+        std::array<std::unique_ptr<MeshVersionData>, 6> staged;
+        mVersionData.reserve( staged.size() );
+        size_t next = 0;
+        auto add = [&]( MeshVersion version, const char *label, auto implementation ) {
+            auto descriptor = std::make_unique<MeshVersionData>( version, String( label ), implementation.get() );
+            implementation.release();
+            mVersionData.push_back( descriptor.get() );
+            staged[next++] = std::move( descriptor );
+        };
 
-        mVersionData.push_back( new MeshVersionData( MESH_VERSION_1_7, "[MeshSerializer_v1.41]",
-                                                     new MeshSerializerImpl_v1_41() ) );
-
-        mVersionData.push_back( new MeshVersionData( MESH_VERSION_1_4, "[MeshSerializer_v1.40]",
-                                                     new MeshSerializerImpl_v1_4() ) );
-
-        mVersionData.push_back( new MeshVersionData( MESH_VERSION_1_0, "[MeshSerializer_v1.30]",
-                                                     new MeshSerializerImpl_v1_3() ) );
-        mVersionData.push_back( new MeshVersionData( MESH_VERSION_LEGACY, "[MeshSerializer_v1.20]",
-                                                     new MeshSerializerImpl_v1_2() ) );
-
-        mVersionData.push_back( new MeshVersionData( MESH_VERSION_LEGACY, "[MeshSerializer_v1.10]",
-                                                     new MeshSerializerImpl_v1_1() ) );
+        // Note MUST be added in reverse order so latest is first in the list.
+        add( MESH_VERSION_1_8, "[MeshSerializer_v1.8]", std::make_unique<MeshSerializerImpl>() );
+        add( MESH_VERSION_1_7, "[MeshSerializer_v1.41]", std::make_unique<MeshSerializerImpl_v1_41>() );
+        add( MESH_VERSION_1_4, "[MeshSerializer_v1.40]", std::make_unique<MeshSerializerImpl_v1_4>() );
+        add( MESH_VERSION_1_0, "[MeshSerializer_v1.30]", std::make_unique<MeshSerializerImpl_v1_3>() );
+        add( MESH_VERSION_LEGACY, "[MeshSerializer_v1.20]", std::make_unique<MeshSerializerImpl_v1_2>() );
+        add( MESH_VERSION_LEGACY, "[MeshSerializer_v1.10]", std::make_unique<MeshSerializerImpl_v1_1>() );
+        for( auto &descriptor : staged ) descriptor.release();
     }
 
     MeshSerializer::~MeshSerializer()

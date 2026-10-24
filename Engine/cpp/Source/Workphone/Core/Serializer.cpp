@@ -2,6 +2,7 @@
 #include <Workphone/Core/Serializer.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -98,13 +99,11 @@ namespace workphone
     {
         if( m_flipEndian )
         {
-            auto pFloatToWrite = static_cast<float *>( malloc( sizeof( float ) * count ) );
-            memcpy( pFloatToWrite, pFloat, sizeof( float ) * count );
+            auto pFloatToWrite = makeSourceBudgetArray<float>( count );
+            memcpy( pFloatToWrite.get(), pFloat, sizeof( float ) * count );
 
-            flipToLittleEndian( pFloatToWrite, sizeof( float ), count );
-            writeData( pFloatToWrite, sizeof( float ), count );
-
-            free( pFloatToWrite );
+            flipToLittleEndian( pFloatToWrite.get(), sizeof( float ), count );
+            writeData( pFloatToWrite.get(), sizeof( float ), count );
         }
         else
         {
@@ -115,37 +114,31 @@ namespace workphone
     void Serializer::writeFloats( const double *const pDouble, u32 count )
     {
         // Convert to float, then write
-        // float* tmp = OGRE_ALLOC_T(float, count, MEMCATEGORY_GENERAL);
-        auto tmp = new float[count];
+        auto tmp = makeSourceBudgetArray<float>( count );
         for( unsigned int i = 0; i < count; ++i )
         {
             tmp[i] = static_cast<float>( pDouble[i] );
         }
         if( m_flipEndian )
         {
-            flipToLittleEndian( tmp, sizeof( float ), count );
-            writeData( tmp, sizeof( float ), count );
+            flipToLittleEndian( tmp.get(), sizeof( float ), count );
+            writeData( tmp.get(), sizeof( float ), count );
         }
         else
         {
-            writeData( tmp, sizeof( float ), count );
+            writeData( tmp.get(), sizeof( float ), count );
         }
-        // OGRE_FREE(tmp, MEMCATEGORY_GENERAL);
-        delete[] tmp;
     }
 
     void Serializer::writeShorts( const u16 *const pShort, u32 count = 1 )
     {
         if( m_flipEndian )
         {
-            auto pShortToWrite =
-                static_cast<unsigned short *>( malloc( sizeof( unsigned short ) * count ) );
-            memcpy( pShortToWrite, pShort, sizeof( unsigned short ) * count );
+            auto pShortToWrite = makeSourceBudgetArray<u16>( count );
+            memcpy( pShortToWrite.get(), pShort, sizeof( unsigned short ) * count );
 
-            flipToLittleEndian( pShortToWrite, sizeof( unsigned short ), count );
-            writeData( pShortToWrite, sizeof( unsigned short ), count );
-
-            free( pShortToWrite );
+            flipToLittleEndian( pShortToWrite.get(), sizeof( unsigned short ), count );
+            writeData( pShortToWrite.get(), sizeof( unsigned short ), count );
         }
         else
         {
@@ -157,13 +150,11 @@ namespace workphone
     {
         if( m_flipEndian )
         {
-            auto pIntToWrite = static_cast<unsigned *>( malloc( sizeof( unsigned int ) * count ) );
-            memcpy( pIntToWrite, pInt, sizeof( unsigned int ) * count );
+            auto pIntToWrite = makeSourceBudgetArray<u32>( count );
+            memcpy( pIntToWrite.get(), pInt, sizeof( unsigned int ) * count );
 
-            flipToLittleEndian( pIntToWrite, sizeof( unsigned int ), count );
-            writeData( pIntToWrite, sizeof( unsigned int ), count );
-
-            free( pIntToWrite );
+            flipToLittleEndian( pIntToWrite.get(), sizeof( unsigned int ), count );
+            writeData( pIntToWrite.get(), sizeof( unsigned int ), count );
         }
         else
         {
@@ -176,15 +167,13 @@ namespace workphone
         // no endian flipping for 1-byte bools
         // XXX Nasty Hack to convert to 1-byte bools
 #if OGRE_PLATFORM == OGRE_PLATFORM_APPLE || OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
-        auto pCharToWrite = static_cast<char *>( malloc( sizeof( char ) * count ) );
+        auto pCharToWrite = makeSourceBudgetArray<char>( count );
         for( unsigned int i = 0; i < count; i++ )
         {
-            *( pCharToWrite + i ) = *const_cast<bool *>( pBool + i );
+            pCharToWrite[i] = pBool[i];
         }
 
-        writeData( pCharToWrite, sizeof( char ), count );
-
-        free( pCharToWrite );
+        writeData( pCharToWrite.get(), sizeof( char ), count );
 #else
         writeData( pBool, sizeof( bool ), count );
 #endif
@@ -241,14 +230,12 @@ namespace workphone
     {
         // XXX Nasty Hack to convert 1 byte bools to 4 byte bools
 #if OGRE_PLATFORM == OGRE_PLATFORM_APPLE || OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
-        auto pTemp = static_cast<char *>( malloc( 1 * count ) );  // to hold 1-byte bools
-        stream->read( pTemp, 1 * count );
+        auto pTemp = makeSourceBudgetArray<char>( count );  // to hold 1-byte bools
+        stream->read( pTemp.get(), 1 * count );
         for( unsigned int i = 0; i < count; i++ )
         {
-            *( pDest + i ) = *( pTemp + i );
+            pDest[i] = pTemp[i];
         }
-
-        free( pTemp );
 #else
         stream->read( pDest, sizeof( bool ) * count );
 #endif
@@ -264,18 +251,15 @@ namespace workphone
     void Serializer::readFloats( SmartPtr<IStream> &stream, double *pDest, u32 count )
     {
         // Read from float, convert to double
-        // float* tmp = OGRE_ALLOC_T(float, count, MEMCATEGORY_GENERAL);
-        auto tmp = new float[count];
-        float *ptmp = tmp;
-        stream->read( tmp, sizeof( float ) * count );
-        flipFromLittleEndian( tmp, sizeof( float ), count );
+        auto tmp = makeSourceBudgetArray<float>( count );
+        float *ptmp = tmp.get();
+        stream->read( tmp.get(), sizeof( float ) * count );
+        flipFromLittleEndian( tmp.get(), sizeof( float ), count );
         // Convert to doubles (no cast required)
         while( count-- )
         {
             *pDest++ = *ptmp++;
         }
-        // OGRE_FREE(tmp, MEMCATEGORY_GENERAL);
-        delete[] tmp;
     }
 
     void Serializer::readShorts( SmartPtr<IStream> &stream, unsigned short *pDest, u32 count )

@@ -2,6 +2,7 @@
 #include <Workphone/Mesh/VertexBuffer.hpp>
 #include <Workphone/Interface/Mesh/IVertexDeclaration.hpp>
 #include <Workphone/Memory/Memory.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -10,10 +11,31 @@
 
 namespace workphone
 {
+    namespace
+    {
+        // Only growth needs replacement storage. Stage all growing inventories
+        // before touching a published stream; in-capacity resize below cannot
+        // allocate for pointers, leases or byte counts.
+        template <class T>
+        Array<T> stageStreamGrowth( const Array<T> &current, size_t size )
+        {
+            auto staged = makeSourceBudgetSnapshot<T>();
+            if( size > current.capacity() )
+            {
+                staged.reserve( size );
+                for( const auto &value : current ) staged.push_back( value );
+                staged.resize( size );
+            }
+            return staged;
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone, VertexBuffer, IVertexBuffer );
 
-    VertexBuffer::VertexBuffer() : m_vertexData( 0 )
+    VertexBuffer::VertexBuffer() :
+        m_vertexData( Allocator<u8 *>( sourceBudget ) ),
+        m_vertexBudgets( Allocator<StreamBudget>( sourceBudget ) ),
+        m_vertexBytes( Allocator<u64>( sourceBudget ) )
     {
         m_vertexData.resize( 1 );
     }
@@ -37,9 +59,10 @@ namespace workphone
             }
         }
 
-        m_vertexData.clear();
-        m_vertexBudgets.clear();
-        m_vertexBytes.clear();
+        // Retire physical capacity too, without admission during teardown.
+        m_vertexData = makeSourceBudgetSnapshot<u8 *>();
+        m_vertexBudgets = makeSourceBudgetSnapshot<StreamBudget>();
+        m_vertexBytes = makeSourceBudgetSnapshot<u64>();
         m_allocatedDeclaration = nullptr;
         m_allocatedNumVertices = m_numVertices = 0;
 
@@ -85,7 +108,10 @@ namespace workphone
                     u64 bytes = 0;
                 };
                 const auto newSize = std::max( m_vertexData.size(), size_t( index ) + 1 );
-                std::vector<Replacement> replacements( newSize );
+                auto dataGrowth = stageStreamGrowth( m_vertexData, newSize );
+                auto budgetGrowth = stageStreamGrowth( m_vertexBudgets, newSize );
+                auto byteGrowth = stageStreamGrowth( m_vertexBytes, newSize );
+                std::vector<Replacement, SourceBudgetAllocator<Replacement>> replacements( newSize );
                 for( size_t source = 0; source < newSize; ++source )
                 {
                     const auto previous = source < m_vertexData.size() ? m_vertexData[source] : nullptr;
@@ -108,6 +134,9 @@ namespace workphone
                 }
                 // Old and staged allocations stay charged until the entire buffer
                 // can commit. A failed admission preserves every stream and lease.
+                if( dataGrowth.capacity() ) m_vertexData.swap( dataGrowth );
+                if( budgetGrowth.capacity() ) m_vertexBudgets.swap( budgetGrowth );
+                if( byteGrowth.capacity() ) m_vertexBytes.swap( byteGrowth );
                 m_vertexBudgets.resize( newSize );
                 m_vertexBytes.resize( newSize );
                 m_vertexData.resize( newSize );

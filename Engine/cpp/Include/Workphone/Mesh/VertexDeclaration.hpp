@@ -2,6 +2,7 @@
 #define CVertexDeclaration_h__
 
 #include <Workphone/Interface/Mesh/IVertexDeclaration.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -20,9 +21,11 @@ namespace workphone
      * - Elements are stored in insertion order.
      * - This class does not perform GPU resource binding; it only describes layout.
      */
-    class WPCore_API VertexDeclaration : public IVertexDeclaration
+    class WPCore_API VertexDeclaration : public IVertexDeclaration, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Construct an empty vertex declaration.
          *

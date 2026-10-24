@@ -2,6 +2,7 @@
 #define __AnimationMorphKeyFrame_h__
 
 #include <Workphone/Interface/Animation/IAnimationMorphKeyFrame.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -10,11 +11,14 @@ namespace workphone
      * @brief Represents a keyframe specifically for morph target animations, storing the timestamp and
      * the associated vertex buffer.
      */
-    class AnimationMorphKeyFrame : public IAnimationMorphKeyFrame
+    class WPCore_API AnimationMorphKeyFrame : public IAnimationMorphKeyFrame, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /** @brief Default constructor. */
         AnimationMorphKeyFrame();
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         /** @brief Gets the timestamp of this morph keyframe. */
         f32 getTime() const override;

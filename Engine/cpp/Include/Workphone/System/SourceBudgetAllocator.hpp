@@ -26,6 +26,9 @@ namespace workphone
         static void operator delete( void *p ) noexcept { freeSourceBudgetStorage(p, alignof(std::max_align_t)); }
         static void *operator new( size_t, void *p ) noexcept { return p; }
         static void operator delete( void *, void * ) noexcept {}
+        // Diagnostic placement construction also borrows its caller's slot.
+        static void *operator new( size_t, void *p, const char *, int, const char * ) noexcept { return p; }
+        static void operator delete( void *, void *, const char *, int, const char * ) noexcept {}
         static void *operator new( size_t bytes, int, const char *, int ) { return operator new(bytes); }
         static void operator delete( void *p, int, const char *, int ) noexcept { operator delete(p); }
         static void *operator new( size_t bytes, std::align_val_t a ) { return allocateSourceBudgetStorage(bytes, size_t(a)); }

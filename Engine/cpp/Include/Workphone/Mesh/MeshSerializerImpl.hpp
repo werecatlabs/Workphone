@@ -4,6 +4,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Core/Serializer.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Mesh/VertexBoneAssignment.hpp>
 #include <Workphone/Mesh/VertexElement.hpp>
 #include <Workphone/Mesh/MeshPose.hpp>
@@ -29,7 +30,7 @@ namespace workphone
         This mesh format was used from Ogre v1.8.
 
     */
-    class MeshSerializerImpl : public Serializer
+    class MeshSerializerImpl : public Serializer, public SourceBudgetObject
     {
     public:
         MeshSerializerImpl();

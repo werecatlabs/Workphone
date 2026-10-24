@@ -13,9 +13,10 @@ namespace workphone
      * This class implements an animation track specifically for game actors.
      * It allows animating a specific property of a scene actor over time.
      */
-    class ActorAnimationTrack : public AnimationTrack<IActorAnimationTrack>
+    class WPCore_API ActorAnimationTrack : public AnimationTrack<IActorAnimationTrack>
     {
     public:
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Constructor for ActorAnimationTrack.
          * @param parent Pointer to the parent animation this track belongs to.

@@ -19,6 +19,9 @@
 #include <Workphone/Interface/Animation/IAnimationMorphKeyFrame.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Mesh/IMeshPose.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
+#include <limits>
+#include <stdexcept>
 
 #if OGRE_COMPILER == OGRE_COMPILER_MSVC
 // Disable conversion warnings, we do a lot of them, intentionally
@@ -387,33 +390,30 @@ namespace workphone
         const auto &elemList = vertexDeclaration->getElements();
         auto dataArray = vertexData->getDataArray();
 
-        /*
-        size_t size = MSTREAM_OVERHEAD_SIZE;
-
-        // Vertex count
-        size += sizeof(u32);
-
-        // Vertex declaration
-        size += MSTREAM_OVERHEAD_SIZE + elemList.size() * (MSTREAM_OVERHEAD_SIZE + sizeof(u16) * 5);
-
-        // Buffers and bindings
-        size += dataArray.size() * ((MSTREAM_OVERHEAD_SIZE * 2) + (sizeof(u16) * 2));
-        */
-
         auto size =
-            MSTREAM_OVERHEAD_SIZE + sizeof( unsigned int ) +  // base
+            u64( MSTREAM_OVERHEAD_SIZE ) + sizeof( unsigned int ) +  // base
             ( MSTREAM_OVERHEAD_SIZE +
               elemList.size() * ( MSTREAM_OVERHEAD_SIZE + sizeof( unsigned short ) * 5 ) );  // elements
+        if( size > std::numeric_limits<u32>::max() )
+            throw std::length_error( "Mesh geometry exceeds the serialized chunk size range." );
 
         auto numVerticies = vertexData->getNumVertices();
 
         // Buffer data
-        for( u32 i = 0; i < dataArray.size(); ++i )
+        for( size_t source = 0; source < dataArray.size(); ++source )
         {
-            auto vertexSize = vertexDeclaration->getSize( i );
-            auto vertexBufferSize = vertexSize * numVerticies;
-            size += vertexBufferSize;  // vbuf->getSizeInBytes() is too large for meshes prepared for
-            // shadow volumes
+            if( !dataArray[source] ) continue;
+            if( source > std::numeric_limits<u16>::max() )
+                throw std::length_error( "Mesh vertex stream exceeds the serialized source range." );
+            const auto vertexSize = vertexDeclaration->getSize( static_cast<u16>( source ) );
+            if( vertexSize > std::numeric_limits<u16>::max() )
+                throw std::length_error( "Mesh vertex stride exceeds the serialized size range." );
+            // Each present stream contains its buffer header, binding/stride,
+            // data header and exactly this source's vertex payload.
+            size += ( MSTREAM_OVERHEAD_SIZE * 2 ) + sizeof( u16 ) * 2 +
+                    u64( vertexSize ) * numVerticies;
+            if( size > std::numeric_limits<u32>::max() )
+                throw std::length_error( "Mesh geometry exceeds the serialized chunk size range." );
         }
 
         return static_cast<u32>( size );
@@ -467,11 +467,16 @@ namespace workphone
             writeShorts( &tmp, 1 );
         }
 
-        auto bindIndex = static_cast<u16>( 0 );
         auto vertexDataArray = vertexData->getDataArray();
-        for( auto data : vertexDataArray )
+        for( size_t source = 0; source < vertexDataArray.size(); ++source )
         {
-            auto vbufSizeInBytes = vertexDeclaration->getSize() * vertexData->getNumVertices();
+            auto data = vertexDataArray[source];
+            if( !data ) continue;
+            const auto bindIndex = static_cast<u16>( source );
+            const auto vertexSize = vertexDeclaration->getSize( bindIndex );
+            // calcGeometrySize validated both the stride and complete chunk
+            // extent before writing any geometry bytes.
+            const auto vbufSizeInBytes = static_cast<u32>( u64( vertexSize ) * vertexCount );
             size = ( MSTREAM_OVERHEAD_SIZE * 2 ) + ( sizeof( u16 ) * 2 ) + vbufSizeInBytes;
 
             auto chunkId = static_cast<u16>( M_GEOMETRY_VERTEX_BUFFER );
@@ -479,7 +484,7 @@ namespace workphone
 
             writeShorts( &bindIndex, 1 );
 
-            tmp = static_cast<u16>( vertexDeclaration->getSize() );
+            tmp = static_cast<u16>( vertexSize );
             writeShorts( &tmp, 1 );
 
             // Data
@@ -492,21 +497,18 @@ namespace workphone
             {
                 // endian conversion
                 // Copy data
-                auto tempData = new u8[vbufSizeInBytes];
-                memcpy( tempData, data, vbufSizeInBytes );
+                auto tempData = makeSourceBudgetArray<u8>( vbufSizeInBytes );
+                memcpy( tempData.get(), data, vbufSizeInBytes );
 
-                flipToLittleEndian( tempData, vertexData->getNumVertices(), vertexDeclaration->getSize(),
+                flipToLittleEndian( tempData.get(), vertexCount, vertexSize,
                                     vertexDeclaration->findElementsBySource( bindIndex ) );
 
-                writeData( tempData, vertexDeclaration->getSize(), vertexData->getNumVertices() );
-                delete[] tempData;
+                writeData( tempData.get(), vertexSize, vertexCount );
             }
             else
             {
-                writeData( data, vertexDeclaration->getSize(), vertexData->getNumVertices() );
+                writeData( data, vertexSize, vertexCount );
             }
-
-            bindIndex++;
         }
     }
 
@@ -2536,12 +2538,12 @@ namespace workphone
             return;
         }
 
-        auto vert = new float[n_floats];
-        readFloats( stream, vert, n_floats );
+        auto vert = makeSourceBudgetArray<float>( n_floats );
+        readFloats( stream, vert.get(), n_floats );
 
         // For now, we'll store the extreme points but not use them until we extend the SubMesh interface
         // In a future update, we should add methods like addExtremePoint() to ISubMesh
-        Array<Vector3F> extremePoints;
+        auto extremePoints = makeSourceBudgetSnapshot<Vector3F>();
         extremePoints.reserve( n_floats / 3 );
 
         for( int i = 0; i < n_floats; i += 3 )
@@ -2555,7 +2557,6 @@ namespace workphone
                        " extreme points for submesh " + std::to_string( idx );
         WP_LOG( message.c_str() );
 
-        delete[] vert;
     }
 
     MeshSerializerImpl_v1_41::MeshSerializerImpl_v1_41()

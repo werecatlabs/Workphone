@@ -12,20 +12,76 @@
 #include <Workphone/Interface/System/IResourceManager.hpp>
 #include <Workphone/Animation/Animation.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <new>
+#include <mutex>
 
 namespace workphone
 {
+    namespace
+    {
+        // Meshes may outlive the application's manager during factory teardown.
+        // Keep synchronization available without constructing a dynamic owner.
+        std::recursive_mutex &detachedMeshMutex()
+        {
+            // Retain image storage through late static/factory destruction.
+            alignas( std::recursive_mutex ) static unsigned char storage[sizeof( std::recursive_mutex )];
+            static auto *mutex = new( storage ) std::recursive_mutex;
+            return *mutex;
+        }
+
+        void meshRetirementError( const char *message ) noexcept
+        {
+            try { WP_LOG_ERROR( message ); } catch( ... ) {}
+        }
+        void meshRetirementError( const std::exception &error ) noexcept
+        {
+            try { WP_LOG_EXCEPTION( error ); } catch( ... ) {}
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone, Mesh, IMesh );
 
-    Mesh::Mesh() = default;
+    Mesh::Mesh() :
+        m_subMeshes( Allocator<SmartPtr<ISubMesh>>( sourceBudget ) ),
+        m_animations( Allocator<SmartPtr<IAnimation>>( sourceBudget ) ),
+        m_boneAssignments( Allocator<SmartPtr<IVertexBoneAssignment>>( sourceBudget ) ),
+        m_poses( Allocator<SmartPtr<IMeshPose>>( sourceBudget ) )
+    {
+    }
 
     Mesh::~Mesh() = default;
 
     void Mesh::unload( SmartPtr<ISharedObject> data )
     {
-        setLoadingState( LoadingState::Unloading );
+        // Loading notifications are optional new work; their denial must not
+        // strand already admitted inventories during physical retirement.
+        try { setLoadingState( LoadingState::Unloading ); }
+        catch( const std::bad_alloc & ) {}
 
-        for( auto subMesh : m_subMeshes )
+        auto subMeshes = makeSourceBudgetSnapshot<SmartPtr<ISubMesh>>();
+        auto animations = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
+        auto bones = makeSourceBudgetSnapshot<SmartPtr<IVertexBoneAssignment>>();
+        auto poses = makeSourceBudgetSnapshot<SmartPtr<IMeshPose>>();
+        SmartPtr<IVertexBuffer> sharedVertexBuffer;
+        SmartPtr<IAnimationInterface> animationInterface;
+        SmartPtr<ISkeleton> skeleton;
+        {
+            ScopedLock lock( this );
+            // Transfer the complete generation without copying or admitting
+            // teardown scratch. Reentrant unload sees empty inventories.
+            subMeshes.swap( m_subMeshes );
+            animations.swap( m_animations );
+            bones.swap( m_boneAssignments );
+            poses.swap( m_poses );
+            std::swap( sharedVertexBuffer, m_sharedVertexBuffer );
+            std::swap( animationInterface, m_animationInterface );
+            std::swap( skeleton, m_skeleton );
+            m_skeletonName.clear();
+            m_hasSkeleton = false;
+            m_hasSharedVertexData = false;
+        }
+
+        for( auto subMesh : subMeshes )
         {
             try
             {
@@ -37,85 +93,81 @@ namespace workphone
                         subMesh->unload( nullptr );
                 }
                 else
-                    WP_LOG_ERROR( "Null subMesh encountered during unload." );
+                    meshRetirementError( "Null subMesh encountered during unload." );
             }
             catch( const std::exception &e )
             {
-                WP_LOG_EXCEPTION( e );
+                meshRetirementError( e );
             }
         }
 
-        m_subMeshes.clear();
-
-        if( m_sharedVertexBuffer )
+        if( sharedVertexBuffer )
         {
             try
             {
-                if( m_sharedVertexBuffer->getReferences() == 1 &&
-                    !m_sharedVertexBuffer->getWeakReferences() )
-                    m_sharedVertexBuffer->unload( nullptr );
+                if( sharedVertexBuffer->getReferences() == 1 &&
+                    !sharedVertexBuffer->getWeakReferences() )
+                    sharedVertexBuffer->unload( nullptr );
             }
             catch( const std::exception &e )
             {
-                WP_LOG_EXCEPTION( e );
+                meshRetirementError( e );
             }
-            m_sharedVertexBuffer = nullptr;
         }
 
-        if( m_animationInterface )
+        if( animationInterface )
         {
             try
             {
-                m_animationInterface->unload( nullptr );
+                if( animationInterface->getReferences() == 1 &&
+                    !animationInterface->getWeakReferences() )
+                    animationInterface->unload( nullptr );
             }
             catch( const std::exception &e )
             {
-                WP_LOG_EXCEPTION( e );
+                meshRetirementError( e );
             }
-            m_animationInterface = nullptr;
         }
 
-        for( auto animation : m_animations )
+        for( auto animation : animations )
         {
             try
             {
                 if( animation )
-                    animation->unload( nullptr );
+                {
+                    if( animation->getReferences() == 2 && !animation->getWeakReferences() )
+                        animation->unload( nullptr );
+                }
                 else
-                    WP_LOG_ERROR( "Null animation encountered during unload." );
+                    meshRetirementError( "Null animation encountered during unload." );
             }
             catch( const std::exception &e )
             {
-                WP_LOG_EXCEPTION( e );
+                meshRetirementError( e );
             }
         }
 
-        m_animations.clear();
-        m_boneAssignments.clear();
-        m_skeleton = nullptr;
-        m_skeletonName.clear();
-        m_hasSkeleton = false;
-        m_hasSharedVertexData = false;
-
         // Clean up poses
-        for( auto pose : m_poses )
+        for( auto pose : poses )
         {
             try
             {
                 if( pose )
-                    pose->unload( nullptr );
+                {
+                    if( pose->getReferences() == 2 && !pose->getWeakReferences() )
+                        pose->unload( nullptr );
+                }
                 else
-                    WP_LOG_ERROR( "Null pose encountered during unload." );
+                    meshRetirementError( "Null pose encountered during unload." );
             }
             catch( const std::exception &e )
             {
-                WP_LOG_EXCEPTION( e );
+                meshRetirementError( e );
             }
         }
 
-        m_poses.clear();
-
-        setLoadingState( LoadingState::Unloaded );
+        try { setLoadingState( LoadingState::Unloaded ); }
+        catch( const std::bad_alloc & ) {}
     }
 
     void Mesh::addSubMesh( SmartPtr<ISubMesh> subMesh )
@@ -135,7 +187,8 @@ namespace workphone
         auto it = std::find( m_subMeshes.begin(), m_subMeshes.end(), subMesh );
         if( it != m_subMeshes.end() )
         {
-            m_subMeshes.erase( it );
+            std::move( it + 1, m_subMeshes.end(), it );
+            m_subMeshes.pop_back();
         }
         else
         {
@@ -334,6 +387,11 @@ namespace workphone
             }
 
             SmartPtr<IAnimation> clonedAnimationPtr( clonedAnimation );
+#if WP_GARBAGE_COLLECTION == 1
+            // clone() transfers the initial intrusive reference, just as new
+            // does in make_ptr. The SmartPtr now owns that transferred result.
+            clonedAnimation->removeReference();
+#endif
             clonedAnimationPtr->setName( animation->getName() );
             newMesh->m_animations.push_back( clonedAnimationPtr );
         }
@@ -595,6 +653,10 @@ namespace workphone
         {
             m_boneAssignments.push_back( boneAssignment );
         }
+        catch( const std::bad_alloc & )
+        {
+            throw;
+        }
         catch( const std::exception &e )
         {
             WP_LOG_ERROR( "Failed to add bone assignment: " + String( e.what() ) );
@@ -613,7 +675,8 @@ namespace workphone
         auto it = std::find( m_boneAssignments.begin(), m_boneAssignments.end(), boneAssignment );
         if( it != m_boneAssignments.end() )
         {
-            m_boneAssignments.erase( it );
+            std::move( it + 1, m_boneAssignments.end(), it );
+            m_boneAssignments.pop_back();
         }
         else
         {
@@ -731,7 +794,8 @@ namespace workphone
         auto it = std::find( m_animations.begin(), m_animations.end(), animation );
         if( it != m_animations.end() )
         {
-            m_animations.erase( it );
+            std::move( it + 1, m_animations.end(), it );
+            m_animations.pop_back();
         }
         else
         {
@@ -863,6 +927,10 @@ namespace workphone
         {
             m_poses.push_back( pose );
         }
+        catch( const std::bad_alloc & )
+        {
+            throw;
+        }
         catch( const std::exception &e )
         {
             WP_LOG_ERROR( "Failed to add pose: " + String( e.what() ) );
@@ -881,7 +949,8 @@ namespace workphone
         auto it = std::find( m_poses.begin(), m_poses.end(), pose );
         if( it != m_poses.end() )
         {
-            m_poses.erase( it );
+            std::move( it + 1, m_poses.end(), it );
+            m_poses.pop_back();
         }
         else
         {
@@ -898,22 +967,24 @@ namespace workphone
     void Mesh::lock()
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto meshManager = applicationManager->getMeshManager();
-        meshManager->lock();
+        auto meshManager = applicationManager ? applicationManager->getMeshManager() : nullptr;
+        if( meshManager ) meshManager->lock();
+        else detachedMeshMutex().lock();
     }
 
     bool Mesh::try_lock()
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto meshManager = applicationManager->getMeshManager();
-        return meshManager->try_lock();
+        auto meshManager = applicationManager ? applicationManager->getMeshManager() : nullptr;
+        return meshManager ? meshManager->try_lock() : detachedMeshMutex().try_lock();
     }
 
     void Mesh::unlock()
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto meshManager = applicationManager->getMeshManager();
-        meshManager->unlock();
+        auto meshManager = applicationManager ? applicationManager->getMeshManager() : nullptr;
+        if( meshManager ) meshManager->unlock();
+        else detachedMeshMutex().unlock();
     }
 
     bool Mesh::isValid() const
