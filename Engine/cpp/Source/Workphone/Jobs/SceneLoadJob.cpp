@@ -264,6 +264,17 @@ namespace workphone
             auto cameraManager = app->getCameraManager();
             auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
             auto editorData = m_preparedData->getChild( "editorCamera" );
+            std::unordered_set<String> retainedRootIds;
+            if( app->isPlaying() )
+            {
+                for( const auto &root : target->getActors() )
+                {
+                    if( root && root->getPerpetual() )
+                    {
+                        retainedRootIds.insert( root->getHandle()->getUUIDAsString() );
+                    }
+                }
+            }
             Array<SmartPtr<Properties>> ordered;
             for( const auto &data : m_preparedData->getChildrenByName( ApplicationUtil::actorsStr ) )
             {
@@ -273,7 +284,20 @@ namespace workphone
                         editorData = data;
                 }
                 else
+                {
+                    String uuid;
+                    if( data )
+                        data->getPropertyValue( scene::GameActorUtil::uuidStr, uuid );
+                    if( !uuid.empty() && retainedRootIds.count(
+                            StringUtil::toString( StringUtil::parseUUID( uuid ) ) ) != 0 )
+                    {
+                        // Runtime perpetual roots win over their serialized copies.
+                        // The graph loader indexes them and their descendants so new
+                        // scene components can resolve references to the retained rig.
+                        continue;
+                    }
                     ordered.push_back( data );
+                }
             }
             actors = scene::GameActorUtil::loadSceneActors( ordered, target );
             for( const auto &actor : actors )

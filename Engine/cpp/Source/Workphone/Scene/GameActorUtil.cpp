@@ -796,6 +796,7 @@ namespace workphone::scene
             auto label = String();
             auto enabled = true;
             auto visible = true;
+            auto perpetual = pActor->getPerpetual();
             auto bStatic = false;
             auto bSmoothMotion = false;
             auto collisionMask = u32( 0 );
@@ -810,6 +811,7 @@ namespace workphone::scene
             properties->getPropertyValue( staticStr, bStatic );
             properties->getPropertyValue( enabledStr, enabled );
             properties->getPropertyValue( "visible", visible );
+            properties->getPropertyValue( "perpetual", perpetual );
             properties->getPropertyValue( smoothMotionStr, bSmoothMotion );
             properties->getPropertyValue( collisionMaskStr, collisionMask );
             getDirectStringProperty( properties, layerStr, layer );
@@ -818,6 +820,7 @@ namespace workphone::scene
             pActor->setName( label );
             pActor->setEnabled( enabled );
             pActor->setVisible( visible );
+            pActor->setPerpetual( perpetual, false );
             pActor->setStatic( bStatic );
             pActor->setSmoothMotion( bSmoothMotion );
             pActor->setCollisionMask( collisionMask );
@@ -1059,6 +1062,7 @@ namespace workphone::scene
         actorData->setProperty( GameActorUtil::staticStr, bStatic );
         actorData->setProperty( GameActorUtil::enabledStr, enabled );
         actorData->setProperty( "visible", visible );
+        actorData->setProperty( "perpetual", actor->getPerpetual() );
         actorData->setProperty( GameActorUtil::smoothMotionStr, actor->isSmoothMotion() );
         actorData->setProperty( GameActorUtil::collisionMaskStr, actor->getCollisionMask() );
         actorData->setProperty( GameActorUtil::layerStr, actor->getLayer() );

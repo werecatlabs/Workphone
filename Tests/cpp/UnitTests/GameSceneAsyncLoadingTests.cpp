@@ -423,4 +423,156 @@ BOOST_AUTO_TEST_CASE( ordered_async_load_with_zero_one_and_multiple_job_workers 
     }
 }
 
+BOOST_AUTO_TEST_CASE( deferred_play_scene_load_retains_perpetual_root_hierarchy )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    const auto wasPlaying = guard.applicationManager->isPlaying();
+    guard.applicationManager->setPlaying( false );
+    guard.addCleanup( [&guard, wasPlaying] {
+        guard.applicationManager->setPlaying( false );
+        guard.scene->setState( IGameScene::State::Edit );
+        guard.scene->clear( true );
+        guard.applicationManager->setPlaying( wasPlaying );
+    } );
+    resetScene( guard );
+
+    auto retained = guard.createBasicActor();
+    auto child = guard.createBasicActor();
+    auto grandchild = guard.createBasicActor();
+    auto ordinary = guard.createBasicActor();
+    BOOST_REQUIRE( retained && child && grandchild && ordinary );
+    retained->setName( "PersistentRig" );
+    child->setName( "PersistentChild" );
+    grandchild->setName( "PersistentGrandchild" );
+    retained->addChild( child );
+    child->addChild( grandchild );
+    retained->setPerpetual( true, false );
+    guard.scene->addActor( retained );
+    guard.scene->addActor( ordinary );
+    const auto retainedUUID = retained->getHandle()->getUUIDAsString();
+    guard.applicationManager->setPlaying( true );
+    guard.scene->setState( IGameScene::State::Play );
+
+    auto data = make_ptr<Properties>();
+    data->addChild( actorData( "NewTerrain" ) );
+    guard.scene->clear( false );
+    guard.scene->loadSceneDataStr( DataUtil::toString( data.get() ), true );
+    drainLoad( guard );
+
+    BOOST_REQUIRE( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Loaded );
+    BOOST_CHECK_EQUAL( guard.scene->getActors().size(), 2u );
+    BOOST_CHECK( guard.scene->findActorByName( "PersistentRig" ) == retained );
+    BOOST_CHECK_EQUAL( retained->getHandle()->getUUIDAsString(), retainedUUID );
+    BOOST_REQUIRE_EQUAL( retained->getChildren().size(), 1u );
+    BOOST_CHECK( retained->getChildren()[0] == child );
+    BOOST_REQUIRE_EQUAL( child->getChildren().size(), 1u );
+    BOOST_CHECK( child->getChildren()[0] == grandchild );
+    BOOST_CHECK( child->getParent() == retained );
+    BOOST_CHECK( grandchild->getParent() == child );
+    BOOST_CHECK( retained->isLoaded() && child->isLoaded() && grandchild->isLoaded() );
+    BOOST_CHECK( retained->getScene() == guard.scene );
+    BOOST_CHECK( guard.scene->findActorByName( "NewTerrain" ) );
+    BOOST_CHECK( ordinary->getLoadingState() == LoadingState::Unloaded );
+}
+
+BOOST_AUTO_TEST_CASE( deferred_play_load_reuses_retained_uuid_and_resolves_references )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    const auto wasPlaying = guard.applicationManager->isPlaying();
+    guard.applicationManager->setPlaying( false );
+    guard.addCleanup( [&guard, wasPlaying] {
+        guard.applicationManager->setPlaying( false );
+        guard.scene->setState( IGameScene::State::Edit );
+        guard.scene->clear( true );
+        guard.applicationManager->setPlaying( wasPlaying );
+    } );
+    resetScene( guard );
+
+    auto retained = guard.createBasicActor();
+    auto child = guard.createBasicActor();
+    auto ordinary = guard.createBasicActor();
+    BOOST_REQUIRE( retained && child && ordinary );
+    retained->setName( "RuntimeRig" );
+    child->setName( "RuntimeTarget" );
+    retained->addChild( child );
+    auto target = child->addComponent<CameraTarget>();
+    BOOST_REQUIRE( target );
+    target->getHandle()->setUUID( StringUtil::getUUID() );
+    retained->setPerpetual( true, false );
+    guard.scene->addActor( retained );
+    guard.scene->addActor( ordinary );
+
+    auto duplicate = workphone::dynamic_pointer_cast<Properties>( retained->toData() );
+    BOOST_REQUIRE( duplicate );
+    duplicate->setName( ApplicationUtil::actorsStr );
+    duplicate->setProperty( GameActorUtil::labelStr, "DiskCopyMustNotReplaceRuntime" );
+    duplicate->setProperty( "perpetual", false );
+    auto follower = actorData( "NewFollower" );
+    auto followData = make_ptr<Properties>();
+    followData->setName( GameActorUtil::componentStr );
+    followData->setProperty( GameActorUtil::componentTypeStr, "CameraFollow" );
+    followData->setProperty( CameraFollow::followObjectStr, child->getHandle()->getUUIDAsString() );
+    followData->setProperty( CameraFollow::targetStr, target->getHandle()->getUUIDAsString() );
+    follower->addChild( followData );
+    auto data = make_ptr<Properties>();
+    data->addChild( duplicate );
+    data->addChild( follower );
+
+    guard.applicationManager->setPlaying( true );
+    guard.scene->setState( IGameScene::State::Play );
+    guard.scene->clear( false );
+    guard.scene->loadSceneDataStr( DataUtil::toString( data.get() ), true );
+    drainLoad( guard );
+
+    BOOST_REQUIRE( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Loaded );
+    BOOST_CHECK_EQUAL( guard.scene->getActors().size(), 2u );
+    BOOST_CHECK( guard.scene->findActorByName( "RuntimeRig" ) == retained );
+    BOOST_CHECK( !guard.scene->findActorByName( "DiskCopyMustNotReplaceRuntime" ) );
+    BOOST_CHECK( retained->getPerpetual() );
+    BOOST_REQUIRE_EQUAL( retained->getChildren().size(), 1u );
+    BOOST_CHECK( retained->getChildren()[0] == child );
+    BOOST_CHECK( child->getComponent<CameraTarget>() == target );
+    auto newFollower = guard.scene->findActorByName( "NewFollower" );
+    BOOST_REQUIRE( newFollower );
+    auto follow = newFollower->getComponent<CameraFollow>();
+    BOOST_REQUIRE( follow );
+    BOOST_CHECK( follow->getFollowObject() == child );
+    BOOST_CHECK( follow->getTarget() == target );
+    BOOST_CHECK( ordinary->getLoadingState() == LoadingState::Unloaded );
+}
+
+BOOST_AUTO_TEST_CASE( deferred_edit_scene_load_still_replaces_perpetual_roots )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    const auto wasPlaying = guard.applicationManager->isPlaying();
+    guard.applicationManager->setPlaying( false );
+    guard.addCleanup( [&guard, wasPlaying] {
+        guard.applicationManager->setPlaying( false );
+        guard.scene->setState( IGameScene::State::Edit );
+        guard.scene->clear( true );
+        guard.applicationManager->setPlaying( wasPlaying );
+    } );
+    resetScene( guard );
+    auto old = guard.createBasicActor();
+    BOOST_REQUIRE( old );
+    old->setName( "OldEditRig" );
+    old->setPerpetual( true, false );
+    guard.scene->addActor( old );
+    auto data = make_ptr<Properties>();
+    data->addChild( actorData( "NewEditTerrain", old->getHandle()->getUUIDAsString() ) );
+    guard.scene->clear( false );
+    guard.scene->loadSceneDataStr( DataUtil::toString( data.get() ), true );
+    drainLoad( guard );
+
+    BOOST_REQUIRE( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Loaded );
+    BOOST_REQUIRE_EQUAL( guard.scene->getActors().size(), 1u );
+    BOOST_CHECK( guard.scene->getActors()[0] != old );
+    BOOST_CHECK_EQUAL( guard.scene->getActors()[0]->getName(), "NewEditTerrain" );
+    BOOST_CHECK( old->getLoadingState() == LoadingState::Unloaded );
+    BOOST_CHECK( !guard.scene->getActors()[0]->getPerpetual() );
+}
+
 BOOST_AUTO_TEST_SUITE_END()
