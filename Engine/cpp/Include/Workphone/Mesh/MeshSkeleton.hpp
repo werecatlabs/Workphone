@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/ISkeleton.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <map>
 
 namespace workphone
@@ -25,9 +26,12 @@ namespace workphone
      * @see IAnimation
      * @see LinkedSkeletonAnimationSource
      */
-    class WPCore_API MeshSkeleton : public ISkeleton
+    class WPCore_API MeshSkeleton : public ISkeleton, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Default constructor.
          *
@@ -232,9 +236,11 @@ namespace workphone
          */
         Array<SmartPtr<IBone>> m_bones;
 
-        std::map<String, SmartPtr<IAnimation>> m_animationsByName;
+        std::map<String, SmartPtr<IAnimation>, std::less<String>,
+                 SourceBudgetAllocator<std::pair<const String, SmartPtr<IAnimation>>>> m_animationsByName;
 
-        std::map<String, SmartPtr<IBone>> m_bonesByName;
+        std::map<String, SmartPtr<IBone>, std::less<String>,
+                 SourceBudgetAllocator<std::pair<const String, SmartPtr<IBone>>>> m_bonesByName;
 
         /**
          * @brief Linked skeleton animation source for animation sharing.

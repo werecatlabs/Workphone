@@ -10,8 +10,6 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, ImGuiDropJob, Job );
 
-    atomic_f64 ImGuiDropJob::s_lastDropTime = 0.0;
-
     ImGuiDropJob::ImGuiDropJob() = default;
     ImGuiDropJob::~ImGuiDropJob() = default;
 
@@ -77,47 +75,41 @@ namespace workphone::ui
             return;
         }
 
-        auto timer = applicationManager->getTimer();
-        if( s_lastDropTime + 1.0 < timer->now() )
+        // A tree row, its insertion line and the enclosing window can all observe the same
+        // release. Deduplicate that gesture, without delaying separate asset drops.
+        if( ImGui::GetCurrentContext() && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
         {
-            // A tree row, its insertion line and the enclosing window can all observe the same
-            // release. Only the first eligible target may dispatch that drag gesture.
-            if( ImGui::GetCurrentContext() && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+            if( const auto payload = ImGui::GetDragDropPayload();
+                payload && payload->IsDataType( "_TREENODE" ) )
             {
-                if( const auto payload = ImGui::GetDragDropPayload();
-                    payload && payload->IsDataType( "_TREENODE" ) )
+                static thread_local ImGuiContext *lastContext = nullptr;
+                static thread_local int lastFrame = -1;
+                static thread_local ImGuiID lastSource = 0;
+                const auto context = ImGui::GetCurrentContext();
+                const auto frame = ImGui::GetFrameCount();
+                if( lastContext == context && lastFrame == frame && lastSource == payload->SourceId )
                 {
-                    static thread_local ImGuiContext *lastContext = nullptr;
-                    static thread_local int lastFrame = -1;
-                    static thread_local ImGuiID lastSource = 0;
-                    const auto context = ImGui::GetCurrentContext();
-                    const auto frame = ImGui::GetFrameCount();
-                    if( lastContext == context && lastFrame == frame && lastSource == payload->SourceId )
-                    {
-                        return;
-                    }
-                    lastContext = context;
-                    lastFrame = frame;
-                    lastSource = payload->SourceId;
+                    return;
                 }
+                lastContext = context;
+                lastFrame = frame;
+                lastSource = payload->SourceId;
             }
+        }
 
-            job->setDropTarget( dropTarget );
-            job->setSender( sender );
-            job->setObject( object );
-            job->setArguments( std::move( arguments ) );
+        job->setDropTarget( dropTarget );
+        job->setSender( sender );
+        job->setObject( object );
+        job->setArguments( std::move( arguments ) );
 
-            auto jobQueue = applicationManager->getJobQueue();
-            if( jobQueue && jobQueue->isRunning() )
-            {
-                jobQueue->addJob( job, TaskId::Application );
-            }
-            else
-            {
-                job->execute();
-            }
-
-            s_lastDropTime = timer->now();
+        auto jobQueue = applicationManager->getJobQueue();
+        if( jobQueue && jobQueue->isRunning() )
+        {
+            jobQueue->addJob( job, TaskId::Application );
+        }
+        else
+        {
+            job->execute();
         }
     }
 }  // namespace workphone::ui

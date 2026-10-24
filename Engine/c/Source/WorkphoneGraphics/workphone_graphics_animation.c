@@ -5,6 +5,7 @@
 
 #include "workphone_graphics_animation.h"
 #include "workphone_graphics_node.h"
+#include "workphone_graphics_memory_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -59,7 +60,13 @@ static wp_transform_keyframe s_default_transform_keyframe( wp_f32 time )
 
 wp_animation *wp_animation_create( const char *name, wp_f32 length )
 {
-    wp_animation *anim = (wp_animation *)malloc( sizeof( wp_animation ) );
+    return wp_animation_create_budgeted( name, length, NULL );
+}
+
+wp_animation *wp_animation_create_budgeted( const char *name, wp_f32 length,
+                                           const wp_graphics_memory_callbacks *callbacks )
+{
+    wp_animation *anim = (wp_animation *)wp_graphics_memory_allocate( callbacks, sizeof( wp_animation ), 0 );
     if( !anim )
     {
         return NULL;
@@ -82,7 +89,7 @@ void wp_animation_destroy( wp_animation *anim )
     {
         return;
     }
-    free( anim );
+    wp_graphics_memory_free( anim );
 }
 
 /* =========================================================================

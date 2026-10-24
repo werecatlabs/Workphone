@@ -2,6 +2,7 @@
 #define IAnimationState_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -11,7 +12,7 @@ namespace workphone
     {
     public:
         /// Typedef for an array of float values used as a bone blend mask
-        typedef std::vector<float> BoneBlendMask;
+        using BoneBlendMask = std::vector<float, SourceBudgetAllocator<float>>;
 
         WP_CLASS_REGISTER_DECL;
     };

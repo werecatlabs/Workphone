@@ -5,21 +5,59 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 namespace workphone::animation
 {
     namespace
     {
         constexpr f32 Epsilon = std::numeric_limits<f32>::epsilon();
+        // SmartPtr's legacy move constructor has no noexcept declaration; Array
+        // therefore copies clip candidates before publication during growth.
+        static_assert( std::is_nothrow_move_assignable_v<AnimationGraphClip> );
+        static_assert( std::is_nothrow_move_constructible_v<AnimationGraphTransition> &&
+                       std::is_nothrow_move_assignable_v<AnimationGraphTransition> );
+        static_assert( std::is_nothrow_move_constructible_v<AnimationGraphPoseNodeDefinition> &&
+                       std::is_nothrow_move_assignable_v<AnimationGraphPoseNodeDefinition> );
 
         f32 normalizedTime( f32 time, f32 duration )
         {
             return duration > Epsilon ? std::clamp( time / duration, 0.0f, 1.0f ) : 0.0f;
         }
 
-        bool visitedContains( const Array<String> &visited, const String &id )
+        bool visitedContains( const Array<const String *> &visited, const String &id )
         {
-            return std::find( visited.begin(), visited.end(), id ) != visited.end();
+            return std::any_of( visited.begin(), visited.end(), [&id](const String *value) { return *value == id; } );
+        }
+        struct PopVisit
+        {
+            Array<const String *> &visited;
+            ~PopVisit() { visited.pop_back(); }
+        };
+        AnimationGraphTransition admittedTransition( const AnimationGraphTransition &input )
+        {
+            AnimationGraphTransition output;
+            output.fromState = input.fromState;
+            output.toState = input.toState;
+            output.conditions = makeSourceBudgetSnapshot( input.conditions );
+            output.duration = input.duration;
+            output.exitTime = input.exitTime;
+            output.priority = input.priority;
+            output.synchronize = input.synchronize;
+            return output;
+        }
+        AnimationGraphPoseNodeDefinition admittedNode( const AnimationGraphPoseNodeDefinition &input )
+        {
+            AnimationGraphPoseNodeDefinition output;
+            output.id = input.id;
+            output.type = input.type;
+            output.clipId = input.clipId;
+            output.speed = input.speed;
+            output.loop = input.loop;
+            output.childNodeIds = makeSourceBudgetSnapshot( input.childNodeIds );
+            output.parameter = input.parameter;
+            output.blendRanges = makeSourceBudgetSnapshot( input.blendRanges );
+            return output;
         }
     }  // namespace
 
@@ -47,6 +85,35 @@ namespace workphone::animation
                exitTime <= 1.0f;
     }
 
+    AnimationGraphDefinition::AnimationGraphDefinition( const AnimationGraphDefinition &other ) :
+        m_clips( makeSourceBudgetSnapshot( other.m_clips ) ),
+        m_states( makeSourceBudgetSnapshot( other.m_states ) ),
+        m_initialState( other.m_initialState )
+    {
+        m_transitions.reserve( other.m_transitions.capacity() );
+        for( const auto &transition : other.m_transitions )
+            m_transitions.push_back( admittedTransition( transition ) );
+        m_poseNodes.reserve( other.m_poseNodes.capacity() );
+        for( const auto &node : other.m_poseNodes ) m_poseNodes.push_back( admittedNode( node ) );
+    }
+    AnimationGraphDefinition &AnimationGraphDefinition::operator=( const AnimationGraphDefinition &other )
+    {
+        if( this != &other )
+        {
+            AnimationGraphDefinition candidate( other );
+            swap( candidate );
+        }
+        return *this;
+    }
+    void AnimationGraphDefinition::swap( AnimationGraphDefinition &other ) noexcept
+    {
+        m_clips.swap( other.m_clips );
+        m_states.swap( other.m_states );
+        m_transitions.swap( other.m_transitions );
+        m_poseNodes.swap( other.m_poseNodes );
+        m_initialState.swap( other.m_initialState );
+    }
+
     bool AnimationGraphDefinition::addClip( const AnimationGraphClip &clip )
     {
         if( !clip.isValid() || findClip( clip.id ) )
@@ -71,10 +138,12 @@ namespace workphone::animation
         {
             return false;
         }
+        const auto initial = m_initialState.empty();
+        String initialState = initial ? state.id : String();
         m_states.push_back( state );
-        if( m_initialState.empty() )
+        if( initial )
         {
-            m_initialState = state.id;
+            m_initialState.swap( initialState );
         }
         return true;
     }
@@ -86,11 +155,11 @@ namespace workphone::animation
         {
             return false;
         }
-        m_transitions.push_back( transition );
-        std::stable_sort( m_transitions.begin(), m_transitions.end(),
-                          []( const AnimationGraphTransition &a, const AnimationGraphTransition &b ) {
-                              return a.priority > b.priority;
-                          } );
+        auto candidate = admittedTransition( transition );
+        size_t index = 0;
+        while( index < m_transitions.size() && m_transitions[index].priority >= candidate.priority ) ++index;
+        m_transitions.push_back( std::move( candidate ) );
+        std::rotate( m_transitions.begin() + index, m_transitions.end() - 1, m_transitions.end() );
         return true;
     }
 
@@ -109,19 +178,24 @@ namespace workphone::animation
             return false;
         }
 
-        const auto previousSize = m_clips.size();
-        m_clips.erase(
-            std::remove_if( m_clips.begin(), m_clips.end(),
-                            [&id]( const AnimationGraphClip &clip ) { return clip.id == id; } ),
-            m_clips.end() );
-        return previousSize != m_clips.size();
+        const auto found = std::find_if( m_clips.begin(), m_clips.end(),
+            [&id]( const AnimationGraphClip &clip ) { return clip.id == id; } );
+        if( found == m_clips.end() ) return false;
+        std::move( found + 1, m_clips.end(), found );
+        m_clips.pop_back();
+        return true;
     }
     bool AnimationGraphDefinition::removeState( const String &id )
     {
+        const String stableId( id );
+        String initialState;
+        if( m_initialState == stableId )
+            for( const auto &state : m_states ) if( state.id != stableId )
+            { initialState = state.id; break; }
         const auto previousSize = m_states.size();
         m_states.erase(
             std::remove_if( m_states.begin(), m_states.end(),
-                            [&id]( const AnimationGraphState &state ) { return state.id == id; } ),
+                            [&stableId]( const AnimationGraphState &state ) { return state.id == stableId; } ),
             m_states.end() );
         if( previousSize == m_states.size() )
         {
@@ -129,26 +203,26 @@ namespace workphone::animation
         }
 
         m_transitions.erase( std::remove_if( m_transitions.begin(), m_transitions.end(),
-                                             [&id]( const AnimationGraphTransition &transition ) {
-                                                 return transition.fromState == id ||
-                                                        transition.toState == id;
+                                             [&stableId]( const AnimationGraphTransition &transition ) {
+                                                 return transition.fromState == stableId ||
+                                                        transition.toState == stableId;
                                              } ),
                              m_transitions.end() );
 
-        if( m_initialState == id )
+        if( m_initialState == stableId )
         {
-            m_initialState = m_states.empty() ? String() : m_states.front().id;
+            m_initialState.swap( initialState );
         }
         return true;
     }
 
     void AnimationGraphDefinition::clear()
     {
-        m_clips.clear();
-        m_states.clear();
-        m_transitions.clear();
-        m_poseNodes.clear();
-        m_initialState.clear();
+        m_clips = makeSourceBudgetSnapshot<AnimationGraphClip>();
+        m_states = makeSourceBudgetSnapshot<AnimationGraphState>();
+        m_transitions = makeSourceBudgetSnapshot<AnimationGraphTransition>();
+        m_poseNodes = makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
+        m_initialState.release();
     }
 
     const AnimationGraphClip *AnimationGraphDefinition::findClip( const String &id ) const
@@ -232,7 +306,7 @@ namespace workphone::animation
         {
             return false;
         }
-        m_poseNodes.push_back( node );
+        m_poseNodes.push_back( admittedNode( node ) );
         return true;
     }
 
@@ -243,13 +317,12 @@ namespace workphone::animation
         {
             return false;
         }
-        const auto previousSize = m_poseNodes.size();
-        m_poseNodes.erase( std::remove_if( m_poseNodes.begin(), m_poseNodes.end(),
-                                           [&id]( const AnimationGraphPoseNodeDefinition &node ) {
-                                               return node.id == id;
-                                           } ),
-                           m_poseNodes.end() );
-        return previousSize != m_poseNodes.size();
+        const auto found = std::find_if( m_poseNodes.begin(), m_poseNodes.end(),
+            [&id]( const AnimationGraphPoseNodeDefinition &node ) { return node.id == id; } );
+        if( found == m_poseNodes.end() ) return false;
+        std::move( found + 1, m_poseNodes.end(), found );
+        m_poseNodes.pop_back();
+        return true;
     }
 
     const AnimationGraphPoseNodeDefinition *AnimationGraphDefinition::findPoseNode(
@@ -270,14 +343,100 @@ namespace workphone::animation
         setDefinition( definition );
     }
 
+    AnimationGraphInstance::AnimationGraphInstance( const AnimationGraphInstance &other ) :
+        m_definition( other.m_definition ), m_boolParameters( other.m_boolParameters ),
+        m_floatParameters( other.m_floatParameters ), m_currentState( other.m_currentState ),
+        m_destinationState( other.m_destinationState ), m_currentTime( other.m_currentTime ),
+        m_destinationTime( other.m_destinationTime ), m_transitionTime( other.m_transitionTime ),
+        m_transitionDuration( other.m_transitionDuration ),
+        m_samples( makeSourceBudgetSnapshot( other.m_samples ) ),
+        m_sampledEvents( makeSourceBudgetSnapshot( other.m_sampledEvents ) )
+    {
+        m_staging.samples.reserve( other.m_staging.samples.capacity() );
+        m_staging.events.reserve( other.m_staging.events.capacity() );
+        m_staging.currentState.reserve( other.m_staging.currentState.capacity() );
+        m_staging.destinationState.reserve( other.m_staging.destinationState.capacity() );
+        m_traversalScratch.reserve( other.m_traversalScratch.capacity() );
+    }
+    AnimationGraphInstance &AnimationGraphInstance::operator=( const AnimationGraphInstance &other )
+    {
+        if( this != &other )
+        {
+            AnimationGraphInstance candidate( other );
+            swap( candidate );
+        }
+        return *this;
+    }
+    void AnimationGraphInstance::swapRuntime( RuntimeState &state ) noexcept
+    {
+        using std::swap;
+        m_currentState.swap( state.currentState );
+        m_destinationState.swap( state.destinationState );
+        swap( m_currentTime, state.currentTime );
+        swap( m_destinationTime, state.destinationTime );
+        swap( m_transitionTime, state.transitionTime );
+        swap( m_transitionDuration, state.transitionDuration );
+        m_samples.swap( state.samples );
+        m_sampledEvents.swap( state.events );
+    }
+    void AnimationGraphInstance::swap( AnimationGraphInstance &other ) noexcept
+    {
+        m_definition.swap( other.m_definition );
+        m_boolParameters.swap( other.m_boolParameters );
+        m_floatParameters.swap( other.m_floatParameters );
+        RuntimeState transfer;
+        swapRuntime( transfer );
+        other.swapRuntime( transfer );
+        swapRuntime( transfer );
+        std::swap( m_staging, other.m_staging );
+        m_traversalScratch.swap( other.m_traversalScratch );
+    }
+    void AnimationGraphInstance::beginRuntimeMutation()
+    {
+        // Copy only the scalar state, reusing its admitted strings. The graph
+        // definition and parameter maps are never copied during evaluation.
+        m_staging.currentState.assign( m_currentState );
+        m_staging.destinationState.assign( m_destinationState );
+        m_staging.currentTime = m_currentTime;
+        m_staging.destinationTime = m_destinationTime;
+        m_staging.transitionTime = m_transitionTime;
+        m_staging.transitionDuration = m_transitionDuration;
+        m_staging.samples.clear();
+        m_staging.events.clear();
+        swapRuntime( m_staging );
+    }
+    void AnimationGraphInstance::rollbackRuntimeMutation() noexcept
+    {
+        swapRuntime( m_staging );
+        m_staging.samples.clear();
+        m_staging.events.clear();
+    }
+    Array<const String *> &AnimationGraphInstance::traversalScratch() const
+    {
+        m_traversalScratch.clear();
+        return m_traversalScratch;
+    }
+
     bool AnimationGraphInstance::setDefinition( const AnimationGraphDefinition &definition )
     {
         if( !definition.isValid() )
         {
             return false;
         }
-        m_definition = definition;
-        reset();
+        AnimationGraphDefinition candidate( definition );
+        auto traversal = makeSourceBudgetSnapshot<const String *>();
+        if( !candidate.getPoseNodes().empty() ) traversal.reserve( candidate.getPoseNodes().size() + 1 );
+        m_definition.swap( candidate );
+        m_traversalScratch.swap( traversal );
+        try { reset(); }
+        catch( ... )
+        {
+            m_definition.swap( candidate );
+            m_traversalScratch.swap( traversal );
+            throw;
+        }
+        m_staging.samples.clear();
+        m_staging.events.clear();
         return true;
     }
 
@@ -288,14 +447,19 @@ namespace workphone::animation
 
     void AnimationGraphInstance::reset()
     {
-        m_currentState = m_definition.getInitialState();
-        m_destinationState.clear();
-        m_currentTime = 0.0f;
-        m_destinationTime = 0.0f;
-        m_transitionTime = 0.0f;
-        m_transitionDuration = 0.0f;
-        m_sampledEvents.clear();
-        rebuildSamples();
+        beginRuntimeMutation();
+        try
+        {
+            m_currentState = m_definition.getInitialState();
+            m_destinationState.clear();
+            m_currentTime = 0.0f;
+            m_destinationTime = 0.0f;
+            m_transitionTime = 0.0f;
+            m_transitionDuration = 0.0f;
+            m_sampledEvents.clear();
+            rebuildSamples();
+        }
+        catch( ... ) { rollbackRuntimeMutation(); throw; }
     }
 
     bool AnimationGraphInstance::forceState( const String &stateId, f32 targetNormalizedTime )
@@ -312,56 +476,66 @@ namespace workphone::animation
             return false;
         }
 
-        m_currentState = stateId;
-        m_currentTime = duration * std::clamp( targetNormalizedTime, 0.0f, 1.0f );
-        m_destinationState.clear();
-        m_destinationTime = 0.0f;
-        m_transitionTime = 0.0f;
-        m_transitionDuration = 0.0f;
-        m_sampledEvents.clear();
-        rebuildSamples();
-        return true;
+        beginRuntimeMutation();
+        try
+        {
+            m_currentState = stateId;
+            m_currentTime = duration * std::clamp( targetNormalizedTime, 0.0f, 1.0f );
+            m_destinationState.clear();
+            m_destinationTime = 0.0f;
+            m_transitionTime = 0.0f;
+            m_transitionDuration = 0.0f;
+            m_sampledEvents.clear();
+            rebuildSamples();
+            return true;
+        }
+        catch( ... ) { rollbackRuntimeMutation(); throw; }
     }
 
     void AnimationGraphInstance::update( f32 deltaTime )
     {
-        m_sampledEvents.clear();
-        if( !isValid() || !std::isfinite( deltaTime ) || deltaTime <= 0.0f )
+        beginRuntimeMutation();
+        try
         {
-            rebuildSamples();
-            return;
-        }
-
-        const auto previousCurrentTime = m_currentTime;
-        const auto currentAdvance = advanceState( m_currentState, m_currentTime, deltaTime );
-        m_currentTime = currentAdvance.time;
-        sampleEvents( m_currentState, previousCurrentTime, currentAdvance );
-
-        if( isTransitioning() )
-        {
-            const auto previousDestinationTime = m_destinationTime;
-            const auto destinationAdvance =
-                advanceState( m_destinationState, m_destinationTime, deltaTime );
-            m_destinationTime = destinationAdvance.time;
-            sampleEvents( m_destinationState, previousDestinationTime, destinationAdvance );
-
-            m_transitionTime += deltaTime;
-            if( m_transitionDuration <= Epsilon || m_transitionTime >= m_transitionDuration )
+            m_sampledEvents.clear();
+            if( !isValid() || !std::isfinite( deltaTime ) || deltaTime <= 0.0f )
             {
-                m_currentState = m_destinationState;
-                m_currentTime = m_destinationTime;
-                m_destinationState.clear();
-                m_destinationTime = 0.0f;
-                m_transitionTime = 0.0f;
-                m_transitionDuration = 0.0f;
+                rebuildSamples();
+                return;
             }
-        }
-        else if( const auto transition = findTransition() )
-        {
-            beginTransition( *transition );
-        }
 
-        rebuildSamples();
+            const auto previousCurrentTime = m_currentTime;
+            const auto currentAdvance = advanceState( m_currentState, m_currentTime, deltaTime );
+            m_currentTime = currentAdvance.time;
+            sampleEvents( m_currentState, previousCurrentTime, currentAdvance );
+
+            if( isTransitioning() )
+            {
+                const auto previousDestinationTime = m_destinationTime;
+                const auto destinationAdvance =
+                    advanceState( m_destinationState, m_destinationTime, deltaTime );
+                m_destinationTime = destinationAdvance.time;
+                sampleEvents( m_destinationState, previousDestinationTime, destinationAdvance );
+
+                m_transitionTime += deltaTime;
+                if( m_transitionDuration <= Epsilon || m_transitionTime >= m_transitionDuration )
+                {
+                    m_currentState = m_destinationState;
+                    m_currentTime = m_destinationTime;
+                    m_destinationState.clear();
+                    m_destinationTime = 0.0f;
+                    m_transitionTime = 0.0f;
+                    m_transitionDuration = 0.0f;
+                }
+            }
+            else if( const auto transition = findTransition() )
+            {
+                beginTransition( *transition );
+            }
+
+            rebuildSamples();
+        }
+        catch( ... ) { rollbackRuntimeMutation(); throw; }
     }
 
     void AnimationGraphInstance::apply( ISkeleton *skeleton, f32 scale, f32 globalWeight ) const
@@ -536,10 +710,9 @@ namespace workphone::animation
         const auto pose = resolveStatePose( stateId );
         if( pose )
         {
-            Array<String> durationVisited;
-            duration = getPoseTreeDuration( pose->id, durationVisited );
-            Array<String> loopVisited;
-            loops = getPoseTreeLoops( pose->id, loopVisited );
+            auto &visited = traversalScratch();
+            duration = getPoseTreeDuration( pose->id, visited );
+            loops = getPoseTreeLoops( pose->id, visited );
         }
         else
         {
@@ -585,7 +758,7 @@ namespace workphone::animation
             }
             const auto previousNormalized = normalizedTime( previousTime, duration );
             const auto currentNormalized = normalizedTime( advance.time, duration );
-            Array<String> visited;
+            auto &visited = traversalScratch();
             samplePoseTreeEvents( stateId, pose->id, previousNormalized, currentNormalized,
                                   advance.looped, visited );
             return;
@@ -664,7 +837,7 @@ namespace workphone::animation
         const auto pose = resolveStatePose( stateId );
         if( pose )
         {
-            Array<String> visited;
+            auto &visited = traversalScratch();
             return getPoseTreeDuration( pose->id, visited );
         }
         const auto clip = getClipForState( stateId );
@@ -676,20 +849,21 @@ namespace workphone::animation
         const auto pose = resolveStatePose( stateId );
         if( pose )
         {
-            Array<String> visited;
+            auto &visited = traversalScratch();
             return getPoseTreeLoops( pose->id, visited );
         }
         const auto clip = getClipForState( stateId );
         return clip ? clip->loop : false;
     }
 
-    f32 AnimationGraphInstance::getPoseTreeDuration( const String &nodeId, Array<String> &visited ) const
+    f32 AnimationGraphInstance::getPoseTreeDuration( const String &nodeId, Array<const String *> &visited ) const
     {
         if( visitedContains( visited, nodeId ) )
         {
             return 0.0f;
         }
-        visited.push_back( nodeId );
+        visited.push_back( &nodeId );
+        PopVisit pop{visited};
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -709,8 +883,8 @@ namespace workphone::animation
             f32 maxDuration = 0.0f;
             for( const auto &childId : node->childNodeIds )
             {
-                Array<String> childVisited = visited;
-                maxDuration = std::max( maxDuration, getPoseTreeDuration( childId, childVisited ) );
+
+                maxDuration = std::max( maxDuration, getPoseTreeDuration( childId, visited ) );
             }
             return maxDuration;
         }
@@ -719,13 +893,14 @@ namespace workphone::animation
         }
     }
 
-    bool AnimationGraphInstance::getPoseTreeLoops( const String &nodeId, Array<String> &visited ) const
+    bool AnimationGraphInstance::getPoseTreeLoops( const String &nodeId, Array<const String *> &visited ) const
     {
         if( visitedContains( visited, nodeId ) )
         {
             return false;
         }
-        visited.push_back( nodeId );
+        visited.push_back( &nodeId );
+        PopVisit pop{visited};
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -746,10 +921,10 @@ namespace workphone::animation
             bool bestLoop = false;
             for( const auto &childId : node->childNodeIds )
             {
-                Array<String> durationVisited = visited;
-                const auto childDuration = getPoseTreeDuration( childId, durationVisited );
-                Array<String> loopVisited = visited;
-                const auto childLoop = getPoseTreeLoops( childId, loopVisited );
+
+                const auto childDuration = getPoseTreeDuration( childId, visited );
+
+                const auto childLoop = getPoseTreeLoops( childId, visited );
                 if( childDuration > bestDuration )
                 {
                     bestDuration = childDuration;
@@ -777,7 +952,7 @@ namespace workphone::animation
         {
             const auto duration = getStateEffectiveDuration( stateId );
             const auto nt = normalizedTime( time, duration );
-            Array<String> visited;
+            auto &visited = traversalScratch();
             evaluatePoseTree( stateId, pose->id, nt, clampedWeight, outSamples, visited );
             return;
         }
@@ -794,13 +969,14 @@ namespace workphone::animation
     void AnimationGraphInstance::evaluatePoseTree( const String &stateId, const String &nodeId,
                                                    f32 normalizedTimeValue, f32 weight,
                                                    Array<AnimationGraphSample> &outSamples,
-                                                   Array<String> &visited ) const
+                                                   Array<const String *> &visited ) const
     {
         if( visitedContains( visited, nodeId ) || weight <= 0.0f )
         {
             return;
         }
-        visited.push_back( nodeId );
+        visited.push_back( &nodeId );
+        PopVisit pop{visited};
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -857,9 +1033,9 @@ namespace workphone::animation
                                      : node->blendRanges.back().inputIndex1;
                 const auto childIdx = static_cast<u32>(
                     std::clamp( static_cast<s32>( idx ), 0, static_cast<s32>( lastChildIndex ) ) );
-                Array<String> childVisited = visited;
+
                 evaluatePoseTree( stateId, node->childNodeIds[childIdx], normalizedTimeValue, weight,
-                                  outSamples, childVisited );
+                                  outSamples, visited );
                 return;
             }
 
@@ -868,12 +1044,12 @@ namespace workphone::animation
                                                           static_cast<s32>( lastChildIndex ) ) );
             const auto i1 = static_cast<u32>( std::clamp( static_cast<s32>( range->inputIndex1 ), 0,
                                                           static_cast<s32>( lastChildIndex ) ) );
-            Array<String> visited0 = visited;
+
             evaluatePoseTree( stateId, node->childNodeIds[i0], normalizedTimeValue,
-                              weight * ( 1.0f - blendWeight ), outSamples, visited0 );
-            Array<String> visited1 = visited;
+                              weight * ( 1.0f - blendWeight ), outSamples, visited );
+
             evaluatePoseTree( stateId, node->childNodeIds[i1], normalizedTimeValue, weight * blendWeight,
-                              outSamples, visited1 );
+                              outSamples, visited );
             return;
         }
         case AnimationGraphPoseNodeType::Selector:
@@ -896,9 +1072,9 @@ namespace workphone::animation
                 childIdx =
                     static_cast<u32>( std::clamp( rawIndex, 0, static_cast<s32>( lastChildIndex ) ) );
             }
-            Array<String> childVisited = visited;
+
             evaluatePoseTree( stateId, node->childNodeIds[childIdx], normalizedTimeValue, weight,
-                              outSamples, childVisited );
+                              outSamples, visited );
             return;
         }
         default:
@@ -908,13 +1084,14 @@ namespace workphone::animation
 
     void AnimationGraphInstance::samplePoseTreeEvents( const String &stateId, const String &nodeId,
                                                        f32 previousNormalized, f32 currentNormalized,
-                                                       bool looped, Array<String> &visited )
+                                                       bool looped, Array<const String *> &visited )
     {
         if( visitedContains( visited, nodeId ) )
         {
             return;
         }
-        visited.push_back( nodeId );
+        visited.push_back( &nodeId );
+        PopVisit pop{visited};
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -941,9 +1118,9 @@ namespace workphone::animation
         {
             for( const auto &childId : node->childNodeIds )
             {
-                Array<String> childVisited = visited;
+
                 samplePoseTreeEvents( stateId, childId, previousNormalized, currentNormalized, looped,
-                                      childVisited );
+                                      visited );
             }
             return;
         }

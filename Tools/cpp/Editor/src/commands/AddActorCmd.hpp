@@ -4,6 +4,7 @@
 #include <commands/Command.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
+#include <Workphone/Math/Vector3.hpp>
 
 namespace workphone
 {
@@ -76,6 +77,7 @@ namespace workphone
 
             void setUseSelectionAsParent( bool useSelectionAsParent );
             void setExpectedScene( SmartPtr<scene::IGameScene> scene );
+            void setWorldPosition( const Vector3<real_Num> &position );
 
             ActorType getActorType() const;
             void setActorType( ActorType actorType );
@@ -93,6 +95,8 @@ namespace workphone
             bool m_useSelectionAsParent = true;
             WeakPtr<scene::IGameScene> m_expectedScene;
             bool m_hasExpectedScene = false;
+            Vector3<real_Num> m_worldPosition = Vector3<real_Num>::zero();
+            bool m_hasWorldPosition = false;
             AtomicValue<ActorType> m_actorType = ActorType::EmptyActor;
             AtomicObject<String> m_filePath;
         };

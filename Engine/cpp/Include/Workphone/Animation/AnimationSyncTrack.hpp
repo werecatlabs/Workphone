@@ -26,9 +26,11 @@ namespace workphone::animation
     };
 
     /** Event-based clip synchronization adapted to Workphone normalized time. */
-    class WPCore_API AnimationSyncTrack
+    class WPCore_API AnimationSyncTrack : public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         AnimationSyncTrack();
         explicit AnimationSyncTrack( const Array<AnimationSyncMarker> &markers,
                                      s32 startEventOffset = 0 );
@@ -62,7 +64,7 @@ namespace workphone::animation
         s32 logicalToRawIndex( s32 logicalIndex ) const;
         s32 rawToLogicalIndex( s32 rawIndex ) const;
 
-        Array<AnimationSyncMarker> m_markers;
+        Array<AnimationSyncMarker> m_markers{ Allocator<AnimationSyncMarker>( sourceBudget ) };
         s32 m_startEventOffset = 0;
     };
 }  // namespace workphone::animation

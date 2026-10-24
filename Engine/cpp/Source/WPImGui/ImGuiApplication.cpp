@@ -1945,6 +1945,53 @@ namespace workphone::ui
                             projectionMatrix = renderCamera->getProjectionMatrix().transpose();
                         }
 
+                        const auto dragPayload = ImGui::GetDragDropPayload();
+                        const bool sceneAssetDragging =
+                            dragPayload && dragPayload->IsDataType( "_TREENODE" );
+                        if( auto dropTarget = renderWindow->getDropTarget();
+                            dropTarget && sceneRectSize.x > 0 && sceneRectSize.y > 0 )
+                        {
+                            // The image is submitted directly to the draw list so it does not
+                            // intercept ImGuizmo input. Give drag/drop its own exact image bounds.
+                            const ImRect dropRect(
+                                sceneRectMin, ImVec2( sceneRectMin.x + sceneRectSize.x,
+                                                     sceneRectMin.y + sceneRectSize.y ) );
+                            if( ImGui::BeginDragDropTargetCustom( dropRect,
+                                                                 ImGui::GetID( "##SceneAssetDrop" ) ) )
+                            {
+                                const auto payload = ImGui::AcceptDragDropPayload( "_TREENODE" );
+                                if( payload && payload->IsDelivery() && payload->Data &&
+                                    payload->DataSize > 0 )
+                                {
+                                    Array<Parameter> args;
+                                    args.reserve( 4 );
+                                    args.emplace_back( String( static_cast<const char *>( payload->Data ),
+                                                               payload->DataSize ) );
+                                    args.emplace_back( -1 );
+                                    if( renderCamera )
+                                    {
+                                        const auto mouse = ImGui::GetMousePos();
+                                        Ray3<real_Num> ray;
+                                        real_Num range;
+                                        if( workphone::scene::makeScenePickingRay(
+                                                renderCamera->getViewMatrix(),
+                                                renderCamera->getProjectionMatrix(),
+                                                Vector2F( ( mouse.x - sceneRectMin.x ) / sceneRectSize.x,
+                                                          ( mouse.y - sceneRectMin.y ) / sceneRectSize.y ),
+                                                ray, range ) )
+                                        {
+                                            args.resize( 4 );
+                                            args[2].setVector3( ray.getOrigin() );
+                                            args[3].setVector3( ray.getDirection() );
+                                        }
+                                    }
+                                    ImGuiDropJob::queue( dropTarget, std::move( args ), renderWindow,
+                                                         renderWindow );
+                                }
+                                ImGui::EndDragDropTarget();
+                            }
+                        }
+
                         // The scene image's exact content rectangle is the input
                         // surface. Lua tools receive a world ray, independent of
                         // docking, DPI scaling, title bars and render-target size.
@@ -1958,7 +2005,7 @@ namespace workphone::ui
                                                  mouse.x < sceneRectMin.x + sceneRectSize.x &&
                                                  mouse.y < sceneRectMin.y + sceneRectSize.y;
                             const char *phase = "hover";
-                            if( ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
+                            if( sceneAssetDragging || ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
                                 !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) )
                                 phase = "cancel";
                             else if( ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
@@ -2366,6 +2413,7 @@ namespace workphone::ui
                             if( m_scenePickWindow.lock() == renderWindow )
                             {
                                 m_scenePickSuppressed = m_scenePickSuppressed || sceneToolActive ||
+                                    sceneAssetDragging ||
                                     ( sceneGizmoActive && ( ImGuizmo::IsOver() || ImGuizmo::IsUsing() ) ) || io.KeyAlt ||
                                     ImGui::IsMouseDown( ImGuiMouseButton_Right ) ||
                                     ImGui::IsMouseDown( ImGuiMouseButton_Middle ) ||

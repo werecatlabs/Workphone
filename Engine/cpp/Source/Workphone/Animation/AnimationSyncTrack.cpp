@@ -4,9 +4,12 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <type_traits>
 
 namespace workphone::animation
 {
+    static_assert( std::is_nothrow_move_constructible_v<AnimationSyncTrack> &&
+                   std::is_nothrow_move_assignable_v<AnimationSyncTrack> );
     bool AnimationSyncTrackTime::isValid() const
     {
         return eventIndex >= 0 && std::isfinite( percentageThrough ) && percentageThrough >= 0.0f &&
@@ -41,7 +44,7 @@ namespace workphone::animation
     AnimationSyncTrack AnimationSyncTrack::fromTimeline( const AnimationEventTimeline &timeline,
                                                          s32 startEventOffset )
     {
-        Array<AnimationSyncMarker> markers;
+        auto markers = makeSourceBudgetSnapshot<AnimationSyncMarker>();
         for( const auto &event : timeline.getSyncMarkers() )
         {
             markers.push_back( { event.id, event.startTime >= 1.0f ? 0.0f : event.startTime } );
@@ -75,8 +78,8 @@ namespace workphone::animation
             return false;
         }
 
-        auto sortedMarkers = markers;
-        std::stable_sort( sortedMarkers.begin(), sortedMarkers.end(),
+        auto sortedMarkers = makeSourceBudgetSnapshot( markers );
+        std::sort( sortedMarkers.begin(), sortedMarkers.end(),
                           []( const AnimationSyncMarker &a, const AnimationSyncMarker &b ) {
                               return a.startTime < b.startTime;
                           } );
@@ -91,7 +94,7 @@ namespace workphone::animation
             return false;
         }
 
-        m_markers = sortedMarkers;
+        m_markers.swap( sortedMarkers );
         setStartEventOffset( m_startEventOffset );
         return true;
     }

@@ -6,6 +6,7 @@
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/Map.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -16,9 +17,11 @@ namespace workphone
      * retrieve, and remove animations by name or index. It serves as the concrete
      * implementation of the IAnimationInterface.
      */
-    class WPCore_API AnimationInterface : public IAnimationInterface
+    class WPCore_API AnimationInterface : public IAnimationInterface, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         /**
          * @brief Default constructor for AnimationInterface.
          */
@@ -28,6 +31,7 @@ namespace workphone
          * @brief Destructor for AnimationInterface.
          */
         ~AnimationInterface() override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         /**
          * @brief Creates a new animation and adds it to the interface management.
@@ -89,12 +93,13 @@ namespace workphone
         /**
          * @brief Map storing animations associated with their unique names.
          */
-        Map<String, SmartPtr<IAnimation>> m_animations;
+        SourceBudgetMap<String, SmartPtr<IAnimation>> m_animations;
 
         /**
          * @brief Array maintaining the ordered list of animation names for index-based access.
          */
-        Array<String> m_animationNames;
+        Array<String> m_animationNames{ Allocator<String>( sourceBudget ) };
+        bool m_unloading = false;
     };
 }  // namespace workphone
 

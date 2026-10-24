@@ -8,6 +8,7 @@
 #include <Workphone/Animation/AnimationEventTimeline.hpp>
 #include <Workphone/Animation/AnimationSyncTrack.hpp>
 #include <Workphone/Animation/AnimationGraphNodes.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <map>
 
 namespace workphone
@@ -70,7 +71,7 @@ namespace workphone::animation
     {
         String fromState;
         String toState;
-        Array<AnimationGraphCondition> conditions;
+        Array<AnimationGraphCondition> conditions = makeSourceBudgetSnapshot<AnimationGraphCondition>();
         f32 duration = 0.15f;
         f32 exitTime = -1.0f;
         s32 priority = 0;
@@ -80,9 +81,15 @@ namespace workphone::animation
     };
 
     /** Serializable/editor-facing graph definition with no UI dependency. */
-    class WPCore_API AnimationGraphDefinition
+    class WPCore_API AnimationGraphDefinition : public SourceBudgetObject
     {
     public:
+        AnimationGraphDefinition() = default;
+        AnimationGraphDefinition( const AnimationGraphDefinition &other );
+        AnimationGraphDefinition &operator=( const AnimationGraphDefinition &other );
+        AnimationGraphDefinition( AnimationGraphDefinition &&other ) noexcept = default;
+        AnimationGraphDefinition &operator=( AnimationGraphDefinition &&other ) noexcept = default;
+        void swap( AnimationGraphDefinition &other ) noexcept;
         bool addClip( const AnimationGraphClip &clip );
         bool addState( const AnimationGraphState &state );
         bool addTransition( const AnimationGraphTransition &transition );
@@ -108,10 +115,10 @@ namespace workphone::animation
         const Array<AnimationGraphPoseNodeDefinition> &getPoseNodes() const;
 
     private:
-        Array<AnimationGraphClip> m_clips;
-        Array<AnimationGraphState> m_states;
-        Array<AnimationGraphTransition> m_transitions;
-        Array<AnimationGraphPoseNodeDefinition> m_poseNodes;
+        Array<AnimationGraphClip> m_clips = makeSourceBudgetSnapshot<AnimationGraphClip>();
+        Array<AnimationGraphState> m_states = makeSourceBudgetSnapshot<AnimationGraphState>();
+        Array<AnimationGraphTransition> m_transitions = makeSourceBudgetSnapshot<AnimationGraphTransition>();
+        Array<AnimationGraphPoseNodeDefinition> m_poseNodes = makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
         String m_initialState;
     };
 
@@ -131,11 +138,13 @@ namespace workphone::animation
     };
 
     /** Runtime instance that evaluates state transitions and applies weighted clips. */
-    class WPCore_API AnimationGraphInstance
+    class WPCore_API AnimationGraphInstance : public SourceBudgetObject
     {
     public:
         AnimationGraphInstance() = default;
         explicit AnimationGraphInstance( const AnimationGraphDefinition &definition );
+        AnimationGraphInstance( const AnimationGraphInstance &other );
+        AnimationGraphInstance &operator=( const AnimationGraphInstance &other );
 
         bool setDefinition( const AnimationGraphDefinition &definition );
         const AnimationGraphDefinition &getDefinition() const;
@@ -158,6 +167,19 @@ namespace workphone::animation
         bool isValid() const;
 
     private:
+        struct RuntimeState
+        {
+            String currentState;
+            String destinationState;
+            f32 currentTime = 0, destinationTime = 0, transitionTime = 0, transitionDuration = 0;
+            Array<AnimationGraphSample> samples = makeSourceBudgetSnapshot<AnimationGraphSample>();
+            Array<AnimationGraphEvent> events = makeSourceBudgetSnapshot<AnimationGraphEvent>();
+        };
+        void beginRuntimeMutation();
+        void swapRuntime( RuntimeState &state ) noexcept;
+        void rollbackRuntimeMutation() noexcept;
+        void swap( AnimationGraphInstance &other ) noexcept;
+        Array<const String *> &traversalScratch() const;
         struct AdvanceResult
         {
             f32 time = 0.0f;
@@ -176,27 +198,29 @@ namespace workphone::animation
         const AnimationGraphPoseNodeDefinition *resolveStatePose( const String &stateId ) const;
         f32 getStateEffectiveDuration( const String &stateId ) const;
         bool getStateLoops( const String &stateId ) const;
-        f32 getPoseTreeDuration( const String &nodeId, Array<String> &visited ) const;
-        bool getPoseTreeLoops( const String &nodeId, Array<String> &visited ) const;
+        f32 getPoseTreeDuration( const String &nodeId, Array<const String *> &visited ) const;
+        bool getPoseTreeLoops( const String &nodeId, Array<const String *> &visited ) const;
         void collectStateSamples( const String &stateId, f32 time, f32 weight,
                                   Array<AnimationGraphSample> &outSamples ) const;
         void evaluatePoseTree( const String &stateId, const String &nodeId, f32 normalizedTime,
                                f32 weight, Array<AnimationGraphSample> &outSamples,
-                               Array<String> &visited ) const;
+                               Array<const String *> &visited ) const;
         void samplePoseTreeEvents( const String &stateId, const String &nodeId, f32 previousNormalized,
-                                   f32 currentNormalized, bool looped, Array<String> &visited );
+                                   f32 currentNormalized, bool looped, Array<const String *> &visited );
 
         AnimationGraphDefinition m_definition;
-        std::map<String, bool> m_boolParameters;
-        std::map<String, f32> m_floatParameters;
+        SourceBudgetMap<String, bool> m_boolParameters;
+        SourceBudgetMap<String, f32> m_floatParameters;
         String m_currentState;
         String m_destinationState;
         f32 m_currentTime = 0.0f;
         f32 m_destinationTime = 0.0f;
         f32 m_transitionTime = 0.0f;
         f32 m_transitionDuration = 0.0f;
-        Array<AnimationGraphSample> m_samples;
-        Array<AnimationGraphEvent> m_sampledEvents;
+        Array<AnimationGraphSample> m_samples = makeSourceBudgetSnapshot<AnimationGraphSample>();
+        Array<AnimationGraphEvent> m_sampledEvents = makeSourceBudgetSnapshot<AnimationGraphEvent>();
+        RuntimeState m_staging;
+        mutable Array<const String *> m_traversalScratch = makeSourceBudgetSnapshot<const String *>();
     };
 }  // namespace workphone::animation
 

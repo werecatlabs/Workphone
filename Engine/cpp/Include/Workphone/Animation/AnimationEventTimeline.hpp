@@ -4,6 +4,7 @@
 #include <Workphone/WorkphoneTypes.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone::animation
 {
@@ -22,8 +23,15 @@ namespace workphone::animation
 
     struct WPCore_API AnimationEventTrack
     {
+        AnimationEventTrack() = default;
+        AnimationEventTrack( const String &trackName, const Array<AnimationEvent> &trackEvents,
+                             bool trackEnabled = true );
+        AnimationEventTrack( const AnimationEventTrack &other );
+        AnimationEventTrack &operator=( const AnimationEventTrack &other );
+        AnimationEventTrack( AnimationEventTrack && ) noexcept = default;
+        AnimationEventTrack &operator=( AnimationEventTrack && ) noexcept = default;
         String name;
-        Array<AnimationEvent> events;
+        Array<AnimationEvent> events{ Allocator<AnimationEvent>( sourceBudget ) };
         bool enabled = true;
     };
 
@@ -45,9 +53,16 @@ namespace workphone::animation
      * Runtime/editor-neutral event timeline adapted from Esoterica's event tracks.
      * The class owns authored tracks and can sample forward, reverse, and wrapped ranges.
      */
-    class WPCore_API AnimationEventTimeline
+    class WPCore_API AnimationEventTimeline : public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        AnimationEventTimeline() = default;
+        AnimationEventTimeline( const AnimationEventTimeline &other );
+        AnimationEventTimeline &operator=( const AnimationEventTimeline &other );
+        AnimationEventTimeline( AnimationEventTimeline && ) noexcept = default;
+        AnimationEventTimeline &operator=( AnimationEventTimeline && ) noexcept = default;
         static constexpr u32 InvalidIndex = static_cast<u32>( -1 );
 
         u32 addTrack( const String &name );
@@ -73,7 +88,7 @@ namespace workphone::animation
     private:
         static void sortEvents( AnimationEventTrack &track );
 
-        Array<AnimationEventTrack> m_tracks;
+        Array<AnimationEventTrack> m_tracks{ Allocator<AnimationEventTrack>( sourceBudget ) };
     };
 }  // namespace workphone::animation
 

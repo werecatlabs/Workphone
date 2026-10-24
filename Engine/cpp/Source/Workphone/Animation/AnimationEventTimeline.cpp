@@ -2,6 +2,7 @@
 #include <Workphone/Animation/AnimationEventTimeline.hpp>
 #include <algorithm>
 #include <cmath>
+#include <type_traits>
 
 namespace workphone::animation
 {
@@ -75,7 +76,68 @@ namespace workphone::animation
 
             return point >= previousTime ? point - previousTime : ( 1.0f - previousTime ) + point;
         }
+
+        // Stable insertion uses only the admitted array. std::stable_sort may
+        // allocate an untracked temporary buffer, including during an edit.
+        void sortByStartTime( Array<AnimationEvent> &events )
+        {
+            for( size_t i = 1; i < events.size(); ++i )
+            {
+                auto event = std::move( events[i] );
+                auto position = i;
+                while( position && event.startTime < events[position - 1].startTime )
+                {
+                    events[position] = std::move( events[position - 1] );
+                    --position;
+                }
+                events[position] = std::move( event );
+            }
+        }
     }  // namespace
+
+    static_assert( std::is_nothrow_move_constructible_v<AnimationEventTrack> &&
+                   std::is_nothrow_move_assignable_v<AnimationEventTrack> );
+    static_assert( std::is_nothrow_move_constructible_v<AnimationEvent> &&
+                   std::is_nothrow_move_assignable_v<AnimationEvent> );
+    static_assert( std::is_nothrow_move_constructible_v<AnimationEventTimeline> &&
+                   std::is_nothrow_move_assignable_v<AnimationEventTimeline> );
+
+    AnimationEventTrack::AnimationEventTrack( const String &trackName,
+                                              const Array<AnimationEvent> &trackEvents,
+                                              bool trackEnabled ) :
+        name( trackName ), events( makeSourceBudgetSnapshot( trackEvents ) ), enabled( trackEnabled )
+    {
+    }
+
+    AnimationEventTrack::AnimationEventTrack( const AnimationEventTrack &other ) :
+        AnimationEventTrack( other.name, other.events, other.enabled )
+    {
+    }
+
+    AnimationEventTrack &AnimationEventTrack::operator=( const AnimationEventTrack &other )
+    {
+        if( this != &other )
+        {
+            AnimationEventTrack next( other );
+            *this = std::move( next );
+        }
+        return *this;
+    }
+
+    AnimationEventTimeline::AnimationEventTimeline( const AnimationEventTimeline &other ) :
+        m_tracks( makeSourceBudgetSnapshot( other.m_tracks ) )
+    {
+    }
+
+    AnimationEventTimeline &AnimationEventTimeline::operator=( const AnimationEventTimeline &other )
+    {
+        if( this != &other )
+        {
+            AnimationEventTimeline next( other );
+            m_tracks.swap( next.m_tracks );
+        }
+        return *this;
+    }
 
     bool AnimationEvent::isValid() const
     {
@@ -105,7 +167,7 @@ namespace workphone::animation
     {
         AnimationEventTrack track;
         track.name = name;
-        m_tracks.push_back( track );
+        m_tracks.push_back( std::move( track ) );
         return static_cast<u32>( m_tracks.size() - 1 );
     }
 
@@ -116,7 +178,8 @@ namespace workphone::animation
             return false;
         }
 
-        m_tracks.erase( m_tracks.begin() + trackIndex );
+        std::move( m_tracks.begin() + trackIndex + 1, m_tracks.end(), m_tracks.begin() + trackIndex );
+        m_tracks.pop_back();
         return true;
     }
 
@@ -153,16 +216,38 @@ namespace workphone::animation
             return InvalidIndex;
         }
 
-        track->events.push_back( event );
+        // Compute the first matching sorted position before growth or sorting
+        // can invalidate an event argument borrowed from this same track.
+        size_t resultIndex = 0;
+        bool matched = false;
+        for( const auto &candidate : track->events )
+        {
+            if( candidate.startTime < event.startTime )
+                ++resultIndex;
+            else if( candidate.startTime == event.startTime && !matched )
+            {
+                matched = candidate.id == event.id && candidate.duration == event.duration &&
+                          candidate.payload == event.payload;
+                if( !matched )
+                    ++resultIndex;
+            }
+        }
+
+        // A caller can populate getTrack()->events using a borrowed raw Array.
+        // Canonicalize that import before publishing any authored mutation.
+        AnimationEvent staged( event );
+        if( !track->events.get_allocator().isSourceBudgeted() )
+        {
+            auto next = makeSourceBudgetSnapshot( track->events );
+            next.push_back( std::move( staged ) );
+            track->events.swap( next );
+        }
+        else
+        {
+            track->events.push_back( std::move( staged ) );
+        }
         sortEvents( *track );
-        const auto found = std::find_if(
-            track->events.begin(), track->events.end(), [&event]( const AnimationEvent &candidate ) {
-                return candidate.id == event.id && candidate.startTime == event.startTime &&
-                       candidate.duration == event.duration && candidate.payload == event.payload;
-            } );
-        return found != track->events.end()
-                   ? static_cast<u32>( std::distance( track->events.begin(), found ) )
-                   : InvalidIndex;
+        return static_cast<u32>( resultIndex );
     }
 
     bool AnimationEventTimeline::updateEvent( u32 trackIndex, u32 eventIndex,
@@ -174,7 +259,17 @@ namespace workphone::animation
             return false;
         }
 
-        track->events[eventIndex] = event;
+        AnimationEvent staged( event );
+        if( !track->events.get_allocator().isSourceBudgeted() )
+        {
+            auto next = makeSourceBudgetSnapshot( track->events );
+            next[eventIndex] = std::move( staged );
+            track->events.swap( next );
+        }
+        else
+        {
+            track->events[eventIndex] = std::move( staged );
+        }
         sortEvents( *track );
         return true;
     }
@@ -187,7 +282,9 @@ namespace workphone::animation
             return false;
         }
 
-        track->events.erase( track->events.begin() + eventIndex );
+        std::move( track->events.begin() + eventIndex + 1, track->events.end(),
+                   track->events.begin() + eventIndex );
+        track->events.pop_back();
         return true;
     }
 
@@ -201,10 +298,11 @@ namespace workphone::animation
         {
             f32 distance = 0.0f;
             f32 phaseTime = 0.0f;
+            size_t order = 0;
             SampledAnimationEvent sample;
         };
 
-        Array<PendingSample> pending;
+        auto pending = makeSourceBudgetSnapshot<PendingSample>();
         for( u32 trackIndex = 0; trackIndex < m_tracks.size(); ++trackIndex )
         {
             const auto &track = m_tracks[trackIndex];
@@ -229,12 +327,13 @@ namespace workphone::animation
                     PendingSample item;
                     item.distance = traversalDistance( previousTime, event.startTime, reverse );
                     item.phaseTime = event.startTime;
+                    item.order = pending.size();
                     item.sample.trackIndex = trackIndex;
                     item.sample.eventIndex = eventIndex;
                     item.sample.phase =
                         reverse ? AnimationEventPhase::Ended : AnimationEventPhase::Started;
                     item.sample.event = event;
-                    pending.push_back( item );
+                    pending.push_back( std::move( item ) );
                 }
 
                 if( event.duration > 0.0f && event.duration < 1.0f )
@@ -248,18 +347,19 @@ namespace workphone::animation
                         PendingSample item;
                         item.distance = traversalDistance( previousTime, endTime, reverse );
                         item.phaseTime = endTime;
+                        item.order = pending.size();
                         item.sample.trackIndex = trackIndex;
                         item.sample.eventIndex = eventIndex;
                         item.sample.phase =
                             reverse ? AnimationEventPhase::Started : AnimationEventPhase::Ended;
                         item.sample.event = event;
-                        pending.push_back( item );
+                        pending.push_back( std::move( item ) );
                     }
                 }
             }
         }
 
-        std::stable_sort( pending.begin(), pending.end(),
+        std::sort( pending.begin(), pending.end(),
                           []( const PendingSample &a, const PendingSample &b ) {
                               if( a.distance != b.distance )
                               {
@@ -269,21 +369,23 @@ namespace workphone::animation
                               {
                                   return a.sample.trackIndex < b.sample.trackIndex;
                               }
-                              return a.sample.eventIndex < b.sample.eventIndex;
+                              if( a.sample.eventIndex != b.sample.eventIndex )
+                                  return a.sample.eventIndex < b.sample.eventIndex;
+                              return a.order < b.order;
                           } );
 
-        Array<SampledAnimationEvent> result;
+        auto result = makeSourceBudgetSnapshot<SampledAnimationEvent>();
         result.reserve( pending.size() );
-        for( const auto &item : pending )
+        for( auto &item : pending )
         {
-            result.push_back( item.sample );
+            result.push_back( std::move( item.sample ) );
         }
         return result;
     }
 
     Array<SampledAnimationEvent> AnimationEventTimeline::getActiveEvents( f32 normalizedTime ) const
     {
-        Array<SampledAnimationEvent> result;
+        auto result = makeSourceBudgetSnapshot<SampledAnimationEvent>();
         for( u32 trackIndex = 0; trackIndex < m_tracks.size(); ++trackIndex )
         {
             const auto &track = m_tracks[trackIndex];
@@ -306,7 +408,7 @@ namespace workphone::animation
 
     Array<AnimationEvent> AnimationEventTimeline::getSyncMarkers() const
     {
-        Array<AnimationEvent> markers;
+        auto markers = makeSourceBudgetSnapshot<AnimationEvent>();
         for( const auto &track : m_tracks )
         {
             if( !track.enabled )
@@ -322,10 +424,34 @@ namespace workphone::animation
             }
         }
 
-        std::stable_sort( markers.begin(), markers.end(),
-                          []( const AnimationEvent &a, const AnimationEvent &b ) {
-                              return a.startTime < b.startTime;
-                          } );
+        // Marker exports can concatenate many independently sorted tracks.
+        // Sort admitted indices rather than using quadratic insertion or the
+        // implementation-owned temporary buffer of std::stable_sort.
+        auto order = makeSourceBudgetSnapshot<size_t>();
+        order.reserve( markers.size() );
+        for( size_t i = 0; i < markers.size(); ++i )
+            order.push_back( i );
+        std::sort( order.begin(), order.end(), [&markers]( size_t a, size_t b ) {
+            if( markers[a].startTime != markers[b].startTime )
+                return markers[a].startTime < markers[b].startTime;
+            return a < b;
+        } );
+        for( size_t i = 0; i < order.size(); ++i )
+        {
+            if( order[i] == i )
+                continue;
+            auto saved = std::move( markers[i] );
+            auto position = i;
+            while( order[position] != i )
+            {
+                const auto next = order[position];
+                markers[position] = std::move( markers[next] );
+                order[position] = position;
+                position = next;
+            }
+            markers[position] = std::move( saved );
+            order[position] = position;
+        }
         return markers;
     }
 
@@ -346,9 +472,6 @@ namespace workphone::animation
 
     void AnimationEventTimeline::sortEvents( AnimationEventTrack &track )
     {
-        std::stable_sort( track.events.begin(), track.events.end(),
-                          []( const AnimationEvent &a, const AnimationEvent &b ) {
-                              return a.startTime < b.startTime;
-                          } );
+        sortByStartTime( track.events );
     }
 }  // namespace workphone::animation

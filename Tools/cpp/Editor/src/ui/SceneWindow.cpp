@@ -1799,6 +1799,11 @@ namespace workphone::editor
                 dropJob->setData( text );
                 dropJob->setSiblingIndex( siblingIndex );
                 dropJob->setDestination( dynamic_pointer_cast<ui::IUIElement>( object ) );
+                if( arguments.size() >= 4 )
+                {
+                    dropJob->setDropRay( Ray3<real_Num>( arguments[2].getVector3(),
+                                                        arguments[3].getVector3() ) );
+                }
 
                 // ImGuiDropJob already dispatches this event on the application task. Keep the
                 // source and destination captured at release, rather than reading mutable tree

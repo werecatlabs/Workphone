@@ -1003,6 +1003,12 @@ namespace workphone::editor
     {
         setActorControlsEnabled( false );
 
+        if( m_transformWindow )
+        {
+            m_transformWindow->setTransform( nullptr );
+            m_transformWindow->setWindowVisible( false );
+        }
+
         if( m_selectionSummary )
         {
             m_selectionSummary->setText( message );
@@ -1354,6 +1360,7 @@ namespace workphone::editor
             if( actor && m_transformWindow )
             {
                 m_transformWindow->setTransform( actor->getTransform() );
+                m_transformWindow->setWindowVisible( true );
                 m_transformWindow->updateSelection();
             }
 

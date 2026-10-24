@@ -114,6 +114,15 @@ target_link_libraries(
 set_target_properties(WorkphoneGraphicsShaderTests PROPERTIES FOLDER Tests/C)
 add_test(NAME WorkphoneGraphics.shader_contract COMMAND WorkphoneGraphicsShaderTests)
 
+add_executable(WorkphoneGraphicsAnimationBudgetTests WorkphoneGraphicsAnimationBudgetTests.c)
+target_include_directories(WorkphoneGraphicsAnimationBudgetTests PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+target_link_libraries(WorkphoneGraphicsAnimationBudgetTests PRIVATE
+    WorkphoneGraphics WorkphonePlatformWin32 WorkphoneCore)
+set_target_properties(WorkphoneGraphicsAnimationBudgetTests PROPERTIES
+    FOLDER Tests/C C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+add_test(NAME WorkphoneGraphics.animation_budget_contract COMMAND WorkphoneGraphicsAnimationBudgetTests)
+
 add_executable(WorkphoneGraphicsMaterialSparseTests WorkphoneGraphicsMaterialSparseTests.c)
 target_include_directories(
     WorkphoneGraphicsMaterialSparseTests

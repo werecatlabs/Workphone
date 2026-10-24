@@ -168,6 +168,8 @@ namespace workphone::editor
             m_editorManager->setUI( editorUiManager );
             editorUiManager->load( nullptr );
 
+            configureSceneRenderWindow();
+
             if( !m_editorApplicationListener )
             {
                 m_editorApplicationListener = workphone::make_ptr<ApplicationListener>( this );
@@ -311,6 +313,8 @@ namespace workphone::editor
             m_editorManager->setUI( editorUiManager );
             editorUiManager->load( nullptr );
 
+            configureSceneRenderWindow();
+
             // ImGuiApplication uses these objects as the editor's active transform-mode state.
             // Their legacy scene debug rendering remains hidden; ImGuizmo supplies the visuals.
             auto translateManipulator = factoryManager->make_ptr<TranslateManipulator>();
@@ -401,8 +405,6 @@ namespace workphone::editor
             {
                 uiManager->setMainWindow( m_renderWindow );
             }
-
-            applicationManager->setSceneRenderWindow( m_renderWindow );
 
             if( auto gameManager = applicationManager->getGameManager() )
             {
@@ -540,6 +542,7 @@ namespace workphone::editor
 
                     if( m_renderWindow )
                     {
+                        m_renderWindow->setDropTarget( nullptr );
                         m_renderWindow->setWindow( nullptr );
                         m_renderWindow->setRenderTexture( nullptr );
 
@@ -1725,6 +1728,20 @@ namespace workphone::editor
         }
 
         return true;
+    }
+
+    void EditorApplication::configureSceneRenderWindow()
+    {
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        applicationManager->setSceneRenderWindow( m_renderWindow );
+        if( m_renderWindow )
+        {
+            // Share the hierarchy's asset-instantiation path and undo history.
+            auto ui = m_editorManager ? m_editorManager->getUI() : nullptr;
+            auto sceneWindow = ui ? ui->getSceneWindow() : nullptr;
+            auto hierarchyWindow = sceneWindow ? sceneWindow->getParentWindow() : nullptr;
+            m_renderWindow->setDropTarget( hierarchyWindow ? hierarchyWindow->getDropTarget() : nullptr );
+        }
     }
 
     void EditorApplication::createRenderWindow()

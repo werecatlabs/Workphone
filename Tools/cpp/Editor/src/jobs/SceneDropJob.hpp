@@ -3,6 +3,7 @@
 
 #include <EditorPrerequisites.hpp>
 #include <Workphone/System/Job.hpp>
+#include <Workphone/Math/Ray3.hpp>
 
 namespace workphone
 {
@@ -30,12 +31,17 @@ namespace workphone
             s32 getSiblingIndex() const;
             void setSiblingIndex( s32 siblingIndex );
 
+            /** World ray captured over the render viewport when the asset is released. */
+            void setDropRay( const Ray3<real_Num> &ray );
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
             SmartPtr<ui::IUIElement> m_destination;
             String m_data;
             s32 m_siblingIndex = -1;
+            Ray3<real_Num> m_dropRay;
+            bool m_hasDropRay = false;
         };
     }  // end namespace editor
 }  // namespace workphone

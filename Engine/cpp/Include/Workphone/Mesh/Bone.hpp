@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Mesh/IGraphicsBone.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -16,9 +17,12 @@ namespace workphone
      * bone structure. Each bone can have children and maintains transform
      * information for skeletal animation.
      */
-    class Bone : public IBone
+    class WPCore_API Bone : public IBone, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Default constructor.
          * Initializes the bone with default values.

@@ -4,6 +4,11 @@
 
 namespace workphone
 {
+    void LinkedSkeletonAnimationSource::unload( SmartPtr<ISharedObject> data )
+    {
+        pSkeleton = nullptr;
+        skeletonName.release();
+    }
 
     LinkedSkeletonAnimationSource::LinkedSkeletonAnimationSource( const String &skelName, f32 scl,
                                                                   SmartPtr<ISkeleton> skelPtr ) :

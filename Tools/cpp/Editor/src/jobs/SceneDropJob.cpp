@@ -6,6 +6,7 @@
 #include <ui/ProjectTreeData.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <cmath>
 
 namespace workphone::editor
 {
@@ -52,6 +53,58 @@ namespace workphone::editor
                 return;
             }
 
+            const bool viewportDrop = destination && destination->isDerived<ui::IUIRenderWindow>();
+            Vector3<real_Num> dropPosition;
+            if( viewportDrop )
+            {
+                if( destination != applicationManager->getSceneRenderWindow() || !m_hasDropRay )
+                {
+                    return;
+                }
+
+                const auto origin = m_dropRay.getOrigin();
+                auto direction = m_dropRay.getDirection();
+                const auto finite = []( const Vector3<real_Num> &v ) {
+                    return std::isfinite( v.x ) && std::isfinite( v.y ) && std::isfinite( v.z );
+                };
+                const auto length = direction.length();
+                if( !finite( origin ) || !finite( direction ) || !std::isfinite( length ) ||
+                    length <= static_cast<real_Num>( 0.000001 ) )
+                {
+                    return;
+                }
+                direction /= length;
+
+                // Place on the editor ground plane. Rays above the horizon or nearly parallel
+                // to it use a nearby point in view instead of placing an asset behind the camera.
+                auto distance = static_cast<real_Num>( 10 );
+                if( std::abs( direction.y ) > static_cast<real_Num>( 0.000001 ) )
+                {
+                    const auto groundDistance = -origin.y / direction.y;
+                    if( groundDistance > 0 && groundDistance <= static_cast<real_Num>( 10000 ) )
+                    {
+                        distance = groundDistance;
+                    }
+                }
+                dropPosition = origin + direction * distance;
+                if( !finite( dropPosition ) )
+                {
+                    return;
+                }
+            }
+
+            const auto addActor = [&]( SmartPtr<AddActorCmd> cmd ) {
+                if( !cmd )
+                {
+                    return;
+                }
+                if( viewportDrop )
+                {
+                    cmd->setWorldPosition( dropPosition );
+                }
+                commandManager->addCommand( cmd );
+            };
+
             auto properties = factoryManager->make_ptr<Properties>();
             auto dataStr = String( text.c_str() );
 
@@ -89,7 +142,7 @@ namespace workphone::editor
                         cmd->setParent( destinationActor );
                         cmd->setUseSelectionAsParent( false );
                         cmd->setExpectedScene( scene );
-                        commandManager->addCommand( cmd );
+                        addActor( cmd );
                     }
                 }
             }
@@ -99,7 +152,7 @@ namespace workphone::editor
 
                 if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
-                    auto ext = Path::getFileExtension( filePath );
+                    auto ext = StringUtil::make_lower( Path::getFileExtension( filePath ) );
                     if( ApplicationUtil::isSupportedMesh( filePath ) || ext == prefabExtStr )
                     {
                         auto cmd = factoryManager->make_ptr<AddActorCmd>();
@@ -108,10 +161,10 @@ namespace workphone::editor
                         cmd->setUseSelectionAsParent( false );
                         cmd->setParent( destinationActor );
                         cmd->setExpectedScene( scene );
-                        commandManager->addCommand( cmd );
+                        addActor( cmd );
                     }
                 }
-                else if( properties->hasProperty( "actorUUID" ) )
+                else if( !viewportDrop && properties->hasProperty( "actorUUID" ) )
                 {
                     auto actorUUID = properties->getProperty( "actorUUID" );
                     SmartPtr<scene::IGameActor> actor;
@@ -193,5 +246,11 @@ namespace workphone::editor
     void SceneDropJob::setSiblingIndex( s32 siblingIndex )
     {
         m_siblingIndex = siblingIndex;
+    }
+
+    void SceneDropJob::setDropRay( const Ray3<real_Num> &ray )
+    {
+        m_dropRay = ray;
+        m_hasDropRay = true;
     }
 }  // namespace workphone::editor

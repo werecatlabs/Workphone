@@ -2,6 +2,7 @@
 #include <WPAssimp/AnimationImport.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/TimerMT.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Animation/Animation.hpp>
@@ -192,10 +193,18 @@ int main()
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance( application );
     application->setFactoryManager( make_ptr<FactoryManager>() );
+    // Actor transform dirtiness records frame time through the application
+    // timer, including the first GameActor::setTransform in importedRoutes.
+    auto timer = make_ptr<TimerMT>();
+    timer->load( nullptr );
+    application->setTimer( timer );
     int result = 0;
     try { samplingFailuresAndDefaults(); importedRoutes(); }
     catch( const std::exception &error ) { std::fprintf( stderr, "Animation import: FAIL: %s\n", error.what() ); result = 1; }
     application->setFactoryManager( nullptr );
+    application->setTimer( nullptr );
+    timer->unload( nullptr );
+    timer = nullptr;
     core::IApplicationManager::setInstance( nullptr );
     application = nullptr;
     TypeManager::setInstance( nullptr );

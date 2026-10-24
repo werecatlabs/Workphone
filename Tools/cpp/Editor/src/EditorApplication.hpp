@@ -163,6 +163,7 @@ namespace workphone
 
         private:
             void loadEditorPreferences();
+            void configureSceneRenderWindow();
 
             class ApplicationListener : public IEventListener
             {

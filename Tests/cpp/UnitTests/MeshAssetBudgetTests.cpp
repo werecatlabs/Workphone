@@ -15,6 +15,10 @@
 #include "../MeshObjectBodyBudgetContracts.hpp"
 #include "../PoseVertexPayloadBudgetContracts.hpp"
 #include "../AnimationPayloadBudgetContracts.hpp"
+#include "../AnimationGraphBudgetContracts.hpp"
+#include "../AnimationStateBudgetContracts.hpp"
+#include "../SkeletonInventoryBudgetContracts.hpp"
+#include "../NativeAnimationBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -597,6 +601,30 @@ BOOST_AUTO_TEST_CASE( animation_payloads_obey_shared_source_admission )
 {
     TestGuard guard;
     animation_payload_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( animation_graphs_obey_shared_source_admission )
+{
+    TestGuard guard;
+    animation_graph_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( animation_state_containers_obey_shared_source_admission )
+{
+    TestGuard guard;
+    animation_state_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( skeleton_inventories_obey_shared_source_admission )
+{
+    TestGuard guard;
+    skeleton_inventory_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( native_animation_and_cpp_owners_share_source_admission )
+{
+    TestGuard guard;
+    native_animation_budget_contracts::run();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

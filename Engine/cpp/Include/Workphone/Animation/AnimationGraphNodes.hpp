@@ -68,11 +68,11 @@ namespace workphone
             bool loop = true;
 
             // Blend1D / Selector node fields
-            Array<String> childNodeIds;  ///< Ordered child pose node ids.
+            Array<String> childNodeIds = makeSourceBudgetSnapshot<String>();
             String parameter;            ///< Float parameter driving the blend/selection.
 
             // Blend1D only: ordered, non-overlapping blend ranges across the parameter space.
-            Array<AnimationGraphBlendRange> blendRanges;
+            Array<AnimationGraphBlendRange> blendRanges = makeSourceBudgetSnapshot<AnimationGraphBlendRange>();
 
             bool isValid() const;
         };

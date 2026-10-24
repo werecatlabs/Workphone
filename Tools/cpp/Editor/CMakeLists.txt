@@ -1007,6 +1007,12 @@ if (WIN32)
 endif()
 
 if (WP_EDITOR_TESTS)
+    target_include_directories(Editor PRIVATE
+        "$<$<CONFIG:Debug>:${WP_ROOT}/Dependencies/imgui>")
+    if (TARGET WPImGui AND TARGET imgui)
+        target_link_libraries(Editor
+            "$<$<CONFIG:Debug>:WPImGui>" "$<$<CONFIG:Debug>:imgui>")
+    endif()
     set(WP_EDITOR_TEST_CASES
         play_mode
         play_stop_mode
@@ -1032,6 +1038,8 @@ if (WP_EDITOR_TESTS)
         actor_component_test
         actor_test
         actor_dragdrop_test
+        scene_render_asset_drop_test
+        im_gui_drop_queue_delivers_distinct_gestures_test
         actor_prefab_test
         actor_addremove_test
         terrain_test

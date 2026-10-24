@@ -23,6 +23,7 @@
 #include "workphone_types.h"
 #include "workphone_vector.h"
 #include "workphone_quat.h"
+#include "workphone_graphics_memory.h"
 
 /* wp_node is forward-declared here to avoid the wp_quatf redefinition that
  * occurs when workphone_graphics_node.h (which defines its own wp_quatf) is
@@ -161,6 +162,11 @@ typedef struct
  * @return Pointer to the new animation, or NULL on allocation failure.
  */
 wp_animation *wp_animation_create( const char *name, wp_f32 length );
+
+/* Admits the complete body, including spare inline tracks/keyframes. The
+ * callbacks' user must outlive the animation; rejection returns NULL. */
+wp_animation *wp_animation_create_budgeted( const char *name, wp_f32 length,
+                                           const wp_graphics_memory_callbacks *callbacks );
 
 /**
  * @brief Destroys an animation and releases its memory.

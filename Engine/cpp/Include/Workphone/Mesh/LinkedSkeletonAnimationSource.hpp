@@ -2,6 +2,7 @@
 #define LinkedSkeletonAnimationSource_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -14,8 +15,11 @@ namespace workphone
      * allowing the animation system to apply movements to the correct skeletal hierarchy
      * with an optional scaling factor.
      */
-    struct LinkedSkeletonAnimationSource : public ISharedObject
+    struct WPCore_API LinkedSkeletonAnimationSource : public ISharedObject, public SourceBudgetObject
     {
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         /** @brief The name of the skeleton this animation source is linked to. */
         String skeletonName;
 

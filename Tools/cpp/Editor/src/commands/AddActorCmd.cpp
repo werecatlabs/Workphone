@@ -2,6 +2,7 @@
 #include <commands/AddActorCmd.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
+#include <ui/ActorWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
 
@@ -55,8 +56,36 @@ namespace workphone::editor
             return;
         }
 
+        bool selectionChanged = false;
         if( auto actor = getActor() )
         {
+            if( auto selectionManager = applicationManager->getSelectionManager() )
+            {
+                // An undone prefab removes its whole hierarchy. Deselect its actors and
+                // components without disturbing selections elsewhere in the scene.
+                for( auto selected : selectionManager->getSelection() )
+                {
+                    auto selectedActor = dynamic_pointer_cast<IGameActor>( selected );
+                    if( !selectedActor )
+                    {
+                        if( auto component = dynamic_pointer_cast<IComponent>( selected ) )
+                        {
+                            selectedActor = component->getActor();
+                        }
+                    }
+
+                    for( auto ancestor = selectedActor; ancestor; ancestor = ancestor->getParent() )
+                    {
+                        if( ancestor == actor )
+                        {
+                            selectionManager->removeSelectedObject( selected );
+                            selectionChanged = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
             if( auto parent = actor->getParent() )
             {
                 parent->removeChild( actor );
@@ -69,6 +98,13 @@ namespace workphone::editor
         }
 
         uiManager->rebuildSceneTree();
+        if( selectionChanged )
+        {
+            if( auto actorWindow = uiManager->getActorWindow() )
+            {
+                actorWindow->updateSelection();
+            }
+        }
     }
 
     void AddActorCmd::redo()
@@ -209,6 +245,13 @@ namespace workphone::editor
                 {
                     scene->addActor( actor );
                 }
+            }
+
+            if( m_hasWorldPosition )
+            {
+                // Translate the imported actor after parenting so its authored
+                // rotation and scale remain intact at the requested world position.
+                actor->setPosition( m_worldPosition );
             }
 
             // Keep initial creation consistent with redo(). Components need to
@@ -805,6 +848,13 @@ namespace workphone::editor
         RecursiveMutex::ScopedLock lock( m_mutex );
         m_expectedScene = scene;
         m_hasExpectedScene = true;
+    }
+
+    void AddActorCmd::setWorldPosition( const Vector3<real_Num> &position )
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        m_worldPosition = position;
+        m_hasWorldPosition = true;
     }
 
     AddActorCmd::ActorType AddActorCmd::getActorType() const

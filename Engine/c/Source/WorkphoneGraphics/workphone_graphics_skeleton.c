@@ -1,4 +1,5 @@
 #include "workphone_graphics_skeleton.h"
+#include "workphone_graphics_memory_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,37 +14,52 @@
  * Equivalent to: Skeleton::Skeleton() and the parameterized constructor. */
 void wp_skeleton_init( wp_skeleton *self )
 {
-    if( !self )
-        return;
+    wp_skeleton_init_budgeted( self, NULL );
+}
+
+wp_s32 wp_skeleton_init_budgeted( wp_skeleton *self, const wp_graphics_memory_callbacks *callbacks )
+{
+    int i;
+    wp_graphics_memory_callbacks memory;
+    if( !self || !wp_graphics_memory_valid( callbacks ) ) return 0;
+    /* The policy may be borrowed from this previously destroyed skeleton. */
+    memset( &memory, 0, sizeof( memory ) );
+    if( callbacks ) memory = *callbacks;
+    self->memory = memory;
     self->next_auto_handle = 0;
     self->blend_state = ANIMBLEND_AVERAGE;
     self->manual_bones_dirty = 0;
-    for( int i = 0; i < MAX_BONES; i++ )
+    for( i = 0; i < MAX_BONES; i++ )
     {
         self->bone_list[i] = NULL;
     }
+    return 1;
 }
 
 /* Cleans up the skeleton and its bones.
  * Equivalent to: ~Skeleton() and unprepareImpl(). */
 void wp_skeleton_destroy( wp_skeleton *self )
 {
+    int i;
     if( !self )
         return;
-    for( int i = 0; i < MAX_BONES; i++ )
+    for( i = 0; i < MAX_BONES; i++ )
     {
         if( self->bone_list[i] != NULL )
         {
-            free( self->bone_list[i] );
+            wp_graphics_memory_free( self->bone_list[i] );
             self->bone_list[i] = NULL;
         }
     }
+    self->next_auto_handle = 0;
 }
 
 /* Creates a bone within the skeleton.
  * Handles logic from Skeleton::createBone overloads. */
 wp_bone *wp_skeleton_create_bone( wp_skeleton *self, const char *name, unsigned short handle )
 {
+    int i;
+    wp_bone *new_bone;
     if( !self )
         return NULL;
 
@@ -63,7 +79,7 @@ wp_bone *wp_skeleton_create_bone( wp_skeleton *self, const char *name, unsigned 
     /* Logic corresponding to name check in mBoneListByName */
     if( name != NULL )
     {
-        for( int i = 0; i < MAX_BONES; i++ )
+        for( i = 0; i < MAX_BONES; i++ )
         {
             if( self->bone_list[i] != NULL && strcmp( self->bone_list[i]->name, name ) == 0 )
             {
@@ -73,7 +89,8 @@ wp_bone *wp_skeleton_create_bone( wp_skeleton *self, const char *name, unsigned 
         }
     }
 
-    wp_bone *new_bone = (wp_bone *)malloc( sizeof( wp_bone ) );
+    new_bone = (wp_bone *)wp_graphics_memory_allocate(
+        self->memory.reserve ? &self->memory : NULL, sizeof( wp_bone ), 0 );
     if( new_bone != NULL )
     {
         new_bone->handle = handle;
@@ -95,11 +112,18 @@ wp_bone *wp_skeleton_create_bone( wp_skeleton *self, const char *name, unsigned 
 /* Helper functions for C-style selection of overloads */
 wp_bone *wp_skeleton_create_bone_auto( wp_skeleton *self )
 {
-    return wp_skeleton_create_bone( self, NULL, self->next_auto_handle++ );
+    return wp_skeleton_create_bone_named( self, NULL );
 }
 
 wp_bone *wp_skeleton_create_bone_named( wp_skeleton *self, const char *name )
 {
-    /* Note: In C++ this implicitly uses the next available auto_handle */
-    return wp_skeleton_create_bone( self, name, self->next_auto_handle++ );
+    unsigned short handle;
+    wp_bone *bone;
+    if( !self ) return NULL;
+    handle = self->next_auto_handle;
+    while( handle < MAX_BONES && self->bone_list[handle] ) ++handle;
+    if( handle >= MAX_BONES ) return NULL;
+    bone = wp_skeleton_create_bone( self, name, handle );
+    if( bone ) self->next_auto_handle = handle + 1;
+    return bone;
 }
