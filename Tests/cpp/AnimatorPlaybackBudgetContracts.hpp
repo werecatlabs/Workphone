@@ -10,6 +10,8 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Mesh/Mesh.hpp>
 #include <Workphone/Mesh/SubMesh.hpp>
 #include <Workphone/Mesh/MeshResource.hpp>
@@ -52,8 +54,9 @@ namespace animator_playback_budget_contracts
     };
     inline SmartPtr<scene::GameActor> actor(const char *name)
     {
-        auto result=make_ptr<scene::GameActor>(); result->setName(name);
-        result->setTransform(make_ptr<scene::Transform>()); return result;
+        auto result=dynamic_pointer_cast<scene::GameActor>(core::IApplicationManager::instance()->getGameManager()->createActor());
+        require(result!=nullptr,"Actor fixture registers real game-manager handles");
+        result->setName(name); return result;
     }
     inline void inventories()
     {
@@ -124,7 +127,8 @@ namespace animator_playback_budget_contracts
         other->setAnimationTime(.75f);
         require(std::abs(rig->getBone("Root")->getPosition().X()-1)<1e-4f,"A second instance cannot overwrite the first pose");
         animator->stop();require(animator->isStopped() && animator->getAnimationTime()==0,"Stop resets time");
-        other->unload(nullptr);animator->unload(nullptr);root->unload(nullptr);
+        other->unload(nullptr);animator->unload(nullptr);
+        core::IApplicationManager::instance()->getGameManager()->destroyActor(root);
     }
     inline SmartPtr<scene::GameActor> prefabShell( const SmartPtr<Properties> &properties )
     {
@@ -190,35 +194,48 @@ namespace animator_playback_budget_contracts
         input.seekg(0);input.read(bytes.data(),bytes.size()-1);
         auto properties=make_ptr<Properties>();DataUtil::parse(String(bytes.data()),properties.get(),DataFormat::XML);
         auto root=prefabShell(properties);
-        auto animator=make_ptr<scene::Animator>();animator->setActor(root);animator->setAnimationCachePath(rigPath);
+        class ImportedMesh : public scene::Mesh {public:void path(const String &value){m_meshPath=value;}};
+        auto imported=make_ptr<ImportedMesh>();imported->path(meshPath);root->addComponentInstance(imported);
+        auto animator=make_ptr<scene::Animator>();animator->setActor(root);
         auto action=make_ptr<Properties>();action->setButtonPressed(scene::Animator::playButtonStr,true);
         animator->setProperties(action);
         require(animator->isPlaying() && animator->getNumAnimationClips()>0 && animator->getSkeleton(),
                 "Project model Play restores a real runtime clip and rig");
-        render::ClawMesh mesh;mesh.setMeshName(meshPath);mesh.load(nullptr);
+        auto rig=dynamic_pointer_cast<MeshSkeleton>(animator->getSkeleton());
+        size_t parents=0;for(const auto &bone:rig->getBones()) if(bone->getParent()) ++parents;
+        require(parents>0,"Old project cache recovers real bone hierarchy from its prefab instance");
+        auto meshOwner=make_ptr<render::ClawMesh>();auto &mesh=*meshOwner;mesh.setMeshName(meshPath);mesh.load(nullptr);
         require(mesh.isLoaded() && mesh.getNativeMesh(),"Project mesh loads its actual native geometry");
+        auto renderer=make_ptr<scene::MeshRenderer>();renderer->setGraphicsObject(meshOwner);root->addComponentInstance(renderer);
         String error;
         animator->setAnimationTime(0);
-        auto apply=[&]{const auto success=mesh.applySkeletonPose(animator->getSkeleton(),error);require(success,error.c_str());};
-        apply();
+        require(animator->getPlaybackStatus().empty(),"Animator publishes the sampled pose directly to its actual mesh renderer");
+        require(mesh.hasSkinningData(),"Animator controller installs the real mesh skin binding");
         auto native=mesh.getNativeMesh();const auto count=wp_graphics_mesh_get_vertex_count(native);
         const auto stride=wp_graphics_mesh_get_vertex_stride(native);
         auto positions=makeSourceBudgetSnapshot<wp_vec3f>();positions.resize(count);
         auto raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
         for(u32 i=0;i<count;++i) std::memcpy(&positions[i],raw+size_t(i)*stride,sizeof(wp_vec3f));
-        animator->setAnimationTime(2.5f);
-        apply();
-        raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
         size_t changed=0;double maximum=0;
-        for(u32 i=0;i<count;++i)
+        // The clip returns to its initial pose at 2.5 seconds. Sample moving
+        // and resting portions, rather than equating equal endpoints with a stall.
+        for(float time : {.0416667f,.125f,.5f,1.f,2.5f,4.f,5.f})
         {
-            wp_vec3f current;std::memcpy(&current,raw+size_t(i)*stride,sizeof(current));
-            const auto distance=std::abs(current.x-positions[i].x)+std::abs(current.y-positions[i].y)+std::abs(current.z-positions[i].z);
-            require(std::isfinite(distance),"Project animated positions stay finite");
-            if(distance>1e-5f) ++changed;maximum=std::max(maximum,double(distance));
+            animator->setAnimationTime(time);
+            require(animator->getPlaybackStatus().empty(),"Animator controller publishes advancing bone poses");
+            raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
+            size_t frameChanged=0;
+            for(u32 i=0;i<count;++i)
+            {
+                wp_vec3f current;std::memcpy(&current,raw+size_t(i)*stride,sizeof(current));
+                const auto distance=std::abs(current.x-positions[i].x)+std::abs(current.y-positions[i].y)+std::abs(current.z-positions[i].z);
+                require(std::isfinite(distance),"Project animated positions stay finite");
+                if(distance>1e-5f) ++frameChanged;maximum=std::max(maximum,double(distance));
+            }
+            changed=std::max(changed,frameChanged);
         }
         require(changed>0,"Project model Play changes physical rendered vertex positions");
-        animator->stop();apply();
+        animator->stop();require(animator->getPlaybackStatus().empty(),"Stop publishes the reset pose");
         raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
         for(u32 i=0;i<count;++i)
         {
@@ -226,8 +243,9 @@ namespace animator_playback_budget_contracts
             require(std::abs(current.x-positions[i].x)+std::abs(current.y-positions[i].y)+std::abs(current.z-positions[i].z)<1e-4f,
                     "Project Stop restores the first sampled physical pose without cumulative deformation");
         }
-        std::printf("Project Animator: %u vertices, %zu changed, maximum displacement %.6f\n",count,changed,maximum);
-        mesh.unload(nullptr);animator->unload(nullptr);root->unload(nullptr);
+        std::printf("Project Animator: %u vertices, %zu changed, %zu hierarchy links, maximum displacement %.6f\n",count,changed,parents,maximum);
+        renderer->setGraphicsObject(nullptr);mesh.unload(nullptr);animator->unload(nullptr);
+        app->getGameManager()->destroyActor(root);
     }
     inline void run(){inventories();cachedPlayback();skinPublication();projectAsset();}
 }
