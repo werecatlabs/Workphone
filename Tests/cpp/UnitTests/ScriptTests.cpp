@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <Workphone/IO/MemoryFile.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Script/ScriptInvoker.hpp>
 #include <Workphone/Interface/Script/IScriptManager.hpp>
@@ -1133,6 +1135,87 @@ BOOST_AUTO_TEST_CASE( script_actor_components_support_ui_state_activation )
         }
     }
     BOOST_CHECK( guard.scene->getActors().empty() );
+}
+
+BOOST_AUTO_TEST_CASE( script_stream_returns_retain_native_ownership_and_support_preflight )
+{
+    TestGuard guard;
+    const String contents = "native Lua stream ownership";
+    const auto path = std::filesystem::path( guard.applicationManager->getProjectPath().c_str() ) /
+                      ( "lua-stream-" + std::string( StringUtil::getUUID().c_str() ) + ".txt" );
+    guard.trackFilesystemPath( path.string().c_str() );
+    {
+        std::ofstream file( path, std::ios::binary );
+        BOOST_REQUIRE( file.is_open() );
+        file.write( contents.c_str(), static_cast<std::streamsize>( contents.size() ) );
+        BOOST_REQUIRE( file.good() );
+    }
+    auto scriptManager = guard.factoryManager->make_object<IScriptManager>( "Lua" );
+    BOOST_REQUIRE( scriptManager );
+    scriptManager->load( nullptr );
+    guard.addCleanup( [scriptManager]() mutable { scriptManager->unload( nullptr ); } );
+    BOOST_REQUIRE( scriptManager->isLoaded() );
+    scriptManager->loadScriptFromString( R"(
+        function retainNativeStream(parameters, results)
+            retainedNativeStream = parameters:getAsObject(0)
+            results:addAsBool(retainedNativeStream ~= nil)
+        end
+        function verifyRetainedNativeStream(parameters, results)
+            assert(retainedNativeStream:isOpen())
+            assert(retainedNativeStream:isReadable())
+            assert(retainedNativeStream:size() == 5)
+            retainedNativeStream:close()
+            assert(not retainedNativeStream:isOpen())
+            retainedNativeStream = nil
+            collectgarbage("collect")
+            results:addAsBool(true)
+        end
+        function verifyFilePreflight(parameters, results)
+            local path, expected = parameters:getAsString(0), parameters:getAsString(1)
+            local files = assert(IApplicationManager.instance():getFileSystem())
+            assert(files:isExistingFile(path, false, false))
+            local stream = assert(files:openFull(path, true, false, false, false, false))
+            assert(stream:isOpen())
+            assert(stream:isReadable())
+            assert(stream:size() == #expected)
+            assert(stream:getAsString() == expected)
+            stream:close()
+            assert(not stream:isOpen())
+            stream:close()
+            results:addAsBool(true)
+        end
+    )" );
+
+    char buffer[] = "alive";
+    SmartPtr<workphone::IStream> stream = make_ptr<MemoryFile>( buffer, 5, "Lua lifetime probe", false );
+    WeakPtr<workphone::IStream> lifetime( stream );
+    Parameters parameters{ Parameter( SmartPtr<ISharedObject>( stream ) ) }, results;
+    scriptManager->callFunction( "retainNativeStream", parameters, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 1 );
+    BOOST_REQUIRE( results[0].getBool() );
+    parameters.clear();
+    stream = nullptr;
+    // The transient Lua Parameters wrapper must release its copied native argument too.
+    scriptManager->garbageCollect();
+    const auto retained = !lifetime.expired();
+    if( !retained )
+    {
+        // A non-owning Lua wrapper must be discarded without invoking its dangling pointer.
+        scriptManager->loadScriptFromString( "retainedNativeStream = nil; collectgarbage('collect')" );
+    }
+    BOOST_REQUIRE_MESSAGE( retained, "Lua must retain native streams after their C++ and Parameter owners release them" );
+    results.clear();
+    scriptManager->callFunction( "verifyRetainedNativeStream", {}, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 1 );
+    BOOST_CHECK( results[0].getBool() );
+    scriptManager->garbageCollect();
+    BOOST_CHECK_MESSAGE( lifetime.expired(), "clearing the Lua stream must release its native ownership" );
+
+    parameters = { Parameter( String( path.generic_string().c_str() ) ), Parameter( contents ) };
+    results.clear();
+    scriptManager->callFunction( "verifyFilePreflight", parameters, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 1 );
+    BOOST_CHECK( results[0].getBool() );
 }
 
 BOOST_AUTO_TEST_CASE( script_resource_returns_preserve_prefab_and_mesh_interfaces )

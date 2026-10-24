@@ -1535,12 +1535,15 @@ namespace workphone::scene
         if( getPerpetual() != perpetual )
         {
             setFlag( ActorFlagPerpetual, perpetual, false );
+        }
 
-            if( cascade )
+        if( cascade )
+        {
+            for( auto child : getChildren() )
             {
-                for( auto child : getChildren() )
+                if( child )
                 {
-                    child->setPerpetual( perpetual );
+                    child->setPerpetual( perpetual, true );
                 }
             }
         }
@@ -2098,6 +2101,7 @@ namespace workphone::scene
         properties->setProperty( GameActorUtil::staticStr, isStatic() );
         properties->setProperty( GameActorUtil::enabledStr, isEnabled() );
         properties->setProperty( "visible", isVisible() );
+        properties->setProperty( "perpetual", getPerpetual() );
         properties->setProperty( GameActorUtil::smoothMotionStr, isSmoothMotion() );
         properties->setProperty( GameActorUtil::collisionMaskStr, getCollisionMask() );
         properties->setProperty( GameActorUtil::layerStr, getLayer() );
@@ -2122,6 +2126,8 @@ namespace workphone::scene
                            "Controls actor and component updates." );
         setEditorMetadata( "visible", "Visible", "Actor",
                            "Controls actor rendering without disabling updates." );
+        setEditorMetadata( "perpetual", "Perpetual", "Actor",
+                           "Keep this actor and its hierarchy when loading another scene in Play." );
         setEditorMetadata( GameActorUtil::staticStr, "Static", "Actor",
                            "Use a static physics body and static-scene optimizations." );
         setEditorMetadata( GameActorUtil::smoothMotionStr, "Smooth Motion", "Physics",
@@ -2148,6 +2154,7 @@ namespace workphone::scene
         auto bIsStatic = false;
         auto enabled = isEnabled();
         auto visible = isVisible();
+        auto perpetual = getPerpetual();
         auto smoothMotion = isSmoothMotion();
         auto collisionMask = getCollisionMask();
         auto layer = getLayer();
@@ -2160,6 +2167,7 @@ namespace workphone::scene
         properties->getPropertyValue( GameActorUtil::staticStr, bIsStatic );
         properties->getPropertyValue( GameActorUtil::enabledStr, enabled );
         properties->getPropertyValue( "visible", visible );
+        properties->getPropertyValue( "perpetual", perpetual );
         properties->getPropertyValue( GameActorUtil::smoothMotionStr, smoothMotion );
         properties->getPropertyValue( GameActorUtil::collisionMaskStr, collisionMask );
         properties->getPropertyValue( GameActorUtil::layerStr, layer );
@@ -2174,6 +2182,7 @@ namespace workphone::scene
         setStatic( bIsStatic );
         setEnabled( enabled );
         setVisible( visible );
+        setPerpetual( perpetual, false );
         setSmoothMotion( smoothMotion );
         setCollisionMask( collisionMask );
         setLayer( layer );

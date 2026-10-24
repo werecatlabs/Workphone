@@ -31,6 +31,65 @@ namespace
             return true;
         }
     };
+
+    struct PerpetualActorTree
+    {
+        explicit PerpetualActorTree( TestGuard &guard )
+        {
+            root = guard.createBasicActor();
+            child = guard.createBasicActor();
+            grandchild = guard.createBasicActor();
+            sibling = guard.createBasicActor();
+            BOOST_REQUIRE( root );
+            BOOST_REQUIRE( child );
+            BOOST_REQUIRE( grandchild );
+            BOOST_REQUIRE( sibling );
+
+            root->setName( "PerpetualRoot" );
+            child->setName( "PerpetualChild" );
+            grandchild->setName( "PerpetualGrandchild" );
+            sibling->setName( "PerpetualSibling" );
+            root->addChild( child );
+            child->addChild( grandchild );
+            root->addChild( sibling );
+        }
+
+        void checkFlags( bool rootValue, bool childValue, bool grandchildValue,
+                         bool siblingValue ) const
+        {
+            BOOST_CHECK_EQUAL( root->getPerpetual(), rootValue );
+            BOOST_CHECK_EQUAL( child->getPerpetual(), childValue );
+            BOOST_CHECK_EQUAL( grandchild->getPerpetual(), grandchildValue );
+            BOOST_CHECK_EQUAL( sibling->getPerpetual(), siblingValue );
+        }
+
+        SmartPtr<IGameActor> root;
+        SmartPtr<IGameActor> child;
+        SmartPtr<IGameActor> grandchild;
+        SmartPtr<IGameActor> sibling;
+    };
+
+    void requirePerpetualProperty( const SmartPtr<Properties> &properties, bool expected )
+    {
+        BOOST_REQUIRE( properties );
+        bool actual = !expected;
+        BOOST_REQUIRE( properties->getPropertyValue( "perpetual", actual ) );
+        BOOST_CHECK_EQUAL( actual, expected );
+        BOOST_CHECK( properties->getPropertyObject( "perpetual" ).getType() ==
+                     ParameterType::PARAM_TYPE_BOOL );
+    }
+
+    SmartPtr<IGameActor> requirePerpetualChild( const SmartPtr<IGameActor> &parent,
+                                              const String &name )
+    {
+        BOOST_REQUIRE( parent );
+        for( const auto &child : parent->getChildren() )
+        {
+            if( child && child->getName() == name ) return child;
+        }
+        BOOST_FAIL( "Expected actor child '" << name << "'" );
+        return nullptr;
+    }
 }  // namespace
 
 BOOST_AUTO_TEST_CASE( actor_flag_callbacks_release_lock_before_cross_thread_reads )
@@ -99,6 +158,151 @@ BOOST_AUTO_TEST_CASE( actor_flag_callbacks_release_lock_before_cross_thread_read
         if( readableDuringCallback ) BOOST_CHECK_EQUAL( observedFlags, notifiedFlags );
         BOOST_CHECK( actor->getFlag( mutation.bit ) );
     }
+}
+
+BOOST_AUTO_TEST_CASE( actor_perpetual_properties_default_and_explicit_boolean_values )
+{
+    TestGuard guard;
+    auto actor = guard.createBasicActor();
+    BOOST_REQUIRE( actor );
+    BOOST_CHECK( !actor->getPerpetual() );
+
+    auto properties = actor->getProperties();
+    requirePerpetualProperty( properties, false );
+    const auto &metadata = properties->getPropertyObject( "perpetual" );
+    BOOST_CHECK_EQUAL( metadata.getAttribute( "label" ), "Perpetual" );
+    BOOST_CHECK_EQUAL( metadata.getAttribute( "category" ), "Actor" );
+
+    properties->setProperty( "perpetual", true );
+    actor->setProperties( properties );
+    BOOST_CHECK( actor->getPerpetual() );
+    requirePerpetualProperty( actor->getProperties(), true );
+
+    // A partial inspector edit does not reset an existing lifetime flag.
+    auto partial = actor->getProperties();
+    BOOST_REQUIRE( partial->removeProperty( "perpetual" ) );
+    actor->setProperties( partial );
+    BOOST_CHECK( actor->getPerpetual() );
+
+    properties = actor->getProperties();
+    properties->setProperty( "perpetual", false );
+    actor->setProperties( properties );
+    BOOST_CHECK( !actor->getPerpetual() );
+    requirePerpetualProperty( actor->getProperties(), false );
+}
+
+BOOST_AUTO_TEST_CASE( actor_perpetual_data_roundtrip_preserves_mixed_nested_flags )
+{
+    TestGuard guard;
+    PerpetualActorTree source( guard );
+    for( bool value : { true, false } )
+    {
+        source.root->setPerpetual( value, false );
+        source.child->setPerpetual( !value, false );
+        source.grandchild->setPerpetual( value, false );
+        source.sibling->setPerpetual( !value, false );
+
+        auto data = workphone::static_pointer_cast<Properties>( source.root->toData() );
+        requirePerpetualProperty( data, value );
+        auto children = data->getChildrenByName( "child" );
+        BOOST_REQUIRE_EQUAL( children.size(), 2u );
+        requirePerpetualProperty( children[0], !value );
+        requirePerpetualProperty( children[1], !value );
+        auto grandchildren = children[0]->getChildrenByName( "child" );
+        BOOST_REQUIRE_EQUAL( grandchildren.size(), 1u );
+        requirePerpetualProperty( grandchildren[0], value );
+
+        auto restored = guard.createBasicActor();
+        BOOST_REQUIRE( restored );
+        // Explicit false must clear an already-true destination as well.
+        restored->setPerpetual( !value, false );
+        restored->fromData( data );
+        BOOST_CHECK_EQUAL( restored->getName(), "PerpetualRoot" );
+        BOOST_CHECK_EQUAL( restored->getPerpetual(), value );
+        BOOST_REQUIRE_EQUAL( restored->getChildren().size(), 2u );
+        auto child = requirePerpetualChild( restored, "PerpetualChild" );
+        auto sibling = requirePerpetualChild( restored, "PerpetualSibling" );
+        auto grandchild = requirePerpetualChild( child, "PerpetualGrandchild" );
+        BOOST_CHECK_EQUAL( child->getPerpetual(), !value );
+        BOOST_CHECK_EQUAL( sibling->getPerpetual(), !value );
+        BOOST_CHECK_EQUAL( grandchild->getPerpetual(), value );
+        source.checkFlags( value, !value, value, !value );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( actor_perpetual_legacy_data_without_flag_defaults_false )
+{
+    TestGuard guard;
+    auto data = make_ptr<Properties>();
+    data->setProperty( "label", String( "LegacyPerpetualRoot" ) );
+    auto childData = make_ptr<Properties>();
+    childData->setName( "child" );
+    childData->setProperty( "label", String( "LegacyPerpetualChild" ) );
+    auto grandchildData = make_ptr<Properties>();
+    grandchildData->setName( "child" );
+    grandchildData->setProperty( "label", String( "LegacyPerpetualGrandchild" ) );
+    childData->addChild( grandchildData );
+    data->addChild( childData );
+    BOOST_CHECK( !data->hasProperty( "perpetual" ) );
+    BOOST_CHECK( !childData->hasProperty( "perpetual" ) );
+    BOOST_CHECK( !grandchildData->hasProperty( "perpetual" ) );
+
+    auto actor = guard.createBasicActor();
+    BOOST_REQUIRE( actor );
+    actor->fromData( data );
+    BOOST_CHECK( !actor->getPerpetual() );
+    auto child = requirePerpetualChild( actor, "LegacyPerpetualChild" );
+    auto grandchild = requirePerpetualChild( child, "LegacyPerpetualGrandchild" );
+    BOOST_CHECK( !child->getPerpetual() );
+    BOOST_CHECK( !grandchild->getPerpetual() );
+    requirePerpetualProperty( actor->getProperties(), false );
+    requirePerpetualProperty( child->getProperties(), false );
+    requirePerpetualProperty( grandchild->getProperties(), false );
+}
+
+BOOST_AUTO_TEST_CASE( actor_perpetual_cascade_repairs_descendants_when_root_already_matches )
+{
+    TestGuard guard;
+    PerpetualActorTree tree( guard );
+    tree.root->setPerpetual( true, false );
+    tree.child->setPerpetual( true, false );
+    tree.grandchild->setPerpetual( false, false );
+    tree.sibling->setPerpetual( false, false );
+    tree.checkFlags( true, true, false, false );
+
+    // Both the root and first child already match; grandchildren still repair.
+    tree.root->setPerpetual( true, true );
+    tree.checkFlags( true, true, true, true );
+
+    tree.root->setPerpetual( false, false );
+    tree.child->setPerpetual( false, false );
+    tree.grandchild->setPerpetual( true, false );
+    tree.sibling->setPerpetual( true, false );
+    tree.checkFlags( false, false, true, true );
+    tree.root->setPerpetual( false, true );
+    tree.checkFlags( false, false, false, false );
+
+    tree.root->setPerpetual( true, true );
+    tree.checkFlags( true, true, true, true );
+    tree.root->setPerpetual( false, true );
+    tree.checkFlags( false, false, false, false );
+}
+
+BOOST_AUTO_TEST_CASE( actor_perpetual_non_cascade_changes_only_root )
+{
+    TestGuard guard;
+    PerpetualActorTree tree( guard );
+    tree.child->setPerpetual( true, false );
+    tree.grandchild->setPerpetual( false, false );
+    tree.sibling->setPerpetual( true, false );
+    tree.checkFlags( false, true, false, true );
+
+    tree.root->setPerpetual( true, false );
+    tree.checkFlags( true, true, false, true );
+    tree.root->setPerpetual( false, false );
+    tree.checkFlags( false, true, false, true );
+    tree.root->setPerpetual( true );
+    tree.checkFlags( true, true, false, true );
 }
 
 // Helper macro for logging test state with context

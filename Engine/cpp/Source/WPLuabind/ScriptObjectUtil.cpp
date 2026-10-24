@@ -1,6 +1,7 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/ScriptObjectUtil.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Interface/Scene/IGamePrefab.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
@@ -73,6 +74,14 @@ namespace workphone
         if( scriptObj->isDerived<IFactoryManager>() )
         {
             luabind::detail::convert_to_lua( L, SmartPtr<IFactoryManager>( scriptObj ) );
+            return true;
+        }
+
+        if( scriptObj->isDerived<IStream>() )
+        {
+            // File opens can return the stream's last native owner. Keep an
+            // owning holder in Lua instead of the raw-pointer fallback.
+            luabind::detail::convert_to_lua( L, SmartPtr<IStream>( scriptObj ) );
             return true;
         }
 
