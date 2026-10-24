@@ -30,11 +30,12 @@ namespace workphone::render
             { "pbr-materials", dx11 ? Status::Implemented : Status::Unavailable,
               "DX11 forward material path; light and shader limits apply." },
             { "cpu-skinning", native ? Status::Experimental : Status::Unavailable,
-              "Explicit bind vertices and joint palette; 4 influences, 256 joints, uniform scale. "
-              "Import/controller bridge pending." },
+              "Imported bind weights and Animator pose publication; 4 influences, 256 joints, "
+              "rigid/uniform-scale affine transforms. GPU skinning remains unavailable." },
             { "gpu-skinning", Status::Unavailable, "GPU palettes and skinned vertex shader pending." },
-            { "animation-controller", Status::Unavailable,
-              "Graph and IK tests do not certify asset-to-screen animation." },
+            { "animation-controller", native ? Status::Experimental : Status::Unavailable,
+              "Cached clip restoration and CPU skeletal pose publication; representative "
+              "asset/interactive validation is required." },
             { "particle-simulation", native ? Status::Experimental : Status::Unavailable,
               "One point emitter; deterministic 120 Hz CPU simulation; no template parser or timed "
               "pause." },

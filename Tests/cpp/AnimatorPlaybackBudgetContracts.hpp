@@ -10,6 +10,14 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Mesh/Mesh.hpp>
+#include <Workphone/Mesh/SubMesh.hpp>
+#include <Workphone/Mesh/MeshResource.hpp>
+#include <Workphone/Mesh/MeshManager.hpp>
+#include <Workphone/Mesh/VertexBuffer.hpp>
+#include <Workphone/Mesh/VertexDeclaration.hpp>
+#include <Workphone/Mesh/VertexBoneAssignment.hpp>
+#include <Workphone/Mesh/IndexBuffer.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <workphone_graphics_mesh.h>
 #include <cstdlib>
@@ -125,6 +133,43 @@ namespace animator_playback_budget_contracts
         for(const auto &child:properties->getChildrenByName("child")) result->addChild(prefabShell(child));
         return result;
     }
+    inline void skinPublication()
+    {
+        Budget budget;
+        auto manager=dynamic_pointer_cast<MeshManager>(core::IApplicationManager::instance()->getMeshManager());
+        require(manager!=nullptr,"Skin contract has the engine mesh manager");
+        auto source=make_ptr<workphone::Mesh>();auto section=make_ptr<SubMesh>();
+        auto buffer=make_ptr<VertexBuffer>();auto declaration=make_ptr<VertexDeclaration>();
+        declaration->addElement(0,0,VertexElementSemantic::VES_POSITION,VertexElementType::VET_FLOAT3);
+        declaration->addElement(0,12,VertexElementSemantic::VES_NORMAL,VertexElementType::VET_FLOAT3);
+        declaration->addElement(0,24,VertexElementSemantic::VES_TEXTURE_COORDINATES,VertexElementType::VET_FLOAT2);
+        buffer->setVertexDeclaration(declaration);buffer->setNumVertices(3);
+        const float vertices[]={0,0,0,0,0,1,0,0, 1,0,0,0,0,1,1,0, 0,1,0,0,0,1,0,1};
+        std::memcpy(buffer->createVertexData(),vertices,sizeof(vertices));
+        auto indices=make_ptr<IndexBuffer>();indices->setNumIndices(3);
+        auto indexData=static_cast<u32 *>(indices->createIndexData());indexData[0]=0;indexData[1]=1;indexData[2]=2;
+        section->setVertexBuffer(buffer);section->setIndexBuffer(indices);
+        for(u32 i=0;i<3;++i){auto assignment=make_ptr<VertexBoneAssignment>();assignment->setVertexIndex(i);assignment->setBoneIndex(0);assignment->setWeight(1);section->addBoneAssignment(assignment);}
+        source->addSubMesh(section);
+        auto resource=make_ptr<MeshResource>();resource->setFilePath("__procedural/animator-skin-contract");resource->setMesh(source);
+        resource->setLoadingState(LoadingState::Loaded);manager->addMeshResource(resource);
+        render::ClawMesh mesh;mesh.setMeshName(resource->getFilePath());mesh.load(nullptr);
+        require(mesh.isLoaded(),"Skin fixture native mesh loads");
+        auto rig=make_ptr<MeshSkeleton>();auto bone=rig->createBone("Root",0);
+        bone->setPosition({2,0,0});bone->setBindingPose();bone->setPosition({3,0,0});
+        String error;const auto applied=mesh.applySkeletonPose(rig,error);require(applied,error.c_str());
+        auto first=[&]{wp_vec3f value;std::memcpy(&value,wp_graphics_mesh_get_vertices(mesh.getNativeMesh()),sizeof(value));return value;};
+        require(std::abs(first().x-1)<1e-5f,"Current joint multiplied by inverse binding pose deforms actual native vertices");
+        error="Skin pose admission or validation failed; retaining previous geometry.";error.clear();
+        const auto resident=budget.used();budget.set(resident);bone->setPosition({4,0,0});
+        require(!mesh.applySkeletonPose(rig,error) && std::abs(first().x-1)<1e-5f,
+                "At-cap native replacement preserves the last physical skin pose");
+        budget.set(budget.original);const auto retry=mesh.applySkeletonPose(rig,error);require(retry,error.c_str());
+        require(std::abs(first().x-2)<1e-5f,"Skin retry resamples immutable bind vertices without cumulative deformation");
+        budget.set(budget.used());mesh.unload(nullptr);
+        require(!mesh.hasSkinningData(),"At-cap render unload retires pose bindings and scratch");
+        budget.set(budget.original);manager->destroyResource(resource);
+    }
     // Optional project-asset reproduction; the ordinary suite uses the portable
     // analytical cache above. This never rewrites the user's project or caches.
     inline void projectAsset()
@@ -154,14 +199,15 @@ namespace animator_playback_budget_contracts
         require(mesh.isLoaded() && mesh.getNativeMesh(),"Project mesh loads its actual native geometry");
         String error;
         animator->setAnimationTime(0);
-        require(mesh.applySkeletonPose(animator->getSkeleton(),error),error.c_str());
+        auto apply=[&]{const auto success=mesh.applySkeletonPose(animator->getSkeleton(),error);require(success,error.c_str());};
+        apply();
         auto native=mesh.getNativeMesh();const auto count=wp_graphics_mesh_get_vertex_count(native);
         const auto stride=wp_graphics_mesh_get_vertex_stride(native);
         auto positions=makeSourceBudgetSnapshot<wp_vec3f>();positions.resize(count);
         auto raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
         for(u32 i=0;i<count;++i) std::memcpy(&positions[i],raw+size_t(i)*stride,sizeof(wp_vec3f));
         animator->setAnimationTime(2.5f);
-        require(mesh.applySkeletonPose(animator->getSkeleton(),error),error.c_str());
+        apply();
         raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
         size_t changed=0;double maximum=0;
         for(u32 i=0;i<count;++i)
@@ -172,7 +218,7 @@ namespace animator_playback_budget_contracts
             if(distance>1e-5f) ++changed;maximum=std::max(maximum,double(distance));
         }
         require(changed>0,"Project model Play changes physical rendered vertex positions");
-        animator->stop();require(mesh.applySkeletonPose(animator->getSkeleton(),error),error.c_str());
+        animator->stop();apply();
         raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(native));
         for(u32 i=0;i<count;++i)
         {
@@ -183,5 +229,5 @@ namespace animator_playback_budget_contracts
         std::printf("Project Animator: %u vertices, %zu changed, maximum displacement %.6f\n",count,changed,maximum);
         mesh.unload(nullptr);animator->unload(nullptr);root->unload(nullptr);
     }
-    inline void run(){inventories();cachedPlayback();projectAsset();}
+    inline void run(){inventories();cachedPlayback();skinPublication();projectAsset();}
 }

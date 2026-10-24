@@ -242,6 +242,8 @@ namespace workphone::scene
         auto retiredClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
         retiredAnimations.swap( m_animations );
         retiredClips.swap( m_animationClips );
+        auto retiredSkeleton = m_skeleton;
+        m_skeleton = nullptr;
         m_state = STATE_STOPPED;
 
         // Cleanup FSM
@@ -733,17 +735,28 @@ namespace workphone::scene
         catch(...) { m_animations.swap(candidate); m_selectedAnimationIndex=index; m_state=state; m_animationTime=time; throw; }
     }
 
-    void Animator::setAnimationCachePath( const String &path ) { m_animationCachePath = path; }
+    void Animator::setAnimationCachePath( const String &path )
+    {
+        auto app=core::IApplicationManager::instance();
+        const auto project=app ? app->getProjectPath() : String();
+        auto relative=project.empty() ? path : Path::getRelativePath(project,path);
+        m_animationCachePath=(!relative.empty() && !Path::isPathAbsolute(relative) && relative.rfind("..",0)!=0) ? relative : path;
+    }
     String Animator::getAnimationCachePath() const { return m_animationCachePath; }
     String Animator::getPlaybackStatus() const { return m_playbackStatus; }
 
     bool Animator::restoreRuntimeAnimations()
     {
         auto actors = animationActors( getActor() );
-        auto cache = m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
+        auto cacheKey = m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
         auto app = core::IApplicationManager::instance();
         const auto project = app ? app->getProjectPath() : String();
-        cache = Path::getAbsolutePath( project.empty() ? Path::getWorkingDirectory() : project, cache );
+        auto cache = Path::getAbsolutePath( project.empty() ? Path::getWorkingDirectory() : project, cacheKey );
+        if(!Path::isExistingFile(cache) && cache.size()>=13 && cache.substr(cache.size()-13)==".skeleton.xml")
+        {
+            cache=cache.substr(0,cache.size()-13)+".sceneanim.xml";
+            cacheKey=cacheKey.substr(0,cacheKey.size()-13)+".sceneanim.xml";
+        }
         if( cache.empty() || !Path::isExistingFile(cache) )
         {
             m_playbackStatus = "No playable runtime clips. Reimport the animated model to create its animation cache.";
@@ -826,7 +839,7 @@ namespace workphone::scene
         }
         if(sourceBudgetDenialCount() != epoch) throw std::bad_alloc();
         if(clips.empty()) { m_playbackStatus="The animation cache contains no playable clips."; return false; }
-        String stagedCache(cache);
+        String stagedCache(cacheKey);
         m_animations.swap(clips);
         m_skeleton = rig;
         m_selectedAnimationIndex = std::min<u32>(m_selectedAnimationIndex, static_cast<u32>(m_animations.size()-1));
@@ -939,6 +952,13 @@ namespace workphone::scene
                 if( published && !committed ) std::swap( active, retired );
             }
         } restoreIK{m_ikSystem, parsedIK};
+        auto previousClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+        struct RestoreClipsOnFailure
+        {
+            Array<SmartPtr<Animation>> &active, &previous;
+            bool published=false, committed=false;
+            ~RestoreClipsOnFailure(){if(published && !committed) active.swap(previous);}
+        } restoreClips{m_animationClips,previousClips};
         m_applyOnPropertyChange = false;
 
         u32 selectedIndex = m_selectedAnimationIndex;
@@ -982,6 +1002,8 @@ namespace workphone::scene
 
             if( !clips.empty() || clipsNode->hasProperty( editableClipCountStr ) )
             {
+                m_animationClips.swap(previousClips);
+                restoreClips.published=true;
                 setAnimationClips( clips );
             }
         }
@@ -1035,6 +1057,7 @@ namespace workphone::scene
         Component::setProperties( properties );
         restoreApply.committed = true;
         restoreIK.committed = true;
+        restoreClips.committed = true;
     }
 
     Array<SmartPtr<ISharedObject>> Animator::getChildObjects() const
