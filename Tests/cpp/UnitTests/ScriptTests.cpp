@@ -300,6 +300,49 @@ namespace
 }  // namespace
 
 #if WP_ENABLE_LUA
+BOOST_AUTO_TEST_CASE( script_component_lifecycle_and_scene_loaded_callbacks )
+{
+    struct LifecycleScript : scene::Script
+    {
+        using scene::Script::handleComponentEvent;
+    };
+    ComponentScriptFixture fixture;
+    fixture.manager->loadScriptFromString( R"(
+        class 'LifecycleProbe' (Application)
+        function LifecycleProbe:__init(component) Application.__init(self, component) end
+        function LifecycleProbe:onPlay() self.playCount = (self.playCount or 0) + 1 end
+        function LifecycleProbe:onStop() self.stopCount = (self.stopCount or 0) + 1 end
+        function LifecycleProbe:onSceneLoaded() self.sceneCount = (self.sceneCount or 0) + 1 end
+    )" );
+    auto component = make_ptr<LifecycleScript>();
+    fixture.actor = fixture.guard.sceneManager->createActor();
+    fixture.guard.scene->addActor( fixture.actor );
+    component->setActor( fixture.actor );
+    component->setInvoker( make_ptr<ScriptInvoker>( component ) );
+    component->setClassName( "LifecycleProbe" );
+    BOOST_REQUIRE( !component->getScriptData() );
+    // Native state entry creates the Lua instance even when frame updates are off.
+    component->handleComponentEvent( static_cast<u32>( scene::IComponent::State::Play ),
+                                     FSMEvent::Enter );
+    BOOST_REQUIRE( component->getScriptData() );
+    auto instance = fixture.manager->instance;
+    BOOST_CHECK_EQUAL( luabind::object_cast<int>( instance["playCount"] ), 1 );
+    BOOST_CHECK( !component->getUpdateInPlayMode() );
+    component->handleEvent( EventType::Actor, scene::IComponent::sceneWasLoaded, {},
+                             fixture.actor, component, nullptr );
+    BOOST_CHECK_EQUAL( luabind::object_cast<int>( instance["sceneCount"] ), 1 );
+    component->handleEvent( EventType::Actor, scene::IComponent::hierarchyChanged, {},
+                             fixture.actor, component, nullptr );
+    BOOST_CHECK_EQUAL( luabind::object_cast<int>( instance["sceneCount"] ), 1 );
+    component->handleComponentEvent( static_cast<u32>( scene::IComponent::State::Play ),
+                                     FSMEvent::Leave );
+    BOOST_CHECK_EQUAL( luabind::object_cast<int>( instance["stopCount"] ), 1 );
+    BOOST_CHECK( !component->getScriptData() );
+    BOOST_CHECK_EQUAL( fixture.manager->destroyedObjects, 1 );
+    component->setInvoker( nullptr );
+    component->setActor( nullptr );
+}
+
 BOOST_FIXTURE_TEST_CASE( script_component_generate_before_first_state_update, ComponentScriptFixture )
 {
     manager->loadScriptFromString( R"(
