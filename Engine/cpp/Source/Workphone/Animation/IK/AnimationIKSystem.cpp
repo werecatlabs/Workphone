@@ -5,6 +5,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <algorithm>
 #include <cmath>
+#include <type_traits>
 
 namespace workphone::animation
 {
@@ -22,7 +23,27 @@ namespace workphone::animation
         const String blendModeStr( "blendMode" );
         const String matchTargetOrientationStr( "matchTargetOrientation" );
         const String enabledStr( "enabled" );
+
+        bool hierarchyDepth( SmartPtr<IBone> bone, size_t &depth )
+        {
+            auto slow = bone;
+            auto fast = bone;
+            while( fast )
+            {
+                fast = fast->getParent();
+                if( fast ) fast = fast->getParent();
+                slow = slow ? slow->getParent() : SmartPtr<IBone>();
+                if( fast && fast == slow ) return false;
+            }
+            depth = 0;
+            for( auto current = bone; current; current = current->getParent() ) ++depth;
+            return true;
+        }
     }  // namespace
+
+    // Transform3/Vector3 retain legacy non-noexcept declarations, but assign
+    // only scalar values. The owning strings must move without admission.
+    static_assert( std::is_nothrow_move_assignable_v<String> );
 
     bool TwoBoneIKConstraint::isValid() const
     {
@@ -50,24 +71,24 @@ namespace workphone::animation
         {
             return false;
         }
-        *existing = constraint;
+        TwoBoneIKConstraint candidate( constraint );
+        *existing = std::move( candidate );
         return true;
     }
 
     bool AnimationIKSystem::removeConstraint( const String &id )
     {
-        const auto previousSize = m_constraints.size();
-        m_constraints.erase( std::remove_if( m_constraints.begin(), m_constraints.end(),
-                                             [&id]( const TwoBoneIKConstraint &constraint ) {
-                                                 return constraint.id == id;
-                                             } ),
-                             m_constraints.end() );
-        return previousSize != m_constraints.size();
+        const auto found = std::find_if( m_constraints.begin(), m_constraints.end(),
+            [&id]( const TwoBoneIKConstraint &constraint ) { return constraint.id == id; } );
+        if( found == m_constraints.end() ) return false;
+        std::move( found + 1, m_constraints.end(), found );
+        m_constraints.pop_back();
+        return true;
     }
 
     void AnimationIKSystem::clear()
     {
-        m_constraints.clear();
+        m_constraints = makeSourceBudgetSnapshot<TwoBoneIKConstraint>();
     }
 
     TwoBoneIKConstraint *AnimationIKSystem::findConstraint( const String &id )
@@ -188,31 +209,74 @@ namespace workphone::animation
             }
         }
 
-        m_constraints = parsedSystem.m_constraints;
+        m_constraints.swap( parsedSystem.m_constraints );
         return true;
     }
 
     Array<AnimationIKSolveResult> AnimationIKSystem::solve( ISkeleton *skeleton ) const
     {
-        Array<AnimationIKSolveResult> results;
-        if( !skeleton )
-        {
-            return results;
-        }
+        auto prepared = prepareSolve( skeleton );
+        solvePrepared( prepared );
+        return prepared.takeResults();
+    }
 
-        results.reserve( m_constraints.size() );
+    const Array<AnimationIKSolveResult> &AnimationIKSystem::PreparedSolve::getResults() const
+    { return m_results; }
+
+    Array<AnimationIKSolveResult> AnimationIKSystem::PreparedSolve::takeResults() noexcept
+    {
+        auto results = std::move( m_results );
+        m_commands = makeSourceBudgetSnapshot<Command>();
+        m_hierarchy = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+        return results;
+    }
+
+    AnimationIKSystem::PreparedSolve AnimationIKSystem::prepareSolve( ISkeleton *skeleton ) const
+    {
+        PreparedSolve prepared;
+        if( !skeleton ) return prepared;
+        prepared.m_results.reserve( m_constraints.size() );
+        prepared.m_commands.reserve( m_constraints.size() );
+        size_t maximumDepth = 0;
         for( const auto &constraint : m_constraints )
         {
             if( !constraint.enabled || !constraint.isValid() )
             {
                 continue;
             }
-
             auto effector = skeleton->getBone( constraint.effectorBone );
-            results.push_back(
-                { constraint.id, TwoBoneIKSolver::solve( effector, constraint.targetTransform,
-                                                         constraint.settings ) } );
+            // IDs can own nonpooled character buffers. Capture every ID and
+            // command before the first solver is allowed to publish bone data.
+            prepared.m_results.push_back( { constraint.id, {} } );
+            prepared.m_commands.push_back( { effector, constraint.targetTransform, constraint.settings } );
+            size_t depth = 0;
+            if( !hierarchyDepth( effector, depth ) )
+                prepared.m_results.back().result.status = TwoBoneIKStatus::InvalidChain;
+            else
+                maximumDepth = std::max( maximumDepth, depth );
         }
-        return results;
+        prepared.m_hierarchy.reserve( maximumDepth );
+        return prepared;
+    }
+
+    void AnimationIKSystem::solvePrepared( PreparedSolve &prepared ) const
+    {
+        // Native hierarchies can be edited between prepare and execution. Any
+        // resulting scratch growth must still finish before the first write.
+        size_t maximumDepth = 0;
+        for( const auto &command : prepared.m_commands )
+        {
+            size_t depth = 0;
+            if( hierarchyDepth( command.effector, depth ) )
+                maximumDepth = std::max( maximumDepth, depth );
+        }
+        prepared.m_hierarchy.reserve( maximumDepth );
+        for( size_t i = 0; i < prepared.m_commands.size(); ++i )
+        {
+            auto &result = prepared.m_results[i].result;
+            const auto &command = prepared.m_commands[i];
+            result = TwoBoneIKSolver::solve( command.effector, command.target, command.settings,
+                                             prepared.m_hierarchy );
+        }
     }
 }  // namespace workphone::animation

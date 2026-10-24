@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ClawTextureRetirementBudgetContracts.hpp"
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
@@ -670,10 +671,71 @@ namespace claw_texture_mip_contracts
         std::puts( "Shared texture/mesh asset budget and native allocation lifetime contracts passed." );
     }
 
+    inline void checkedByteStagingContracts()
+    {
+        auto scheduler = WorldStreamingScheduler::shared();
+        constexpr auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto original = scheduler->stats().limits[source];
+        struct RestoreLimit
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler;
+            u64 limit;
+            ~RestoreLimit() { String error; scheduler->setBudget( StreamMemoryClass::SourceCpu, limit, error ); }
+        } restore{ scheduler, original };
+        const auto limit = [&]( u64 bytes )
+        {
+            String error;
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, bytes, error ), "byte staging limit applies" );
+        };
+        auto first = makeSourceBudgetSnapshot<u8>();
+        first.resize( 16, 0 );
+        auto replacement = makeSourceBudgetSnapshot<u8>();
+        replacement.resize( 16, 0 );
+        for( size_t i = 0; i < first.size(); i += 4 )
+        {
+            first[i + 1] = 47; first[i + 3] = 255;
+            replacement[i + 1] = 193; replacement[i + 3] = 255;
+        }
+        ClawTexture texture;
+        ITexture &bridge = texture;
+        String error;
+        require( bridge.copyByteData( first, {2,2}, error ), "checked byte interface admits exact sampled pixels" );
+        texture.load( nullptr );
+        ComPtr<ID3D11ShaderResourceView> oldView = view( texture );
+        auto oldPixels = texture.getCpuBaseMip( error );
+        require( oldView && oldPixels && oldPixels->bgra[1] == 47, "initial checked pixels reach CPU and GPU" );
+        require( !bridge.copyByteData( replacement, {2,3}, error ) && !error.empty() &&
+                 view(texture) == oldView.Get(), "checked byte count mismatch preserves the last-good view" );
+        require( !texture.ITexture::copyByteData( replacement, {2,2}, error ),
+                 "unimplemented checked backend reports explicit unavailability" );
+        texture.setUsageFlags( static_cast<u32>(TextureUsage::TU_RENDERTARGET) );
+        require( !bridge.copyByteData( replacement, {2,2}, error ),
+                 "sampled byte staging rejects render-target owners before mutation" );
+        texture.setUsageFlags( 0 );
+        const auto resident = scheduler->stats().used[source];
+        limit( resident );
+        require( !bridge.copyByteData( replacement, {2,2}, error ) && !error.empty() &&
+                 texture.getSize() == Vector2I(2,2) && view(texture) == oldView.Get() &&
+                 scheduler->stats().used[source] == resident && oldPixels->bgra[1] == 47,
+                 "Source denial is returned through ITexture and preserves dimensions, owners and residency" );
+        limit( resident + replacement.size() );
+        require( bridge.copyByteData( replacement, {2,2}, error ) &&
+                 scheduler->stats().used[source] == resident,
+                 "exact overlapping pixel admission commits and physically retires old source storage" );
+        limit( original );
+        ComPtr<ID3D11ShaderResourceView> next = view(texture);
+        require( next && next.Get() != oldView.Get() && greenPixel(next.Get()) == 193 &&
+                 greenPixel(oldView.Get()) == 47 && oldPixels->bgra[1] == 47,
+                 "checked retry publishes new GPU bytes while retained CPU/GPU generations remain immutable" );
+        texture.unload( nullptr );
+    }
+
     inline void run()
     {
         Fixture fixture;
         fixture.initialize();
+        checkedByteStagingContracts();
+        claw_texture_retirement_budget_contracts::run( fixture );
         ClawTexture texture;
         auto properties = make_ptr<Properties>();
         properties->setProperty( "mipmapFilter", static_cast<s32>( TextureMipFilter::Cutout ) );

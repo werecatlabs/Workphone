@@ -9,10 +9,31 @@ namespace workphone
 
     KeyFrameAnimator2::KeyFrameAnimator2() = default;
 
-    KeyFrameAnimator2::~KeyFrameAnimator2() = default;
+    KeyFrameAnimator2::~KeyFrameAnimator2()
+    {
+        unload( nullptr );
+    }
+
+    void KeyFrameAnimator2::unload( SmartPtr<ISharedObject> data )
+    {
+        auto keys = makeSourceBudgetSnapshot<SmartPtr<KeyFrameTransform2>>();
+        keys.swap( m_keyFrames );
+        auto current = m_currentKeyFrame;
+        m_currentKeyFrame = nullptr;
+        m_positionSpline.unload( nullptr );
+        Animator::unload( data );
+    }
 
     void KeyFrameAnimator2::update()
     {
+        // The sampled key remains lazy in 2D. A completion callback may install
+        // multiple keys and restart playback, so admit its possible first sample
+        // before invoking callbacks or consuming frame time. Paused single-key
+        // and stopped updates cannot reach a completion callback.
+        auto current = m_currentKeyFrame;
+        if( m_isPlaying && !current &&
+            ( m_keyFrames.size() > 1 || ( m_onCompleteCallback && !m_isPaused ) ) )
+            current = make_ptr<KeyFrameTransform2>();
         Animator::update();
 
         if( !m_isPlaying || m_keyFrames.empty() )
@@ -67,15 +88,17 @@ namespace workphone
         f32 interpRot = rot1 + ( rot2 - rot1 ) * localT;
 
         // Set current keyframe
-        if( !m_currentKeyFrame )
-            m_currentKeyFrame = workphone::make_ptr<KeyFrameTransform2>();
-        m_currentKeyFrame->setPosition( interpPos );
-        m_currentKeyFrame->setScale( interpScale );
-        m_currentKeyFrame->setRotation( interpRot );
+        // A derived completion hook may also restart with a new inventory.
+        if( !current ) current = make_ptr<KeyFrameTransform2>();
+        current->setPosition( interpPos );
+        current->setScale( interpScale );
+        current->setRotation( interpRot );
+        m_currentKeyFrame = std::move( current );
     }
 
     void KeyFrameAnimator2::addKeyFrame( const SmartPtr<KeyFrameTransform2> &keyFrame )
     {
+        if( !keyFrame ) return;
         m_keyFrames.push_back( keyFrame );
         std::sort( m_keyFrames.begin(), m_keyFrames.end(),
                    []( const SmartPtr<KeyFrameTransform2> &a, const SmartPtr<KeyFrameTransform2> &b ) {
@@ -85,8 +108,18 @@ namespace workphone
 
     void KeyFrameAnimator2::addKeyFrames( const Array<SmartPtr<KeyFrameTransform2>> &keyFrames )
     {
+        auto candidate = makeSourceBudgetSnapshot<SmartPtr<KeyFrameTransform2>>();
+        if( keyFrames.capacity() > candidate.max_size() - m_keyFrames.size() )
+            throw std::length_error( "Keyframe animator capacity overflow" );
+        candidate.reserve( std::max( m_keyFrames.capacity(), m_keyFrames.size() + keyFrames.capacity() ) );
+        for( const auto &kf : m_keyFrames ) candidate.push_back( kf );
         for( const auto &kf : keyFrames )
-            addKeyFrame( kf );
+            if( kf ) candidate.push_back( kf );
+        std::sort( candidate.begin(), candidate.end(),
+                   []( const SmartPtr<KeyFrameTransform2> &a, const SmartPtr<KeyFrameTransform2> &b ) {
+                       return a->getTime() < b->getTime();
+                   } );
+        m_keyFrames.swap( candidate );
     }
 
     void KeyFrameAnimator2::setAnimationLength( f32 animationLength )
@@ -106,8 +139,13 @@ namespace workphone
 
     void KeyFrameAnimator2::setKeyFrames( const Array<SmartPtr<KeyFrameTransform2>> &keyFrames )
     {
-        m_keyFrames.clear();
-        addKeyFrames( keyFrames );
+        auto candidate = makeSourceBudgetSnapshot( keyFrames );
+        candidate.erase( std::remove( candidate.begin(), candidate.end(), nullptr ), candidate.end() );
+        std::sort( candidate.begin(), candidate.end(),
+                   []( const SmartPtr<KeyFrameTransform2> &a, const SmartPtr<KeyFrameTransform2> &b ) {
+                       return a->getTime() < b->getTime();
+                   } );
+        m_keyFrames.swap( candidate );
     }
 
 }  // namespace workphone

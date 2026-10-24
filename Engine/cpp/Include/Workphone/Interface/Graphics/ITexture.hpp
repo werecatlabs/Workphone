@@ -141,6 +141,11 @@ namespace workphone
             virtual bool copyLinearFloatData( const Array<f32> &rgba, const Vector2I &size,
                                               String &error );
 
+            /** Stage exact BGRA8 pixels transactionally. Admission/validation
+             * failure preserves old contents; unsupported backends return false.
+             * GPU publication remains on the backend render-owner path. */
+            virtual bool copyByteData( const Array<u8> &bgra, const Vector2I &size, String &error );
+
             WP_CLASS_REGISTER_DECL;
         };
     }  // end namespace render

@@ -17,17 +17,31 @@ namespace workphone
             hi.x <= lo.x || hi.y <= lo.y || hi.z <= lo.z )
             throw std::invalid_argument( "Invalid mesh imposter bake dimensions or bounds." );
 
+        // Validate the borrowed input before admitting output or raster scratch.
+        for( const auto &triangle : triangles )
+            for( const auto &position : triangle.positions )
+                if( !MathUtil<f32>::isFinite( position ) )
+                    throw std::invalid_argument( "Non-finite imposter vertex." );
+
         MeshImposterAtlas result;
         result.width = tileWidth * 3;
         result.height = tileHeight;
         result.tileWidth = tileWidth;
-        result.rgba.resize( size_t( result.width ) * result.height * 4, 0 );
+        const auto imageBytes = size_t( result.width ) * result.height * 4;
+        result.rgba.reserve( imageBytes );
+        result.rgba.resize( imageBytes, 0 );
         result.views = { { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, {}, {} },
                            { { 0, 0, 1 }, { 0, 1, 0 }, { -1, 0, 0 }, {}, {} },
                            { { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 }, {}, {} } } };
 
         auto light = Vector3F( .4f, .75f, .5f );
         light.normalise();
+
+        // One admitted depth workspace serves all three views. Its charge
+        // overlaps the complete retained atlas until rasterization finishes.
+        auto depth = makeSourceBudgetSnapshot<float>();
+        depth.reserve( size_t( tileWidth ) * tileHeight );
+        depth.resize( size_t( tileWidth ) * tileHeight );
 
         for( size_t viewIndex = 0; viewIndex < result.views.size(); ++viewIndex )
         {
@@ -45,8 +59,7 @@ namespace workphone
                 view.maximum.y = std::max( view.maximum.y, y );
             }
 
-            Array<float> depth( size_t( tileWidth ) * tileHeight,
-                                -std::numeric_limits<float>::infinity() );
+            std::fill( depth.begin(), depth.end(), -std::numeric_limits<float>::infinity() );
 
             for( const auto &triangle : triangles )
             {
@@ -54,8 +67,6 @@ namespace workphone
                 for( size_t i = 0; i < 3; ++i )
                 {
                     const auto &p = triangle.positions[i];
-                    if( !MathUtil<f32>::isFinite( p ) )
-                        throw std::invalid_argument( "Non-finite imposter vertex." );
                     projected[i] = { 1 + ( p.dotProduct( view.right ) - view.minimum.x ) /
                                              ( view.maximum.x - view.minimum.x ) * ( tileWidth - 3 ),
                                      1 + ( view.maximum.y - p.dotProduct( view.up ) ) /

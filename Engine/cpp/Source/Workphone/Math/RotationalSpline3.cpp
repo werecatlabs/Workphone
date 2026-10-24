@@ -10,9 +10,52 @@ namespace workphone
     RotationalSpline3<T>::~RotationalSpline3() = default;
 
     template <class T>
+    RotationalSpline3<T>::RotationalSpline3( const RotationalSpline3 &other ) :
+        ISharedObject(), m_points( makeSourceBudgetSnapshot( other.m_points ) ),
+        m_tangents( makeSourceBudgetSnapshot( other.m_tangents ) ),
+        m_autoCalc( other.m_autoCalc ), m_useShortestRoute( other.m_useShortestRoute )
+    {
+    }
+
+    template <class T>
+    RotationalSpline3<T> &RotationalSpline3<T>::operator=( const RotationalSpline3 &other )
+    {
+        if( this != &other )
+        {
+            auto points = makeSourceBudgetSnapshot( other.m_points );
+            auto tangents = makeSourceBudgetSnapshot( other.m_tangents );
+            m_points.swap( points ); m_tangents.swap( tangents );
+            m_autoCalc = other.m_autoCalc;
+            m_useShortestRoute = other.m_useShortestRoute;
+        }
+        return *this;
+    }
+
+    template <class T>
+    void RotationalSpline3<T>::unload( SmartPtr<ISharedObject> data )
+    {
+        m_points = makeSourceBudgetSnapshot<Quaternion<T>>();
+        m_tangents = makeSourceBudgetSnapshot<Quaternion<T>>();
+    }
+
+    namespace
+    {
+        template<class V>
+        Array<V> prepareRotationalTangents( const Array<V> &tangents, size_t count, bool autoCalculate )
+        {
+            auto result = makeSourceBudgetSnapshot<V>();
+            if( autoCalculate && count >= 2 && count > tangents.capacity() ) result.resize( count );
+            return result;
+        }
+    }
+
+    template <class T>
     void RotationalSpline3<T>::addPoint( const Quaternion<T> &p )
     {
+        if( m_points.size() == m_points.max_size() ) throw std::length_error( "Spline point capacity overflow" );
+        auto tangents = prepareRotationalTangents( m_tangents, m_points.size() + 1, m_autoCalc );
         m_points.push_back( p );
+        if( !tangents.empty() ) m_tangents.swap( tangents );
         if( m_autoCalc )
         {
             recalcTangents();
@@ -81,7 +124,7 @@ namespace workphone
 
         if( numPoints < 2 )
         {
-            // Can't do anything yet
+            m_tangents.clear();
             return;
         }
 
@@ -167,7 +210,9 @@ namespace workphone
     {
         WP_ASSERT( index < m_points.size() && "Point index is out of bounds!!" );
 
+        auto tangents = prepareRotationalTangents( m_tangents, m_points.size(), m_autoCalc );
         m_points[index] = value;
+        if( !tangents.empty() ) m_tangents.swap( tangents );
         if( m_autoCalc )
         {
             recalcTangents();

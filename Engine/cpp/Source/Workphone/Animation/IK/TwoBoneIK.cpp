@@ -243,6 +243,15 @@ namespace workphone::animation
                                             const Transform3<real_Num> &targetTransform,
                                             const TwoBoneIKSettings &settings )
     {
+        auto hierarchyScratch = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+        return solve( effectorBone, targetTransform, settings, hierarchyScratch );
+    }
+
+    TwoBoneIKResult TwoBoneIKSolver::solve( SmartPtr<IBone> effectorBone,
+                                            const Transform3<real_Num> &targetTransform,
+                                            const TwoBoneIKSettings &settings,
+                                            Array<SmartPtr<IBone>> &hierarchyScratch )
+    {
         if( !effectorBone )
         {
             TwoBoneIKResult result;
@@ -261,9 +270,9 @@ namespace workphone::animation
         }
 
         ChainTransforms transforms;
-        if( !getModelSpaceTransform( root, transforms[0] ) ||
-            !getModelSpaceTransform( mid, transforms[1] ) ||
-            !getModelSpaceTransform( effector, transforms[2] ) )
+        if( !getModelSpaceTransform( root, transforms[0], hierarchyScratch ) ||
+            !getModelSpaceTransform( mid, transforms[1], hierarchyScratch ) ||
+            !getModelSpaceTransform( effector, transforms[2], hierarchyScratch ) )
         {
             TwoBoneIKResult result;
             result.status = TwoBoneIKStatus::InvalidChain;
@@ -279,7 +288,7 @@ namespace workphone::animation
 
         Transform parentModelTransform;
         auto rootParent = root->getParent();
-        if( rootParent && !getModelSpaceTransform( rootParent, parentModelTransform ) )
+        if( rootParent && !getModelSpaceTransform( rootParent, parentModelTransform, hierarchyScratch ) )
         {
             TwoBoneIKResult invalidResult;
             invalidResult.status = TwoBoneIKStatus::InvalidChain;
@@ -302,12 +311,33 @@ namespace workphone::animation
 
     bool TwoBoneIKSolver::getModelSpaceTransform( SmartPtr<IBone> bone, Transform3<real_Num> &transform )
     {
+        auto hierarchyScratch = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+        return getModelSpaceTransform( bone, transform, hierarchyScratch );
+    }
+
+    bool TwoBoneIKSolver::getModelSpaceTransform( SmartPtr<IBone> bone, Transform3<real_Num> &transform,
+                                                Array<SmartPtr<IBone>> &hierarchy )
+    {
         if( !bone )
         {
             return false;
         }
 
-        Array<SmartPtr<IBone>> hierarchy;
+        if( !hierarchy.get_allocator().isSourceBudgeted() )
+        {
+            auto admitted = makeSourceBudgetSnapshot( hierarchy );
+            hierarchy.swap( admitted );
+        }
+        hierarchy.clear();
+        auto slow = bone;
+        auto fast = bone;
+        while( fast )
+        {
+            fast = fast->getParent();
+            if( fast ) fast = fast->getParent();
+            slow = slow ? slow->getParent() : SmartPtr<IBone>();
+            if( fast && fast == slow ) return false;
+        }
         for( auto current = bone; current; )
         {
             hierarchy.push_back( current );

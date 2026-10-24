@@ -13,6 +13,7 @@
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -30,9 +31,11 @@ namespace workphone::scene::race
 
         struct Geometry
         {
-            Array<Vector3F> positions, normals, uv;
-            Array<u32> indices;
-            Array<Vector4F> tangents;
+            Array<Vector3F> positions{ Allocator<Vector3F>( sourceBudget ) };
+            Array<Vector3F> normals{ Allocator<Vector3F>( sourceBudget ) };
+            Array<Vector3F> uv{ Allocator<Vector3F>( sourceBudget ) };
+            Array<u32> indices{ Allocator<u32>( sourceBudget ) };
+            Array<Vector4F> tangents{ Allocator<Vector4F>( sourceBudget ) };
 
             void quad( Vector3F a, Vector3F b, Vector3F c, Vector3F d, Vector3F normal, float u0 = 0,
                        float u1 = 1, float v0 = 0, float v1 = 1 )
@@ -116,37 +119,56 @@ namespace workphone::scene::race
             return m;
         }
 
+        SmartPtr<render::ITexture> uploadPixels(
+            SceneAssets &assets, const u8 *pixels, size_t bytes, u32 width, u32 height,
+            render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1 )
+        {
+            if( !bytes ) return nullptr;
+            if( !pixels || !width || !height || width > 16384 || height > 16384 ||
+                u64( width ) * height * 4 != bytes )
+                throw std::invalid_argument( "Procedural upload requires exact bounded RGBA pixels." );
+            // Admit conversion before creating a manager-owned texture. The
+            // caller's atlas and this BGRA snapshot remain independently owned.
+            auto bgra = makeSourceBudgetSnapshot<u8>();
+            bgra.reserve( bytes );
+            bgra.resize( bytes );
+            std::copy_n( pixels, bytes, bgra.begin() );
+            for( size_t i = 0; i < bgra.size(); i += 4 ) std::swap( bgra[i], bgra[i + 2] );
+            auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
+            auto manager = graphics->getTextureManager();
+            auto name =
+                assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
+            // New sampled textures default to 2D/usage zero. Avoid allocating
+            // createManual's complete blank image before replacing its pixels.
+            auto texture = dynamic_pointer_cast<render::ITexture>( manager->create( name ) );
+            if( !texture ) throw std::runtime_error( "Cannot create procedural texture." );
+            try
+            {
+                auto properties = texture->getProperties();
+                properties->setProperty( "mipmapFilter", static_cast<s32>( filter ) );
+                properties->setProperty( "mipmapAtlasColumns", atlasColumns );
+                texture->setProperties( properties );
+                String error;
+                if( !texture->copyByteData( bgra, Vector2I( width, height ), error ) )
+                    throw std::runtime_error( ( String( "Cannot stage procedural texture: " ) + error ).c_str() );
+                texture->load( nullptr );
+                assets.textures.push_back( texture );
+                assets.textureBytes += bytes;
+            }
+            catch( ... )
+            {
+                try { manager->destroyResource( texture ); } catch( ... ) {}
+                throw;
+            }
+            return texture;
+        }
+
         SmartPtr<render::ITexture> upload(
             SceneAssets &assets, const TextureBuffer &buffer,
             render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1 )
         {
-            if( buffer.pixels.empty() )
-            {
-                return nullptr;
-            }
-            auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
-            auto name =
-                assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
-            auto texture = graphics->getTextureManager()->createManual( name, "General", 2, buffer.width,
-                                                                        buffer.height, 1, 0, 0 );
-            if( !texture )
-            {
-                throw std::runtime_error( "Cannot create procedural texture." );
-            }
-            auto properties = texture->getProperties();
-            properties->setProperty( "mipmapFilter", static_cast<s32>( filter ) );
-            properties->setProperty( "mipmapAtlasColumns", atlasColumns );
-            texture->setProperties( properties );
-            // ClawTexture's native storage uses BGRA8, while procedural buffers use RGBA8.
-            auto bgra = buffer.pixels;
-            for( size_t i = 0; i < bgra.size(); i += 4 )
-            {
-                std::swap( bgra[i], bgra[i + 2] );
-            }
-            texture->copyData( bgra.data(), Vector2I( buffer.width, buffer.height ) );
-            assets.textureBytes += buffer.sizeBytes();
-            assets.textures.push_back( texture );
-            return texture;
+            return uploadPixels( assets, buffer.data(), buffer.pixels.size(), buffer.width, buffer.height,
+                                 filter, atlasColumns );
         }
 
         SmartPtr<render::ITexture> uploadLinearRadiance( SceneAssets &assets, const Array<f32> &rgba,
@@ -456,7 +478,8 @@ namespace workphone::scene::race
         {
             Geometry trunks, canopy;
             pineGeometry( trunks, canopy, {}, 1, variant );
-            Array<MeshImposterTriangle> triangles;
+            auto triangles = makeSourceBudgetSnapshot<MeshImposterTriangle>();
+            triangles.reserve( trunks.indices.size() / 3 + canopy.indices.size() / 3 );
             auto append = [&]( const Geometry &g, ColourF colour ) {
                 for( size_t i = 0; i < g.indices.size(); i += 3 )
                 {
@@ -867,10 +890,10 @@ namespace workphone::scene::race
                 struct TreePatch
                 {
                     Geometry trunks, leaves, imposters;
-                    Array<scene::LODDetailBound> detailBounds;
+                    Array<scene::LODDetailBound> detailBounds{ Allocator<scene::LODDetailBound>( sourceBudget ) };
                 };
 
-                std::map<std::pair<int, int>, TreePatch> patches;
+                SourceBudgetMap<std::pair<int, int>, TreePatch> patches;
                 const std::array<MeshImposterAtlas, 4> atlases = { bakePineImposter( 0 ),
                                                                    bakePineImposter( 1 ),
                                                                    bakePineImposter( 2 ),
@@ -878,7 +901,10 @@ namespace workphone::scene::race
                 const auto &atlas = atlases[0];
                 // All four near silhouettes have matching far views in one twelve-
                 // column atlas. Keep the existing one-material patch batching.
-                TextureBuffer treeTexture( atlas.width * 4, atlas.height );
+                auto treePixels = makeSourceBudgetSnapshot<u8>();
+                const auto treeWidth = atlas.width * 4;
+                treePixels.reserve( size_t( treeWidth ) * atlas.height * 4 );
+                treePixels.resize( size_t( treeWidth ) * atlas.height * 4 );
                 for( u32 variant = 0; variant < atlases.size(); ++variant )
                 {
                     for( u32 y = 0; y < atlas.height; ++y )
@@ -886,13 +912,14 @@ namespace workphone::scene::race
                         std::copy_n(
                             atlases[variant].rgba.begin() + size_t( y ) * atlas.width * 4,
                             size_t( atlas.width ) * 4,
-                            treeTexture.pixels.begin() +
-                                ( size_t( y ) * treeTexture.width + variant * atlas.width ) * 4 );
+                            treePixels.begin() +
+                                ( size_t( y ) * treeWidth + variant * atlas.width ) * 4 );
                     }
                 }
                 auto imposterMaterial = material( assets, ColourF::White, 1 );
                 auto imposterTexture =
-                    upload( assets, treeTexture, render::TextureMipFilter::Cutout, 12 );
+                    uploadPixels( assets, treePixels.data(), treePixels.size(), treeWidth, atlas.height,
+                                  render::TextureMipFilter::Cutout, 12 );
                 imposterMaterial->setTexture( imposterTexture, 0 );
                 // Colour is already lit by the CPU bake. Keep its alpha mask in the
                 // albedo slot and supply baked colour through the PBS emission slot.

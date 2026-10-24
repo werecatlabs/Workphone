@@ -25,6 +25,12 @@ namespace workphone::render
         return false;
     }
 
+    bool ITexture::copyByteData( const Array<u8> &, const Vector2I &, String &error )
+    {
+        error = "Checked byte texture staging is unsupported by this backend.";
+        return false;
+    }
+
     Array<SmartPtr<ITexture>> ITexture::getCubemapFaces() const
     {
         return {};

@@ -601,7 +601,10 @@ namespace workphone
             // Lazy CPU/native access can acquire physical residency after a
             // rejected load left the logical state Unloaded. Retire that data
             // on every unload; the state alone does not prove cache emptiness.
-            setLoadingState( LoadingState::Unloading );
+            // Notifications require fresh Source storage. Their denial cannot
+            // strand physical residency that was admitted by an earlier load.
+            try { setLoadingState( LoadingState::Unloading ); }
+            catch( const std::bad_alloc & ) {}
             {
                 std::scoped_lock lock( g_textureMutex );
                 auto found = g_textureData.find( this );
@@ -640,7 +643,8 @@ namespace workphone
             }
 
             Texture::unload( data );
-            setLoadingState( LoadingState::Unloaded );
+            try { setLoadingState( LoadingState::Unloaded ); }
+            catch( const std::bad_alloc & ) {}
         }
 
         void ClawTexture::copyToTexture( SmartPtr<ITexture> &target )
@@ -687,6 +691,19 @@ namespace workphone
                 return;
             }
             setSize( size );
+        }
+
+        bool ClawTexture::copyByteData( const Array<u8> &bgra, const Vector2I &size, String &error )
+        {
+            error.clear();
+            if( size.x <= 0 || size.y <= 0 || size.x > 16384 || size.y > 16384 ||
+                u64( size.x ) * u64( size.y ) * 4 != bgra.size() || getRenderTarget() ||
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                error = "Byte texture staging requires a sampled texture, bounded dimensions and exact BGRA pixels.";
+                return false;
+            }
+            return replaceClawTexturePixels( this, bgra.data(), size, error );
         }
 
         bool ClawTexture::copyLinearFloatData( const Array<f32> &rgba, const Vector2I &size,

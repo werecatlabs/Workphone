@@ -372,7 +372,8 @@ namespace workphone
 
             animation::AnimationGraphInstance m_animationGraph;
             animation::AnimationIKSystem m_ikSystem;
-            Array<animation::AnimationIKSolveResult> m_lastIKSolveResults;
+            Array<animation::AnimationIKSolveResult> m_lastIKSolveResults =
+                makeSourceBudgetSnapshot<animation::AnimationIKSolveResult>();
 
             u32 m_state = STATE_STOPPED;
             u32 m_selectedAnimationIndex = 0;

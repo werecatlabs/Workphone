@@ -68,10 +68,11 @@ namespace workphone
                 auto texture = workphone::static_pointer_cast<ITexture>( resource );
                 if( texture )
                 {
-                    texture->unload( nullptr );
-
+                    // Detach before callbacks: denied optional notifications or
+                    // a reentrant lookup must not leave a ghost manager owner.
                     m_textures.erase( std::remove( m_textures.begin(), m_textures.end(), texture ),
                                       m_textures.end() );
+                    texture->unload( nullptr );
                 }
             }
         }

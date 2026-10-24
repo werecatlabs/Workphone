@@ -33,7 +33,15 @@ namespace workphone
 
     Animator::~Animator()
     {
-        stop();
+        unload( nullptr );
+    }
+
+    void Animator::unload( SmartPtr<ISharedObject> data )
+    {
+        // Teardown must not invoke virtual playback hooks or completion work.
+        m_isPlaying = false;
+        m_isPaused = false;
+        m_animationTime = 0.0f;
         m_onCompleteCallback = nullptr;
     }
 
@@ -151,7 +159,7 @@ namespace workphone
 
     void Animator::setOnCompleteCallback( OnCompleteCallback callback )
     {
-        m_onCompleteCallback = callback;
+        m_onCompleteCallback = std::move( callback );
     }
 
     void Animator::update()

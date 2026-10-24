@@ -5,6 +5,8 @@
 #include <Workphone/Core/Pair.hpp>
 #include <Workphone/Math/Vector2.hpp>
 #include <Workphone/Math/Matrix4.hpp>
+#include <Workphone/Core/Array.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -42,9 +44,14 @@ namespace workphone
      * @endcode
      */
     template <class T>
-    class WPCore_API LinearSpline2 : public ISharedObject
+    class WPCore_API LinearSpline2 : public ISharedObject, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        LinearSpline2( const LinearSpline2 &other );
+        LinearSpline2 &operator=( const LinearSpline2 &other );
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Default constructor.
          *
@@ -207,13 +214,13 @@ namespace workphone
         bool m_autoCalc = true;
 
         /** @brief Array of time/parameter values for each control point. */
-        Array<T> m_times;
+        Array<T> m_times{ Allocator<T>( sourceBudget ) };
 
         /** @brief Array of 3D control points (Z component is typically 0 for 2D splines). */
-        Array<Vector3<T>> m_points;
+        Array<Vector3<T>> m_points{ Allocator<Vector3<T>>( sourceBudget ) };
 
         /** @brief Array of 3D tangent vectors for each control point. */
-        Array<Vector3<T>> m_tangents;
+        Array<Vector3<T>> m_tangents{ Allocator<Vector3<T>>( sourceBudget ) };
 
         /**
          * @brief Hermite polynomial coefficient matrix.

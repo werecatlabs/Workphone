@@ -5,6 +5,7 @@
 #include <Workphone/Animation/IK/TwoBoneIK.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -32,9 +33,27 @@ namespace workphone::animation
     };
 
     /** Post-animation IK pass owned by an Animator component. */
-    class WPCore_API AnimationIKSystem
+    class WPCore_API AnimationIKSystem : public SourceBudgetObject
     {
     public:
+        /** Admitted commands and outputs prepared before any animation/bone writes. */
+        class WPCore_API PreparedSolve : public SourceBudgetObject
+        {
+        public:
+            const Array<AnimationIKSolveResult> &getResults() const;
+            Array<AnimationIKSolveResult> takeResults() noexcept;
+        private:
+            friend class AnimationIKSystem;
+            struct Command
+            {
+                SmartPtr<IBone> effector;
+                Transform3<real_Num> target;
+                TwoBoneIKSettings settings;
+            };
+            Array<Command> m_commands = makeSourceBudgetSnapshot<Command>();
+            Array<AnimationIKSolveResult> m_results = makeSourceBudgetSnapshot<AnimationIKSolveResult>();
+            Array<SmartPtr<IBone>> m_hierarchy = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+        };
         bool addConstraint( const TwoBoneIKConstraint &constraint );
         bool updateConstraint( const TwoBoneIKConstraint &constraint );
         bool removeConstraint( const String &id );
@@ -55,9 +74,11 @@ namespace workphone::animation
         bool setProperties( SmartPtr<Properties> properties );
 
         Array<AnimationIKSolveResult> solve( ISkeleton *skeleton ) const;
+        PreparedSolve prepareSolve( ISkeleton *skeleton ) const;
+        void solvePrepared( PreparedSolve &prepared ) const;
 
     private:
-        Array<TwoBoneIKConstraint> m_constraints;
+        Array<TwoBoneIKConstraint> m_constraints = makeSourceBudgetSnapshot<TwoBoneIKConstraint>();
     };
 }  // namespace workphone::animation
 

@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Math/Quaternion.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -27,9 +28,14 @@ namespace workphone
      * @see Quaternion, ISharedObject
      */
     template <class T>
-    class WPCore_API RotationalSpline3 : public ISharedObject
+    class WPCore_API RotationalSpline3 : public ISharedObject, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        RotationalSpline3( const RotationalSpline3 &other );
+        RotationalSpline3 &operator=( const RotationalSpline3 &other );
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Default constructor.
          *
@@ -228,7 +234,7 @@ namespace workphone
          * These points represent the orientations that the spline passes through.
          * Each quaternion should be normalized for proper interpolation.
          */
-        Array<Quaternion<T>> m_points;
+        Array<Quaternion<T>> m_points{ Allocator<Quaternion<T>>( sourceBudget ) };
 
         /**
          * @brief Array of tangent quaternions for smooth interpolation.
@@ -237,7 +243,7 @@ namespace workphone
          * used by the SQUAD interpolation method to ensure smooth transitions
          * between control points.
          */
-        Array<Quaternion<T>> m_tangents;
+        Array<Quaternion<T>> m_tangents{ Allocator<Quaternion<T>>( sourceBudget ) };
 
         /**
          * @brief Flag controlling automatic tangent calculation.

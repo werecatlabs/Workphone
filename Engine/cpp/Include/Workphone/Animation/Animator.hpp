@@ -2,6 +2,7 @@
 #define _BaseAnimator_H
 
 #include <Workphone/Interface/Animation/IAnimator.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <functional>
 
 namespace workphone
@@ -11,9 +12,12 @@ namespace workphone
      * @brief Base class for all animators, providing core logic for timing, playback control, and
      * loop/reverse functionality.
      */
-    class WPCore_API Animator : public IAnimator
+    class WPCore_API Animator : public IAnimator, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        void unload( SmartPtr<ISharedObject> data ) override;
         /** @brief Callback type executed when the animation completes. */
         using OnCompleteCallback = std::function<void()>;
 

@@ -5,6 +5,7 @@
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -72,14 +73,22 @@ namespace workphone
      * Asset import directors provide defaults and each Mesh component stores its own copy, allowing
      * an imported instance to be tuned without modifying other users of the source asset.
      */
-    struct WPCore_API ProgressiveMeshOptions
+    struct WPCore_API ProgressiveMeshOptions : public SourceBudgetObject
     {
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        ProgressiveMeshOptions() = default;
+        ProgressiveMeshOptions( const ProgressiveMeshOptions &other );
+        ProgressiveMeshOptions &operator=( const ProgressiveMeshOptions &other );
+        ProgressiveMeshOptions( ProgressiveMeshOptions && ) noexcept = default;
+        ProgressiveMeshOptions &operator=( ProgressiveMeshOptions && ) noexcept = default;
+
         MeshLodGenerationMode generationMode = MeshLodGenerationMode::Disabled;
         MeshLodPreset preset = MeshLodPreset::Balanced;
         MeshLodTransitionMode transitionMode = MeshLodTransitionMode::Distance;
         MeshSimplificationMetric simplificationMetric = MeshSimplificationMetric::QuadricError;
 
-        Array<ProgressiveMeshLodLevel> levels;
+        Array<ProgressiveMeshLodLevel> levels{ Allocator<ProgressiveMeshLodLevel>( sourceBudget ) };
 
         u32 minimumSourceTriangleCount = 500;
         u32 minimumLodTriangleCount = 64;
@@ -124,6 +133,10 @@ namespace workphone
         bool operator!=( const ProgressiveMeshOptions &other ) const;
 
         static Array<ProgressiveMeshLodLevel> getPresetLevels( MeshLodPreset preset );
+
+    private:
+        void copySettings( const ProgressiveMeshOptions &other ) noexcept;
+        void importProperties( SmartPtr<Properties> properties );
     };
 }  // namespace workphone
 

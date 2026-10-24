@@ -4,6 +4,7 @@
 #include <Workphone/WorkphoneTypes.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
+#include <Workphone/Core/Array.hpp>
 #include <array>
 
 namespace workphone
@@ -64,8 +65,14 @@ namespace workphone::animation
         static TwoBoneIKResult solve( SmartPtr<IBone> effectorBone,
                                       const Transform3<real_Num> &targetTransform,
                                       const TwoBoneIKSettings &settings = {} );
+        static TwoBoneIKResult solve( SmartPtr<IBone> effectorBone,
+                                      const Transform3<real_Num> &targetTransform,
+                                      const TwoBoneIKSettings &settings,
+                                      Array<SmartPtr<IBone>> &hierarchyScratch );
 
         static bool getModelSpaceTransform( SmartPtr<IBone> bone, Transform3<real_Num> &transform );
+        static bool getModelSpaceTransform( SmartPtr<IBone> bone, Transform3<real_Num> &transform,
+                                            Array<SmartPtr<IBone>> &hierarchyScratch );
     };
 }  // namespace workphone::animation
 

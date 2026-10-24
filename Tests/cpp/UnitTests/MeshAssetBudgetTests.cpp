@@ -19,6 +19,10 @@
 #include "../AnimationStateBudgetContracts.hpp"
 #include "../SkeletonInventoryBudgetContracts.hpp"
 #include "../NativeAnimationBudgetContracts.hpp"
+#include "../AnimationIKBudgetContracts.hpp"
+#include "../KeyFrameAnimatorBudgetContracts.hpp"
+#include "../ProgressiveMeshBudgetContracts.hpp"
+#include "../MeshImposterBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -625,6 +629,30 @@ BOOST_AUTO_TEST_CASE( native_animation_and_cpp_owners_share_source_admission )
 {
     TestGuard guard;
     native_animation_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( ik_containers_and_outputs_obey_shared_source_admission )
+{
+    TestGuard guard;
+    animation_ik_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( keyframe_animators_and_splines_obey_shared_source_admission )
+{
+    TestGuard guard;
+    keyframe_animator_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( progressive_mesh_options_obey_shared_source_admission )
+{
+    TestGuard guard;
+    progressive_mesh_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( imposter_buffers_obey_shared_source_admission )
+{
+    TestGuard guard;
+    mesh_imposter_budget_contracts::run();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

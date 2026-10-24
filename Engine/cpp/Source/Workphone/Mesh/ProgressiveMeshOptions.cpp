@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 
 namespace workphone
 {
@@ -60,6 +61,57 @@ namespace workphone
         return !( *this == other );
     }
 
+    static_assert( std::is_nothrow_move_constructible_v<ProgressiveMeshOptions> &&
+                   std::is_nothrow_move_assignable_v<ProgressiveMeshOptions> );
+
+    ProgressiveMeshOptions::ProgressiveMeshOptions( const ProgressiveMeshOptions &other ) :
+        levels( makeSourceBudgetSnapshot( other.levels ) )
+    {
+        copySettings( other );
+    }
+
+    ProgressiveMeshOptions &ProgressiveMeshOptions::operator=( const ProgressiveMeshOptions &other )
+    {
+        if( this != &other )
+        {
+            ProgressiveMeshOptions next( other );
+            *this = std::move( next );
+        }
+        return *this;
+    }
+
+    void ProgressiveMeshOptions::copySettings( const ProgressiveMeshOptions &other ) noexcept
+    {
+        generationMode = other.generationMode;
+        preset = other.preset;
+        transitionMode = other.transitionMode;
+        simplificationMetric = other.simplificationMetric;
+        minimumSourceTriangleCount = other.minimumSourceTriangleCount;
+        minimumLodTriangleCount = other.minimumLodTriangleCount;
+        preserveBorders = other.preserveBorders;
+        preserveUvSeams = other.preserveUvSeams;
+        preserveHardEdges = other.preserveHardEdges;
+        preserveMaterialBoundaries = other.preserveMaterialBoundaries;
+        preserveSkinning = other.preserveSkinning;
+        borderImportance = other.borderImportance;
+        uvImportance = other.uvImportance;
+        normalImportance = other.normalImportance;
+        skinningImportance = other.skinningImportance;
+        hardEdgeAngleDegrees = other.hardEdgeAngleDegrees;
+        useVertexNormals = other.useVertexNormals;
+        compressIndexBuffers = other.compressIndexBuffers;
+        optimiseHiddenInterior = other.optimiseHiddenInterior;
+        outsideImportance = other.outsideImportance;
+        outsideWalkAngleDegrees = other.outsideWalkAngleDegrees;
+        generateShadowLods = other.generateShadowLods;
+        shadowLodOffset = other.shadowLodOffset;
+        recalculateBounds = other.recalculateBounds;
+        halfPosition = other.halfPosition;
+        halfTexCoords = other.halfTexCoords;
+        qTangents = other.qTangents;
+        halfPoseData = other.halfPoseData;
+    }
+
     bool ProgressiveMeshOptions::isEnabled() const
     {
         return generationMode != MeshLodGenerationMode::Disabled;
@@ -70,7 +122,7 @@ namespace workphone
         auto resolvedLevels =
             generationMode == MeshLodGenerationMode::Automatic && preset != MeshLodPreset::Custom
                 ? getPresetLevels( preset )
-                : levels;
+                : makeSourceBudgetSnapshot( levels );
 
         resolvedLevels.erase(
             std::remove_if( resolvedLevels.begin(), resolvedLevels.end(),
@@ -292,6 +344,18 @@ namespace workphone
             return;
         }
 
+        // Parsing replaces the complete level inventory. Stage scalar settings
+        // without first duplicating the old inventory, and publish only after
+        // child snapshots, level capacity and string payloads are admitted.
+        ProgressiveMeshOptions next;
+        next.copySettings( *this );
+        next.importProperties( properties );
+        *this = std::move( next );
+    }
+
+    void ProgressiveMeshOptions::importProperties( SmartPtr<Properties> properties )
+    {
+
         auto generationModeValue = static_cast<u32>( generationMode );
         auto presetValue = static_cast<u32>( preset );
         auto transitionModeValue = static_cast<u32>( transitionMode );
@@ -347,7 +411,7 @@ namespace workphone
         outsideWalkAngleDegrees = std::clamp( outsideWalkAngleDegrees, 0.0f, 180.0f );
 
         const auto levelProperties = properties->getChildrenByName( lodLevelName );
-        Array<ProgressiveMeshLodLevel> newLevels;
+        auto newLevels = makeSourceBudgetSnapshot<ProgressiveMeshLodLevel>();
         newLevels.reserve( levelProperties.size() );
         for( const auto &levelData : levelProperties )
         {
@@ -409,25 +473,33 @@ namespace workphone
 
     Array<ProgressiveMeshLodLevel> ProgressiveMeshOptions::getPresetLevels( MeshLodPreset preset )
     {
+        auto result = makeSourceBudgetSnapshot<ProgressiveMeshLodLevel>();
         switch( preset )
         {
         case MeshLodPreset::Performance:
-            return { makePercentageLevel( 0.45f, 0.16f, 12.0f, 0.65f ),
-                     makePercentageLevel( 0.20f, 0.04f, 30.0f, 0.35f ),
-                     makePercentageLevel( 0.08f, 0.008f, 70.0f, 0.15f ) };
+            result.reserve( 3 );
+            result.push_back( makePercentageLevel( 0.45f, 0.16f, 12.0f, 0.65f ) );
+            result.push_back( makePercentageLevel( 0.20f, 0.04f, 30.0f, 0.35f ) );
+            result.push_back( makePercentageLevel( 0.08f, 0.008f, 70.0f, 0.15f ) );
+            break;
         case MeshLodPreset::Quality:
-            return { makePercentageLevel( 0.65f, 0.32f, 25.0f, 0.90f ),
-                     makePercentageLevel( 0.40f, 0.13f, 60.0f, 0.70f ),
-                     makePercentageLevel( 0.22f, 0.04f, 120.0f, 0.50f ),
-                     makePercentageLevel( 0.10f, 0.01f, 240.0f, 0.30f ) };
+            result.reserve( 4 );
+            result.push_back( makePercentageLevel( 0.65f, 0.32f, 25.0f, 0.90f ) );
+            result.push_back( makePercentageLevel( 0.40f, 0.13f, 60.0f, 0.70f ) );
+            result.push_back( makePercentageLevel( 0.22f, 0.04f, 120.0f, 0.50f ) );
+            result.push_back( makePercentageLevel( 0.10f, 0.01f, 240.0f, 0.30f ) );
+            break;
         case MeshLodPreset::Balanced:
-            return { makePercentageLevel( 0.60f, 0.28f, 15.0f, 0.80f ),
-                     makePercentageLevel( 0.35f, 0.10f, 35.0f, 0.55f ),
-                     makePercentageLevel( 0.18f, 0.025f, 70.0f, 0.30f ),
-                     makePercentageLevel( 0.07f, 0.004f, 140.0f, 0.12f ) };
+            result.reserve( 4 );
+            result.push_back( makePercentageLevel( 0.60f, 0.28f, 15.0f, 0.80f ) );
+            result.push_back( makePercentageLevel( 0.35f, 0.10f, 35.0f, 0.55f ) );
+            result.push_back( makePercentageLevel( 0.18f, 0.025f, 70.0f, 0.30f ) );
+            result.push_back( makePercentageLevel( 0.07f, 0.004f, 140.0f, 0.12f ) );
+            break;
         case MeshLodPreset::Custom:
         default:
-            return {};
+            break;
         }
+        return result;
     }
 }  // namespace workphone

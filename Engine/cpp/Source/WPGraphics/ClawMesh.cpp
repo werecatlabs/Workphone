@@ -618,8 +618,9 @@ namespace workphone
 
         void ClawMesh::setProgressiveMeshOptions( const ProgressiveMeshOptions &options )
         {
-            m_options = options;
+            ProgressiveMeshOptions staged( options );
             GraphicsMesh::setProgressiveMeshOptions( options );
+            m_options = std::move( staged );
         }
 
         SmartPtr<IGraphicsSkeleton> ClawMesh::getSkeleton() const

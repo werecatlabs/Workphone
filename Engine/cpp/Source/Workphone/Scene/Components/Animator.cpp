@@ -182,7 +182,15 @@ namespace workphone::scene
 
     void Animator::unload( SmartPtr<ISharedObject> data )
     {
-        setLoadingState( LoadingState::Unloading );
+        // Loading-state changes commit before optional notification admission.
+        // A refused notification must not strand this generation's IK owners.
+        try { setLoadingState( LoadingState::Unloading ); }
+        catch( const std::bad_alloc & ) {}
+
+        animation::AnimationIKSystem retiredIK;
+        std::swap( retiredIK, m_ikSystem );
+        auto retiredResults = makeSourceBudgetSnapshot<animation::AnimationIKSolveResult>();
+        retiredResults.swap( m_lastIKSolveResults );
 
         // Cleanup FSM
         if( m_fsm )
@@ -199,7 +207,8 @@ namespace workphone::scene
         }
 
         Component::unload( data );
-        setLoadingState( LoadingState::Unloaded );
+        try { setLoadingState( LoadingState::Unloaded ); }
+        catch( const std::bad_alloc & ) {}
     }
 
     void Animator::update()
@@ -353,6 +362,9 @@ namespace workphone::scene
 
     void Animator::onUpdate()
     {
+        // Capture and admit every IK output/command before clip sampling can
+        // write to the skeleton. The prepared pass performs no further growth.
+        auto preparedIK = m_ikSystem.prepareSolve( m_skeleton.get() );
         if( m_animationGraph.isValid() )
         {
             m_animationGraph.apply( m_skeleton.get(), m_animationScale, m_animationWeight );
@@ -369,14 +381,8 @@ namespace workphone::scene
             }
         }
 
-        if( auto skeleton = m_skeleton )
-        {
-            m_lastIKSolveResults = m_ikSystem.solve( skeleton.get() );
-        }
-        else
-        {
-            m_lastIKSolveResults.clear();
-        }
+        m_ikSystem.solvePrepared( preparedIK );
+        m_lastIKSolveResults = preparedIK.takeResults();
     }
 
     f32 Animator::getAnimationTime() const
@@ -719,7 +725,32 @@ namespace workphone::scene
             return;
         }
 
+        // An IK import can admit arrays and oversized IDs. Finish that staging
+        // before changing playback properties or suppressing update callbacks.
+        animation::AnimationIKSystem parsedIK;
+        bool replaceIK = false;
+        if( auto ikConstraintsNode = properties->getChild( ikConstraintsStr ) )
+            replaceIK = parsedIK.setProperties( ikConstraintsNode );
+
         const auto previousApplyOnPropertyChange = m_applyOnPropertyChange;
+        struct RestoreApplyOnFailure
+        {
+            bool &value;
+            bool previous;
+            bool committed = false;
+            ~RestoreApplyOnFailure() { if( !committed ) value = previous; }
+        } restoreApply{m_applyOnPropertyChange, previousApplyOnPropertyChange};
+        struct RestoreIKOnFailure
+        {
+            animation::AnimationIKSystem &active;
+            animation::AnimationIKSystem &retired;
+            bool published = false;
+            bool committed = false;
+            ~RestoreIKOnFailure()
+            {
+                if( published && !committed ) std::swap( active, retired );
+            }
+        } restoreIK{m_ikSystem, parsedIK};
         m_applyOnPropertyChange = false;
 
         u32 selectedIndex = m_selectedAnimationIndex;
@@ -767,9 +798,10 @@ namespace workphone::scene
             }
         }
 
-        if( auto ikConstraintsNode = properties->getChild( ikConstraintsStr ) )
+        if( replaceIK )
         {
-            m_ikSystem.setProperties( ikConstraintsNode );
+            std::swap( m_ikSystem, parsedIK );
+            restoreIK.published = true;
         }
 
         setSelectedAnimationIndex( selectedIndex );
@@ -813,6 +845,8 @@ namespace workphone::scene
         }
 
         Component::setProperties( properties );
+        restoreApply.committed = true;
+        restoreIK.committed = true;
     }
 
     Array<SmartPtr<ISharedObject>> Animator::getChildObjects() const

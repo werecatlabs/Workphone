@@ -6,6 +6,7 @@
 #include <Workphone/Core/Pair.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Math/Matrix4.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -23,9 +24,14 @@ namespace workphone
      * @tparam T The numeric type for coordinates (typically float or double).
      */
     template <class T>
-    class WPCore_API LinearSpline3 : public ISharedObject
+    class WPCore_API LinearSpline3 : public ISharedObject, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+        LinearSpline3( const LinearSpline3 &other );
+        LinearSpline3 &operator=( const LinearSpline3 &other );
+        void unload( SmartPtr<ISharedObject> data ) override;
         /**
          * @brief Default constructor.
          *
@@ -170,13 +176,13 @@ namespace workphone
         bool m_autoCalc = true;
 
         /** @brief Array of parameter values for each control point. */
-        Array<T> m_times;
+        Array<T> m_times{ Allocator<T>( sourceBudget ) };
 
         /** @brief Array of 3D positions for each control point. */
-        Array<Vector3<T>> m_points;
+        Array<Vector3<T>> m_points{ Allocator<Vector3<T>>( sourceBudget ) };
 
         /** @brief Array of computed tangent vectors for each control point. */
-        Array<Vector3<T>> m_tangents;
+        Array<Vector3<T>> m_tangents{ Allocator<Vector3<T>>( sourceBudget ) };
 
         /**
          * @brief Matrix of Hermite polynomial coefficients used for interpolation.

@@ -11,13 +11,14 @@ namespace workphone
      * @class KeyFrameAnimator2
      * @brief Manages 2D animations by interpolating between a series of KeyFrameTransform2 keyframes.
      */
-    class KeyFrameAnimator2 : public Animator
+    class WPCore_API KeyFrameAnimator2 : public Animator
     {
     public:
         /** @brief Default constructor. */
         KeyFrameAnimator2();
 
         ~KeyFrameAnimator2() override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         /** @brief Updates the animation time and interpolates transformation values. */
         void update() override;
@@ -44,7 +45,8 @@ namespace workphone
 
     private:
         SmartPtr<KeyFrameTransform2> m_currentKeyFrame;   ///< The currently active keyframe
-        Array<SmartPtr<KeyFrameTransform2>> m_keyFrames;  ///< Collection of keyframes for the animation
+        Array<SmartPtr<KeyFrameTransform2>> m_keyFrames{
+            Allocator<SmartPtr<KeyFrameTransform2>>( sourceBudget ) };
         LinearSpline2<real_Num> m_positionSpline;         ///< Spline used for position interpolation
         // For scale and rotation, we will interpolate manually in update()
     };

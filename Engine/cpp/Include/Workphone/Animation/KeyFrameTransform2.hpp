@@ -10,7 +10,7 @@ namespace workphone
      * @class KeyFrameTransform2
      * @brief Represents a keyframe containing 2D transformation data (position, rotation, and scale).
      */
-    class KeyFrameTransform2 : public AnimationKeyFrame
+    class WPCore_API KeyFrameTransform2 : public AnimationKeyFrame
     {
     public:
         /** @brief Default constructor. */

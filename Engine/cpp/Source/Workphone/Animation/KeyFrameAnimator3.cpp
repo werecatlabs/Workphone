@@ -14,10 +14,24 @@ namespace workphone
         setAnimationTime( 0.f );
         setAnimationLength( 0.f );
 
-        m_currentKeyFrame = SmartPtr<KeyFrameTransform3>( new KeyFrameTransform3 );
+        m_currentKeyFrame = make_ptr<KeyFrameTransform3>();
     }
 
-    KeyFrameAnimator3::~KeyFrameAnimator3() = default;
+    KeyFrameAnimator3::~KeyFrameAnimator3()
+    {
+        unload( nullptr );
+    }
+
+    void KeyFrameAnimator3::unload( SmartPtr<ISharedObject> data )
+    {
+        auto keys = makeSourceBudgetSnapshot<SmartPtr<KeyFrameTransform3>>();
+        keys.swap( m_keyFrames );
+        auto current = m_currentKeyFrame;
+        m_currentKeyFrame = nullptr;
+        m_positionSpline.unload( nullptr );
+        m_orientationSpline.unload( nullptr );
+        Animator::unload( data );
+    }
 
     void KeyFrameAnimator3::update()
     {
@@ -73,11 +87,15 @@ namespace workphone
 
     void KeyFrameAnimator3::addKeyFrame( const SmartPtr<KeyFrameTransform3> &keyFrame )
     {
+        if( !keyFrame ) return;
+        auto current = m_currentKeyFrame;
+        if( !current ) current = make_ptr<KeyFrameTransform3>();
         m_keyFrames.push_back( keyFrame );
         std::sort( m_keyFrames.begin(), m_keyFrames.end(),
                    []( const SmartPtr<KeyFrameTransform3> &a, const SmartPtr<KeyFrameTransform3> &b ) {
                        return a && b ? a->getTime() < b->getTime() : static_cast<bool>( a );
                    } );
+        m_currentKeyFrame = std::move( current );
     }
 
     void KeyFrameAnimator3::addKeyFrames( const Array<SmartPtr<KeyFrameTransform3>> &keyFrames )
@@ -102,14 +120,16 @@ namespace workphone
 
     void KeyFrameAnimator3::setKeyFrames( const Array<SmartPtr<KeyFrameTransform3>> &keyFrames )
     {
-        m_keyFrames.clear();
-        for( const auto &keyFrame : keyFrames )
-        {
-            if( keyFrame )
-            {
-                addKeyFrame( keyFrame );
-            }
-        }
+        auto candidate = makeSourceBudgetSnapshot( keyFrames );
+        candidate.erase( std::remove( candidate.begin(), candidate.end(), nullptr ), candidate.end() );
+        std::sort( candidate.begin(), candidate.end(),
+                   []( const SmartPtr<KeyFrameTransform3> &a, const SmartPtr<KeyFrameTransform3> &b ) {
+                       return a->getTime() < b->getTime();
+                   } );
+        auto current = m_currentKeyFrame;
+        if( !current && !candidate.empty() ) current = make_ptr<KeyFrameTransform3>();
+        m_keyFrames.swap( candidate );
+        m_currentKeyFrame = std::move( current );
     }
 
 }  // namespace workphone
