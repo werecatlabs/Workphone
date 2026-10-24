@@ -19,6 +19,7 @@
 #include <Workphone/Animation/KeyFrameTransform3.hpp>
 #include <Workphone/Animation/Animation.hpp>
 #include <Workphone/Mesh/MeshSkeleton.hpp>
+#include <Workphone/Mesh/Bone.hpp>
 #include <Workphone/Mesh/XMLSkeletonSerializer.hpp>
 
 #include <set>
@@ -2855,6 +2856,16 @@ namespace workphone
 
         collectBoneNodes( scene->mRootNode );
 
+        // Deforming joints also depend on unweighted ancestors. Preserve the
+        // complete transform chain rather than a flat collection of locals.
+        auto requiredNames = boneNames;
+        for( const auto &name : requiredNames )
+        {
+            const auto found=m_boneNodesByName.find(name);
+            for(auto node=found==m_boneNodesByName.end()?nullptr:found->second; node; node=node->mParent)
+                boneNames.insert(String(node->mName.C_Str()));
+        }
+
         auto skeleton = workphone::make_ptr<MeshSkeleton>();
         u32 handle = 0;
         for( const auto &boneName : boneNames )
@@ -2881,6 +2892,15 @@ namespace workphone
             }
         }
 
+        for(const auto &name:boneNames)
+        {
+            const auto found=m_boneNodesByName.find(name);
+            auto node=found==m_boneNodesByName.end()?nullptr:found->second;
+            if(!node || !node->mParent) continue;
+            auto parent=dynamic_pointer_cast<Bone>(skeleton->getBone(node->mParent->mName.C_Str()));
+            auto child=dynamic_pointer_cast<Bone>(skeleton->getBone(name));
+            if(parent && child) parent->addChild(child);
+        }
         importAnimations( scene, skeleton );
         return skeleton;
     }
@@ -3728,6 +3748,7 @@ namespace workphone
             {
                 animator->addAnimation( animation );
             }
+            animator->setAnimationCachePath( getAbsoluteCacheSceneAnimationPath(m_meshPath,m_fileUUID) );
         }
 
         if( scene->HasAnimations() && skeleton )
@@ -3745,6 +3766,9 @@ namespace workphone
             }
 
             animator->setSkeleton( skeleton );
+            animator->setAnimationCachePath( getAbsoluteCacheSkeletonPath(m_meshPath,m_fileUUID) );
+            // Prefer deforming rig clips to duplicate scene-node descriptors.
+            animator->clearAnimations();
 
             for( u32 animIndex = 0; animIndex < scene->mNumAnimations; ++animIndex )
             {

@@ -69,6 +69,21 @@ namespace workphone
         for( auto &child : m_children ) if( child ) child->setBindingPose();
     }
 
+    Vector3<real_Num> Bone::getBindingPosition() const { return m_bindingPosition; }
+    Quaternion<real_Num> Bone::getBindingOrientation() const { return m_bindingOrientation; }
+
+    void Bone::addChild( SmartPtr<Bone> child )
+    {
+        if( !child || child.get() == this ) throw std::invalid_argument( "Invalid bone child" );
+        for( auto p = SmartPtr<Bone>( this ); p; p = p->m_parent.get() )
+            if( p == child ) throw std::invalid_argument( "Cyclic bone hierarchy" );
+        if( child->m_parent.get() == this ) return;
+        m_children.push_back( child ); // Complete admission before either parent changes.
+        if( auto old = child->m_parent.get() )
+            old->m_children.erase( std::remove( old->m_children.begin(), old->m_children.end(), child ), old->m_children.end() );
+        child->m_parent = this;
+    }
+
     void Bone::reset()
     {
         m_position = m_bindingPosition;

@@ -23,6 +23,7 @@
 #include "../KeyFrameAnimatorBudgetContracts.hpp"
 #include "../ProgressiveMeshBudgetContracts.hpp"
 #include "../MeshImposterBudgetContracts.hpp"
+#include "../AnimatorPlaybackBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -653,6 +654,12 @@ BOOST_AUTO_TEST_CASE( imposter_buffers_obey_shared_source_admission )
 {
     TestGuard guard;
     mesh_imposter_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( scene_animator_playback_and_inventories )
+{
+    TestGuard guard;
+    animator_playback_budget_contracts::run();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

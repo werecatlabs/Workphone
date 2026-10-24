@@ -21,6 +21,10 @@
 #include <Workphone/Interface/System/IResourceManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
+#include <Workphone/Mesh/MeshSkeleton.hpp>
+#include <Workphone/Mesh/Bone.hpp>
+#include <Workphone/Interface/Mesh/IVertexBoneAssignment.hpp>
+#include <Workphone/Math/Matrix4.hpp>
 
 namespace workphone
 {
@@ -689,6 +693,10 @@ namespace workphone
 
         void ClawMesh::clearSkinningData()
         {
+            m_poseSkeleton = nullptr;
+            m_poseBones = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+            m_inverseBind = makeSourceBudgetSnapshot<wp_mat4f>();
+            m_posePalette = makeSourceBudgetSnapshot<wp_mat4f>();
             m_skinVertices.reset();
             m_skinInputBudget.reset();
             Array<wp_skin_result>().swap( m_skinOutput );
@@ -748,6 +756,107 @@ namespace workphone
                                                    wp_graphics_mesh_get_local_aabb( m_mesh ) );
             }
             return true;
+        }
+
+        bool ClawMesh::applySkeletonPose( SmartPtr<ISkeleton> skeleton, String &error )
+        {
+            NativeMeshLifecycleLock lifecycleLock;
+            error.clear();
+            if(!m_mesh || !isLoaded()) { error="Animated mesh is waiting for its render resource."; return false; }
+            auto rig = dynamic_pointer_cast<MeshSkeleton>(skeleton);
+            if(!rig) { error="Claw skeletal playback requires a MeshSkeleton."; return false; }
+            try
+            {
+                auto model = [](SmartPtr<IBone> bone, bool binding)
+                {
+                    auto matrix = Matrix4F::identity();
+                    size_t depth = 0;
+                    for(auto current=bone; current; current=current->getParent())
+                    {
+                        if(++depth > WP_SKIN_MAX_JOINTS) throw std::runtime_error("Cyclic or oversized skin hierarchy");
+                        auto concrete = dynamic_pointer_cast<Bone>(current);
+                        if(!concrete) throw std::runtime_error("Claw requires accessible bone binding poses");
+                        Matrix4F local;
+                        local.makeTransform(binding ? concrete->getBindingPosition() : current->getPosition(),
+                                            Vector3F(1,1,1),
+                                            binding ? concrete->getBindingOrientation() : current->getOrientation());
+                        matrix = local * matrix;
+                    }
+                    return matrix;
+                };
+                auto nativeMatrix = [](const Matrix4F &matrix)
+                {
+                    wp_mat4f value;
+                    for(u32 r=0;r<4;++r) for(u32 c=0;c<4;++c) value.m[r][c]=matrix[r][c];
+                    return value;
+                };
+                if(m_poseSkeleton != skeleton || !hasSkinningData())
+                {
+                    auto bones = makeSourceBudgetSnapshot(rig->getBones());
+                    size_t joints=0;
+                    for(const auto &bone:bones) if(bone) joints=std::max(joints,size_t(bone->getBoneHandle())+1);
+                    if(!joints || joints>WP_SKIN_MAX_JOINTS) throw std::runtime_error("Claw supports at most 256 skin joints");
+                    auto inverse = makeSourceBudgetSnapshot<wp_mat4f>(); inverse.resize(joints);
+                    auto palette = makeSourceBudgetSnapshot<wp_mat4f>(); palette.resize(joints);
+                    for(auto &entry:inverse) entry=nativeMatrix(Matrix4F::identity());
+                    for(const auto &bone:bones) if(bone) inverse[bone->getBoneHandle()]=nativeMatrix(model(bone,true).inverse());
+                    const auto count=wp_graphics_mesh_get_vertex_count(m_mesh);
+                    const auto stride=wp_graphics_mesh_get_vertex_stride(m_mesh);
+                    const auto raw=static_cast<const u8 *>(wp_graphics_mesh_get_vertices(m_mesh));
+                    const auto format=wp_graphics_mesh_get_vertex_format(m_mesh);
+                    if(!raw || (format!=WORKPHONE_VERTEX_FORMAT_PNT && format!=WORKPHONE_VERTEX_FORMAT_PNTC))
+                        throw std::runtime_error("Unsupported animated vertex format");
+                    auto vertices=makeSourceBudgetSnapshot<wp_skin_vertex>(); vertices.resize(count);
+                    for(u32 i=0;i<count;++i)
+                    {
+                        std::memcpy(&vertices[i].position,raw+size_t(i)*stride,sizeof(wp_vec3f));
+                        std::memcpy(&vertices[i].normal,raw+size_t(i)*stride+sizeof(wp_vec3f),sizeof(wp_vec3f));
+                    }
+                    auto app=core::IApplicationManager::instance();
+                    auto manager=app ? app->getMeshManager() : nullptr;
+                    auto resource=manager ? dynamic_pointer_cast<IMeshResource>(manager->loadFromFile(m_meshName.str())) : nullptr;
+                    auto source=resource ? resource->getMesh() : nullptr;
+                    if(!source) throw std::runtime_error("Cannot load animated CPU mesh weights");
+                    size_t base=0, weighted=0;
+                    for(u32 i=0;i<source->getNumSubMeshes();++i)
+                    {
+                        auto section=source->getSubMesh(i);
+                        auto buffer=section ? section->getVertexBuffer() : nullptr;
+                        if(!buffer || section->getUseSharedVertices()) throw std::runtime_error("Unsupported shared skin vertex layout");
+                        if(base+buffer->getNumVertices()>count) throw std::runtime_error("Skin weight and render vertex layouts differ");
+                        for(const auto &assignment:section->getBoneAssignments()) if(assignment && assignment->getWeight()>0)
+                        {
+                            if(assignment->getVertexIndex()>=buffer->getNumVertices() || assignment->getBoneIndex()>=joints)
+                                throw std::runtime_error("Invalid skin bone/vertex index");
+                            auto &vertex=vertices[base+assignment->getVertexIndex()];
+                            u32 slot=0; while(slot<WP_SKIN_INFLUENCES && vertex.weights[slot]>0) ++slot;
+                            if(slot==WP_SKIN_INFLUENCES) throw std::runtime_error("Claw supports at most four weights per vertex");
+                            vertex.joints[slot]=assignment->getBoneIndex(); vertex.weights[slot]=assignment->getWeight(); ++weighted;
+                        }
+                        base+=buffer->getNumVertices();
+                    }
+                    if(!weighted) { error="Mesh cache contains no skin weights; reimport the animated model."; return false; }
+                    if(base!=count) throw std::runtime_error("Incomplete skin vertex layout");
+                    for(auto &vertex:vertices)
+                    {
+                        float sum=0; for(float weight:vertex.weights) sum+=weight;
+                        if(sum>0) for(float &weight:vertex.weights) weight/=sum;
+                    }
+                    if(!setSkinningData(vertices)) throw std::runtime_error("Skin binding admission or validation failed");
+                    m_poseBones=std::move(bones); m_inverseBind=std::move(inverse); m_posePalette=std::move(palette);
+                    m_poseSkeleton=skeleton;
+                }
+                for(const auto &bone:m_poseBones) if(bone)
+                {
+                    const auto handle=bone->getBoneHandle();
+                    Matrix4F inverse;
+                    for(u32 r=0;r<4;++r) for(u32 c=0;c<4;++c) inverse[r][c]=m_inverseBind[handle].m[r][c];
+                    m_posePalette[handle]=nativeMatrix(model(bone,false)*inverse);
+                }
+                if(!applySkinningPalette(m_posePalette)) { error="Skin pose admission or validation failed; retaining previous geometry."; return false; }
+                return true;
+            }
+            catch(const std::exception &exception) { error=String("Skeletal playback: ")+exception.what(); return false; }
         }
 
         bool ClawMesh::updateGeometry( const Array<wp_graphics_mesh_vertex_pntc> &vertices,

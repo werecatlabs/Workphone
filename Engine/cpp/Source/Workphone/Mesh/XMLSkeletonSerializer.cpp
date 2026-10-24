@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Mesh/XMLSkeletonSerializer.hpp>
+#include <Workphone/Mesh/Bone.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Interface/Animation/IActorAnimationTrack.hpp>
 #include <Workphone/Interface/Animation/IAnimation.hpp>
@@ -283,9 +284,9 @@ namespace workphone
 
             if( bone && parent )
             {
-                // Note: This depends on IBone having an addChild method or similar hierarchy setup
-                // You may need to implement this in your IBone interface
-                // parent->addChild( bone );
+                auto concreteParent = dynamic_pointer_cast<Bone>( parent );
+                auto concreteChild = dynamic_pointer_cast<Bone>( bone );
+                if( concreteParent && concreteChild ) concreteParent->addChild( concreteChild );
                 WP_LOG( "XMLSkeletonSerializer: Setting up bone hierarchy: " + parentName + " -> " +
                         boneName );
             }
@@ -344,6 +345,7 @@ namespace workphone
 
                     track->setPropertyName( boneName );
                     track->setTrackType( IActorAnimationTrack::TrackType::Transform );
+                    track->removeAllKeyFrames();
                     readKeyFrames( track.get(), trackElem->FirstChildElement( "keyframes" ) );
                     WP_LOG( "XMLSkeletonSerializer: Processing track for bone: " + boneName );
                 }

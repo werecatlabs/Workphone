@@ -8,6 +8,19 @@
 #include <Workphone/Interface/System/IFSMListener.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Core/Path.hpp>
+#include <Workphone/Mesh/MeshSkeleton.hpp>
+#include <Workphone/Mesh/Bone.hpp>
+#include <Workphone/Mesh/XMLSkeletonSerializer.hpp>
+#include <Workphone/Animation/Animation.hpp>
+#include <Workphone/Animation/ActorAnimationTrack.hpp>
+#include <Workphone/Animation/KeyFrameTransform3.hpp>
+#include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include <Workphone/Interface/Scene/IGameActor.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsMesh.hpp>
+#include <tinyxml.h>
+#include <fstream>
 #include <algorithm>
 #include <cmath>
 
@@ -54,7 +67,41 @@ namespace workphone::scene
     {
         Array<String> getPlaybackStateNames()
         {
-            return { String( "Stopped" ), String( "Playing" ), String( "Paused" ) };
+            auto names = makeSourceBudgetSnapshot<String>();
+            names.reserve(3);
+            names.push_back("Stopped"); names.push_back("Playing"); names.push_back("Paused");
+            return names;
+        }
+
+        Array<SmartPtr<IGameActor>> animationActors( SmartPtr<IGameActor> root )
+        {
+            auto result = makeSourceBudgetSnapshot<SmartPtr<IGameActor>>();
+            if( root ) result.push_back( root );
+            for( size_t i = 0; i < result.size(); ++i )
+            {
+                auto children = result[i]->getChildren();
+                result.insert( result.end(), children.begin(), children.end() );
+            }
+            return result;
+        }
+
+        String legacyAnimationCache( const Array<SmartPtr<IGameActor>> &actors )
+        {
+            for( const auto &actor : actors )
+                if( auto mesh = actor->getComponent<Mesh>() )
+                {
+                    const auto path = mesh->getMeshPath();
+                    auto name = Path::getFileNameWithoutExtension( path );
+                    if( name.size() < 37 ) continue;
+                    for( const auto *extension : { ".glb.", ".gltf.", ".fbx.", ".dae.", ".blend." } )
+                    {
+                        const auto separator = StringUtil::make_lower( name ).find( extension );
+                        if( separator == String::npos ) continue;
+                        return Path::lexically_normal( Path::getFilePath(path),
+                            name.substr(0,separator) + "_" + name.substr(name.size()-36) + ".skeleton.xml" );
+                    }
+                }
+            return {};
         }
 
         u32 normalisePlaybackState( u32 state )
@@ -191,6 +238,11 @@ namespace workphone::scene
         std::swap( retiredIK, m_ikSystem );
         auto retiredResults = makeSourceBudgetSnapshot<animation::AnimationIKSolveResult>();
         retiredResults.swap( m_lastIKSolveResults );
+        auto retiredAnimations = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
+        auto retiredClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+        retiredAnimations.swap( m_animations );
+        retiredClips.swap( m_animationClips );
+        m_state = STATE_STOPPED;
 
         // Cleanup FSM
         if( m_fsm )
@@ -264,6 +316,13 @@ namespace workphone::scene
         {
             return;
         }
+
+        if( !m_animationGraph.isValid() && m_animations.empty() && !restoreRuntimeAnimations() )
+        {
+            m_state = STATE_STOPPED;
+            return;
+        }
+        m_playbackStatus.clear();
 
         const auto wasPaused = m_state == STATE_PAUSED;
         if( !wasPaused && m_resetTimeOnPlay )
@@ -383,6 +442,7 @@ namespace workphone::scene
 
         m_ikSystem.solvePrepared( preparedIK );
         m_lastIKSolveResults = preparedIK.takeResults();
+        publishSkeletonPose();
     }
 
     f32 Animator::getAnimationTime() const
@@ -628,8 +688,12 @@ namespace workphone::scene
 
     void Animator::setAnimationClips( const Array<SmartPtr<Animation>> &animationClips )
     {
-        m_animationClips = animationClips;
-        setSelectedAnimationIndex( m_selectedAnimationIndex );
+        auto candidate = makeSourceBudgetSnapshot( animationClips );
+        const auto index=m_selectedAnimationIndex, state=m_state;
+        const auto time=m_animationTime;
+        m_animationClips.swap( candidate );
+        try { setSelectedAnimationIndex( index ); }
+        catch(...) { m_animationClips.swap(candidate); m_selectedAnimationIndex=index; m_state=state; m_animationTime=time; throw; }
     }
 
     u32 Animator::getNumAnimationClips() const
@@ -639,8 +703,10 @@ namespace workphone::scene
 
     void Animator::clearAnimations()
     {
-        m_animations.clear();
-        m_animationClips.clear();
+        auto retiredAnimations = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
+        auto retiredClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+        retiredAnimations.swap( m_animations );
+        retiredClips.swap( m_animationClips );
         m_selectedAnimationIndex = 0;
         m_animationTime = 0.0f;
         m_state = STATE_STOPPED;
@@ -659,8 +725,126 @@ namespace workphone::scene
 
     void Animator::setAnimations( const Array<SmartPtr<IAnimation>> &animations )
     {
-        m_animations = animations;
-        setSelectedAnimationIndex( m_selectedAnimationIndex );
+        auto candidate = makeSourceBudgetSnapshot( animations );
+        const auto index=m_selectedAnimationIndex, state=m_state;
+        const auto time=m_animationTime;
+        m_animations.swap( candidate );
+        try { setSelectedAnimationIndex( index ); }
+        catch(...) { m_animations.swap(candidate); m_selectedAnimationIndex=index; m_state=state; m_animationTime=time; throw; }
+    }
+
+    void Animator::setAnimationCachePath( const String &path ) { m_animationCachePath = path; }
+    String Animator::getAnimationCachePath() const { return m_animationCachePath; }
+    String Animator::getPlaybackStatus() const { return m_playbackStatus; }
+
+    bool Animator::restoreRuntimeAnimations()
+    {
+        auto actors = animationActors( getActor() );
+        auto cache = m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
+        auto app = core::IApplicationManager::instance();
+        const auto project = app ? app->getProjectPath() : String();
+        cache = Path::getAbsolutePath( project.empty() ? Path::getWorkingDirectory() : project, cache );
+        if( cache.empty() || !Path::isExistingFile(cache) )
+        {
+            m_playbackStatus = "No playable runtime clips. Reimport the animated model to create its animation cache.";
+            return false;
+        }
+        const auto epoch = sourceBudgetDenialCount();
+        auto clips = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
+        SmartPtr<MeshSkeleton> rig;
+        if( cache.find(".skeleton.xml") != String::npos )
+        {
+            rig = make_ptr<MeshSkeleton>();
+            XMLSkeletonSerializer{}.importSkeleton( cache, rig.get() );
+            // Older caches omitted hierarchy links. Recover them from the
+            // instance's retained node tree without sharing another instance's rig.
+            for( const auto &actor : actors )
+            {
+                auto child = dynamic_pointer_cast<Bone>(rig->getBone(actor->getName()));
+                if( !child ) continue;
+                for( auto parent = actor->getParent(); parent; parent = parent->getParent() )
+                {
+                    if( auto bone = dynamic_pointer_cast<Bone>(rig->getBone(parent->getName())) )
+                    { bone->addChild(child); break; }
+                }
+            }
+            clips = makeSourceBudgetSnapshot( rig->getAnimations() );
+        }
+        else
+        {
+            std::ifstream file(cache.c_str(), std::ios::binary | std::ios::ate);
+            const auto size = file ? static_cast<size_t>(file.tellg()) : 0;
+            if( !size || size > (64u << 20) ) throw std::runtime_error("Invalid scene animation cache size");
+            auto bytes = makeSourceBudgetSnapshot<char>(); bytes.resize(size + 1, 0);
+            file.seekg(0); file.read(bytes.data(), size);
+            if( !file ) throw std::runtime_error("Incomplete scene animation cache");
+            TiXmlDocument document; document.Parse(bytes.data());
+            auto root = document.RootElement();
+            if( document.Error() || !root || String(root->Value()) != "sceneAnimations" )
+                throw std::runtime_error("Invalid scene animation cache");
+            auto number = [](const TiXmlElement *node, const char *name, double fallback)
+            {
+                double value = fallback;
+                if(node && node->Attribute(name) && node->QueryDoubleAttribute(name,&value) != TIXML_SUCCESS)
+                    throw std::runtime_error("Invalid animation cache number");
+                if(!std::isfinite(value)) throw std::runtime_error("Nonfinite animation cache number");
+                return value;
+            };
+            for( auto item = root->FirstChildElement("animation"); item; item = item->NextSiblingElement("animation") )
+            {
+                auto clip = make_ptr<workphone::Animation>();
+                clip->setName(item->Attribute("name") ? item->Attribute("name") : "Animation");
+                clip->setLength(static_cast<f32>(number(item,"length",0)));
+                if(clip->getLength() <= 0) throw std::runtime_error("Invalid animation cache duration");
+                auto tracks = item->FirstChildElement("tracks");
+                u16 handle = 0;
+                for(auto node = tracks ? tracks->FirstChildElement("track") : nullptr; node; node = node->NextSiblingElement("track"))
+                {
+                    const String name = node->Attribute("actor") ? node->Attribute("actor") : "";
+                    auto found = std::find_if(actors.begin(),actors.end(),[&](const auto &actor){return actor->getName()==name;});
+                    if(found == actors.end()) continue;
+                    auto track = dynamic_pointer_cast<IActorAnimationTrack>(clip->addTrack(StringUtil::getHash("ActorAnimationTrack"), name, handle++));
+                    if(!track) throw std::runtime_error("Cannot create cached actor track");
+                    track->setActor(*found); track->removeAllKeyFrames();
+                    auto keys = node->FirstChildElement("keyframes");
+                    double previous = -1;
+                    for(auto key = keys ? keys->FirstChildElement("keyframe") : nullptr; key; key = key->NextSiblingElement("keyframe"))
+                    {
+                        const auto time = number(key,"time",0);
+                        if(time < 0 || time <= previous) throw std::runtime_error("Unordered animation cache keys");
+                        previous = time;
+                        auto frame = dynamic_pointer_cast<KeyFrameTransform3>(track->createKeyFrame(static_cast<f32>(time)));
+                        if(!frame) throw std::runtime_error("Cannot create cached animation key");
+                        auto p=key->FirstChildElement("translate"), q=key->FirstChildElement("rotation"), s=key->FirstChildElement("scale");
+                        frame->setPosition({real_Num(number(p,"x",0)),real_Num(number(p,"y",0)),real_Num(number(p,"z",0))});
+                        frame->setOrientation({real_Num(number(q,"qw",1)),real_Num(number(q,"qx",0)),real_Num(number(q,"qy",0)),real_Num(number(q,"qz",0))});
+                        frame->setScale({real_Num(number(s,"x",1)),real_Num(number(s,"y",1)),real_Num(number(s,"z",1))});
+                    }
+                }
+                clips.push_back(clip);
+            }
+        }
+        if(sourceBudgetDenialCount() != epoch) throw std::bad_alloc();
+        if(clips.empty()) { m_playbackStatus="The animation cache contains no playable clips."; return false; }
+        String stagedCache(cache);
+        m_animations.swap(clips);
+        m_skeleton = rig;
+        m_selectedAnimationIndex = std::min<u32>(m_selectedAnimationIndex, static_cast<u32>(m_animations.size()-1));
+        m_animationCachePath = std::move(stagedCache);
+        return true;
+    }
+
+    void Animator::publishSkeletonPose()
+    {
+        if( !m_skeleton ) return;
+        m_playbackStatus.clear();
+        for( const auto &actor : animationActors(getActor()) )
+            if( auto renderer = actor->getComponent<MeshRenderer>() )
+                if( auto mesh = renderer->getGraphicsObjectByType<render::IGraphicsMesh>() )
+                {
+                    String error;
+                    if( !mesh->applySkeletonPose(m_skeleton,error) ) m_playbackStatus = error;
+                }
     }
 
     SmartPtr<Properties> Animator::getProperties() const
@@ -672,6 +856,8 @@ namespace workphone::scene
         }
 
         properties->setProperty( animationTimeStr, m_animationTime );
+        properties->setProperty( "animationCachePath", m_animationCachePath );
+        properties->setProperty( "playbackStatus", m_playbackStatus, true );
         properties->setProperty( animationSpeedStr, m_animationSpeed );
         properties->setProperty( animationWeightStr, m_animationWeight );
         properties->setProperty( animationScaleStr, m_animationScale );
@@ -724,6 +910,8 @@ namespace workphone::scene
         {
             return;
         }
+
+        properties->getPropertyValue( "animationCachePath", m_animationCachePath );
 
         // An IK import can admit arrays and oversized IDs. Finish that staging
         // before changing playback properties or suppressing update callbacks.
@@ -781,7 +969,7 @@ namespace workphone::scene
 
         if( auto clipsNode = properties->getChild( clipsStr ) )
         {
-            Array<SmartPtr<Animation>> clips;
+            auto clips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
             for( auto &clipProperties : clipsNode->getChildrenByName( clipStr ) )
             {
                 if( clipProperties )
@@ -851,7 +1039,7 @@ namespace workphone::scene
 
     Array<SmartPtr<ISharedObject>> Animator::getChildObjects() const
     {
-        auto children = Component::getChildObjects();
+        auto children = makeSourceBudgetSnapshot( Component::getChildObjects() );
         children.insert( children.end(), m_animations.begin(), m_animations.end() );
         children.insert( children.end(), m_animationClips.begin(), m_animationClips.end() );
         return children;

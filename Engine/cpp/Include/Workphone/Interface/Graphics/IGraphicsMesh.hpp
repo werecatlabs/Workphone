@@ -119,6 +119,10 @@ namespace workphone
             /** Sets the mesh skeleton. */
             virtual void setSkeleton( SmartPtr<IGraphicsSkeleton> skeleton ) = 0;
 
+            /** Publish a sampled CPU skeleton to this mesh. Unsupported backends
+             * report an explicit error; rejected staging preserves geometry. */
+            virtual bool applySkeletonPose( SmartPtr<ISkeleton> skeleton, String &error );
+
             WP_CLASS_REGISTER_DECL;
         };
 

@@ -106,6 +106,7 @@ namespace workphone
 
             /** Assigns a skeleton for skeletal animation. */
             void setSkeleton( SmartPtr<IGraphicsSkeleton> skeleton ) override;
+            bool applySkeletonPose( SmartPtr<ISkeleton> skeleton, String &error ) override;
 
             /** Initial CPU deformation path; call from the mesh-owning render thread.
              * Joint palettes are model-space current_joint * inverse_bind. */
@@ -127,6 +128,10 @@ namespace workphone
 
         protected:
             void clearSkinningData();
+            SmartPtr<ISkeleton> m_poseSkeleton;
+            Array<SmartPtr<IBone>> m_poseBones = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+            Array<wp_mat4f> m_inverseBind = makeSourceBudgetSnapshot<wp_mat4f>();
+            Array<wp_mat4f> m_posePalette = makeSourceBudgetSnapshot<wp_mat4f>();
             std::shared_ptr<StreamBudgetLease> m_skinInputBudget;
             std::shared_ptr<const Array<wp_skin_vertex>> m_skinVertices;
             std::shared_ptr<StreamBudgetLease> m_skinOutputBudget;

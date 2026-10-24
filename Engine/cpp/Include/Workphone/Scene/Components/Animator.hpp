@@ -288,6 +288,11 @@ namespace workphone
 
             void clearAnimations();
 
+            /** Runtime cache used to restore imported clips after prefab/scene loading. */
+            void setAnimationCachePath( const String &path );
+            String getAnimationCachePath() const;
+            String getPlaybackStatus() const;
+
             /**
              * @brief Replace the animator's animations with the provided list.
              * @param animations New list of animations to use.
@@ -345,6 +350,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
+            bool restoreRuntimeAnimations();
+            void publishSkeletonPose();
             /**
              * @brief Finite state machine instance that manages animation playback
              * states and dispatches events.
@@ -367,8 +374,10 @@ namespace workphone
              * The array contains smart pointers to animation resources that will
              * be advanced when playback is active.
              */
-            Array<SmartPtr<IAnimation>> m_animations;
-            Array<SmartPtr<Animation>> m_animationClips;
+            Array<SmartPtr<IAnimation>> m_animations = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
+            Array<SmartPtr<Animation>> m_animationClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+            String m_animationCachePath;
+            String m_playbackStatus;
 
             animation::AnimationGraphInstance m_animationGraph;
             animation::AnimationIKSystem m_ikSystem;

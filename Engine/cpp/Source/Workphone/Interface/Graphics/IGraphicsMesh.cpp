@@ -19,4 +19,10 @@ namespace workphone::render
 
     IGraphicsMesh::~IGraphicsMesh() = default;
 
+    bool IGraphicsMesh::applySkeletonPose( SmartPtr<ISkeleton>, String &error )
+    {
+        error = "Skeleton pose publication is unsupported by this graphics backend.";
+        return false;
+    }
+
 }  // namespace workphone::render

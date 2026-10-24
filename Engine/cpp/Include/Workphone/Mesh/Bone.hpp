@@ -51,6 +51,10 @@ namespace workphone
          * The binding pose is the reference pose used for mesh binding.
          */
         void setBindingPose() override;
+        Vector3<real_Num> getBindingPosition() const;
+        Quaternion<real_Num> getBindingOrientation() const;
+        /** Attach an existing indexed bone without replacing its handle/name. */
+        void addChild( SmartPtr<Bone> child );
 
         /**
          * @brief Resets the bone to its binding pose.

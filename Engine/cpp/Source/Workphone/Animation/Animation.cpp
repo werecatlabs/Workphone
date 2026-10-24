@@ -589,6 +589,13 @@ namespace workphone
                     auto actorTrack = dynamic_cast<ActorAnimationTrack *>( pair.second );
                     if( actorTrack )
                     {
+                        // Scene-node tracks keep explicit actor bindings even
+                        // when the owning Animator also drives a skeleton.
+                        if( actorTrack->getActor() )
+                        {
+                            actorTrack->apply( timeIndex, weight, scale );
+                            continue;
+                        }
                         auto boneName = actorTrack->getPropertyName();
                         if( StringUtil::isNullOrEmpty( boneName ) )
                             if( const auto importedBone = actorTrack->getBone() )
