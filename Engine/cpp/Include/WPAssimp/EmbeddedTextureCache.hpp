@@ -30,6 +30,14 @@ namespace workphone::detail
                         []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
         // Never derive a path from an exporter-supplied filename or unchecked hint.
         if( formatHint == "jpeg" ) formatHint = "jpg";
+        // Older Assimp glTF importers truncated format hints to three characters.
+        // Recover WebP only when its container signature confirms that format.
+        if( formatHint == "web" && byteLength >= 12 &&
+            std::memcmp( data, "RIFF", 4 ) == 0 &&
+            std::memcmp( static_cast<const char *>( data ) + 8, "WEBP", 4 ) == 0 )
+        {
+            formatHint = "webp";
+        }
         if( formatHint.empty() || formatHint.size() > 8 ||
             !std::all_of( formatHint.begin(), formatHint.end(),
                           []( unsigned char c ) { return std::isalnum( c ) != 0; } ) )

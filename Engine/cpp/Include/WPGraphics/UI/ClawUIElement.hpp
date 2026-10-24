@@ -530,7 +530,7 @@ namespace workphone
                 return;
             }
 
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
                 if( auto guiChild = dynamic_cast<IWorkphoneWidget *>( child.get() ) )
@@ -621,10 +621,13 @@ namespace workphone
             child->remove();
             child->setParent( this );
 
-            auto &children = getChildrenRef();
-            if( std::find( children.begin(), children.end(), child ) == children.end() )
             {
-                children.push_back( child );
+                auto &children = getChildrenRef();
+                ScopedLock lock( &children );
+                if( std::find( children.begin(), children.end(), child ) == children.end() )
+                {
+                    children.push_back( child );
+                }
             }
 
             if( !this->template isDerived<IUILayoutWindow>() )
@@ -644,13 +647,20 @@ namespace workphone
         {
             if( child )
             {
-                auto &children = getChildrenRef();
-
-                auto it = std::find( children.begin(), children.end(), child );
-                if( it != children.end() )
+                bool removed = false;
+                {
+                    auto &children = getChildrenRef();
+                    ScopedLock lock( &children );
+                    auto it = std::find( children.begin(), children.end(), child );
+                    if( it != children.end() )
+                    {
+                        children.erase( it );
+                        removed = true;
+                    }
+                }
+                if( removed )
                 {
                     child->setParent( nullptr );
-                    children.erase( it );
                     return true;
                 }
             }
@@ -670,7 +680,13 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::removeAllChildren()
         {
-            auto &children = getChildrenRef();
+            Array<SmartPtr<IUIElement>> children;
+            {
+                auto &storedChildren = getChildrenRef();
+                ScopedLock lock( &storedChildren );
+                children = storedChildren.snapshot();
+                storedChildren.clear();
+            }
             for( auto &child : children )
             {
                 if( child )
@@ -678,8 +694,6 @@ namespace workphone
                     child->setParent( nullptr );
                 }
             }
-
-            children.clear();
         }
 
         template <class T>
@@ -688,7 +702,13 @@ namespace workphone
             auto applicationManager = core::IApplicationManager::instance();
             auto ui = applicationManager->getUI();
 
-            auto &children = getChildrenRef();
+            Array<SmartPtr<IUIElement>> children;
+            {
+                auto &storedChildren = getChildrenRef();
+                ScopedLock lock( &storedChildren );
+                children = storedChildren.snapshot();
+                storedChildren.clear();
+            }
             for( auto &child : children )
             {
                 if( child )
@@ -698,14 +718,12 @@ namespace workphone
                     ui->removeElement( child );
                 }
             }
-
-            children.clear();
         }
 
         template <class T>
         bool ClawUIElement<T>::hasChildById( const String &id ) const
         {
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
                 if( child )
@@ -734,7 +752,7 @@ namespace workphone
         template <class T>
         SmartPtr<IUIElement> ClawUIElement<T>::findChildById( const String &id ) const
         {
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
                 if( child )
@@ -763,7 +781,7 @@ namespace workphone
         template <class T>
         SmartPtr<IUIElement> ClawUIElement<T>::findChildByComponentId( const String &componentId ) const
         {
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
                 if( auto childElement = dynamic_cast<IWorkphoneWidget *>( child.get() );
@@ -833,13 +851,15 @@ namespace workphone
                 }
             }
 
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
-                auto listener = child->findObjectListener( id );
-                if( listener )
+                if( child )
                 {
-                    return listener;
+                    if( auto listener = child->findObjectListener( id ) )
+                    {
+                        return listener;
+                    }
                 }
             }
 
@@ -891,10 +911,10 @@ namespace workphone
             //         return true;
             // }
 
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
-                if( child->handleEvent( event ) )
+                if( child && child->handleEvent( event ) )
                 {
                     return true;
                 }
@@ -923,10 +943,13 @@ namespace workphone
 
                 if( cascade )
                 {
-                    auto &children = getChildrenRef();
-                    for( u32 i = 0; i < children.size(); ++i )
+                    auto children = getChildren();
+                    for( auto &child : children )
                     {
-                        children[i]->setEnabled( m_isEnabled );
+                        if( child )
+                        {
+                            child->setEnabled( m_isEnabled );
+                        }
                     }
                 }
 
@@ -985,10 +1008,13 @@ namespace workphone
 
             if( cascade )
             {
-                auto &children = getChildrenRef();
+                auto children = getChildren();
                 for( auto &child : children )
                 {
-                    child->setVisible( visible, cascade );
+                    if( child )
+                    {
+                        child->setVisible( visible, cascade );
+                    }
                 }
             }
 
@@ -1007,10 +1033,13 @@ namespace workphone
 
             m_hasFocus = hasFocus;
 
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
-                child->setFocus( m_hasFocus );
+                if( child )
+                {
+                    child->setFocus( m_hasFocus );
+                }
             }
 
             if( m_hasFocus )
@@ -1531,14 +1560,50 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::sortZOrder()
         {
-            auto &children = getChildrenRef();
+            Array<SmartPtr<IUIElement>> children;
+            {
+                auto &storedChildren = getChildrenRef();
+                ScopedLock lock( &storedChildren );
+                struct OrderedChild
+                {
+                    SmartPtr<IUIElement> child;
+                    u32 order;
+                };
+                Array<OrderedChild> ordered;
+                auto members = storedChildren.snapshot();
+                ordered.reserve( members.size() );
+                for( auto &child : members )
+                {
+                    ordered.push_back( { child, child ? child->getOrder() : 0 } );
+                }
+                // Live UI state can change order while rendering. Compare fixed keys
+                // and never expose std::sort's moved-from slots in the shared inventory.
+                std::stable_sort( ordered.begin(), ordered.end(), []( const auto &a, const auto &b ) {
+                    if( !a.child )
+                    {
+                        return false;
+                    }
+                    if( !b.child )
+                    {
+                        return true;
+                    }
+                    return a.order < b.order;
+                } );
+                children.reserve( ordered.size() );
+                for( size_t index = 0; index < ordered.size(); ++index )
+                {
+                    storedChildren[index] = ordered[index].child;
+                    children.push_back( ordered[index].child );
+                }
+            }
 
-            std::sort( children.begin(), children.end(),
-                       []( auto a, auto b ) { return a->getOrder() < b->getOrder(); } );
-
+            // Child callbacks may change membership; never retain live iterators here.
             for( auto child : children )
             {
-                child->sortZOrder();
+                if( child )
+                {
+                    child->sortZOrder();
+                }
             }
         }
 
@@ -1547,10 +1612,13 @@ namespace workphone
         {
             sortZOrder();
 
-            auto &children = getChildrenRef();
+            auto children = getChildren();
             for( auto &child : children )
             {
-                child->updateZOrder();
+                if( child )
+                {
+                    child->updateZOrder();
+                }
             }
         }
 
@@ -1647,10 +1715,13 @@ namespace workphone
 
                 if( cascade )
                 {
-                    auto &children = getChildrenRef();
+                    auto children = getChildren();
                     for( auto &child : children )
                     {
-                        child->setHighlighted( m_isHighlighted );
+                        if( child )
+                        {
+                            child->setHighlighted( m_isHighlighted );
+                        }
                     }
                 }
             }

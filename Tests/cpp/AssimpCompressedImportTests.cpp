@@ -1,6 +1,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <meshoptimizer.h>
+#include <WPAssimp/MeshCacheFileName.hpp>
 
 #include <array>
 #include <cmath>
@@ -21,6 +22,42 @@ namespace
     }
 
     bool close( float a, float b ) { return std::abs( a - b ) < 0.0001f; }
+
+    void verifyCacheFileNames()
+    {
+        using workphone::detail::meshCacheFileName;
+        const std::string uuid = "369fea76-b44b-e654-7c4e-563ca7c091cd";
+        const auto ordinary = meshCacheFileName( "car.glb", "Body", uuid, 127 );
+        require( ordinary == "car.glb.Body_" + uuid + ".fbmeshbin",
+                 "existing safe mesh cache names must stay stable" );
+        const std::string corvetteNode =
+            "c:SM_Base_0000_003_SM_Base_0000_003_MAT_Corvette_Z06_Cabrio.004";
+        const auto actual = meshCacheFileName( "Chevrolet_Corvette.glb", corvetteNode, uuid, 127 );
+        require( actual.size() <= 127 && actual.find( ':' ) == std::string::npos &&
+                 actual.substr( actual.size() - 10 ) == ".fbmeshbin",
+                 "Corvette cache names must fit FileInfo and never create alternate data streams" );
+        require( actual == meshCacheFileName( "Chevrolet_Corvette.glb", corvetteNode, uuid, 127 ),
+                 "mesh cache names must be deterministic across reimport" );
+        require( meshCacheFileName( "car.glb", "a:b", uuid, 127 ) !=
+                     meshCacheFileName( "car.glb", "a?b", uuid, 127 ),
+                 "sanitized node names must retain their distinct identities" );
+        const std::string common( 200, 'a' );
+        const auto longName = meshCacheFileName( "car.glb", common + "1", uuid, 127 );
+        require( longName.size() <= 127 &&
+                 longName != meshCacheFileName( "car.glb", common + "2", uuid, 127 ) &&
+                 longName != meshCacheFileName( "car.glb", common + "1", "different-source", 127 ),
+                 "shortening must retain node and source identity beyond the visible prefix" );
+        const auto separators = meshCacheFileName( "car.glb", "<>:\"/\\|?*\n", uuid, 127 );
+        require( separators.find_first_of( "<>:\"/\\|?*\n" ) == std::string::npos,
+                 "exporter-controlled node names must remain single safe filenames" );
+        require( meshCacheFileName( {}, "CON.part", uuid, 127 ).front() == '_',
+                 "Windows reserved device names must not become mesh cache files" );
+        const std::string exactNode( 127 - std::string( "car.glb._" + uuid + ".fbmeshbin" ).size(), 'x' );
+        require( meshCacheFileName( "car.glb", exactNode, uuid, 127 ).size() == 127,
+                 "the longest valid FileInfo cache name must remain valid" );
+        require( meshCacheFileName( "car.glb", exactNode + "x", uuid, 127 ).size() <= 127,
+                 "the first overflowing cache name must be shortened" );
+    }
 
     enum class Fault
     {
@@ -313,6 +350,7 @@ int main( int argc, char **argv )
             return 0;
         }
         require( argc == 1, "usage: WPAssimpCompressedImportTests [--assets <directory>]" );
+        verifyCacheFileNames();
         verifyGeometry( false, false );
         verifyGeometry( true, false );
         verifyGeometry( false, true );
@@ -321,7 +359,7 @@ int main( int argc, char **argv )
         for( auto fault : { Fault::CorruptPayload, Fault::SourceOutsideBuffer, Fault::InconsistentCount,
                            Fault::UnknownMode, Fault::UnknownFilter, Fault::InvalidFilterStride } )
             rejectMalformed( fault );
-        std::puts( "Assimp compressed import: 5 geometry contracts and 6 malformed input contracts passed" );
+        std::puts( "Assimp compressed import: cache filename contracts, 5 geometry contracts and 6 malformed input contracts passed" );
         return 0;
     }
     catch( const std::exception &error )

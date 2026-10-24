@@ -210,4 +210,27 @@ BOOST_AUTO_TEST_CASE( embedded_image_cache_repairs_incomplete_file_and_rejects_p
     BOOST_CHECK( !error.empty() );
 }
 
+BOOST_AUTO_TEST_CASE( legacy_three_character_webp_hint_uses_the_verified_container_extension )
+{
+    TextureFolders folders;
+    std::string error;
+    const std::string webp = "RIFF1234WEBPpayload";
+    const auto recovered = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "web",
+        webp.data(), webp.size(), error );
+    BOOST_REQUIRE_MESSAGE( !recovered.empty(), error );
+    BOOST_CHECK_EQUAL( recovered.extension().string(), ".webp" );
+    const auto modern = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "webp",
+        webp.data(), webp.size(), error );
+    BOOST_CHECK( recovered == modern );
+
+    const std::string other = "RIFF1234WAVEpayload";
+    const auto unrelated = workphone::detail::cacheEmbeddedTexture(
+        folders.project / "Cache", "Assets/cars/body.glb", 0, "web",
+        other.data(), other.size(), error );
+    BOOST_REQUIRE_MESSAGE( !unrelated.empty(), error );
+    BOOST_CHECK_EQUAL( unrelated.extension().string(), ".web" );
+}
+
 BOOST_AUTO_TEST_SUITE_END()

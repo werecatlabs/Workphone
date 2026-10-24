@@ -884,6 +884,7 @@ namespace workphone
         bindCore( luaState );
         bindIO( luaState );
         bindSystem( luaState );
+        bindMesh( luaState );
 
         bindScript( luaState );
 

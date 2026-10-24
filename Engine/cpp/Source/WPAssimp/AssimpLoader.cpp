@@ -3,6 +3,7 @@
 #include <WPAssimp/MaterialImportDefaults.hpp>
 #include <WPAssimp/TexturePathResolver.hpp>
 #include <WPAssimp/EmbeddedTextureCache.hpp>
+#include <WPAssimp/MeshCacheFileName.hpp>
 #include <WPAssimp/LogStream.hpp>
 #include <WPAssimp/IOSystem.hpp>
 #include <Workphone/Workphone.hpp>
@@ -640,10 +641,10 @@ namespace workphone
             u32 flags = getAssimpImportFlags( meshDirector );
 
             auto scene = importer.ReadFile( meshPath.c_str(), flags );
-            if( !scene || !scene->mRootNode )
+            if( !scene || !scene->mRootNode || scene->mNumMeshes == 0 )
             {
                 WP_LOG_ERROR( "Mesh import failed for '" + meshPath + "': " +
-                              String( importer.GetErrorString() ) );
+                              String( *importer.GetErrorString() ? importer.GetErrorString() : "the file contains no usable mesh scene" ) );
             }
             if( scene && scene->mRootNode )
             {
@@ -800,10 +801,10 @@ namespace workphone
             u32 flags = getAssimpImportFlags( getMeshDirector() );
 
             auto scene = importer.ReadFile( m_meshPath.c_str(), flags );
-            if( !scene || !scene->mRootNode )
+            if( !scene || !scene->mRootNode || scene->mNumMeshes == 0 )
             {
                 WP_LOG_ERROR( "Mesh import failed for '" + m_meshPath + "': " +
-                              String( importer.GetErrorString() ) );
+                              String( *importer.GetErrorString() ? importer.GetErrorString() : "the file contains no usable mesh scene" ) );
                 sceneManager->destroyActor( actor );
                 setRootActor( nullptr );
                 setMeshResource( nullptr );
@@ -1010,10 +1011,10 @@ namespace workphone
                 u32 flags = getAssimpImportFlags( getMeshDirector() );
 
                 auto scene = importer.ReadFile( meshFilePath.c_str(), flags );
-                if( !scene || !scene->mRootNode )
+                if( !scene || !scene->mRootNode || scene->mNumMeshes == 0 )
                 {
                     WP_LOG_ERROR( "Mesh import failed for '" + meshFilePath + "': " +
-                                  String( importer.GetErrorString() ) );
+                                  String( *importer.GetErrorString() ? importer.GetErrorString() : "the file contains no usable mesh scene" ) );
                     gameManager->destroyActor( actor );
                     setRootActor( nullptr );
                     setMeshResource( nullptr );
@@ -1191,10 +1192,10 @@ namespace workphone
             u32 flags = getAssimpImportFlags( getMeshDirector() );
 
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );
-            if( !scene || !scene->mRootNode )
+            if( !scene || !scene->mRootNode || scene->mNumMeshes == 0 )
             {
                 WP_LOG_ERROR( "Mesh import failed for '" + absolutePath + "': " +
-                              String( importer.GetErrorString() ) );
+                              String( *importer.GetErrorString() ? importer.GetErrorString() : "the file contains no usable mesh scene" ) );
                 setMeshResource( nullptr );
                 setMeshDirector( nullptr );
                 return nullptr;
@@ -1363,10 +1364,10 @@ namespace workphone
             setAssimpImportOptions( importer, getMeshDirector() );
             u32 flags = getAssimpImportFlags( getMeshDirector() );
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );
-            if( !scene || !scene->mRootNode )
+            if( !scene || !scene->mRootNode || scene->mNumMeshes == 0 )
             {
                 WP_LOG_ERROR( "Mesh import failed for '" + absolutePath + "': " +
-                              String( importer.GetErrorString() ) );
+                              String( *importer.GetErrorString() ? importer.GetErrorString() : "the file contains no usable mesh scene" ) );
                 setMeshResource( nullptr );
                 setMeshDirector( nullptr );
                 return nullptr;
@@ -1659,11 +1660,11 @@ namespace workphone
 
             auto numMeshes = pNode->mNumMeshes;
 
-            static const auto meshExt = String( ".fbmeshbin" );
             const auto nodeName = String( pNode->mName.data );
-
-            auto meshFilePath = "Cache/" + m_meshFileName + "." + nodeName + "_" +
-                                StringUtil::toString( m_fileUUID ) + meshExt;
+            const auto sourceUUID = StringUtil::toString( m_fileUUID );
+            auto meshFilePath = "Cache/" + String( detail::meshCacheFileName(
+                m_meshFileName.c_str(), nodeName.c_str(), sourceUUID.c_str(),
+                WP_MAX_FILENAME - 1 ).c_str() );
             meshFilePath = StringUtil::cleanupPath( meshFilePath );
 
             if( numMeshes > 0 && pNode->mMeshes )
@@ -1928,9 +1929,9 @@ namespace workphone
 
             auto numMeshes = pNode->mNumMeshes;
 
-            static const auto engineMeshExtention = String( ".fbmeshbin" );
-            auto meshFilePath = String( pNode->mName.data ) + "_" + StringUtil::toString( m_fileUUID ) +
-                                engineMeshExtention;
+            const auto sourceUUID = StringUtil::toString( m_fileUUID );
+            auto meshFilePath = String( detail::meshCacheFileName(
+                {}, pNode->mName.data, sourceUUID.c_str(), WP_MAX_FILENAME - 1 ).c_str() );
 
             if( numMeshes > 0 && pNode->mMeshes )
             {

@@ -16,7 +16,7 @@ namespace workphone
      * different shapes or animations. This interface provides methods to manipulate and query
      * the vertex offsets and other properties of the pose.
      */
-    class IMeshPose : public ISharedObject
+    class WPCore_API IMeshPose : public ISharedObject
     {
     public:
         ~IMeshPose() override;

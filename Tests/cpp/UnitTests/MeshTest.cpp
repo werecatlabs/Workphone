@@ -1009,7 +1009,20 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
         converter->writeMesh( actor );
         auto cachedResource = database->loadResourceByType<IMeshResource>( mesh->getName() );
         BOOST_REQUIRE( cachedResource );
-        BOOST_CHECK( cachedResource->getMesh() == mesh );
+        auto cachedMesh = cachedResource->getMesh();
+        BOOST_REQUIRE( cachedMesh );
+        const auto importedSubMeshes = mesh->getSubMeshes();
+        const auto cachedSubMeshes = cachedMesh->getSubMeshes();
+        BOOST_REQUIRE_EQUAL( cachedSubMeshes.size(), importedSubMeshes.size() );
+        for( size_t index = 0; index < importedSubMeshes.size(); ++index )
+        {
+            BOOST_REQUIRE( importedSubMeshes[index]->getVertexBuffer() );
+            BOOST_REQUIRE( cachedSubMeshes[index]->getVertexBuffer() );
+            BOOST_CHECK_EQUAL( cachedSubMeshes[index]->getVertexBuffer()->getNumVertices(),
+                               importedSubMeshes[index]->getVertexBuffer()->getNumVertices() );
+        }
+        cachedMesh->updateAABB( true );
+        BOOST_CHECK( cachedMesh->getAABB() == mesh->getAABB() );
         cachedResource->setLoadingState( LoadingState::Loaded );
         auto originalGraphics = app->getGraphicsSystem();
         auto loadProbe = workphone::make_ptr<CatalogMeshLoadProbe>();

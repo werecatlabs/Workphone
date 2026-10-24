@@ -17,7 +17,7 @@ namespace workphone
      * of bones is expressed using `SmartPtr<IBone>`; parent/child relationships
      * are returned as smart pointers to make lifetime management explicit.
      */
-    class IBone : public ISharedObject
+    class WPCore_API IBone : public ISharedObject
     {
     public:
         /** Virtual destructor. */

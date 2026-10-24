@@ -532,6 +532,11 @@ namespace workphone
     {
         if( factoryManager )
         {
+            if( auto factory = factoryManager->getFactoryByName( typeName ) )
+            {
+                return factoryManager->createById( factory->getObjectTypeId() );
+            }
+
             return factoryManager->createById( ISharedObject::typeInfo(), typeName );
         }
 

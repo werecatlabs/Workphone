@@ -1858,8 +1858,8 @@ void glTF2Importer::ImportEmbeddedTextures(glTF2::Asset &r) {
                 } // webp requires no transformation
 
                 size_t len = strlen(ext);
-                if (len > 3) len = 3;
-                tex->achFormatHint[3] = '\0';
+                if (len >= sizeof(tex->achFormatHint)) len = sizeof(tex->achFormatHint) - 1;
+                tex->achFormatHint[len] = '\0';
                 memcpy(tex->achFormatHint, ext, len);
             }
         }

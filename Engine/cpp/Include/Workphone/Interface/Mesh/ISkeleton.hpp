@@ -15,7 +15,7 @@ namespace workphone
      * associated with a skeleton. It serves as a base interface for skeleton-related operations
      * in a 3D engine.
      */
-    class ISkeleton : public ISharedObject
+    class WPCore_API ISkeleton : public ISharedObject
     {
     public:
         /**

@@ -12,6 +12,7 @@
 #include <Workphone/Interface/Script/IScriptData.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Mesh/Mesh.hpp>
 #include <initializer_list>
 #include <limits>
 
@@ -1153,7 +1154,7 @@ BOOST_AUTO_TEST_CASE( script_resource_returns_preserve_prefab_and_mesh_interface
     BOOST_REQUIRE( meshComponent );
     auto resource = dynamic_pointer_cast<IMeshResource>(
         guard.applicationManager->getMeshManager()->create( StringUtil::getUUID() ) );
-    auto mesh = guard.factoryManager->make_object<IMesh>( "Mesh" );
+    auto mesh = workphone::make_ptr<workphone::Mesh>();
     BOOST_REQUIRE( resource );
     BOOST_REQUIRE( mesh );
     mesh->setAABB( AABB3F( Vector3F( -1, -2, -3 ), Vector3F( 1, 2, 3 ) ) );
@@ -1165,7 +1166,7 @@ BOOST_AUTO_TEST_CASE( script_resource_returns_preserve_prefab_and_mesh_interface
             local source = parameters:getAsObject(0)
             local visual = parameters:getAsObject(1)
             local sharedResource = parameters:getAsObject(2)
-            local componentResource = visual:getComponent("Mesh"):getMeshResource()
+            local componentResource = visual:getComponent("workphone::scene::Mesh"):getMeshResource()
             local sharedMeshAPI = type(sharedResource.getMesh) == "function"
             local componentMeshAPI = type(componentResource.getMesh) == "function"
             results:addAsBool(sharedMeshAPI)

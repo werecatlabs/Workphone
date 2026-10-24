@@ -251,7 +251,10 @@ namespace workphone::ui
                 }
             } restore{ panel, canvas, originalClip };
 
-            for( auto child : m_children )
+            // UI callbacks can rebuild their screen while this frame is being
+            // drawn. Pin this frame's members instead of traversing live slots.
+            auto children = getChildren();
+            for( auto child : children )
             {
                 if( child )
                 {

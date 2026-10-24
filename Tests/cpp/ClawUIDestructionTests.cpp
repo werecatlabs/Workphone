@@ -1,4 +1,6 @@
 #include <WPGraphics/UI/ClawUIManager.hpp>
+#include <WPGraphics/UI/ClawUILayout.hpp>
+#include <WPGraphics/UI/ClawUIElement.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
@@ -22,12 +24,22 @@
 #include <Workphone/Interface/System/IFSMManager.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <cstdio>
+#include <cstring>
+#include <atomic>
+#include <chrono>
+#include <exception>
+#include <functional>
+#include <future>
 #include <memory>
+#include <thread>
+#include <WorkphoneCore/workphone.h>
 
 using namespace workphone;
 
 namespace
 {
+    unsigned assertions = 0;
+
     struct Fixture
     {
         Fixture() : types( std::make_unique<TypeManager>() ),
@@ -63,9 +75,190 @@ namespace
 
     bool check( bool condition, const char *message )
     {
+        ++assertions;
         if( !condition )
             std::fprintf( stderr, "FAIL: %s\n", message );
         return condition;
+    }
+
+    class CollectionProbe : public ui::ClawUIElement<ui::IUIElement>
+    {
+    public:
+        u32 getOrder() const override
+        {
+            ++orderReads;
+            if( onOrder ) onOrder();
+            return order;
+        }
+
+        void draw( wp_context * ) override
+        {
+            ++draws;
+            if( observedDraws ) ++*observedDraws;
+            if( onDraw ) onDraw();
+        }
+
+        u32 order = 0;
+        mutable unsigned orderReads = 0;
+        unsigned draws = 0;
+        std::shared_ptr<unsigned> observedDraws;
+        std::function<void()> onOrder;
+        std::function<void()> onDraw;
+    };
+
+    bool testSortingExcludesOtherThreads()
+    {
+        auto manager = make_ptr<ui::ClawUIManager>();
+        auto layout = dynamic_pointer_cast<ui::ClawUILayout>( manager->addElement( ui::IUILayoutWindow::typeInfo() ) );
+        if( !layout ) return check( false, "sort regression needs a native factory-created layout" );
+        auto first = make_ptr<CollectionProbe>();
+        auto second = make_ptr<CollectionProbe>();
+        first->order = 2;
+        second->order = 1;
+        layout->addChild( first );
+        layout->addChild( second );
+
+        std::promise<void> compared, release;
+        auto comparisonReached = compared.get_future();
+        auto continueComparison = release.get_future().share();
+        std::atomic<bool> observed{ false };
+        first->onOrder = [&] {
+            if( !observed.exchange( true ) )
+            {
+                compared.set_value();
+                continueComparison.wait();
+            }
+        };
+        std::exception_ptr sortFailure;
+        std::thread sorter( [&] {
+            try { layout->sortZOrder(); }
+            catch( ... ) { sortFailure = std::current_exception(); }
+        } );
+
+        const auto reached = comparisonReached.wait_for( std::chrono::seconds( 5 ) ) ==
+                             std::future_status::ready;
+        bool acquired = false;
+        if( reached )
+        {
+            acquired = layout->getChildrenRef().try_lock();
+            if( acquired ) layout->getChildrenRef().unlock();
+        }
+        release.set_value();
+        sorter.join();
+        first->onOrder = {};
+        bool ok = check( reached, "native child sorting must reach the controlled order capture" );
+        ok &= check( !sortFailure, "native child sorting must finish without throwing" );
+        ok &= check( reached && !acquired,
+                     "sorting must retain exclusive child inventory ownership across comparisons" );
+        const auto children = layout->getChildren();
+        ok &= check( children.size() == 2 && children[0] == second && children[1] == first,
+                     "the protected sort must preserve and order both native children" );
+        layout->removeAllChildren();
+        manager->clear();
+        return ok;
+    }
+
+    bool testSortCapturesEachOrderOnce()
+    {
+        auto manager = make_ptr<ui::ClawUIManager>();
+        auto layout = dynamic_pointer_cast<ui::ClawUILayout>( manager->addElement( ui::IUILayoutWindow::typeInfo() ) );
+        if( !layout ) return check( false, "order snapshot regression needs a native factory-created layout" );
+        Array<SmartPtr<CollectionProbe>> probes;
+        for( u32 order : { 3u, 1u, 1u, 0u } )
+        {
+            auto probe = make_ptr<CollectionProbe>();
+            probe->order = order;
+            layout->addChild( probe );
+            probes.push_back( probe );
+        }
+        const auto before = layout->getChildren();
+        for( auto probe : probes ) probe->orderReads = 0;
+        layout->sortZOrder();
+        bool ok = true;
+        for( auto probe : probes )
+        {
+            ok &= check( probe->orderReads == 1,
+                         "one native sort must capture each live order only once before comparing keys" );
+        }
+        const auto sorted = layout->getChildren();
+        ok &= check( sorted.size() == 4 && sorted[0] == probes[3] && sorted[3] == probes[0],
+                     "captured keys must order native collection membership" );
+        Array<SmartPtr<ui::IUIElement>> tied;
+        for( auto child : before )
+            if( child == probes[1] || child == probes[2] ) tied.push_back( child );
+        ok &= check( sorted.size() == 4 && tied.size() == 2 && sorted[1] == tied[0] && sorted[2] == tied[1],
+                     "equal captured draw orders must retain their existing relative membership order" );
+        layout->removeAllChildren();
+        manager->clear();
+        return ok;
+    }
+
+    bool testDrawPinsItsFrameMembers( Fixture &fixture )
+    {
+        auto manager = make_ptr<ui::ClawUIManager>();
+        fixture.application->setRenderUI( manager );
+        auto layout = dynamic_pointer_cast<ui::ClawUILayout>( manager->addElement( ui::IUILayoutWindow::typeInfo() ) );
+        if( !layout )
+        {
+            fixture.application->setRenderUI( nullptr );
+            return check( false, "draw regression needs a native factory-created layout" );
+        }
+        layout->load( nullptr );
+        auto first = make_ptr<CollectionProbe>();
+        auto second = make_ptr<CollectionProbe>();
+        auto replacement = make_ptr<CollectionProbe>();
+        first->order = 0;
+        second->order = 1;
+        replacement->order = 2;
+        auto removedDraws = std::make_shared<unsigned>( 0 );
+        second->observedDraws = removedDraws;
+        WeakPtr<ui::IUIElement> removed( second );
+        layout->addChild( first );
+        layout->addChild( second );
+        bool changed = false, retainedDuringFrame = false;
+        first->onDraw = [&] {
+            if( !changed )
+            {
+                changed = true;
+                layout->removeChild( second );
+                second = nullptr;
+                retainedDuringFrame = !removed.expired();
+                layout->addChild( replacement );
+            }
+        };
+
+        auto ctx = manager->getContext();
+        bool ok = check( ctx != nullptr, "headless native draw needs its real UI context" );
+        if( ctx )
+        {
+            wp_input_end( ctx );
+            const auto frame = [&] {
+                if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "CollectionSnapshot" ),
+                              wp_make_rect( 0, 0, 320, 200 ), WORKPHONE_WINDOW_NO_SCROLLBAR ) )
+                {
+                    wp_layout_space_begin( ctx, WORKPHONE_STATIC, 200, 32 );
+                    layout->draw( ctx );
+                    wp_layout_space_end( ctx );
+                }
+                wp_end( ctx );
+                wp_clear( ctx );
+            };
+            frame();
+            ok &= check( changed && first->draws == 1,
+                         "first native child must mutate membership from its draw callback" );
+            ok &= check( retainedDuringFrame && *removedDraws == 1 && replacement->draws == 0,
+                         "a native frame must draw its pinned members before newly added replacements" );
+            ok &= check( removed.expired(), "the frame snapshot must release removed widgets after drawing" );
+            frame();
+            ok &= check( first->draws == 2 && *removedDraws == 1 && replacement->draws == 1,
+                         "the following frame must use the replacement membership" );
+        }
+        first->onDraw = {};
+        layout->removeAllChildren();
+        layout->unload( nullptr );
+        manager->clear();
+        fixture.application->setRenderUI( nullptr );
+        return ok;
     }
 
     bool testRemoveEachElement()
@@ -315,9 +508,17 @@ namespace
     }
 }
 
-int main()
+int main( int argc, char **argv )
 {
     Fixture fixture;
+    if( argc > 1 && std::strcmp( argv[1], "--collection-sort-only" ) == 0 )
+    {
+        bool ok = testSortingExcludesOtherThreads();
+        ok &= testSortCapturesEachOrderOnce();
+        std::printf( "Claw UI sorting contracts: 2 cases, %u assertions, %s.\n", assertions,
+                     ok ? "passed" : "failed" );
+        return ok ? 0 : 1;
+    }
     bool ok = testRemoveEachElement();
     ok &= testSceneTextAppearance();
     ok &= testEditorCameraDuringPlay( fixture );
@@ -327,7 +528,10 @@ int main()
     ok &= testTreeCleanup( Cleanup::Unload );
     ok &= testTreeCleanup( Cleanup::Destructor );
     ok &= testInputListenerCleanup( fixture );
+    ok &= testSortingExcludesOtherThreads();
+    ok &= testSortCapturesEachOrderOnce();
+    ok &= testDrawPinsItsFrameMembers( fixture );
     if( ok )
-        std::puts( "Claw UI destruction tests passed." );
+        std::printf( "Claw UI destruction tests: 12 cases, %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }

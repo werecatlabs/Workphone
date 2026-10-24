@@ -443,6 +443,7 @@ if(TARGET Workphone)
         if(TARGET Meshopt)
             add_executable(WPAssimpCompressedImportTests AssimpCompressedImportTests.cpp)
             target_include_directories(WPAssimpCompressedImportTests PRIVATE
+                ${WP_ROOT}/Engine/cpp/Include
                 ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp)
             if(WIN32)
                 target_include_directories(WPAssimpCompressedImportTests PRIVATE
