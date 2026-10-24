@@ -165,6 +165,24 @@ namespace workphone::scene
         return m_invoker.get();
     }
 
+    Parameter Script::handleEvent( EventType eventType, hash_type eventValue,
+                                   const Array<Parameter> &arguments,
+                                   SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object,
+                                   SmartPtr<IEvent> event )
+    {
+        auto result = Component::handleEvent( eventType, eventValue, arguments,
+                                             sender, object, event );
+        if( eventValue == IComponent::sceneWasLoaded && getScriptData() )
+        {
+            if( auto invoker = getInvoker() )
+            {
+                invoker->callObjectMember( "onSceneLoaded" );
+            }
+        }
+        return result;
+    }
+
     auto Script::getInvoker() const -> SmartPtr<IScriptInvoker>
     {
         return m_invoker;
@@ -389,6 +407,13 @@ namespace workphone::scene
             case State::Play:
             {
                 createScriptData();
+                // Lua lifecycle methods are optional. Dispatch after the instance
+                // exists; scripts should defer scene/UI mutations to update().
+                if( auto invoker = getInvoker() )
+                {
+                    invoker->callObjectMember( "onPlay" );
+                }
+                // onPlay may opt this component into frame updates.
                 updatePlayModeState();
             }
             break;
@@ -410,6 +435,10 @@ namespace workphone::scene
             break;
             case State::Play:
             {
+                if( auto invoker = getInvoker() )
+                {
+                    invoker->callObjectMember( "onStop" );
+                }
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
                 WP_ASSERT( applicationManager->isValid() );

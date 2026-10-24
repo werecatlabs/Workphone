@@ -376,6 +376,15 @@ namespace workphone
     {
         using namespace luabind;
 
+        module( L )[class_<IGameScene::SceneLoadingState>( "SceneLoadingState" )
+            .enum_( "constants" )[
+                value( "None", static_cast<u32>( IGameScene::SceneLoadingState::None ) ),
+                value( "Loaded", static_cast<u32>( IGameScene::SceneLoadingState::Loaded ) ),
+                value( "Unloaded", static_cast<u32>( IGameScene::SceneLoadingState::Unloaded ) ),
+                value( "Loading", static_cast<u32>( IGameScene::SceneLoadingState::Loading ) ),
+                value( "Failed", static_cast<u32>( IGameScene::SceneLoadingState::Failed ) ),
+                value( "Cancelled", static_cast<u32>( IGameScene::SceneLoadingState::Cancelled ) )]];
+
         module(
             L )[luabind::class_<IGameScene::SpatialPartitioningConfig>( "SpatialPartitioningConfig" )
                     .property( "nearDistance", &IGameScene::SpatialPartitioningConfig::nearDistance )
@@ -407,6 +416,9 @@ namespace workphone
                     .def( "registerAllUpdates", &IGameScene::registerAllUpdates )
                     .def( "unregisterAll", &IGameScene::unregisterAll )
                     .def( "getFilePath", &IGameScene::getFilePath )
+                    .def( "getSceneLoadingState", +[]( const IGameScene *scene ) {
+                        return static_cast<u32>( scene->getSceneLoadingState() );
+                    } )
                     .def( "setFilePath", &IGameScene::setFilePath )];
 
         module( L )[class_<IGameManager, ISharedObject, SmartPtr<IGameManager>>( "IGameManager" )
