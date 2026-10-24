@@ -136,10 +136,11 @@ namespace workphone::scene
 
             if( m_openCity )
             {
-                m_cityLayout = procedural::OpenCityLayout::generate( m_seed, m_cityBlocks, m_cityRoute );
+                m_cityLayout = procedural::OpenCityLayout::generate( m_seed, m_cityBlocks, m_cityRoute, m_cityNaturalRoads );
             }
 
             m_assets.openCity = m_openCity;
+            m_assets.cityNaturalRoads = m_cityNaturalRoads;
             m_assets.useFoliageWorld = m_foliageWorldEnabled;
             m_assets.exportSourceDirectory = m_materialExportDirectory;
             m_assets.cityBlocks = m_cityBlocks;
@@ -628,6 +629,7 @@ namespace workphone::scene
         p->setProperty( "Foliage World", m_foliageWorldEnabled );
         p->setProperty( "City Blocks", m_cityBlocks );
         p->setProperty( "City Route", m_cityRoute );
+        p->setProperty( "City Natural Roads", m_cityNaturalRoads );
         p->setProperty( "Generation Error", m_generationError );
         p->setButtonPressed( "Regenerate", false );
         return p;
@@ -656,6 +658,7 @@ namespace workphone::scene
         p->getPropertyValue( "Foliage World", m_foliageWorldEnabled );
         p->getPropertyValue( "City Blocks", m_cityBlocks );
         p->getPropertyValue( "City Route", m_cityRoute );
+        p->getPropertyValue( "City Natural Roads", m_cityNaturalRoads );
         m_cityBlocks = std::clamp( m_cityBlocks / 2 * 2, 6, 10 );
         m_cityRoute = std::clamp( m_cityRoute, 0, 2 );
 

@@ -69,7 +69,7 @@ namespace workphone::scene::race
      */
     struct WPCore_API SceneAssets : SourceBudgetObject
     {
-        bool openCity = false, useFoliageWorld = false;
+        bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false;
         SmartPtr<render::Terrain> foliageTerrain;
         int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
@@ -317,6 +317,7 @@ namespace workphone::scene
 
         /** Select open-city generation instead of the standalone circuit. */
         bool m_openCity = false;
+        bool m_cityNaturalRoads = false;
         bool m_foliageWorldEnabled = false;
         String m_materialExportDirectory;
 

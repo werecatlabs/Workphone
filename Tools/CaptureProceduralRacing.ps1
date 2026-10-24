@@ -4,9 +4,13 @@ param(
     [string]$OutputDirectory,
     [ValidateRange(0, 4294967295)][long]$Seed = 42,
     [ValidateSet('low', 'medium', 'high', 'cinematic')][string]$Quality = 'high',
+    [ValidateSet('circuit', 'city')][string]$Scene = 'circuit',
+    [ValidateSet(6, 8, 10)][int]$CityBlocks = 8,
+    [ValidateRange(0, 2)][int]$CityRoute = 0,
+    [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -14,6 +18,9 @@ param(
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
+if ($Scene -ne 'city' -and ($Views -contains 'street' -or $Views -contains 'boulevard' -or $PSBoundParameters.ContainsKey('CityBlocks') -or $PSBoundParameters.ContainsKey('CityRoute') -or $PSBoundParameters.ContainsKey('CityLayout'))) {
+    throw 'Street-level views and city layout options require -Scene city.'
+}
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $binaryRoot = Join-Path $repoRoot "bin/windows/v145/x64/MD/$Configuration"
 $executable = Join-Path $binaryRoot 'SampleVehicleAdvanced.exe'
@@ -41,13 +48,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot identify source revision.' }
 $diffPath = Join-Path $output 'working-tree.patch'
 & git -C $repoRoot diff --binary HEAD "--output=$diffPath"
 if ($LASTEXITCODE -ne 0) { throw 'Cannot capture local diff.' }
-$sourceRoots = @('Engine/cpp/Include/WPProcedural', 'Engine/cpp/Source/WPProcedural', 'Engine/cpp/Include/WPGraphics', 'Engine/cpp/Source/WPGraphics', 'Engine/cpp/Include/Workphone/Graphics', 'Engine/cpp/Source/Workphone/Graphics', 'Engine/cpp/Include/Workphone/Interface/Graphics', 'Engine/cpp/Source/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Scene', 'Engine/cpp/Source/Workphone/Scene', 'Engine/c/Include/WorkphoneGraphics', 'Engine/c/Source/WorkphoneGraphics', 'Engine/c/Include/WorkphonePlatformWin32', 'Engine/c/Source/WorkphonePlatformWin32', 'Samples/cpp/VehicleAdvanced')
+$sourceRoots = @('Engine/cpp/Include/WPProcedural', 'Engine/cpp/Source/WPProcedural', 'Engine/cpp/Include/WPGraphics', 'Engine/cpp/Source/WPGraphics', 'Engine/cpp/Include/Workphone/Graphics', 'Engine/cpp/Source/Workphone/Graphics', 'Engine/cpp/Include/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Interface/Procedural', 'Engine/cpp/Source/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Scene', 'Engine/cpp/Source/Workphone/Scene', 'Engine/c/Include/WorkphoneGraphics', 'Engine/c/Source/WorkphoneGraphics', 'Engine/c/Include/WorkphonePlatformWin32', 'Engine/c/Source/WorkphonePlatformWin32', 'Samples/cpp/VehicleAdvanced')
 $sources = @($sourceRoots | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $repoRoot $_) -Recurse -File | Where-Object { $_.Extension -in '.cpp', '.c', '.hpp', '.h', '.txt' } } | Sort-Object FullName -Unique | ForEach-Object { Get-Identity $_.FullName })
 $binaries = @(Get-ChildItem -LiteralPath $binaryRoot -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'SampleVehicleAdvanced.exe' } | Sort-Object Name | ForEach-Object { Get-Identity $_.FullName })
 $assets = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'bin/Media') -Recurse -File | Where-Object { $_.Extension -in '.png', '.jpg', '.jpeg', '.tga', '.dds', '.mesh', '.hdr', '.texres', '.matres', '.folspec', '.folworld' } | Sort-Object FullName | ForEach-Object { Get-Identity $_.FullName })
 $manifest = [ordered]@{
     schema = 'workphone.procedural-capture-set.v1'; startedUtc = [DateTime]::UtcNow.ToString('o')
     revision = $revision; configuration = $Configuration; seed = $Seed; quality = $Quality
+    scene = $Scene; cityBlocks = $(if ($Scene -eq 'city') { $CityBlocks } else { $null }); cityRoute = $(if ($Scene -eq 'city') { $CityRoute } else { $null })
+    cityLayout = $(if ($Scene -eq 'city') { $CityLayout } else { $null })
     requestedResolution = $Resolution; benchmarkSeconds = $Seconds; visualAcceptance = 'unreviewed'
     diff = Get-Identity (Join-Path $output 'working-tree.patch'); sources = $sources; binaries = $binaries
     plugins = Get-Identity $plugins; assets = $assets; replay = $null; runs = @()
@@ -60,11 +69,12 @@ try {
         $capture = Join-Path $output "$view.bmp"
         $evidence = Join-Path $output "$view.json"
         $arguments = @('--seed', "$Seed", '--quality', $Quality, '--plugins', (Quote-ProcessArgument $plugins), '--capture', (Quote-ProcessArgument $capture), '--view', $view, '--no-hud', '--resolution', $Resolution, '--no-audio', '--benchmark', $Seconds.ToString([Globalization.CultureInfo]::InvariantCulture), '--evidence', (Quote-ProcessArgument $evidence))
+        if ($Scene -eq 'city') { $arguments += @('--city', '--city-blocks', "$CityBlocks", '--city-route', "$CityRoute", '--city-layout', $CityLayout) }
         if ($Replay) { $arguments += @('--replay', (Quote-ProcessArgument $Replay)) }
         if ($NoEffects) { $arguments += '--no-effects' }
         if ($FoliageWorld) { $arguments += '--foliage-world' }
         if ($ExportMaterials) { $arguments += @('--export-materials', (Quote-ProcessArgument (Join-Path $output "$view-materials"))) }
-        Write-Host "Capturing $view ($Quality, seed $Seed)"
+        Write-Host "Capturing $Scene/$view ($Quality, seed $Seed)"
         $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $binaryRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output "$view.stdout.log") -RedirectStandardError (Join-Path $output "$view.stderr.log") -PassThru
         $timedOut = !$process.WaitForExit($TimeoutSeconds * 1000)
         if ($timedOut) { $process.Kill(); $process.WaitForExit() }

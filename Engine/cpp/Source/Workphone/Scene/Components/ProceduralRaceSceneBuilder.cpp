@@ -8,6 +8,7 @@
 #include <Workphone/Mesh/MeshImposterGenerator.hpp>
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
+#include <Workphone/Interface/Procedural/OpenCityStreetDetails.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
@@ -25,7 +26,7 @@
 namespace workphone::scene::race
 {
     SceneAssets::SceneAssets(const SceneAssets &other) :
-        openCity(other.openCity), useFoliageWorld(other.useFoliageWorld), foliageTerrain(other.foliageTerrain),
+        openCity(other.openCity), useFoliageWorld(other.useFoliageWorld), cityNaturalRoads(other.cityNaturalRoads), foliageTerrain(other.foliageTerrain),
         cityBlocks(other.cityBlocks), cityRoute(other.cityRoute), vehicle(other.vehicle), circuit(other.circuit),
         wheels(other.wheels), body(other.body), shadow(other.shadow), reflectionActor(other.reflectionActor), ground(other.ground),
         reflectionTexture(other.reflectionTexture), vehicleMaterials(other.vehicleMaterials), materials(other.materials),
@@ -39,7 +40,7 @@ namespace workphone::scene::race
     void SceneAssets::swap(SceneAssets &other) noexcept
     {
         using std::swap;
-        swap(openCity,other.openCity);swap(useFoliageWorld,other.useFoliageWorld);swap(foliageTerrain,other.foliageTerrain);
+        swap(openCity,other.openCity);swap(useFoliageWorld,other.useFoliageWorld);swap(cityNaturalRoads,other.cityNaturalRoads);swap(foliageTerrain,other.foliageTerrain);
         swap(cityBlocks,other.cityBlocks);swap(cityRoute,other.cityRoute);swap(vehicle,other.vehicle);circuit.swap(other.circuit);
         wheels.swap(other.wheels);swap(body,other.body);swap(shadow,other.shadow);swap(reflectionActor,other.reflectionActor);swap(ground,other.ground);
         swap(reflectionTexture,other.reflectionTexture);vehicleMaterials.swap(other.vehicleMaterials);materials.swap(other.materials);
@@ -1235,8 +1236,14 @@ namespace workphone::scene::race
                 throw std::runtime_error(
                     "Generated foliage atlas lost its registered texture identity." );
             }
+            const auto city = assets.openCity
+                                  ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute, assets.cityNaturalRoads )
+                                  : OpenCityLayout{};
             auto world = std::make_shared<render::FoliageWorldData>();
             world->revision = 1;
+            // The bounded city overview needs a longer tree view range. Larger city
+            // pages keep that range inside the existing 30-page-width pager gate.
+            if( assets.openCity ) world->pageSize = 128;
             for( u32 variant = 0; variant < 4; ++variant )
             {
                 FoliagePlantRecipe recipe;
@@ -1262,7 +1269,7 @@ namespace workphone::scene::race
                 {
                     throw std::runtime_error( "Generated foliage species lost its leaf cutout atlas." );
                 }
-                species->maximumDistance = 600;
+                species->maximumDistance = assets.openCity ? std::max( 600.f, city.extent * 5.f ) : 600.f;
                 species->shadowDistance = 120;
                 world->species.push_back( species );
                 for( const auto &lod : species->lods )
@@ -1273,25 +1280,49 @@ namespace workphone::scene::race
             std::mt19937 random( seed );
             std::uniform_real_distribution<float> unit( 0, 1 );
             const int count = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
-            auto city = assets.openCity
-                            ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute )
-                            : OpenCityLayout{};
+            SourceBudgetVector<size_t> cityParks;
+            if( assets.openCity )
+            {
+                cityParks.reserve( size_t( std::count_if( city.lots.begin(), city.lots.end(),
+                    []( const auto &lot ) { return lot.park; } ) ) );
+                for( size_t index = 0; index < city.lots.size(); ++index )
+                    if( city.lots[index].park ) cityParks.push_back( index );
+                // A bounded preview must not always populate only the first city rows.
+                // Every park receives a candidate before another round is distributed.
+                std::sort( cityParks.begin(), cityParks.end(), [&]( size_t a, size_t b ) {
+                    const auto ha = render::foliageStableHash( city.lots[a].id );
+                    const auto hb = render::foliageStableHash( city.lots[b].id );
+                    return ha != hb ? ha < hb : city.lots[a].id < city.lots[b].id;
+                } );
+            }
             for( int i = 0; i < count; ++i )
             {
                 Vector3F p( -100 + unit( random ) * 380, 0, -250 + unit( random ) * 440 );
+                u64 cityPlacementId = 0;
                 if( assets.openCity )
                 {
-                    if( city.lots.empty() )
+                    if( cityParks.empty() )
                     {
                         continue;
                     }
-                    const auto &lot = city.lots[size_t( i ) % city.lots.size()];
-                    if( !lot.park )
-                    {
-                        continue;
-                    }
-                    p = { lot.x + ( unit( random ) - .5f ) * std::max( 0.f, lot.width - 6 ), .04f,
-                          lot.z + ( unit( random ) - .5f ) * std::max( 0.f, lot.depth - 6 ) };
+                    const auto &lot = city.lots[cityParks[size_t( i ) % cityParks.size()]];
+                    const auto round = u64( size_t( i ) / cityParks.size() );
+                    // Mix the complete parcel identity with an independent round domain.
+                    const u64 key = render::foliageStableHash( lot.id ) ^
+                        ( ( round + 1 ) * 0x9e3779b97f4a7c15ull );
+                    cityPlacementId = render::foliageStableHash( key );
+                    if( !cityPlacementId ) cityPlacementId = key;
+                    const auto scalar = []( u64 value ) {
+                        return float( render::foliageStableHash( value ) >> 40 ) / 16777216.f;
+                    };
+                    // The 90/220 candidate tiers fit one 16x16 cell permutation per park.
+                    // Distinct rounds occupy distinct cells; hashes jitter within each cell.
+                    // Fixed cells keep retained candidates stable across quality presets.
+                    const auto cell = u32( round * 73 + render::foliageStableHash( lot.id ) ) & 255u;
+                    const float u = ( float( cell & 15u ) + .2f + .6f * scalar( key ^ 0xa341316cu ) ) / 16;
+                    const float v = ( float( cell >> 4 ) + .2f + .6f * scalar( key ^ 0xc8013ea4u ) ) / 16;
+                    p = { lot.parcelX + ( u - .5f ) * std::max( 0.f, lot.parcelWidth - 4 ), .16f,
+                          lot.parcelZ + ( v - .5f ) * std::max( 0.f, lot.parcelDepth - 4 ) };
                 }
                 else if( ( p - assets.circuit.samples[assets.circuit.nearest( p )].position ).length() <
                              22 ||
@@ -1300,7 +1331,8 @@ namespace workphone::scene::race
                     continue;
                 }
                 render::FoliageInstance instance;
-                instance.id = render::foliageStableHash( ( u64( seed ) << 32 ) | u32( i + 1 ) );
+                instance.id = cityPlacementId ? cityPlacementId :
+                    render::foliageStableHash( ( u64( seed ) << 32 ) | u32( i + 1 ) );
                 if( !instance.id )
                 {
                     instance.id = u64( i + 1 );
@@ -1325,9 +1357,211 @@ namespace workphone::scene::race
             }
         }
 
+        void buildCityStreetDressing( SceneAssets &assets, const OpenCityLayout &city,
+                                     VehicleAppearanceQuality quality )
+        {
+            Geometry stone, metal, wood, dark, planting;
+            const bool preview = quality == VehicleAppearanceQuality::Preview;
+            const auto horizontal = []( Geometry &g, Vector3F p, float width, float depth ) {
+                const auto h = Vector3F( width * .5f, 0, depth * .5f );
+                g.quad( p + Vector3F( -h.x, 0, -h.z ), p + Vector3F( h.x, 0, -h.z ),
+                        p + Vector3F( h.x, 0, h.z ), p + Vector3F( -h.x, 0, h.z ), { 0, 1, 0 } );
+            };
+            const auto axisBox = []( Geometry &g, Vector3F p, float width, float height,
+                                     float depth, bool xFace ) {
+                g.box( p, xFace ? Vector3F( depth, height, width ) : Vector3F( width, height, depth ) );
+            };
+            const auto normalFor = []( OpenCityLayout::Frontage frontage ) {
+                switch( frontage )
+                {
+                case OpenCityLayout::Frontage::West: return Vector3F( -1, 0, 0 );
+                case OpenCityLayout::Frontage::East: return Vector3F( 1, 0, 0 );
+                case OpenCityLayout::Frontage::South: return Vector3F( 0, 0, 1 );
+                default: return Vector3F( 0, 0, -1 );
+                }
+            };
+            SourceBudgetVector<const OpenCityLayout::Lot *> parkLots, frontages;
+            parkLots.reserve( city.lots.size() ); frontages.reserve( city.lots.size() );
+            for( const auto &lot : city.lots )
+            {
+                if( !lot.park ) { frontages.push_back( &lot ); continue; }
+                parkLots.push_back( &lot );
+                const float hx = lot.parcelWidth * .5f, hz = lot.parcelDepth * .5f;
+                const Vector3F centre( lot.parcelX, .161f, lot.parcelZ );
+                // The perimeter loop stays inside the two-metre tree exclusion margin.
+                // Corners belong to the transverse strips only, avoiding coplanar overlaps.
+                for( int side : { -1, 1 } )
+                {
+                    horizontal( stone, centre + Vector3F( 0, 0, side * ( hz - 1.4f ) ),
+                                lot.parcelWidth - 1.6f, 1.2f );
+                    horizontal( stone, centre + Vector3F( side * ( hx - 1.4f ), 0, 0 ),
+                                1.2f, lot.parcelDepth - 4.f );
+                    horizontal( stone, centre + Vector3F( 0, 0, side * ( hz - .56f ) ),
+                                lot.parcelWidth - 1.f, .12f );
+                    horizontal( stone, centre + Vector3F( side * ( hx - .56f ), 0, 0 ),
+                                .12f, lot.parcelDepth - 1.24f );
+                    horizontal( dark, centre + Vector3F( 0, .001f, side * ( hz - 2.f ) ),
+                                lot.parcelWidth - 4.f, .025f );
+                    horizontal( dark, centre + Vector3F( side * ( hx - 2.f ), .001f, 0 ),
+                                .025f, lot.parcelDepth - 4.f );
+                }
+                if( !city.naturalRoads )
+                {
+                    const auto normal = normalFor( lot.frontage );
+                    const auto tangent = Vector3F( normal.z, 0, -normal.x );
+                    const bool xFace = std::abs( normal.x ) > .5f;
+                    const auto front = centre + normal * ( xFace ? hx : hz );
+                    auto inner = front - normal * .8f, outer = front + normal * 2.5f;
+                    inner.y = .163f; outer.y = .151f;
+                    stone.quad( inner - tangent * .6f, outer - tangent * .6f,
+                                outer + tangent * .6f, inner + tangent * .6f, { 0, 1, 0 } );
+                }
+            }
+            const auto nearest = []( const auto *a, const auto *b ) {
+                const float da = a->x * a->x + a->z * a->z, db = b->x * b->x + b->z * b->z;
+                return da == db ? a->id < b->id : da < db;
+            };
+            std::sort( parkLots.begin(), parkLots.end(), nearest );
+            std::sort( frontages.begin(), frontages.end(), nearest );
+            const size_t benchCount = std::min<size_t>( parkLots.size(), preview ? 8 : 16 );
+            for( size_t i = 0; i < benchCount; ++i )
+            {
+                const auto &lot = *parkLots[i];
+                const auto normal = normalFor( lot.frontage );
+                const auto tangent = Vector3F( normal.z, 0, -normal.x );
+                const bool xFace = std::abs( normal.x ) > .5f;
+                const float half = ( xFace ? lot.parcelWidth : lot.parcelDepth ) * .5f;
+                const float span = xFace ? lot.parcelDepth : lot.parcelWidth;
+                const auto p = Vector3F( lot.parcelX, .15f, lot.parcelZ ) + normal * ( half + ( city.naturalRoads ? -.8f : 1.1f ) ) -
+                    tangent * std::min( 6.f, span * .25f );
+                for( int plank = -2; plank <= 2; ++plank )
+                    axisBox( wood, p + Vector3F( 0, .46f, 0 ) + normal * ( plank * .085f ),
+                             1.8f, .055f, .065f, xFace );
+                for( int row = 0; row < 3; ++row )
+                    axisBox( wood, p + Vector3F( 0, .70f + row * .13f, 0 ) - normal * .21f,
+                             1.8f, .08f, .045f, xFace );
+                for( int side : { -1, 1 } )
+                {
+                    axisBox( metal, p + tangent * ( side * .64f ) + Vector3F( 0, .215f, 0 ),
+                             .075f, .43f, .43f, xFace );
+                    metal.beam( p + tangent * ( side * .64f ) - normal * .22f + Vector3F( 0, .22f, 0 ),
+                                p + tangent * ( side * .64f ) - normal * .22f + Vector3F( 0, .98f, 0 ), .035f );
+                }
+                staticBox( assets, "City bench", p + Vector3F( 0, .515f, 0 ),
+                    xFace ? Vector3F( .55f, 1.03f, 1.84f ) : Vector3F( 1.84f, 1.03f, .55f ) );
+            }
+            const size_t planterCount = city.naturalRoads ? 0 : std::min<size_t>( frontages.size(), preview ? 8 : 16 );
+            for( size_t i = 0; i < planterCount; ++i )
+            {
+                const auto &lot = *frontages[i];
+                const auto normal = normalFor( lot.frontage );
+                const auto tangent = Vector3F( normal.z, 0, -normal.x );
+                const bool xFace = std::abs( normal.x ) > .5f;
+                const float half = ( xFace ? lot.width : lot.depth ) * .5f;
+                const float span = xFace ? lot.depth : lot.width;
+                const auto p = Vector3F( lot.x, .15f, lot.z ) + normal * ( half + 1.15f ) + tangent * ( span * .35f );
+                for( int side : { -1, 1 } )
+                {
+                    axisBox( stone, p + normal * ( side * .31f ) + Vector3F( 0, .275f, 0 ),
+                             1.6f, .55f, .08f, xFace );
+                    axisBox( stone, p + tangent * ( side * .76f ) + Vector3F( 0, .275f, 0 ),
+                             .08f, .55f, .54f, xFace );
+                }
+                const auto soil = p + Vector3F( 0, .49f, 0 );
+                horizontal( dark, soil, xFace ? .54f : 1.44f, xFace ? 1.44f : .54f );
+                for( int blade = 0; blade < ( preview ? 10 : 18 ); ++blade )
+                {
+                    const float angle = blade * 2.39996323f + float( lot.variant % 127 ) * .07f;
+                    const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
+                    const auto across = Vector3F( direction.z, 0, -direction.x );
+                    const auto base = soil + direction * .045f;
+                    const float height = .4f + .25f * float( ( blade * 19 + lot.variant ) % 31 ) / 30;
+                    for( int segment = 0; segment < 3; ++segment )
+                    {
+                        const float a = segment / 3.f, b = ( segment + 1 ) / 3.f;
+                        const auto lower = base + direction * ( .13f * a * a ) + Vector3F( 0, height * a, 0 );
+                        const auto upper = base + direction * ( .13f * b * b ) + Vector3F( 0, height * b, 0 );
+                        const auto aWidth = across * ( .023f * ( 1 - .9f * a ) );
+                        const auto bWidth = across * ( .023f * ( 1 - .9f * b ) );
+                        auto faceNormal = ( lower + aWidth - ( lower - aWidth ) ).crossProduct( upper + bWidth - ( lower - aWidth ) );
+                        faceNormal.normalise();
+                        planting.quad( lower - aWidth, lower + aWidth, upper + bWidth, upper - bWidth, faceNormal );
+                    }
+                }
+                staticBox( assets, "City planter", p + Vector3F( 0, .275f, 0 ),
+                    xFace ? Vector3F( .7f, .55f, 1.6f ) : Vector3F( 1.6f, .55f, .7f ) );
+            }
+            const size_t binCount = city.naturalRoads ? 0 : std::min<size_t>( frontages.size(), preview ? 4 : 8 );
+            for( size_t i = 0; i < binCount; ++i )
+            {
+                const auto &lot = *frontages[( i * 3 + 1 ) % frontages.size()];
+                const auto normal = normalFor( lot.frontage );
+                const auto tangent = Vector3F( normal.z, 0, -normal.x );
+                const bool xFace = std::abs( normal.x ) > .5f;
+                const float half = ( xFace ? lot.width : lot.depth ) * .5f;
+                const float span = xFace ? lot.depth : lot.width;
+                const auto p = Vector3F( lot.x, .15f, lot.z ) + normal * ( half + 1.1f ) - tangent * ( span * .35f );
+                metal.box( p + Vector3F( 0, .45f, 0 ), { .42f, .9f, .42f } );
+                metal.box( p + Vector3F( 0, .93f, 0 ), { .47f, .06f, .47f } );
+                axisBox( dark, p + Vector3F( 0, .75f, 0 ) + normal * .214f, .26f, .10f, .005f, xFace );
+                staticBox( assets, "City waste bin", p + Vector3F( 0, .48f, 0 ), { .48f, .96f, .48f } );
+            }
+            const auto street = OpenCityStreetDetails::generate( city, 0, false );
+            SourceBudgetVector<const OpenCityStreetDetails::Corner *> walks;
+            walks.reserve( street.sidewalks.size() );
+            for( const auto &walk : street.sidewalks ) walks.push_back( &walk );
+            std::sort( walks.begin(), walks.end(), []( const auto *a, const auto *b ) {
+                return a->x * a->x + a->z * a->z < b->x * b->x + b->z * b->z;
+            } );
+            const size_t detailedWalks = std::min<size_t>( walks.size(), preview ? 32 : 64 );
+            for( size_t i = 0; i < detailedWalks; ++i )
+            {
+                const auto &walk = *walks[i];
+                const bool horizontalWalk = walk.width > walk.depth;
+                const float length = horizontalWalk ? walk.width : walk.depth;
+                const float step = preview ? 4.8f : 2.4f;
+                for( float t = -length * .5f + step; t < length * .5f - .2f; t += step )
+                    horizontal( dark, { walk.x + ( horizontalWalk ? t : 0 ), .151f,
+                        walk.z + ( horizontalWalk ? 0 : t ) }, horizontalWalk ? .018f : walk.width,
+                        horizontalWalk ? walk.depth : .018f );
+                horizontal( dark, { walk.x, .151f, walk.z },
+                    horizontalWalk ? length : .018f, horizontalWalk ? .018f : length );
+                if( i % 3 != 0 ) continue;
+                const Vector3F centre( walk.x, .152f, walk.z );
+                const auto vertex = [&]( Vector3F p, Vector3F uv ) {
+                    const auto index = u32( metal.positions.size() );
+                    metal.positions.push_back( p ); metal.normals.push_back( { 0, 1, 0 } );
+                    metal.tangents.push_back( { 1, 0, 0, 1 } ); metal.uv.push_back( uv );
+                    return index;
+                };
+                const auto c = vertex( centre, { .5f, .5f, 0 } );
+                const auto first = u32( metal.positions.size() );
+                constexpr int sides = 20;
+                for( int segment = 0; segment <= sides; ++segment )
+                {
+                    const float angle = segment * 2 * pi / sides;
+                    vertex( centre + Vector3F( std::cos( angle ) * .31f, 0, std::sin( angle ) * .31f ),
+                        { .5f + .5f * std::cos( angle ), .5f + .5f * std::sin( angle ), 0 } );
+                }
+                for( int segment = 0; segment < sides; ++segment )
+                { metal.indices.push_back( c ); metal.indices.push_back( first + segment + 1 ); metal.indices.push_back( first + segment ); }
+                for( int groove = -2; groove <= 2; ++groove )
+                {
+                    const float z = groove * .09f;
+                    horizontal( dark, centre + Vector3F( 0, .001f, z ),
+                        2 * std::sqrt( .31f * .31f - z * z ) - .04f, .012f );
+                }
+            }
+            mesh( assets, "City park paving and planter rims", stone, material( assets, { .49f, .48f, .42f, 1 }, .9f ) );
+            mesh( assets, "City bench frames bins and utility covers", metal, material( assets, { .12f, .15f, .16f, 1 }, .62f, .55f ) );
+            mesh( assets, "City bench timber", wood, material( assets, { .36f, .21f, .10f, 1 }, .8f ) );
+            mesh( assets, "City paving joints and planter soil", dark, material( assets, { .12f, .14f, .11f, 1 }, 1 ) );
+            mesh( assets, "City ornamental planter grasses", planting, material( assets, { .24f, .36f, .13f, 1 }, .92f ) );
+        }
+
         void buildCity( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
-            const auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute );
+            const auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute, assets.cityNaturalRoads );
             auto app = core::IApplicationManager::instance();
             auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>( "IRoadSystem" );
             if( !roads )
@@ -1348,14 +1582,22 @@ namespace workphone::scene::race
             // World projection gives segments and intersections the same physical texture scale.
             cityAsphalt->setUVProjection( 3 );
             cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 1.5f );
-            Geometry asphalt, pavement, markings, buildings[3], windows, parks, roofs, facadeTrim;
+            Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
+            struct CityPatch
+            {
+                Geometry walls[3], farWalls[3], glass[2], farGlass, roofs, farRoofs, frames, accents;
+                Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
+            };
+            SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
+            const auto streetDetails = OpenCityStreetDetails::generate( city, seed,
+                quality != VehicleAppearanceQuality::Preview );
             // Match the existing flat physics proxy. Preserve library topology,
             // kerbs and markings without introducing unsupported road-height bumps.
-            auto append = []( Geometry &g, const RoadMesh &source, bool flat = false ) {
+            auto append = []( Geometry &g, const RoadMesh &source, bool flat = false, float height = .012f ) {
                 const auto base = static_cast<u32>( g.positions.size() );
                 for( const auto &v : source.vertices )
                 {
-                    g.positions.push_back( { float( v.position.x ), flat ? .012f : float( v.position.y ),
+                    g.positions.push_back( { float( v.position.x ), flat ? height : float( v.position.y ),
                                              float( v.position.z ) } );
                     g.normals.push_back( flat ? Vector3F( 0, 1, 0 )
                                               : Vector3F( float( v.normal.x ), float( v.normal.y ),
@@ -1363,9 +1605,22 @@ namespace workphone::scene::race
                     g.uv.push_back( { float( v.uv.x ), float( v.uv.y ), 0 } );
                     g.tangents.push_back( { 1, 0, 0, 1 } );
                 }
-                for( auto index : source.indices )
+                if( source.indices.size() % 3 ) throw std::runtime_error( "Incomplete city road triangles." );
+                for( size_t triangle = 0; triangle < source.indices.size(); triangle += 3 )
                 {
-                    g.indices.push_back( base + index );
+                    if( source.indices[triangle] >= source.vertices.size() ||
+                        source.indices[triangle + 1] >= source.vertices.size() ||
+                        source.indices[triangle + 2] >= source.vertices.size() )
+                        throw std::runtime_error( "Invalid city road triangle index." );
+                    auto a = base + source.indices[triangle], b = base + source.indices[triangle + 1],
+                         c = base + source.indices[triangle + 2];
+                    if( a >= g.positions.size() || b >= g.positions.size() || c >= g.positions.size() )
+                        throw std::runtime_error( "Invalid city road triangle index." );
+                    // Marking meshes can carry the opposite winding to their authored
+                    // up normal. Flattened city surfaces always face out of the ground.
+                    if( flat && ( g.positions[b] - g.positions[a] ).crossProduct( g.positions[c] - g.positions[a] ).y < 0 )
+                        std::swap( b, c );
+                    g.indices.push_back( a ); g.indices.push_back( b ); g.indices.push_back( c );
                 }
             };
             const int half = city.blocks / 2;
@@ -1385,17 +1640,12 @@ namespace workphone::scene::race
                         spec.roadClass = RoadClass::Arterial;
                         spec.seed = segmentSeed++;
                         spec.generateDressing = false;
+                        spec.generateSidewalks = false;
+                        spec.generateKerbs = false;
                         const auto road = roads->generateSegment( spec );
                         append( asphalt, road.roadSurface, true );
-                        for( const auto &part : road.sidewalks )
-                        {
-                            append( pavement, part );
-                        }
-                        for( const auto &part : road.kerbs )
-                        {
-                            append( pavement, part );
-                        }
-                        append( markings, road.markings );
+                        // Shared city walks have one flat grade and own each corner once.
+                        append( markings, road.markings, true, .018f );
                     }
                 }
             }
@@ -1409,67 +1659,259 @@ namespace workphone::scene::race
                     spec.seed = segmentSeed++;
                     const auto junction = roads->generateIntersection( spec );
                     append( asphalt, junction.surface, true );
-                    append( markings, junction.markings );
+                    append( markings, junction.markings, true, .018f );
                 }
             }
-            size_t lotIndex = 0;
+            const auto addWalk = [&]( const OpenCityStreetDetails::Corner &walk ) {
+                const Vector3F centre( walk.x, ( walk.bottom + walk.top ) * .5f, walk.z );
+                const Vector3F size( walk.width, walk.top - walk.bottom, walk.depth );
+                pavement.box( centre, size );
+            };
+            for( const auto &walk : streetDetails.sidewalks ) addWalk( walk );
+            for( const auto &walk : streetDetails.corners ) addWalk( walk );
+            // The inner block slabs meet the sidewalks at the same authored grade.
+            for( int x = -half; x < half; ++x ) for( int z = -half; z < half; ++z )
+            {
+                const Vector3F centre( ( x + .5f ) * city.spacing, .075f, ( z + .5f ) * city.spacing );
+                const Vector3F size( city.spacing - 17, .15f, city.spacing - 17 );
+                courtyards.box( centre, size );
+            }
+            // The adjoining plaza/walk pieces form one solid interior square per
+            // block. Use that exact union to avoid thousands of scene-root actors.
+            for( const auto &surface : streetDetails.collisionSurfaces( city ) )
+                staticBox( assets, "City sidewalk",
+                    { surface.x, ( surface.bottom + surface.top ) * .5f, surface.z },
+                    { surface.width, surface.top - surface.bottom, surface.depth } );
+            for( const auto &item : streetDetails.furniture )
+            {
+                const Vector3F p( item.x, item.baseY, item.z );
+                if( item.kind == OpenCityStreetDetails::FurnitureKind::Lamp )
+                {
+                    const Vector3F top = p + Vector3F( 0, 6.2f, 0 );
+                    const Vector3F arm( std::sin( item.yaw ) * 1.25f, -.15f, std::cos( item.yaw ) * 1.25f );
+                    streetMetal.beam( p, top, .055f );
+                    streetMetal.beam( top, top + arm, .045f );
+                    lampGlass.box( top + arm, { .5f, .10f, .5f } );
+                    staticBox( assets, "City lamp post", p + Vector3F( 0, 3.1f, 0 ), { .12f, 6.2f, .12f } );
+                }
+                else streetMetal.box( p + Vector3F( 0, .45f, 0 ), { .13f, .9f, .13f } );
+            }
             for( const auto &lot : city.lots )
             {
                 if( lot.park )
                 {
-                    parks.box( { lot.x, .02f, lot.z }, { lot.width, .04f, lot.depth } );
+                    parks.box( { lot.parcelX, .155f, lot.parcelZ },
+                               { lot.parcelWidth - 1, .01f, lot.parcelDepth - 1 } );
                     continue;
                 }
-                auto &walls = buildings[lotIndex++ % 3];
-                const Vector3F size( lot.width, lot.height, lot.depth );
-                walls.box( { lot.x, lot.height * .5f, lot.z }, size );
-                // A roof cap, parapet and plinth establish a consistent modular grammar.
-                roofs.box( { lot.x, lot.height + .08f, lot.z },
-                           { lot.width + .3f, .16f, lot.depth + .3f } );
-                for( int side : { -1, 1 } )
+                const auto key = std::make_pair( int( std::floor( lot.x / 128 ) ), int( std::floor( lot.z / 128 ) ) );
+                const Vector3F origin( key.first * 128.f + 64, 0, key.second * 128.f + 64 );
+                auto &patch = patches[key];
+                patch.bounds.push_back( { Vector3F( lot.x, lot.height * .5f, lot.z ) - origin,
+                    std::max( { lot.width, lot.depth, lot.height } ) } );
+                const auto volumes = OpenCityLayout::buildingVolumes( lot );
+                const bool office = lot.district == OpenCityLayout::District::Commercial;
+                const bool civic = lot.district == OpenCityLayout::District::Civic;
+                const int entranceAxis = lot.frontage == OpenCityLayout::Frontage::West ||
+                    lot.frontage == OpenCityLayout::Frontage::East ? 1 : 0;
+                const int entranceSign = lot.frontage == OpenCityLayout::Frontage::West ||
+                    lot.frontage == OpenCityLayout::Frontage::North ? -1 : 1;
+                for( const auto &volume : volumes )
                 {
-                    facadeTrim.box( { lot.x, lot.height + .35f, lot.z + side * lot.depth * .5f },
-                                    { lot.width + .3f, .5f, .2f } );
-                    facadeTrim.box( { lot.x + side * lot.width * .5f, lot.height + .35f, lot.z },
-                                    { .2f, .5f, lot.depth } );
-                    facadeTrim.box( { lot.x, .3f, lot.z + side * ( lot.depth * .5f + .04f ) },
-                                    { lot.width, .6f, .08f } );
-                }
-                if( quality != VehicleAppearanceQuality::Preview )
-                {
-                    roofs.box( { lot.x, lot.height + .55f, lot.z }, { 2.4f, .9f, 1.6f } );
-                }
-                reserveOwnerSlot(assets.actors);
-                auto collision = app->getGameManager()->createActor();
-                if(!collision) throw std::runtime_error("Cannot create procedural actor");
-                assets.actors.push_back(collision);
-                collision->setName( "City building collision" );
-                collision->setStatic( true );
-                collision->setPosition( { lot.x, lot.height * .5f, lot.z } );
-                collision->addComponent<CollisionBox>()->setExtents( size );
-                collision->addComponent<Rigidbody>();
-                app->getGameManager()->getCurrentScene()->addActor( collision );
-                // Batched facades keep city draw calls independent of building count.
-                const float floorStep = quality == VehicleAppearanceQuality::Preview ? 6.f : 3.5f;
-                for( float y = 2; y < lot.height - 1; y += floorStep )
-                {
-                    for( float x = -lot.width / 2 + 3; x < lot.width / 2 - 2; x += 4 )
+                    const Vector3F centre( volume.x, volume.bottom + volume.height * .5f, volume.z );
+                    const Vector3F size( volume.width, volume.height, volume.depth );
+                    const bool groundFloor = volume.bottom == 0;
+                    const u32 family = civic ? 1u : office ?
+                        ( groundFloor && lot.variant % 3 == 0 ? 1u : 2u ) : ( lot.variant % 5 == 0 ? 1u : 0u );
+                    auto &opaque = patch.walls[family];
+                    patch.farWalls[family].box( centre - origin, size );
+                    // Geometry and collision consume the identical stepped mass description.
+                    staticBox( assets, "City building mass", centre, size );
+                    const float cx = centre.x - origin.x, cz = centre.z - origin.z;
+                    const float top = volume.bottom + volume.height;
+                    // Horizontal caps close the shell. Near walls are segmented around
+                    // genuine apertures; a solid wall never covers the recessed glazing.
+                    opaque.quad( { cx - size.x * .5f, top, cz - size.z * .5f },
+                        { cx + size.x * .5f, top, cz - size.z * .5f },
+                        { cx + size.x * .5f, top, cz + size.z * .5f },
+                        { cx - size.x * .5f, top, cz + size.z * .5f }, { 0, 1, 0 } );
+                    opaque.quad( { cx - size.x * .5f, volume.bottom, cz - size.z * .5f },
+                        { cx + size.x * .5f, volume.bottom, cz - size.z * .5f },
+                        { cx + size.x * .5f, volume.bottom, cz + size.z * .5f },
+                        { cx - size.x * .5f, volume.bottom, cz + size.z * .5f }, { 0, -1, 0 } );
+                    patch.roofs.box( { cx, top + .06f, cz }, { volume.width + .12f, .12f, volume.depth + .12f } );
+                    patch.farRoofs.box( { cx, top + .06f, cz }, { volume.width + .12f, .12f, volume.depth + .12f } );
+                    const float nominalFloor = office ? 3.6f : civic ? 3.5f : 3.2f;
+                    const int floors = std::max( 1, int( std::round( volume.height / nominalFloor ) ) );
+                    const float floorHeight = volume.height / floors;
+                    for( int axis = 0; axis < 2; ++axis ) for( int sign : { -1, 1 } )
                     {
-                        for( int face : { -1, 1 } )
+                        const float span = axis ? volume.depth : volume.width;
+                        const bool entrance = groundFloor && axis == entranceAxis && sign == entranceSign;
+                        const Vector3F normal( axis ? float( sign ) : 0, 0, axis ? 0 : float( sign ) );
+                        const Vector3F along( axis ? 0 : 1, 0, axis ? 1 : 0 );
+                        const auto point = [&]( float s, float y, float inset ) {
+                            return axis ? Vector3F( cx + sign * ( size.x * .5f - inset ), y, cz + s ) :
+                                Vector3F( cx + s, y, cz + sign * ( size.z * .5f - inset ) );
+                        };
+                        const auto panel = [&]( Geometry &g, float left, float low, float right,
+                                                float high, float inset = 0.f ) {
+                            if( right - left <= .001f || high - low <= .001f ) return;
+                            g.quad( point( left, low, inset ), point( right, low, inset ),
+                                point( right, high, inset ), point( left, high, inset ), normal );
+                        };
+                        const auto reveal = [&]( float left, float low, float right, float high, float depth ) {
+                            opaque.quad( point( left, low, 0 ), point( left, low, depth ),
+                                point( left, high, depth ), point( left, high, 0 ), along );
+                            opaque.quad( point( right, low, 0 ), point( right, high, 0 ),
+                                point( right, high, depth ), point( right, low, depth ), -along );
+                            opaque.quad( point( left, low, 0 ), point( right, low, 0 ),
+                                point( right, low, depth ), point( left, low, depth ), { 0, 1, 0 } );
+                            opaque.quad( point( left, high, 0 ), point( left, high, depth ),
+                                point( right, high, depth ), point( right, high, 0 ), { 0, -1, 0 } );
+                        };
+                        const auto faceBox = [&]( Geometry &g, float s, float y, float width,
+                                                  float height, float projection, float thickness ) {
+                            g.box( point( s, y, -projection ), axis ? Vector3F( thickness, height, width ) :
+                                Vector3F( width, height, thickness ) );
+                        };
+                        const float desiredBay = office ? 3.8f : civic ? 4.6f : 4.4f + ( lot.variant % 3 ) * .45f;
+                        const int bays = std::max( 1, int( std::floor( span / desiredBay ) ) );
+                        const float bayWidth = span / bays;
+                        for( int floor = 0; floor < floors; ++floor )
                         {
-                            windows.box( { lot.x + x, y, lot.z + face * ( lot.depth * .5f + .03f ) },
-                                         { 1.4f, 1.6f, .06f } );
+                            const float y0 = volume.bottom + floor * floorHeight;
+                            const float y1 = floor + 1 == floors ? top : y0 + floorHeight;
+                            const bool retail = entrance && floor == 0 && ( office || civic || lot.variant % 3 != 0 );
+                            const float low = y0 + ( retail ? .28f : office ? .62f : .78f );
+                            const float high = y1 - ( retail ? .42f : office ? .48f : .62f );
+                            auto &glass = patch.glass[( lot.variant / 7 + axis + ( sign > 0 ? 1 : 0 ) ) % 2];
+                            if( high - low < .45f )
+                            {
+                                panel( opaque, -span * .5f, y0, span * .5f, y1 );
+                                continue;
+                            }
+                            if( office )
+                            {
+                                // Curtain-wall kit: recessed ribbons, substantial spandrels
+                                // and fine mullions rather than hundreds of boxed windows.
+                                const float left = -span * .5f + .38f, right = span * .5f - .38f;
+                                panel( opaque, -span * .5f, y0, span * .5f, low );
+                                panel( opaque, -span * .5f, high, span * .5f, y1 );
+                                panel( opaque, -span * .5f, low, left, high );
+                                panel( opaque, right, low, span * .5f, high );
+                                reveal( left, low, right, high, .085f );
+                                panel( glass, left, low, right, high, .085f );
+                                panel( patch.farGlass, left, low, right, high, -.018f );
+                                for( int bay = 1; bay < bays; ++bay )
+                                {
+                                    const float s = -span * .5f + bay * bayWidth;
+                                    panel( patch.frames, s - .035f, low, s + .035f, high, .045f );
+                                }
+                                if( lot.variant % 3 == 1 )
+                                    panel( patch.frames, left, ( low + high ) * .5f - .025f,
+                                        right, ( low + high ) * .5f + .025f, .045f );
+                                panel( patch.frames, -span * .5f, y1 - .065f, span * .5f, y1, -.025f );
+                            }
+                            else for( int bay = 0; bay < bays; ++bay )
+                            {
+                                const float s0 = -span * .5f + bay * bayWidth, s1 = s0 + bayWidth;
+                                const float s = ( s0 + s1 ) * .5f;
+                                const bool door = entrance && floor == 0 && bay == bays / 2;
+                                const float ratio = retail ? .79f : civic ? .56f : .48f + ( lot.variant % 3 ) * .05f;
+                                const float width = door ? std::min( 2.05f, bayWidth * .72f ) : bayWidth * ratio;
+                                const float left = s - width * .5f, right = s + width * .5f;
+                                const float bottom = door ? y0 + .16f : low;
+                                const float head = door ? std::min( y1 - .35f, y0 + 2.65f ) : high;
+                                const float depth = civic ? .24f : .16f;
+                                panel( opaque, s0, y0, s1, bottom );
+                                panel( opaque, s0, head, s1, y1 );
+                                panel( opaque, s0, bottom, left, head );
+                                panel( opaque, right, bottom, s1, head );
+                                reveal( left, bottom, right, head, depth );
+                                panel( glass, left, bottom, right, head, depth );
+                                panel( patch.farGlass, left, bottom, right, head, -.018f );
+                                panel( patch.frames, s - .032f, bottom, s + .032f, head, depth - .025f );
+                                if( !retail && !door && axis == entranceAxis && sign == entranceSign )
+                                {
+                                    // A shallow projecting sill gives a grazing highlight.
+                                    faceBox( patch.frames, s, bottom - .035f, width + .18f, .07f, .05f, .20f );
+                                }
+                            }
+                            if( entrance && floor == 0 )
+                            {
+                                const float doorS = office ? 0.f : -span * .5f + ( bays / 2 + .5f ) * bayWidth;
+                                const float head = office ? std::min( y1 - .42f, y0 + 2.7f ) :
+                                    std::min( y1 - .35f, y0 + 2.65f );
+                                const float doorHalfWidth = office ? .92f : std::min( 2.05f, bayWidth * .72f ) * .5f;
+                                const float depth = office ? .06f : civic ? .215f : .135f;
+                                panel( patch.frames, doorS - doorHalfWidth, y0 + .16f, doorS - doorHalfWidth + .06f, head, depth );
+                                panel( patch.frames, doorS + doorHalfWidth - .06f, y0 + .16f, doorS + doorHalfWidth, head, depth );
+                                panel( patch.frames, doorS - doorHalfWidth, head - .065f, doorS + doorHalfWidth, head, depth );
+                                faceBox( patch.frames, doorS - .16f, y0 + 1.3f, .025f, .40f, -depth + .015f, .025f );
+                                faceBox( patch.frames, doorS + .16f, y0 + 1.3f, .025f, .40f, -depth + .015f, .025f );
+                                const float canopyWidth = std::min( span * .60f, civic ? 11.f : 7.f );
+                                const float canopyDepth = civic ? 1.05f : .70f;
+                                faceBox( patch.accents, doorS, y1 - .08f, canopyWidth, .16f,
+                                    canopyDepth * .5f, canopyDepth );
+                                faceBox( patch.frames, doorS, y1 + .10f, canopyWidth * .82f, .20f, .045f, .10f );
+                                if( civic ) for( int bay = 0; bay <= bays; ++bay )
+                                {
+                                    const float s = std::clamp( -span * .5f + bay * bayWidth,
+                                        -span * .5f + .22f, span * .5f - .22f );
+                                    // Engaged stone columns articulate a portico; the closed
+                                    // facade never advertises an unsupported walkable interior.
+                                    faceBox( patch.frames, s, y0 + floorHeight * .5f, .32f,
+                                        floorHeight - .20f, .12f, .36f );
+                                    faceBox( patch.frames, s, y0 + .25f, .47f, .30f, .12f, .46f );
+                                }
+                            }
                         }
                     }
-                }
-                for( float y = 2; y < lot.height - 1; y += floorStep )
-                {
-                    for( float z = -lot.depth / 2 + 3; z < lot.depth / 2 - 2; z += 4 )
+                    // Roof detail has bounded variants, rather than one box repeated
+                    // at every lot centre. The occupied building masses stay unchanged.
+                    const bool finalTier = std::abs( top - lot.height ) < .001f;
+                    if( finalTier )
                     {
-                        for( int face : { -1, 1 } )
+                        for( int side : { -1, 1 } )
                         {
-                            windows.box( { lot.x + face * ( lot.width * .5f + .03f ), y, lot.z + z },
-                                         { .06f, 1.6f, 1.4f } );
+                            patch.roofs.box( { cx, top + .29f, cz + side * ( size.z * .5f - .10f ) },
+                                { size.x, .34f, .20f } );
+                            patch.roofs.box( { cx + side * ( size.x * .5f - .10f ), top + .29f, cz },
+                                { .20f, .34f, size.z - .40f } );
+                            patch.farRoofs.box( { cx, top + .29f, cz + side * ( size.z * .5f - .10f ) },
+                                { size.x, .34f, .20f } );
+                            patch.farRoofs.box( { cx + side * ( size.x * .5f - .10f ), top + .29f, cz },
+                                { .20f, .34f, size.z - .40f } );
+                        }
+                        if( quality != VehicleAppearanceQuality::Preview )
+                        {
+                            const int requestedUnits = office ? 2 + int( lot.variant % 3 ) : 1 + int( lot.variant % 2 );
+                            const int units = std::min( requestedUnits,
+                                std::max( 1, 1 + int( std::floor( ( size.x - 3.22f ) / 2.9f ) ) ) );
+                            for( int unit = 0; unit < units; ++unit )
+                            {
+                                const float x = cx + ( unit - ( units - 1 ) * .5f ) * 2.9f;
+                                const float z = cz + ( lot.variant % 2 ? .17f : -.17f ) * size.z;
+                                const float h = office ? .85f : .60f;
+                                patch.roofs.box( { x, top + .12f + h * .5f, z }, { 2.15f, h, 1.45f } );
+                                for( int fin = 0; fin < 3; ++fin )
+                                    patch.frames.box( { x, top + .15f + h + fin * .055f, z },
+                                        { 2.22f, .025f, 1.48f } );
+                            }
+                            if( lot.variant % 3 == 1 )
+                            {
+                                for( int side : { -1, 1 } )
+                                {
+                                    patch.accents.box( { cx, top + .73f, cz + side * ( size.z * .5f - .40f ) },
+                                        { size.x - .65f, .045f, .045f } );
+                                    patch.accents.box( { cx + side * ( size.x * .5f - .40f ), top + .73f, cz },
+                                        { .045f, .045f, size.z - .65f } );
+                                }
+                                for( int sx : { -1, 1 } ) for( int sz : { -1, 1 } )
+                                    patch.accents.box( { cx + sx * ( size.x * .5f - .40f ), top + .50f,
+                                        cz + sz * ( size.z * .5f - .40f ) }, { .045f, .46f, .045f } );
+                            }
                         }
                     }
                 }
@@ -1502,34 +1944,97 @@ namespace workphone::scene::race
                   material( assets, { .42f, .43f, .44f, 1 }, .95f ) );
             mesh( assets, "City lane markings", markings,
                   material( assets, { .85f, .82f, .65f, 1 }, .8f ) );
-            const ColourF colours[] = { { .42f, .38f, .32f, 1 },
-                                        { .54f, .52f, .47f, 1 },
-                                        { .24f, .29f, .34f, 1 } };
-            SurfaceBakeResult concrete;
-            forge->bakeConcrete( concrete, surfaceParams );
+            const ColourF colours[] = { { .78f, .68f, .57f, 1 },
+                                        { .86f, .83f, .75f, 1 },
+                                        { .58f, .65f, .69f, 1 } };
+            const SurfaceTag facadeSurfaces[] = {
+                SurfaceTag::Brick, SurfaceTag::Plaster, SurfaceTag::Concrete };
+            std::array<SmartPtr<render::IMaterial>, 3> facades;
             for( int i = 0; i < 3; ++i )
             {
-                auto facade = material( assets, colours[i], .85f );
-                maps( assets, facade, concrete.albedo, concrete.normal, concrete.orm );
-                // maps() sets a neutral multiplier; restore the curated facade family tint.
-                facade->setDiffuse( colours[i] );
-                facade->setUVProjection( 3 );
-                facade->setNormalStrength( .12f );
-                facade->setEditorUInt( "uvFilter", 3 );
-                facade->setEditorFloat( "uvAniso", 8.f );
-                facade->setEditorFloat( "uvTriplanarScale", .25f );
-                mesh( assets, "City buildings", buildings[i], facade );
+                // Complete bakes supply encoded albedo and linear normal/ORM data.
+                // Each architectural kit has a different surface and physical scale.
+                auto surface = forge->bakeSurface( facadeSurfaces[i], surfaceParams );
+                if( surface.albedo.pixels.empty() || surface.normal.pixels.empty() || surface.orm.pixels.empty() )
+                    throw std::runtime_error( "City facades require complete PBR maps." );
+                facades[i] = material( assets, colours[i], 1, 1 );
+                maps( assets, facades[i], surface.albedo, surface.normal, surface.orm );
+                facades[i]->setDiffuse( colours[i] );
+                // Box projection uses facade height as well as width; XZ projection
+                // had collapsed vertical walls into stretched texture columns.
+                facades[i]->setUVProjection( 1 );
+                facades[i]->setNormalStrength( i == 0 ? .2f : .1f );
+                // Height-derived micro AO must not blanket-darken whole flat walls.
+                facades[i]->setEditorFloat( "aoStrength", .35f );
+                facades[i]->setEditorUInt( "uvFilter", 3 );
+                facades[i]->setEditorFloat( "uvAniso", 8.f );
+                facades[i]->setEditorFloat( "uvTriplanarScale", i == 0 ? 1.f : .25f );
             }
-            mesh( assets, "City roof caps and service units", roofs,
-                  material( assets, { .19f, .21f, .22f, 1 }, .82f ) );
-            mesh( assets, "City parapets and plinths", facadeTrim,
-                  material( assets, { .34f, .33f, .30f, 1 }, .9f ) );
-            mesh( assets, "City windows", windows,
-                  material( assets, { .055f, .13f, .19f, 1 }, .22f, .35f ) );
-            mesh( assets, "City parks", parks, material( assets, { .16f, .32f, .12f, 1 }, 1 ) );
+            const auto roofMaterial = material( assets, { .18f, .21f, .23f, 1 }, .78f );
+            const auto frameMaterial = material( assets, { .68f, .67f, .61f, 1 }, .8f );
+            const auto accentMaterial = material( assets, { .18f, .28f, .30f, 1 }, .55f );
+            const std::array<SmartPtr<render::IMaterial>, 2> glassMaterials = {
+                material( assets, { .12f, .18f, .23f, 1 }, .12f, 0 ),
+                material( assets, { .18f, .23f, .27f, 1 }, .18f, 0 ) };
+            for( const auto &[key, patch] : patches )
+            {
+                reserveOwnerSlot( assets.actors );
+                auto root = app->getGameManager()->createActor();
+                if( !root ) throw std::runtime_error( "Cannot create city LOD patch." );
+                assets.actors.push_back( root );
+                root->setName( "City LOD patch" );
+                root->setPosition( { key.first * 128.f + 64, 0, key.second * 128.f + 64 } );
+                app->getGameManager()->getCurrentScene()->addActor( root );
+                auto nearRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
+                auto farRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
+                const auto add = [&]( const String &name, const Geometry &geometry,
+                    SmartPtr<render::IMaterial> surface, auto &renderers ) {
+                    if( auto actor = mesh( assets, name, geometry, surface, root ) )
+                        renderers.push_back( actor->getComponent<scene::MeshRenderer>() );
+                };
+                if( quality != VehicleAppearanceQuality::Preview )
+                {
+                    for( int family = 0; family < 3; ++family )
+                        add( "LOD0 city facade", patch.walls[family], facades[family], nearRenderers );
+                    for( int glass = 0; glass < 2; ++glass )
+                        add( "LOD0 city glazing", patch.glass[glass], glassMaterials[glass], nearRenderers );
+                    add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
+                    add( "LOD0 city facade frames", patch.frames, frameMaterial, nearRenderers );
+                    add( "LOD0 city entrance fascia", patch.accents, accentMaterial, nearRenderers );
+                }
+                for( int family = 0; family < 3; ++family )
+                    add( "LOD1 city massing", patch.farWalls[family], facades[family], farRenderers );
+                add( "LOD1 city roof silhouette", patch.farRoofs, roofMaterial, farRenderers );
+                add( "LOD1 city glazing ribbons", patch.farGlass, glassMaterials[0], farRenderers );
+                auto lod = root->addComponent<scene::LODGroup>();
+                lod->setSize( 128 ); lod->setDetailBounds( patch.bounds );
+                lod->setHysteresis( .18f ); lod->setCullBelowLastLOD( false );
+                if( !nearRenderers.empty() ) lod->addLevel( .11f, nearRenderers );
+                lod->addLevel( 0, farRenderers );
+                String error;
+                if( !lod->validate( &error ) ) throw std::runtime_error( "Invalid city LOD patch: " + error );
+            }
+            mesh( assets, "City block plazas", courtyards, material( assets, { .40f, .41f, .38f, 1 }, .92f ) );
+            mesh( assets, "City street furniture", streetMetal, material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );
+            mesh( assets, "City lamp lenses", lampGlass, material( assets, { .80f, .82f, .76f, 1 }, .35f ) );
+            mesh( assets, "City parks", parks, material( assets, { .20f, .34f, .14f, 1 }, 1 ) );
+            buildCityStreetDressing( assets, city, quality );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
             mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
+            // Bounded driving remains inside the collision walls. A surrounding ground
+            // surface gives the skyline context instead of ending the city in the sky.
+            Geometry hinterland;
+            const float horizon = city.extent + 1400;
+            hinterland.quad( { -horizon, -.12f, -horizon }, { horizon, -.12f, -horizon },
+                             { horizon, -.12f, horizon }, { -horizon, -.12f, horizon }, { 0, 1, 0 } );
+            auto land = material( assets, { .34f, .48f, .25f, 1 }, 1 );
+            auto soil = forge->bakeSurface( SurfaceTag::Dirt, surfaceParams );
+            maps( assets, land, soil.albedo, soil.normal, soil.orm );
+            land->setDiffuse( { .34f, .48f, .25f, 1 } );
+            land->setUVProjection( 3 ); land->setEditorFloat( "uvTriplanarScale", .1f );
+            land->setNormalStrength( .15f );
+            mesh( assets, "City surrounding landscape", hinterland, land );
             if( assets.useFoliageWorld )
             {
                 buildFoliageWorld( assets, seed, quality );
@@ -1551,7 +2056,8 @@ namespace workphone::scene::race
                 const auto forward = Vector3F( sample.right.z, 0, -sample.right.x );
                 const auto p = sample.position + Vector3F( 0, .04f, 0 );
                 const auto tip = p + forward * 2;
-                arrows.quad( p - sample.right * 1.5f, p + sample.right * 1.5f, tip, tip, { 0, 1, 0 } );
+                arrows.quad( p - sample.right * 1.5f, p + sample.right * 1.5f,
+                             tip + sample.right * .01f, tip - sample.right * .01f, { 0, 1, 0 } );
             }
             mesh( assets, "City race route arrows", arrows,
                   material( assets, { .05f, .7f, .9f, 1 }, .6f ) );
@@ -1691,6 +2197,13 @@ namespace workphone::scene::race
                 {
                     vehicleMaterial->setTexture( reflection, reflectionSlot );
                 }
+                if( assets.openCity )
+                {
+                    // The outdoor HDR sky also lights architectural specular response.
+                    // Recessed opaque glazing still has no transmission/interior model.
+                    for( auto &cityMaterial : assets.materials )
+                        cityMaterial->setTexture( reflection, reflectionSlot );
+                }
                 // The actor's material also lets Cubemap manage the representative body material.
                 actor->addComponent<scene::Material>()->setMaterial( assets.vehicleMaterials.front() );
                 auto scene = app->getGameManager()->getCurrentScene();
@@ -1702,14 +2215,15 @@ namespace workphone::scene::race
                     "materials." );
             }
 
-            graphicsScene->setAmbientLight( ColourF( .28f, .32f, .38f, 1 ) );
-            // Use the same horizon palette as the unlit sky. Lit surfaces pass through
-            // Reinhard, so invert that transform to converge to the sky's displayed colour.
+            graphicsScene->setAmbientLight( assets.openCity
+                ? ColourF( .55f, .57f, .60f, 1 ) : ColourF( .28f, .32f, .38f, 1 ) );
+            // The native HDR city path fogs in scene-linear space before its final
+            // filmic transfer. Retain the legacy circuit presentation separately.
             auto horizon = sky->computeSkyColour( Vector3F( 1, 0, 0 ), result.sunDir, state.turbidity,
                                                   result.sunAltitude );
-            const auto fogRadiance = []( float displayedLinear ) {
+            const auto fogRadiance = [&]( float displayedLinear ) {
                 const float colour = std::clamp( displayedLinear, 0.f, .95f );
-                return colour / ( 1 - colour );
+                return assets.openCity ? colour : colour / ( 1 - colour );
             };
             graphicsScene->setFog(
                 render::IGraphicsScene::FOG_LINEAR,
@@ -1727,7 +2241,7 @@ namespace workphone::scene::race
             sun->setType( LightTypes::LT_DIRECTIONAL );
             sun->setDirection( -result.sunDir );
             sun->setDiffuseColour( ColourF( 1, .96f, .88f, 1 ) );
-            sun->setPowerScale( 1.8f );
+            sun->setPowerScale( assets.openCity ? 3.f : 1.8f );
             sun->setCastShadows( true );
             sun->setVisible( true );
         }

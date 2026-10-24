@@ -48,6 +48,8 @@ namespace workphone
         }
         void reset();
         void setFoliageWorldEnabled( bool enabled ) { m_foliageWorldEnabled = enabled; }
+        void setCityOptions( bool enabled, s32 blocks, s32 route, bool naturalRoads = false )
+        { m_openCity = enabled; m_cityBlocks = blocks; m_cityRoute = route; m_cityNaturalRoads = naturalRoads; }
         void setMaterialExportDirectory( const std::string &path ) { m_materialExportDirectory = path; }
         void setEvidenceOptions( const std::string &path, const std::string &replay,
                                  std::vector<advanced::ReviewControl> controls )
@@ -138,6 +140,13 @@ namespace workphone
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;
         bool m_hudEnabled = true, m_orbitCamera = false, m_benchmarkStarted = false;
         bool m_foliageWorldEnabled = false;
+        bool m_openCity = false;
+        bool m_cityNaturalRoads = false;
+        s32 m_cityBlocks = 8, m_cityRoute = 0;
+        f32 m_cityExtent = 0, m_citySpacing = 0;
+        f32 m_cityOverviewExtent = 0;
+        Vector3F m_cityOverviewCentre{}, m_cityStreetCentre{};
+        Vector3F m_cityStreetForward{ 0, 0, -1 };
         s32 m_forcedLOD = -1;
         s32 m_forcedVehicleLOD = -1;
         f64 m_benchmarkSeconds = 0;

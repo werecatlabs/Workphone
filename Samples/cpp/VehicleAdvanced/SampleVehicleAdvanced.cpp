@@ -404,6 +404,10 @@ namespace workphone
             m_cameraController = nullptr;
             m_raceScene = nullptr;
             m_assets = {};
+            m_cityExtent = m_citySpacing = 0;
+            m_cityOverviewExtent = 0;
+            m_cityOverviewCentre = m_cityStreetCentre = Vector3F::zero();
+            m_cityStreetForward = { 0, 0, -1 };
 
             if( core::IApplicationManager::instance() )
             {
@@ -576,7 +580,7 @@ namespace workphone
                 if( m_sceneProfile ) m_sceneProfile->endMeasurement();
                 bool linearSceneValid = true;
                 size_t treeMeshes = 0, treeImposters = 0;
-                bool treeLODValid = m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
+                bool treeLODValid = m_assets.openCity || m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
                 for( const auto &group : m_assets.treeLODs )
                 {
                     auto levels = group->getLevels();
@@ -639,6 +643,78 @@ namespace workphone
                          << ",\n  \"renderUpdatesMeasured\": " << m_profileFrames
                          << ",\n  \"sceneMeshes\": " << m_assets.meshes.size()
                          << ",\n  \"sceneTextures\": " << m_assets.textures.size();
+                evidence << ",\n  \"sceneMode\": " << advanced::jsonString( m_assets.openCity ? "city" : "circuit" );
+                bool cityValid = m_assets.openCity == m_openCity;
+                if( m_assets.openCity )
+                {
+                    const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
+                                                                            m_assets.cityNaturalRoads );
+                    size_t parkLots = 0, buildingLots = 0, buildingCollisions = 0, expectedBuildingCollisions = 0;
+                    size_t cityLODGroups = 0, cityLODNear = 0, cityLODFar = 0;
+                    bool footprintValid = true, routeValid = m_assets.circuit.samples.size() >= 3;
+                    bool cityLODValid = true;
+                    for( const auto &lot : city.lots )
+                    {
+                        if( lot.park ) ++parkLots; else ++buildingLots;
+                        expectedBuildingCollisions += procedural::OpenCityLayout::buildingVolumes( lot ).size();
+                        const float clearance = city.footprintRoadClearance( lot.x, lot.z, lot.width, lot.depth );
+                        footprintValid = footprintValid && std::isfinite( clearance ) &&
+                            clearance >= procedural::OpenCityLayout::roadSetback - .001f;
+                    }
+                    for( size_t i = 0; i < m_assets.circuit.samples.size(); ++i )
+                    {
+                        const auto p = m_assets.circuit.samples[i].position;
+                        const auto q = m_assets.circuit.samples[( i + 1 ) % m_assets.circuit.samples.size()].position;
+                        const float step = ( q - p ).length();
+                        routeValid = routeValid && std::isfinite( p.x ) && std::isfinite( p.z ) &&
+                            city.roadDistance( p.x, p.z ) < .01f && step > 0 && step <= 2.05f;
+                    }
+                    for( const auto &actor : m_assets.actors )
+                    {
+                        if( !actor ) continue;
+                        const auto name = actor->getName();
+                        if( name.find( "Trackside collision: City building mass" ) == 0 ) ++buildingCollisions;
+                        if( name.find( "City LOD patch" ) != 0 ) continue;
+                        ++cityLODGroups;
+                        const auto group = actor->getComponent<scene::LODGroup>();
+                        if( !group || !group->validate() ) { cityLODValid = false; continue; }
+                        const auto levels = group->getLevels();
+                        size_t visibleLevels = 0;
+                        for( size_t level = 0; level < levels.size(); ++level )
+                        {
+                            if( levels[level].renderers.empty() ) { cityLODValid = false; continue; }
+                            const bool visible = levels[level].renderers.front()->isLODVisible();
+                            for( const auto &renderer : levels[level].renderers )
+                                cityLODValid = cityLODValid && renderer && renderer->isLODVisible() == visible;
+                            if( visible )
+                            {
+                                ++visibleLevels;
+                                if( level == 0 && levels.size() > 1 ) ++cityLODNear; else ++cityLODFar;
+                            }
+                        }
+                        cityLODValid = cityLODValid && visibleLevels == 1;
+                    }
+                    cityValid = cityValid && m_assets.cityBlocks == m_cityBlocks && m_assets.cityRoute == m_cityRoute &&
+                        m_assets.cityNaturalRoads == m_cityNaturalRoads &&
+                        routeValid && footprintValid && buildingLots > 0 && buildingCollisions == expectedBuildingCollisions &&
+                        cityLODGroups > 0 && cityLODValid;
+                    evidence << ",\n  \"city\": {\"blocks\":" << city.blocks << ",\"route\":" << m_assets.cityRoute
+                             << ",\"layout\":" << advanced::jsonString( m_assets.cityNaturalRoads ? "lsystem" : "grid" )
+                             << ",\"generatorRevision\":" << procedural::OpenCityLayout::generatorRevision
+                             << ",\"roadNetworkNodes\":" << city.roads.nodes.size()
+                             << ",\"roadNetworkEdges\":" << city.roads.edges.size()
+                             << ",\"spacing\":" << city.spacing << ",\"extent\":" << city.extent
+                             << ",\"lots\":" << city.lots.size() << ",\"buildingLots\":" << buildingLots
+                             << ",\"parkLots\":" << parkLots << ",\"buildingCollisionActors\":" << buildingCollisions
+                             << ",\"expectedBuildingCollisionActors\":" << expectedBuildingCollisions
+                             << ",\"routeSamples\":" << m_assets.circuit.samples.size()
+                             << ",\"closedRouteOnRoads\":" << ( routeValid ? "true" : "false" )
+                             << ",\"footprintsClearRoads\":" << ( footprintValid ? "true" : "false" )
+                             << ",\"lodGroups\":" << cityLODGroups << ",\"nearLodGroups\":" << cityLODNear
+                             << ",\"farLodGroups\":" << cityLODFar << ",\"lodValid\":" << ( cityLODValid ? "true" : "false" )
+                             << ",\"structuralValidation\":" << ( cityValid ? "true" : "false" ) << "}";
+                    if( !cityValid ) WP_LOG_ERROR( "VehicleAdvanced: city route, clearance, collision or LOD validation failed." );
+                }
                 evidence << ",\n  \"device\": " << advanced::captureDeviceEvidence();
                 void *reflectionView = nullptr;
                 if( m_assets.reflectionTexture ) m_assets.reflectionTexture->getTextureFinal( &reflectionView );
@@ -772,7 +848,7 @@ namespace workphone
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
-                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid;
+                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid && cityValid;
                 evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
                          << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
                          << "  \"limits\": \"Control replay is physics-tick based; settings and source hashes are recorded by the capture runner. Timings do not certify image quality.\"\n}\n";
@@ -1089,11 +1165,15 @@ namespace workphone
             return;
         auto physics = app->getPhysicsManager()->getPhysicsScene();
         auto chassis = m_vehicleActor->getComponent<scene::Rigidbody>()->getRigidDynamic();
+        if( m_assets.openCity && m_collisionProbeStarted ) return;
         if( !m_collisionProbeStarted )
         {
             size_t count = 0;
+            size_t cityBuildingMasses = 0;
+            SmartPtr<scene::IGameActor> citySidewalk;
             auto fail = [&]( const String &message ) {
-                WP_LOG_ERROR( "Trackside collision smoke: FAIL " + message );
+                WP_LOG_ERROR( String( m_assets.openCity ? "City collision smoke: FAIL " :
+                                                       "Trackside collision smoke: FAIL " ) + message );
                 m_smokeTestPassed = false;
                 app->setQuit( true );
             };
@@ -1102,6 +1182,8 @@ namespace workphone
                 if( actor->getName().find( "Trackside collision: " ) != 0 )
                     continue;
                 ++count;
+                if( actor->getName() == "Trackside collision: City building mass" ) ++cityBuildingMasses;
+                if( !citySidewalk && actor->getName() == "Trackside collision: City sidewalk" ) citySidewalk = actor;
                 auto box = actor->getComponent<scene::CollisionBox>();
                 auto body = actor->getComponent<scene::Rigidbody>();
                 if( !box || !box->getShape() || !body || !body->getRigidStatic() ||
@@ -1147,6 +1229,59 @@ namespace workphone
             }
             Vector3F hitPosition, hitNormal;
             SmartPtr<ISharedObject> object;
+            if( m_assets.openCity )
+            {
+                // Registration/pose/face checks above cover every authored static box.
+                // These longer downward probes verify the two distinct drive/walk grades.
+                const auto roadPoint = m_assets.cityNaturalRoads && !m_assets.circuit.samples.empty()
+                    ? m_assets.circuit.samples[std::min<size_t>( 10, m_assets.circuit.samples.size() - 1 )].position
+                    : Vector3F( 0, 0, -m_citySpacing * .25f );
+                if( count == 0 || !std::isfinite( m_citySpacing ) || m_citySpacing <= 0 ||
+                    !physics->intersects( roadPoint + Vector3F( 0, 2, 0 ),
+                                          roadPoint - Vector3F( 0, 1, 0 ),
+                                          hitPosition, hitNormal, object ) || !object ||
+                    !std::isfinite( hitPosition.y ) || std::abs( hitPosition.y ) > .02f )
+                {
+                    fail( "road-centre collision grade does not match Y=0" );
+                    return;
+                }
+                const float roadY = hitPosition.y;
+                if( !citySidewalk )
+                {
+                    fail( "no shared-descriptor sidewalk collision was generated" );
+                    return;
+                }
+                // buildCity creates this actor directly from the first shared sidewalk
+                // descriptor; use its centre without regenerating street dressing.
+                const auto walkPoint = citySidewalk->getPosition();
+                object = nullptr;
+                if( !physics->intersects( { walkPoint.x, 2, walkPoint.z },
+                                          { walkPoint.x, -1, walkPoint.z },
+                                          hitPosition, hitNormal, object ) || !object ||
+                    object != citySidewalk->getComponent<scene::Rigidbody>()->getRigidStatic() ||
+                    !std::isfinite( hitPosition.y ) || std::abs( hitPosition.y - .15f ) > .015f )
+                {
+                    fail( "sidewalk collision grade does not match Y=0.15" );
+                    return;
+                }
+                const float sidewalkY = hitPosition.y;
+                const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
+                                                                        m_assets.cityNaturalRoads );
+                size_t expectedMasses = 0;
+                for( const auto &lot : city.lots ) expectedMasses += procedural::OpenCityLayout::buildingVolumes( lot ).size();
+                if( cityBuildingMasses != expectedMasses || expectedMasses == 0 )
+                {
+                    fail( "native building mass count does not match the shared layout" );
+                    return;
+                }
+                WP_LOG( "City collision smoke: PASS native static boxes=" + StringUtil::toString( count ) +
+                        " roadY=" + StringUtil::toString( roadY ) + " sidewalkY=" + StringUtil::toString( sidewalkY ) +
+                        " building masses=" + StringUtil::toString( cityBuildingMasses ) );
+                m_collisionProbeStarted = true;
+                m_smokeTestPassed = true;
+                app->setQuit( true );
+                return;
+            }
             if( count == 0 || physics->intersects( { 0, .5f, 2 }, { 0, .5f, 4 },
                                                   hitPosition, hitNormal, object ) )
             {
@@ -1522,9 +1657,66 @@ namespace workphone
         m_raceScene->setQuality( static_cast<s32>( m_quality ) );
         m_raceScene->setFoliageWorldEnabled( m_foliageWorldEnabled );
         m_raceScene->setMaterialExportDirectory( m_materialExportDirectory );
+        if( m_openCity )
+        {
+            auto properties = m_raceScene->getProperties();
+            properties->setProperty( "Open City", true );
+            properties->setProperty( "City Blocks", m_cityBlocks );
+            properties->setProperty( "City Route", m_cityRoute );
+            properties->setProperty( "City Natural Roads", m_cityNaturalRoads );
+            m_raceScene->setProperties( properties );
+        }
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
+        m_cityExtent = m_citySpacing = 0;
+        m_cityOverviewExtent = 0;
+        m_cityOverviewCentre = m_cityStreetCentre = Vector3F::zero();
+        m_cityStreetForward = { 0, 0, -1 };
+        if( m_assets.openCity )
+        {
+            const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
+                                                                    m_assets.cityNaturalRoads );
+            m_cityExtent = city.extent;
+            m_citySpacing = city.spacing;
+            m_cityOverviewExtent = city.extent;
+            if( city.naturalRoads && !city.roads.nodes.empty() )
+            {
+                float minX = std::numeric_limits<float>::max(), minZ = minX;
+                float maxX = -minX, maxZ = -minX;
+                for( const auto &node : city.roads.nodes )
+                {
+                    minX = std::min( minX, node.x - 9.f ); maxX = std::max( maxX, node.x + 9.f );
+                    minZ = std::min( minZ, node.z - 9.f ); maxZ = std::max( maxZ, node.z + 9.f );
+                }
+                for( const auto &lot : city.lots )
+                {
+                    minX = std::min( minX, lot.x - lot.width * .5f ); maxX = std::max( maxX, lot.x + lot.width * .5f );
+                    minZ = std::min( minZ, lot.z - lot.depth * .5f ); maxZ = std::max( maxZ, lot.z + lot.depth * .5f );
+                }
+                m_cityOverviewCentre = { ( minX + maxX ) * .5f, 0, ( minZ + maxZ ) * .5f };
+                m_cityOverviewExtent = std::max( city.spacing, std::max( maxX - minX, maxZ - minZ ) * .5f + 20.f );
+                float best = std::numeric_limits<float>::max();
+                const float scale = city.spacing * city.spacing;
+                for( const auto &edge : city.roads.edges )
+                {
+                    if( edge.a >= city.roads.nodes.size() || edge.b >= city.roads.nodes.size() ) continue;
+                    const auto &a = city.roads.nodes[edge.a], &b = city.roads.nodes[edge.b];
+                    const Vector3F delta( b.x - a.x, 0, b.z - a.z );
+                    const float lengthSquared = delta.lengthSquared();
+                    if( lengthSquared < 1.f ) continue;
+                    const Vector3F centre( ( a.x + b.x ) * .5f, 0, ( a.z + b.z ) * .5f );
+                    // Prefer a central avenue with enough uninterrupted length for
+                    // both opposing inspection views; never assume a +Z grid street.
+                    const float score = ( centre - m_cityOverviewCentre ).lengthSquared() + scale * scale / lengthSquared;
+                    if( score < best )
+                    {
+                        best = score; m_cityStreetCentre = centre;
+                        m_cityStreetForward = delta / std::sqrt( lengthSquared );
+                    }
+                }
+            }
+        }
 #if WP_GRAPHICS_SYSTEM_CLAW
         if( auto scene = dynamic_pointer_cast<render::ClawScene>(
                 applicationManager->getGraphicsSystem()->getGraphicsScene() ) )
@@ -1572,7 +1764,7 @@ namespace workphone
             // The overhead view needs more depth precision to resolve the road's
             // millimetre surface offsets at a distance of nearly 500 metres.
             m_camera->setNearClipDistance( m_captureView == "track" && !m_orbitCamera ? 10.f : .5f );
-            m_camera->setFarClipDistance( 1000 );
+            m_camera->setFarClipDistance( std::max( 1000.f, m_cityExtent * 6.f ) );
         }
         updateRenderCamera();
 
@@ -1621,8 +1813,27 @@ namespace workphone
                     }
                     else if( m_captureView == "track" )
                     {
-                        m_cameraActor->setPosition( Vector3F( 75, 480, -30 ) );
-                        m_cameraActor->lookAt( Vector3F( 75, 0, -30 ), Vector3F::unitZ() );
+                        if( m_openCity )
+                        {
+                            m_cameraActor->setPosition( m_cityOverviewCentre + Vector3F(
+                                m_cityOverviewExtent * 1.2f, m_cityOverviewExtent * 1.9f, m_cityOverviewExtent * 1.35f ) );
+                            m_cameraActor->lookAt( m_cityOverviewCentre, Vector3F::unitY() );
+                        }
+                        else
+                        {
+                            m_cameraActor->setPosition( Vector3F( 75, 480, -30 ) );
+                            m_cameraActor->lookAt( Vector3F( 75, 0, -30 ), Vector3F::unitZ() );
+                        }
+                    }
+                    else if( m_captureView == "street" || m_captureView == "boulevard" )
+                    {
+                        const float travel = m_captureView == "boulevard" ? -1.f : 1.f;
+                        const Vector3F right( -m_cityStreetForward.z, 0, m_cityStreetForward.x );
+                        m_cameraActor->setPosition( m_cityStreetCentre +
+                            m_cityStreetForward * ( travel * m_citySpacing * .12f ) + Vector3F( 0, 3.2f, 0 ) );
+                        m_cameraActor->lookAt( m_cityStreetCentre +
+                            m_cityStreetForward * ( travel * m_citySpacing * .60f ) +
+                            right * ( travel * m_citySpacing * .24f ) + Vector3F( 0, 8, 0 ), Vector3F::unitY() );
                     }
                     else
                     {
@@ -1759,9 +1970,9 @@ int main( int argc, char **argv )
                 << "SampleVehicleAdvanced [--seed N] [--quality low|medium|high|cinematic] [--plugins PATH]\n"
                    "  --smoke-test                 Settle, accelerate, turn, brake and reset checks\n"
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
-                   "  --collision-smoke-test        Verify trackside boxes and a garage impact\n"
+                   "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|street|boulevard   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -1771,6 +1982,11 @@ int main( int argc, char **argv )
                    "  --evidence PATH.json          Write machine-readable review results\n"
                    "  --replay PATH.csv             Apply 120 Hz tick,throttle,brake,steering inputs\n"
                    "  --foliage-world               Use paged instanced broadleaf vegetation\n"
+                   "  --city                        Generate the existing open-city scene instead of a circuit\n"
+                   "  --city-blocks 6|8|10           Blocks per side (requires --city; default 8)\n"
+                   "  --city-route 0|1|2             Street race route (requires --city; default 0)\n"
+                   "  --city-layout grid|lsystem     Road network layout (requires --city; default grid)\n"
+                   "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
                    "  --no-audio                    Disable vehicle sounds\n"
@@ -1801,6 +2017,9 @@ int main( int argc, char **argv )
     auto quality = procedural::VehicleAppearanceQuality::High;
     bool hud = true, orbit = false;
     bool foliageWorld = false;
+    bool openCity = false, cityOptionsExplicit = false;
+    bool cityNaturalRoads = false;
+    s32 cityBlocks = 8, cityRoute = 0;
     s32 forcedLOD = -1;
     s32 forcedVehicleLOD = -1;
     f64 benchmarkSeconds = 0;
@@ -1829,6 +2048,29 @@ int main( int argc, char **argv )
                 orbit = true;
             else if( String( argv[i] ) == "--foliage-world" )
                 foliageWorld = true;
+            else if( String( argv[i] ) == "--city" )
+                openCity = true;
+            else if( String( argv[i] ) == "--city-blocks" && i + 1 < argc )
+            {
+                const std::string value = argv[++i];
+                if( value != "6" && value != "8" && value != "10" )
+                    throw std::runtime_error( "City blocks must be 6, 8 or 10." );
+                cityBlocks = std::stoi( value ); cityOptionsExplicit = true;
+            }
+            else if( String( argv[i] ) == "--city-route" && i + 1 < argc )
+            {
+                const std::string value = argv[++i];
+                if( value != "0" && value != "1" && value != "2" )
+                    throw std::runtime_error( "City route must be 0, 1 or 2." );
+                cityRoute = std::stoi( value ); cityOptionsExplicit = true;
+            }
+            else if( String( argv[i] ) == "--city-layout" && i + 1 < argc )
+            {
+                const std::string value = argv[++i];
+                if( value != "grid" && value != "lsystem" )
+                    throw std::runtime_error( "City layout must be grid or lsystem." );
+                cityNaturalRoads = value == "lsystem"; cityOptionsExplicit = true;
+            }
             else if( String( argv[i] ) == "--force-lod" && i + 1 < argc )
             {
                 const String value = argv[++i];
@@ -1911,8 +2153,10 @@ int main( int argc, char **argv )
                 throw std::runtime_error( std::string( "Unknown option or missing value: " ) + argv[i] );
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
-            captureView != "corner" )
-            throw std::runtime_error( "View must be follow, car, track, or corner." );
+            captureView != "corner" && captureView != "street" && captureView != "boulevard" )
+            throw std::runtime_error( "View must be follow, car, track, corner, street, or boulevard." );
+        if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
+            throw std::runtime_error( "City options and street-level views require --city." );
         if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) + int(effectsSmokeTest) > 1 ||
             ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
@@ -2012,6 +2256,7 @@ int main( int argc, char **argv )
         app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
         app->setEvidenceOptions( evidencePath, replayPath, std::move( replayControls ) );
         app->setFoliageWorldEnabled( foliageWorld );
+        app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
         app->setMaterialExportDirectory( materialExportDirectory );
         if( !pluginsConfig.empty() )
             app->setPluginsConfigFilePath( pluginsConfig );
