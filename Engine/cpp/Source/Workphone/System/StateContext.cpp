@@ -14,7 +14,6 @@
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/System/DebugUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
-#include <unordered_set>
 #include <typeinfo>
 
 namespace workphone
@@ -417,11 +416,14 @@ namespace workphone
                 // lightweight event so dependent objects can invalidate their own derived state.
                 // Dispatching snapshots synchronously keeps the notification on this context's
                 // task and makes listener removal from inside a callback safe.
-                std::unordered_set<IEventListener *> notifiedListeners;
-                auto notifyListeners = [&]( auto eventListeners ) {
-                    for( auto &eventListener : eventListeners )
+                // Both lists are unique. Scan the already retained context list
+                // to deduplicate the owner's route without a heap-backed set
+                // after a handler has consumed the dirty state.
+                auto notifyListeners = [&]( const auto &eventListeners, bool ownerRoute ) {
+                    for( auto eventListener : eventListeners )
                     {
-                        if( !eventListener || !notifiedListeners.insert( eventListener.get() ).second )
+                        if( !eventListener || (ownerRoute &&
+                            std::find(contextEvents.begin(), contextEvents.end(), eventListener) != contextEvents.end()) )
                         {
                             continue;
                         }
@@ -444,9 +446,10 @@ namespace workphone
                     }
                 };
 
-                notifyListeners( std::move(contextEvents) );
+                notifyListeners( contextEvents, false );
                 if(auto stateOwner = state->getOwner())
-                    notifyListeners(stateOwner->getObjectListeners());
+                    if(auto ownerEvents = stateOwner->getObjectListenerSnapshot())
+                        notifyListeners(*ownerEvents, true);
             }
 
             // --- Process queued messages for this task ---

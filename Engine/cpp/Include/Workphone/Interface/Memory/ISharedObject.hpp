@@ -5,6 +5,7 @@
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
+#include <memory>
 
 #if WP_TRACK_REFERENCES
 #    include <Workphone/Memory/SharedObjectTracker.hpp>
@@ -489,6 +490,11 @@ namespace workphone
          * @return Array of listeners.
          */
         virtual Array<SmartPtr<IEventListener>> getObjectListeners() const;
+
+        using ObjectListenerSnapshot = std::shared_ptr<const Array<SmartPtr<IEventListener>>>;
+        /** Retain an immutable, pre-admitted dispatch generation without allocating.
+         * Custom listener inventories must also override this dispatch view. */
+        virtual ObjectListenerSnapshot getObjectListenerSnapshot() const;
 
         /**
          * @brief Get registered object listeners.

@@ -8,6 +8,7 @@
 #include <Workphone/System/StateQueue.hpp>
 #include <Workphone/System/FactoryTemplate.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Jobs/EventJob.hpp>
 #include <atomic>
 #include <iostream>
 #include <stdexcept>
@@ -37,6 +38,21 @@ namespace
         Parameter handleEvent( EventType, hash_type, const Array<Parameter> &,
                                SmartPtr<ISharedObject>, SmartPtr<ISharedObject>,
                                SmartPtr<IEvent> ) override { return {}; }
+    };
+    class LifecycleEvent : public IEventListener
+    {
+    public:
+        unsigned calls = 0;
+        size_t argumentCount = 0;
+        std::function<void()> callback;
+        Parameter handleEvent(EventType, hash_type, const Array<Parameter> &arguments,
+                              SmartPtr<ISharedObject>, SmartPtr<ISharedObject>, SmartPtr<IEvent>) override
+        {
+            ++calls;
+            argumentCount = arguments.size();
+            if(callback) { auto action = std::move(callback); action(); }
+            return {};
+        }
     };
     class DirtyState : public State
     {
@@ -73,6 +89,17 @@ namespace
         {
             ++unloads;
             StateMessage::unload( data );
+        }
+    };
+    class QueueBatchReentryMessage : public QueueMessage
+    {
+    public:
+        StateQueue *queue = nullptr;
+        SmartPtr<IStateMessage> nested;
+        void unload(SmartPtr<ISharedObject> data) override
+        {
+            if(queue) { auto target = queue; queue = nullptr; target->queueMessage(nested); }
+            QueueMessage::unload(data);
         }
     };
     class QueueListener : public IStateListener
@@ -352,6 +379,272 @@ namespace
         u32 m_task = static_cast<u32>( TaskId::Primary );
         ConcurrentQueue<SmartPtr<IStateMessage>> m_messages;
     };
+
+    struct LifecycleCapacity
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
+        static constexpr auto source = size_t(StreamMemoryClass::SourceCpu);
+        u64 original = scheduler->stats().limits[source];
+        u64 used() const { return scheduler->stats().used[source]; }
+        void set(u64 limit) { String error; require(scheduler->setBudget(StreamMemoryClass::SourceCpu, limit, error), "Lifecycle budget applies"); }
+        void restore() { set(original); }
+        ~LifecycleCapacity() { restore(); }
+    };
+    class TeardownObject : public State
+    {
+    public:
+        SmartPtr<TeardownObject> *releaseOther = nullptr;
+        unsigned *destructions = nullptr, *unloads = nullptr;
+        ~TeardownObject() override { if(destructions) ++*destructions; }
+        void unload(SmartPtr<ISharedObject>) override
+        {
+            if(unloads) ++*unloads;
+            if(releaseOther) *releaseOther = nullptr;
+        }
+    };
+    class TeardownFactory : public FactoryTemplate<TeardownObject>
+    {
+    public:
+        void publish(TeardownObject *object) { configureObject(object, false); }
+        size_t count() const { return m_instances.size(); }
+    };
+    SmartPtr<TeardownObject> createTeardown(TeardownFactory &factory)
+    {
+        auto object = static_cast<TeardownObject *>(factory.createObject());
+        SmartPtr<TeardownObject> result(object);
+        object->removeReference();
+        return result;
+    }
+    void lifecycleBudgetContracts()
+    {
+        LifecycleCapacity budget;
+        {
+            TeardownFactory factory;
+            factory.setGrowSize(1); factory.load(nullptr);
+            auto memory = factory.allocateMemory();
+            auto candidate = new(memory) TeardownObject;
+            const auto resident = budget.used(); budget.set(resident);
+            bool denied = false;
+            try { factory.publish(candidate); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && !factory.count() && budget.used() == resident,
+                    "Factory publication cannot bypass denied teardown scratch admission");
+            candidate->~TeardownObject(); factory.freeMemory(memory); budget.restore();
+            unsigned destructions = 0, unloads = 0;
+            auto first = createTeardown(factory), second = createTeardown(factory);
+            first->destructions = second->destructions = &destructions;
+            first->unloads = second->unloads = &unloads;
+            first->releaseOther = &second;
+            auto snapshot = factory.getInstanceObjects();
+            require(snapshot.size() == 2 && snapshot.get_allocator().isSourceBudgeted(), "Factory public snapshots carry admission");
+            snapshot = {};
+            const auto before = budget.used(); budget.set(before);
+            denied = false;
+            try { auto copy = factory.getInstanceObjects(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && factory.count() == 2 && budget.used() == before, "Denied caller snapshot preserves factory inventory");
+            auto pins = factory.takeInstanceObjectsForUnload();
+            require(pins.size() == 2 && pins.get_allocator().isSourceBudgeted() && budget.used() == before,
+                    "Factory teardown transfers pre-admitted pins at capacity");
+            require(factory.takeInstanceObjectsForUnload().empty(), "Closing factory cannot publish a duplicate teardown batch");
+            for(auto &object : pins) object->unload(nullptr);
+            require(unloads == 2 && destructions == 0 && !second,
+                    "Teardown pins protect later objects from references released by an earlier callback");
+            first = nullptr; pins = {};
+            require(destructions == 2 && factory.count() == 0, "Teardown releases pins outside inventory lock and retires both objects");
+            factory.unload(nullptr); budget.restore();
+        }
+        {
+            auto queue = make_ptr<StateQueue>(); queue->load(nullptr);
+            std::vector<SmartPtr<QueueMessage>> messages;
+            for(unsigned i = 0; i < 257; ++i) messages.push_back(make_ptr<QueueMessage>());
+            const auto empty = budget.used();
+            for(auto &message : messages) queue->queueMessage(message);
+            const auto resident = budget.used(); budget.set(resident);
+            bool denied = false;
+            try { auto snapshot = queue->getMessages(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && !queue->isEmpty() && budget.used() == resident, "Denied queue snapshot never consumes accepted messages");
+            auto batch = queue->getMessagesAndClear();
+            require(batch.size() == messages.size() && batch.get_allocator().isSourceBudgeted() &&
+                        queue->isEmpty() && budget.used() == resident,
+                    "Full-budget drain transfers actual buffer and spare capacity without admission");
+            for(size_t i = 0; i < batch.size(); ++i) require(batch[i] == messages[i], "Drain preserves FIFO order");
+            denied = false;
+            try { queue->queueMessage(messages.front()); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && queue->isEmpty(), "Retained caller batch does not let a new producer bypass admission");
+            const auto batchBytes = sourceBudgetStorageBytes(batch.capacity() * sizeof(SmartPtr<IStateMessage>), alignof(SmartPtr<IStateMessage>));
+            require(resident - empty == batchBytes, "Queue admits exactly its physical drain capacity");
+            queue->unload(nullptr); queue = nullptr;
+            const auto retainedUsage = budget.used();
+            batch = {};
+            require(budget.used() + batchBytes == retainedUsage, "Last drain owner retires physical storage after producer destruction");
+            budget.restore();
+        }
+        {
+            FactoryManager manager; manager.load(nullptr);
+            auto factory = make_ptr<TeardownFactory>(); factory->setGrowSize(1);
+            factory->setObjectTypeName("BudgetTeardownProbe");
+            manager.addFactory(factory);
+            unsigned destructions = 0, unloads = 0;
+            auto first = createTeardown(*factory), second = createTeardown(*factory);
+            first->destructions = second->destructions = &destructions;
+            first->unloads = second->unloads = &unloads; first->releaseOther = &second;
+            budget.set(budget.used()); manager.unload(nullptr);
+            require(!manager.isLoaded() && !factory->isLoaded() && destructions == 2 && unloads == 2,
+                    "FactoryManager performs both teardown phases at the shared limit without a snapshot allocation");
+            first = nullptr; second = nullptr; budget.restore();
+        }
+        {
+            auto owner = make_ptr<State>();
+            auto first = make_ptr<LifecycleEvent>(), second = make_ptr<LifecycleEvent>(), third = make_ptr<LifecycleEvent>();
+            const auto baseline = budget.used();
+            owner->addObjectListener(first); owner->addObjectListener(second);
+            auto retained = owner->getObjectListenerSnapshot();
+            auto copied = owner->getObjectListeners();
+            require(copied.get_allocator().isSourceBudgeted(), "Public object-event copies preserve budget policy");
+            copied = {};
+            const auto resident = budget.used(); budget.set(resident);
+            owner->addObjectListener(first);
+            bool denied = false;
+            try { owner->addObjectListener(third); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && owner->getObjectListenerSnapshot() == retained && !owner->hasObjectListener(third),
+                    "Denied listener publication preserves the complete immutable generation");
+            denied = false;
+            try { auto copy = owner->getObjectListeners(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && owner->getObjectListenerSnapshot() == retained && budget.used() == resident,
+                    "Denied event copy preserves retained generation; duplicate registration needs no admission");
+            const auto copyBytes = sourceBudgetStorageBytes(retained->capacity() * sizeof(SmartPtr<IEventListener>), alignof(SmartPtr<IEventListener>));
+            budget.set(resident + copyBytes); denied = false;
+            try { owner->removeObjectListener(first); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && owner->getObjectListenerSnapshot() == retained && budget.used() == resident,
+                    "Denied listener control-block admission retires a staged partial-removal buffer atomically");
+            budget.set(resident);
+            owner->removeObjectListeners();
+            require(!owner->getObjectListenerSnapshot() && retained->size() == 2 && budget.used() == resident,
+                    "Full-budget listener teardown leaves retained dispatch generation charged and valid");
+            retained.reset(); require(budget.used() == baseline, "Last object-event generation retires buffer and control storage");
+            budget.restore();
+            owner->addObjectListener(first); owner->addObjectListener(second);
+            const auto exclusive = budget.used(); budget.set(exclusive);
+            owner->removeObjectListener(first);
+            require(owner->getNumListeners() == 1 && owner->hasObjectListener(second) && budget.used() == exclusive,
+                    "Exclusive listener removal reuses admitted capacity at the shared limit");
+            owner->removeObjectListener(second);
+            require(!owner->getObjectListenerSnapshot() && budget.used() == baseline,
+                    "Exclusive final-listener removal retires buffer/control storage without admission");
+            budget.restore();
+        }
+        {
+            auto queue = make_ptr<StateQueue>(); queue->load(nullptr);
+            std::vector<SmartPtr<QueueMessage>> messages;
+            for(unsigned i = 0; i < 256; ++i) messages.push_back(make_ptr<QueueMessage>());
+            std::atomic<unsigned> producers{4};
+            std::vector<std::thread> writers;
+            for(unsigned worker = 0; worker < 4; ++worker)
+                writers.emplace_back([&, worker]() {
+                    for(unsigned i = worker * 64; i < (worker + 1) * 64; ++i) queue->queueMessage(messages[i]);
+                    --producers;
+                });
+            std::array<unsigned, 256> seen{};
+            std::array<int, 4> last{{-1, -1, -1, -1}};
+            unsigned deliveries = 0;
+            while(producers || !queue->isEmpty())
+            {
+                auto batch = queue->getMessagesAndClear();
+                for(auto &message : batch)
+                {
+                    const auto found = std::find(messages.begin(), messages.end(), message);
+                    require(found != messages.end(), "Concurrent drain only publishes accepted messages");
+                    const auto index = static_cast<unsigned>(found - messages.begin());
+                    require(!seen[index]++ && static_cast<int>(index) > last[index / 64],
+                            "Concurrent drain has no duplicates and preserves each producer's order");
+                    last[index / 64] = static_cast<int>(index); ++deliveries;
+                }
+                std::this_thread::yield();
+            }
+            for(auto &writer : writers) writer.join();
+            require(deliveries == messages.size(), "Concurrent transfer drains every accepted message exactly once");
+            auto nested = make_ptr<QueueMessage>(); auto reentrant = make_ptr<QueueBatchReentryMessage>();
+            reentrant->queue = queue.get(); reentrant->nested = nested; queue->queueMessage(reentrant);
+            queue->clear();
+            require(reentrant->unloads == 1 && nested->unloads == 0 && !queue->isEmpty(),
+                    "Clear callbacks enqueue into the next batch outside the queue lock");
+            queue->clear(); require(nested->unloads == 1, "Reentrant clear work retires exactly once on the next drain");
+            reentrant->queue = queue.get(); queue->queueMessage(reentrant);
+            budget.set(budget.used()); queue->unload(nullptr);
+            require(queue->isEmpty() && reentrant->unloads == 2 && nested->unloads == 1,
+                    "Unloading closes publication before callbacks without admitting a drain array");
+            budget.restore();
+        }
+        {
+            auto owner = make_ptr<State>();
+            std::vector<SmartPtr<LifecycleEvent>> listeners;
+            for(unsigned i = 0; i < 64; ++i) listeners.push_back(make_ptr<LifecycleEvent>());
+            std::vector<std::thread> writers;
+            for(unsigned worker = 0; worker < 4; ++worker)
+                writers.emplace_back([&]() { for(auto &listener : listeners) owner->addObjectListener(listener); });
+            for(auto &writer : writers) writer.join();
+            auto retained = owner->getObjectListenerSnapshot();
+            require(retained && retained->size() == listeners.size(), "Concurrent object listener registration publishes unique generations");
+            writers.clear();
+            for(unsigned worker = 0; worker < 4; ++worker)
+                writers.emplace_back([&, worker]() {
+                    for(unsigned i = worker; i < listeners.size(); i += 4) owner->removeObjectListener(listeners[i]);
+                });
+            for(auto &writer : writers) writer.join();
+            require(!owner->getObjectListenerSnapshot() && retained->size() == listeners.size(),
+                    "Concurrent listener removal preserves previously retained dispatch generations");
+        }
+        {
+            QueueFixture fixture;
+            auto first = make_ptr<LifecycleEvent>(), second = make_ptr<LifecycleEvent>();
+            auto sender = make_ptr<State>(); sender->setObjectFlag(OBJECT_FLAG_GLOBAL_EVENTS, true);
+            sender->setObjectFlag(OBJECT_FLAG_TRIGGER_EVENTS, true); sender->setObjectFlag(OBJECT_FLAG_RECEIVE_EVENTS, true);
+            fixture.app->addObjectListener(first); sender->addObjectListener(first); sender->addObjectListener(second);
+            auto job = make_ptr<EventJob>(); job->setSender(sender); job->setObject(sender);
+            const Array<Parameter> arguments{Parameter(7)};
+            job->setArguments(arguments);
+            first->callback = [&]() { sender->removeObjectListeners(); };
+            const auto resident = budget.used(); budget.set(resident);
+            bool denied = false;
+            try { auto copy = job->getArguments(); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && budget.used() == resident, "Event argument copies cannot bypass SourceCpu admission");
+            denied = false;
+            try { job->setArguments(arguments); } catch(const std::bad_alloc &) { denied = true; }
+            require(denied && budget.used() == resident, "Denied event argument replacement preserves the installed generation");
+            job->execute();
+            require(first->calls == 1 && first->argumentCount == 1 && second->calls == 0,
+                    "Full-budget argument delivery retains prior generation; later routes observe callback removal");
+            budget.restore(); sender->addObjectListener(first); sender->addObjectListener(second);
+            budget.set(budget.used()); job->execute();
+            require(first->calls == 2 && second->calls == 1, "Full-budget global/sender/object overlap delivers exactly once");
+            sender->removeObjectListeners(); fixture.app->removeObjectListeners(); budget.restore();
+        }
+        {
+            QueueFixture fixture;
+            auto context = fixture.context(); auto state = make_ptr<DirtyState>(); context->addState(state);
+            auto previousOwner = make_ptr<State>(), nextOwner = make_ptr<State>(); state->setOwner(previousOwner);
+            auto previousEvent = make_ptr<LifecycleEvent>(), nextEvent = make_ptr<LifecycleEvent>(), overlap = make_ptr<LifecycleEvent>();
+            previousOwner->addObjectListener(previousEvent); nextOwner->addObjectListener(nextEvent); nextOwner->addObjectListener(overlap);
+            context->addEventListener(overlap);
+            auto listener = make_ptr<InventoryListener>();
+            listener->onFirst = [&]() { state->setOwner(nextOwner); budget.set(budget.used()); };
+            context->addStateListener(listener);
+            context->update();
+            require(!state->dirty && listener->notifications == 1 && nextEvent->calls == 1 &&
+                        previousEvent->calls == 0 && overlap->calls == 1,
+                    "State dispatch observes owner replacement after callbacks and deduplicates at a full budget");
+            budget.restore(); context->unload(nullptr); fixture.drainScheduling();
+        }
+        {
+            QueueFixture fixture;
+            auto queue = fixture.factories->make_ptr<StateQueue>(); queue->load(nullptr);
+            auto message = fixture.message(); queue->queueMessage(message);
+            budget.set(budget.used()); queue->unload(nullptr);
+            require(queue->getLoadingState() == LoadingState::Unloaded && queue->isEmpty() && message->unloads == 1,
+                    "Denied loading-event creation cannot strand accepted messages or stop queue teardown");
+            budget.restore();
+        }
+        std::cout << "Factory teardown, message drains and immutable object-event budgets PASS\n";
+    }
 
     void queueContracts()
     {
@@ -731,6 +1024,7 @@ int main()
             inventory->unload(nullptr);
         }
         std::cout << "State inventory/listeners: concurrent registration, retained dispatch and cleanup PASS\n";
+        lifecycleBudgetContracts();
         queueContracts();
         factoryDerivedQueueContracts();
         std::cout << "State/event listeners: fan-out, concurrent deduplication, dispatch and cleanup PASS\n";

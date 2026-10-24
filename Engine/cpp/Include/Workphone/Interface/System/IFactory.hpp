@@ -176,6 +176,11 @@ namespace workphone
          */
         virtual Array<SmartPtr<ISharedObject>> getInstanceObjects() const = 0;
 
+        /** Close instance publication and transfer pre-admitted lifecycle pins.
+         * Factory implementations with an inventory should override this so shutdown
+         * does not need a new snapshot allocation. */
+        virtual Array<SmartPtr<ISharedObject>> takeInstanceObjectsForUnload();
+
         /**
          * @brief Gets the tags associated with this factory.
          * @return Array of tags as strings.

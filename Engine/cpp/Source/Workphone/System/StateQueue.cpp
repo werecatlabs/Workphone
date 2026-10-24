@@ -27,6 +27,7 @@ namespace workphone
     {
         (void)data;
         setLoadingState( LoadingState::Loading );
+        { ScopedLock lock(&m_messageMutex); m_acceptMessages = true; }
         setLoadingState( LoadingState::Loaded );
     }
 
@@ -34,9 +35,12 @@ namespace workphone
     {
         try
         {
-            setLoadingState( LoadingState::Unloading );
-
+            { ScopedLock lock(&m_messageMutex); m_acceptMessages = false; }
             auto messageQueue = getMessagesAndClear();
+            // setLoadingState commits the state before publishing a new event.
+            // Denying that optional publication must not strand accepted work.
+            try { setLoadingState( LoadingState::Unloading ); }
+            catch(const std::bad_alloc &) {}
             for( auto &message : messageQueue )
             {
                 if( message )
@@ -49,25 +53,8 @@ namespace workphone
                 }
             }
 
-            while( !m_messageQueue.empty() )
-            {
-                SmartPtr<IStateMessage> message;
-                if( m_messageQueue.try_pop( message ) )
-                {
-                    if( message )
-                    {
-                        message->unload( nullptr );
-                    }
-                    else
-                    {
-                        WP_LOG_WARNING( "StateQueue::clear: null message popped from queue; skipping." );
-                    }
-                }
-            }
-
-            m_messageQueue.clear();
-
-            setLoadingState( LoadingState::Unloaded );
+            try { setLoadingState( LoadingState::Unloaded ); }
+            catch(const std::bad_alloc &) {}
         }
         catch( std::exception &e )
         {
@@ -124,28 +111,15 @@ namespace workphone
             return;
         }
 
-        m_messageQueue.push( message );
+        ScopedLock lock(&m_messageMutex);
+        if(m_acceptMessages) m_messageQueue.push_back( message );
     }
 
     void StateQueue::clear()
     {
-        while( !m_messageQueue.empty() )
-        {
-            SmartPtr<IStateMessage> message;
-            if( m_messageQueue.try_pop( message ) )
-            {
-                if( message )
-                {
-                    message->unload( nullptr );
-                }
-                else
-                {
-                    WP_LOG_WARNING( "StateQueue::clear: null message popped from queue; skipping." );
-                }
-            }
-        }
-
-        m_messageQueue.clear();
+        auto messages = getMessagesAndClear();
+        for(auto &message : messages)
+            if(message) message->unload(nullptr);
     }
 
     auto StateQueue::getTaskId() const -> u32
@@ -160,6 +134,7 @@ namespace workphone
 
     auto StateQueue::isEmpty() const -> bool
     {
+        ScopedLock lock(&m_messageMutex);
         return m_messageQueue.empty();
     }
 
@@ -175,35 +150,15 @@ namespace workphone
 
     auto StateQueue::getMessages() const -> Array<SmartPtr<IStateMessage>>
     {
-        return {};
+        ScopedLock lock(&m_messageMutex);
+        return m_messageQueue;
     }
 
     auto StateQueue::getMessagesAndClear() -> Array<SmartPtr<IStateMessage>>
     {
-        if( !m_messageQueue.empty() )
-        {
-            auto messages = Array<SmartPtr<IStateMessage>>();
-            messages.reserve( 128 );
-
-            SmartPtr<IStateMessage> message;
-            while( m_messageQueue.try_pop( message ) )
-            {
-                if( message )
-                {
-                    messages.push_back( message );
-                }
-                else
-                {
-                    WP_LOG_WARNING(
-                        "StateQueue::getMessagesAndClear: null message popped from queue; "
-                        "skipping." );
-                }
-            }
-
-            return messages;
-        }
-
-        return {};
+        auto messages = makeSourceBudgetSnapshot<SmartPtr<IStateMessage>>();
+        { ScopedLock lock(&m_messageMutex); messages.swap(m_messageQueue); }
+        return messages;
     }
 
 }  // namespace workphone

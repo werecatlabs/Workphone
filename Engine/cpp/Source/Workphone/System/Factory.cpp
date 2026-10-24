@@ -246,12 +246,11 @@ namespace workphone
 
     Array<SmartPtr<ISharedObject>> Factory::getInstanceObjects() const
     {
-        Array<SmartPtr<ISharedObject>> result;
+        auto result = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
+        ScopedLock lock(&m_instances, false);
+        result.reserve( m_instances.size() );
 
-        auto instances = m_instances.snapshot();
-        result.reserve( instances.size() );
-
-        for( auto instance : instances )
+        for( auto instance : m_instances )
         {
             if( instance )
             {
@@ -323,15 +322,9 @@ namespace workphone
 
     bool Factory::Listener::destroy( void *ptr )
     {
-        //std::fprintf( stderr, "TRACE Factory::Listener::destroy this=%p object=%p factory-weak=%p\n",
-        //              this, ptr, m_factory.get() );
         if( auto factory = getFactory() )
         {
-            const auto objectType = factory->getObjectTypeName();
-            //std::fprintf( stderr, "TRACE Factory::Listener::destroy locked factory=%p type=%s\n",
-            //              factory.get(), objectType.c_str() );
             factory->freeObject( ptr );
-            //std::fprintf( stderr, "TRACE Factory::Listener::destroy freeObject returned\n" );
             return true;
         }
 
