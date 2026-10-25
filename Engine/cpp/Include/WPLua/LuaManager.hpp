@@ -341,7 +341,7 @@ namespace workphone
                                        std::shared_ptr<resource::IResourceSystem> resources,
                                        bool compiledOnly = false );
         bool loadScriptAsset( const String &uuid ) override;
-        bool loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource );
+        bool loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot = {} );
 
         /**
          * @brief Get whether the manager is running in full debug mode.

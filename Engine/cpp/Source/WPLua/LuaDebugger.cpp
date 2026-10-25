@@ -15,6 +15,7 @@
 #include <cctype>
 #include <climits>
 #include <cstdlib>
+#include <string_view>
 #ifdef _MSC_VER
 // Engine math uses /fp:fast; debugger expressions must retain Lua's NaN and
 // infinity comparison semantics regardless of renderer optimization flags.
@@ -61,12 +62,35 @@ namespace workphone
             explicit StackGuard( lua_State *s ) : state( s ), top( lua_gettop( s ) ) {}
             ~StackGuard() { lua_settop( state, top ); }
         };
+        std::string safeText( std::string_view input, size_t limit )
+        {
+            std::string output;
+            const char *hex = "0123456789abcdef";
+            size_t at = 0;
+            while( at < input.size() && output.size() + 4 <= limit )
+            {
+                const auto c = static_cast<unsigned char>( input[at] );
+                size_t length = c < 128 ? 1 : c >= 0xc2 && c <= 0xdf ? 2 : c >= 0xe0 && c <= 0xef ? 3 : c >= 0xf0 && c <= 0xf4 ? 4 : 0;
+                bool valid = length && at + length <= input.size();
+                for( size_t i = 1; valid && i < length; ++i ) valid = ( static_cast<unsigned char>( input[at + i] ) & 0xc0 ) == 0x80;
+                if( valid && length >= 3 )
+                {
+                    const auto second = static_cast<unsigned char>( input[at + 1] );
+                    valid = !( ( c == 0xe0 && second < 0xa0 ) || ( c == 0xed && second >= 0xa0 ) ||
+                               ( c == 0xf0 && second < 0x90 ) || ( c == 0xf4 && second >= 0x90 ) );
+                }
+                if( valid ) { output.append( input.data() + at, length ); at += length; }
+                else { output += "\\x"; output += hex[c >> 4]; output += hex[c & 15]; ++at; }
+            }
+            if( at < input.size() ) output += "...";
+            return output;
+        }
     }
 
     struct LuaDebugger::Impl
     {
-        struct Source { std::string path, text; int id = 0, lines = 1; };
-        struct Reference { int kind = 0, level = 0, registry = LUA_NOREF; };
+        struct Source { std::string path, text, original; int id = 0, lines = 1; };
+        struct Reference { int kind = 0, level = 0, registry = LUA_NOREF, offset = 0; };
         struct Packet { unsigned session; j::object request; };
         struct StopRule
         {
@@ -242,7 +266,7 @@ namespace workphone
             for( int level = 0; level < 64 && lua_getstack( state, level, &frame ); ++level )
             {
                 lua_getinfo( state, "Sln", &frame );
-                stack.push_back( j::object{ { "name", frame.name ? frame.name : "Lua" },
+                stack.push_back( j::object{ { "name", safeText( frame.name ? frame.name : "Lua", 256 ) },
                     { "source", path( frame.source ? frame.source : "" ) }, { "line", frame.currentline } } );
             }
             { std::lock_guard<std::mutex> lock( mutex ); snapshot = j::serialize( j::object{ { "reason", reason }, { "stack", std::move( stack ) } } ); }
@@ -304,16 +328,16 @@ namespace workphone
             default: return std::string( "<" ) + lua_typename( state, lua_type( state, index ) ) + ">";
             }
         }
-        j::object variable( lua_State *state, const std::string &name, int index )
+        j::object variable( lua_State *state, std::string_view name, int index )
         {
             int reference = 0;
-            if( lua_istable( state, index ) && references.size() < 4096 )
+            if( lua_istable( state, index ) && references.size() < 4096 && nextHandle < INT_MAX )
             {
                 lua_pushvalue( state, index );
                 reference = nextHandle++;
                 references[reference] = { 3, 0, luaL_ref( state, LUA_REGISTRYINDEX ) };
             }
-            return { { "name", name }, { "value", display( state, index ) },
+            return { { "name", safeText( name, 256 ) }, { "value", display( state, index ) },
                      { "type", lua_typename( state, lua_type( state, index ) ) }, { "variablesReference", reference } };
         }
         bool lookup( lua_State *state, int level, const std::string &expression )
@@ -619,6 +643,9 @@ namespace workphone
                 auto s = args.if_contains( "source" );
                 if( !s || !s->is_object() ) { response( request, {}, "Source is required" ); return; }
                 auto source = path( stringValue( s->as_object(), "path" ) );
+                if( source.empty() )
+                    for( const auto &entry : sources )
+                        if( entry.second.id == integer( s->as_object(), "sourceReference" ) ) { source = entry.first; break; }
                 if( source.empty() ) { response( request, {}, "A source path is required" ); return; }
                 if( ( !breakpoints.count( source ) && breakpoints.size() >= 256 ) || nextBreakpoint > INT_MAX - 1024 )
                 { response( request, {}, "Breakpoint source limit reached" ); return; }
@@ -703,7 +730,7 @@ namespace workphone
                 {
                     lua_getstack( stopped, level, &frame ); lua_getinfo( stopped, "Sln", &frame );
                     const int id = nextHandle++; frames[id] = level;
-                    result.push_back( j::object{ { "id", id }, { "name", frame.name ? frame.name : frame.what ? frame.what : "Lua" },
+                    result.push_back( j::object{ { "id", id }, { "name", safeText( frame.name ? frame.name : frame.what ? frame.what : "Lua", 256 ) },
                         { "source", sourceObject( path( frame.source ? frame.source : "" ) ) },
                         { "line", std::max( 0, frame.currentline - ( linesAtOne ? 0 : 1 ) ) }, { "column", 1 } } );
                 }
@@ -725,8 +752,15 @@ namespace workphone
                 auto ref = references.find( integer( args, "variablesReference" ) );
                 if( ref == references.end() ) { response( request, {}, "Stale variable reference" ); return; }
                 auto scope = ref->second; j::array values; lua_Debug frame{};
-                const int start = integer( args, "start" ); const int count = std::min( 256, integer( args, "count", 256 ) ); int seen = 0;
-                auto add = [&]( const std::string &name ) { if( seen++ >= start && values.size() < static_cast<size_t>( count ? count : 256 ) ) values.push_back( variable( stopped, name, -1 ) ); };
+                const int start = integer( args, "start" ) > INT_MAX - scope.offset ? INT_MAX : integer( args, "start" ) + scope.offset;
+                const int count = std::min( 256, integer( args, "count", 256 ) ); int seen = 0; size_t bytes = 0; bool more = false;
+                auto add = [&]( std::string_view name ) {
+                    if( seen++ < start ) return;
+                    if( values.size() >= static_cast<size_t>( count ? count : 256 ) ) { more = true; return; }
+                    auto value = variable( stopped, name, -1 ); const auto size = j::serialize( value ).size();
+                    if( bytes + size > 48000 ) { more = true; return; }
+                    bytes += size; values.push_back( std::move( value ) );
+                };
                 if( scope.kind <= 1 && lua_getstack( stopped, scope.level, &frame ) )
                 {
                     if( scope.kind == 1 ) lua_getinfo( stopped, "f", &frame );
@@ -735,6 +769,7 @@ namespace workphone
                         auto name = scope.kind == 0 ? lua_getlocal( stopped, &frame, i ) : lua_getupvalue( stopped, -1, i );
                         if( !name ) break;
                         if( name[0] != '(' ) add( name ); lua_pop( stopped, 1 );
+                        if( more ) break;
                     }
                 }
                 else if( scope.kind >= 2 )
@@ -743,10 +778,19 @@ namespace workphone
                     lua_pushnil( stopped ); int visited = 0;
                     while( visited++ < 4096 && lua_next( stopped, -2 ) )
                     {
-                        auto name = lua_type( stopped, -2 ) == LUA_TSTRING ? std::string( lua_tostring( stopped, -2 ) ) : display( stopped, -2 );
+                        size_t length = 0; const auto key = lua_type( stopped, -2 ) == LUA_TSTRING ? lua_tolstring( stopped, -2, &length ) : nullptr;
+                        auto name = key ? safeText( std::string_view( key, length ), 256 ) : display( stopped, -2 );
                         add( name ); lua_pop( stopped, 1 );
-                        if( values.size() >= static_cast<size_t>( count ? count : 256 ) ) break;
+                        if( more ) break;
                     }
+                }
+                if( more && references.size() < 4096 && nextHandle < INT_MAX )
+                {
+                    auto continuation = scope; continuation.offset = seen - 1;
+                    if( continuation.registry != LUA_NOREF )
+                    { lua_rawgeti( stopped, LUA_REGISTRYINDEX, continuation.registry ); continuation.registry = luaL_ref( stopped, LUA_REGISTRYINDEX ); }
+                    const int id = nextHandle++; references[id] = continuation;
+                    values.push_back( j::object{ { "name", "[more variables]" }, { "value", "Expand to continue inspection" }, { "variablesReference", id } } );
                 }
                 response( request, { { "variables", std::move( values ) } } ); return;
             }
@@ -866,6 +910,24 @@ namespace workphone
     bool LuaDebugger::start( lua_State *state, unsigned short port, const std::string &token,
                              const std::string &root, std::string &error )
     {
+        if( state && m_impl->main == state && m_impl->listeningPort && token == m_impl->token &&
+            ( port == 0 || port == m_impl->listeningPort ) )
+        {
+            if( root.empty() ) { error = "A source root is required"; return false; }
+            if( root != m_impl->root )
+            {
+                m_impl->root = root;
+                auto registered = std::move( m_impl->sources );
+                m_impl->sources.clear(); m_impl->sourceBytes = 0;
+                for( auto &entry : registered )
+                {
+                    entry.second.path = m_impl->path( entry.second.original );
+                    m_impl->sourceBytes += entry.second.text.size();
+                    m_impl->sources.emplace( entry.second.path, std::move( entry.second ) );
+                }
+            }
+            return true;
+        }
         stop();
         if( !state || token.size() < 16 || root.empty() ) { error = "A loaded VM, source root and token of at least 16 characters are required"; return false; }
         try
@@ -877,7 +939,7 @@ namespace workphone
             m_impl->token = token; m_impl->root = root; m_impl->stopping = false;
             auto registered = std::move( m_impl->sources );
             m_impl->sources.clear(); m_impl->sourceBytes = 0;
-            for( const auto &entry : registered ) source( entry.second.path, entry.second.text );
+            for( const auto &entry : registered ) source( entry.second.original, entry.second.text );
             bind( state );
             m_impl->network = std::thread( [self = m_impl.get(), io, listener = std::move( listener )]() mutable {
                 try { self->serve( std::move( listener ) ); } catch( ... ) { self->connected = false; ++self->generation; }
@@ -940,7 +1002,7 @@ namespace workphone
             m_impl->sourceBytes - previousSize + text.size() > 64 * 1024 * 1024 ) return;
         m_impl->sourceBytes = m_impl->sourceBytes - previousSize + text.size();
         auto &source = m_impl->sources[key];
-        source.path = key; source.text = text; source.lines = 1 + static_cast<int>( std::count( text.begin(), text.end(), '\n' ) );
+        source.path = key; source.original = name; source.text = text; source.lines = 1 + static_cast<int>( std::count( text.begin(), text.end(), '\n' ) );
         if( !source.id ) source.id = m_impl->nextSource++;
         if( m_impl->attached ) m_impl->event( "loadedSource", { { "reason", "new" }, { "source", m_impl->sourceObject( key ) } } );
         if( m_impl->attached )
@@ -955,7 +1017,7 @@ namespace workphone
         m_impl->poll();
         if( m_impl->attached && m_impl->configured && m_impl->breakOnException && !m_impl->suppress )
         {
-            m_impl->exceptionText = message ? message : "Lua error";
+            m_impl->exceptionText = safeText( message ? message : "Lua error", 4096 );
             try { m_impl->pause( state, "exception" ); }
             catch( ... )
             {
@@ -994,7 +1056,7 @@ namespace workphone
     }
     void LuaDebugger::copySourcesFrom( const LuaDebugger &other )
     {
-        for( const auto &entry : other.m_impl->sources ) source( entry.second.path, entry.second.text );
+        for( const auto &entry : other.m_impl->sources ) source( entry.second.original, entry.second.text );
     }
 }
 #ifdef _MSC_VER

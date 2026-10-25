@@ -9,6 +9,12 @@ extern "C" {
 #include <cmath>
 #include <limits>
 
+#ifdef WP_LUA_BACKEND_LUAJIT
+inline constexpr unsigned wpLuaBackendAbi = 0x4a210501u; // LuaJIT 2.1 / Lua 5.1 API
+#else
+inline constexpr unsigned wpLuaBackendAbi = 0x4c000505u; // Bundled Lua 5.5
+#endif
+
 // Use distinct names: the bundled Luabind supplies and then undefines several
 // compatibility macros in its public headers.
 inline void wpLuaPushGlobalTable( lua_State *state )

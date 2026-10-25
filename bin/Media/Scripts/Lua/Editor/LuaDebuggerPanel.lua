@@ -34,7 +34,8 @@ function LuaDebuggerPanel:update()
     end
     local ok, state = pcall(cjson.decode, manager:getDebuggerStatus())
     if not ok then self.status:setText("Debugger status unavailable") return end
-    local text = "Local port: " .. tostring(state.port) .. "\n"
+    local text = (jit and (jit.version .. " (JIT disabled for debugging)") or _VERSION) .. "\n"
+    text = text .. "Local port: " .. tostring(state.port) .. "\n"
     text = text .. (state.connected and "Client attached\n" or "Waiting for Visual Studio\n")
     text = text .. (state.paused and "Stopped\n" or "Running\n")
     if state.paused and state.stop then

@@ -17,7 +17,8 @@ Edited sources must still support that lap continuously, including terrain conta
 heights and island exclusion. Unsupported laps become unavailable in native and
 Lua racing flows. They are not replaced by an invented route.
 
-Buildings use exact full-parcel terrain-cell coverage and road/junction clearance.
+Buildings use exact full-parcel terrain-cell coverage and road/junction clearance,
+including the full 2.45 m roadside pavement reservation (5 cm gap plus 2.4 m walk).
 Holes, excessive relief or unsupported parcels are culled; retained foundations,
 building collision, parks and existing foliage placement use the same fitted
 heights. Source roads own generated asphalt, kerb, turf and paint materials with
@@ -102,6 +103,8 @@ Debug DLLs. The later retention runs use a separately frozen binary set, not the
 | [06: original smoke](../artifacts/procedural/city-terrain-retention-20261025-06/manifest.json) | Timed out at 180.37 s; the original timing failure remains open |
 | [07: extended diagnostic](../artifacts/procedural/city-terrain-retention-20261025-07-diagnostic/manifest.json) | Same frozen binaries/fixture, separate 600 s limit; access violation `0xc0000005` after 259.52 s |
 | [08: CDB diagnostic](../artifacts/procedural/city-terrain-retention-20261025-08-debugger/outcome.json) | Same frozen binaries under launch-time debugging; fourth generation still progressing at the 600 s timeout, no reproduced exception stack or functional pass |
+| [09: post-FSM functional diagnostic](../artifacts/procedural/city-terrain-retention-20261025-09-fsm-fixed/manifest.json) | Four generations complete; first resumed Physics update finds a foundation without its active static body, followed by an access violation at 250.07 s; no native retention pass |
+| [10: normal launch and debugger attachment](../artifacts/procedural/city-terrain-retention-20261025-10-debugger/outcome.json) | Same frozen binaries/fixture; foundation assertion reproduced, then native/debugger exit 1 with clean teardown at 255.19 s. No access violation reproduced or exception dump captured |
 
 For 07, Windows Error Reporting identifies `Workphone.dll+0x14511c8`; following
 the frozen DLL's export thunks resolves it to `FSM::getAutoChangeState+0x18`.
@@ -112,12 +115,25 @@ retired slot. The Editor regression forces storage relocation and checks live
 flag values plus retired-queue behaviour. This diagnosis uses the recorded fault
 address and source evidence; 08 did not capture a matching exception stack.
 
-The FSM fix and a separate parcel exclusion correction reserving the full
-2.45 m roadside pavement extent are awaiting the final combined test/native
-validation. New parcel/cull counts must come from those captures. Build 22 has
-completed, but subsequent focused rebuilds and the final city/Editor/FSM/GPU
-matrix remain in progress. CDB launch may perturb allocation costs; 08 is not
-performance evidence, and neither extended run closes the original 180-second gate.
+Build 23 completes the synchronized FSM repair and full pavement reservation.
+The [final city/Editor/Play matrix](../procedural-city-integration-20261025-tests18-final-city-play.log)
+passes 18/18 in 186.84 s: the 12 city/Editor checks plus six Play-mode lifecycle
+checks. This includes forced FSM storage relocation, retired/deferred-slot safety
+and full pavement/parcel exclusions at default grid roundabouts and edited roads.
+The [09 retained snapshot](../artifacts/procedural/city-terrain-retention-20261025-09-fsm-fixed/binary-snapshot.json)
+preserves all 11 runtime artifacts, matching Core/Graphics/Sample/Physics/Procedural
+symbols and scoped source hashes; all 11 live runtime hashes matched the snapshot.
+The [final production-render GPU suite](../procedural-city-integration-20261025-tests19-final-renderer.log)
+also passes in 28.73 s. Native 09 exposes a further publication-order defect:
+new generated actors wait for the Application scene play queue, while Physics
+can resume before their static bodies are activated. The collision assertions
+remain unchanged. A production activation barrier and a separate shutdown-crash
+diagnosis are in progress; fresh final captures remain pending. The attached
+[10 diagnostic](../artifacts/procedural/city-terrain-retention-20261025-10-debugger/manifest.json)
+uses a normal launch of the same frozen binaries with matching symbols.
+New parcel/cull counts must come from the final captures.
+CDB launch may perturb allocation costs; 08 is not performance evidence, and
+neither extended diagnostic closes the original 180-second gate.
 Hardware performance, recorded Editor pointer/DPI acceptance and source-free
 reconstruction remain open.
 

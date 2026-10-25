@@ -96,7 +96,7 @@ namespace workphone
                         v.tangentSign = 1.0f;
                     }
 
-                    Array<Vector3F> bitangents( mesh.vertices.size(), Vector3F() );
+                    SourceBudgetVector<Vector3F> bitangents( mesh.vertices.size(), Vector3F() );
                     for( std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3 )
                     {
                         const std::uint32_t ia = mesh.indices[i];
@@ -177,7 +177,7 @@ namespace workphone
             };
 
             template <class Station>
-            Array<Station> refineStations( const Array<Station> &stations, std::uint32_t steps,
+            SourceBudgetVector<Station> refineStations( const SourceBudgetVector<Station> &stations, std::uint32_t steps,
                                            std::initializer_list<float Station::*> fields )
             {
                 if( steps <= 1 || stations.size() < 2 )
@@ -207,7 +207,7 @@ namespace workphone
                     const float w0 = 2 * h1 + h0, w1 = h1 + 2 * h0;
                     return ( w0 + w1 ) / ( w0 / before + w1 / after );
                 };
-                Array<Station> refined;
+                SourceBudgetVector<Station> refined;
                 refined.reserve( ( stations.size() - 1 ) * steps + 1 );
                 for( std::size_t i = 0; i + 1 < stations.size(); ++i )
                 {
@@ -236,7 +236,7 @@ namespace workphone
                 return refined;
             }
 
-            void loftBody( Builder &b, const Array<BodyStation> &stations, std::uint32_t radial )
+            void loftBody( Builder &b, const SourceBudgetVector<BodyStation> &stations, std::uint32_t radial )
             {
                 radial = std::max<std::uint32_t>( 8u, radial );
                 const std::uint32_t cols = radial + 1u;
@@ -351,7 +351,7 @@ namespace workphone
                 }
             }
 
-            void loftPod( Builder &b, const Array<PodStation> &stations, std::uint32_t radial,
+            void loftPod( Builder &b, const SourceBudgetVector<PodStation> &stations, std::uint32_t radial,
                           bool closeFront = true )
             {
                 const auto base = static_cast<std::uint32_t>( b.mesh.vertices.size() );
@@ -649,7 +649,7 @@ namespace workphone
                 Builder paint( "body_paint", VehicleMaterial::Paint );
                 Builder carbonMatte( "aero_carbon_matte", VehicleMaterial::CarbonMatte );
                 const auto loftSteps = level == 0 ? 6u : ( level == 1 ? 3u : 1u );
-                const Array<BodyStation> stations = {
+                const SourceBudgetVector<BodyStation> stations = {
                     { -cfg.bodyLength * 0.54f, 0.075f, 0.21f, 0.30f, 0.00f },
                     { -cfg.bodyLength * 0.48f, 0.15f, 0.18f, 0.37f, 0.01f },
                     { frontZ - 0.28f, 0.22f, 0.15f, 0.46f, 0.025f },
@@ -671,7 +671,7 @@ namespace workphone
                 for( int side : { -1, 1 } )
                 {
                     const float sign = static_cast<float>( side );
-                    const Array<PodStation> pods = { { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
+                    const SourceBudgetVector<PodStation> pods = { { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
                                                      { 0.26f, sign * 0.60f, 0.27f, 0.25f, 0.70f },
                                                      { 0.62f, sign * 0.55f, 0.30f, 0.13f, 0.66f },
                                                      { 1.03f, sign * 0.50f, 0.27f, 0.13f, 0.59f },
@@ -684,7 +684,7 @@ namespace workphone
                              podRadial, false );
                     inletLip( paint, carbonMatte, pods.front(), podRadial, .16f );
                 }
-                const Array<PodStation> airbox = { { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
+                const SourceBudgetVector<PodStation> airbox = { { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
                                                    { 0.54f, 0.0f, 0.14f, 0.80f, 1.22f },
                                                    { 0.83f, 0.0f, 0.13f, 0.79f, 1.16f },
                                                    { .83f + ( rearZ - .17f - .83f ) * .65f, 0.0f, 0.07f,
@@ -993,7 +993,7 @@ namespace workphone
                     return Vector3F( u * s.halfWidth, y, depth );
                 };
                 // Share surface vertices so normals flow across the curved panels.
-                auto surface = [&]( Builder &builder, const std::vector<float> &rows, unsigned cols,
+                auto surface = [&]( Builder &builder, const SourceBudgetVector<float> &rows, unsigned cols,
                                     auto point, Vector3F outward ) {
                     const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
                     for( float row : rows )
@@ -1028,7 +1028,7 @@ namespace workphone
                         }
                     }
                 };
-                std::vector<float> rows;
+                SourceBudgetVector<float> rows;
                 for( const auto &s : stations )
                 {
                     rows.push_back( s.z );
@@ -1071,7 +1071,7 @@ namespace workphone
                         {
                             ++end;
                         }
-                        std::vector<float> strip( rows.begin() + begin, rows.begin() + end + 1 );
+                        SourceBudgetVector<float> strip( rows.begin() + begin, rows.begin() + end + 1 );
                         surface( paint, strip, level == 0 ? 5u : 3u,
                                  [&]( float depth, float v ) {
                                      const auto s = sample( depth );
@@ -1094,7 +1094,7 @@ namespace workphone
                     // Thin arch returns show panel thickness, rather than a razor edge.
                     for( float axle : { front, rear } )
                     {
-                        std::vector<float> arc;
+                        SourceBudgetVector<float> arc;
                         for( unsigned i = 0; i <= across; ++i )
                         {
                             arc.push_back( kPi * i / across );
@@ -1157,7 +1157,7 @@ namespace workphone
                 }
                 // A curved fastback: raked windshield, crowned roof, and rear glass.
                 const float roof = shoulder + ( gt ? .43f : .34f );
-                Array<BodyStation> cabin =
+                SourceBudgetVector<BodyStation> cabin =
                     refineStations<BodyStation>( { { z( .34f ), .73f, .025f, 0, 0 },
                                                    { z( .48f ), .62f, roof, 0, 0 },
                                                    { z( .62f ), .60f, roof - .015f, 0, 0 },
@@ -1187,7 +1187,7 @@ namespace workphone
                 for( unsigned segment = 0; segment < 3; ++segment )
                 {
                     const unsigned stride = static_cast<unsigned>( ( cabin.size() - 1 ) / 3 );
-                    std::vector<float> patch;
+                    SourceBudgetVector<float> patch;
                     for( unsigned i = segment * stride; i <= ( segment + 1 ) * stride; ++i )
                     {
                         patch.push_back( cabin[i].z );
@@ -1197,7 +1197,7 @@ namespace workphone
                 }
                 for( int side : { -1, 1 } )
                 {
-                    std::vector<float> windowRows;
+                    SourceBudgetVector<float> windowRows;
                     for( const auto &c : cabin )
                     {
                         windowRows.push_back( c.z );
@@ -1297,8 +1297,8 @@ namespace workphone
                         };
                         face( trim, lightPoint( a, 0 ), lightPoint( a, 2.8f ), lightPoint( b, 2.8f ),
                               lightPoint( b, 0 ), { 0, 1, 0 } );
-                        const std::vector<float> blades =
-                            gt ? std::vector<float>{ .3f, 1.2f, 2.1f } : std::vector<float>{ .4f, 1.7f };
+                        const SourceBudgetVector<float> blades =
+                            gt ? SourceBudgetVector<float>{ .3f, 1.2f, 2.1f } : SourceBudgetVector<float>{ .4f, 1.7f };
                         for( float blade : blades )
                         {
                             face( lamps, lightPoint( a, blade ) + Vector3F( 0, .004f, 0 ),
@@ -1399,7 +1399,7 @@ namespace workphone
                 if( !gt )
                 {
                     // Integrated ducktail for the road car.
-                    std::vector<float> lipRows{ z( .94f ), z( .975f ), tail };
+                    SourceBudgetVector<float> lipRows{ z( .94f ), z( .975f ), tail };
                     surface( paint, lipRows, across / 2,
                              [&]( float depth, float u ) {
                                  return skin( depth, ( 2 * u - 1 ) * .83f ) +
@@ -1660,7 +1660,7 @@ namespace workphone
                 const auto hullBubbleVertices = hull.mesh.vertices.size();
                 const auto glassBubbleVertices = glazing.mesh.vertices.size();
                 // A continuous tapered boom blends into the aft engine compartment.
-                Array<PodStation> boom = {
+                SourceBudgetVector<PodStation> boom = {
                     { .20f * scale, 0, .24f * width, 1.27f * scale, 1.80f * scale },
                     { .90f * scale, 0, .19f * width, 1.38f * scale, 1.83f * scale },
                     { 2.6f * scale, 0, .11f * width, 1.60f * scale, 1.86f * scale },
@@ -1671,7 +1671,7 @@ namespace workphone
                     refineStations( boom, level == 0 ? 5u : 2u,
                                     { &PodStation::halfWidth, &PodStation::bottom, &PodStation::top } ),
                     around / 2, true );
-                Array<PodStation> engine = {
+                SourceBudgetVector<PodStation> engine = {
                     { -.40f * scale, 0, .27f * width, 1.78f * scale, 2.22f * scale },
                     { .10f * scale, 0, .48f * width, 1.52f * scale, 2.36f * scale },
                     { .65f * scale, 0, .43f * width, 1.42f * scale, 2.25f * scale },
@@ -1958,7 +1958,7 @@ namespace workphone
                     float z, halfWidth, y, height;
                 };
 
-                auto loft = [&]( Builder &builder, const Array<Station> &controlStations ) {
+                auto loft = [&]( Builder &builder, const SourceBudgetVector<Station> &controlStations ) {
                     const auto stations =
                         refineStations( controlStations, level == 0 ? 7u : ( level == 1 ? 4u : 2u ),
                                         { &Station::halfWidth, &Station::y, &Station::height } );
@@ -2003,7 +2003,7 @@ namespace workphone
                         }
                     }
                 };
-                const Array<Station> bodyStations = {
+                const SourceBudgetVector<Station> bodyStations = {
                     { -4.0f, .40f, 1.90f, .43f }, { -3.5f, .52f, 1.9f, .55f },
                     { -2.1f, .60f, 1.9f, .64f },  { -.8f, .58f, 1.85f, .65f },
                     { .8f, .49f, 1.8f, .55f },    { 2.6f, .26f, 1.85f, .34f },

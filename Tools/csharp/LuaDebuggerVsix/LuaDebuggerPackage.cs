@@ -13,6 +13,7 @@ namespace LuaDebuggerVsix
     public sealed class LuaDebuggerPackage : AsyncPackage
     {
         internal static LuaDebuggerPackage? Instance { get; private set; }
+        internal CancellationToken ShutdownToken => DisposalToken;
 
         public const string PackageGuidString = "7C9E5E2A-0F9E-45FA-9B8B-61D0717049B2";
 

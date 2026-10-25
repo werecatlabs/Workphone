@@ -355,7 +355,8 @@ namespace workphone
             WP_LOG_ERROR( m_lastDiagnostic );
             return;
         }
-        if( executeSource( stream->getAsString(), "@" + filename ) )
+        const auto sourceName = stream->getFileName();
+        if( executeSource( stream->getAsString(), "@" + ( sourceName.empty() ? filename : sourceName ) ) )
             m_scripts.push_back( filename );
     }
 
@@ -638,7 +639,7 @@ namespace workphone
                            "=compiled-module-policy" );
     }
 
-    bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource )
+    bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
     {
         ScopedLock lock( this );
         LuaScriptCompiler compiler;
@@ -662,7 +663,7 @@ namespace workphone
                     !collect( dependency.get() ) ) return false;
             ScriptPreload entry;
             entry.slashName = item->header.resourceId.sourceRelativePath();
-            entry.sourceName = "@" + entry.slashName;
+            entry.sourceName = "@" + ( sourceRoot.empty() ? entry.slashName : sourceRoot + "/" + entry.slashName );
             entry.slashName.resize( entry.slashName.size() - 4 ); // .lua
             entry.dottedName = entry.slashName;
             std::replace( entry.dottedName.begin(), entry.dottedName.end(), '/', '.' );
@@ -734,7 +735,7 @@ namespace workphone
             }
             auto compiled = adapter.load( request, error );
             if( !compiled || !adapter.isCurrent( request, error ) ) return fail( error );
-            if( !loadScriptResource( compiled ) ) return false;
+            if( !loadScriptResource( compiled, catalog->getProjectRoot() ) ) return false;
             m_loadedScriptAssets[uuid] = compiled->header.sourceHash;
             return true;
         }
@@ -948,6 +949,15 @@ namespace workphone
                             reinterpret_cast<BindLibrary>( plugin->getFunction( "bindLibrary" ) );
                         if( bindLibrary )
                         {
+                            using QueryBackendAbi = unsigned ( * )();
+                            const auto queryAbi = reinterpret_cast<QueryBackendAbi>(
+                                plugin->getFunction( "wp_lua_backend_abi" ) );
+#ifdef WP_LUA_BACKEND_LUAJIT
+                            if( !queryAbi ) throw std::runtime_error(
+                                "LuaJIT binding plugins must export wp_lua_backend_abi; rebuild this plugin with the selected engine SDK" );
+#endif
+                            if( queryAbi && queryAbi() != wpLuaBackendAbi ) throw std::runtime_error(
+                                "Lua binding plugin backend ABI does not match this engine" );
                             bindLibrary( luaState );
                         }
                     }
@@ -1174,7 +1184,8 @@ namespace workphone
         {
             auto stream = fs->open( filename.str(), true, false, false, false, false );
             if( !stream ) stream = fs->open( filename.str(), true, false, false, true, true );
-            if( !stream || !candidate.executeSource( stream->getAsString(), "@" + filename.str() ) )
+            if( !stream || !candidate.executeSource( stream->getAsString(), "@" +
+                    ( stream->getFileName().empty() ? filename.str() : stream->getFileName() ) ) )
             {
                 m_lastDiagnostic = stream ? candidate.getLastDiagnostic() : "Reload source missing: " + filename.str();
                 setError( true );

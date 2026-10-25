@@ -119,8 +119,10 @@ int main()
                             j::object{ { "line", 4 }, { "logMessage", "captured={data.value}" }, { "condition", "data.value >= 12" }, { "hitCondition", ">=1" } },
                             j::object{ { "line", 5 }, { "condition", "inner == 19 and not false" } } } } } ) );
                     connection.reply( connection.request( "setExceptionBreakpoints", { { "filters", j::array{ "uncaught" } } } ) );
-                    connection.reply( connection.request( "setBreakpoints", { { "source", j::object{ { "path", root + "/debug-coroutine.lua" } } },
-                        { "breakpoints", j::array{ j::object{ { "line", 4 }, { "hitCondition", "2" }, { "condition", "marker >= 21" } } } } ) );
+                    j::array coroutineBreakpoints{ j::object{ { "line", 4 }, { "hitCondition", "2" }, { "condition", "marker >= 21" } } };
+                    connection.reply( connection.request( "setBreakpoints", {
+                        { "source", j::object{ { "path", root + "/debug-coroutine.lua" } } },
+                        { "breakpoints", std::move( coroutineBreakpoints ) } } ) );
                     connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach ); ready = true;
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "captured=12" ) != std::string::npos, "Logpoint did not evaluate its expression" );
                     check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Conditional breakpoint was not hit" );

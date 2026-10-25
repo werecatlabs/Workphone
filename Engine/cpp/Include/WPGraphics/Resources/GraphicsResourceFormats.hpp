@@ -6,6 +6,8 @@
 #include <Workphone/Core/ColourF.hpp>
 #include <ostream>
 #include <Workphone/System/CompiledResource.hpp>
+#include <WPGraphics/MaterialProgramBinding.hpp>
+#include <array>
 struct wp_renderer_dx11;
 
 namespace workphone::render
@@ -46,6 +48,27 @@ namespace workphone::render
         u64 compilerVersion = 0;
     };
 
+    // Portable v3 material shader payload. Numeric values use explicit IEEE-754
+    // or integer 32-bit words; persistent resource identities are ResourceIDs.
+    // No process-local handles, native offsets or pointers are serialized.
+    struct CookedMaterialShaderParameter
+    {
+        String name;
+        MaterialShaderParameterType type = MaterialShaderParameterType::Scalar;
+        std::array<u32,16> words{};
+        CookedMaterialTextureReference texture;
+    };
+    struct CookedMaterialShaderData
+    {
+        String shaderID;
+        u32 schemaVersion = 0;
+        Array<CookedMaterialShaderParameter> parameters;
+        std::vector<u8> vertexDXBC, pixelDXBC;
+        MaterialProgramReflectionSelection vertexSelection, pixelSelection;
+        bool present() const { return !shaderID.empty(); }
+    };
+    inline constexpr u32 graphicsMaterialShaderByteLimit = 4u * 1024u * 1024u;
+
     /** Normal maps require Normal filtering and linear storage; packed ORM maps
      * require Data filtering and linear storage. Base colour retains the legacy
      * contract for old materials, which did not restrict texture mip semantics. */
@@ -63,6 +86,7 @@ namespace workphone::render
         u64 textureCompilerVersion = 0;
         CookedMaterialTextureReference normalTexture;
         CookedMaterialTextureReference ormTexture;
+        CookedMaterialShaderData shader;
         String target;
         bool packagedBuild = false;
     };

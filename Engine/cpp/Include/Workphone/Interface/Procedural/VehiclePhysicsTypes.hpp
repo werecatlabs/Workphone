@@ -1,5 +1,7 @@
 #pragma once
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/System/SourceBudgetStdString.hpp>
+#include <Workphone/System/SourceBudgetVector.hpp>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -53,13 +55,32 @@ namespace workphone
             RearRight
         };
 
-        struct VehicleMassElement
+        struct VehicleMassElement : SourceBudgetObject
         {
-            std::string name;
+            SourceBudgetStdString name;
             double massKg = 0.0;
             VehiclePhysicsVector3 centre;
             /// Dimensions of an equivalent solid box, used to derive local inertia.
             VehiclePhysicsVector3 dimensions;
+
+            VehicleMassElement() = default;
+            VehicleMassElement( SourceBudgetStdString name, double massKg,
+                                VehiclePhysicsVector3 centre, VehiclePhysicsVector3 dimensions ) :
+                name( std::move( name ) ), massKg( massKg ), centre( centre ), dimensions( dimensions ) {}
+            VehicleMassElement( const VehicleMassElement & ) = default;
+            VehicleMassElement( VehicleMassElement && ) noexcept = default;
+            VehicleMassElement &operator=( VehicleMassElement && ) noexcept = default;
+            VehicleMassElement &operator=( const VehicleMassElement &other )
+            {
+                if( this != &other ) { VehicleMassElement candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleMassElement &other ) noexcept
+            {
+                using std::swap;
+                name.swap( other.name ); swap( massKg, other.massKg );
+                swap( centre, other.centre ); swap( dimensions, other.dimensions );
+            }
         };
 
         struct VehicleMassProperties
@@ -129,7 +150,7 @@ namespace workphone
             double groundEffectSensitivity = 0.0;
         };
 
-        struct VehicleDrivetrainConfig
+        struct VehicleDrivetrainConfig : SourceBudgetObject
         {
             DrivenAxle drivenAxle = DrivenAxle::Rear;
             double peakPowerW = 0.0;
@@ -138,10 +159,35 @@ namespace workphone
             double redlineRpm = 0.0;
             double finalDriveRatio = 1.0;
             double transmissionEfficiency = 1.0;
-            std::vector<double> forwardGearRatios;
+            SourceBudgetVector<double> forwardGearRatios;
+
+            VehicleDrivetrainConfig() = default;
+            VehicleDrivetrainConfig( DrivenAxle axle, double power, double torque, double idle,
+                                     double redline, double finalRatio, double efficiency,
+                                     SourceBudgetVector<double> ratios ) :
+                drivenAxle( axle ), peakPowerW( power ), peakTorqueNm( torque ), idleRpm( idle ),
+                redlineRpm( redline ), finalDriveRatio( finalRatio ), transmissionEfficiency( efficiency ),
+                forwardGearRatios( std::move( ratios ) ) {}
+            VehicleDrivetrainConfig( const VehicleDrivetrainConfig & ) = default;
+            VehicleDrivetrainConfig( VehicleDrivetrainConfig && ) noexcept = default;
+            VehicleDrivetrainConfig &operator=( VehicleDrivetrainConfig && ) noexcept = default;
+            VehicleDrivetrainConfig &operator=( const VehicleDrivetrainConfig &other )
+            {
+                if( this != &other ) { VehicleDrivetrainConfig candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleDrivetrainConfig &other ) noexcept
+            {
+                using std::swap;
+                swap( drivenAxle, other.drivenAxle ); swap( peakPowerW, other.peakPowerW );
+                swap( peakTorqueNm, other.peakTorqueNm ); swap( idleRpm, other.idleRpm );
+                swap( redlineRpm, other.redlineRpm ); swap( finalDriveRatio, other.finalDriveRatio );
+                swap( transmissionEfficiency, other.transmissionEfficiency );
+                forwardGearRatios.swap( other.forwardGearRatios );
+            }
         };
 
-        struct VehiclePhysicsConfig
+        struct VehiclePhysicsConfig : SourceBudgetObject
         {
             std::uint64_t seed = 0;
             VehiclePhysicsPreset preset = VehiclePhysicsPreset::GrandPrix;
@@ -151,17 +197,49 @@ namespace workphone
             double bodyLengthM = 0.0;
             double bodyWidthM = 0.0;
             double gravityMps2 = 9.80665;
-            std::vector<VehicleMassElement> massElements;
+            SourceBudgetVector<VehicleMassElement> massElements;
             VehicleMassProperties massProperties;
             std::array<VehicleWheelConfig, 4> wheels;
             VehicleAeroConfig aero;
             VehicleDrivetrainConfig drivetrain;
+
+            VehiclePhysicsConfig() = default;
+            VehiclePhysicsConfig( const VehiclePhysicsConfig & ) = default;
+            VehiclePhysicsConfig( VehiclePhysicsConfig && ) noexcept = default;
+            VehiclePhysicsConfig &operator=( VehiclePhysicsConfig && ) noexcept = default;
+            VehiclePhysicsConfig &operator=( const VehiclePhysicsConfig &other )
+            {
+                if( this != &other ) { VehiclePhysicsConfig candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehiclePhysicsConfig &other ) noexcept
+            {
+                using std::swap;
+                swap( seed, other.seed ); swap( preset, other.preset );
+                swap( wheelbaseM, other.wheelbaseM ); swap( frontTrackM, other.frontTrackM );
+                swap( rearTrackM, other.rearTrackM ); swap( bodyLengthM, other.bodyLengthM );
+                swap( bodyWidthM, other.bodyWidthM ); swap( gravityMps2, other.gravityMps2 );
+                massElements.swap( other.massElements ); swap( massProperties, other.massProperties );
+                wheels.swap( other.wheels ); swap( aero, other.aero ); drivetrain.swap( other.drivetrain );
+            }
         };
 
-        struct VehiclePhysicsValidation
+        struct VehiclePhysicsValidation : SourceBudgetObject
         {
-            std::vector<std::string> errors;
-            std::vector<std::string> warnings;
+            SourceBudgetVector<SourceBudgetStdString> errors;
+            SourceBudgetVector<SourceBudgetStdString> warnings;
+
+            VehiclePhysicsValidation() = default;
+            VehiclePhysicsValidation( const VehiclePhysicsValidation & ) = default;
+            VehiclePhysicsValidation( VehiclePhysicsValidation && ) noexcept = default;
+            VehiclePhysicsValidation &operator=( VehiclePhysicsValidation && ) noexcept = default;
+            VehiclePhysicsValidation &operator=( const VehiclePhysicsValidation &other )
+            {
+                if( this != &other ) { VehiclePhysicsValidation candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehiclePhysicsValidation &other ) noexcept
+            { errors.swap( other.errors ); warnings.swap( other.warnings ); }
 
             bool isValid() const noexcept
             {

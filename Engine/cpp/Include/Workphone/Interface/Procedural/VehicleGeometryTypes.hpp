@@ -2,6 +2,8 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Math/Vector2.hpp>
 #include <Workphone/Math/Vector3.hpp>
+#include <Workphone/System/SourceBudgetStdString.hpp>
+#include <Workphone/System/SourceBudgetVector.hpp>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -41,32 +43,86 @@ namespace workphone
         };
 
         /// One independently drawable, single-material indexed triangle mesh.
-        struct WPCore_API VehicleMeshSection
+        struct WPCore_API VehicleMeshSection : SourceBudgetObject
         {
-            std::string name;
+            SourceBudgetStdString name;
             VehicleMaterial material = VehicleMaterial::Paint;
-            std::vector<VehicleVertex> vertices;
-            std::vector<std::uint32_t> indices;
+            SourceBudgetVector<VehicleVertex> vertices;
+            SourceBudgetVector<std::uint32_t> indices;
+
+            VehicleMeshSection() = default;
+            VehicleMeshSection( const VehicleMeshSection & ) = default;
+            VehicleMeshSection( VehicleMeshSection && ) noexcept = default;
+            VehicleMeshSection &operator=( VehicleMeshSection && ) noexcept = default;
+            VehicleMeshSection &operator=( const VehicleMeshSection &other )
+            {
+                if( this != &other ) { VehicleMeshSection candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleMeshSection &other ) noexcept
+            {
+                name.swap( other.name );
+                std::swap( material, other.material );
+                vertices.swap( other.vertices );
+                indices.swap( other.indices );
+            }
 
             bool hasGeometry() const;
         };
 
-        struct WPCore_API VehicleLOD
+        struct WPCore_API VehicleLOD : SourceBudgetObject
         {
             std::uint32_t level = 0;
             float suggestedScreenCoverage = 1.0f;
-            std::vector<VehicleMeshSection> sections;
+            SourceBudgetVector<VehicleMeshSection> sections;
+
+            VehicleLOD() = default;
+            VehicleLOD( const VehicleLOD & ) = default;
+            VehicleLOD( VehicleLOD && ) noexcept = default;
+            VehicleLOD &operator=( VehicleLOD && ) noexcept = default;
+            VehicleLOD &operator=( const VehicleLOD &other )
+            {
+                if( this != &other ) { VehicleLOD candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleLOD &other ) noexcept
+            {
+                std::swap( level, other.level );
+                std::swap( suggestedScreenCoverage, other.suggestedScreenCoverage );
+                sections.swap( other.sections );
+            }
         };
 
-        struct WPCore_API VehicleGeometry
+        struct WPCore_API VehicleGeometry : SourceBudgetObject
         {
-            std::vector<VehicleLOD> lods;
+            SourceBudgetVector<VehicleLOD> lods;
             Vector3F boundsMin{};
             Vector3F boundsMax{};
             Vector3F centreOfMass{};
             Vector3F frontAxle{};
             Vector3F rearAxle{};
             Vector3F cockpitEye{};
+
+            VehicleGeometry() = default;
+            VehicleGeometry( const VehicleGeometry & ) = default;
+            VehicleGeometry( VehicleGeometry && ) noexcept = default;
+            VehicleGeometry &operator=( VehicleGeometry && ) noexcept = default;
+            VehicleGeometry &operator=( const VehicleGeometry &other )
+            {
+                if( this != &other ) { VehicleGeometry candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleGeometry &other ) noexcept
+            {
+                using std::swap;
+                lods.swap( other.lods );
+                swap( boundsMin, other.boundsMin );
+                swap( boundsMax, other.boundsMax );
+                swap( centreOfMass, other.centreOfMass );
+                swap( frontAxle, other.frontAxle );
+                swap( rearAxle, other.rearAxle );
+                swap( cockpitEye, other.cockpitEye );
+            }
 
             bool hasGeometry() const;
         };

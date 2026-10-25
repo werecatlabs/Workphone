@@ -635,6 +635,7 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     endif()
     set_target_properties(LuaRuntimeTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPLua.runtime_contracts COMMAND LuaRuntimeTests)
+    set_tests_properties(WPLua.runtime_contracts PROPERTIES TIMEOUT 60)
     add_executable(LuaDebuggerTests LuaDebuggerTests.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaDebugger.cpp

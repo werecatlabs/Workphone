@@ -156,9 +156,128 @@ namespace workphone::render
                      "Cooked texture contains unexpected mip levels" );
         }
 
+        u32 shaderWords(MaterialShaderParameterType type)
+        {
+            using T = MaterialShaderParameterType;
+            switch(type)
+            {
+            case T::Scalar: case T::Int: case T::UInt: case T::Bool: return 1;
+            case T::Vector2: case T::IntVector2: return 2;
+            case T::Colour: case T::Vector4: case T::IntVector4: case T::Sampler: return 4;
+            case T::Matrix: return 16;
+            case T::Texture: return 0;
+            default: throw std::runtime_error("Cooked shader buffer/resource kind is unsupported");
+            }
+        }
+        u32 shaderWireType(MaterialShaderParameterType type)
+        {
+            using T = MaterialShaderParameterType;
+            switch(type)
+            {
+            case T::Scalar:return 1; case T::Colour:return 2; case T::Vector2:return 3;
+            case T::Vector4:return 4; case T::Matrix:return 5; case T::Texture:return 6;
+            case T::Sampler:return 7; case T::Int:return 8; case T::UInt:return 9;
+            case T::Bool:return 10; case T::IntVector2:return 11; case T::IntVector4:return 12;
+            default: throw std::runtime_error("Unknown cooked material shader parameter type");
+            }
+        }
+        MaterialShaderParameterType shaderType(u32 wire)
+        {
+            using T = MaterialShaderParameterType;
+            switch(wire)
+            {
+            case 1:return T::Scalar; case 2:return T::Colour; case 3:return T::Vector2;
+            case 4:return T::Vector4; case 5:return T::Matrix; case 6:return T::Texture;
+            case 7:return T::Sampler; case 8:return T::Int; case 9:return T::UInt;
+            case 10:return T::Bool; case 11:return T::IntVector2; case 12:return T::IntVector4;
+            default: throw std::runtime_error("Unknown cooked material shader wire type");
+            }
+        }
+        void validateIdentity(const String &name)
+        {
+            require(!name.empty() && name.size() <= 255 && name.find('\0') == String::npos,
+                "Invalid cooked shader identity");
+        }
+        void validateDXBC(const std::vector<u8> &bytes, bool optional)
+        {
+            if(bytes.empty() && optional) return;
+            require(bytes.size() >= 32 && bytes.size() <= graphicsMaterialShaderByteLimit/2 &&
+                !std::memcmp(bytes.data(),"DXBC",4),"Invalid cooked DXBC envelope");
+            const auto word = [&](size_t offset) {
+                require(offset <= bytes.size()-4,"Truncated DXBC word");
+                return u32(bytes[offset]) | u32(bytes[offset+1])<<8 | u32(bytes[offset+2])<<16 | u32(bytes[offset+3])<<24;
+            };
+            const auto count = word(28);
+            require(word(24) == bytes.size() && count > 0 && count <= 64 && 32ull+count*4ull <= bytes.size(),
+                "Invalid cooked DXBC length or chunk count");
+            for(u32 i=0;i<count;++i)
+            {
+                const auto offset=word(32+i*4);
+                require(offset >= 32+count*4 && offset <= bytes.size()-8,"Invalid DXBC chunk offset");
+                const auto size=word(offset+4);
+                require(size <= bytes.size()-offset-8,"Truncated DXBC chunk");
+                for(u32 j=0;j<i;++j)
+                {
+                    const auto other=word(32+j*4), end=other+8ull+word(other+4);
+                    require(offset+8ull+size <= other || offset >= end,"Overlapping DXBC chunks");
+                }
+            }
+        }
+        void validateShader(const CookedMaterialShaderData &shader)
+        {
+            if(!shader.present())
+            {
+                require(!shader.schemaVersion && shader.parameters.empty() && shader.vertexDXBC.empty() &&
+                    shader.pixelDXBC.empty() && shader.vertexSelection.constantBuffers.empty() &&
+                    shader.vertexSelection.resources.empty() && shader.pixelSelection.constantBuffers.empty() &&
+                    shader.pixelSelection.resources.empty(),"Absent cooked shader contains payload");
+                return;
+            }
+            validateIdentity(shader.shaderID);
+            require(shader.schemaVersion > 0 && shader.parameters.size() <= 64,"Invalid cooked material schema version/count");
+            validateDXBC(shader.pixelDXBC,false); validateDXBC(shader.vertexDXBC,true);
+            Array<String> names;
+            for(const auto &p:shader.parameters)
+            {
+                validateIdentity(p.name); shaderWireType(p.type);
+                require(std::find(names.begin(),names.end(),p.name)==names.end(),"Duplicate cooked shader parameter");
+                names.push_back(p.name);
+                using T=MaterialShaderParameterType;
+                const auto words=shaderWords(p.type);
+                for(size_t i=words;i<p.words.size();++i) require(!p.words[i],"Nonzero unused cooked shader words");
+                if(p.type==T::Bool) require(p.words[0]<=1,"Invalid cooked bool");
+                if(p.type==T::Sampler)
+                    require(p.words[0]<=4 && p.words[1]<=4 && p.words[2]<=3 && p.words[3]>=1 && p.words[3]<=16,
+                        "Invalid portable cooked sampler policy");
+                if(p.type==T::Scalar || p.type==T::Colour || p.type==T::Vector2 || p.type==T::Vector4 || p.type==T::Matrix)
+                    for(u32 i=0;i<words;++i) { float f;std::memcpy(&f,&p.words[i],4);require(std::isfinite(f),"Nonfinite cooked shader value"); }
+                if(p.type==T::Texture)
+                    require(p.texture.id.isValid() && !p.texture.id.isSubResource() &&
+                        p.texture.id.type()==resource::ResourceTypeID("texres") && p.texture.id.str().size()<=1024 &&
+                        p.texture.sourceHash && p.texture.payloadHash && p.texture.compilerVersion,
+                        "Cooked shader texture requires a pinned durable texres identity");
+                else require(!p.texture.id.isValid() && !p.texture.sourceHash && !p.texture.payloadHash && !p.texture.compilerVersion,
+                    "Numeric/sampler parameter contains a texture identity");
+            }
+            for(const auto selection:{&shader.vertexSelection,&shader.pixelSelection})
+                for(const auto list:{&selection->constantBuffers,&selection->resources})
+                {
+                    require(list->size()<=144,"Cooked shader ownership selection is too large");
+                    for(size_t i=0;i<list->size();++i)
+                    {
+                        validateIdentity((*list)[i]);
+                        require(std::find(list->begin(),list->begin()+i,(*list)[i])==list->begin()+i,
+                            "Duplicate cooked shader ownership selection");
+                    }
+                }
+            require(!shader.vertexDXBC.empty() || (shader.vertexSelection.constantBuffers.empty() &&
+                shader.vertexSelection.resources.empty()),"Missing vertex stage has ownership selections");
+        }
+
         void validateMaterial( const CookedMaterialData &data )
         {
             validateTarget( data.target );
+            validateShader(data.shader);
             for( const auto value : { data.baseColour.r, data.baseColour.g, data.baseColour.b,
                                       data.baseColour.a, data.metalness, data.roughness } )
             {
@@ -280,6 +399,71 @@ namespace workphone::render
             size_t m_position = 0;
         };
 
+        void writeShader(std::ostream &output,const CookedMaterialShaderData &shader)
+        {
+            write32(output,0x01020304u); write32(output,1); // endian marker and portable schema wire version
+            writeString(output,shader.shaderID); write32(output,shader.schemaVersion);
+            write32(output,static_cast<u32>(shader.parameters.size()));
+            for(const auto &p:shader.parameters)
+            {
+                writeString(output,p.name); write32(output,shaderWireType(p.type));
+                const auto count=shaderWords(p.type);write32(output,count);
+                for(u32 i=0;i<count;++i)write32(output,p.words[i]);
+                if(p.type==MaterialShaderParameterType::Texture)
+                {
+                    writeString(output,p.texture.id.str());write64(output,p.texture.sourceHash);
+                    write64(output,p.texture.payloadHash);write64(output,p.texture.compilerVersion);
+                }
+            }
+            for(const auto code:{&shader.vertexDXBC,&shader.pixelDXBC})
+            {
+                write32(output,static_cast<u32>(code->size()));
+                if(!code->empty())output.write(reinterpret_cast<const char *>(code->data()),code->size());
+            }
+            for(const auto selection:{&shader.vertexSelection,&shader.pixelSelection})
+                for(const auto list:{&selection->constantBuffers,&selection->resources})
+                {
+                    write32(output,static_cast<u32>(list->size()));
+                    for(const auto &name:*list)writeString(output,name);
+                }
+        }
+        CookedMaterialShaderData readShader(Reader &reader)
+        {
+            require(reader.read32()==0x01020304u && reader.read32()==1,"Unsupported cooked shader endian/schema version");
+            CookedMaterialShaderData shader;
+            shader.shaderID=reader.readString(255);shader.schemaVersion=reader.read32();
+            const auto count=reader.read32();
+            require(count<=64 && u64(count)*16<=reader.remaining(),"Invalid cooked shader parameter count");
+            for(u32 i=0;i<count;++i)
+            {
+                CookedMaterialShaderParameter p;p.name=reader.readString(255);p.type=shaderType(reader.read32());
+                const auto words=reader.read32();
+                require(words==shaderWords(p.type) && u64(words)*4<=reader.remaining(),"Invalid cooked shader value width");
+                for(u32 j=0;j<words;++j)p.words[j]=reader.read32();
+                if(p.type==MaterialShaderParameterType::Texture)
+                {
+                    require(p.texture.id.set(reader.readString(1024)),"Invalid cooked shader texture ResourceID");
+                    p.texture.sourceHash=reader.read64();p.texture.payloadHash=reader.read64();p.texture.compilerVersion=reader.read64();
+                }
+                shader.parameters.push_back(std::move(p));
+            }
+            for(auto code:{&shader.vertexDXBC,&shader.pixelDXBC})
+            {
+                const auto bytes=reader.read32();
+                require(bytes<=graphicsMaterialShaderByteLimit/2 && bytes<=reader.remaining(),"Invalid cooked shader bytecode length");
+                reader.readBytes(*code,bytes);
+            }
+            for(auto selection:{&shader.vertexSelection,&shader.pixelSelection})
+                for(auto list:{&selection->constantBuffers,&selection->resources})
+                {
+                    const auto size=reader.read32();
+                    require(size<=144 && u64(size)*4<=reader.remaining(),"Invalid cooked shader ownership count");
+                    for(u32 i=0;i<size;++i)list->push_back(reader.readString(255));
+                }
+            validateShader(shader);
+            return shader;
+        }
+
         void validateResource( const resource::RuntimeResource &value, const char *type )
         {
             const resource::ResourceTypeID expected( type );
@@ -288,7 +472,8 @@ namespace workphone::render
                          value.header.resourceId.type() == expected &&
                          value.header.resourceType == expected &&
                          ( value.header.compilerVersion == compiler.versionFor( expected ) ||
-                           ( expected == resource::ResourceTypeID( "matres" ) && value.header.compilerVersion == 2 ) ),
+                           ( expected == resource::ResourceTypeID( "matres" ) &&
+                             (value.header.compilerVersion == 2 || value.header.compilerVersion == 3) ) ),
                      "Cooked graphics resource type or compiler version is incompatible" );
             require( value.payload.size() <= graphicsTextureByteLimit + 4096u &&
                          value.header.payloadSize == value.payload.size() &&
@@ -413,7 +598,7 @@ namespace workphone::render
         {
             validateMaterial( data );
             const auto count = u32( data.normalTexture.id.isValid() ) + u32( data.ormTexture.id.isValid() );
-            writePrefix( output, materialMagic, data.target, data.packagedBuild, count ? 2 : 1 );
+            writePrefix( output, materialMagic, data.target, data.packagedBuild, data.shader.present() ? 3 : (count ? 2 : 1) );
             for( const auto value : { data.baseColour.r, data.baseColour.g, data.baseColour.b,
                                       data.baseColour.a, data.metalness, data.roughness } )
             {
@@ -423,7 +608,7 @@ namespace workphone::render
             write64( output, data.textureSourceHash );
             write64( output, data.texturePayloadHash );
             write64( output, data.textureCompilerVersion );
-            if( count )
+            if( count || data.shader.present() )
             {
                 write32( output, count );
                 for( const auto slot : { MaterialTextureSlot::Normal, MaterialTextureSlot::ORM } )
@@ -437,6 +622,7 @@ namespace workphone::render
                     write64( output, ref.compilerVersion );
                 }
             }
+            if(data.shader.present())writeShader(output,data.shader);
             require( output.good(), "Failed writing cooked material payload" );
             return true;
         }
@@ -517,12 +703,14 @@ namespace workphone::render
         try
         {
             validateResource( value, "matres" );
-            require( value.payload.size() <= 4096, "Cooked material payload exceeds its size limit" );
+            require( value.payload.size() <= graphicsMaterialShaderByteLimit+65536u, "Cooked material payload exceeds its size limit" );
             Reader reader( value.payload );
             CookedMaterialData data;
-            const auto version = readPrefix( reader, materialMagic, data.target, data.packagedBuild, 2 );
+            const auto version = readPrefix( reader, materialMagic, data.target, data.packagedBuild, 3 );
             require( value.header.compilerVersion != 2 || version == 1,
                      "Legacy material compiler cannot produce extended material payloads" );
+            require(value.header.compilerVersion >= 4 || version <= 2,
+                "Legacy material compiler cannot produce shader-schema payloads");
             data.baseColour.r = reader.readFloat();
             data.baseColour.g = reader.readFloat();
             data.baseColour.b = reader.readFloat();
@@ -534,10 +722,10 @@ namespace workphone::render
             data.textureSourceHash = reader.read64();
             data.texturePayloadHash = reader.read64();
             data.textureCompilerVersion = reader.read64();
-            if( version == 2 )
+            if( version >= 2 )
             {
                 const auto count = reader.read32();
-                require( count >= 1 && count <= 2, "Invalid cooked material optional slot count" );
+                require( count <= 2 && (version >= 3 || count >= 1), "Invalid cooked material optional slot count" );
                 for( u32 i = 0; i < count; ++i )
                 {
                     const auto slot = static_cast<MaterialTextureSlot>( reader.read32() );
@@ -551,6 +739,7 @@ namespace workphone::render
                     ref.compilerVersion = reader.read64();
                 }
             }
+            if(version >= 3)data.shader=readShader(reader);
             require( reader.remaining() == 0, "Unexpected trailing cooked material data" );
             validateMaterial( data );
             Array<resource::ResourceID> expected{ data.textureId };
@@ -559,6 +748,9 @@ namespace workphone::render
                 if( ref.id.isValid() && std::find( expected.begin(), expected.end(), ref.id ) == expected.end() )
                     expected.push_back( ref.id );
             }
+            for(const auto &p:data.shader.parameters)
+                if(p.type==MaterialShaderParameterType::Texture &&
+                    std::find(expected.begin(),expected.end(),p.texture.id)==expected.end())expected.push_back(p.texture.id);
             require( value.header.installDependencies.size() == expected.size() &&
                          value.dependencies.size() == expected.size(),
                      "Cooked material install dependency count does not match its semantic slots" );
@@ -596,6 +788,8 @@ namespace workphone::render
                 const auto &ref = slot == MaterialTextureSlot::Normal ? data.normalTexture : data.ormTexture;
                 if( ref.id.isValid() ) validateSlot( ref.id, ref.sourceHash, ref.payloadHash, ref.compilerVersion, slot );
             }
+            for(const auto &p:data.shader.parameters)if(p.type==MaterialShaderParameterType::Texture)
+                validateSlot(p.texture.id,p.texture.sourceHash,p.texture.payloadHash,p.texture.compilerVersion,MaterialTextureSlot::BaseColour);
             output = std::move( data );
             return true;
         }

@@ -482,7 +482,7 @@ namespace workphone::editor
                 auto root = app->getProjectPath();
                 if( root.empty() ) root = std::filesystem::current_path().u8string().c_str();
                 const auto token = m_luaDebuggerToken;
-                if( scripts->getDebuggerPort() || scripts->startDebugger( 0, token, root ) )
+                if( scripts->startDebugger( 0, token, root ) )
                 {
                     scripts->setDebuggerPausePump( [this]() {
                         auto app = core::IApplicationManager::instancePtr();
@@ -509,9 +509,11 @@ namespace workphone::editor
                         Thread::setCurrentTask( previousTask );
                         return !app->getQuit();
                     } );
-                    const auto directory = std::filesystem::u8path( root.c_str() ) / ".workphone";
+                    auto destination = std::filesystem::u8path( root.c_str() ) / ".workphone/lua-debug.json";
+                    if( const auto requested = std::getenv( "WP_LUA_DEBUG_ENDPOINT" ); requested && *requested )
+                        destination = std::filesystem::absolute( std::filesystem::u8path( requested ) );
+                    const auto directory = destination.parent_path();
                     std::filesystem::create_directories( directory );
-                    const auto destination = directory / "lua-debug.json";
                     auto temporary = destination;
                     temporary += std::string( "." ) + token.c_str() + ".tmp";
                     try
@@ -533,7 +535,7 @@ namespace workphone::editor
                     {
                         std::error_code ignored; std::filesystem::remove( temporary, ignored ); throw;
                     }
-                    WP_LOG( "Lua debugger endpoint: " + root + "/.workphone/lua-debug.json" );
+                    WP_LOG( "Lua debugger endpoint: " + m_luaDebuggerEndpoint );
                 }
                 else WP_LOG_ERROR( "Could not start the Lua debugger" );
             }

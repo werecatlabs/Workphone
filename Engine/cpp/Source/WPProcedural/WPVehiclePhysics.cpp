@@ -2,10 +2,10 @@
 #include "WPProcedural/WPVehiclePhysics.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <numeric>
-#include <sstream>
 
 namespace workphone
 {
@@ -129,16 +129,26 @@ namespace workphone
                 }
             }
 
-            void addError( VehiclePhysicsValidation &result, const std::string &text )
+            void addError( VehiclePhysicsValidation &result, SourceBudgetStdString text )
             {
-                result.errors.push_back( text );
+                result.errors.push_back( std::move( text ) );
+            }
+
+            void addError( VehiclePhysicsValidation &result, const SourceBudgetStdString &prefix,
+                           const char *text )
+            {
+                auto message = prefix;
+                message += text;
+                addError( result, std::move( message ) );
             }
 
             void requirePositive( VehiclePhysicsValidation &result, double value, const char *label )
             {
                 if( !finite( value ) || value <= 0.0 )
                 {
-                    addError( result, std::string( label ) + " must be finite and positive" );
+                    SourceBudgetStdString message( label );
+                    message += " must be finite and positive";
+                    addError( result, std::move( message ) );
                 }
             }
         }  // namespace
@@ -467,16 +477,18 @@ namespace workphone
             for( std::size_t i = 0; i < c.wheels.size(); ++i )
             {
                 const auto &w = c.wheels[i];
-                const std::string prefix = "wheel " + std::to_string( i ) + ": ";
+                SourceBudgetStdString prefix( "wheel " );
+                prefix.push_back( static_cast<char>( '0' + i ) );
+                prefix += ": ";
                 if( !finite( w.hubPosition.x ) || !finite( w.hubPosition.y ) ||
                     !finite( w.hubPosition.z ) )
                 {
-                    addError( result, prefix + "hub position must be finite" );
+                    addError( result, prefix, "hub position must be finite" );
                 }
                 if( w.tire.radiusM <= 0.1 || w.tire.widthM <= 0.05 ||
                     w.tire.unloadedRadiusM < w.tire.radiusM )
                 {
-                    addError( result, prefix + "tire dimensions are invalid" );
+                    addError( result, prefix, "tire dimensions are invalid" );
                 }
                 requirePositive( result, w.tire.wheelMassKg, "wheel mass" );
                 requirePositive( result, w.tire.wheelInertiaKgM2, "wheel inertia" );
@@ -486,11 +498,11 @@ namespace workphone
                 requirePositive( result, w.suspension.damperReboundNPerMps, "rebound damping" );
                 if( w.suspension.motionRatio <= 0.0 || w.suspension.motionRatio > 1.5 )
                 {
-                    addError( result, prefix + "motion ratio is outside (0, 1.5]" );
+                    addError( result, prefix, "motion ratio is outside (0, 1.5]" );
                 }
                 if( w.tire.peakLongitudinalFriction < 0.5 || w.tire.peakLongitudinalFriction > 2.5 )
                 {
-                    addError( result, prefix + "peak friction is outside supported range" );
+                    addError( result, prefix, "peak friction is outside supported range" );
                 }
 
                 const double cornerMass =
@@ -500,10 +512,17 @@ namespace workphone
                     std::sqrt( wheelRate / std::max( 1.0, cornerMass ) ) / ( 2.0 * Pi );
                 if( naturalHz < 1.0 || naturalHz > 6.5 )
                 {
-                    std::ostringstream message;
-                    message << prefix << "ride frequency " << naturalHz
-                            << " Hz is outside the 1.0-6.5 Hz supported envelope";
-                    result.warnings.push_back( message.str() );
+                    char frequency[64];
+                    const auto formatted = std::to_chars( frequency, frequency + sizeof(frequency),
+                                                          naturalHz, std::chars_format::general, 6 );
+                    auto message = prefix;
+                    message += "ride frequency ";
+                    if( formatted.ec == std::errc() )
+                        message.append( frequency, size_t( formatted.ptr - frequency ) );
+                    else
+                        message += "unrepresentable";
+                    message += " Hz is outside the 1.0-6.5 Hz supported envelope";
+                    result.warnings.push_back( std::move( message ) );
                 }
             }
 
