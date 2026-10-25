@@ -534,7 +534,7 @@ namespace workphone::scene
             requireRuntime( getActor()->getScene() == scene, "Road authoring belongs to a different or detached scene." );
             auto factories = app->getFactoryManager();
             requireRuntime( bool( factories ), "Road procedural service factory is unavailable." );
-            auto forge = factories->createObjectFromType<procedural::ITextureForge>( "ITextureForge" );
+            auto forge = factories->make_object<procedural::ITextureForge>( "ITextureForge" );
             requireRuntime( bool( forge ), "Authored road materials require the WPProcedural texture forge." );
             // Authored identity, not edit/revision order, determines persistent surfaces.
             u32 surfaceSeed = 2166136261u;
