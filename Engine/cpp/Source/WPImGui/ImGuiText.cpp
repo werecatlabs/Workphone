@@ -65,13 +65,19 @@ namespace workphone::ui
 
     void ImGuiText::setText( const String &text )
     {
-        if( text.length() > m_text.capacity() )
+        // FixedString capacity includes its terminating slot.
+        if( text.length() >= m_text.capacity() )
         {
-            m_longText = text;
+            // Prepare allocating replacements before retiring the displayed
+            // value. A failed copy leaves both representations unchanged.
+            String candidate( text );
+            m_longText.swap( candidate );
+            m_text.clear();
         }
         else
         {
             m_text = text;
+            String{}.swap( m_longText );
         }
     }
 
@@ -117,7 +123,7 @@ namespace workphone::ui
 
     const c8 *ImGuiText::getTextPtr() const
     {
-        return m_text.c_str();
+        return !m_longText.empty() ? m_longText.c_str() : m_text.c_str();
     }
 
     void ImGuiText::renderTextWithAlignment( const String &text )

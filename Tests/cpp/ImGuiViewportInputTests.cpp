@@ -1,5 +1,6 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
+#include <WPImGui/ImGuiText.hpp>
 #include <WPGraphics/UI/ClawUIManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
@@ -15,6 +16,7 @@
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
+#include <cstring>
 
 using namespace workphone;
 
@@ -87,6 +89,34 @@ namespace
         state->setEventType( type );
         event->setMouseState( state );
         manager.OnEvent( event );
+    }
+
+    void textReplacement()
+    {
+        auto widget=make_ptr<ui::ImGuiText>();
+        const String diagnostic(256,'A');
+        const String recovered="Shader generation 2 active.";
+        const auto render=[&](const String &expected) {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos(ImVec2(0,0),ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(1900,300),ImGuiCond_Always);
+            ImGui::Begin("Material shader status",nullptr,ImGuiWindowFlags_NoSavedSettings);
+            const auto vertices=ImGui::GetWindowDrawList()->VtxBuffer.Size;
+            widget->update();
+            if(expected.empty())
+                require(ImGui::GetWindowDrawList()->VtxBuffer.Size==vertices,"cleared text submits no stale glyphs");
+            else
+                require(near(ImGui::GetItemRectSize().x,ImGui::CalcTextSize(expected.c_str()).x),
+                    "actual text rendering uses the current replacement rather than retired diagnostics");
+            ImGui::End();ImGui::EndFrame();
+        };
+        for(const auto &value:{diagnostic,recovered,String(127,'B'),String(128,'C'),String()})
+        {
+            widget->setText(value);
+            require(widget->getText()==value,"text getters follow long, short, boundary and empty replacements");
+            require(std::strcmp(widget->getTextPtr(),value.c_str())==0,"borrowed text pointer matches the displayed representation");
+            render(value);
+        }
     }
 
     void displayedImageGeometry( Fixture &fixture, bool textureReady, bool fractional )
@@ -163,9 +193,10 @@ int main()
     try
     {
         Fixture fixture;
+        textReplacement();
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui viewport input: 2 cases, %u assertions passed\n", assertions );
+        std::printf( "ImGui text/viewport input: 3 cases, %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

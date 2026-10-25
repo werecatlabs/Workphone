@@ -327,7 +327,7 @@ The publication build's full Debug **Editor aggregate passes 66/66 cases and 2,7
 
 | Slice | Remaining review evidence/work |
 | --- | --- |
-| M0 / M6 | Current racing-scene allocation profiles and all three CPU repetitions per view are complete below. Matched original/current CPU work, hardware cache/GPU/frame-p95 measurements, interactive visual/Editor soak and final cleanup/certification remain open. The controlled material allocation target is verified below. |
+| M0 / M6 | M6 warm-path cleanup, full affected material suites, broad graphics validation and the 78-case Debug Editor aggregate pass below. A fresh 300-second follow-view memory run plus separate 30-second CPU control is complete. Matched original/current CPU work, physical hardware/cache/GPU/frame-p95 measurements, repeated edited-frame/retired-owner soak, interactive visual/device-loss, SDK/external-asset and final certification gates remain open. The controlled M4 allocation target remains verified historically. |
 | M3 | Claw/DX11 runtime implementation and automated correctness gates complete below: persistent table and remaining adapter migration. Hardware/interactive certification remains in M0/M6. |
 | M4 | Storage implementation, automated compatibility and full CPU allocation profiling complete; the 50% target passes the 10,000-instance shared-layout fixture. Representative scene/hardware/interactive certification remains in M0/M6. |
 | M5 | Original cook, binding/packing, schema migration, reload and device validation gates complete for the documented DX11 vertex/pixel PNTC contract. File/include watching, Editor controls/persistence and versioned source-free installation are validated below. Custom vertex instancing/shadow extensions, automatic engine-wide cooked-owner restoration and hardware/interactive certification are outside this completion claim; see the final M5 section. |
@@ -1029,6 +1029,57 @@ Final frozen acceptance passes **12/12 Debug in 106.79 seconds** and **8/8 RelWi
 All ten runtime DLLs, seven native test executables plus Debug Editor, runtime configuration sidecars and relevant source/test inputs were hashed around freezing. The original command arguments, properties, working directories and timeouts were retained; both accepted snapshots have **zero hash drift**. Builds include the final core serializer and backend changes. Initial diagnostic/recovery runs are preserved, including the locked PCH, test-only Lua identifier limit, ordinary-material null schema and headless fixture service errors. Exact snapshots, JUnit results, logs and boundaries are in `project_x64/material_m5_finish_validation_20261025.json`. `git diff --check` passes.
 
 The device is **WARP / Microsoft Basic Render Driver**. Custom vertex programs still defer instanced submission; arbitrary custom deformation/shadow programs remain backend extensions. Persistent buffer assets reject explicitly because no durable buffer asset adapter exists; cooked textures and samplers are supported. Optional constant-block restructuring was not required without measured justification. Matched original/current CPU acceptance, hardware cache/GPU/frame-p95 measurements, long growth/device-loss soak and interactive Editor/visual certification remain M0/M6 work. No new process/driver memory ceiling or M4 percentage remeasurement is claimed.
+
+## M6 cleanup, affected-suite certification and current-scene residency (25 October 2026)
+
+**M6 is in progress.** The automated affected-material and Editor aggregate gates now pass on the current implementation. Hardware, matched original/current performance and interactive/release certification remain open.
+
+The custom material runtime no longer retains a redundant layout shared_ptr or assigns it on every warm publication read. Direct programs still validate the exact layout/map generation, reload bindings validate the coordinator layout, and numeric shader-selection/value revisions retain their existing invalidation behavior. This removes unnecessary per-capture reference counting and one retained pointer without weakening validity checks.
+
+The broader review found that MaterialEditor's 30-update status poll had no native update forwarding. The application task now updates visible object/file and actor/component material panels, plus the optional direct material panel. Hidden panels remain idle. The actual panel regression verifies queued, failed and recovered shader status through normal application updates, without manually invoking Refresh or the Lua update method. Its read-only Lua observation follows the actual tab-owned text widget because tab items are not exposed through generic UI child traversal.
+
+The visible recovery path also exposed a real ImGuiText bug: after a long diagnostic, a short or empty replacement left the old long-text representation active. Replacement now retires the obsolete representation, the native text pointer follows the displayed value, and allocating long text is staged before publication. Exactly 128 characters use long storage because FixedString's terminating slot is included in capacity. Actual widget getter, native pointer and rendered item-width checks cover long/short, 127/128-character and empty transitions. Both configurations rebuild WPImGui, WPGraphics and the matching widget test; Editor is refreshed for the new panel path.
+
+Final frozen validation:
+
+| Gate | Result |
+| --- | --- |
+| Broad Debug graphics/material/catalog/Lua/UI selection | **36 passed, 1 skipped**, 333.87 s |
+| Broad RelWithDebInfo selection | **35 passed, 1 skipped**, 146.19 s |
+| Full affected standalone UnitTests material/pass/texture/LOD/shader/resource-cleanup selection, included in Debug above | **140 cases / 2,233 assertions passed** |
+| Registered Debug `Editor.all` | **78/78 cases / 2,140,766 assertions passed**, 757.43 s under the original 900 s limit |
+| Normal-update material panel status regression | Passed separately before the aggregate |
+
+The standalone selection filters out the other 1,587 UnitTests cases; it is not a claim that the complete 1,727-case engine executable was run. No headless-skip messages appeared in that affected selection. The single registered skip in each broad run is `WorkphoneGraphics.mesh_import_assets`: the external Ogre mesh fixtures are unavailable. The native serializer, C89 skinning/particle contracts, shader/sparse-material/renderer/frame/RTT/job tests, packing, production/lifecycle, cubemaps, terrain/foliage, catalog, load/heap/memory/cooked material, picking, viewport and Lua workflow gates all ran.
+
+Two old terrain fixtures needed corrections before their broader gates could be meaningful. The representative smooth field's adjacent slopes were below the default 30-degree thermal talus threshold, so unchanged output was correct. The recipe now explicitly uses 10 degrees and asserts an active initial slope; the 1025-squared field, radius 128, 64 iterations, admission caps, output/determinism assertions and 900-second timeout remain. The 1,000-cycle regeneration fixture previously compared against a cold string-pool baseline. It now discloses one complete 16-shape warm-up, then measures all original 1,000 cycles. Every complete measured shape period and final state require exact warmed SourceCpu, pending/ready work and producer equality, plus unchanged string committed/slab/live/free counts. Cold character capacity grows from 65,280 to 3,879,168 bytes (1 to 33 slabs), with five live blocks unchanged. No idle pools are flushed to disguise retention. Both complete 1,000-cycle gates pass; this is bounded steady-state terrain retirement evidence, not whole-process leak certification.
+
+All three accepted test snapshots have zero source/binary/configuration hash drift. Original registered arguments, working directories, properties and timeouts are preserved in the frozen harness. The standalone UnitTests selection is recorded separately from pre-existing CTest registrations. A live aggregate stack initially sampled the timed prefab case; later noninvasive samples showed normal progress into other tests. No TaskManager deadlock existed or source change was made, and the original aggregate timeout was retained. Exact snapshots, build/recovery logs, JUnit, fixture diagnostics and remaining gates are in `project_x64/material_m6_validation_20261025.json`.
+
+The current SampleVehicleAdvanced and backend were rebuilt, then the existing scene profiler froze their runtime for a **300.004-second follow-view memory interval** and a separate **30.219-second heap-walk-free CPU control** at 1280x720/high/seed 42. This is an explicit focused `--smoke` selection: one view and one CPU repetition, with `baseline_protocol_completed=false` and performance acceptance disabled. It does not replace the earlier complete multi-view protocol or provide a matched original/current comparison.
+
+| Current follow-view diagnostic | Result |
+| --- | --- |
+| Memory interval | 1,851 rendered updates / 300.004 s; 60 steady memory samples |
+| Steady heap / private commitment | **1,626.43-1,630.92 MiB / 1,940.74-1,942.44 MiB** |
+| Measurement-end minus warm heap / private | **-2.126 MiB / +1.680 MiB** |
+| CPU control material preparation | **134.77 microseconds/update**, 178 updates, zero measurement heap walks |
+| CPU control render-owner mean / p95 interval | **169.77 / 188.63 ms**, WARP diagnostic only |
+| Warm material record rebuilds / preparation storage allocations | **0 / 0 in both processes** |
+| Failed passes / failed Presents / occluded Presents | **0 / 0 / 0 in both processes** |
+
+The scene has 757 generated actors, 30 unique materials, 50 textures, 162 meshes and 1,806,049 vertices. The last visible material cache holds 21 resident slots and 21,136 bytes. Source, frozen runtime and inventoried assets remain unchanged; neither interval/sample buffer truncates. The rendered follow capture was inspected and contains the car and track; it is not a matched visual-equivalence review. The observed heap slope is approximately -1.24 KiB/s and private-commit slope +1.56 KiB/s. After application unload and TypeManager destruction, residuals above bootstrap are **12.95 MiB heap / 226.77 MiB private commitment**. These residuals are not attributed solely to materials, and the observer does not expose a complete post-unload material-owner ledger. Neither the slopes nor a single loaded interval establishes leak freedom. Raw checkpoints, renderer evidence and capture hashes are in `project_x64/material_m6_current_follow_300s_20261025/manifest.json`.
+
+Today's read-only PMU preflight still finds only Timer with one selectable counter and no required retired-instruction, cycle or cache-miss sources; the token also lacks SeSystemProfilePrivilege. No trace or privilege change was attempted. Windows exposes a virtual display adapter, and the actual renderer remains Microsoft Basic Render Driver with zero dedicated VRAM. WARP timings include software rendering and Present; they are not physical GPU/cache performance results.
+
+Remaining M6 review gates:
+
+- Matched original/current material stress CPU measurement, including update/publication and submit, against the 50% goal; representative whole-frame p95 nonregression.
+- Physical GPU/cache-counter/residency profiling on an eligible machine, plus repeated current multi-view production intervals.
+- Longer edited-frame, repeated load/unload and retained-generation/owner retirement pressure with complete attribution.
+- Interactive visual equivalence, real device-loss workflow, rebuilt/relocated SDK consumers, external mesh fixtures and final compatibility/release cleanup.
+
+The supported backend limits recorded under M5 remain explicit extensions. This continuation does not recertify M4's historical percentage or complete M6. `git diff --check` passes.
 
 ## Nested vehicle ownership and shared budgets (25 October 2026)
 

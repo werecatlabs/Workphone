@@ -1069,15 +1069,39 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     auto editorUI=EditorManager::getSingletonPtr()->getUI();
     auto objectWindow=editorUI->getObjectWindow();auto actorWindow=editorUI->getActorWindow();
     BOOST_REQUIRE(objectWindow);BOOST_REQUIRE(actorWindow);
+    objectWindow->getParentWindow()->setName("ShaderPollingObject");
+    actorWindow->getParentWindow()->setName("ShaderPollingActor");
+    // ImGui tab pages have a separate inventory from getChildren(). Observe
+    // each real panel's actual widget through Lua; reading never refreshes it.
+    auto scripts=application->getScriptManager();
+    scripts->loadScriptFromString(R"(
+        local original = MaterialEditor.setShaderReloadMessage
+        local panels = setmetatable({}, {__mode="k"})
+        function MaterialEditor:setShaderReloadMessage(message)
+            original(self, message)
+            panels[self] = true
+        end
+        function readMaterialShaderPanelPolling(parameters)
+            local snapshot = parameters:getAsObject(0)
+            for panel in pairs(panels) do
+                local parent = panel.window and panel.window:getParent()
+                if parent and parent:getName() == snapshot:getPropertyAsString("parentName") then
+                    snapshot:setPropertyAsBool("found", true)
+                    snapshot:setPropertyAsString("text", panel.shaderReloadStatusText:getText())
+                    return
+                end
+            end
+        end
+    )");
     auto selection=application->getSelectionManager();selection->clearSelection();selection->addSelectedObject(material);
     objectWindow->setWindowVisible(true);objectWindow->updateSelection();
-    std::function<bool(SmartPtr<ui::IUIElement>,const String &)> containsText;
-    containsText=[&](SmartPtr<ui::IUIElement> element,const String &text) {
-        if(!element) return false;
-        if(auto value=workphone::dynamic_pointer_cast<ui::IUIText>(element))
-            if(value->getText().find(text)!=String::npos) return true;
-        for(auto child:element->getChildren()) if(containsText(child,text)) return true;
-        return false;
+    const auto checkStatus=[&](const String &parent,const String &fragment,bool expected) {
+        auto snapshot=make_ptr<Properties>();snapshot->setProperty("parentName",parent);
+        scripts->callFunction("readMaterialShaderPanelPolling",Parameters{Parameter(SmartPtr<ISharedObject>(snapshot))});
+        BOOST_REQUIRE_MESSAGE(snapshot->getPropertyAsBool("found"),"Material panel was not observed: "<<parent);
+        const auto text=snapshot->getProperty("text");
+        BOOST_CHECK_MESSAGE((text.find(fragment)!=String::npos)==expected,
+            "Panel "<<parent<<" expected "<<(expected?"":"no ")<<fragment<<"; displayed: "<<text);
     };
     const auto pollPanel=[&] {
         for(int i=0;i<30;++i) app.updateApplication();
@@ -1092,12 +1116,12 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     auto queued=requestFor("reload");processMaterialShaderReloadAction(material,queued);
     BOOST_REQUIRE(queued->getPropertyAsBool("queued"));
     objectWindow->setWindowVisible(false);pollPanel();
-    BOOST_CHECK(!containsText(objectWindow->getParentWindow(),"Shader reload pending"));
+    checkStatus("ShaderPollingObject","Shader reload pending",false);
     objectWindow->setWindowVisible(true);pollPanel();
-    BOOST_CHECK(containsText(objectWindow->getParentWindow(),"Shader reload pending"));
+    checkStatus("ShaderPollingObject","Shader reload pending",true);
     ownerUpdate();pollPanel();
-    BOOST_CHECK(containsText(objectWindow->getParentWindow(),"Shader generation "));
-    BOOST_CHECK(!containsText(objectWindow->getParentWindow(),"Shader reload pending"));
+    checkStatus("ShaderPollingObject","Shader generation ",true);
+    checkStatus("ShaderPollingObject","Shader reload pending",false);
 
     auto actor=application->getGameManager()->createActor();
     auto component=actor->addComponent<scene::Material>();component->setMaterial(material);
@@ -1111,10 +1135,10 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
         std::this_thread::sleep_for(std::chrono::milliseconds(275));ownerUpdate();pollPanel();
     };
     replacePixel("This pixel shader does not compile");
-    BOOST_CHECK(containsText(actorWindow->getParentWindow(),"Shader reload failed;"));
+    checkStatus("ShaderPollingActor","Shader reload failed;",true);
     replacePixel("cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}");
-    BOOST_CHECK(containsText(actorWindow->getParentWindow(),"Shader generation "));
-    BOOST_CHECK(!containsText(actorWindow->getParentWindow(),"Shader reload failed;"));
+    checkStatus("ShaderPollingActor","Shader generation ",true);
+    checkStatus("ShaderPollingActor","Shader reload failed;",false);
     selection->clearSelection();objectWindow->updateSelection();application->getGameManager()->destroyActor(actor);
 #endif
 }

@@ -90,6 +90,30 @@ namespace terrain_performance_contracts
             recipe.region.radius = 128;
             recipe.iterations = 64;
             recipe.seed = 97;
+            if( recipe.mode == TerrainErosionMode::Thermal )
+            {
+                // This smooth field's adjacent slopes stay below tan(30deg),
+                // so the default recipe correctly performs no thermal work.
+                // Keep the cap-adjacent domain/iterations and select an active
+                // threshold instead of timing an unchanged-field simulation.
+                recipe.talusAngle = 10;
+                double initialSlope = 0;
+                for( s32 z = 385; z <= 640; ++z )
+                    for( s32 x = 385; x <= 640; ++x )
+                    {
+                        const double dx = x - 512.5, dz = z - 512.5;
+                        if( dx * dx + dz * dz >= 128.0 * 128.0 ) continue;
+                        const auto index = size_t( z ) * 1025 + x;
+                        initialSlope = std::max( initialSlope,
+                            std::abs( double( field.heights[index] ) - field.heights[index + 1] ) *
+                                field.heightScale / field.spacing.x );
+                        initialSlope = std::max( initialSlope,
+                            std::abs( double( field.heights[index] ) - field.heights[index + 1025] ) *
+                                field.heightScale / field.spacing.y );
+                    }
+                require( initialSlope > std::tan( recipe.talusAngle * 3.141592653589793 / 180 ),
+                         "representative thermal fixture exceeds its selected talus threshold" );
+            }
             TerrainData result;
             const auto start = std::chrono::steady_clock::now();
             require( prepareTerrainErosion( field, recipe, result, nullptr, error ),
@@ -154,13 +178,15 @@ namespace terrain_performance_contracts
     inline void regenerationSoak( u32 cycles )
     {
         auto scheduler = WorldStreamingScheduler::shared();
-        const auto baseline = scheduler->stats();
+        const auto cold = scheduler->stats();
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+        const auto coldStrings = String::character_pool_stats();
+#endif
         const auto sourceClass = size_t( StreamMemoryClass::SourceCpu );
         String error;
         std::vector<double> cycleMs;
         cycleMs.reserve( cycles );
-        for( u32 i = 0; i < cycles; ++i )
-        {
+        const auto cycle = [&]( u32 i ) {
             const auto start = std::chrono::steady_clock::now();
             auto terrain = make_ptr<TerrainSystem>();
             const u32 width = 65 + ( i % 4 ) * 32, depth = 65 + ( ( i / 4 ) % 4 ) * 32;
@@ -178,15 +204,68 @@ namespace terrain_performance_contracts
             require( reopened->exportTerrainData() == json, "cycled export roundtrips exactly" );
             terrain = nullptr;
             reopened = nullptr;
-            cycleMs.push_back( std::chrono::duration<double, std::milli>(
-                                   std::chrono::steady_clock::now() - start )
-                                   .count() );
+            return std::chrono::duration<double, std::milli>(
+                       std::chrono::steady_clock::now() - start ).count();
+        };
+        // Each grid shape creates different pooled JSON string size classes.
+        // Returned physical slabs remain SourceCpu-charged while this process
+        // owns the shared pools. Warm the complete 16-shape period, disclose
+        // its cold charge, then still measure every requested soak cycle.
+        for( u32 i = 0; i < 16; ++i ) cycle( i );
+        const auto baseline = scheduler->stats();
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+        const auto warmStrings = String::character_pool_stats();
+        std::printf(
+            "Terrain regeneration warm-up: 16 shapes, SourceCpu %llu->%llu; "
+            "character committed %llu->%llu, slabs %llu->%llu, live blocks %llu->%llu\n",
+            static_cast<unsigned long long>( cold.used[sourceClass] ),
+            static_cast<unsigned long long>( baseline.used[sourceClass] ),
+            static_cast<unsigned long long>( coldStrings.committedBytes ),
+            static_cast<unsigned long long>( warmStrings.committedBytes ),
+            static_cast<unsigned long long>( coldStrings.slabCount ),
+            static_cast<unsigned long long>( warmStrings.slabCount ),
+            static_cast<unsigned long long>( coldStrings.liveBlocks ),
+            static_cast<unsigned long long>( warmStrings.liveBlocks ) );
+#else
+        std::printf( "Terrain regeneration warm-up: 16 shapes, SourceCpu %llu->%llu\n",
+            static_cast<unsigned long long>( cold.used[sourceClass] ),
+            static_cast<unsigned long long>( baseline.used[sourceClass] ) );
+#endif
+        for( u32 i = 0; i < cycles; ++i )
+        {
+            cycleMs.push_back( cycle( i ) );
+            if( ( i + 1 ) % 16 == 0 )
+            {
+                const auto period = scheduler->stats();
+                require( period.used[sourceClass] == baseline.used[sourceClass] &&
+                             period.pending == baseline.pending && period.ready == baseline.ready &&
+                             period.producers == baseline.producers,
+                         "each regenerated grid period retires to the exact warmed reservation baseline" );
+            }
         }
         const auto after = scheduler->stats();
+        if( after.used[sourceClass] != baseline.used[sourceClass] ||
+            after.pending != baseline.pending || after.ready != baseline.ready ||
+            after.producers != baseline.producers )
+            std::fprintf( stderr,
+                "Terrain regeneration retirement: cycles=%u SourceCpu=%llu->%llu "
+                "pending=%u->%u ready=%u->%u producers=%u->%u\n",
+                cycles, static_cast<unsigned long long>( baseline.used[sourceClass] ),
+                static_cast<unsigned long long>( after.used[sourceClass] ),
+                baseline.pending, after.pending, baseline.ready, after.ready,
+                baseline.producers, after.producers );
         require( after.used[sourceClass] == baseline.used[sourceClass] &&
                      after.pending == baseline.pending && after.ready == baseline.ready &&
                      after.producers == baseline.producers,
                  "regeneration soak leaves no scheduler reservation or work behind" );
+#if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
+        const auto afterStrings = String::character_pool_stats();
+        require( afterStrings.committedBytes == warmStrings.committedBytes &&
+                     afterStrings.slabCount == warmStrings.slabCount &&
+                     afterStrings.liveBlocks == warmStrings.liveBlocks &&
+                     afterStrings.freeBlocks == warmStrings.freeBlocks,
+                 "regeneration returns every string block without increasing retained pool capacity" );
+#endif
         std::vector<double> first( cycleMs.begin(), cycleMs.begin() + std::min<u32>( 16, cycles ) ),
             last( cycleMs.end() - std::min<u32>( 16, cycles ), cycleMs.end() );
         const auto firstMean = std::accumulate( first.begin(), first.end(), 0.0 ) / first.size();
