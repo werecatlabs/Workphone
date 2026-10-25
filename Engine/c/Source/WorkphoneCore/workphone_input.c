@@ -100,8 +100,16 @@ void wp_input_button( struct wp_context *ctx, enum wp_buttons id, wp_s32 x, wp_s
     }
 
     btn = &in->mouse.buttons[id];
-    btn->clicked_pos.x = (wp_f32)x;
-    btn->clicked_pos.y = (wp_f32)y;
+#ifndef WORKPHONE_BUTTON_TRIGGER_ON_RELEASE
+    /* A complete click may arrive between draws. Retain its press origin so a
+     * batched release over a different button cannot activate that button. A
+     * release on its own keeps the existing release-position behavior. */
+    if( down || !btn->clicked )
+#endif
+    {
+        btn->clicked_pos.x = (wp_f32)x;
+        btn->clicked_pos.y = (wp_f32)y;
+    }
     btn->down = down;
     btn->clicked++;
 

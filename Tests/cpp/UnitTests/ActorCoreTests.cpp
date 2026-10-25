@@ -13,6 +13,15 @@ using namespace workphone::scene;
 
 namespace
 {
+    class UpdateCallbackComponent : public Component
+    {
+    public:
+        std::function<void()> callback;
+        void preUpdate() override { if( callback ) callback(); }
+        void update() override { if( callback ) callback(); }
+        void postUpdate() override { if( callback ) callback(); }
+    };
+
     class FlagCallbackActor : public GameActor
     {
     public:
@@ -91,6 +100,58 @@ namespace
         return nullptr;
     }
 }  // namespace
+
+BOOST_AUTO_TEST_CASE( actor_update_callbacks_release_component_lock_before_cross_thread_reads )
+{
+    TestGuard guard;
+    auto actor = guard.createBasicActor();
+    BOOST_REQUIRE( actor );
+    auto component = make_ptr<UpdateCallbackComponent>();
+    actor->addComponentInstance( component );
+    BOOST_REQUIRE_EQUAL( actor->getComponents().size(), 1 );
+
+    // A UI renderer needs this ancestor snapshot while an application Script
+    // callback is executing. Bound both waits so an old lock inversion produces
+    // an assertion failure, never an indefinitely hung test runner.
+    for( const auto phase : { 0, 1, 2 } )
+    {
+        std::mutex gate;
+        std::condition_variable rendezvous;
+        bool callbackEntered = false;
+        bool readerSawCallback = false;
+        bool readerFinished = false;
+        bool finishedDuringCallback = false;
+        size_t componentCount = 0;
+        component->callback = [&]() {
+            std::unique_lock<std::mutex> lock( gate );
+            callbackEntered = true;
+            rendezvous.notify_one();
+            finishedDuringCallback = rendezvous.wait_for(
+                lock, std::chrono::seconds( 2 ), [&]() { return readerFinished; } );
+        };
+        std::thread reader( [&]() {
+            {
+                std::unique_lock<std::mutex> lock( gate );
+                readerSawCallback = rendezvous.wait_for(
+                    lock, std::chrono::seconds( 2 ), [&]() { return callbackEntered; } );
+            }
+            if( readerSawCallback ) componentCount = actor->getComponents().size();
+            {
+                std::lock_guard<std::mutex> lock( gate );
+                readerFinished = true;
+            }
+            rendezvous.notify_one();
+        } );
+        if( phase == 0 ) actor->preUpdate();
+        else if( phase == 1 ) actor->update();
+        else actor->postUpdate();
+        reader.join();
+        component->callback = nullptr;
+        BOOST_CHECK_MESSAGE( readerSawCallback, "callback phase " << phase );
+        BOOST_CHECK_MESSAGE( finishedDuringCallback, "component snapshot blocked by callback phase " << phase );
+        BOOST_CHECK_EQUAL( componentCount, 1 );
+    }
+}
 
 BOOST_AUTO_TEST_CASE( actor_flag_callbacks_release_lock_before_cross_thread_reads )
 {
