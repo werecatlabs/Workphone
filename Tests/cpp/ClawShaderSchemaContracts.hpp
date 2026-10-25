@@ -177,7 +177,34 @@ namespace claw_shader_schema_contracts
                 priorFirstState->roughness==.65f && priorSecondState->roughness==.35f,
                 "new semantic defaults commit with both maps while retained CPU states remain immutable");
             draw(firstMesh,restored,2,false);draw(secondMesh,restored,2,true);draw(firstMesh,migrated,1,false);draw(firstMesh,original,0,false);
-            std::fprintf(stderr,"Claw atomic CPU schema reload: typed migration/defaults, owner fallback/snapshots, retained GPU generations, busy deferral and CPU/GPU rollback passed\n");
+            const char *psSourceOnly="cbuffer Values:register(b9){float Roughness:packoffset(c0.x);uint Mode:packoffset(c0.y);"
+                "uint Gain:packoffset(c0.z);float4 Tint:packoffset(c1);}"
+                "float4 main(float4 p:SV_POSITION):SV_TARGET{return Tint*(Mode==0 && Gain==0 && Roughness==0?float4(1,0,0,1):float4(0,1,0,1));}";
+            const auto generation3=reload->GetGeneration(),attempts3=reload->GetAttemptCount(),compiles3=reload->GetCompileCount();
+            const auto restoredFirst=first->getRuntimePublication(),restoredSecond=second->getRuntimePublication();
+            ClawMaterialDrawRecords pinned;
+            {
+                MaterialProgramReloadDX11::CaptureScope cohort;
+                wp_shader_set_source(pixel.get(),text(psSourceOnly));reload->RequestRetry();
+                {
+                    MaterialProgramReloadDX11::CaptureScope nested;
+                    MaterialProgramReloadDX11::UpdateAll();
+                    require(first->getRuntimePublication()==restoredFirst && second->getRuntimePublication()==restoredSecond,
+                        "forced source reload cannot split subscribers during nested frame capture");
+                }
+                capture(pinned);
+                require(first->getRuntimePublication()==restoredFirst && second->getRuntimePublication()==restoredSecond &&
+                    reload->GetGeneration()==generation3 && reload->GetAttemptCount()==attempts3 && reload->GetCompileCount()==compiles3,
+                    "frame capture defers the complete shader candidate without attempts or compilation");
+            }
+            draw(firstMesh,pinned,2,false);draw(secondMesh,pinned,2,true);
+            ClawMaterialDrawRecords sourceOnly;capture(sourceOnly);
+            require(reload->GetGeneration()==generation3+1 && first->getRuntimePublication()!=restoredFirst &&
+                second->getRuntimePublication()!=restoredSecond && first->getShaderParameters().GetLayout()==readded &&
+                second->getShaderParameters().GetLayout()==readded,
+                "next owner update atomically reloads source using the persistent migrated CPU schema metadata");
+            draw(firstMesh,sourceOnly,0,false);draw(secondMesh,sourceOnly,0,true);draw(firstMesh,pinned,2,false);
+            std::fprintf(stderr,"Claw atomic CPU schema reload: typed migration/defaults, owner fallback/snapshots, retained GPU generations, frame cohort/busy deferral and CPU/GPU rollback passed\n");
             return true;
         }
         catch(const std::exception &error) { std::fprintf(stderr,"FAIL: Claw shader schema: %s\n",error.what());return false; }

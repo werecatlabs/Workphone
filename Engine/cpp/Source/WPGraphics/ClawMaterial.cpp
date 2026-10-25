@@ -25,7 +25,7 @@ namespace workphone
             MaterialProgramReloadDX11::BindingPtr reload;
             MaterialProgramReloadDX11::Ptr controller;
             MaterialShaderParameterLayout::Ptr layout;
-            SourceBudgetString shaderName;
+            u64 shaderIDRevision = 0;
             u64 revision = 0;
             RuntimeState()
             {
@@ -71,7 +71,7 @@ namespace workphone
         {
             if(!program) { m_runtime.reset(); detail::shaderReloadAttached(this,0); return; }
             auto candidate = std::make_unique<RuntimeState>();
-            candidate->shaderName=getShaderID().c_str();
+            candidate->shaderIDRevision=getShaderIDRevision();
             candidate->publication = program->Capture(getShaderParameters(), resources);
             candidate->program = std::move(program); candidate->resources = std::move(resources);
             candidate->layout = getShaderParameters().GetLayout();
@@ -87,17 +87,21 @@ namespace workphone
             if(!m_runtime) return;
             target.setShaderID(getShaderID());
             target.getShaderParameters()=getShaderParameters();
-            if(m_runtime->controller) target.setRuntimeReload(m_runtime->controller,m_runtime->resources);
+            if(m_runtime->controller)
+            {
+                detail::copyShaderFiles(this,&target);
+                target.setRuntimeReload(m_runtime->controller,m_runtime->resources);
+            }
             else target.setRuntimeProgram(m_runtime->program,m_runtime->resources);
         }
 
         bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
         bool ClawMaterial::refreshRuntimeShaderSelection()
         {
-            if(!m_runtime || m_runtime->layout==getShaderParameters().GetLayout()) return false;
-            // Shader identity is cold: compare names only after a layout change,
-            // never perform a string lookup/copy on unchanged warm submissions.
-            if(m_runtime->shaderName!=getShaderID().c_str())
+            if(!m_runtime) return false;
+            // A logical shader switch can retain the same layout. Its numeric
+            // authoring token keeps unchanged warm submissions free of strings.
+            if(m_runtime->shaderIDRevision!=getShaderIDRevision())
             { m_runtime.reset();detail::forgetShaderReload(this);return true; }
             m_runtime->layout=getShaderParameters().GetLayout();return false;
         }
@@ -107,7 +111,7 @@ namespace workphone
         {
             if(!reload) { m_runtime.reset();detail::shaderReloadAttached(this,0);return; }
             auto candidate = std::make_unique<RuntimeState>();
-            candidate->shaderName=getShaderID().c_str();
+            candidate->shaderIDRevision=getShaderIDRevision();
             detail::prepareShaderReloadStatus(this);
             candidate->resources=resources;candidate->controller=reload;
             candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));

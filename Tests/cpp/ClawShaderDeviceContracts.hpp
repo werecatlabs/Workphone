@@ -69,6 +69,12 @@ namespace claw_shader_device_contracts
             require(reload->GetGeneration()==before+2,"graphics-owner device replacement triggers automatic native rebuild");
             ClawMaterialDrawRecords recovered;recovered.capture(&firstMesh);recovered.capture(&secondMesh);renderer.prepareMaterialRecords(recovered);
             draw(renderer,native,secondMesh,recovered,1);draw(other,otherNative,firstMesh,next,0);
+            const auto sharedLayout=clone->getShaderParameters().GetLayout();
+            clone->setShaderParameters(sharedLayout->GetParameterInfo(),"OtherDeviceShader");
+            require(clone->getShaderParameters().GetLayout()==sharedLayout,"logical shader switch reuses matching CPU layout");
+            require(!clone->getRuntimePublication() && !clone->hasRuntimeProgram(),"same-layout shader switch retires previous runtime attachment");
+            bool available=true;clone->getRuntimeShaderReloadStatus()->getPropertyValue("available",available);
+            require(!available,"same-layout shader switch clears previous Editor reload status");
             std::fprintf(stderr,"Shader device recreation and independent cloned values: PASS\n");return true;
         }
         catch(const std::exception &e) {renderer.setRenderTarget(nullptr);std::fprintf(stderr,"FAIL: shader device recreation: %s\n",e.what());return false;}

@@ -33,6 +33,15 @@ namespace workphone::render
             auto value=std::allocate_shared<Entry>(SourceBudgetAllocator<Entry>{});value->material=material;
             entries[material]=value;return value;
         }
+        void fileSettings(const Entry &value,SourceBudgetString &vertex,SourceBudgetString &pixel,bool &watching)
+        {
+            vertex=value.vertex;pixel=value.pixel;watching=value.watching;
+            if(value.version!=value.processed || !value.id) return;
+            const auto status=MaterialProgramReloadDX11::EditorStatus(value.id);
+            if(!status->getPropertyAsBool("available")) return;
+            vertex=status->getProperty("vertexFile");pixel=status->getProperty("pixelFile");
+            watching=status->getPropertyAsBool("watching");
+        }
     }
     namespace detail
     {
@@ -50,6 +59,17 @@ namespace workphone::render
         }
         void forgetShaderReload(ClawMaterial *material) noexcept
         { try { std::lock_guard<std::recursive_mutex> lock(mutex);entries.erase(material); } catch(...) {} }
+        void copyShaderFiles(const ClawMaterial *source,ClawMaterial *target)
+        {
+            std::lock_guard<std::recursive_mutex> lock(mutex);
+            const auto found=entries.find(source);
+            if(found==entries.end()) return;
+            auto value=std::allocate_shared<Entry>(SourceBudgetAllocator<Entry>{});
+            fileSettings(*found->second,value->vertex,value->pixel,value->watching);
+            if(value->pixel.empty()) return;
+            value->material=target;value->shaderName=found->second->shaderName;
+            entries[target]=std::move(value);
+        }
         void appendShaderFiles(const ClawMaterial *material,SmartPtr<Properties> properties)
         {
             std::lock_guard<std::recursive_mutex> lock(mutex);
@@ -59,9 +79,11 @@ namespace workphone::render
                 properties->setProperty("runtimeShaderVertexFile",String());properties->setProperty("runtimeShaderPixelFile",String());
                 properties->setProperty("runtimeShaderWatching",false);return;
             }
-            properties->setProperty("runtimeShaderVertexFile",static_cast<String>(found->second->vertex));
-            properties->setProperty("runtimeShaderPixelFile",static_cast<String>(found->second->pixel));
-            properties->setProperty("runtimeShaderWatching",found->second->watching);
+            SourceBudgetString vertex,pixel;bool watching=false;
+            fileSettings(*found->second,vertex,pixel,watching);
+            properties->setProperty("runtimeShaderVertexFile",static_cast<String>(vertex));
+            properties->setProperty("runtimeShaderPixelFile",static_cast<String>(pixel));
+            properties->setProperty("runtimeShaderWatching",watching);
         }
     }
     bool ClawMaterial::requestRuntimeShaderFiles(const String &vertex,const String &pixel)
@@ -106,8 +128,11 @@ namespace workphone::render
         bool available=false;status->getPropertyValue("available",available);
         if(configured || pending)
         {
-            status->setProperty("available",true);status->setProperty("vertexFile",vertex);status->setProperty("pixelFile",pixel);
-            status->setProperty("watching",watching);
+            status->setProperty("available",true);
+            if(!available || pending) {status->setProperty("vertexFile",vertex);status->setProperty("pixelFile",pixel);}
+            // File coordinators may be shared by several materials. Once an
+            // owner exists, report its applied watch state to every subscriber.
+            if(!available || pending) status->setProperty("watching",watching);
         }
         if(pending) { status->setProperty("pending",true);status->setProperty("status",String("queued")); }
         if(!error.empty()) { status->setProperty("diagnostic",error);status->setProperty("success",false);status->setProperty("status",String("failed")); }

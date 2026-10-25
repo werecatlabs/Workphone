@@ -132,6 +132,12 @@ Source or terrain changes trigger a rebuild of the derived city. Moving a road
 away from the pinned racing route disables racing until the route has continuous
 supported coverage again; free editing does not silently create a replacement lap.
 
+Rebuilding completes the terrain/source and generated-collider lifecycle before
+driving resumes. During scene reconstruction or before the vehicle is attached,
+physics readiness stays false and activation retries on the Application task.
+Removed or transferred actors cannot be reactivated by a stale queued load;
+valid children retain activation through their live scene-owned parent hierarchy.
+
 Terrain-city streets also have fitted 2.4 m pedestrian strips and roundabout-edge
 walks, 15 cm above terrain, with concrete kerbs and shared mesh collision. Road
 mouths and unsupported terrain pieces stay open. Splitter refuges retain their
@@ -190,6 +196,16 @@ Validation:
   `CityRoadParcelSupportTests` checks whole-parcel support and road exclusions;
   `CityRoadFootwaysTests` checks open junctions, terrain cells/holes, shifted oblique
   seams, maximum cities and bounded transactional allocation failures.
+
+The 25 October native integration checkpoint retains road width/control IDs through
+four generations, a terrain rebind and a terrain-only refresh, then verifies actual
+static boxes, building masses, road/terrain rays, the fitted footway and uploaded
+PBR maps before a clean exit. Fresh grid street, natural pedestrian and natural
+overview captures use the same retained Debug binaries. See the
+[evidence and remaining gates](WPPROCEDURAL_IMPLEMENTATION_STATUS.md).
+These software-renderer captures remain prototype art; recorded Editor pointer
+interaction, representative hardware performance and commercial visual acceptance
+are separate gates.
 - `CityRoadRoundaboutTests`, `CityRoadTerrainMeshTests` and `CityRoadAuthoringTests`
   cover junction topology/routes, exact terrain coverage and component revision/lifetime
   behavior. `Editor.city_road_viewport_authoring_test` exercises native controls and

@@ -19,10 +19,14 @@
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
 #include <Workphone/Graphics/Texture.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+#include <WPGraphics/ClawMaterial.hpp>
+#endif
 
 #include <algorithm>
 #include <functional>
 #include <filesystem>
+#include <fstream>
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
@@ -980,6 +984,61 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     BOOST_CHECK(retry->getPropertyAsBool("success"));
     BOOST_CHECK(retry->getPropertyAsBool("queued"));
     ownerUpdate();
+    // Exercise the successful native action and the persisted authoring keys,
+    // including a fresh material restored from serialized Properties.
+    struct ShaderFiles
+    {
+        std::filesystem::path vertex=std::filesystem::temp_directory_path()/
+            ("editor-shader-vertex-"+std::string(StringUtil::getUUID().c_str())+".hlsl");
+        std::filesystem::path pixel=std::filesystem::temp_directory_path()/
+            ("editor-shader-pixel-"+std::string(StringUtil::getUUID().c_str())+".hlsl");
+        ~ShaderFiles()
+        {
+            std::error_code ignored;std::filesystem::remove(vertex,ignored);std::filesystem::remove(pixel,ignored);
+        }
+    } files;
+    {
+        std::ofstream vertex(files.vertex,std::ios::binary),pixel(files.pixel,std::ios::binary);
+        BOOST_REQUIRE(vertex && pixel);
+        vertex<<"cbuffer Transform:register(b0){row_major float4x4 Mvp;}"
+            "float4 main(float3 p:POSITION):SV_POSITION{return mul(Mvp,float4(p,1));}";
+        pixel<<"cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}";
+        vertex.close();pixel.close();BOOST_REQUIRE(vertex && pixel);
+    }
+    application->getGraphicsSystem()->loadObject(material,true);
+    const String vertexFile(files.vertex.u8string().c_str()),pixelFile(files.pixel.u8string().c_str());
+    auto valid=requestFor("configureFiles");valid->setProperty("vertexFile",vertexFile);valid->setProperty("pixelFile",pixelFile);
+    processMaterialShaderReloadAction(material,valid);
+    BOOST_REQUIRE_MESSAGE(valid->getPropertyAsBool("success"),valid->getProperty("status"));
+    BOOST_CHECK(valid->getPropertyAsBool("queued") && valid->getPropertyAsBool("pending"));
+    ownerUpdate();
+    auto ready=requestFor("read");processMaterialShaderReloadAction(material,ready);
+    BOOST_REQUIRE_MESSAGE(ready->getPropertyAsBool("runtimeSuccess"),ready->getProperty("diagnostic"));
+    BOOST_CHECK(!ready->getPropertyAsBool("pending"));
+    auto nativeMaterial=dynamic_cast<render::ClawMaterial *>(material.get());
+    BOOST_REQUIRE(nativeMaterial);BOOST_CHECK(nativeMaterial->hasRuntimeProgram());
+    auto pause=requestFor("setWatching");pause->setProperty("watching",false);
+    processMaterialShaderReloadAction(material,pause);
+    BOOST_REQUIRE(pause->getPropertyAsBool("queued"));ownerUpdate();
+    const auto saved=material->getProperties();BOOST_REQUIRE(saved);
+    BOOST_CHECK_EQUAL(saved->getProperty("runtimeShaderVertexFile"),vertexFile);
+    BOOST_CHECK_EQUAL(saved->getProperty("runtimeShaderPixelFile"),pixelFile);
+    BOOST_CHECK(!saved->getPropertyAsBool("runtimeShaderWatching"));
+    auto parsed=make_ptr<Properties>();DataUtil::parse(DataUtil::toString(saved.get(),true),parsed.get());
+    auto restored=workphone::dynamic_pointer_cast<render::IMaterial>(
+        application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadRestored"));
+    BOOST_REQUIRE(restored);application->getGraphicsSystem()->loadObject(restored,true);
+    restored->setProperties(parsed);
+    auto restoring=requestFor("read");processMaterialShaderReloadAction(restored,restoring);
+    BOOST_CHECK(restoring->getPropertyAsBool("available") && restoring->getPropertyAsBool("pending"));
+    ownerUpdate();
+    auto restoredStatus=requestFor("read");processMaterialShaderReloadAction(restored,restoredStatus);
+    BOOST_REQUIRE_MESSAGE(restoredStatus->getPropertyAsBool("runtimeSuccess"),restoredStatus->getProperty("diagnostic"));
+    BOOST_CHECK(!restoredStatus->getPropertyAsBool("pending") && !restoredStatus->getPropertyAsBool("watching"));
+    BOOST_CHECK_EQUAL(restoredStatus->getProperty("vertexFile"),vertexFile);
+    BOOST_CHECK_EQUAL(restoredStatus->getProperty("pixelFile"),pixelFile);
+    auto nativeRestored=dynamic_cast<render::ClawMaterial *>(restored.get());
+    BOOST_REQUIRE(nativeRestored);BOOST_CHECK(nativeRestored->hasRuntimeProgram());
 #endif
 }
 
@@ -995,11 +1054,11 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_controls_test )
     auto selection = application->getSelectionManager();
     selection->clearSelection(); selection->addSelectedObject(material);
     application->getScriptManager()->loadScriptFromString(R"(
-        class 'MaterialShaderReloadControlsProbe' (MaterialEditor)
-        function MaterialShaderReloadControlsProbe:__init(window)
+        class 'ShaderReloadControlsProbe' (MaterialEditor)
+        function ShaderReloadControlsProbe:__init(window)
             MaterialEditor.__init(self, window)
         end
-        function MaterialShaderReloadControlsProbe:load()
+        function ShaderReloadControlsProbe:load()
             MaterialEditor.load(self)
             self.probeWindow = IApplicationManager.instance():getUI():addElement(IUIWindow.typeInfo())
             self.probeWindow:addChild(self.reloadShaderButton)
@@ -1013,7 +1072,8 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_controls_test )
         end
     )");
     auto window = make_ptr<ScriptWindow>();
-    window->setClassName("MaterialShaderReloadControlsProbe");
+    // Lua native type identifiers have an established FixedString32 bound.
+    window->setClassName("ShaderReloadControlsProbe");
     window->load(nullptr); window->setWindowVisible(true); window->updateSelection();
     BOOST_REQUIRE(window->getParent());
     const auto controls = window->getParent()->getChildren();

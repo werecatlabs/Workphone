@@ -124,6 +124,44 @@ namespace cooked_material_shader_contracts
         std::ostringstream wrongPin(std::ios::binary);require(writeCookedMaterial(unsupported,wrongPin,error),error);
         auto broken=graphics_compiler_contracts::wrap(id,wrongPin.str());broken.header.installDependencies=loaded->header.installDependencies;
         broken.dependencies=loaded->dependencies;reject(std::move(broken));
+        // Device-independent public writers must not produce envelopes larger
+        // than their reader accepts, even with programmatically supplied metadata.
+        auto large=data;
+        for(auto code:{&large.shader.vertexDXBC,&large.shader.pixelDXBC})
+        {
+            const auto limit=graphicsMaterialShaderByteLimit/2;
+            std::vector<u8> privateData(limit-code->size()-64,0);ComPtr<ID3DBlob> expanded;
+            require(SUCCEEDED(D3DSetBlobPart(code->data(),code->size(),D3D_BLOB_PRIVATE_DATA,0,
+                privateData.data(),privateData.size(),&expanded)),"Large boundary fixture preserves valid DXBC with private data");
+            const auto begin=static_cast<const u8 *>(expanded->GetBufferPointer());
+            code->assign(begin,begin+expanded->GetBufferSize());
+            require(code->size()<=limit && code->size()>limit-128,"Large boundary shader is near its per-stage limit");
+        }
+        for(u32 i=0;i<55;++i)
+        {
+            CookedMaterialShaderParameter p;p.type=MaterialShaderParameterType::Texture;
+            p.name=String("Unused")+std::to_string(i).c_str()+String(240,'q');p.texture=data.shader.parameters[2].texture;
+            const String path="data://"+String(240,'a')+"/"+String(240,'b')+"/"+String(240,'c')+"/"+
+                String(190,'d')+std::to_string(i).c_str()+".texres";
+            require(p.texture.id.set(path),"Large metadata fixture has valid durable identities");
+            large.shader.parameters.push_back(std::move(p));
+        }
+        std::ostringstream tooLarge(std::ios::binary);
+        require(!writeCookedMaterial(large,tooLarge,error) && tooLarge.str().empty(),
+            "Aggregate shader bytecode and metadata reject before writing an unreadable envelope");
+        large.shader.parameters.resize(data.shader.parameters.size()+45);
+        std::ostringstream bounded(std::ios::binary);require(writeCookedMaterial(large,bounded,error),error);
+        require(bounded.str().size()<=graphicsMaterialShaderByteLimit+65536u,"Nearby large payload obeys the reader bound");
+        auto largeResource=graphics_compiler_contracts::wrap(id,bounded.str());
+        largeResource.header.installDependencies=loaded->header.installDependencies;largeResource.dependencies=loaded->dependencies;
+        for(size_t i=data.shader.parameters.size();i<large.shader.parameters.size();++i)
+        {
+            const auto &identity=large.shader.parameters[i].texture.id;
+            auto dependency=std::make_shared<RuntimeResource>(*loaded->dependencies.front());dependency->header.resourceId=identity;
+            largeResource.header.installDependencies.push_back(identity);largeResource.dependencies.push_back(std::move(dependency));
+        }
+        CookedMaterialData nearby;require(decodeCookedMaterial(largeResource,nearby,error),error);
+        require(nearby.shader.parameters.size()==large.shader.parameters.size(),"Nearby large valid payload round-trips without native handle serialization");
         // Binary typed values reconstruct canonical CPU types, not native offsets.
         std::unique_ptr<wp_shader_program,decltype(&wp_shader_program_destroy)> definition(wp_shader_program_create(),&wp_shader_program_destroy);
         MaterialShaderParametersInstance values;
@@ -149,6 +187,46 @@ namespace cooked_material_shader_contracts
         require(!publisher.stageRuntime(malformed,error) && publisher.current()==candidate,
             "Malformed shader replacement preserves the previously published source-free draw");
         requireDraw(fixture,publisher.current(),true);
+        // Direct immutable programs stay on their original device. The cooked
+        // resource owner reinstalls from the retained shipped payload on a new
+        // renderer without source/compiler services, while old views still draw.
+        {
+            auto firstRenderer=fixture.graphics.renderer;
+            auto secondWindow=make_ptr<claw_texture_mip_contracts::Window>();
+            secondWindow->handle=CreateWindowExW(0,L"STATIC",L"Cooked shader second device",WS_OVERLAPPED,
+                0,0,32,32,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+            require(secondWindow->handle!=nullptr,"Second cooked renderer window allocates");
+            auto secondRenderer=make_ptr<ClawRendererDX11>();
+            struct RestoreRenderer
+            {
+                Fixture &fixture;SmartPtr<ClawRendererDX11> first,second;
+                SmartPtr<claw_texture_mip_contracts::Window> window;
+                ~RestoreRenderer()
+                {
+                    fixture.graphics.renderer=first;fixture.graphics.graphics->attachRenderer(first);
+                    second->unload(nullptr);
+                    if(window->handle){DestroyWindow(window->handle);window->handle=nullptr;}
+                }
+            } restoreRenderer{fixture,firstRenderer,secondRenderer,secondWindow};
+            secondRenderer->load(secondWindow);require(secondRenderer->isLoaded(),"Second cooked renderer creates a real device");
+            auto firstNative=wp_renderer_get_dx11(firstRenderer->getNativeRenderer());
+            auto secondNative=wp_renderer_get_dx11(secondRenderer->getNativeRenderer());
+            require(wp_renderer_dx11_get_device(firstNative)!=wp_renderer_dx11_get_device(secondNative),
+                "Cooked shader recreation fixture uses distinct simultaneously retained devices");
+            const auto oldPublication=candidate->material()->getRuntimePublication();
+            require(oldPublication && !oldPublication->Bind(secondNative,false),
+                "Old immutable shader publication explicitly rejects a different device");
+            fixture.graphics.renderer=secondRenderer;fixture.graphics.graphics->attachRenderer(secondRenderer);
+            require(!publisher.current(),"Cooked owner hides its incompatible old visible bundle");
+            ClawMaterialResource reinstalled(nullptr,nullptr,"",{},secondRenderer,config.target,true);
+            auto secondCandidate=reinstalled.stageRuntime(shipped,error);
+            require(secondCandidate && reinstalled.publish(secondCandidate,error),error);
+            requireDraw(fixture,secondCandidate,true);
+            fixture.graphics.renderer=firstRenderer;fixture.graphics.graphics->attachRenderer(firstRenderer);
+            require(publisher.current()==candidate,"Returning to the retained original device restores its visible identity");
+            requireDraw(fixture,candidate,true);
+            require(reinstalled.unload(error),error);
+        }
         require(publisher.unload(error),error);shipping.shutdown();
         std::cout<<"PASS: v3 typed material schema, HLSL/DXBC/include build keys, malformed payload rejection, source-free shader/texture/sampler installation and retained visible generation\n";
     }

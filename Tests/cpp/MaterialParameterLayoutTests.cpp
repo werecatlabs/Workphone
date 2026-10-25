@@ -1,6 +1,10 @@
 #include <Workphone/Graphics/MaterialShader.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
+#include <Workphone/Graphics/MaterialPass.hpp>
+#include <Workphone/Graphics/MaterialTechnique.hpp>
+#include <Workphone/System/StateContext.hpp>
+#include <Workphone/State/States/State.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/Properties.hpp>
@@ -339,6 +343,65 @@ namespace
         require(retry->Commit() && second.GetLayout() == after,"restored admission permits migration retry");
     }
 
+    void schemaMigrationPassOverrideContracts()
+    {
+        // A headless state fixture exercises the real pass setters and snapshots
+        // without an application/graphics manager or asynchronous state queues.
+        struct PassState
+        {
+            SmartPtr<MaterialPass> pass;
+            SmartPtr<StateContext> context;
+            SmartPtr<MaterialPassStateData> data;
+            SmartPtr<State> state;
+            PassState()
+            {
+                pass=make_ptr<MaterialPass>();
+                pass->setLoadingState(LoadingState::Unloaded);
+                context=make_ptr<StateContext>();
+                context->setLoadingState(LoadingState::Loaded);
+                data=make_ptr<MaterialPassStateData>();state=make_ptr<State>();
+                state->setId(pass->getId());state->setData(data);context->addState(state);
+                pass->setStateContext(context);
+                pass->setLoadingState(LoadingState::Loaded);
+            }
+            ~PassState()
+            {
+                pass->setLoadingState(LoadingState::Unloaded);
+                pass->setMaterial(nullptr);pass->setParent(nullptr);pass->setStateContext(nullptr);
+                context->removeState(state);context->setLoadingState(LoadingState::Unloaded);
+            }
+        };
+        auto material=make_ptr<Material>();auto technique=make_ptr<MaterialTechnique>();
+        PassState original;
+        technique->setPasses({original.pass});material->setTechniques({technique});
+        using Type=MaterialShaderParameterType;
+        const Array<MaterialShaderParameterInfo> info={{Type::Scalar,"Roughness"},{Type::Scalar,"Custom"}};
+        material->setShaderParameters(info,"MigrationPassOverride");
+        material->setRoughness(.7f);
+        original.pass->setRoughness(.2f);original.pass->setMetalness(.8f);
+        const auto before=material->getRenderState();
+        require(before && before==original.data->getRenderState() && before->roughness==.2f && before->metalness==.8f,
+            "direct pass overrides have a real immutable state before migration");
+        // This ordinary no-op schema setter marks the owner dirty without a
+        // pending semantic write. Dirty alone must not erase pass-local values.
+        material->setShaderParameters(info,"MigrationPassOverride");
+        const auto next=MaterialShaderParameterLayout::Create({{Type::Scalar,"Custom"},{Type::Scalar,"Roughness"},{Type::Scalar,"Metalness"}});
+        auto migration=material->getShaderParameters().PrepareMigration(next);
+        require(migration->Values().GetScalar(migration->Values().FindParameter("Roughness"))==.7f &&
+            migration->Values().GetScalar(migration->Values().FindParameter("Metalness"))==0 && migration->Commit(),
+            "migration preserves authored canonical values and defaults newly owned semantics");
+        const auto after=material->getRenderState();
+        require(after && after!=before && after->roughness==.2f && after->metalness==0 &&
+            original.pass->getRoughness()==.2f && original.pass->getMetalness()==0 &&
+            before->roughness==.2f && before->metalness==.8f,
+            "schema-only reorder preserves unrelated pass override while new semantics initialize atomically");
+        PassState attached;
+        technique->setPasses({original.pass,attached.pass});
+        require(attached.pass->getRoughness()==.7f && attached.pass->getMetalness()==0,
+            "a newly attached pass seeds current canonical values independently of existing local overrides");
+        material->removeAllTechniques();technique->setPasses({});
+    }
+
     void layoutStorageAccountingContracts()
     {
 #if WP_USE_WP_STRING && WP_USE_STANDARD_STRING_ALLOCATOR
@@ -622,6 +685,7 @@ namespace
         numericAuthoringContracts();
         stringAuthoringContracts();
         surfaceStorageContracts();
+        schemaMigrationPassOverrideContracts();
         {
             Material material;
             auto &values = material.getShaderParameters();

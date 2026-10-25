@@ -172,7 +172,8 @@ namespace
                 // deferred queues with preUpdate; no test-only queue mutation.
                 registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, actor, nullptr );
             }
-            const auto removed = actors[0], active = actors[1], transferred = actors[2];
+            const auto removed = actors[0], transferred = actors[2];
+            auto active = actors[1];
             const auto removedState = removed->getState(), transferredState = transferred->getState();
             auto removedBody = removed->getComponent<scene::Rigidbody>(), activeBody = active->getComponent<scene::Rigidbody>();
             auto transferredBody = transferred->getComponent<scene::Rigidbody>();

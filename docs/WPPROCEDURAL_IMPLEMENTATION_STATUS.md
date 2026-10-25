@@ -2,6 +2,13 @@
 
 ## Generated cities with editable terrain roads — 25 October 2026
 
+Final retained-binary captures 13/14/15 pass native structural validation and exit
+0; normal run 16 passes functional edit/regeneration retention and collision with
+exit 0 in 249.76 s. All three captures match the snapshot's 11 runtime hashes.
+The original 180-second timing gate, native 09's unknown historical crash caller,
+hardware performance, recorded Editor pointer acceptance and AAA visual acceptance
+remain open. The independent grid review rates commercial quality **not met**.
+
 `ProceduralRaceScene` now promotes grid and L-system streets into the existing
 `CityRoadAuthoring` source when **City Terrain Roads** is enabled. The source and
 terrain are persistent scene anchors; generated render/collision actors are
@@ -40,8 +47,9 @@ The native sample and capture script accept `--city-terrain-roads` and
 `-CityTerrainRoads`. Evidence checks actual source/terrain revisions, fitted lots,
 native surface rays, driveable route coverage and uploaded road material bindings.
 Collision smoke additionally exercises manual edit retention, regeneration,
-terrain rebinding and a same-source-revision terrain refresh. That stronger
-repeated-generation retention gate has not passed within its 180-second limit.
+terrain rebinding and a same-source-revision terrain refresh. The final normal
+run passes functional retention in 249.76 s under its separate 600 s diagnostic
+limit. The original 180-second timing gate remains open.
 
 `RacingGameOpenCity` now persists/forwards the terrain mode and canonical source
 UUID. Quality/seed/source changes reuse the native vehicle/camera/component in
@@ -98,13 +106,15 @@ the same binary hashes; concurrent material/Lua work subsequently replaced share
 Debug DLLs. The later retention runs use a separately frozen binary set, not the
 04/05 baseline, and do not certify unrelated concurrent changes.
 
-| Retention evidence | Observed outcome |
+| Diagnostic evidence | Observed outcome |
 |---|---|
 | [06: original smoke](../artifacts/procedural/city-terrain-retention-20261025-06/manifest.json) | Timed out at 180.37 s; the original timing failure remains open |
 | [07: extended diagnostic](../artifacts/procedural/city-terrain-retention-20261025-07-diagnostic/manifest.json) | Same frozen binaries/fixture, separate 600 s limit; access violation `0xc0000005` after 259.52 s |
 | [08: CDB diagnostic](../artifacts/procedural/city-terrain-retention-20261025-08-debugger/outcome.json) | Same frozen binaries under launch-time debugging; fourth generation still progressing at the 600 s timeout, no reproduced exception stack or functional pass |
 | [09: post-FSM functional diagnostic](../artifacts/procedural/city-terrain-retention-20261025-09-fsm-fixed/manifest.json) | Four generations complete; first resumed Physics update finds a foundation without its active static body, followed by an access violation at 250.07 s; no native retention pass |
 | [10: normal launch and debugger attachment](../artifacts/procedural/city-terrain-retention-20261025-10-debugger/outcome.json) | Same frozen binaries/fixture; foundation assertion reproduced, then native/debugger exit 1 with clean teardown at 255.19 s. No access violation reproduced or exception dump captured |
+| [11: Editor first-chance diagnostic](../artifacts/procedural/city-terrain-20261025-11-editor-debugger/debugger.log) | Captured the null scripting-manager assertion before Boost handled it, then an Editor test-exit WPAssimp/type-pool lifetime fault. Dumps and debugger cleanup are retained; this was not a passing test or a reproduction of native 09's caller |
+| [16: final normal functional run](../artifacts/procedural/city-terrain-lifecycle-20261025-16/manifest.json) | Functional retention and collision pass; exit 0, no timeout, unchanged binaries, 249.76 s under the separate 600 s limit. The original 180 s timing gate remains open |
 
 For 07, Windows Error Reporting identifies `Workphone.dll+0x14511c8`; following
 the frozen DLL's export thunks resolves it to `FSM::getAutoChangeState+0x18`.
@@ -135,27 +145,70 @@ The separate 09 crash maps to an atomic byte compare/exchange at
 removed and 10 did not reproduce the access violation. It is not a confirmed
 recurrence of the earlier FSM fault.
 
-Build 27 now builds the Debug sample, Editor and focused target set. The new
-production activation barrier resolves parent transforms and activates generated
+The production activation barrier resolves parent transforms and activates generated
 actors plus persistent terrain/source anchors on the Application task, under
 render/physics locks. It verifies attached native static bodies, shapes and world
 poses before driving readiness becomes true. Scene restoration or an unattached
 owner leaves readiness false with braking applied; publication errors remain
 visible. This uses actor/component lifecycle entry directly, without pumping
-unrelated scene updates. Queued Edit/Play events now reject unloaded, removed or
-transferred actors and events for the wrong current scene state.
+unrelated scene updates. Queued Edit/Play events reject unloaded, removed or
+transferred actors and events for the wrong current scene state. Live children
+remain admissible through a loaded ancestor anchored in the current scene.
 
-The [updated activation/anchor/FSM regression](../procedural-city-integration-20261025-tests20-publication-anchor.log)
-passes in 24.27 s, including actual deferred Edit/Play queue drains, removed and
-transferred actors, repeated activation, saved source anchors and FSM storage
-growth/retirement. The remaining 17 city/Play checks and final GPU rerun are
-pending. The [12 publication snapshot](../artifacts/procedural/city-terrain-publication-20261025-12/binary-snapshot.json)
+The earlier [activation/anchor/FSM regression](../procedural-city-integration-20261025-tests20-publication-anchor.log)
+passed in 24.27 s. [Tests 21](../procedural-city-integration-20261025-tests21-publication-city-play.log)
+passed the nine other geometry checks but failed all six Play cases. CDB 11
+identified the first failure as `EditorApplication::update` querying a null
+scripting manager at line 1126; that polling now checks the manager first. Its
+later Editor exit fault occurred because an aborted fixture left plugins alive
+when test Main retired TypeManager's pools. Main now unloads any orphan singleton
+manager before those pools, preserving Boost's failure result and never calling
+an abandoned stack Application. This Editor diagnosis does not identify native
+09's unknown shutdown caller.
+
+[Build 28](../procedural-city-integration-20261025-build28-lifecycle.log) completed
+the Sample and native dependencies; an Editor regression const-handle compilation
+error was corrected. [Build 29](../procedural-city-integration-20261025-build29-lifecycle-tests.log)
+then rebuilt Editor and the renderer-test target against the completed
+dependencies with project-reference rebuilding disabled. [Tests 23](../procedural-city-integration-20261025-tests23-lifecycle.log)
+pass 9/9 in 71.96 s: authoring, viewport, anchor persistence and all six Play cases.
+The anchor fixture covers both root and child queued activation, repeated drains,
+removed/transferred actors, FSM storage growth/retirement and saved identities.
+The [final renderer suite](../procedural-city-integration-20261025-tests24-lifecycle-renderer.log)
+passes in 30.76 s.
+
+The [16 lifecycle snapshot](../artifacts/procedural/city-terrain-lifecycle-20261025-16/binary-snapshot.json)
 retains 11 runtime artifacts and five matching PDBs with scoped source hashes;
-the normal Debug media working directory is still required. Final native
-retention and fresh captures have not run yet. New parcel/cull counts must come
-from those captures; the 09 shutdown crash remains an open diagnosis.
-CDB launch may perturb allocation costs; 08 is not performance evidence, and
-neither extended diagnostic closes the original 180-second gate.
+the normal Debug media working directory is still required. Its
+[normal native retention run](../artifacts/procedural/city-terrain-lifecycle-20261025-16/manifest.json)
+passes with exit 0, no timeout and unchanged binaries in 249.7603777 s. The
+unchanged fixture preserves the edited road GUID and 11.75 m width through four
+generations, terrain rebinding, retirement of the old terrain and a terrain
+snapshot refresh. Generation times are 38.829/40.720/41.853/42.473 s. Native
+collision validates 452 static boxes, 178 building masses, four surface rays,
+one footway ray and 16 uploaded road PBR textures. This closes functional
+retention/contact acceptance for that fixture, not its original 180 s timing gate.
+
+All three final captures pass native validation, exit 0 without timeout and use
+the same frozen snapshot-16 binaries. The recorded 11 runtime hashes in each
+manifest match that snapshot, including independently checked 14/15 inventories.
+
+| Final capture | Roads / roundabouts | Supported lots (building / park) | Building masses / culled parcels | Route samples | WARP mean / P95 ms |
+|---|---|---|---|---|---|
+| [13 grid street](../artifacts/procedural/city-terrain-20261025-13-grid-street/manifest.json) | 22 / 4 | 128 (111 / 17) | 178 / 16 | 689 | 173.889 / 189.998 |
+| [14 natural boulevard](../artifacts/procedural/city-terrain-20261025-14-natural-boulevard/manifest.json) | 70 / 4 | 117 (107 / 10) | 139 / 5 | 528 | 214.650 / 229.344 |
+| [15 natural overview](../artifacts/procedural/city-terrain-20261025-15-natural-overview/manifest.json) | 70 / 4 | 117 (107 / 10) | 139 / 5 | 528 | 107.743 / 125.342 |
+
+Each view validates four baseline native surface rays, one fitted footway body/ray
+and 16 uploaded road PBR textures. Both natural views contain 111,530 authored
+road runtime triangles and retain driveable route coverage and island exclusion.
+The [independent visual review](../artifacts/procedural/city-terrain-20261025-13-grid-street/visual-review.md)
+finds clearer pavement/foundation contact but still rates the scene a prototype;
+the commercial visual gate is not met. Each WARP view measures 29 frames; these
+short software-renderer intervals do not establish hardware performance. The
+three capture exits plus normal functional run 16 leave native 09's historical
+shutdown caller unresolved; newer success does not identify that crash's cause.
+CDB launch may perturb allocation costs; 08 is not performance evidence.
 Hardware performance, recorded Editor pointer/DPI acceptance and source-free
 reconstruction remain open.
 
@@ -362,3 +415,9 @@ Four fresh `SampleVehicleAdvanced --road-authoring-showcase` street/overview cap
 At 1280×720 on Microsoft Basic Render Driver/WARP, the final close view records 50 frames with mean/P95 intervals 60.507/87.944 ms; overview records 78 frames at 39.076/55.184 ms. These short software runs are diagnostic. The manifests explicitly record visual acceptance as **not accepted**: asphalt/terrain shading is simple, surroundings are empty and thin distant lines alias. No representative hardware result, full driving lap, commercial blind comparison or AAA parity is claimed. Rivers, bridges, rail, arbitrary junction editing, generated-city source conversion and production art remain open.
 
 The Debug executable now opens the ordinary Editor when launched without arguments or with `--interactive`; explicit Boost arguments retain the CTest runner. Development startup resolves relative plugin/media paths from the executable directory. A live native window was exposed, but Windows capture failed with `FrameArrived timed out`/`window capture timed out`; a native accessibility read exposed title-bar controls only, and input reported `coordinate input geometry is unavailable`. The same limitation occurred with twelve and zero workers, so no threaded-render defect is established. Both owned instances were stopped and the ordinary worker policy restored. [The recorded attempt](../artifacts/procedural/city-road-authoring-editor-20261024-attempt/attempt.json) explicitly leaves mouse-driven draw/edit/undo/reopen acceptance unverified. The final control pass also gives newly drawn roads the same 25 mm terrain surface bias as the native showcase, preventing coplanar road/terrain surfaces.
+
+## Vehicle asset memory ownership (25 October 2026)
+
+Nested vehicle geometry/LOD, physics mass/gearing, appearance/validation/issue storage and direct owning heap bodies now use the engine's shared SourceCpu budget. Complete copies stage before publication; procedural scratch, actual effects output and component/manager inventories preserve admitted spare capacity and last-good state under denial. CVehicleManager retains its custom SharedPtr APIs with admitted typed body/control storage. Existing five-preset geometry/physics outputs are preserved; matching C++ callers/plugins must rebuild for allocator/layout changes. Detailed ownership and remaining city/road/terrain allocation families are recorded in SCENE_WORLD_STREAMING.md and WPMATERIAL_IMPLEMENTATION_STATUS.md.
+
+Validation passes **28/28 selected RelWithDebInfo CTest groups (95.19 seconds)** with **130 actor/HLOD cases**, including 31 budget/playback cases. The five new vehicle cases also pass in Debug. Real service tests cover effects RNG/output rollback, exact foreign-capacity admission, large-output scratch and full-cap warm/quiet paths. Frozen runtime/configuration and scoped vehicle snapshots have zero hash drift. This extends automated memory ownership coverage and does not change the visual/hardware acceptance boundaries recorded above.

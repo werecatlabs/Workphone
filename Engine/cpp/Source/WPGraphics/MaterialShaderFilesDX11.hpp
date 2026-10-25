@@ -1,6 +1,7 @@
 #pragma once
 #include <WPGraphics/MaterialProgramDX11.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -59,9 +60,9 @@ namespace workphone::render::detail
             bool used=true;
             bool read=false;
             Stamp captured;
-            File(const std::filesystem::path &value) : budget(reserveSourceBudgetBytes(
-                sizeof(File)+(value.native().capacity()+1)*sizeof(std::filesystem::path::value_type))),
-                path(value),observed(stamp(value)) {}
+            File(std::filesystem::path value) : budget(reserveSourceBudgetBytes(
+                (value.native().capacity()+1)*sizeof(std::filesystem::path::value_type))),
+                path(std::move(value)),observed(stamp(path)) {}
         };
         using FilePtr = std::shared_ptr<File>;
         using Files = std::vector<FilePtr,SourceBudgetAllocator<FilePtr>>;
@@ -78,7 +79,7 @@ namespace workphone::render::detail
                 m_files.erase(std::remove_if(m_files.begin(),m_files.end(),[&](const auto &file) {
                     return !file->used && file!=m_roots[0] && file!=m_roots[1]; }),m_files.end());
             if(m_files.size() >= 128) throw std::runtime_error("Shader include dependency limit exceeded");
-            auto file = std::make_shared<File>(normalized);
+            auto file = std::allocate_shared<File>(SourceBudgetAllocator<File>{},std::move(normalized));
             m_files.push_back(file); return file;
         }
         struct Include : ID3DInclude
@@ -91,7 +92,7 @@ namespace workphone::render::detail
             };
             ShaderFilesDX11 &owner;
             FilePtr root;
-            std::vector<std::unique_ptr<Block>,SourceBudgetAllocator<std::unique_ptr<Block>>> blocks;
+            std::vector<SourceBudgetUnique<Block>,SourceBudgetAllocator<SourceBudgetUnique<Block>>> blocks;
             size_t total = 0;
             String error;
             Include(ShaderFilesDX11 &o,FilePtr r) : owner(o),root(std::move(r)) {}
@@ -118,7 +119,7 @@ namespace workphone::render::detail
                     auto directory=root->path.parent_path();unsigned depth=1;
                     for(auto &block : blocks) if(block->bytes.data()==parent) { directory=block->file->path.parent_path();depth=block->depth+1;break; }
                     if(depth>32) {error="Shader include depth limit exceeded";return E_FAIL;}
-                    auto block=std::make_unique<Block>();block->depth=depth; block->file=owner.track(directory/std::filesystem::u8path(name));
+                    auto block=makeSourceBudgetUnique<Block>();block->depth=depth; block->file=owner.track(directory/std::filesystem::u8path(name));
                     if(!read(*block)) return E_FAIL;
                     *data=block->bytes.data(); *bytes=UINT(block->bytes.size()-1);
                     blocks.push_back(std::move(block)); return S_OK;

@@ -117,14 +117,20 @@ namespace
             shader.setDefine("SCALE","0.5");
             ok &= check(shader.compile() && shader.getBinary()!=first,"HLSL define changes produce new compiled output");
             const auto half=shader.getBinary();
+            wp_shader_set_define(shader.getNativeShader(),c("SCALE"),c("0.25"));
+            ok &= check(wp_shader_compile(shader.getNativeShader()) && shader.isCompiled() && shader.getBinary()!=half,
+                "direct C compilation publishes new bytecode through a live Claw wrapper");
+            const auto replacement=shader.getBinary();
             void *halfNative=nullptr; shader.getNativeHandle(&halfNative);
-            shader.setSource("This is not valid HLSL");
-            ok &= check(!shader.compile() && !shader.isCompiled() && !shader.getDiagnostics().empty() && shader.getBinary()==half,
+            wp_shader_set_source(shader.getNativeShader(),c("This is not valid HLSL"));
+            ok &= check(!wp_shader_compile(shader.getNativeShader()) && shader.getBinary()==replacement,
+                "failed direct C replacement preserves the bytecode visible through Claw");
+            ok &= check(!shader.compile() && !shader.isCompiled() && !shader.getDiagnostics().empty() && shader.getBinary()==replacement,
                 "failed source replacement reports failure while preserving last-good bytes");
             void *afterFailure=nullptr; shader.getNativeHandle(&afterFailure);
             ok &= check(afterFailure==halfNative,"failed source replacement preserves the native blob identity");
             const auto attempted=wp_shader_get_revision(shader.getNativeShader());
-            ok &= check(!shader.reload() && wp_shader_get_revision(shader.getNativeShader())!=attempted && shader.getBinary()==half,
+            ok &= check(!shader.reload() && wp_shader_get_revision(shader.getNativeShader())!=attempted && shader.getBinary()==replacement,
                 "explicit reload retries the same failed source revision without losing output");
             shader.setSource(valid);
             const auto beforeDeny=scheduler->stats();
@@ -133,7 +139,7 @@ namespace
             const auto afterDeny=scheduler->stats();
             scheduler->setBudget(StreamMemoryClass::SourceCpu,beforeDeny.limits[source],error);
             ok &= check(capped && denied && afterDeny.used[source]==beforeDeny.used[source] &&
-                afterDeny.rejectedReservations[source]>beforeDeny.rejectedReservations[source] && shader.getBinary()==half,
+                afterDeny.rejectedReservations[source]>beforeDeny.rejectedReservations[source] && shader.getBinary()==replacement,
                 "compiled bytecode admission denial preserves last-good output and exact leases");
             ok &= check(shader.reload() && shader.isCompiled(),"restored bytecode budget permits explicit retry");
             const auto good=shader.getBinary();

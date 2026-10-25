@@ -274,6 +274,29 @@ namespace workphone::render
                 shader.vertexSelection.resources.empty()),"Missing vertex stage has ownership selections");
         }
 
+        u64 materialWireBytes(const CookedMaterialData &data)
+        {
+            const auto stringBytes=[](const String &value){return 4ull+value.size();};
+            u64 bytes=8+stringBytes(data.target)+4+24+stringBytes(data.textureId.str())+24;
+            const u32 count=u32(data.normalTexture.id.isValid())+u32(data.ormTexture.id.isValid());
+            if(count || data.shader.present())bytes+=4;
+            for(const auto &ref:{data.normalTexture,data.ormTexture})if(ref.id.isValid())bytes+=4+stringBytes(ref.id.str())+24;
+            if(data.shader.present())
+            {
+                bytes+=8+stringBytes(data.shader.shaderID)+4+4;
+                for(const auto &p:data.shader.parameters)
+                {
+                    bytes+=stringBytes(p.name)+4+4+u64(shaderWords(p.type))*4;
+                    if(p.type==MaterialShaderParameterType::Texture)bytes+=stringBytes(p.texture.id.str())+24;
+                }
+                bytes+=8+data.shader.vertexDXBC.size()+data.shader.pixelDXBC.size();
+                for(const auto selection:{&data.shader.vertexSelection,&data.shader.pixelSelection})
+                    for(const auto list:{&selection->constantBuffers,&selection->resources})
+                    {bytes+=4;for(const auto &name:*list)bytes+=stringBytes(name);}
+            }
+            return bytes;
+        }
+
         void validateMaterial( const CookedMaterialData &data )
         {
             validateTarget( data.target );
@@ -301,6 +324,8 @@ namespace workphone::render
                              ref.id.str().size() <= 1024 && ref.sourceHash && ref.payloadHash && ref.compilerVersion,
                          "Optional cooked material texture requires a pinned texres dependency" );
             }
+            require(materialWireBytes(data) <= (data.shader.present()?graphicsMaterialShaderByteLimit+65536ull:4096ull),
+                "Cooked material aggregate payload exceeds its wire size limit");
         }
 
         void write32( std::ostream &output, u32 value )

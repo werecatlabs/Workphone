@@ -567,7 +567,10 @@ namespace workphone
         {
 #if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
             auto compiled=m_compiledBlob;
-            if(!compiled && m_shader && wp_shader_get_compile_func(m_shader)==compileClawShader)
+            // Native C callers can compile a new generation while this wrapper
+            // remains alive. Its transactional native owner is authoritative;
+            // only the default callback guarantees an ID3DBlob handle.
+            if(m_shader && wp_shader_get_compile_func(m_shader)==compileClawShader)
                 compiled=wp_shader_get_native(m_shader);
             if(compiled)
             {

@@ -918,6 +918,7 @@ namespace workphone
 
         void ClawHammerSystem::prepareFramePasses( wp_f32 deltaTime )
         {
+            MaterialProgramReloadDX11::CaptureScope shaderCapture;
             // Publish descriptors and their retained objects together. If allocation or
             // validation fails, the previous native descriptors still have live contexts.
             std::vector<FramePassContext> nextFramePasses;

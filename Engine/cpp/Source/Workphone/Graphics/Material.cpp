@@ -3466,12 +3466,11 @@ namespace workphone::render
             data.replaceFallback = bool(fallback.mask) != data.hadFallback ||
                 (fallback.mask && !equal(fallback,data.beforeFallback));
             if(data.replaceFallback && fallback.mask) data.fallback = makeSourceBudgetUnique<Material::LegacySurfaceData>(fallback);
-            const bool force = data.dirty && !data.pending;
             const auto changed = [&](MaterialBuiltinParameter semantic,MaterialShaderParameterType type,u32 bytes) {
                 const auto next = data.values.GetBuiltin(semantic);
                 if(!data.values.IsHandleValid(next,type,bytes)) return false;
                 const auto old = GetBuiltin(semantic);
-                return force || (data.pending & (1u << static_cast<u32>(semantic))) || !IsHandleValid(old,type,bytes) ||
+                return (data.pending & (1u << static_cast<u32>(semantic))) || !IsHandleValid(old,type,bytes) ||
                     std::memcmp(GetParameterMemory().data()+old.m_offsetInBytes,
                         data.values.GetParameterMemory().data()+next.m_offsetInBytes,bytes) != 0;
             };
@@ -3522,7 +3521,7 @@ namespace workphone::render
                         const bool alphaOnlyTransfer = pbr && opacityTransfer && !nextOpacity &&
                             valid(*this,MaterialBuiltinParameter::Albedo,MaterialShaderParameterType::Colour,sizeof(ColourF)) &&
                             valid(data.values,MaterialBuiltinParameter::Albedo,MaterialShaderParameterType::Colour,sizeof(ColourF)) &&
-                            !(data.pending & (1u << static_cast<u32>(MaterialBuiltinParameter::Albedo))) && !force;
+                            !(data.pending & (1u << static_cast<u32>(MaterialBuiltinParameter::Albedo)));
                         const bool diffuse = !alphaOnlyTransfer && (colorOnly || pbr) &&
                             colour(colorOnly ? MaterialBuiltinParameter::Color : MaterialBuiltinParameter::Albedo,surface.diffuseColour);
                         if(colorOnly && diffuse) assign(surface.emissiveColour,surface.diffuseColour);
@@ -3718,7 +3717,11 @@ namespace workphone::render
             prepareShaderSurfaceHandoff( m_shaderParameters.GetLayout(), !shaderID.empty(),
                 !shaderID.empty() && shaderID != unlitShaderIDStr && shaderID != colorOnlyShaderIDStr ) : nullptr;
         if( next ) m_shaderAuthoring = std::move(next);
-        if( m_shaderAuthoring && idChanged ) m_shaderAuthoring->shaderID.swap(nextID);
+        if( m_shaderAuthoring && idChanged )
+        {
+            m_shaderAuthoring->shaderID.swap(nextID);
+            ++m_shaderAuthoring->shaderIDRevision;
+        }
         commitShaderSurfaceHandoff(std::move(handoff));
         m_shaderWorkflow = shaderID.empty() ? ShaderWorkflow::Legacy :
                            shaderID == unlitShaderIDStr ? ShaderWorkflow::Unlit :
@@ -3734,6 +3737,11 @@ namespace workphone::render
     String Material::getShaderID() const
     {
         return m_shaderAuthoring ? String(m_shaderAuthoring->shaderID) : String();
+    }
+
+    u64 Material::getShaderIDRevision() const noexcept
+    {
+        return m_shaderAuthoring ? m_shaderAuthoring->shaderIDRevision : 0;
     }
 
     bool Material::isDataDriven() const

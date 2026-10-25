@@ -3,19 +3,32 @@
 #include <WPGraphics/MaterialProgramDX11.hpp>
 namespace workphone::render
 {
-    /** Graphics-owner-thread reload coordinator for a fixed immutable CPU schema.
-     * Watches C/ClawShader stage source/binary/define revisions automatically.
+    /** Graphics-owner-thread reload coordinator for shader/CPU-schema generations.
+     * Watches C/ClawShader stage revisions and configured source/include files.
      * A detached native/map candidate and every subscribed material publication
      * must succeed before a nonallocating commit. Old draw records retain their
      * generation. Failed edits leave the complete last-good generation active.
      * Source edits, creation, subscription lifetime, Update and capture must be
      * serialized on the same owner thread. No compilation occurs in native Bind.
-     * File/include watching, schema migration and device recreation are separate.
+     * Schema migration and device replacements stage with the same cohort.
      */
     class WPGraphics_API MaterialProgramReloadDX11 : public std::enable_shared_from_this<MaterialProgramReloadDX11>
     {
     public:
         using Ptr = std::shared_ptr<MaterialProgramReloadDX11>;
+        /** Pins the current reload cohort while a frame's views/jobs capture
+         * their immutable records. Commands and external file edits stay pending
+         * until the next owner update; ordinary value repacking still works.
+         * Scopes must be nested and destroyed on their constructing thread.
+         */
+        class WPGraphics_API CaptureScope
+        {
+        public:
+            CaptureScope() noexcept;
+            ~CaptureScope() noexcept;
+            CaptureScope(const CaptureScope &) = delete;
+            CaptureScope &operator=(const CaptureScope &) = delete;
+        };
         class WPGraphics_API Binding
         {
         public:

@@ -19,6 +19,7 @@ namespace workphone::render
 {
     namespace
     {
+        thread_local size_t reloadCaptureDepth = 0;
         using Microsoft::WRL::ComPtr;
         StreamBudget admit(size_t bytes)
         {
@@ -251,7 +252,7 @@ namespace workphone::render
         MaterialShaderParameterLayout::Ptr layout, requestedLayout, baseLayout;
         u64 schemaRevision=0;
         std::unique_ptr<detail::ShaderFilesDX11> files;
-        bool watching=true, autoSchema=false;
+        bool watching=true, autoSchema=false, explicitSchema=false;
         void *deviceOwner=nullptr;
         std::atomic<bool> reloadCommand{false};
         std::atomic<int> watchCommand{-1};
@@ -291,6 +292,12 @@ namespace workphone::render
     std::mutex MaterialProgramReloadDX11::Data::registryMutex;
     MaterialProgramReloadDX11::Data *MaterialProgramReloadDX11::Data::head=nullptr;
     u64 MaterialProgramReloadDX11::Data::nextId=1;
+    MaterialProgramReloadDX11::CaptureScope::CaptureScope() noexcept { ++reloadCaptureDepth; }
+    MaterialProgramReloadDX11::CaptureScope::~CaptureScope() noexcept
+    {
+        assert(reloadCaptureDepth != 0);
+        --reloadCaptureDepth;
+    }
     MaterialProgramReloadDX11::MaterialProgramReloadDX11() : m_data(new Data)
     {
         auto &data=*m_data; std::lock_guard<std::mutex> lock(Data::registryMutex);
@@ -375,6 +382,9 @@ namespace workphone::render
     bool MaterialProgramReloadDX11::Update()
     {
         auto &data = *m_data;
+        // Do not consume commands or poll files midway through a frame's view
+        // capture. The next owner boundary installs the complete pending cohort.
+        if(reloadCaptureDepth) return bool(data.current) && !data.error[0];
         const bool manual=data.reloadCommand.exchange(false);
         const int watch=data.watchCommand.exchange(-1);
         if(watch>=0) data.watching=watch!=0;
@@ -413,7 +423,8 @@ namespace workphone::render
                 { data.diagnostic("Reload supports only matching vertex/pixel stage attachments"); return false; }
             if(!key.stages[1].identity) { data.diagnostic("Reload requires a pixel shader"); return false; }
             auto preparedDefinition=data.autoSchema?std::shared_ptr<Definition>{}:
-                std::make_shared<Definition>(data.source,data.requestedLayout);
+                std::make_shared<Definition>(data.source,data.requestedLayout?data.requestedLayout:
+                    (data.explicitSchema?data.layout:MaterialShaderParameterLayout::Ptr{}));
             if(data.files) data.files->BeginCandidate();
             Bytecode code[2]; String error;
             for(size_t i = 0; i < 2; ++i)
@@ -545,7 +556,7 @@ namespace workphone::render
     MaterialProgramReloadDX11::Ptr MaterialProgramReloadDX11::CreateFromFiles(void *device,
         MaterialShaderParameterLayout::Ptr layout,const String &vertex,const String &pixel,u64 generation,String &error)
     {
-        if(!device || !layout || pixel.empty() || !generation) { error="Invalid shader file configuration";return {}; }
+        if(!device || pixel.empty() || !generation) { error="Invalid shader file configuration";return {}; }
         const auto vertexPath=vertex.empty()?String():String(std::filesystem::absolute(std::filesystem::u8path(vertex.c_str())).lexically_normal().u8string().c_str());
         const auto pixelPath=String(std::filesystem::absolute(std::filesystem::u8path(pixel.c_str())).lexically_normal().u8string().c_str());
         for(auto cached=Data::head;cached;cached=cached->next)
@@ -553,7 +564,12 @@ namespace workphone::render
                 cached->status.vertex==vertexPath.c_str() && cached->status.pixel==pixelPath.c_str())
             { error.clear();return cached->owner->shared_from_this(); }
         Ptr result(new MaterialProgramReloadDX11); auto &data=*result->m_data;
-        data.device=static_cast<ID3D11Device *>(device);data.layout=std::move(layout);data.baseLayout=data.layout;data.deviceGeneration=generation;
+        data.device=static_cast<ID3D11Device *>(device);data.baseLayout=layout;
+        // Ordinary legacy materials have no CPU shader layout yet. Reflection
+        // can install their first schema without changing live values up front.
+        data.layout=layout?std::move(layout):MaterialShaderParameterLayout::Create({});
+        if(!data.layout) {error="Cannot create an empty shader schema";return {};}
+        data.deviceGeneration=generation;
         data.autoSchema=true;
         data.ownedSourceBudget=admit(wp_shader_program_descriptor_size()+WP_SHADER_MAX_PARAMS*80u+
             (vertex.empty()?1u:2u)*(wp_shader_descriptor_size()+1));
@@ -619,6 +635,7 @@ namespace workphone::render
     }
     void MaterialProgramReloadDX11::UpdateAll(void *device,void *owner)
     {
+        if(reloadCaptureDepth) return;
         for(auto data=Data::head;data;)
         {
             auto next=data->next;
@@ -635,7 +652,8 @@ namespace workphone::render
     void MaterialProgramReloadDX11::RequestSchema(MaterialShaderParameterLayout::Ptr layout)
     {
         if(!layout) throw std::invalid_argument("Shader schema is required");
-        m_data->requestedLayout=std::move(layout);++m_data->schemaRevision;m_data->force=true;
+        m_data->requestedLayout=std::move(layout);m_data->explicitSchema=true;
+        ++m_data->schemaRevision;m_data->force=true;
     }
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "ClawMaterialReloadContracts.hpp"
+#include "../../Engine/cpp/Source/WPGraphics/MaterialShaderFilesDX11.hpp"
 #include <Workphone/Core/StringUtil.hpp>
 #include <filesystem>
 #include <fstream>
@@ -46,6 +47,82 @@ namespace claw_shader_file_watch_contracts
             MaterialProgramReloadDX11::UpdateAll();
         }
     };
+
+    inline void admissionAndValidation(void *device,MaterialShaderParameterLayout::Ptr layout,Files &files)
+    {
+        auto scheduler=WorldStreamingScheduler::shared();
+        const auto source=size_t(StreamMemoryClass::SourceCpu),gpu=size_t(StreamMemoryClass::Gpu);
+        const auto c=[](const char *p) { return reinterpret_cast<const wp_c8 *>(p); };
+        const char *plain="cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}";
+        const char *included="#include \"cold-budget.hlsli\"\ncbuffer Values:register(b4){float4 Tint;}"
+            "float4 main():SV_TARGET{return Tint*budgetColour();}";
+        files.write("budget-pixel.hlsl",plain);
+        MaterialShaderParametersInstance values;values.Reset(layout);
+        values.SetColour(values.FindParameter("Tint"),ColourF::White);
+        const auto baseline=scheduler->stats();
+        {
+            claw_material_reload_contracts::BudgetLimit limit(StreamMemoryClass::SourceCpu,baseline.used[source]);
+            bool denied=false;
+            try { workphone::render::detail::ShaderFilesDX11 cold(String(),files.path("budget-pixel.hlsl")); }
+            catch(const std::bad_alloc &) { denied=true; }
+            require(denied && scheduler->stats().used[source]==baseline.used[source],
+                "cold watcher admission fails before retaining unbudgeted metadata");
+        }
+        {
+            String error;
+            auto isolated=MaterialProgramReloadDX11::CreateFromFiles(device,layout,String(),files.path("budget-pixel.hlsl"),1,error);
+            require(isolated && isolated->HasProgram(),error.empty()?"isolated file watcher creates":error.c_str());
+            auto binding=isolated->Attach(values);
+            auto retained=binding->GetPublication();
+            require(bool(retained),"file watcher admission fixture publishes last-good values");
+            const auto generation=isolated->GetGeneration(),attempts=isolated->GetAttemptCount();
+            // A new dependency and its include block fit, but its cold source
+            // buffer exceeds headroom. Neither root is manually touched in C.
+            const auto large=std::string(64u<<10,' ')+"float4 budgetColour(){return float4(0,1,0,1);}";
+            files.write("cold-budget.hlsli",large.c_str());files.write("budget-pixel.hlsl",included);
+            const auto before=scheduler->stats();
+            {
+                claw_material_reload_contracts::BudgetLimit limit(StreamMemoryClass::SourceCpu,before.used[source]+(32u<<10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(275));isolated->Update();
+                require(binding->GetPublication()==retained && isolated->GetGeneration()==generation && isolated->GetLastError()[0],
+                    "cold include admission denial retains the complete last-good publication");
+                const auto denied=scheduler->stats();
+                require(denied.used[source]<=before.used[source]+(32u<<10) && denied.used[gpu]==before.used[gpu] &&
+                    denied.rejectedReservations[source]>before.rejectedReservations[source],
+                    "new dependency metadata stays admitted and denied include buffers unwind without GPU growth");
+                require(isolated->GetAttemptCount()==attempts+1,"cold include denial attempts the changed graph once");
+                binding->GetPublication();
+                require(isolated->GetAttemptCount()==attempts+1 && scheduler->stats().used[source]==denied.used[source],
+                    "unchanged denied dependency graph does not allocate or compile repeatedly");
+            }
+            auto recovered=binding->GetPublication();
+            require(recovered && recovered!=retained && isolated->GetGeneration()==generation+1 && !isolated->GetLastError()[0],
+                "restoring SourceCpu headroom automatically recompiles the cold include graph");
+            recovered.reset();binding.reset();isolated.reset();
+            require(scheduler->stats().used[source]>baseline.used[source] && scheduler->stats().used[gpu]>baseline.used[gpu],
+                "last-good retained publication outlives its watcher metadata");
+            retained.reset();
+        }
+        require(scheduler->stats().used[source]==baseline.used[source] && scheduler->stats().used[gpu]==baseline.used[gpu],
+            "file coordinator metadata, control blocks, include blocks and retained programs retire exact leases");
+        {
+            workphone::render::detail::ShaderFilesDX11 probe(String(),files.path("budget-pixel.hlsl"));
+            std::unique_ptr<wp_shader,decltype(&wp_shader_destroy)> shader(
+                wp_shader_create(WORKPHONE_SHADER_TYPE_PIXEL,WORKPHONE_SHADER_LANGUAGE_HLSL,c(""),c("main")),&wp_shader_destroy);
+            require(bool(shader),"file candidate validation fixture creates an authoring stage");
+            Microsoft::WRL::ComPtr<ID3DBlob> bytecode;String error;
+            probe.BeginCandidate();require(probe.Compile(shader.get(),1,bytecode,error),error.c_str());
+            require(probe.ValidateCandidate(),"unchanged compiled dependency graph validates");
+            files.write("cold-budget.hlsli","float4 budgetColour(){return float4(0,0,1,1);}");
+            require(!probe.ValidateCandidate(),"include edits after compilation invalidate the entire candidate");
+            bytecode.Reset();probe.BeginCandidate();
+            require(probe.Compile(shader.get(),1,bytecode,error) && probe.ValidateCandidate(),
+                "a fresh candidate validates after capturing the changed dependency");
+            probe.CommitCandidate();
+        }
+        require(scheduler->stats().used[source]==baseline.used[source] && scheduler->stats().used[gpu]==baseline.used[gpu],
+            "direct dependency validation retires every watcher and include allocation");
+    }
 
     inline bool run(ClawRendererDX11 &renderer)
     {
@@ -96,6 +173,7 @@ namespace claw_shader_file_watch_contracts
             const auto initialTint = values.FindParameter("Tint");
             const ColourF tint(.75f,.5f,.25f,1);
             values.SetColour(initialTint,tint);
+            admissionAndValidation(wp_renderer_dx11_get_device(native),initialLayout,files);
             String error;
             auto reload = MaterialProgramReloadDX11::CreateFromFiles(wp_renderer_dx11_get_device(native),
                 initialLayout,files.path("vertex.hlsl"),files.path("pixel.hlsl"),1,error);
@@ -125,6 +203,25 @@ namespace claw_shader_file_watch_contracts
             auto status=MaterialProgramReloadDX11::EditorStatus(id);
             require(id && status->getPropertyAsBool("available") && status->getPropertyAsBool("success") &&
                 status->getPropertyAsBool("watching"),"Editor reads initial active file generation without compiling");
+            {
+                auto sibling=make_ptr<ClawMaterial>();
+                sibling->setShaderID(material->getShaderID());sibling->getShaderParameters()=values;
+                require(material->requestRuntimeShaderFiles(files.path("vertex.hlsl"),files.path("pixel.hlsl")) &&
+                    sibling->requestRuntimeShaderFiles(files.path("vertex.hlsl"),files.path("pixel.hlsl")),
+                    "materials can configure a shared file coordinator");
+                ClawMaterial::processRuntimeShaderReloads(renderer);
+                MaterialProgramReloadDX11::UpdateAll();
+                require(material->setRuntimeShaderWatching(false),"first subscriber can pause shared file watching");
+                MaterialProgramReloadDX11::UpdateAll();
+                require(!material->getRuntimeShaderReloadStatus()->getPropertyAsBool("watching") &&
+                    !sibling->getRuntimeShaderReloadStatus()->getPropertyAsBool("watching"),
+                    "all subscribers report the applied shared watch pause");
+                require(sibling->setRuntimeShaderWatching(true),"second subscriber can resume shared file watching");
+                MaterialProgramReloadDX11::UpdateAll();
+                require(material->getRuntimeShaderReloadStatus()->getPropertyAsBool("watching") &&
+                    sibling->getRuntimeShaderReloadStatus()->getPropertyAsBool("watching"),
+                    "all subscribers report the applied shared watch resumption");
+            }
             require(!MaterialProgramReloadDX11::QueueReload(0) && !MaterialProgramReloadDX11::QueueWatching(0,true) &&
                 !MaterialProgramReloadDX11::EditorStatus(0)->getPropertyAsBool("available"),"expired/unknown Editor identities fail explicitly");
             ClawMaterialDrawRecords original; capture(original); draw(original,0);
@@ -213,6 +310,16 @@ namespace claw_shader_file_watch_contracts
             require(reload->GetGeneration()==generation && reload->GetLastError()[0]==0,
                 "retired root files do not trigger the replacement dependency graph");
             draw(movedRoot,2,true); draw(original,0);
+            {
+                auto clone=make_ptr<ClawMaterial>();material->copyRuntimeShaderTo(*clone);
+                const auto saved=clone->getProperties();
+                require(saved->getProperty("runtimeShaderPixelFile").find("variants")!=String::npos &&
+                    saved->getProperty("runtimeShaderVertexFile")==files.path("vertex.hlsl") &&
+                    saved->getPropertyAsBool("runtimeShaderWatching"),
+                    "cloned file material saves the active roots and shared watcher policy");
+                require(clone->getRuntimePublication()!=nullptr && !clone->getRuntimeShaderReloadStatus()->getPropertyAsBool("pending"),
+                    "cloning shares the ready shader without queueing a redundant compile");
+            }
             std::fprintf(stderr,"Shader file watching: nested include changes, missing/error recovery, pause/manual control, reflected migration, root replacement and retained generations passed\n");
             return true;
         }

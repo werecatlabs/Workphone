@@ -1225,6 +1225,9 @@ namespace workphone
             /** @brief The data-driven shader this material is bound to (empty for legacy PBR). */
             String getShaderID() const;
 
+            /** Owner-thread shader selection token; unchanged reads require no strings. */
+            u64 getShaderIDRevision() const noexcept;
+
             /** @brief Bind this material to a data-driven shader by name. Clears nothing;
              *
              * call setShaderParameters() to (re)build the parameter buffer. */
@@ -1414,6 +1417,7 @@ namespace workphone
             struct ShaderAuthoringData
             {
                 SourceBudgetString shaderID;
+                u64 shaderIDRevision = 0;
                 SourceBudgetArray<ShaderTextureRef> textureRefs;
                 SourceBudgetArray<ShaderTextureBinding> textureBindings;
                 u64 bindingLayoutId = 0;
