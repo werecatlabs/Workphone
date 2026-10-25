@@ -1126,13 +1126,36 @@ namespace workphone::render
                                        : material ? ClawUtil::toCCullMode( ( state ? state->cullMode : material->getCullMode() ) )
                                                   : WORKPHONE_CULL_MODE_BACK );
 
+            // Activation occurs inside the native draw, after its built-in state
+            // setup. Shadow ownership remains with the existing depth/cutout pass.
+            const auto runtime = m_shadowPass ? nullptr : record->runtime;
+            if(!m_shadowPass && record->runtimeRequested && !runtime) continue;
+            struct Activation
+            {
+                const MaterialProgramDX11::Publication *publication;
+                bool attempted = false;
+            } activation{runtime};
+            const wp_material_bind_dx11 activate = runtime ? +[](wp_renderer_dx11 *r, wp_s32 instanced, void *user) -> wp_s32 {
+                auto &active = *static_cast<Activation *>(user);
+                active.attempted = true;
+                try { return active.publication->Bind(r, instanced != 0); }
+                catch(...) { return 0; } // Never unwind through the C renderer.
+            } : nullptr;
+            auto activationData = &activation;
+            struct RetireBindings
+            {
+                const Activation &active;
+                wp_renderer_dx11 *renderer;
+                ~RetireBindings() { if(active.attempted) active.publication->Unbind(renderer); }
+            } retireBindings{activation, dx11};
+
             if( instances )
             {
                 if( geometry && count > 0 && count % 3u == 0 )
                 {
-                    const auto drawn = wp_renderer_dx11_draw_geometry_pntc_instanced(
+                    const auto drawn = wp_renderer_dx11_draw_geometry_pntc_instanced_bound(
                         dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ), 0,
-                        instances, static_cast<wp_s32>( instanceCount ) );
+                        instances, static_cast<wp_s32>( instanceCount ), activate, activationData );
                     if( drawn > 0 )
                     {
                         submitted += drawn;
@@ -1146,9 +1169,9 @@ namespace workphone::render
             {
                 if( auto stripGeometry = asset_budget::prepareMesh( dx11, nativeMesh, start, count ) )
                 {
-                    wp_renderer_dx11_draw_geometry_pntc( dx11, stripGeometry, 0,
-                        static_cast<wp_s32>( ( count - 2u ) * 3u ), 0 );
-                    m_primitiveCount += count - 2u;
+                    if(wp_renderer_dx11_draw_geometry_pntc_bound( dx11, stripGeometry, 0,
+                        static_cast<wp_s32>( ( count - 2u ) * 3u ), 0, activate, activationData ))
+                        m_primitiveCount += count - 2u;
                 }
             }
             else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST && geometry )
@@ -1156,9 +1179,9 @@ namespace workphone::render
                 count -= count % 3u;
                 if( count > 0 )
                 {
-                    wp_renderer_dx11_draw_geometry_pntc( dx11, geometry, static_cast<wp_s32>( start ),
-                        static_cast<wp_s32>( count ), 0 );
-                    m_primitiveCount += count / 3u;
+                    if(wp_renderer_dx11_draw_geometry_pntc_bound( dx11, geometry, static_cast<wp_s32>( start ),
+                        static_cast<wp_s32>( count ), 0, activate, activationData ))
+                        m_primitiveCount += count / 3u;
                 }
             }
         }

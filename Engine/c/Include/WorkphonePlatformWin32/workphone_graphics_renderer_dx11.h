@@ -517,6 +517,14 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *renderer,
                                           wp_s32 index_start, wp_s32 index_count,
                                           wp_s32 base_vertex );
 
+/** Optional owning-thread material activation, after built-in geometry state.
+ * Return zero to defer submission. Must not throw or issue draws. The callback
+ * is borrowed only for this call; the next ordinary draw restores built-in state. */
+typedef wp_s32 (*wp_material_bind_dx11)(wp_renderer_dx11 *, wp_s32 instanced, void *);
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_bound(wp_renderer_dx11 *, const wp_geometry_dx11 *,
+    wp_s32 start, wp_s32 count, wp_s32 base, wp_material_bind_dx11, void *);
+wp_s32 wp_renderer_dx11_material_view_allowed(wp_renderer_dx11 *, void *view);
+
 /** Instance transforms compose beneath the currently bound world matrix.
  * Positive-determinant affine transforms, including nonuniform scale, are
  * supported. Singular/reflected/nonfinite transforms or nonfinite tints reject
@@ -542,6 +550,10 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
     wp_renderer_dx11 *renderer, const wp_geometry_dx11 *geometry,
     wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
     const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
+
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *,
+    const wp_geometry_dx11 *, wp_s32 start, wp_s32 count, wp_s32 base,
+    const wp_instance_pntc_dx11 *, wp_s32 instances, wp_material_bind_dx11, void *);
 
 /** Foliage stream extends ordinary instances without changing their ABI. Wind
  * and interaction are local horizontal displacements in metres; phase is radians.

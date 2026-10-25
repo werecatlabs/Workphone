@@ -1,5 +1,6 @@
 #ifndef ParamConverter_h__
 #define ParamConverter_h__
+#include <WPLuabind/LuaCompat.hpp>
 
 #include <Workphone/Core/ColourF.hpp>
 #include <Workphone/Core/Parameter.hpp>
@@ -294,7 +295,7 @@ namespace luabind
             case LUA_TNUMBER:
             {
                 int isIntegerValue = 0;
-                const auto integerValue = lua_tointegerx( L, index, &isIntegerValue );
+                const auto integerValue = wpLuaToIntegerExact( L, index, &isIntegerValue );
                 if( isIntegerValue )
                 {
                     return Parameter( static_cast<s64>( integerValue ) );

@@ -1,9 +1,10 @@
 project(WorkphoneScript)
 
 include_directories( ../../Include/WorkphoneCore/ )
+include_directories( ${WP_ROOT}/Engine/cpp/Include )
 include_directories( ../../Include/WorkphoneScript/ )
 include_directories( ${WP_ROOT}/Dependencies/boost )
-include_directories( ${WP_ROOT}/Dependencies/lua/inc )
+include_directories( ${WP_LUA_INCLUDE_DIR} )
 include_directories( ${WP_ROOT}/Dependencies/luabind/inc )
 include_directories( ${WP_ROOT}/Dependencies/luabind/inc/luabind )
 
@@ -27,7 +28,7 @@ if (TARGET lua AND TARGET luabind)
 elseif (WIN32)
     target_link_directories(WorkphoneScript PUBLIC
         ${CMAKE_SOURCE_DIR}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})
-    target_link_libraries(WorkphoneScript PRIVATE lua.lib luabind.lib)
+    target_link_libraries(WorkphoneScript PRIVATE lua luabind)
 elseif (APPLE)
     target_link_directories(WorkphoneScript PUBLIC
         ${CMAKE_SOURCE_DIR}/libs/macOS/${CMAKE_BUILD_TYPE})

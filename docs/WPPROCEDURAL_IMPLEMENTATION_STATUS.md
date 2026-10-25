@@ -49,12 +49,52 @@ session-local until a stable edited-route fingerprint is exposed; regeneration
 and detected route changes reset them and the UI states the policy. The real Lua city/component suites pass with fixture
 checks for retained knot IDs/widths, cache invalidation and source restoration.
 
-The focused CPU/Editor rerun passed 5/5 in 45.68 seconds, including the converter,
-parcel support, native authoring controls and real Editor save/reopen fixture.
-That fixture found and fixed first-load source loss when terrain publication was
-temporarily unavailable. It proves anchor/source persistence; it does not prove
-a mouse-driven visual Editor session or a complete restored driving scene.
-Native integration and fresh visual evidence are recorded below once complete.
+Debug sample, Editor and focused targets build. The final city/Editor CTest run
+passes 12/12 in 138.56 seconds, including all seed/size source profiles, maximum
+footway profiles, exact support/holes/grade, eight connected roundabout pedestrian
+corridors, oblique seams, allocation rollback, source revisions and save/reopen.
+The existing production-render GPU suite passes in 26.74 seconds. Both real Lua
+city/component fixture runs pass, including 50 component scripts. These Editor
+fixtures prove native controls and saved anchors; recorded mouse/DPI interaction
+and a complete restored driving scene remain separate acceptance gates.
+
+Fresh native evidence uses six-block cities, high quality, foliage, 1280x720,
+braked replay and the actual DX11 HDR path:
+
+| Capture | Roads / roundabouts | Supported parcels / building masses | Result |
+|---|---|---|---|
+| [Grid street and overview](../artifacts/procedural/city-terrain-20261025-04/manifest.json) | 22 / 4 | 144 / 216 | Both native validations and clean process exits pass |
+| [Natural pedestrian view](../artifacts/procedural/city-terrain-natural-20261025-05/manifest.json) | 70 / 4 | 119 / 143; 3 parcels culled | Native validation and clean process exit pass |
+
+All three views verify four native road/ring/island/terrain rays, a separate
+native hit on the single fitted footway collider, island exclusion, continuous
+driveable route heights and 16 uploaded road PBR textures. Footway height errors
+are at most 0.00000012 m. Source, active and applied road revisions agree. The
+maximum-city corpus is CPU geometry/admission evidence; these native runs use
+six blocks.
+
+Fresh captures exposed and fixed a real renderer lifetime defect: the sky cache
+held a legacy weak pointer that dereferenced freed sky storage during renderer
+shutdown. It now uses the existing independent `ObjectObserver` lifetime token
+and retires expired entries. The GPU regression physically frees six sky owners
+across three renderer lifecycles before cache destruction. The failed capture
+and exception stack remain in `city-terrain-20261025-03`. A separate hot cleanup
+stack exposed global update-list sorting on every actor removal; stable erasure
+now preserves survivor order, with a regression in the save/reopen fixture.
+
+The images are visibly improved at road/kerb contact but remain prototype art:
+repeated opaque glazing/massing, sparse ground content, limited street props,
+simple lighting and visible aliasing still fail commercial visual acceptance.
+The adapter is Microsoft Basic Render Driver/WARP. Grid street/overview mean/P95
+are 207.61/234.37 ms and 258.42/442.61 ms; natural pedestrian mean/P95 are
+598.16/977.98 ms, over 29 measured frames each. These short software-renderer
+runs, including concurrent workspace activity, do not certify hardware speed.
+
+Capture 04 records the verified build and source/binary hashes. Capture 05 uses
+the same binary hashes; material/Lua source edits began concurrently afterward.
+Later shared Debug DLL replacements are preserved. The separate retained-binary
+retention diagnostic records its own inputs and does not certify those unrelated
+changes or a source-free package.
 
 Remaining gates include ordinary junction reconstruction, automatic grading,
 arbitrary edited-lap topology, transport/water integration, representative GPU

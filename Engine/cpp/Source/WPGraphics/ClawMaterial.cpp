@@ -15,6 +15,21 @@ namespace workphone
 {
     namespace render
     {
+        struct ClawMaterial::RuntimeState
+        {
+            StreamBudget cpu;
+            MaterialProgramDX11::Ptr program;
+            std::shared_ptr<MaterialProgramResourcesDX11> resources;
+            MaterialProgramDX11::PublicationPtr publication;
+            MaterialShaderParameterLayout::Ptr layout;
+            u64 revision = 0;
+            RuntimeState()
+            {
+                String error;
+                cpu = WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,sizeof(RuntimeState),error);
+                if(!cpu) throw std::bad_alloc();
+            }
+        };
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMaterial, Material );
 
         const String ClawMaterial::diffuseColourStr = "diffuseColour";
@@ -44,6 +59,36 @@ namespace workphone
                 wp_graphics_material_destroy( m_material );
                 m_material = nullptr;
             }
+        }
+
+        void ClawMaterial::setRuntimeProgram(MaterialProgramDX11::Ptr program,
+            std::shared_ptr<MaterialProgramResourcesDX11> resources)
+        {
+            if(!program) { m_runtime.reset(); return; }
+            auto candidate = std::make_unique<RuntimeState>();
+            candidate->publication = program->Capture(getShaderParameters(), resources);
+            candidate->program = std::move(program); candidate->resources = std::move(resources);
+            candidate->layout = getShaderParameters().GetLayout();
+            candidate->revision = getShaderParameters().GetRevision();
+            m_runtime = std::move(candidate);
+        }
+
+        bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
+
+        MaterialProgramDX11::PublicationPtr ClawMaterial::getRuntimePublication()
+        {
+            if(!m_runtime) return {};
+            const auto &values = getShaderParameters();
+            if(!m_runtime->program->IsCurrent(values.GetLayout())) return {};
+            if(m_runtime->layout != values.GetLayout() || m_runtime->revision != values.GetRevision())
+            {
+                MaterialProgramDX11::PublicationPtr candidate;
+                try { candidate = m_runtime->program->Capture(values, m_runtime->resources); }
+                catch(const std::runtime_error &) { return {}; } // incompatible schema: defer
+                m_runtime->publication = std::move(candidate);
+                m_runtime->layout = values.GetLayout(); m_runtime->revision = values.GetRevision();
+            }
+            return m_runtime->publication;
         }
 
         void ClawMaterial::loadResource( IResource *resource )
@@ -198,6 +243,7 @@ namespace workphone
 
         void ClawMaterial::unload( SmartPtr<ISharedObject> data )
         {
+            m_runtime.reset();
             Material::unload( data );
             // The base class clears the list but also caches its primary graph.
             m_pass = nullptr;

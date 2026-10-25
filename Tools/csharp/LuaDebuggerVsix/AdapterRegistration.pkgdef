@@ -1,0 +1,19 @@
+[$RootKey$\AD7Metrics\Engine\{8BC205D5-3836-4E05-A729-A6D15A6E3884}]
+"CLSID"="{DAB324E9-7B35-454C-ACA8-F6BB0D5C8673}"
+"AlwaysLoadLocal"=dword:00000001
+"AddressBP"=dword:00000000
+"CallStackBP"=dword:00000000
+"Attach"=dword:00000000
+"Exceptions"=dword:00000001
+"ExceptionConditions"=dword:00000000
+"Name"="Workphone Lua"
+"Language"="Lua"
+"Adapter"="$PackageFolder$\adapter\WorkphoneLuaDebugAdapter.exe"
+"LocalsScopeName"="Locals"
+"ExceptionBreakpointCategory"="{EE55A9B1-BC14-471C-8FCE-81091A35F491}"
+[$RootKey$\AD7Metrics\Engine\{8BC205D5-3836-4E05-A729-A6D15A6E3884}\ExceptionBreakpointMappings]
+"Uncaught Lua errors"="uncaught"
+[$RootKey$\AD7Metrics\Exception\{EE55A9B1-BC14-471C-8FCE-81091A35F491}\Lua Exceptions]
+"State"=dword:00010002
+[$RootKey$\AD7Metrics\Exception\{EE55A9B1-BC14-471C-8FCE-81091A35F491}\Lua Exceptions\Uncaught Lua errors]
+"State"=dword:00010002

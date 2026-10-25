@@ -3,6 +3,7 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/Material.hpp>
+#include <WPGraphics/MaterialProgramDX11.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 
 struct wp_graphics_material;
@@ -67,6 +68,13 @@ namespace workphone
              * successfully created. The pointer is set to null after destruction.
              */
             ~ClawMaterial() override;
+
+            // Owning-thread installation; packs a candidate before replacing the
+            // current attachment. Draw records retain immutable prior values.
+            void setRuntimeProgram(MaterialProgramDX11::Ptr program,
+                std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
+            bool hasRuntimeProgram() const;
+            MaterialProgramDX11::PublicationPtr getRuntimePublication();
 
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
@@ -167,6 +175,8 @@ namespace workphone
             wp_graphics_material *m_material;  ///< Underlying Claw material handle.
 
         private:
+            struct RuntimeState;
+            std::unique_ptr<RuntimeState> m_runtime;
             String authoringDocument() const;
             String m_residentDocument;
             StreamBudget m_documentBudget;

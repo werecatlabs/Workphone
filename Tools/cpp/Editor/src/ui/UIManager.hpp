@@ -347,10 +347,12 @@ namespace workphone
 
                 ID_SampleItem,
                 CityRoadWindowId,
+                LuaDebuggerWindowId,
             };
 
             /** @brief Default constructor. Sets up internal listeners and state. */
             UIManager();
+            SmartPtr<EditorWindow> getLuaDebuggerWindow() const { return m_luaDebuggerWindow; }
 
             /** @brief Destructor. Cleans up UI references. */
             ~UIManager() override;
@@ -836,6 +838,7 @@ namespace workphone
             SmartPtr<ObjectWindow> m_objectWindow;                      ///< Object management window.
             SmartPtr<SceneWindow> m_sceneWindow;                        ///< Scene editing window.
             SmartPtr<CityRoadWindow> m_cityRoadWindow;
+            SmartPtr<EditorWindow> m_luaDebuggerWindow;
             SmartPtr<EditorWindow> m_inputManagerWindow;                ///< Input management window.
             SmartPtr<LayerManager> m_layerManager;                      ///< Central actor layer list.
             SmartPtr<LayerDialog> m_layerDialog;                    ///< Actor layer management dialog.

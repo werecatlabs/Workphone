@@ -4415,22 +4415,72 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
     return 1;
 }
 
+wp_s32 wp_renderer_dx11_material_view_allowed(wp_renderer_dx11 *r, void *view)
+{
+    ID3D11RenderTargetView *outputs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+    ID3D11DepthStencilView *depth = NULL;
+    ID3D11Resource *input = NULL, *output = NULL;
+    wp_s32 allowed = 1, i;
+    if(!r || !r->context) return 0;
+    if(!wp_rtt_dx11_view_allowed(r, (ID3D11ShaderResourceView *)view)) return 0;
+    if(!view) return 1;
+    /* Legacy Claw targets bind outputs directly, outside RTT job ownership.
+     * Validate the actual context as well, before D3D silently nulls an SRV. */
+    ID3D11ShaderResourceView_GetResource((ID3D11ShaderResourceView *)view, &input);
+    ID3D11DeviceContext_OMGetRenderTargets(r->context,
+        D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, outputs, &depth);
+    for(i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i) if(outputs[i])
+    {
+        ID3D11RenderTargetView_GetResource(outputs[i], &output);
+        if(output == input) allowed = 0;
+        if(output) ID3D11Resource_Release(output);
+        output = NULL;
+        ID3D11RenderTargetView_Release(outputs[i]);
+    }
+    if(depth)
+    {
+        ID3D11DepthStencilView_GetResource(depth, &output);
+        if(output == input) allowed = 0;
+        if(output) ID3D11Resource_Release(output);
+        ID3D11DepthStencilView_Release(depth);
+    }
+    if(input) ID3D11Resource_Release(input);
+    return allowed;
+}
+
 void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
                                         const wp_geometry_dx11 *geometry,
                                         wp_s32 index_start, wp_s32 index_count,
                                         wp_s32 base_vertex )
 {
-    if( !wp_renderer_dx11_bind_geometry_pntc( r, geometry, index_start, index_count, base_vertex ) ) return;
+    wp_renderer_dx11_draw_geometry_pntc_bound(r, geometry, index_start, index_count, base_vertex, NULL, NULL);
+}
+
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_bound(wp_renderer_dx11 *r,
+    const wp_geometry_dx11 *geometry, wp_s32 index_start, wp_s32 index_count,
+    wp_s32 base_vertex, wp_material_bind_dx11 bind, void *user)
+{
+    if( !wp_renderer_dx11_bind_geometry_pntc( r, geometry, index_start, index_count, base_vertex ) ) return 0;
+    if(bind) { r->pntc_bindings_valid = 0; if(!bind(r, 0, user)) return 0; }
     ++r->statistics.draws;
     r->statistics.triangles += (uint64_t)index_count / 3;
     ID3D11DeviceContext_DrawIndexed( r->context, (UINT)index_count, (UINT)index_start,
                                      (INT)base_vertex );
+    return 1;
 }
 
 wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
     wp_renderer_dx11 *r, const wp_geometry_dx11 *geometry,
     wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
     const wp_instance_pntc_dx11 *instances, wp_s32 instance_count )
+{
+    return wp_renderer_dx11_draw_geometry_pntc_instanced_bound(r, geometry, index_start,
+        index_count, base_vertex, instances, instance_count, NULL, NULL);
+}
+
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *r,
+    const wp_geometry_dx11 *geometry, wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
+    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count, wp_material_bind_dx11 bind, void *user)
 {
     wp_s32 i, count, submitted = 0;
     D3D11_MAPPED_SUBRESOURCE mapped;
@@ -4449,6 +4499,11 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
     ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &r->instance_buffer, &stride, &offset );
     r->statistics.state_bindings += 3;
     r->pntc_bindings_valid = 0;
+    if(bind && !bind(r, 1, user))
+    {
+        ID3D11DeviceContext_IASetVertexBuffers(r->context, 1, 1, &empty_buffer, &stride, &offset);
+        return 0;
+    }
     while( submitted < instance_count )
     {
         count = instance_count-submitted;

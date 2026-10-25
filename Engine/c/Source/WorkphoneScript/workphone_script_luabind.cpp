@@ -1,3 +1,4 @@
+#include <WPLuabind/LuaCompat.hpp>
 extern "C" {
 #include "workphone_script_luabind.h"
 #include "workphone_script_method.h"
@@ -52,7 +53,7 @@ namespace
 
     luabind::detail::class_rep *class_at( lua_State *L, int index )
     {
-        index = lua_absindex( L, index );
+        index = wpLuaAbsIndex( L, index );
         if( !luabind::detail::is_class_rep( L, index ) )
         {
             return 0;
@@ -62,7 +63,7 @@ namespace
 
     luabind::detail::object_rep *instance_at( lua_State *L, int index )
     {
-        index = lua_absindex( L, index );
+        index = wpLuaAbsIndex( L, index );
         return luabind::detail::get_instance( L, index );
     }
 
@@ -130,7 +131,7 @@ namespace
 
         if( L && index != 0 )
         {
-            lua_pushvalue( L, lua_absindex( L, index ) );
+            lua_pushvalue( L, wpLuaAbsIndex( L, index ) );
             object->lua_ref = luaL_ref( L, LUA_REGISTRYINDEX );
         }
 
@@ -261,7 +262,7 @@ namespace
         const char *name;
         wp_script_value value;
 
-        lua_pushglobaltable( L );
+        wpLuaPushGlobalTable( L );
         lua_pushnil( L );
         while( lua_next( L, -2 ) != 0 )
         {

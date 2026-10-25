@@ -19,6 +19,7 @@
 
 namespace workphone
 {
+    class LuaDebugger;
 
     /**
      * @class LuaManager
@@ -47,6 +48,15 @@ namespace workphone
     class LuaManager : public IScriptManager
     {
     public:
+        bool startDebugger( u16 port, const String &token, const String &sourceRoot ) override;
+        void stopDebugger() override;
+        u16 getDebuggerPort() const override;
+        bool isDebuggerPaused() const override;
+        void setDebuggerPausePump( std::function<bool()> pump ) override;
+        void debuggerCommand( const String &command ) override;
+        String getDebuggerStatus() const override;
+        void debuggerException( lua_State *state, const char *message );
+        bool debuggerCallbackAllowed( lua_State *state, int functionIndex ) const;
         /**
          * @class ScriptProfile
          * @brief Holds profiling information for a single script call or function.
@@ -723,6 +733,7 @@ namespace workphone
         ScriptProfiles m_scriptProfiles;        ///< Aggregated profiling data for scripts.
 
         String m_lastDiagnostic;
+        std::unique_ptr<LuaDebugger> m_debugger;
         SmartPtr<AssetDatabaseManager> m_scriptCatalog;
         std::shared_ptr<resource::IResourceSystem> m_scriptResources;
         bool m_compiledScriptsOnly = false;

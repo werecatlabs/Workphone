@@ -100,7 +100,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             target_link_libraries(${graphics_target} PRIVATE
                 WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
             if(graphics_contract STREQUAL "ClawProduction")
-                target_link_libraries(${graphics_target} PRIVATE dbghelp)
+                target_link_libraries(${graphics_target} PRIVATE dbghelp d3dcompiler)
             endif()
             target_link_directories(${graphics_target} PRIVATE
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
@@ -579,6 +579,7 @@ endif()
 if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     add_executable(TerrainLuaBindingTests TerrainLuaBindingTests.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaDebugger.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaScriptCompiler.cpp)
@@ -586,10 +587,10 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
         WP_PROFILE_LUA_CALLS=0 WPLua_EXPORTS WP_TEST_SOURCE_ROOT="${WP_ROOT}")
     target_include_directories(TerrainLuaBindingTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
-        ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+        ${WP_LUA_INCLUDE_DIR} ${WP_ROOT}/Dependencies/luabind/inc
         ${WP_ROOT}/Dependencies/luabind/inc/luabind)
     target_link_libraries(TerrainLuaBindingTests PRIVATE
-        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind)
+        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
     target_link_directories(TerrainLuaBindingTests PRIVATE
         ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     add_dependencies(TerrainLuaBindingTests WPLuaBind Workphone)
@@ -600,30 +601,32 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     # Compile the production host sources into this focused binding executable.
     add_executable(VehicleLuaBindingTests VehicleLuaBindingTests.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaDebugger.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp)
     target_compile_definitions(VehicleLuaBindingTests PRIVATE BOOST_ALL_NO_LIB BOOST_BIND_GLOBAL_PLACEHOLDERS WP_PROFILE_LUA_CALLS=0 WP_TEST_SOURCE_ROOT="${WP_ROOT}")
     target_include_directories(VehicleLuaBindingTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
-        ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+        ${WP_LUA_INCLUDE_DIR} ${WP_ROOT}/Dependencies/luabind/inc
         ${WP_ROOT}/Dependencies/luabind/inc/luabind)
     target_link_libraries(VehicleLuaBindingTests PRIVATE
-        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind)
+        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
     add_dependencies(VehicleLuaBindingTests WPLuaBind Workphone)
     set_target_properties(VehicleLuaBindingTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPVehicle.lua_presentation_bindings COMMAND VehicleLuaBindingTests)
 
     add_executable(LuaRuntimeTests LuaRuntimeTests.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaDebugger.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
         ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp)
     target_compile_definitions(LuaRuntimeTests PRIVATE BOOST_ALL_NO_LIB BOOST_BIND_GLOBAL_PLACEHOLDERS WP_PROFILE_LUA_CALLS=0)
     target_include_directories(LuaRuntimeTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
-        ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+        ${WP_LUA_INCLUDE_DIR} ${WP_ROOT}/Dependencies/luabind/inc
         ${WP_ROOT}/Dependencies/luabind/inc/luabind)
     target_link_libraries(LuaRuntimeTests PRIVATE
-        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind)
+        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
     add_dependencies(LuaRuntimeTests WPLuaBind Workphone)
     if(TARGET WPSQLite)
         target_compile_definitions(LuaRuntimeTests PRIVATE WP_LUA_ASSET_TESTS=1)
@@ -632,7 +635,22 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     endif()
     set_target_properties(LuaRuntimeTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPLua.runtime_contracts COMMAND LuaRuntimeTests)
-    foreach(lua_host_target VehicleLuaBindingTests LuaRuntimeTests)
+    add_executable(LuaDebuggerTests LuaDebuggerTests.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaDebugger.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaScriptCompiler.cpp)
+    target_compile_definitions(LuaDebuggerTests PRIVATE BOOST_ALL_NO_LIB BOOST_BIND_GLOBAL_PLACEHOLDERS WP_PROFILE_LUA_CALLS=0 WPLua_EXPORTS)
+    target_include_directories(LuaDebuggerTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+        ${WP_LUA_INCLUDE_DIR} ${WP_ROOT}/Dependencies/luabind/inc ${WP_ROOT}/Dependencies/luabind/inc/luabind)
+    target_link_libraries(LuaDebuggerTests PRIVATE $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone>
+        lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
+    add_dependencies(LuaDebuggerTests WPLuaBind Workphone)
+    set_target_properties(LuaDebuggerTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPLua.debugger_integration COMMAND LuaDebuggerTests)
+    set_tests_properties(WPLua.debugger_integration PROPERTIES TIMEOUT 60)
+    foreach(lua_host_target VehicleLuaBindingTests LuaRuntimeTests LuaDebuggerTests)
         if(WIN32)
             target_link_directories(${lua_host_target} PRIVATE
                 ${WP_ROOT}/Dependencies/lib/windows/boost

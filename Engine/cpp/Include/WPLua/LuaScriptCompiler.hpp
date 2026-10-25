@@ -11,7 +11,11 @@ namespace workphone
     class WPLua_API LuaScriptCompiler final : public resource::IResourceCompiler
     {
     public:
+#ifdef WP_LUA_BACKEND_LUAJIT
+        static constexpr u64 version = 2;
+#else
         static constexpr u64 version = 1;
+#endif
         static constexpr size_t maxSourceBytes = 8 * 1024 * 1024;
         String name() const override;
         Array<resource::CompilerOutput> outputs() const override;

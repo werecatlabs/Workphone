@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="BaseIntermediateOutputPath;OutputPath;MSBuildProjectExtensionsPath">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>WorkphoneLuaDebugAdapter</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

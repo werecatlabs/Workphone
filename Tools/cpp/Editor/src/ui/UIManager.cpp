@@ -446,6 +446,8 @@ namespace workphone::editor
                                ICON_FA_LIST " Components", "Components", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ResourcesId ),
                                ICON_FA_FILE " Resources", "Resources", ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::LuaDebuggerWindowId ),
+                               "Lua Debugger", "Lua Debugger", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::InputWindowId ),
                                ICON_FA_FILE " Input", "Input", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::LayersWindowId ),
@@ -673,6 +675,11 @@ namespace workphone::editor
         //setInputManagerWindow( inputManagerWindow );
         //inputManagerWindow->setWindowVisible( false );
 
+        auto debuggerWindow = factoryManager->make_ptr<ScriptWindow>();
+        debuggerWindow->setClassName( "LuaDebuggerPanel" );
+        debuggerWindow->load( nullptr );
+        m_luaDebuggerWindow = debuggerWindow;
+        debuggerWindow->setWindowVisible( false );
         auto inputManagerWindow = factoryManager->make_ptr<ScriptWindow>();
         inputManagerWindow->setClassName( "InputManager" );
         inputManagerWindow->load( nullptr );
@@ -986,6 +993,11 @@ namespace workphone::editor
             setAboutDialog( nullptr );
         }
 
+        if( m_luaDebuggerWindow )
+        {
+            m_luaDebuggerWindow->unload( nullptr );
+            m_luaDebuggerWindow = nullptr;
+        }
         if( auto inputManagerWindow = getInputManagerWindow() )
         {
             inputManagerWindow->unload( nullptr );
@@ -1680,6 +1692,11 @@ namespace workphone::editor
                 auto owner = getOwner();
                 auto window = owner->getResourceDatabaseDialog();
                 window->setWindowVisible( true );
+            }
+            break;
+            case WidgetId::LuaDebuggerWindowId:
+            {
+                if( auto window = getOwner()->getLuaDebuggerWindow() ) window->setWindowVisible( true );
             }
             break;
             case WidgetId::InputWindowId:

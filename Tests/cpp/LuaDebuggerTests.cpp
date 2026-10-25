@@ -1,0 +1,188 @@
+#include <boost/asio.hpp>
+#include <boost/json.hpp>
+#include <WPLua/LuaManager.hpp>
+#include <Workphone/Workphone.hpp>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <filesystem>
+#include <thread>
+
+namespace j = boost::json;
+using tcp = boost::asio::ip::tcp;
+using Clock = std::chrono::steady_clock;
+static void check( bool value, const char *message ) { if( !value ) throw std::runtime_error( message ); }
+
+class Client
+{
+    boost::asio::io_context io;
+    tcp::socket socket{ io };
+    int sequence = 0;
+    std::string input;
+public:
+    explicit Client( unsigned short port )
+    {
+        socket.connect( tcp::endpoint( boost::asio::ip::address_v4::loopback(), port ) );
+        socket.non_blocking( true );
+    }
+    int request( const char *command, j::object args = {} )
+    {
+        const int seq = ++sequence;
+        const auto body = j::serialize( j::object{ { "seq", seq }, { "type", "request" }, { "command", command }, { "arguments", std::move( args ) } } );
+        const auto packet = "Content-Length: " + std::to_string( body.size() ) + "\r\n\r\n" + body;
+        // Deliberately fragment headers and UTF-8 JSON payloads.
+        for( size_t pos = 0; pos < packet.size(); )
+        {
+            boost::system::error_code error;
+            pos += socket.write_some( boost::asio::buffer( packet.data() + pos, std::min<size_t>( 7, packet.size() - pos ) ), error );
+            if( error == boost::asio::error::would_block ) std::this_thread::yield();
+            else if( error ) throw boost::system::system_error( error );
+        }
+        return seq;
+    }
+    j::object read()
+    {
+        const auto deadline = Clock::now() + std::chrono::seconds( 15 );
+        while( Clock::now() < deadline )
+        {
+            const auto end = input.find( "\r\n\r\n" );
+            if( end != std::string::npos )
+            {
+                const auto size = std::stoul( input.substr( 16, end - 16 ) );
+                if( input.size() >= end + 4 + size )
+                {
+                    auto message = j::parse( input.substr( end + 4, size ) ).as_object();
+                    input.erase( 0, end + 4 + size ); return message;
+                }
+            }
+            char buffer[4096]; boost::system::error_code error;
+            const auto count = socket.read_some( boost::asio::buffer( buffer ), error );
+            if( !error ) input.append( buffer, count );
+            else if( error != boost::asio::error::would_block && error != boost::asio::error::try_again ) throw boost::system::system_error( error );
+            std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+        }
+        throw std::runtime_error( "DAP response timed out" );
+    }
+    j::object reply( int id, bool success = true )
+    {
+        for( ;; )
+        {
+            auto message = read();
+            if( message.at( "type" ) == "response" && message.at( "request_seq" ).as_int64() == id )
+            { check( message.at( "success" ).as_bool() == success, j::serialize( message ).c_str() ); auto body = message.if_contains( "body" ); return body && body->is_object() ? body->as_object() : j::object{}; }
+        }
+    }
+    j::object event( const char *name )
+    { for( ;; ) { auto message = read(); if( message.at( "type" ) == "event" && message.at( "event" ) == name ) return message.at( "body" ).as_object(); } }
+    void close() { boost::system::error_code ignored; socket.close( ignored ); }
+};
+
+int main()
+{
+    using namespace workphone;
+    TypeManager types; types.load(); TypeManager::setInstance( &types );
+    int result = 0;
+    {
+        LuaManager manager;
+        std::atomic<bool> ready{ false }, failed{ false }, done{ false };
+        std::atomic<int> pumps{ 0 };
+        std::string clientError;
+        std::thread client;
+        try
+        {
+            manager.load( nullptr );
+            const auto root = std::filesystem::current_path().generic_u8string();
+            check( !manager.startDebugger( 0, "short", root.c_str() ), "Short authentication token accepted" );
+            check( manager.startDebugger( 0, "workphone-debug-test-token", root.c_str() ), "Debugger did not listen" );
+            check( manager.executeSource( "gameplayCalls=0; function gameplayCallback() gameplayCalls=gameplayCalls+1 end", "@gameplay.lua" ), "Gameplay fixture" );
+            check( manager.executeSource( "editorCalls=0; function editorCallback() editorCalls=editorCalls+1 end", "@Editor/DebuggerFixture.lua" ), "Editor fixture" );
+            manager.setDebuggerPausePump( [&]() {
+                ++pumps;
+                manager.callFunction( "gameplayCallback" );
+                manager.callFunction( "editorCallback" );
+                return !failed.load();
+            } );
+            const auto port = manager.getDebuggerPort();
+            client = std::thread( [&]() {
+                try
+                {
+                    Client connection( port );
+                    connection.reply( connection.request( "initialize", { { "clientID", "contracts" } } ) );
+                    connection.reply( connection.request( "attach", { { "token", "incorrect-session-token" } } ), false );
+                    const int attach = connection.request( "attach", { { "token", "workphone-debug-test-token" } } );
+                    connection.event( "initialized" );
+                    connection.reply( connection.request( "setBreakpoints", { { "source", j::object{ { "path", root + "/debug-contract.lua" } } },
+                        { "breakpoints", j::array{ j::object{ { "line", 5 } } } } } ) );
+                    connection.reply( connection.request( "setExceptionBreakpoints", { { "filters", j::array{ "uncaught" } } } ) );
+                    connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach ); ready = true;
+                    check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Breakpoint was not hit" );
+                    auto stack = connection.reply( connection.request( "stackTrace" ) ).at( "stackFrames" ).as_array();
+                    check( !stack.empty() && stack.front().as_object().at( "line" ).as_int64() == 5, "Wrong paused line" );
+                    const auto frame = stack.front().as_object().at( "id" ).as_int64();
+                    auto scopes = connection.reply( connection.request( "scopes", { { "frameId", frame } } ) ).at( "scopes" ).as_array();
+                    const auto locals = scopes.front().as_object().at( "variablesReference" ).as_int64();
+                    auto values = connection.reply( connection.request( "variables", { { "variablesReference", locals } } ) ).at( "variables" ).as_array();
+                    bool inner = false;
+                    for( const auto &value : values ) if( value.as_object().at( "name" ) == "inner" ) inner = value.as_object().at( "value" ) == "19";
+                    check( inner, "Local value lost at breakpoint" );
+                    auto evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "data.value" } } ) );
+                    check( evaluated.at( "result" ) == "12", "Upvalue/table evaluation failed" );
+                    connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "os.exit()" } } ), false );
+                    connection.reply( connection.request( "stepIn", { { "threadId", 1 } } ) );
+                    connection.event( "stopped" );
+                    connection.reply( connection.request( "stepOut", { { "threadId", 1 } } ) );
+                    connection.event( "stopped" );
+                    connection.reply( connection.request( "variables", { { "variablesReference", locals } } ), false );
+                    connection.reply( connection.request( "setBreakpoints", { { "source", j::object{ { "path", root + "/debug-contract.lua" } } }, { "breakpoints", j::array{} } } ) );
+                    int steppedLine = 0;
+                    // Lua 5.1 and 5.5 report the caller's return line differently.
+                    // Both must remain in the caller when stepping over child().
+                    for( int i = 0; i < 5 && steppedLine != 11; ++i )
+                    {
+                        connection.reply( connection.request( "next", { { "threadId", 1 } } ) );
+                        connection.event( "stopped" );
+                        auto stepped = connection.reply( connection.request( "stackTrace" ) ).at( "stackFrames" ).as_array();
+                        steppedLine = static_cast<int>( stepped.front().as_object().at( "line" ).as_int64() );
+                        check( stepped.size() == 1 && steppedLine >= 8, "Step over entered a child function" );
+                    }
+                    check( steppedLine == 11, "Step over did not reach the next statement" );
+                    connection.reply( connection.request( "continue", { { "threadId", 1 } } ) );
+                    auto error = connection.event( "stopped" ); check( error.at( "reason" ) == "exception", "Uncaught error did not stop" );
+                    auto info = connection.reply( connection.request( "exceptionInfo", { { "threadId", 1 } } ) );
+                    check( std::string( info.at( "description" ).as_string() ).find( "debug exception" ) != std::string::npos, "Exception text lost" );
+                    connection.close(); // Disconnect must release the suspended VM.
+                    done = true;
+                }
+                catch( const std::exception &error ) { clientError = error.what(); failed = true; ready = true; done = true; }
+            } );
+            Thread::setCurrentTask( TaskId::Application );
+            auto deadline = Clock::now() + std::chrono::seconds( 20 );
+            while( !ready && Clock::now() < deadline ) { manager.update(); std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); }
+            check( ready && !failed, "DAP configuration failed" );
+            check( manager.executeSource( "local outer=7\nlocal data={value=12}\nlocal function child()\n local inner=outer+data.value\n inner=inner+1\n return inner\nend\nresult=child()\nresult=result+1\nresult=child()\nresult=result+1", "@debug-contract.lua" ), "Debugged execution failed" );
+            check( manager.executeSource( "assert(result==21)", "=result" ), "Stepping changed program behavior" );
+            check( !manager.executeSource( "local marker=42\nerror('debug exception')", "@debug-error.lua" ), "Lua error unexpectedly succeeded" );
+            check( pumps > 0, "Paused Editor pump did not run" );
+            check( done && !failed, "Client contracts failed" );
+            if( client.joinable() ) client.join();
+            check( clientError.empty(), clientError.c_str() );
+            const bool dispatch = manager.executeSource( "assert(gameplayCalls==0, 'gameplayCalls='..tostring(gameplayCalls)); assert(editorCalls>0, 'editorCalls='..tostring(editorCalls))", "=paused-dispatch" );
+            check( dispatch, manager.getLastDiagnostic().c_str() );
+            int localStops = 0;
+            manager.setDebuggerPausePump( [&]() { ++localStops; manager.debuggerCommand( "continue" ); return true; } );
+            manager.debuggerCommand( "pause" );
+            check( manager.executeSource( "localPaused=1\nlocalPaused=2", "@local-debug.lua" ), "Editor-only pause failed" );
+            check( localStops > 0, "Editor-only pause did not enter the pump" );
+            manager.stopDebugger(); manager.unload( nullptr );
+            std::puts( "Lua debugger integration: PASS" );
+        }
+        catch( const std::exception &error )
+        {
+            failed = true; manager.stopDebugger();
+            if( client.joinable() ) client.join();
+            std::fprintf( stderr, "Lua debugger integration: FAIL: %s %s\n", error.what(), clientError.c_str() );
+            manager.unload( nullptr ); result = 1;
+        }
+    }
+    TypeManager::setInstance( nullptr ); types.unload(); return result;
+}

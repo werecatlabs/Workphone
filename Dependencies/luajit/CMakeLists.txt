@@ -24,8 +24,9 @@ add_custom_command(OUTPUT "${luajit_library}" "${luajit_executable}"
 add_custom_target(LuaJitBuild DEPENDS "${luajit_library}" "${luajit_executable}")
 add_library(luajit STATIC IMPORTED GLOBAL)
 set_target_properties(luajit PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/src;${luajit_build_root}/$<CONFIG>/src")
 foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
+    file(MAKE_DIRECTORY "${luajit_build_root}/${config}/src")
     string(TOUPPER "${config}" upper_config)
     set_property(TARGET luajit PROPERTY "IMPORTED_LOCATION_${upper_config}"
         "${luajit_build_root}/${config}/lua51.lib")

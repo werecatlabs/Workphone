@@ -1,5 +1,6 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/ClawMaterialDrawRecords.hpp>
+#include <WPGraphics/ClawMaterial.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include "ClawMeshMaterial.hpp"
@@ -110,6 +111,12 @@ namespace workphone::render
                 if( owner.state ) break;
             }
         Record record;
+        if(auto claw = dynamic_cast<ClawMaterial *>(owner.material.get()))
+        {
+            record.runtimeRequested = claw->hasRuntimeProgram();
+            owner.runtime = claw->getRuntimePublication();
+            record.runtime = owner.runtime.get();
+        }
         record.material = owner.material.get();
         record.state = owner.state.get();
         const auto index = static_cast<u32>( m_records.size() );

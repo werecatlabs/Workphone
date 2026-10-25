@@ -1,5 +1,7 @@
 #include <WPLua/LuaManager.hpp>
+#include <WPLua/LuaDebugger.hpp>
 #include <WPLuabind/ParamConverter.hpp>
+#include <WPLuabind/LuaCompat.hpp>
 #include <WPLua/NullScriptObject.hpp>
 #include <WPLua/LuaObjectData.hpp>
 #include <WPLua/LuaScriptCompiler.hpp>
@@ -63,6 +65,7 @@ namespace workphone
             // Do not invoke an arbitrary error object's __tostring in the handler.
             const char *message = lua_tostring( state, 1 );
             if( !message ) message = "Lua raised a non-string error";
+            if( auto manager = stateManager( state ) ) manager->debuggerException( state, message );
             luaL_traceback( state, state, message, 1 );
             return 1;
         }
@@ -147,6 +150,8 @@ namespace workphone
             if( call->optional && lua_isnil( state, -( arguments + 1 ) ) ) return 0;
             if( !lua_isfunction( state, -( arguments + 1 ) ) )
                 return luaL_error( state, "Lua function '%s' was not found", call->functionName );
+            if( auto manager = stateManager( state ); manager &&
+                !manager->debuggerCallbackAllowed( state, -( arguments + 1 ) ) ) return 0;
 
             // Keep the established Parameters and mutable results-container ABI.
             if( call->parameters )
@@ -167,7 +172,23 @@ namespace workphone
     WP_CLASS_REGISTER_DERIVED( workphone, LuaManager, IScriptManager );
 
 
-    LuaManager::LuaManager() = default;
+    LuaManager::LuaManager() : m_debugger( std::make_unique<LuaDebugger>() ) {}
+
+    bool LuaManager::startDebugger( u16 port, const String &token, const String &root )
+    {
+        std::string error;
+        const bool result = m_debugger->start( getLuaState(), port, token.c_str(), root.c_str(), error );
+        if( !result ) { m_lastDiagnostic = error.c_str(); setError( true ); }
+        return result;
+    }
+    void LuaManager::stopDebugger() { m_debugger->stop(); }
+    u16 LuaManager::getDebuggerPort() const { return m_debugger->port(); }
+    bool LuaManager::isDebuggerPaused() const { return m_debugger->paused(); }
+    void LuaManager::setDebuggerPausePump( std::function<bool()> pump ) { m_debugger->setPausePump( std::move( pump ) ); }
+    void LuaManager::debuggerCommand( const String &command ) { m_debugger->command( command.c_str() ); }
+    String LuaManager::getDebuggerStatus() const { return m_debugger->status().c_str(); }
+    void LuaManager::debuggerException( lua_State *state, const char *message ) { m_debugger->exception( state, message ); }
+    bool LuaManager::debuggerCallbackAllowed( lua_State *state, int index ) const { return m_debugger->callbackAllowed( state, index ); }
 
     LuaManager::~LuaManager()
     {
@@ -212,6 +233,7 @@ namespace workphone
             setLoadingState( LoadingState::Unloading );
 
             ScopedLock lock( this );
+            m_debugger->stop();
 
             for( auto objectData : m_objectData )
             {
@@ -404,7 +426,7 @@ namespace workphone
         }
 
         // Push the global environment table onto the stack
-        lua_pushglobaltable( L );
+        wpLuaPushGlobalTable( L );
 
         // Push a nil value onto the stack to start the iteration
         lua_pushnil( L );
@@ -456,7 +478,7 @@ namespace workphone
 
         auto L = getLuaState();
         // Push the global environment table onto the stack
-        lua_pushglobaltable( L );
+        wpLuaPushGlobalTable( L );
         // Push a nil value onto the stack to start the iteration
         lua_pushnil( L );
         while( lua_next( L, -2 ) != 0 )
@@ -467,7 +489,7 @@ namespace workphone
                 // Get the function name
                 std::string functionName = lua_tostring( L, -2 );
                 // Get the function's environment
-                lua_getuservalue( L, -1 );
+                wpLuaGetUserValue( L, -1 );
                 // Get the function's environment table
                 lua_pushstring( L, "__name" );
                 lua_rawget( L, -2 );
@@ -503,7 +525,7 @@ namespace workphone
         ScopedLock lock( this );
         auto L = getLuaState();
         // Push the global environment table onto the stack
-        lua_pushglobaltable( L );
+        wpLuaPushGlobalTable( L );
         // Push a nil value onto the stack to start the iteration
         lua_pushnil( L );
         while( lua_next( L, -2 ) != 0 )
@@ -514,7 +536,7 @@ namespace workphone
                 // Get the function name
                 std::string functionName = lua_tostring( L, -2 );
                 // Get the function's environment
-                lua_getuservalue( L, -1 );
+                wpLuaGetUserValue( L, -1 );
                 // Get the function's environment table
                 lua_pushstring( L, "__name" );
                 lua_rawget( L, -2 );
@@ -659,6 +681,8 @@ namespace workphone
         }
         auto state = getLuaState();
         if( !state ) { m_lastDiagnostic = "Lua state is not loaded"; setError( true ); return false; }
+        for( const auto &entry : entries )
+            m_debugger->source( entry.sourceName.c_str(), std::string( entry.source.data(), entry.source.size() ) );
         const int top = lua_gettop( state );
         lua_pushcfunction( state, scriptTraceback );
         lua_pushcfunction( state, installPreloads );
@@ -739,6 +763,7 @@ namespace workphone
             setError( true );
             return false;
         }
+        m_debugger->source( sourceName.c_str(), std::string( source.data(), source.size() ) );
         const int top = lua_gettop( state );
         lua_pushcfunction( state, scriptTraceback );
         const int handler = top + 1;
@@ -867,7 +892,7 @@ namespace workphone
         luaL_openlibs( luaState );
 
         // Load the Lua CJSON library
-        luaL_requiref( luaState, "cjson", luaopen_cjson, 1 );
+        wpLuaRequire( luaState, "cjson", luaopen_cjson );
         lua_pop( luaState, 1 );
 
         luabind::open( luaState );
@@ -1083,6 +1108,7 @@ namespace workphone
     void LuaManager::update()
     {
         if( !isLoaded() || Thread::getCurrentTask() != TaskId::Application ) return;
+        m_debugger->poll();
         ScopedLock lock( this );
         // Drain a snapshot, so a callback that enqueues work cannot starve the frame.
         SmartPtr<ISharedObject> object;
@@ -1184,6 +1210,11 @@ namespace workphone
             data->load( nullptr ); // Refresh callback metadata against the new class.
         }
         instances.clear();
+        if( m_debugger->port() )
+        {
+            m_debugger->bind( replacement );
+            m_debugger->copySourcesFrom( *candidate.m_debugger );
+        }
         if( previous ) lua_close( previous );
         updateClassNames();
         m_lastDiagnostic.clear();

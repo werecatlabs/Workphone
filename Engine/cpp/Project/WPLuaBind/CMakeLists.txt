@@ -28,7 +28,7 @@ if (UNIX)
 endif()
 
 include_directories( ${WP_ROOT}/Dependencies/boost )
-include_directories( ${WP_ROOT}/Dependencies/lua/inc )
+include_directories( ${WP_LUA_INCLUDE_DIR} )
 include_directories( ${WP_ROOT}/Dependencies/luabind/inc )
 include_directories( ${WP_ROOT}/Dependencies/luabind/inc/luabind )
 
@@ -54,6 +54,7 @@ if (WP_USE_PRECOMPILED_HEADERS)
 endif()
 
 add_library(WPLuaBind STATIC ${HEADER_FILES} ${SOURCE_FILES})
+target_link_libraries(WPLuaBind PUBLIC lua luabind)
 target_include_directories(WPLuaBind PRIVATE ${WP_ROOT}/Dependencies/rapidjson/include)
 set_target_properties (WPLuaBind PROPERTIES FOLDER Engine/Cpp/Scripting)
 

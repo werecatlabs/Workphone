@@ -2,7 +2,7 @@
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"
                  xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="Workphone.LuaDebugger.7c9e5e2a-0f9e-45fa-9b8b-61d0717049b2" Version="0.2.0" Language="en-US" Publisher="Workphone" />
+    <Identity Id="Workphone.LuaDebugger.7c9e5e2a-0f9e-45fa-9b8b-61d0717049b2" Version="0.3.0" Language="en-US" Publisher="Workphone" />
     <DisplayName>Workphone Lua Debugger</DisplayName>
     <Description xml:space="preserve">Lua debugger connection tool for Workphone development builds.</Description>
   </Metadata>
@@ -13,5 +13,5 @@
   </Installation>
   <Dependencies><Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" Version="[4.8,)" /></Dependencies>
   <Prerequisites><Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.0,19.0)" DisplayName="Visual Studio core editor" /></Prerequisites>
-  <Assets><Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" /></Assets>
+  <Assets><Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" /><Asset Type="Microsoft.VisualStudio.VsPackage" Path="AdapterRegistration.pkgdef" /></Assets>
 </PackageManifest>

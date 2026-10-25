@@ -5,6 +5,7 @@
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <WPGraphics/ClawDrawSort.hpp>
 #include <WPGraphics/ClawMaterialStorage.hpp>
+#include <WPGraphics/MaterialProgramDX11.hpp>
 #include <unordered_map>
 #include <vector>
 #include <memory_resource>
@@ -29,6 +30,8 @@ namespace workphone::render
         };
         struct Record
         {
+            const MaterialProgramDX11::Publication *runtime = nullptr;
+            bool runtimeRequested = false;
             IMaterial *material = nullptr;
             const MaterialRenderState *state = nullptr;
             ClawMaterialRenderCache::Handle handle;
@@ -71,6 +74,7 @@ namespace workphone::render
     private:
         struct Owner
         {
+            MaterialProgramDX11::PublicationPtr runtime;
             SmartPtr<IMaterial> material;
             MaterialRenderState::Ptr state;
         };

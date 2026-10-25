@@ -31,6 +31,8 @@
 #include <workphone_graphics_camera.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
+#include <d3dcompiler.h>
+#include <wrl/client.h>
 #include "DX11TestEvidence.hpp"
 #include "ClawSceneNodeTransformContracts.hpp"
 #include "ClawMaterialPassLifetimeContracts.hpp"
@@ -467,6 +469,255 @@ namespace
             retired.preparations == pending.preparations && retired.storageAllocations == pending.storageAllocations,
             "idle frame boundaries retire expired material records without new draws, preparation or allocation");
         renderer.setRenderTarget(nullptr);
+        return ok;
+    }
+
+    bool testRuntimeMaterialProgram(ClawRendererDX11 &renderer)
+    {
+        using Microsoft::WRL::ComPtr;
+        claw_foliage_scene_contracts::Fixture fixture;
+        auto target = make_ptr<ClawRenderTarget>(); target->setSize({64,64});
+        renderer.setRenderTarget(target); renderer.setCamera(nullptr); renderer.setViewport(nullptr);
+        renderer.disableShadows();
+        struct Restore { ClawRendererDX11 &r; ~Restore() { r.setRenderTarget(nullptr); } } restore{renderer};
+        auto native = wp_renderer_get_dx11(renderer.getNativeRenderer());
+        auto device = static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(native));
+        const auto compile = [&](const char *source, const char *profile) {
+            ComPtr<ID3DBlob> code, errors;
+            const auto hr = D3DCompile(source, std::strlen(source), "RuntimeMaterialContract", nullptr, nullptr,
+                "main", profile, D3DCOMPILE_ENABLE_STRICTNESS, 0, &code, &errors);
+            if(FAILED(hr) && errors) std::fprintf(stderr,"%s",static_cast<const char *>(errors->GetBufferPointer()));
+            check(SUCCEEDED(hr), "runtime fixture HLSL compiles");
+            return code;
+        };
+        auto pixel = compile(
+            "cbuffer Values:register(b4){float4 Tint;} Texture2D Tex:register(t12);"
+            "Buffer<float4> Buf:register(t13); SamplerState Samp:register(s5);"
+            "float4 main(float4 p:SV_POSITION):SV_TARGET{return Tint*Tex.Sample(Samp,float2(.5,.5))*Buf[0];}","ps_5_0");
+        auto vertex = compile(
+            "cbuffer Transform:register(b0){row_major float4x4 Mvp;}"
+            "cbuffer VertexValues:register(b8){float4 Tint;}"
+            "float4 main(float3 p:POSITION):SV_POSITION{return mul(Mvp,float4(p*Tint.a,1));}","vs_5_0");
+        if(!pixel || !vertex) return false;
+        auto material = make_ptr<ClawMaterial>();
+        auto technique = make_ptr<ClawMaterialTechnique>(); technique->setMaterial(material.get()); technique->createPass();
+        material->setTechniques({technique}); material->setCullMode(1); material->setBlendMode(0);
+        material->setMaterialType(MaterialType::UI);
+        using Type = MaterialShaderParameterType;
+        material->setShaderParameters({{Type::Colour,"Tint"},{Type::Texture,"Tex"},
+            {Type::Buffer,"Buf"},{Type::Sampler,"Samp"}},"RuntimeTest");
+        auto &values = material->getShaderParameters();
+        values.SetColour(values.FindParameter("Tint"),ColourF(1,0,0,1));
+        values.SetTexture(values.FindParameter("Tex"),1);
+        values.SetBuffer(values.FindParameter("Buf"),2);
+        values.SetSampler(values.FindParameter("Samp"),3);
+        std::unique_ptr<wp_shader_program,decltype(&wp_shader_program_destroy)> descriptor(
+            wp_shader_program_create(), &wp_shader_program_destroy);
+        const auto text = [](const char *p) { return reinterpret_cast<const wp_c8 *>(p); };
+        wp_shader_program_register_uniform(descriptor.get(),text("Tint"),WORKPHONE_UNIFORM_TYPE_VEC4);
+        wp_shader_program_register_param(descriptor.get(),text("Tex"),WORKPHONE_UNIFORM_TYPE_INT,1,
+            WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT,WORKPHONE_SHADER_AUTO_PARAM_NONE,WORKPHONE_SHADER_RESOURCE_TEXTURE);
+        wp_shader_program_register_param(descriptor.get(),text("Buf"),WORKPHONE_UNIFORM_TYPE_INT,1,
+            WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT,WORKPHONE_SHADER_AUTO_PARAM_NONE,WORKPHONE_SHADER_RESOURCE_BUFFER);
+        wp_shader_program_register_param(descriptor.get(),text("Samp"),WORKPHONE_UNIFORM_TYPE_INT,1,
+            WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT,WORKPHONE_SHADER_AUTO_PARAM_NONE,WORKPHONE_SHADER_RESOURCE_SAMPLER);
+        String error;
+        const MaterialProgramDX11::Bytecode ps{pixel->GetBufferPointer(),pixel->GetBufferSize()};
+        const MaterialProgramDX11::Bytecode vs{vertex->GetBufferPointer(),vertex->GetBufferSize()};
+        MaterialProgramReflectionSelection vertexSelection; // b0 is geometry-owned
+        vertexSelection.constantBuffers = {"VertexValues"};
+        auto program = MaterialProgramDX11::Create(device,values.GetLayout(),descriptor.get(),1,ps,vs,error,
+            nullptr,&vertexSelection);
+        if(!check(bool(program),error.c_str())) return false;
+        struct Resources : MaterialProgramResourcesDX11
+        {
+            ComPtr<ID3D11ShaderResourceView> texture, buffer;
+            ComPtr<ID3D11SamplerState> sampler;
+            bool ready = true;
+            unsigned calls = 0;
+            bool Resolve(Type type, MaterialResourceHandle handle, void *&native) override
+            {
+                ++calls;
+                if(!ready) return false;
+                native = type == Type::Texture && handle == 1 ? texture.Get() :
+                    type == Type::Buffer && handle == 2 ? buffer.Get() :
+                    type == Type::Sampler && handle == 3 ? static_cast<void *>(sampler.Get()) : nullptr;
+                return native != nullptr;
+            }
+        };
+        auto resources = std::make_shared<Resources>();
+        const u32 white = 0xffffffff, red = 0xff0000ff, green = 0xff00ff00;
+        auto whiteView = claw_terrain_material_contracts::texture(native,1,1,DXGI_FORMAT_R8G8B8A8_UNORM,&white,4);
+        auto redView = claw_terrain_material_contracts::texture(native,1,1,DXGI_FORMAT_R8G8B8A8_UNORM,&red,4);
+        auto greenView = claw_terrain_material_contracts::texture(native,1,1,DXGI_FORMAT_R8G8B8A8_UNORM,&green,4);
+        resources->texture = whiteView;
+        D3D11_BUFFER_DESC desc{}; desc.ByteWidth = 16; desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        const float ones[] = {1,1,1,1}; D3D11_SUBRESOURCE_DATA initial{ones,0,0};
+        ComPtr<ID3D11Buffer> buffer;
+        D3D11_SHADER_RESOURCE_VIEW_DESC view{}; view.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+        view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER; view.Buffer.NumElements = 1;
+        D3D11_SAMPLER_DESC sampler{}; sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler.MaxLOD = D3D11_FLOAT32_MAX;
+        if(!check(SUCCEEDED(device->CreateBuffer(&desc,&initial,&buffer)) &&
+            SUCCEEDED(device->CreateShaderResourceView(buffer.Get(),&view,&resources->buffer)) &&
+            SUCCEEDED(device->CreateSamplerState(&sampler,&resources->sampler)),"runtime native resources create")) return false;
+        material->setRuntimeProgram(program,resources);
+        TestMesh mesh; mesh.setMaterial(material);
+        ClawMaterialDrawRecords a, b;
+        a.capture(&mesh); renderer.prepareMaterialRecords(a);
+        values.SetColour(values.FindParameter("Tint"),ColourF(0,1,0,1));
+        b.capture(&mesh); renderer.prepareMaterialRecords(b);
+        bool ok = true;
+        const auto expect = [&](int channel, const char *message) {
+            const auto pixels = claw_foliage_contracts::pixels(native);
+            const auto offset = (32u*64u+32u)*4u;
+            bool matches = true;
+            for(int i = 0; i < 3; ++i) matches &= channel == i ? pixels[offset+i] > 200 : pixels[offset+i] < 10;
+            return check(matches,message);
+        };
+        for(auto records : {&a,&b,&a})
+        {
+            renderer.clear(ColourF::Black);
+            ok &= renderer.renderMeshRecords(&mesh,Matrix4F::identity(),*records,*records->find(&mesh));
+            ok &= expect(records == &a ? 0 : 1,"runtime VS/PS + texture/buffer/sampler preserve A/B/A captured values");
+        }
+        values.SetColour(values.FindParameter("Tint"),ColourF(1,0,0,0));
+        renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+        ok &= expect(-1,"vertex-stage material constants reach the active native vertex shader");
+        values.SetColour(values.FindParameter("Tint"),ColourF::White);
+        material->getRuntimePublication(); // Warm latest material revision.
+        ClawMaterialDrawRecords current; current.capture(&mesh); renderer.prepareMaterialRecords(current);
+        const auto publication = material->getRuntimePublication();
+        for(auto texture : {redView,greenView})
+        {
+            resources->texture = texture;
+            renderer.clear(ColourF::Black);
+            renderer.renderMeshRecords(&mesh,Matrix4F::identity(),current,*current.find(&mesh));
+            ok &= expect(texture == redView ? 0 : 1,"resource replacement resolves on every retained-publication draw");
+            ok &= check(material->getRuntimePublication() == publication,"resource replacement does not repack CPU values");
+        }
+        resources->ready = false;
+        wp_render_statistics_dx11 before{}, after{};
+        wp_renderer_dx11_get_statistics(native,&before);
+        renderer.clear(ColourF::Black);
+        renderer.renderMeshRecords(&mesh,Matrix4F::identity(),current,*current.find(&mesh));
+        wp_renderer_dx11_get_statistics(native,&after);
+        ok &= expect(-1,"unresolved resource defers draw");
+        ok &= check(after.draws == before.draws,"denied activation issues no native draw");
+        resources->ready = true;
+        // The canonical invalid handle clears a previous resource rather than reusing it.
+        values.SetBuffer(values.FindParameter("Buf"),InvalidMaterialResourceHandle);
+        renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+        ok &= expect(-1,"invalid resource handle binds null");
+        values.SetBuffer(values.FindParameter("Buf"),2);
+        resources->texture = resources->buffer;
+        renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+        ok &= expect(-1,"buffer SRV cannot satisfy a reflected Texture2D");
+        resources->texture = static_cast<ID3D11ShaderResourceView *>(target->getNativeTextureView());
+        if(check(bool(resources->texture),"active target exposes an SRV for feedback rejection"))
+        {
+            wp_renderer_dx11_get_statistics(native,&before);
+            renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+            wp_renderer_dx11_get_statistics(native,&after);
+            ok &= check(after.draws == before.draws,"runtime material cannot sample its active output target");
+        }
+        else ok = false;
+        ComPtr<ID3D11Device> foreignDevice;
+        ComPtr<ID3D11DeviceContext> foreignContext;
+        D3D_FEATURE_LEVEL feature;
+        if(check(SUCCEEDED(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,
+            &foreignDevice,&feature,&foreignContext)),"foreign-device fixture creates"))
+        {
+            D3D11_TEXTURE2D_DESC image{}; image.Width=image.Height=image.MipLevels=image.ArraySize=1;
+            image.Format=DXGI_FORMAT_R8G8B8A8_UNORM; image.SampleDesc.Count=1;
+            image.Usage=D3D11_USAGE_IMMUTABLE; image.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+            D3D11_SUBRESOURCE_DATA pixels{&white,4,4}; ComPtr<ID3D11Texture2D> texture;
+            ComPtr<ID3D11ShaderResourceView> view;
+            ok &= check(SUCCEEDED(foreignDevice->CreateTexture2D(&image,&pixels,&texture)) &&
+                SUCCEEDED(foreignDevice->CreateShaderResourceView(texture.Get(),nullptr,&view)),"foreign SRV creates");
+            resources->texture=view;
+            wp_renderer_dx11_get_statistics(native,&before);
+            renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+            wp_renderer_dx11_get_statistics(native,&after);
+            ok &= check(after.draws == before.draws,"foreign-device resource defers runtime material draw");
+        }
+        else ok = false;
+        resources->texture = greenView;
+        auto engineTexture = make_ptr<MaterialRoutingTexture>(); engineTexture->currentView = redView.Get();
+        auto table = std::make_shared<MaterialProgramResourceTableDX11>();
+        table->SetTexture(0,engineTexture); // Zero is a valid numeric resource identity.
+        table->SetBuffer(2,resources->buffer.Get()); table->SetSampler(3,resources->sampler.Get());
+        values.SetTexture(values.FindParameter("Tex"),0);
+        material->setRuntimeProgram(program,table);
+        const auto enginePublication = material->getRuntimePublication();
+        for(auto view : {redView,greenView})
+        {
+            engineTexture->currentView = view.Get();
+            renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+            ok &= expect(view == redView ? 0 : 1,"numeric owner table resolves current engine texture view");
+            ok &= check(material->getRuntimePublication() == enginePublication,"texture completion preserves packed publication");
+        }
+        table->SetBuffer(2,resources->sampler.Get());
+        wp_renderer_dx11_get_statistics(native,&before);
+        renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+        wp_renderer_dx11_get_statistics(native,&after);
+        ok &= check(after.draws == before.draws,"native interface mismatch rejects without dereferencing an SRV vtable");
+        table->SetBuffer(2,resources->buffer.Get());
+        // Warm captured draws and numeric lookups run with zero SourceCpu headroom.
+        ClawMaterialDrawRecords warm; warm.capture(&mesh); renderer.prepareMaterialRecords(warm);
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto source = size_t(StreamMemoryClass::SourceCpu), gpu = size_t(StreamMemoryClass::Gpu);
+        const auto baseline = scheduler->stats();
+        bool limits = scheduler->setBudget(StreamMemoryClass::SourceCpu,baseline.used[source],error);
+        renderer.clear(ColourF::Black);
+        renderer.renderMeshRecords(&mesh,Matrix4F::identity(),warm,*warm.find(&mesh));
+        const auto afterWarm = scheduler->stats();
+        bool attachmentDenied = false;
+        try { material->setRuntimeProgram(program,table); }
+        catch(const std::bad_alloc &) { attachmentDenied = true; }
+        scheduler->setBudget(StreamMemoryClass::SourceCpu,baseline.limits[source],error);
+        ok &= check(attachmentDenied && material->getRuntimePublication() == enginePublication &&
+            scheduler->stats().used[source] == baseline.used[source],
+            "cold attachment CPU denial preserves the old immutable publication and lease count");
+        ok &= expect(1,"warm runtime shader draw succeeds at full CPU budget");
+        ok &= check(limits && afterWarm.used[source] == baseline.used[source] &&
+            afterWarm.rejectedReservations[source] == baseline.rejectedReservations[source],
+            "warm runtime binding performs no SourceCpu allocation");
+        // Candidate failure preserves the last attachment and releases partial CPU/GPU ownership.
+        limits = scheduler->setBudget(StreamMemoryClass::Gpu,baseline.used[gpu],error);
+        bool denied = false;
+        try { MaterialProgramDX11::Create(device,values.GetLayout(),descriptor.get(),1,ps,{},error); }
+        catch(const std::bad_alloc &) { denied = true; }
+        const auto afterDenied = scheduler->stats();
+        scheduler->setBudget(StreamMemoryClass::Gpu,baseline.limits[gpu],error);
+        ok &= check(limits && denied && afterDenied.used[source] == baseline.used[source] &&
+            afterDenied.used[gpu] == baseline.used[gpu] && material->getRuntimePublication() == enginePublication,
+            "GPU admission denial unwinds candidate while retaining the installed shader");
+        engineTexture->currentView = nullptr;
+        values.SetTexture(values.FindParameter("Tex"),1);
+        // Standard pipeline must recover after both successful and denied overrides.
+        material->setRuntimeProgram(nullptr); material->setDiffuse(ColourF(0,0,1,1));
+        renderer.clear(ColourF::Black); renderer.renderMesh(&mesh,Matrix4F::identity());
+        ok &= expect(2,"ordinary material restores built-in shaders/constants/resources");
+        auto pixelOnly = MaterialProgramDX11::Create(device,values.GetLayout(),descriptor.get(),1,ps,{},error);
+        material->setRuntimeProgram(pixelOnly,resources);
+        wp_instance_pntc_dx11 instance{};
+        for(int i=0;i<4;++i) instance.transform.m[i][i]=1;
+        instance.tint={1,1,1,1};
+        renderer.clear(ColourF::Black);
+        ok &= check(renderer.renderMeshInstances(&mesh,&instance,1) == 1,"pixel-only program activates after instanced vertex setup");
+        ok &= expect(1,"instanced custom material reaches pixel shader");
+        material->setRuntimeProgram(program,resources);
+        ok &= check(renderer.renderMeshInstances(&mesh,&instance,1) == 0,"custom scalar vertex program explicitly defers instancing");
+        // In-place descriptor edits invalidate both current and retained publications.
+        wp_shader_program_set_permutation_mask(descriptor.get(),WP_SHADER_PERMUTATION_ALPHA_TEST);
+        renderer.clear(ColourF::Black);
+        renderer.renderMeshRecords(&mesh,Matrix4F::identity(),a,*a.find(&mesh));
+        ok &= expect(-1,"stale runtime program never draws retained constants with a new generation");
+        material->setRuntimeProgram(nullptr);
+        std::fprintf(stderr,"Runtime material activation: captured A/B/A, resource refresh/null/denial, built-in recovery, instancing and stale maps passed=%d\n",ok);
         return ok;
     }
 
@@ -1151,6 +1402,7 @@ int main( int argc, char **argv )
             ok &= testRenderedFeatures(renderer);
             ok &= testMaterialUploadWork(renderer);
             ok &= testRenderedFeatures(renderer); // Run the same pixel contracts with split constants.
+            ok &= testRuntimeMaterialProgram(renderer);
             ok &= testPreparedMaterialEdits(renderer);
             ok &= testSkyMaterialPublications(renderer);
             ok &= testIdleMaterialRetirement(renderer);
