@@ -6,6 +6,7 @@ namespace workphone::render
     namespace detail
     {
         void shaderReloadAttached(ClawMaterial *,u64);
+        void prepareShaderReloadStatus(ClawMaterial *);
         void forgetShaderReload(ClawMaterial *) noexcept;
         void appendShaderFiles(const ClawMaterial *,SmartPtr<Properties>);
     }

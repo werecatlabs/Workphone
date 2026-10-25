@@ -57,7 +57,8 @@ namespace cooked_material_shader_contracts
         require(report.succeeded(),"Versioned typed shader material compiles through ResourceSystem");
         auto loaded=resources->load(id,error);CookedMaterialData data;
         require(loaded && decodeCookedMaterial(*loaded,data,error),error);
-        require(loaded->header.compilerVersion==4 && data.shader.shaderID=="Cooked.Contract" && data.shader.schemaVersion==7 &&
+        require(loaded->header.compilerVersion==GraphicsResourceCompiler().versionFor(id.type()) &&
+            data.shader.shaderID=="Cooked.Contract" && data.shader.schemaVersion==7 &&
             data.shader.parameters.size()==9 && loaded->header.installDependencies.size()==1 && loaded->dependencies.size()==1,
             "v3 shader schema preserves identity/version and deduplicates durable texture dependencies");
         const auto bytes=data.shader.pixelDXBC;
@@ -79,10 +80,24 @@ namespace cooked_material_shader_contracts
             "Ambiguous DXBC/HLSL stage source rejects instead of choosing silently");
         writeText(source/"shader.matres",descriptor.c_str());
         writeText(fixture.folder/"outside.hlsli","#define RED_SCALE 1.0f\n");
-        writeText(source/"pixel.hlsl","#include \"../outside.hlsli\"\n");
+        std::string escaping=hlsl;
+        escaping.replace(escaping.find("shade.hlsli"),std::strlen("shade.hlsli"),"../outside.hlsli");
+        writeText(source/"pixel.hlsl",escaping.c_str());
         require(!compiler.getDependencies(probe,dependencies,error) && !error.empty(),
             "Shader include cannot escape the canonical asset source root");
         writeText(source/"pixel.hlsl",hlsl);
+        const auto textureReport=resources->compile(ResourceID("data://white.texres"),options);
+        require(textureReport.succeeded(),"Cook validation fixture retains its pinned texture artifact");
+        probe.packagedBuild=true;probe.dependencyArtifacts["data://white.texres"]=textureReport.outputPath;
+        auto wrongType=descriptor;const auto tintType=wrongType.find("\"type\":\"colour\"");
+        require(tintType!=std::string::npos,"Cook validation fixture locates Tint type");
+        wrongType.replace(tintType,std::strlen("\"type\":\"colour\""),"\"type\":\"int4\"");
+        writeText(source/"shader.matres",wrongType.c_str());
+        std::ostringstream invalidShader(std::ios::binary);Array<String> messages;
+        require(compiler.compile(probe,invalidShader,messages)==CompilationStatus::Failure &&
+            invalidShader.str().empty() && !messages.empty(),
+            "Pure-reflection cook gate rejects HLSL float4 versus declared int4 before output publication");
+        writeText(source/"shader.matres",descriptor.c_str());
         const auto reject=[&](RuntimeResource broken) {
             graphics_compiler_contracts::refreshIntegrity(broken);CookedMaterialData output;
             require(!decodeCookedMaterial(broken,output,error) && !error.empty() && output.target.empty(),

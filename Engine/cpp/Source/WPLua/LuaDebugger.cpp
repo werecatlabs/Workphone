@@ -951,7 +951,7 @@ namespace workphone
                 if( ref == references.end() ) { response( request, {}, "Stale variable reference" ); return; }
                 auto scope = ref->second; j::array values; lua_Debug frame{};
                 const int start = integer( args, "start" ) > INT_MAX - scope.offset ? INT_MAX : integer( args, "start" ) + scope.offset;
-                const int count = std::min( 256, integer( args, "count", 256 ) ); int seen = 0; size_t bytes = 0; bool more = false;
+                const int count = std::min( 256, integer( args, "count", 256 ) ); int seen = 0; size_t bytes = 0; bool more = false, truncated = false;
                 auto add = [&]( std::string_view name ) {
                     if( seen++ < start ) return;
                     if( values.size() >= static_cast<size_t>( count ? count : 256 ) ) { more = true; return; }
@@ -981,6 +981,10 @@ namespace workphone
                         add( name ); lua_pop( stopped, 1 );
                         if( more ) break;
                     }
+                    // Bound work even for enormous tables, but never present an
+                    // inspection budget as if the table simply ended here.
+                    if( !more && visited > 4096 && lua_next( stopped, -2 ) )
+                    { truncated = true; lua_pop( stopped, 1 ); }
                 }
                 if( more && references.size() < 4096 && nextHandle < INT_MAX )
                 {
@@ -990,6 +994,8 @@ namespace workphone
                     const int id = nextHandle++; references[id] = continuation;
                     values.push_back( j::object{ { "name", "[more variables]" }, { "value", "Expand to continue inspection" }, { "variablesReference", id } } );
                 }
+                else if( more ) truncated = true;
+                if( truncated ) values.push_back( j::object{ { "name", "[inspection limit]" }, { "value", "Debugger table or handle budget reached; inspect a specific key in Watch" }, { "variablesReference", 0 } } );
                 response( request, { { "variables", std::move( values ) } } ); return;
             }
             if( command == "evaluate" )

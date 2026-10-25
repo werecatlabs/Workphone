@@ -471,6 +471,11 @@ static wp_s32 wp_shader_program_topology_valid( const wp_shader_program *program
  * Shader object lifecycle
  * ====================================================================== */
 
+wp_size wp_shader_descriptor_size( void )
+{
+    return (wp_size)sizeof( wp_shader );
+}
+
 wp_shader *wp_shader_create( wp_shader_type type, wp_shader_language language, const wp_c8 *source,
                              const wp_c8 *entry_point )
 {
@@ -1035,6 +1040,11 @@ void wp_shader_set_native( wp_shader *shader, void *native )
 /* =========================================================================
  * Shader program lifecycle
  * ====================================================================== */
+
+wp_size wp_shader_program_descriptor_size( void )
+{
+    return (wp_size)sizeof( wp_shader_program );
+}
 
 wp_shader_program *wp_shader_program_create( void )
 {

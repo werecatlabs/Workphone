@@ -17,6 +17,10 @@
 #include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
+#if defined(_WIN32) && WP_BUILD_RENDERER_DX11
+#include <d3dcompiler.h>
+#endif
 #include <WorkphoneCore/workphone.h>
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
 #include <WorkphoneGraphics/workphone_graphics_shader.h>
@@ -61,6 +65,105 @@ namespace
             std::fprintf( stderr, "FAIL: %s\n", message );
         }
         return condition;
+    }
+
+    bool testDefaultShaderCompiler()
+    {
+        using namespace workphone;
+        using namespace workphone::render;
+        bool ok=true;
+        const auto c=[](const char *p) { return reinterpret_cast<const wp_c8 *>(p); };
+        auto raw=wp_shader_create(WORKPHONE_SHADER_TYPE_VERTEX,WORKPHONE_SHADER_LANGUAGE_HLSL,c("void main(){}"),c("main"));
+        auto fresh=wp_shader_program_create();
+        ok &= check(raw && fresh && wp_shader_descriptor_size()>0 &&
+            wp_shader_program_descriptor_size()==wp_shader_program_get_storage_size(fresh),
+            "opaque shader size queries report physical base allocations");
+        ok &= check(wp_shader_get_compile_func(nullptr)==nullptr && wp_shader_get_compile_func(raw)==nullptr &&
+            !wp_shader_compile(raw),"raw C shaders still require an explicit backend compiler callback");
+        wp_shader_destroy(raw); wp_shader_program_destroy(fresh);
+#if defined(_WIN32) && WP_BUILD_RENDERER_DX11
+        auto scheduler=WorldStreamingScheduler::shared();
+        const auto source=size_t(StreamMemoryClass::SourceCpu);
+        const auto baseline=scheduler->stats().used[source];
+        std::unique_ptr<wp_shader_program,decltype(&wp_shader_program_destroy)> program(wp_shader_program_create(),&wp_shader_program_destroy);
+        if(!program) return check(false,"shader wrapper lifetime fixture creates its program");
+        const char *valid=
+            "#ifndef SCALE\n#define SCALE 1.0\n#endif\n"
+            "float4 main(float3 p:POSITION):SV_POSITION{return float4(p*SCALE,1);}";
+        {
+            ClawShader shader;
+            shader.setLanguage(IShader::Language::HLSL); shader.setStage(IShader::Stage::Vertex);
+            shader.setSource(valid);
+            ok &= check(wp_shader_get_compile_func(shader.getNativeShader())!=nullptr && shader.compile() && shader.isCompiled(),
+                "default Claw compiler produces real HLSL output without creating a GPU device");
+            const auto first=shader.getBinary();
+            ok &= check(first.size()>4 && std::memcmp(first.data(),"DXBC",4)==0,
+                "default Claw getBinary returns compiled DXBC instead of HLSL source bytes");
+            void *firstNative=nullptr; shader.getNativeHandle(&firstNative);
+            if(!firstNative) return check(false,"successful default compiler exposes its retained blob");
+            auto retained=static_cast<ID3DBlob *>(firstNative); retained->AddRef();
+            struct ReleaseBlob { ID3DBlob *blob; ~ReleaseBlob() { blob->Release(); } } release{retained};
+            ok &= check(retained->GetBufferSize()==first.size() &&
+                std::memcmp(retained->GetBufferPointer(),first.data(),first.size())==0,
+                "native default shader output is an actual immutable ID3DBlob");
+            const auto warm=scheduler->stats(); String error;
+            const auto limit=scheduler->setBudget(StreamMemoryClass::SourceCpu,warm.used[source],error);
+            const auto warmOk=shader.compile();
+            const auto afterWarm=scheduler->stats();
+            scheduler->setBudget(StreamMemoryClass::SourceCpu,warm.limits[source],error);
+            ok &= check(limit && warmOk && afterWarm.used[source]==warm.used[source] &&
+                afterWarm.rejectedReservations[source]==warm.rejectedReservations[source],
+                "unchanged default shader compilation reuses output at full SourceCpu budget");
+            shader.setDefine("SCALE","0.5");
+            ok &= check(shader.compile() && shader.getBinary()!=first,"HLSL define changes produce new compiled output");
+            const auto half=shader.getBinary();
+            void *halfNative=nullptr; shader.getNativeHandle(&halfNative);
+            shader.setSource("This is not valid HLSL");
+            ok &= check(!shader.compile() && !shader.isCompiled() && !shader.getDiagnostics().empty() && shader.getBinary()==half,
+                "failed source replacement reports failure while preserving last-good bytes");
+            void *afterFailure=nullptr; shader.getNativeHandle(&afterFailure);
+            ok &= check(afterFailure==halfNative,"failed source replacement preserves the native blob identity");
+            const auto attempted=wp_shader_get_revision(shader.getNativeShader());
+            ok &= check(!shader.reload() && wp_shader_get_revision(shader.getNativeShader())!=attempted && shader.getBinary()==half,
+                "explicit reload retries the same failed source revision without losing output");
+            shader.setSource(valid);
+            const auto beforeDeny=scheduler->stats();
+            const auto capped=scheduler->setBudget(StreamMemoryClass::SourceCpu,beforeDeny.used[source],error);
+            const auto denied=!shader.compile();
+            const auto afterDeny=scheduler->stats();
+            scheduler->setBudget(StreamMemoryClass::SourceCpu,beforeDeny.limits[source],error);
+            ok &= check(capped && denied && afterDeny.used[source]==beforeDeny.used[source] &&
+                afterDeny.rejectedReservations[source]>beforeDeny.rejectedReservations[source] && shader.getBinary()==half,
+                "compiled bytecode admission denial preserves last-good output and exact leases");
+            ok &= check(shader.reload() && shader.isCompiled(),"restored bytecode budget permits explicit retry");
+            const auto good=shader.getBinary();
+            ok &= check(!shader.setBinary({3,2,1,0},IShader::Language::DXBC) && shader.getBinary()==good && !shader.isCompiled(),
+                "malformed DXBC is rejected rather than reported compiled");
+            ok &= check(shader.setBinary(good,IShader::Language::DXBC) && shader.getBinary()==good && shader.isCompiled(),
+                "valid precompiled DXBC is validated and retained");
+            shader.setStage(IShader::Stage::Fragment);
+            ok &= check(!shader.reload() && shader.getBinary()==good && !shader.getDiagnostics().empty(),
+                "DXBC stage mismatch is diagnosed and preserves last-good output");
+            shader.setStage(IShader::Stage::Vertex); shader.setLanguage(IShader::Language::GLSL);
+            ok &= check(!shader.reload() && shader.getBinary()==good && !shader.getDiagnostics().empty(),
+                "unsupported DX11 shader languages fail explicitly");
+            shader.setLanguage(IShader::Language::HLSL); shader.setSource(valid);
+            shader.setStage(IShader::Stage::RayGeneration);
+            ok &= check(!shader.reload() && shader.getBinary()==good && !shader.getDiagnostics().empty(),
+                "unsupported DX11 shader stages fail explicitly");
+            shader.setStage(IShader::Stage::Vertex);
+            ok &= check(shader.reload(),"shader can recover after unsupported authoring edits");
+            wp_shader_program_attach(program.get(),shader.getNativeShader());
+        }
+        const auto retainedUsage=scheduler->stats().used[source];
+        ok &= check(retainedUsage>baseline,"a retained C descriptor owns admitted bytecode after its C++ wrapper dies");
+        auto retained=wp_shader_program_get_shader(program.get(),WORKPHONE_SHADER_TYPE_VERTEX);
+        wp_shader_mark_dirty(retained);
+        ok &= check(wp_shader_compile(retained),"stateless compiler callbacks remain valid after wrapper destruction");
+        program.reset();
+        ok &= check(scheduler->stats().used[source]==baseline,"last retained shader descriptor retires exact bytecode leases");
+#endif
+        return ok;
     }
 
     bool framebufferContainsTextPixels( const wp_byte *pixels )
@@ -298,6 +401,7 @@ int main()
     wp_renderer *renderer = nullptr;
     bool ok = true;
 
+    ok &= testDefaultShaderCompiler();
     ok &= testUiInput();
     ok &= testToggleSwitch();
 
@@ -374,12 +478,16 @@ int main()
         workphone::render::ClawShader shader;
         void *native = nullptr;
         workphone::Array<workphone::u8> binary = { 3u, 2u, 1u, 0u };
+        // Explicitly replace the default backend for this custom C callback
+        // contract. No native exists, so its release policy can be changed safely.
+        wp_shader_set_compile_func(shader.getNativeShader(),nullptr,nullptr);
+        wp_shader_set_release_func(shader.getNativeShader(),nullptr,nullptr);
         shader.setLanguage( workphone::render::IShader::Language::HLSL );
         shader.setSource( "void main(){}" );
         ok &= check( !shader.compile() &&
                          shader.getStatus() == workphone::render::IShader::Status::Failed &&
                          !shader.getDiagnostics().empty(),
-                     "Claw must expose a missing backend compiler as a diagnosed failure" );
+                     "Claw must expose an explicitly removed backend compiler as a diagnosed failure" );
         wp_shader_set_compile_func( shader.getNativeShader(), compileShader, nullptr );
         ok &= check( shader.compile() && shader.isCompiled(),
                      "Claw must compile through the canonical C89 callback" );

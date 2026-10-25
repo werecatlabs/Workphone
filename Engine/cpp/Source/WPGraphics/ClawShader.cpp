@@ -7,6 +7,7 @@
 #include <limits>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
+#include <d3d11.h>
 #include <d3d11shader.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -138,6 +139,7 @@ namespace workphone
                     { wp_shader_set_last_error(shader,toCText("DirectX 11 shader compilation supports HLSL and DXBC only."));return 0; }
                     if(wp_shader_get_specialization_count(shader))
                     { wp_shader_set_last_error(shader,toCText("DirectX 11 specialization constants require an explicit compiler policy; use HLSL defines."));return 0; }
+                    StreamBudget budget;
                     ComPtr<ID3DBlob> blob,diagnostic;
                     if(language==WORKPHONE_SHADER_LANGUAGE_DXBC)
                     {
@@ -145,6 +147,9 @@ namespace workphone
                         const auto bytes=wp_shader_get_binary(shader,&size);
                         if(!bytes || !size)
                         { wp_shader_set_last_error(shader,toCText("DXBC shader has no bytecode."));return 0; }
+                        if(size>std::numeric_limits<size_t>::max()-sizeof(ShaderBlob)) throw std::bad_alloc();
+                        budget=WorldStreamingScheduler::reserveSharedSource(sizeof(ShaderBlob)+size);
+                        if(!budget) throw std::bad_alloc();
                         if(FAILED(D3DCreateBlob(size,&blob))) throw std::bad_alloc();
                         std::memcpy(blob->GetBufferPointer(),bytes,size);
                     }
@@ -183,10 +188,11 @@ namespace workphone
                     if(D3D11_SHVER_GET_TYPE(description.Version)!=kinds[static_cast<unsigned>(stage)])
                     { wp_shader_set_last_error(shader,toCText("DXBC stage does not match the shader descriptor."));return 0; }
                     if(blob->GetBufferSize()>std::numeric_limits<size_t>::max()-sizeof(ShaderBlob)) throw std::bad_alloc();
-                    String error;
-                    auto budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,
-                        sizeof(ShaderBlob)+blob->GetBufferSize(),error);
-                    if(!budget) throw std::bad_alloc();
+                    if(!budget)
+                    {
+                        budget=WorldStreamingScheduler::reserveSharedSource(sizeof(ShaderBlob)+blob->GetBufferSize());
+                        if(!budget) throw std::bad_alloc();
+                    }
                     auto retained=new(std::nothrow) ShaderBlob(std::move(blob),std::move(budget));
                     if(!retained) throw std::bad_alloc();
                     *candidate=static_cast<ID3DBlob *>(retained); return 1;
@@ -416,74 +422,77 @@ namespace workphone
 
         bool ClawShader::compile()
         {
-            wp_u32 binarySize = 0u;
-            const void *binary = nullptr;
-            if( !m_shader )
+            if(!m_shader)
             {
-                WP_LOG_ERROR( "ClawShader::compile: native shader is unavailable." );
+                WP_LOG_ERROR("ClawShader::compile: native shader is unavailable.");
                 return false;
             }
-
-            m_stage = static_cast<Stage>( wp_shader_get_type( m_shader ) );
-            m_language = fromCLanguage( wp_shader_get_language( m_shader ) );
-            m_source = String( fromCText( wp_shader_get_source( m_shader ) ) );
-            m_entryPoint = String( fromCText( wp_shader_get_entry_point( m_shader ) ) );
-            m_profile = String( fromCText( wp_shader_get_profile( m_shader ) ) );
-            Shader::setDefines( getDefines() );
-            m_specializationValues.clear();
-            for( wp_s32 i = 0; i < wp_shader_get_specialization_count( m_shader ); ++i )
-            {
-                const auto *entry = wp_shader_get_specialization_at( m_shader, i );
-                if( entry )
+            const bool defaultCompiler=wp_shader_get_compile_func(m_shader)==compileClawShader;
+            const auto cacheNative=[&] {
+#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
+                if(defaultCompiler)
                 {
-                    SpecializationValue value;
-                    value.name = String( fromCText( entry->name ) );
-                    value.value = entry->value;
-                    m_specializationValues.push_back( value );
-                }
-            }
-            binary = wp_shader_get_binary( m_shader, &binarySize );
-            if( binarySize > 0u && binary != nullptr )
-            {
-                m_binary.resize( binarySize );
-                std::memcpy( m_binary.data(), binary, binarySize );
-            }
-            else if( !m_source.empty() )
-            {
-                m_binary.clear();
-            }
-
-            if( !Shader::compile() )
-            {
-                const auto diagnostics = Shader::getDiagnostics();
-                wp_shader_compile( m_shader );
-                if( !diagnostics.empty() )
-                {
-                    wp_shader_set_last_error( m_shader, toCText( diagnostics.front().message.c_str() ) );
-                    WP_LOG_ERROR( "ClawShader::compile: validation failed; profile=" + m_profile +
-                                  ", entry=" + m_entryPoint + ": " + diagnostics.front().message );
+                    auto blob=static_cast<ID3DBlob *>(wp_shader_get_native(m_shader));
+                    if(blob!=m_compiledBlob)
+                    {
+                        if(blob) blob->AddRef();
+                        if(m_compiledBlob) static_cast<ID3DBlob *>(m_compiledBlob)->Release();
+                        m_compiledBlob=blob;
+                    }
+                    m_binary.clear();
                 }
                 else
                 {
-                    WP_LOG_ERROR( "ClawShader::compile: validation failed; profile=" + m_profile +
-                                  ", entry=" + m_entryPoint );
+                    if(m_compiledBlob) static_cast<ID3DBlob *>(m_compiledBlob)->Release();
+                    m_compiledBlob=nullptr;
                 }
-                return false;
-            }
-            if( !wp_shader_compile( m_shader ) )
+#endif
+            };
+            if(wp_shader_get_status(m_shader)==WORKPHONE_SHADER_STATUS_COMPILED &&
+               !wp_shader_is_dirty(m_shader) && wp_shader_get_native(m_shader))
             {
-                m_status = Status::Failed;
-                WP_LOG_ERROR( "ClawShader::compile: native compilation failed; profile=" + m_profile +
-                              ", entry=" + m_entryPoint + ": " +
-                              String( fromCText( wp_shader_get_last_error( m_shader ) ) ) );
+                cacheNative(); m_status=Status::Compiled; return true;
+            }
+            m_stage=static_cast<Stage>(wp_shader_get_type(m_shader));
+            m_language=fromCLanguage(wp_shader_get_language(m_shader));
+            m_source=String(fromCText(wp_shader_get_source(m_shader)));
+            m_entryPoint=String(fromCText(wp_shader_get_entry_point(m_shader)));
+            m_profile=String(fromCText(wp_shader_get_profile(m_shader)));
+            Shader::setDefines(getDefines());
+            Shader::clearDiagnostics();
+            m_specializationValues.clear();
+            for(wp_s32 i=0;i<wp_shader_get_specialization_count(m_shader);++i)
+            {
+                const auto entry=wp_shader_get_specialization_at(m_shader,i);
+                if(entry) m_specializationValues.push_back({String(fromCText(entry->name)),entry->value});
+            }
+            Array<u8> customBinary;
+            if(!defaultCompiler)
+            {
+                wp_u32 size=0; const auto bytes=wp_shader_get_binary(m_shader,&size);
+                if(bytes && size)
+                {
+                    customBinary.resize(size); std::memcpy(customBinary.data(),bytes,size);
+                }
+            }
+            else wp_shader_set_release_func(m_shader,releaseClawShader,nullptr);
+            // The C object validates authoring input and owns transactional native
+            // replacement. A failed attempt never replaces this wrapper's last
+            // successful output reference or exposes the new input as bytecode.
+            if(!wp_shader_compile(m_shader))
+            {
+                m_status=Status::Failed;
+                WP_LOG_ERROR("ClawShader::compile: "+String(fromCText(wp_shader_get_last_error(m_shader))));
                 return false;
             }
-            m_status = Status::Compiled;
-            return true;
+            cacheNative();
+            if(!defaultCompiler) m_binary=std::move(customBinary);
+            m_status=Status::Compiled; return true;
         }
 
         bool ClawShader::reload()
         {
+            if(m_shader) wp_shader_mark_dirty(m_shader);
             return compile();
         }
 
@@ -507,7 +516,13 @@ namespace workphone
 
         IShader::Status ClawShader::getStatus() const
         {
-            return m_shader ? fromCStatus( wp_shader_get_status( m_shader ) ) : Shader::getStatus();
+            if(!m_shader) return Shader::getStatus();
+            const auto status=wp_shader_get_status(m_shader);
+            // set_binary is a raw C input operation and marks bytes compiled for
+            // legacy callers. The default C++ backend must still validate them.
+            if(status==WORKPHONE_SHADER_STATUS_COMPILED && wp_shader_is_dirty(m_shader) &&
+               wp_shader_get_compile_func(m_shader)==compileClawShader) return Status::SourceReady;
+            return fromCStatus(status);
         }
 
         bool ClawShader::isCompiled() const
@@ -550,20 +565,19 @@ namespace workphone
 
         Array<u8> ClawShader::getBinary() const
         {
-            wp_u32 binarySize = 0u;
-            const void *binary;
-            Array<u8> result;
-            if( !m_shader )
+#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
+            auto compiled=m_compiledBlob;
+            if(!compiled && m_shader && wp_shader_get_compile_func(m_shader)==compileClawShader)
+                compiled=wp_shader_get_native(m_shader);
+            if(compiled)
             {
-                return Shader::getBinary();
+                auto blob=static_cast<ID3DBlob *>(compiled);
+                Array<u8> result(blob->GetBufferSize());
+                if(!result.empty()) std::memcpy(result.data(),blob->GetBufferPointer(),result.size());
+                return result;
             }
-            binary = wp_shader_get_binary( m_shader, &binarySize );
-            if( binary != nullptr && binarySize > 0u )
-            {
-                result.resize( binarySize );
-                std::memcpy( result.data(), binary, binarySize );
-            }
-            return result;
+#endif
+            return Shader::getBinary();
         }
 
         bool ClawShader::setBinary( const Array<u8> &binary, Language language )
@@ -579,7 +593,9 @@ namespace workphone
             {
                 return false;
             }
-            return Shader::setBinary( binary, language );
+            // Submitted bytes are input until this backend has validated them.
+            // Keep the previous output on malformed/unsupported replacement.
+            return compile();
         }
 
         bool ClawShader::setSpecializationConstant( const String &name, u32 value )

@@ -5,8 +5,10 @@
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <boost/json.hpp>
 #include <FreeImage.h>
+#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
 #include <d3dcompiler.h>
 #include <wrl/client.h>
+#endif
 
 #include <cmath>
 #include <cstring>
@@ -236,6 +238,7 @@ namespace workphone::render
                 dependencies->push_back(input.logical);
             return input;
         }
+#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
         class ShaderIncludes final : public ID3DInclude
         {
         public:
@@ -305,6 +308,11 @@ namespace workphone::render
             const auto begin=static_cast<const u8 *>(bytecode->GetBufferPointer());
             return std::vector<u8>(begin,begin+bytecode->GetBufferSize());
         }
+#else
+        std::vector<u8> compileShaderInput(const resource::CompileContext &,const String &,
+            const String &,const char *,Array<String> *)
+        { throw std::runtime_error("Cooked HLSL compilation requires the enabled Windows DX11 toolchain"); }
+#endif
         CookedMaterialShaderData readShaderRecipe(const resource::CompileContext &context,
             const json::value &value, Array<String> *dependencies)
         {

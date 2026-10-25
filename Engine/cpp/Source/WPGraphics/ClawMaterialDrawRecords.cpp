@@ -102,8 +102,8 @@ namespace workphone::render
         Record record;
         if(auto claw = dynamic_cast<ClawMaterial *>(owner.material.get()))
         {
-            record.runtimeRequested = claw->hasRuntimeProgram();
             owner.runtime = claw->getRuntimePublication();
+            record.runtimeRequested = claw->hasRuntimeProgram();
             record.runtime = owner.runtime.get();
         }
         if( auto concrete = dynamic_cast<Material *>( owner.material.get() ) )

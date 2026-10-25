@@ -26,6 +26,14 @@ namespace
     void require( bool result, const char *message )
     { if( !result ) throw std::runtime_error( message ); }
 
+    bool exactMatrix( const Matrix4F &left, const Matrix4F &right )
+    {
+        for( u32 row = 0; row < 4; ++row )
+            for( u32 column = 0; column < 4; ++column )
+                if( left[row][column] != right[row][column] ) return false;
+        return true;
+    }
+
     // Frozen storage shape before this optimization. sizeof compares the same
     // base/pointer/configuration layout, without constructing a legacy state.
     struct LegacyPassStateStorage : StateData
@@ -290,7 +298,7 @@ namespace
             values.GetResource(values.FindParameter("Texture")) == 0 &&
             values.GetResource(values.FindParameter("NewSampler")) == InvalidMaterialResourceHandle &&
             values.Get(MaterialParameterHandle<Vector4<s32>>{values.FindParameter("Indices")},indices) &&
-            indices == Vector4<s32>(1,-2,3,-4) && values.GetMatrix(values.FindParameter("Transform")) == matrix,
+            indices == Vector4<s32>(1,-2,3,-4) && exactMatrix(values.GetMatrix(values.FindParameter("Transform")),matrix),
             "migration preserves exact name/type values through reorder and defaults renamed/new/type-changed fields");
         auto scheduler = WorldStreamingScheduler::shared();
         const auto source = size_t(StreamMemoryClass::SourceCpu);

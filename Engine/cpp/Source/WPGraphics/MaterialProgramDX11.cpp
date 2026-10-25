@@ -231,32 +231,40 @@ namespace workphone::render
         auto context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(renderer));
         // Acquire every resource before changing context state or uploading. Strong
         // temporary COM owners span submission; no device pointers enter CPU records.
-        std::array<std::array<ComPtr<ID3D11ShaderResourceView>,128>,2> views;
-        std::array<std::array<ComPtr<ID3D11SamplerState>,16>,2> samplers;
+        // Dense resolved owners touch only the resources actually selected by
+        // the map; sparse t127/s15 registers do not clear whole register arrays.
+        std::array<IUnknown *,WP_SHADER_MAX_PARAMS*2> owners;
+        const size_t counts[]={m_data->stages[0].resources.size(),m_data->stages[1].resources.size()};
+        const size_t total=counts[0]+counts[1];
+        if(total>owners.size()) return false;
+        std::fill_n(owners.data(),total,nullptr);
+        struct ReleaseOwners { IUnknown **p;size_t count;~ReleaseOwners(){for(size_t i=0;i<count;++i) if(p[i]) p[i]->Release();} } release{owners.data(),total};
         for(size_t s = 0; s < 2; ++s)
-            for(const auto &value : m_data->stages[s].resources)
+            for(size_t index=0;index<counts[s];++index)
             {
+                const auto &value=m_data->stages[s].resources[index];
+                auto &resolved=owners[(s?counts[0]:0)+index];
                 if(value.handle == InvalidMaterialResourceHandle) continue;
                 void *native = nullptr;
                 if(!m_data->resolver || !m_data->resolver->Resolve(value.type, value.handle, native) || !native) return false;
                 ComPtr<ID3D11Device> owner;
                 if(value.type == MaterialShaderParameterType::Sampler)
                 {
-                    auto &sampler = samplers[s][value.slot];
+                    ID3D11SamplerState *sampler=nullptr;
                     if(FAILED(static_cast<IUnknown *>(native)->QueryInterface(IID_PPV_ARGS(&sampler)))) return false;
-                    sampler->GetDevice(&owner);
+                    resolved=sampler;sampler->GetDevice(&owner);
                 }
                 else
                 {
-                    auto &view = views[s][value.slot];
+                    ID3D11ShaderResourceView *view=nullptr;
                     if(FAILED(static_cast<IUnknown *>(native)->QueryInterface(IID_PPV_ARGS(&view)))) return false;
-                    view->GetDevice(&owner);
+                    resolved=view;view->GetDevice(&owner);
                     D3D11_SHADER_RESOURCE_VIEW_DESC desc{}; view->GetDesc(&desc);
                     const bool buffer = desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFER ||
                                         desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX;
                     if(buffer != (value.type == MaterialShaderParameterType::Buffer) ||
                        (!buffer && UINT(desc.ViewDimension) != UINT(data.stages[s].dimensions[value.slot])) ||
-                       !wp_renderer_dx11_material_view_allowed(renderer, view.Get())) return false;
+                       !wp_renderer_dx11_material_view_allowed(renderer, view)) return false;
                 }
                 if(owner.Get() != data.device.Get()) return false;
             }
@@ -282,17 +290,21 @@ namespace workphone::render
                 auto buffer = data.stages[s].buffers[b].Get(); const auto slot = map->GetBuffer(b)->slot;
                 if(s) context->PSSetConstantBuffers(slot,1,&buffer); else context->VSSetConstantBuffers(slot,1,&buffer);
             }
-            for(const auto &value : m_data->stages[s].resources)
+            for(size_t index=0;index<counts[s];++index)
+            {
+                const auto &value=m_data->stages[s].resources[index];
+                auto resolved=owners[(s?counts[0]:0)+index];
                 if(value.type == MaterialShaderParameterType::Sampler)
                 {
-                    auto sampler = samplers[s][value.slot].Get();
+                    auto sampler = static_cast<ID3D11SamplerState *>(resolved);
                     if(s) context->PSSetSamplers(value.slot,1,&sampler); else context->VSSetSamplers(value.slot,1,&sampler);
                 }
                 else
                 {
-                    auto view = views[s][value.slot].Get();
+                    auto view = static_cast<ID3D11ShaderResourceView *>(resolved);
                     if(s) context->PSSetShaderResources(value.slot,1,&view); else context->VSSetShaderResources(value.slot,1,&view);
                 }
+            }
         }
         return true;
     }

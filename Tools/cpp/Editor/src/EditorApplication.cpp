@@ -585,6 +585,7 @@ namespace workphone::editor
                     {
                         std::ifstream input( std::filesystem::u8path( m_luaDebuggerEndpoint.c_str() ) );
                         const std::string text( ( std::istreambuf_iterator<char>( input ) ), {} );
+                        input.close(); // Windows cannot remove an endpoint held open by this reader.
                         auto endpoint = boost::json::parse( text ).as_object();
                         if( endpoint.at( "token" ).as_string() == m_luaDebuggerToken.c_str() )
                         {
@@ -1123,8 +1124,11 @@ namespace workphone::editor
                             }
                         }
                         if( auto panel = editorUI->getLuaDebuggerWindow() )
-                            if( panel->isWindowVisible() || applicationManager->getScriptManager()->getDebuggerPort() != 0 )
+                        {
+                            const auto scripts = applicationManager->getScriptManager();
+                            if( panel->isWindowVisible() || ( scripts && scripts->getDebuggerPort() != 0 ) )
                                 if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
+                        }
                         auto inputWindow = editorUI->getInputManagerWindow();
                         if( inputWindow && inputWindow->isLoaded() && inputWindow->isWindowVisible() )
                         {

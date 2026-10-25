@@ -692,6 +692,22 @@ namespace workphone::scene
                 auto sceneManager = applicationManager->getGameManagerPtr();
                 WP_ASSERT( sceneManager );
 
+                const auto liveSceneHierarchy = [this]( SmartPtr<IGameActor> actor ) {
+                    bool anchored = false;
+                    size_t depth = 0;
+                    for( ; actor && depth < 1024; actor = actor->getParent(), ++depth )
+                    {
+                        if( !actor->isLoaded() ) return false;
+                        const auto scene = actor->getScene();
+                        if( scene && scene.get() != this ) return false;
+                        anchored |= scene.get() == this && actor->getFlag( IGameActor::ActorFlagInScene );
+                    }
+                    // Reparented children deliberately lose their root InScene
+                    // flag. A live scene anchor admits them, while removed roots,
+                    // foreign chains and cycles/depth overflow remain ineligible.
+                    return !actor && anchored;
+                };
+
                 if( !m_editQueue.empty() )
                 {
                     SmartPtr<IGameActor> actor;
@@ -699,8 +715,7 @@ namespace workphone::scene
                     {
                         // A queued load can outlive removal or transfer. Retained
                         // references must not re-enter component/physics states.
-                        if( actor && actor->isLoaded() && actor->getScene().get() == this &&
-                            actor->getFlag( IGameActor::ActorFlagInScene ) && getState() == State::Edit )
+                        if( getState() == State::Edit && liveSceneHierarchy( actor ) )
                         {
                             actor->setState( IGameActor::State::Edit );
                         }
@@ -712,8 +727,7 @@ namespace workphone::scene
                     SmartPtr<IGameActor> actor;
                     while( m_playQueue.try_pop( actor ) )
                     {
-                        if( actor && actor->isLoaded() && actor->getScene().get() == this &&
-                            actor->getFlag( IGameActor::ActorFlagInScene ) && getState() == State::Play )
+                        if( getState() == State::Play && liveSceneHierarchy( actor ) )
                         {
                             actor->setState( IGameActor::State::Play );
                         }

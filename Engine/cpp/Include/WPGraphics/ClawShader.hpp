@@ -114,6 +114,9 @@ namespace workphone
             /**
              * @brief Returns an opaque backend handle.
              *
+             * The default DirectX 11 compiler exposes a borrowed ID3DBlob.
+             * Custom C callbacks retain their own native-handle contract.
+             *
              * @param handle Out parameter that receives the compiled backend object, if any.
              */
             void getNativeHandle( void **handle ) const override;

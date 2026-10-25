@@ -189,6 +189,7 @@ namespace workphone
 
         private:
             std::shared_ptr<MaterialProgramResourcesDX11> runtimeShaderResources() const;
+            bool refreshRuntimeShaderSelection();
             struct RuntimeState;
             std::unique_ptr<RuntimeState> m_runtime;
             String authoringDocument() const;

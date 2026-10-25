@@ -17,7 +17,7 @@ namespace workphone::render
         struct Entry
         {
             ObjectObserver<ClawMaterial> material;
-            SourceBudgetString vertex,pixel,error;
+            SourceBudgetString vertex,pixel,error,shaderName;
             u64 version=0,processed=0,id=0;
             bool watching=true;
             MaterialProgramReloadDX11::Ptr candidate;
@@ -36,6 +36,12 @@ namespace workphone::render
     }
     namespace detail
     {
+        void prepareShaderReloadStatus(ClawMaterial *material)
+        {
+            SourceBudgetString name=material->getShaderID().c_str();
+            std::lock_guard<std::recursive_mutex> lock(mutex);
+            auto value=entry(material);value->shaderName=std::move(name);
+        }
         void shaderReloadAttached(ClawMaterial *material,u64 id)
         {
             std::lock_guard<std::recursive_mutex> lock(mutex);
@@ -48,6 +54,11 @@ namespace workphone::render
         {
             std::lock_guard<std::recursive_mutex> lock(mutex);
             auto found=entries.find(material);if(found==entries.end()) return;
+            if(found->second->shaderName!=material->getShaderID().c_str())
+            {
+                properties->setProperty("runtimeShaderVertexFile",String());properties->setProperty("runtimeShaderPixelFile",String());
+                properties->setProperty("runtimeShaderWatching",false);return;
+            }
             properties->setProperty("runtimeShaderVertexFile",static_cast<String>(found->second->vertex));
             properties->setProperty("runtimeShaderPixelFile",static_cast<String>(found->second->pixel));
             properties->setProperty("runtimeShaderWatching",found->second->watching);
@@ -58,7 +69,7 @@ namespace workphone::render
         if(pixel.empty()) return false;
         SourceBudgetString v(vertex),p(pixel);
         std::lock_guard<std::recursive_mutex> lock(mutex);
-        auto value=entry(this);value->vertex=std::move(v);value->pixel=std::move(p);++value->version;value->error.clear();return true;
+        auto value=entry(this);value->shaderName=getShaderID().c_str();value->vertex=std::move(v);value->pixel=std::move(p);++value->version;value->error.clear();return true;
     }
     bool ClawMaterial::requestRuntimeShaderReload()
     {
@@ -107,6 +118,15 @@ namespace workphone::render
     {
         auto native=renderer.getNativeRenderer();auto dx=native?wp_renderer_get_dx11(native):nullptr;
         if(!dx) return;
+        {
+            std::lock_guard<std::recursive_mutex> lock(mutex);
+            for(auto it=entries.begin();it!=entries.end();)
+            {
+                auto current=it++;
+                if(auto material=current->second->material.lock()) material->refreshRuntimeShaderSelection();
+                else entries.erase(current);
+            }
+        }
         for(;;)
         {
             std::shared_ptr<Entry> work;u64 version=0;String vertex,pixel;bool build=false;

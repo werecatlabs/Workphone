@@ -25,6 +25,7 @@ namespace workphone
             MaterialProgramReloadDX11::BindingPtr reload;
             MaterialProgramReloadDX11::Ptr controller;
             MaterialShaderParameterLayout::Ptr layout;
+            SourceBudgetString shaderName;
             u64 revision = 0;
             RuntimeState()
             {
@@ -70,6 +71,7 @@ namespace workphone
         {
             if(!program) { m_runtime.reset(); detail::shaderReloadAttached(this,0); return; }
             auto candidate = std::make_unique<RuntimeState>();
+            candidate->shaderName=getShaderID().c_str();
             candidate->publication = program->Capture(getShaderParameters(), resources);
             candidate->program = std::move(program); candidate->resources = std::move(resources);
             candidate->layout = getShaderParameters().GetLayout();
@@ -90,20 +92,33 @@ namespace workphone
         }
 
         bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
+        bool ClawMaterial::refreshRuntimeShaderSelection()
+        {
+            if(!m_runtime || m_runtime->layout==getShaderParameters().GetLayout()) return false;
+            // Shader identity is cold: compare names only after a layout change,
+            // never perform a string lookup/copy on unchanged warm submissions.
+            if(m_runtime->shaderName!=getShaderID().c_str())
+            { m_runtime.reset();detail::forgetShaderReload(this);return true; }
+            m_runtime->layout=getShaderParameters().GetLayout();return false;
+        }
 
         void ClawMaterial::setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
             std::shared_ptr<MaterialProgramResourcesDX11> resources)
         {
             if(!reload) { m_runtime.reset();detail::shaderReloadAttached(this,0);return; }
             auto candidate = std::make_unique<RuntimeState>();
+            candidate->shaderName=getShaderID().c_str();
+            detail::prepareShaderReloadStatus(this);
             candidate->resources=resources;candidate->controller=reload;
             candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));
+            candidate->layout=getShaderParameters().GetLayout();
             m_runtime = std::move(candidate);
             detail::shaderReloadAttached(this,reload->GetId());
         }
 
         MaterialProgramDX11::PublicationPtr ClawMaterial::getRuntimePublication()
         {
+            refreshRuntimeShaderSelection();
             if(!m_runtime) return {};
             if(m_runtime->reload) return m_runtime->reload->GetPublication();
             const auto &values = getShaderParameters();
@@ -646,7 +661,7 @@ namespace workphone
                         "ClawMaterial::getProperties: native material is null, returning base "
                         "properties." );
                     detail::appendShaderFiles(this,properties);
-                return properties;
+                    return properties;
                 }
 
                 properties->setProperty(
@@ -681,7 +696,7 @@ namespace workphone
                 }
 
                 properties->setProperty( dirtyStr, wp_graphics_material_is_dirty( m_material ) != 0 );
-
+                detail::appendShaderFiles(this,properties);
                 return properties;
             }
             catch( std::exception &e )

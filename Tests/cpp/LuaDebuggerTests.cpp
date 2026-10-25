@@ -131,9 +131,11 @@ int main( int argc, char **argv )
             const auto root = std::filesystem::current_path().generic_u8string();
             check( !manager.startDebugger( 0, "short", root.c_str() ), "Short authentication token accepted" );
             check( manager.startDebugger( 0, "workphone-debug-test-token", root.c_str() ), "Debugger did not listen" );
+            check( manager.executeSource( "assert(jit == nil or not jit.status())", "=debug-backend" ), "JIT compilation stayed enabled while debugging" );
             check( manager.executeSource( "gameplayCalls=0; function gameplayCallback() gameplayCalls=gameplayCalls+1 end", "@gameplay.lua" ), "Gameplay fixture" );
             check( manager.executeSource( "editorCalls=0; function editorCallback() editorCalls=editorCalls+1 end", "@Editor/DebuggerFixture.lua" ), "Editor fixture" );
             check( manager.executeSource( "largeId=9007199254740993; huge={}; for i=1,160 do huge['field'..i]=string.rep('x',1200) end", "@values.lua" ), "Inspection budgets fixture" );
+            check( manager.executeSource( "beyond={}; for i=1,5000 do beyond[i]=i end", "=large-table" ), "Large table fixture" );
             check( manager.executeSource( "pendingCo=coroutine.create(function()\nlocal marker=21\nfor i=1,3 do\n marker=marker+1\nend\nreturn marker\nend)", "@debug-coroutine.lua" ), "Pre-attach coroutine fixture" );
             manager.setDebuggerPausePump( [&]() {
                 ++pumps;
@@ -161,6 +163,7 @@ int main( int argc, char **argv )
                         { "source", j::object{ { "path", root + "/debug-coroutine.lua" } } },
                         { "breakpoints", std::move( coroutineBreakpoints ) } } ) );
                     connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach ); ready = true;
+                    check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "debug output\t23" ) != std::string::npos, "Lua print was not forwarded intact" );
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "captured=12" ) != std::string::npos, "Logpoint did not evaluate its expression" );
                     check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Conditional breakpoint was not hit" );
                     std::this_thread::sleep_for( std::chrono::milliseconds( 1100 ) );
@@ -192,6 +195,9 @@ int main( int argc, char **argv )
                     check( !page.empty() && page.back().as_object().at( "name" ) == "[more variables]", "Large inspection was not paged" );
                     auto nextPage = connection.reply( connection.request( "variables", { { "variablesReference", page.back().as_object().at( "variablesReference" ) } } ) ).at( "variables" ).as_array();
                     check( !nextPage.empty(), "Inspection continuation lost its table" );
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "beyond" } } ) );
+                    page = connection.reply( connection.request( "variables", { { "variablesReference", evaluated.at( "variablesReference" ) }, { "start", 4090 }, { "count", 20 } } ) ).at( "variables" ).as_array();
+                    check( !page.empty() && page.back().as_object().at( "name" ) == "[inspection limit]", "Table budget silently hid remaining keys" );
                     connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "os.exit()" } } ), false );
                     connection.reply( connection.request( "stepIn", { { "threadId", 1 } } ) );
                     connection.event( "stopped" );
@@ -234,6 +240,7 @@ int main( int argc, char **argv )
             while( !ready && Clock::now() < deadline ) { manager.update(); std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); }
             check( ready && !failed, "DAP configuration failed" );
             timer->update(); const auto ticks = timer->getTickCount(); const auto fixed = timer->getFixedTimeNow();
+            check( manager.executeSource( "print('debug output',23)", "=debug-print" ), "Debug print failed" );
             check( manager.executeSource( "local outer=7\nlocal data={value=12}\nlocal function child()\n local inner=outer+data.value\n inner=inner+1\n return inner\nend\nresult=child()\nresult=result+1\nresult=child()\nresult=result+1", "@debug-contract.lua" ), "Debugged execution failed" );
             check( manager.executeSource( "assert(result==21)", "=result" ), "Stepping changed program behavior" );
             check( manager.executeSource( "local ok,value=coroutine.resume(pendingCo); assert(ok and value==24)", "@resume-coroutine.lua" ), "Debugged coroutine failed" );

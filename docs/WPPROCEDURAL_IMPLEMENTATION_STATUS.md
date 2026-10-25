@@ -123,15 +123,37 @@ and full pavement/parcel exclusions at default grid roundabouts and edited roads
 The [09 retained snapshot](../artifacts/procedural/city-terrain-retention-20261025-09-fsm-fixed/binary-snapshot.json)
 preserves all 11 runtime artifacts, matching Core/Graphics/Sample/Physics/Procedural
 symbols and scoped source hashes; all 11 live runtime hashes matched the snapshot.
-The [final production-render GPU suite](../procedural-city-integration-20261025-tests19-final-renderer.log)
-also passes in 28.73 s. Native 09 exposes a further publication-order defect:
+The [build-23 production-render GPU suite](../procedural-city-integration-20261025-tests19-final-renderer.log)
+also passed in 28.73 s. Native 09 exposes a further publication-order defect:
 new generated actors wait for the Application scene play queue, while Physics
 can resume before their static bodies are activated. The collision assertions
-remain unchanged. A production activation barrier and a separate shutdown-crash
-diagnosis are in progress; fresh final captures remain pending. The attached
+remain unchanged. The attached
 [10 diagnostic](../artifacts/procedural/city-terrain-retention-20261025-10-debugger/manifest.json)
 uses a normal launch of the same frozen binaries with matching symbols.
-New parcel/cull counts must come from the final captures.
+The separate 09 crash maps to an atomic byte compare/exchange at
+`Workphone.dll+0x2091dd`; its caller remains unknown because the WER dump was
+removed and 10 did not reproduce the access violation. It is not a confirmed
+recurrence of the earlier FSM fault.
+
+Build 27 now builds the Debug sample, Editor and focused target set. The new
+production activation barrier resolves parent transforms and activates generated
+actors plus persistent terrain/source anchors on the Application task, under
+render/physics locks. It verifies attached native static bodies, shapes and world
+poses before driving readiness becomes true. Scene restoration or an unattached
+owner leaves readiness false with braking applied; publication errors remain
+visible. This uses actor/component lifecycle entry directly, without pumping
+unrelated scene updates. Queued Edit/Play events now reject unloaded, removed or
+transferred actors and events for the wrong current scene state.
+
+The [updated activation/anchor/FSM regression](../procedural-city-integration-20261025-tests20-publication-anchor.log)
+passes in 24.27 s, including actual deferred Edit/Play queue drains, removed and
+transferred actors, repeated activation, saved source anchors and FSM storage
+growth/retirement. The remaining 17 city/Play checks and final GPU rerun are
+pending. The [12 publication snapshot](../artifacts/procedural/city-terrain-publication-20261025-12/binary-snapshot.json)
+retains 11 runtime artifacts and five matching PDBs with scoped source hashes;
+the normal Debug media working directory is still required. Final native
+retention and fresh captures have not run yet. New parcel/cull counts must come
+from those captures; the 09 shutdown crash remains an open diagnosis.
 CDB launch may perturb allocation costs; 08 is not performance evidence, and
 neither extended diagnostic closes the original 180-second gate.
 Hardware performance, recorded Editor pointer/DPI acceptance and source-free

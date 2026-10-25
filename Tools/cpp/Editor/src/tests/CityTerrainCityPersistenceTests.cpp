@@ -150,10 +150,10 @@ namespace
         {
             auto registry = make_ptr<scene::GameScene>(), other = make_ptr<scene::GameScene>();
             registry->load( nullptr ); other->load( nullptr ); BOOST_REQUIRE( registry->isLoaded() && other->isLoaded() );
-            std::array<Actor, 3> actors;
+            std::array<Actor, 4> actors;
             struct ActorsCleanup
             {
-                SmartPtr<scene::IGameManager> manager; SmartPtr<scene::GameScene> registry, other; std::array<Actor, 3> &actors;
+                SmartPtr<scene::IGameManager> manager; SmartPtr<scene::GameScene> registry, other; std::array<Actor, 4> &actors;
                 ~ActorsCleanup()
                 {
                     for( auto &actor : actors ) if( actor ) manager->destroyActor( actor, true );
@@ -162,8 +162,9 @@ namespace
             } cleanup{ manager, registry, other, actors };
             app->setPlaying( play );
             registry->setState( play ? scene::IGameScene::State::Play : scene::IGameScene::State::Edit );
-            for( auto &actor : actors )
+            for( size_t i = 0; i < 3; ++i )
             {
+                auto &actor = actors[i];
                 actor = manager->createActor(); BOOST_REQUIRE( actor && actor->isLoaded() ); actor->setStatic( true );
                 BOOST_REQUIRE( actor->addComponent<scene::CollisionBox>() ); BOOST_REQUIRE( actor->addComponent<scene::Rigidbody>() );
                 registry->addActor( actor );
@@ -192,6 +193,31 @@ namespace
             registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, active, nullptr ); registry->preUpdate();
             BOOST_CHECK( active->getState() == actorState && activeBody->getState() == componentState && activeBody->getRigidStatic() == body );
             if( physicsScene ) BOOST_CHECK_EQUAL( physicsScene->getActors().size(), bodyCount );
+            BOOST_CHECK( removed->getState() == removedState && transferred->getState() == transferredState );
+
+            auto &child = actors[3]; child = manager->createActor(); BOOST_REQUIRE( child && child->isLoaded() );
+            child->setStatic( true ); BOOST_REQUIRE( child->addComponent<scene::CollisionBox>() );
+            auto childBody = child->addComponent<scene::Rigidbody>(); BOOST_REQUIRE( childBody );
+            {
+                // Model a non-owner hierarchy producer: inheritance queues its
+                // actor FSM, then the real Application load queue must finish it.
+                // Do not update the FSM manager separately and hide a skipped child.
+                struct FlagsRestore { u32 value = Thread::getTaskFlags(); ~FlagsRestore() { Thread::setTaskFlags( value ); } } flags;
+                Thread::setTaskFlags( flags.value & ~Thread::Application_Flag ); active->addChild( child );
+            }
+            BOOST_REQUIRE( active->getState() == actorState );
+            BOOST_REQUIRE( child->getParent() == active && child->getScene() == registry &&
+                !child->getFlag( scene::IGameActor::ActorFlagInScene ) );
+            BOOST_REQUIRE( child->getState() != actorState ); // Old own-root-only guard would leave this pending.
+            if( play ) BOOST_REQUIRE( !childBody->getRigidStatic() );
+            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, child, nullptr ); registry->preUpdate();
+            BOOST_REQUIRE( child->getState() == actorState && childBody->getState() == componentState );
+            const auto childNative = childBody->getRigidStatic();
+            if( physicsScene ) { BOOST_REQUIRE( childNative ); BOOST_CHECK( childNative->getScene() == physicsScene ); BOOST_CHECK( childNative->getNumShapes() > 0 ); }
+            const auto childBodyCount = physicsScene ? physicsScene->getActors().size() : 0;
+            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, child, nullptr ); registry->preUpdate();
+            BOOST_CHECK( child->getState() == actorState && childBody->getRigidStatic() == childNative );
+            if( physicsScene ) BOOST_CHECK_EQUAL( physicsScene->getActors().size(), childBodyCount );
             BOOST_CHECK( removed->getState() == removedState && transferred->getState() == transferredState );
         }
     }

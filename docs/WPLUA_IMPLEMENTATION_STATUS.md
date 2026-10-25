@@ -57,6 +57,23 @@ The VSIX packages a .NET Framework 4.8 stdio adapter and registers Workphone Lua
 
 ## Validation
 
+Observed on Windows x64, MSVC v145, RelWithDebInfo, 25 October 2026:
+
+| Check | Result |
+| --- | --- |
+| Default Lua CTest runtime, debugger and Editor panel contracts | 3/3 pass |
+| LuaJIT CTest runtime, debugger, Editor panel and standalone backend contracts | 4/4 pass |
+| `WorkphoneScriptTests` C host | Pass on both backends |
+| Native Editor build | Pass on both backends |
+| Editor startup/teardown smoke with `WP_LUA_DEBUGGER=1` | Pass on both backends, with isolated workspace/profile and shared source media; verifies real panel/native widgets, CJSON, preference bridge and endpoint removal |
+| Shipped source syntax under LuaJIT | 225 files accepted; syntax-only evidence |
+| .NET stdio adapter fixture | Pass: fragmented UTF-8, protocol stdout, EOF and invalid arguments |
+| VSIX build/archive | Pass, zero build warnings/errors; DLL, registration and adapter executable present |
+| VSIX deployment | Deployed and enabled in the separate `LuaQA` experimental instance; registration imported and IDE started |
+| Interactive Visual Studio attach/stepping and paused Editor rendering | Unverified: Windows capture repeatedly failed with `window capture timed out: timed out waiting on channel`; no interactive pass claimed |
+
+CTest evidence is in `lua-final-ctest.log` and `luajit-final-ctest.log` at the repository root. Editor smoke logs are `project_x64/lua-editor-bridge-smoke.log` and `project_luajit/lua-editor-smoke.log`. The latter smoke profile uses the same built binaries and source media; it is not a relocated distribution or clean-machine certification. The installable extension is `project_x64/vsix/bin/LuaDebuggerVsix.vsix`. Follow the [debugging guide](WPLUA_DEBUGGING.md) for attach/launch and inspection limits.
+
 - `LuaRuntimeTests` uses the production C++ host and bindings, with initialized `TypeManager`. Its SQLite-backed asset checks cover source identity, headless lookup, component property round trips, generated class syntax, dependency installation, incremental compilation, failed/successful reload, packaged loading with source files absent, invalid payloads and module-name collisions.
 - `VehicleLuaBindingTests` covers the existing presentation binding contract.
 - `LuaDebuggerTests` exercises the production LuaManager over fragmented authenticated DAP sessions: conditions/logpoints, stepping, coroutine inspection, read-only watches, integer precision, NaN semantics, table paging, exceptions, disconnect recovery, callback suppression, suspension clock exclusion and local Editor RPC/preferences.

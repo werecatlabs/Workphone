@@ -301,6 +301,8 @@ typedef struct wp_shader_option
 
 wp_shader *wp_shader_create( wp_shader_type type, wp_shader_language language, const wp_c8 *source,
                              const wp_c8 *entry_point );
+/** Base opaque descriptor allocation size, excluding source/binary/native data. */
+wp_size wp_shader_descriptor_size( void );
 void wp_shader_destroy( wp_shader *shader );
 
 wp_shader_type wp_shader_get_type( const wp_shader *shader );
@@ -347,6 +349,8 @@ void wp_shader_set_native( wp_shader *shader, void *native );
  * ====================================================================== */
 
 wp_shader_program *wp_shader_program_create( void );
+/** Base opaque program allocation size, excluding parameter/native data. */
+wp_size wp_shader_program_descriptor_size( void );
 void wp_shader_program_retain( wp_shader_program *program );
 void wp_shader_program_destroy( wp_shader_program *program );
 /** Physical descriptor plus allocated parameter-buffer capacity. Excludes

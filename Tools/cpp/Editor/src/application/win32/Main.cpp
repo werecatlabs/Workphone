@@ -27,6 +27,19 @@ int main( int argc, char *argv[] )
         extern bool init_unit_test();
         auto result = boost::unit_test::unit_test_main( &init_unit_test, argc, argv );
 
+        // Boost can translate a fatal SEH assertion without unwinding a fixture
+        // constructor. Retire its remaining engine ownership while TypeManager's
+        // object-data pools are still alive. The fixture's stack Application may
+        // have been abandoned: use the singleton manager directly, never it.
+        {
+            auto orphanedManager = core::IApplicationManager::instancePtr();
+            if( orphanedManager )
+            {
+                orphanedManager->unload( nullptr );
+                core::IApplicationManager::setInstance( nullptr );
+            }
+        }
+
         if( typeManager )
         {
             typeManager->unload();

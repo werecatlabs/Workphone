@@ -1104,6 +1104,8 @@ if (WP_EDITOR_TESTS)
         editor_material_selection_visibility_test
         editor_material_parameters_test
         editor_material_control_events_test
+        editor_material_shader_reload_actions_test
+        editor_material_shader_reload_controls_test
         editor_ui_control_unload_test
         editor_cubemap_face_preview_test
         procedural_components_road_properties

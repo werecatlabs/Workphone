@@ -86,6 +86,7 @@ namespace workphone::render::detail
             struct Block
             {
                 FilePtr file;
+                unsigned depth=0;
                 std::vector<char,SourceBudgetAllocator<char>> bytes;
             };
             ShaderFilesDX11 &owner;
@@ -113,9 +114,11 @@ namespace workphone::render::detail
             {
                 try
                 {
-                    auto directory=root->path.parent_path();
-                    for(auto &block : blocks) if(block->bytes.data()==parent) { directory=block->file->path.parent_path(); break; }
-                    auto block=std::make_unique<Block>(); block->file=owner.track(directory/std::filesystem::u8path(name));
+                    if(!name || std::strlen(name)>131072) {error="Shader include path limit exceeded";return E_FAIL;}
+                    auto directory=root->path.parent_path();unsigned depth=1;
+                    for(auto &block : blocks) if(block->bytes.data()==parent) { directory=block->file->path.parent_path();depth=block->depth+1;break; }
+                    if(depth>32) {error="Shader include depth limit exceeded";return E_FAIL;}
+                    auto block=std::make_unique<Block>();block->depth=depth; block->file=owner.track(directory/std::filesystem::u8path(name));
                     if(!read(*block)) return E_FAIL;
                     *data=block->bytes.data(); *bytes=UINT(block->bytes.size()-1);
                     blocks.push_back(std::move(block)); return S_OK;

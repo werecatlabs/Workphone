@@ -7,6 +7,9 @@
 #include <TlHelp32.h>
 #include <ui/ScriptWindow.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
+#include <editor/EditorManager.hpp>
+#include <ui/UIManager.hpp>
+#include <boost/json.hpp>
 
 namespace workphone::editor
 {
@@ -137,6 +140,26 @@ namespace workphone::editor
             const bool executed = owner->getName() == "package-lua-ready";
             scripts->destroyObject( owner );
             if( !executed ) throw std::runtime_error( "Packaged Editor Lua execution failed" );
+
+            if( const auto debugging = std::getenv( "WP_LUA_DEBUGGER" ); debugging && std::string( debugging ) == "1" )
+            {
+                auto editor = EditorManager::getSingletonPtr();
+                auto panel = editor && editor->getUI() ? editor->getUI()->getLuaDebuggerWindow() : nullptr;
+                if( !scripts->getDebuggerPort() || !panel || !panel->getScriptData() || !panel->getParentWindow() )
+                    throw std::runtime_error( "Editor Lua debugger panel did not initialize" );
+                // Exercise real native widgets, CJSON and queued preferences with
+                // the same update entry points used by the normal/paused Editor.
+                bool preferencesLoaded = false;
+                for( int iteration = 0; iteration < 8; ++iteration )
+                {
+                    panel->getInvoker()->callObjectMember( "show" ); scripts->update();
+                    auto status = boost::json::parse( scripts->getDebuggerStatus().c_str() ).as_object();
+                    for( const auto &reply : status.at( "responses" ).as_array() )
+                        if( reply.as_object().at( "command" ) == "loadBreakpointPreferences" )
+                            preferencesLoaded = reply.as_object().at( "success" ).as_bool();
+                }
+                if( !preferencesLoaded ) throw std::runtime_error( "Editor debugger preferences did not load through the native bridge" );
+            }
 
             if( const auto report = _wgetenv( L"WP_EDITOR_MODULE_REPORT" ) )
             {
