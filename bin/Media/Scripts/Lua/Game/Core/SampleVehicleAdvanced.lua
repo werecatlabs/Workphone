@@ -113,7 +113,10 @@ function SampleVehicleAdvanced:createActor(name)
 end
 
 function SampleVehicleAdvanced:generate()
-    self:shutdown()
+    if self.prepareRaceSceneRegeneration then self:prepareRaceSceneRegeneration() end
+    local reuse = self.started and self.raceScene and self.canReuseRaceScene and self:canReuseRaceScene()
+    if not reuse then self:shutdown() end
+    self.reusedNativeRaceScene = not not reuse
     self.startFailed = false
     self.application = IApplicationManager.instance()
     assert(self.application, "SampleVehicleAdvanced requires an application manager")
@@ -126,14 +129,16 @@ function SampleVehicleAdvanced:generate()
     local wasPlaying = self.application:isPlaying()
 
     local ok, failure = pcall(function()
-        self.generatedRoot = self.gameManager:createActor()
-        assert(self.generatedRoot, "Cannot create the generated scene root")
-        self.generatedRoot:setName("SampleVehicleAdvanced.Generated")
-        owner:addChild(self.generatedRoot)
-        self.generatedRoot:setState(ActorState.Edit, true)
-        self.vehicleActor = self:createActor("Procedural Grand Prix")
-        self.vehicleActor:setPosition(Vector3F(0, SPAWN_HEIGHT, 0))
-        self.raceScene = self.vehicleActor:addComponent("ProceduralRaceScene")
+        if not reuse then
+            self.generatedRoot = self.gameManager:createActor()
+            assert(self.generatedRoot, "Cannot create the generated scene root")
+            self.generatedRoot:setName("SampleVehicleAdvanced.Generated")
+            owner:addChild(self.generatedRoot)
+            self.generatedRoot:setState(ActorState.Edit, true)
+            self.vehicleActor = self:createActor("Procedural Grand Prix")
+            self.vehicleActor:setPosition(Vector3F(0, SPAWN_HEIGHT, 0))
+            self.raceScene = self.vehicleActor:addComponent("ProceduralRaceScene")
+        end
         assert(self.raceScene, "ProceduralRaceScene is unavailable; rebuild Workphone and WPLua")
         self.raceScene:setSeed(self.seed)
         self.raceScene:setQuality(self.quality)
@@ -145,17 +150,19 @@ function SampleVehicleAdvanced:generate()
         self.rigidbody = self.vehicleActor:getComponent("Rigidbody")
         assert(self.car and self.rigidbody, "Generated vehicle has no controller or rigidbody")
 
-        self.cameraActor = self:createActor("Vehicle Follow Camera")
+        if not reuse then
+            self.cameraActor = self:createActor("Vehicle Follow Camera")
+            self.cameraActor:setSmoothMotion(true, false)
+            self.camera = self.cameraActor:addComponent("Camera")
+            self.camera:setNearClipDistance(0.5)
+            self.camera:setFarClipDistance(1000)
+            self.camera:setActive(true)
+            self.cameraController = self.cameraActor:addComponent("VehicleCameraController")
+            self.cameraController:setTarget(self.vehicleActor)
+            self.cameraController:setDistance(CAMERA_DISTANCE)
+            self.cameraController:setHeight(CAMERA_HEIGHT)
+        end
         self:resetCamera()
-        self.cameraActor:setSmoothMotion(true, false)
-        self.camera = self.cameraActor:addComponent("Camera")
-        self.camera:setNearClipDistance(0.5)
-        self.camera:setFarClipDistance(1000)
-        self.camera:setActive(true)
-        self.cameraController = self.cameraActor:addComponent("VehicleCameraController")
-        self.cameraController:setTarget(self.vehicleActor)
-        self.cameraController:setDistance(CAMERA_DISTANCE)
-        self.cameraController:setHeight(CAMERA_HEIGHT)
         local scene = self.gameManager:getCurrentScene()
         assert(scene, "SampleVehicleAdvanced requires a current scene")
         scene:registerAllUpdates(self.vehicleActor)
@@ -171,6 +178,12 @@ function SampleVehicleAdvanced:generate()
         self:drawText(DEBUG_TEXT_ID + 4, 0.06, "Arrows: drive  Mouse wheel: zoom  Esc: quit")
     end)
     if not ok then
+        -- Native generation can retain a newly created scene-owned source even
+        -- when its derived presentation fails. Preserve that binding for retry.
+        if self.captureRaceSceneOptions then
+            local captured, captureFailure = pcall(self.captureRaceSceneOptions, self)
+            if not captured then failure = tostring(failure) .. "; source binding capture failed: " .. tostring(captureFailure) end
+        end
         self:shutdown()
         self.startFailed = true
         error("SampleVehicleAdvanced: " .. tostring(failure))
@@ -196,8 +209,9 @@ end
 
 function SampleVehicleAdvanced:resetCamera()
     if self.cameraActor then
-        self.cameraActor:setPosition(Vector3F(0, SPAWN_HEIGHT + CAMERA_HEIGHT, CAMERA_DISTANCE))
-        self.cameraActor:lookAt(Vector3F(0, SPAWN_HEIGHT, 0), Vector3F(0, 1, 0))
+        local target = self.cityTerrainRoads and self.vehicleActor and self.vehicleActor:getPosition() or Vector3F(0, SPAWN_HEIGHT, 0)
+        self.cameraActor:setPosition(Vector3F(target.x, target.y + CAMERA_HEIGHT, target.z + CAMERA_DISTANCE))
+        self.cameraActor:lookAt(target, Vector3F(0, 1, 0))
         self.cameraActor:updateTransform()
     end
 end

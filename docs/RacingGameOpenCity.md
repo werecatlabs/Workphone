@@ -107,8 +107,44 @@ terrain edits that cannot be recooked deactivate stale road collision while reta
 the authored source. Terrain grading and fully atomic terrain/city replacement remain
 unfinished.
 
-The generated grid/L-system city retains its flat-support path. The separate native
-authoring showcase exercises the real terrain, spline and roundabout components:
+Generated grid/L-system cities can now use the same editable terrain-road system.
+Enable **City Terrain Roads** on `ProceduralRaceScene`, or pass
+`--city-terrain-roads` to `SampleVehicleAdvanced`. This creates persistent
+**Generated city terrain** and **Editable generated city roads** actors. Select the
+road actor in **Window > City Roads** to edit the generated Bezier splines and
+roundabouts. The component's **City Road Authoring UUID** retains that source
+binding when the scene is saved. Regeneration reuses the edited document rather
+than replacing it with the original seed.
+
+`RacingGameOpenCity` exposes the same two script properties. Terrain-city
+regeneration keeps the native vehicle, camera and source binding through quality,
+seed and source-selection changes. Script property serialization also retains
+the binding. Terrain-city lap records remain in memory for the current play
+session and reset after regeneration or a detected route change. Persistent
+records need a stable fingerprint of the edited route; the menu/HUD explains
+this limitation. Flat-city record persistence is unchanged.
+
+The conversion uses stable source/road/knot/junction IDs, coalesces collinear
+streets, and replaces selected junctions with directed roundabout routes. Roads
+follow the real terrain triangles; unsupported parcels are removed and surviving
+building foundations, collision, parks and foliage share sampled ground heights.
+Source or terrain changes trigger a rebuild of the derived city. Moving a road
+away from the pinned racing route disables racing until the route has continuous
+supported coverage again; free editing does not silently create a replacement lap.
+
+```powershell
+& .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
+    -CityLayout lsystem -CityBlocks 6 -Quality high -Views street,track `
+    -FoliageWorld -NoEffects -Seconds 3
+```
+
+The flat city remains the default. Once a scene has saved terrain/source anchors,
+switching that scene back to flat mode is explicitly rejected; use a separate
+scene for the flat generator. Terrain-city source material export is not yet
+supported. Arbitrary topology edits, automatic cut/fill, ordinary junction
+reconstruction and atomic terrain/city replacement remain unfinished.
+
+The separate native authoring showcase remains useful as a small isolated fixture:
 
 ```powershell
 & .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
@@ -118,7 +154,7 @@ authoring showcase exercises the real terrain, spline and roundabout components:
 `--road-authoring-showcase` also selects this mode directly in `SampleVehicleAdvanced`.
 Evidence checks terrain publication, native road/ring/island/terrain ray hits,
 island exclusion from driveable surfaces and route circulation/height agreement.
-This diagnostic fixture does not convert generated cities into editable sources.
+This fixture is independent of the generated-city conversion above.
 [Rivers, road/rail bridges and train tracks](WPPROCEDURAL_CITY_TRANSPORT_WATER_PLAN.md),
 project asset import and country-specific junction approval remain planned.
 

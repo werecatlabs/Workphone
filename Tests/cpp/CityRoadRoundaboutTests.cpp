@@ -86,7 +86,7 @@ namespace
             check( bakeCityRoadRoundabout( spec, terrain( spec ), bake, error ), error );
             check( bakeCityRoadRoundabout( spec, terrain( spec ), repeated, error ), error );
             sameBake( bake, repeated );
-            require( bake.vertices.size() <= 256 * 8 + 6 * 34 + 1 && bake.indices.size() == bake.triangleKinds.size() * 3 &&
+            require( bake.vertices.size() <= 256 * 8 + 6 * 40 + 1 && bake.indices.size() == bake.triangleKinds.size() * 3 &&
                 bake.connections.size() == count && bake.routes.size() == count * ( count - 1 ), "Roundabout output budget/count changed" );
             require( !bake.containsSurface( spec.center.x, spec.center.z ) &&
                 !bake.containsSurface( spec.center.x + spec.islandRadius - .1f, spec.center.z ) &&
@@ -141,7 +141,7 @@ namespace
                 []( const CityRoadRoundaboutPort &port ) { return port.width >= 6 && port.length >= 12; } );
             const unsigned ringCount = circulation / 2;
             require( circulation <= 512 && approaches == count * 2 && island == ringCount + splitters * 4 &&
-                kerb == ringCount * 4 + splitters * 12,
+                kerb == ringCount * 4 + splitters * 24,
                 "Roundabout lost separated annulus/approach/raised island/kerb surfaces" );
             double expectedArea = pi * ( spec.outerRadius * spec.outerRadius - spec.islandRadius * spec.islandRadius );
             for( const auto &p : spec.ports )
@@ -226,21 +226,50 @@ namespace
     {
         for( const auto dimensions : { std::pair<float, float>{ 5.99f, 18 }, { 6, 11.99f }, { 6, 12 }, { 12, 18 } } )
         {
-            auto spec = source(); spec.ringSamples = 32;
+            auto spec = source(); spec.ringSamples = 32; spec.gradeX = .02f; spec.gradeZ = -.03f;
             for( auto &port : spec.ports ) { port.width = dimensions.first; port.length = dimensions.second; }
             CityRoadRoundaboutBake bake; String error;
             check( bakeCityRoadRoundabout( spec, terrain( spec ), bake, error ), error );
             const bool raised = dimensions.first >= 6 && dimensions.second >= 12;
+            const auto topAt = [&]( Vector3F point, CityRoadRoundaboutSurface kind ) {
+                for( std::size_t t = 0; t < bake.triangleKinds.size(); ++t ) if( bake.triangleKinds[t] == kind )
+                {
+                    const auto a = bake.vertices[bake.indices[t * 3]].position;
+                    const auto b = bake.vertices[bake.indices[t * 3 + 1]].position;
+                    const auto c = bake.vertices[bake.indices[t * 3 + 2]].position;
+                    const float denominator = ( b.z - c.z ) * ( a.x - c.x ) + ( c.x - b.x ) * ( a.z - c.z );
+                    if( std::abs( denominator ) < 1e-8f ) continue;
+                    const float u = ( ( b.z - c.z ) * ( point.x - c.x ) + ( c.x - b.x ) * ( point.z - c.z ) ) / denominator;
+                    const float v = ( ( c.z - a.z ) * ( point.x - c.x ) + ( a.x - c.x ) * ( point.z - c.z ) ) / denominator;
+                    if( u >= -.0001f && v >= -.0001f && u + v <= 1.0001f ) return true;
+                }
+                return false;
+            };
             for( const auto &port : spec.ports )
             {
                 const float along = spec.outerRadius + ( 1.5f + std::min( 8.f, port.length * .5f ) ) * .5f;
                 const auto point = spec.center + port.outward * along;
                 require( bake.containsSurface( point.x, point.z ) != raised,
                     "Splitter geometry/query qualification differs from width/length thresholds" );
+                if( raised )
+                {
+                    const Vector3F across{ -port.outward.z, 0, port.outward.x };
+                    const auto rim = point + across * .25f, turf = point + across * .15f;
+                    const auto nose = spec.center + port.outward * ( spec.outerRadius + 1.55f );
+                    require( topAt( rim, CityRoadRoundaboutSurface::Kerb ) && !topAt( rim, CityRoadRoundaboutSurface::Island ) &&
+                        topAt( turf, CityRoadRoundaboutSurface::Island ) && !topAt( turf, CityRoadRoundaboutSurface::Kerb ) &&
+                        topAt( nose, CityRoadRoundaboutSurface::Kerb ) && !topAt( nose, CityRoadRoundaboutSurface::Island ),
+                        "Splitter top lacks its concrete side/nose rim or overlaps inset turf" );
+                    require( !bake.containsSurface( rim.x, rim.z ) && !bake.containsSurface( nose.x, nose.z ) &&
+                        bake.containsSurface( point.x + across.x * .35f, point.z + across.z * .35f ),
+                        "Concrete splitter rim changed its physical footprint/driveability" );
+                }
             }
-            std::size_t raisedTriangles = 0;
+            std::size_t raisedTriangles = 0, rimTriangles = 0;
+            double topArea = 0;
             for( std::size_t triangle = 0; triangle < bake.triangleKinds.size(); ++triangle )
-                if( bake.triangleKinds[triangle] == CityRoadRoundaboutSurface::Island )
+                if( bake.triangleKinds[triangle] == CityRoadRoundaboutSurface::Island ||
+                    bake.triangleKinds[triangle] == CityRoadRoundaboutSurface::Kerb )
                 {
                     const auto &a = bake.vertices[bake.indices[triangle * 3]].position;
                     const auto &b = bake.vertices[bake.indices[triangle * 3 + 1]].position;
@@ -248,7 +277,11 @@ namespace
                     const auto center = ( a + b + c ) / 3.f;
                     if( std::hypot( center.x - spec.center.x, center.z - spec.center.z ) > spec.outerRadius )
                     {
-                        ++raisedTriangles;
+                        const auto normal = ( b - a ).crossProduct( c - a );
+                        if( std::abs( normal.y ) <= 1e-8f ) continue;
+                        raisedTriangles += bake.triangleKinds[triangle] == CityRoadRoundaboutSurface::Island;
+                        rimTriangles += bake.triangleKinds[triangle] == CityRoadRoundaboutSurface::Kerb;
+                        topArea += normal.y * .5;
                         for( const auto p : { a, b, c } )
                             require( std::abs( p.y - plane( spec, p.x, p.z ) - std::min( .12f, spec.islandHeight ) ) < .0001f,
                                 "Splitter top does not share the raised render/collision contact profile" );
@@ -256,6 +289,11 @@ namespace
                 }
             require( raisedTriangles == ( raised ? spec.ports.size() * 4 : 0 ),
                 "Splitter top triangle count exceeded its bounded derived geometry" );
+            require( rimTriangles == ( raised ? spec.ports.size() * 12 : 0 ),
+                "Splitter concrete rim triangle count exceeded its bounded partition" );
+            const double expectedArea = raised ? spec.ports.size() * .6 * ( std::min( 8.f, dimensions.second * .5f ) - 1.5 - .75 ) : 0;
+            require( std::abs( topArea - expectedArea ) < .001,
+                "Splitter turf/rim partition changes the original raised footprint area" );
         }
     }
     void failures()

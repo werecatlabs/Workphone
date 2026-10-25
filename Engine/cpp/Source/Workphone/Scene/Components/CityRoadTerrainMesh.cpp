@@ -24,6 +24,44 @@ namespace workphone::scene
         };
         void require( bool condition, const char *message )
         { if( !condition ) throw std::runtime_error( message ); }
+        size_t straightRunEnd( const SourceBudgetVector<procedural::CityRoadSplineSample> &points,
+                              size_t first, bool drape )
+        {
+            // Bezier subdivision is not a terrain tessellation requirement. Keep
+            // genuinely straight cross-sections as one ribbon, then clip that
+            // entire footprint against every covered terrain cell as before.
+            auto direction = points[first + 1].position - points[first].position;
+            if( drape ) direction.y = 0;
+            const double length = direction.length();
+            if( !std::isfinite( length ) || length <= 1e-6 ) return first + 1;
+            const Vector3<double> axis( direction.x / length, direction.y / length, direction.z / length );
+            const auto offset = [&]( Vector3F a, Vector3F b ) {
+                return Vector3<double>( double( a.x ) - b.x, drape ? 0. : double( a.y ) - b.y, double( a.z ) - b.z );
+            };
+            std::array<double, 3> previous{};
+            const auto &start = points[first];
+            size_t last = first;
+            for( size_t candidate = first + 1; candidate < points.size(); ++candidate )
+            {
+                const auto &point = points[candidate];
+                if( std::hypot( double( point.position.x ) - start.position.x,
+                                double( point.position.z ) - start.position.z ) > 64.0001 ) break;
+                const std::array<Vector3<double>, 3> deltas = { offset( point.position, start.position ),
+                    offset( point.left, start.left ), offset( point.right, start.right ) };
+                std::array<double, 3> progress{};
+                bool straight = true;
+                for( size_t i = 0; i < deltas.size(); ++i )
+                {
+                    progress[i] = deltas[i].dotProduct( axis );
+                    const auto residual = deltas[i] - axis * progress[i];
+                    straight = straight && std::isfinite( progress[i] ) && progress[i] > previous[i] &&
+                        residual.lengthSquared() <= 4e-8; // At most 0.2 mm; never flatten a road curve/Fixed grade break.
+                }
+                if( !straight ) break;
+                previous = progress; last = candidate;
+            }
+            return std::max( first + 1, last );
+        }
         double area( Point a, Point b, Point c )
         { return ( b.x - a.x ) * ( c.z - a.z ) - ( b.z - a.z ) * ( c.x - a.x ); }
         Point lerp( Point a, Point b, double t )
@@ -356,21 +394,28 @@ namespace workphone::scene
                 const auto &samples = bake.roads[roadIndex];
                 require( samples.roadId == road.id && samples.points.size() >= 2,
                          "Road bake has missing/mismatched samples." );
+                const auto finitePoint = []( Vector3F point ) {
+                    return std::isfinite( point.x ) && std::isfinite( point.y ) && std::isfinite( point.z );
+                };
                 for( size_t i = 0; i < samples.points.size(); ++i )
-                    require( std::isfinite( samples.points[i].distance ) && samples.points[i].distance >= 0 &&
+                    require( finitePoint( samples.points[i].position ) && finitePoint( samples.points[i].left ) &&
+                             finitePoint( samples.points[i].right ) &&
+                             std::isfinite( samples.points[i].distance ) && samples.points[i].distance >= 0 &&
                              ( !i || samples.points[i].distance > samples.points[i - 1].distance ),
-                             "Road bake arc distances must be finite and strictly increasing." );
+                             "Road bake points must be finite and arc distances strictly increasing." );
                 Policy policy;
                 policy.drape = road.heightMode == procedural::CityRoadHeightMode::Drape;
                 require( !policy.drape || std::abs( road.heightOffset ) <= .030001f,
                          "Draped road offset exceeds the supported 0.03 m surface bias; bridges are unavailable." );
                 policy.offset = road.heightOffset; policy.maxGrade = road.maxGrade;
-                for( size_t i = 1; i < samples.points.size(); ++i )
+                for( size_t first = 0; first + 1 < samples.points.size(); )
                 {
-                    const auto &a = samples.points[i - 1], &b = samples.points[i];
+                    const size_t last = straightRunEnd( samples.points, first, policy.drape );
+                    const auto &a = samples.points[first], &b = samples.points[last];
                     const float av = a.distance * .125f, bv = b.distance * .125f;
                     builder.triangle( { a.left, a.right, b.left }, { Vector2F( 0, av ), Vector2F( 1, av ), Vector2F( 0, bv ) }, policy );
                     builder.triangle( { a.right, b.right, b.left }, { Vector2F( 1, av ), Vector2F( 1, bv ), Vector2F( 0, bv ) }, policy );
+                    first = last;
                 }
             }
             const auto sampler = [terrain, placement]( const Vector3F &point, float &height ) {

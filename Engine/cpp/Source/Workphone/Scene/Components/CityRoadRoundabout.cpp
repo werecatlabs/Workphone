@@ -166,9 +166,9 @@ namespace workphone::procedural
             angles.erase( std::unique( angles.begin(), angles.end(), []( float a, float b ) { return std::abs( a - b ) < 1.e-6f; } ), angles.end() );
             if( tau - angles.back() + angles.front() < 1.e-6f ) angles.pop_back();
             const std::size_t count = angles.size();
-            candidate.vertices.reserve( count * 8 + spec.ports.size() * 34 + 1 );
-            candidate.indices.reserve( count * 21 + spec.ports.size() * 54 );
-            candidate.triangleKinds.reserve( count * 7 + spec.ports.size() * 18 );
+            candidate.vertices.reserve( count * 8 + spec.ports.size() * 40 + 1 );
+            candidate.indices.reserve( count * 21 + spec.ports.size() * 90 );
+            candidate.triangleKinds.reserve( count * 7 + spec.ports.size() * 30 );
             SourceBudgetVector<float> innerRadii;
             innerRadii.reserve( count );
             for( std::size_t i = 0; i < count; ++i )
@@ -255,8 +255,27 @@ namespace workphone::procedural
                         point( p, nearEnd + taper, -halfWidth ) };
                     const u32 top = u32( candidate.vertices.size() );
                     for( const auto &v : refuge ) vertex( v.x, v.z, height, up );
+                    // The 10 cm rim is a real partition of this same raised top,
+                    // not paint or an overlapping cap. Offset the tapered sides
+                    // by their perpendicular distance so the pointed noses also
+                    // retain a visible concrete boundary around the inset turf.
+                    const float rimWidth = .1f, insetHalf = halfWidth - rimWidth;
+                    const float noseInset = rimWidth * std::hypot( taper, halfWidth ) / halfWidth;
+                    const float shoulderInset = taper + noseInset - rimWidth * taper / halfWidth;
+                    const std::array<Vector3F, 6> inset = { point( p, nearEnd + noseInset, 0 ),
+                        point( p, nearEnd + shoulderInset, insetHalf ), point( p, farEnd - shoulderInset, insetHalf ),
+                        point( p, farEnd - noseInset, 0 ), point( p, farEnd - shoulderInset, -insetHalf ),
+                        point( p, nearEnd + shoulderInset, -insetHalf ) };
+                    const u32 turf = u32( candidate.vertices.size() );
+                    for( const auto &v : inset ) vertex( v.x, v.z, height, up );
                     for( u32 corner = 1; corner + 1 < refuge.size(); ++corner )
-                        triangle( top, top + corner, top + corner + 1, CityRoadRoundaboutSurface::Island, up );
+                        triangle( turf, turf + corner, turf + corner + 1, CityRoadRoundaboutSurface::Island, up );
+                    for( u32 corner = 0; corner < refuge.size(); ++corner )
+                    {
+                        const u32 next = ( corner + 1 ) % u32( refuge.size() );
+                        triangle( top + corner, top + next, turf + next, CityRoadRoundaboutSurface::Kerb, up );
+                        triangle( top + corner, turf + next, turf + corner, CityRoadRoundaboutSurface::Kerb, up );
+                    }
                     float perimeter = 0;
                     for( std::size_t side = 0; side < refuge.size(); ++side )
                     {

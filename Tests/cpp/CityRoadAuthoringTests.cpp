@@ -3,6 +3,8 @@
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/GameActor.hpp>
 #include <Workphone/Scene/GameManager.hpp>
+#include <Workphone/Scene/GameScene.hpp>
+#include <Workphone/Scene/Transform.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
@@ -129,6 +131,16 @@ namespace
         check( restored->rebuild( error ), error );
         require( restored->getActiveRevision() == restored->getSourceRevision() &&
                  restored->getSourceJSON() == saved->getSourceJSON(), "Pending source could not publish without losing saved identity" );
+        auto attached=make_ptr<GameActor>();auto liveScene=make_ptr<GameScene>();attached->setScene(liveScene);
+        auto pending=make_ptr<CityRoadAuthoring>();pending->setActor(attached);
+        pending->setPublishCallback([](const auto &,const auto &,auto,const auto &,String &failure){failure="Terrain generation is not active yet";return false;});
+        pending->setProperties(saved->getProperties());
+        require(pending->getSourceJSON()==saved->getSourceJSON() && pending->getActiveRevision()==0 &&
+            pending->getBake().sourceRevision==0,"Initial publication failure with an attached owner erased saved intent");
+        pending->setPublishCallback([](const auto &,const auto &,auto,const auto &,String &failure){failure.clear();return true;});
+        check(pending->rebuild(error),error);
+        require(pending->getSourceJSON()==saved->getSourceJSON(),"Deferred initial publication changed saved controls");
+        pending->setActor(nullptr);attached->setScene(nullptr);
     }
     void failedTerrainRefresh()
     {
@@ -168,6 +180,30 @@ namespace
         check( document->rebuild( error ), error );
         require( document->getActiveRevision() == revision && document->getBake().sourceRevision == revision,
                  "Explicit retry could not restore the retained source after terrain recook denial" );
+        data.heights[0]=.2f;check(terrain->applyTerrainData(data,error,terrain->getTerrainRevision()),error);
+        document->update();
+        require(document->getSourceRevision()==revision && document->getActiveRevision()==revision &&
+            document->getSource().terrainRevision==terrain->getTerrainRevision(),
+            "Automatic terrain refresh changed authored revision or failed to adopt its new terrain");
+        auto terrainOwner=make_ptr<GameActor>();terrainOwner->setTransform(make_ptr<Transform>());terrain->setActor(terrainOwner);
+        render::TerrainSnapshot serialSnapshot;Transform3<real_Num> serialPose;u64 oldSerial=0,newSerial=0;bool detached=false;
+        terrain->getTerrainIntegrationState(serialSnapshot,serialPose,oldSerial,detached);
+        unsigned serialPublications=0;
+        document->setPublishCallback([&](const auto &,const auto &,auto,const auto &,String &failure){++serialPublications;failure.clear();return true;});
+        terrain->updateTransform();terrain->getTerrainIntegrationState(serialSnapshot,serialPose,newSerial,detached);document->update();
+        require(newSerial>oldSerial && serialPublications==0 && document->getSourceRevision()==revision && document->getActiveRevision()==revision,
+            "An identical terrain placement notification republished roads or advanced the authored revision");
+        terrain->setActor(nullptr);terrainOwner->setTransform(nullptr);
+        auto owner=make_ptr<GameActor>();auto scene=make_ptr<GameScene>();
+        const auto attachedJSON=document->getSourceJSON();
+        owner->setScene(scene);owner->setFlag(IGameActor::ActorFlagInScene,true);document->setActor(owner);
+        owner->setFlag(IGameActor::ActorFlagInScene,false);document->update();
+        require(document->getActiveRevision()==0 && document->getBake().sourceRevision==0 &&
+            document->getSourceJSON()==attachedJSON,"Detached source retained active collision or lost authored intent");
+        owner->setFlag(IGameActor::ActorFlagInScene,true);document->update();
+        require(document->getActiveRevision()==revision && document->getSourceJSON()==attachedJSON,
+            "Reattached source did not republish the retained document");
+        document->setActor(nullptr);owner->setScene(nullptr);
     }
 }
 int main()

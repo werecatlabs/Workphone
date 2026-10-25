@@ -279,6 +279,36 @@ namespace workphone::scene
         void roadMarkings( CityRoadTerrainMesh &mesh, const procedural::CityRoadSplineSource &source,
             const procedural::CityRoadSplineBake &bake )
         {
+            const auto straightRunEnd = []( const SourceBudgetVector<procedural::CityRoadSplineSample> &points, size_t first ) {
+                auto direction = points[first + 1].position - points[first].position; direction.y = 0;
+                const double length = direction.length();
+                if( !std::isfinite( length ) || length <= 1e-6 ) return first + 1;
+                const Vector3<double> axis( direction.x / length, 0, direction.z / length );
+                const auto offset = []( Vector3F a, Vector3F b ) {
+                    return Vector3<double>( double( a.x ) - b.x, 0, double( a.z ) - b.z );
+                };
+                std::array<double, 3> previous{};
+                const auto &start = points[first]; size_t last = first;
+                for( size_t candidate = first + 1; candidate < points.size(); ++candidate )
+                {
+                    const auto &point = points[candidate];
+                    if( std::hypot( double( point.position.x ) - start.position.x,
+                                    double( point.position.z ) - start.position.z ) > 64.0001 ) break;
+                    const std::array<Vector3<double>, 3> deltas = { offset( point.position, start.position ),
+                        offset( point.left, start.left ), offset( point.right, start.right ) };
+                    std::array<double, 3> progress{}; bool straight = true;
+                    for( size_t i = 0; i < deltas.size(); ++i )
+                    {
+                        progress[i] = deltas[i].dotProduct( axis );
+                        const auto residual = deltas[i] - axis * progress[i];
+                        straight = straight && std::isfinite( progress[i] ) && progress[i] > previous[i] &&
+                            residual.lengthSquared() <= 4e-8;
+                    }
+                    if( !straight ) break;
+                    previous = progress; last = candidate;
+                }
+                return std::max( first + 1, last );
+            };
             // Index only the already fitted carriageway. Painting its exact
             // triangles preserves cell ridges, Fixed profiles and road boundaries.
             // It also avoids repeating terrain queries with different coverage.
@@ -296,6 +326,7 @@ namespace workphone::scene
                 z1 = s32( std::floor( std::max( { double( a.z ), double( b.z ), double( c.z ) } ) / cellSize ) );
             };
             const size_t roadTriangleCount = mesh.triangleKinds.size();
+            const size_t baseVertexCount = mesh.vertices.size();
             u64 entries = 0;
             for( size_t i = 0; i < roadTriangleCount; ++i ) if( mesh.triangleKinds[i] == CityRoadTerrainTriangleKind::Road )
             {
@@ -401,7 +432,12 @@ namespace workphone::scene
                         for( size_t i = 1; i + 1 < count; ++i )
                         {
                             if( std::abs( area( scratch[0], scratch[i], scratch[i + 1] ) ) <= 1e-10 ) continue;
-                            requireRuntime( mesh.vertices.size() + 3 <= 1000000, "Road marking vertex budget exceeded." );
+                            if( mesh.vertices.size() + 3 > 1000000 )
+                                throw std::runtime_error( ( String( "Road marking vertex budget exceeded: base=" ) +
+                                    StringUtil::toString( baseVertexCount ) + " added=" +
+                                    StringUtil::toString( mesh.vertices.size() - baseVertexCount ) + " triangles=" +
+                                    StringUtil::toString( roadTriangleCount ) + " strips=" + StringUtil::toString( quads ) +
+                                    " projectionVisits=" + StringUtil::toString( projectionVisits ) ).c_str() );
                             auto aa = fitted( scratch[0] ), bb = fitted( scratch[i] ), cc = fitted( scratch[i + 1] );
                             if( ( bb.position - aa.position ).crossProduct( cc.position - aa.position ).y < 0 ) std::swap( bb, cc );
                             const auto base = u32( mesh.vertices.size() );
@@ -421,9 +457,13 @@ namespace workphone::scene
             for( size_t road = 0; road < source.roads.size(); ++road )
             {
                 const auto &recipe = source.roads[road]; const auto &points = bake.roads[road].points;
-                for( size_t i = 1; i < points.size(); ++i )
+                for( size_t first = 0; first + 1 < points.size(); )
                 {
-                    const auto &a = points[i - 1], &b = points[i];
+                    // Paint is projected onto exact fitted triangles, so only
+                    // horizontal cross-section turns require a new paint span.
+                    const size_t last = straightRunEnd( points, first );
+                    const auto &a = points[first], &b = points[last];
+                    first = last;
                     auto direction = b.position - a.position; direction.y = 0;
                     const float runSquared = direction.lengthSquared();
                     if( runSquared < 1e-8f ) continue;
@@ -531,7 +571,8 @@ namespace workphone::scene
             auto physics = app->getPhysicsManager();
             requireRuntime( bool( game ) && bool( scene ) && bool( physics ) && bool( physics->getPhysicsScene() ),
                 "Roads require the scene and physics services." );
-            requireRuntime( getActor()->getScene() == scene, "Road authoring belongs to a different or detached scene." );
+            requireRuntime( getActor()->getScene() == scene && getActor()->getFlag( IGameActor::ActorFlagInScene ),
+                "Road authoring belongs to a different or detached scene." );
             auto factories = app->getFactoryManager();
             requireRuntime( bool( factories ), "Road procedural service factory is unavailable." );
             auto forge = factories->make_object<procedural::ITextureForge>( "ITextureForge" );
@@ -589,7 +630,8 @@ namespace workphone::scene
                     requireRuntime( !detached && current == terrain && currentPlacement == placement,
                         "Terrain changed before road publication." );
                 }
-                requireRuntime( getActor()->getScene() == scene, "The authoring scene changed during preparation." );
+                requireRuntime( getActor()->getScene() == scene && getActor()->getFlag( IGameActor::ActorFlagInScene ),
+                    "The authoring scene changed during preparation." );
                 scene->addActor( candidate->root );
                 for( auto actor : candidate->actors )
                 {

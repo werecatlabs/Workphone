@@ -1,5 +1,53 @@
 # WPProcedural implementation status
 
+## Generated cities with editable terrain roads — 25 October 2026
+
+`ProceduralRaceScene` now promotes grid and L-system streets into the existing
+`CityRoadAuthoring` source when **City Terrain Roads** is enabled. The source and
+terrain are persistent scene anchors; generated render/collision actors are
+disposable and excluded from scene serialization. Regeneration preserves manual
+road edits and terrain rebinding. Application updates rebuild derived city data
+after source revisions, explicit road rebuilds and terrain snapshot/placement
+changes. Failed or missing bindings report an error and remove stale derived
+collision. The scene cannot silently return to a second flat ground world.
+
+The converter assigns deterministic IDs, merges collinear chains, selects bounded
+roundabouts and fits the original lap through their directed circulation routes.
+Edited sources must still support that lap continuously, including terrain contact
+heights and island exclusion. Unsupported laps become unavailable in native and
+Lua racing flows. They are not replaced by an invented route.
+
+Buildings use exact full-parcel terrain-cell coverage and road/junction clearance.
+Holes, excessive relief or unsupported parcels are culled; retained foundations,
+building collision, parks and existing foliage placement use the same fitted
+heights. Source roads own generated asphalt, kerb, turf and paint materials with
+semantic texture/mip bindings. Flat street overlays are omitted in terrain mode.
+
+The native sample and capture script accept `--city-terrain-roads` and
+`-CityTerrainRoads`. Evidence checks actual source/terrain revisions, fitted lots,
+native surface rays, driveable route coverage and uploaded road material bindings.
+Collision smoke additionally exercises manual edit retention, regeneration,
+terrain rebinding and a same-source-revision terrain refresh.
+
+`RacingGameOpenCity` now persists/forwards the terrain mode and canonical source
+UUID. Quality/seed/source changes reuse the native vehicle/camera/component in
+terrain mode; recreation from serialized script properties rebinds the same
+document. Flat mode retains its existing lifecycle. Terrain-city lap records are
+session-local until a stable edited-route fingerprint is exposed; regeneration
+and detected route changes reset them and the UI states the policy. The real Lua city/component suites pass with fixture
+checks for retained knot IDs/widths, cache invalidation and source restoration.
+
+The focused CPU/Editor rerun passed 5/5 in 45.68 seconds, including the converter,
+parcel support, native authoring controls and real Editor save/reopen fixture.
+That fixture found and fixed first-load source loss when terrain publication was
+temporarily unavailable. It proves anchor/source persistence; it does not prove
+a mouse-driven visual Editor session or a complete restored driving scene.
+Native integration and fresh visual evidence are recorded below once complete.
+
+Remaining gates include ordinary junction reconstruction, automatic grading,
+arbitrary edited-lap topology, transport/water integration, representative GPU
+performance and independent commercial-quality visual comparison.
+
 ## Racing foundations and visual slice — 12 October 2026
 
 This implements parts of P0–P5, P8 and P9 from the [production plan](WPPROCEDURAL_PRODUCTION_PLAN.md). It does not complete P0–P10 or certify AAA quality. Changes reuse the existing procedural services, racing component, terrain foliage attachment and resource compiler.

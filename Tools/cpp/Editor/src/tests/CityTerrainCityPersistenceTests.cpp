@@ -123,10 +123,12 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     vehicle->setEnabled( false ); // This gate saves/restores anchors; it does not regenerate a WPVehicle.
     flush();
     const auto path = temporary.path / "Assets" / "TerrainCityAnchors.scene";
+    BOOST_REQUIRE_MESSAGE(source->getSource().roads.size()==1u,"Manual source was lost before scene save: "+source->getError());
     originalScene->saveScene( path.generic_u8string() ); BOOST_REQUIRE( std::filesystem::is_regular_file( path ) );
     std::ifstream saved( path, std::ios::binary );
     const std::string bytes( ( std::istreambuf_iterator<char>( saved ) ), std::istreambuf_iterator<char>() );
     BOOST_REQUIRE( !bytes.empty() ); BOOST_CHECK( bytes.find( sourceUuid.c_str() ) != std::string::npos );
+    BOOST_REQUIRE_MESSAGE(bytes.find("30000000-0000-4000-8000-000000000001")!=std::string::npos,"Scene serialization omitted the authored road");
     BOOST_CHECK( bytes.find( terrainUuid.c_str() ) != std::string::npos );
 
     if( auto selection = app->getSelectionManager() ) selection->clearSelection();
@@ -153,6 +155,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     restoredSource->setPublishCallback( publisher );
     if( auto renderer = dynamic_pointer_cast<render::Terrain>( restoredTerrain->getTerrain() ) ) renderer->setDeferredTerrainPublication( false );
     flush(); restoredSource->update();
+    BOOST_REQUIRE_MESSAGE(restoredSource->getSource().roads.size()==1u,"Source lost during actual scene restore: "+restoredSource->getError()+"; JSON="+restoredSource->getSourceJSON());
     BOOST_REQUIRE_MESSAGE( restoredSource->rebuild( error ), error );
     BOOST_REQUIRE_EQUAL( restoredSource->getSource().roads.size(), 1u );
     const auto &actual = restoredSource->getSource();

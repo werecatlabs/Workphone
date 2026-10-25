@@ -77,21 +77,25 @@ namespace workphone::scene
         }
         if(m_cityTerrainRoads && m_cityRoadShowcase)
         {m_generationError="Choose a generated terrain city or the separate road authoring showcase.";return false;}
+        if(m_cityTerrainRoads && !m_materialExportDirectory.empty())
+        {m_generationError="Terrain-city source material export is unavailable.";return false;}
 
         auto currentScene=core::IApplicationManager::instance()->getGameManager()->getCurrentScene();
         if(m_cityTerrainRoads)
         {
             if(m_cityTerrain && (!m_cityTerrain->getActor() || m_cityTerrain->getActor()->getScene()!=currentScene))m_cityTerrain=nullptr;
-            if(m_cityRoadAuthoring && (!m_cityRoadAuthoring->getActor() || m_cityRoadAuthoring->getActor()->getScene()!=currentScene))
+            if(m_cityRoadAuthoring && (!m_cityRoadAuthoring->getActor() ||
+                m_cityRoadAuthoring->getActor()->getScene()!=currentScene ||
+                !m_cityRoadAuthoring->getActor()->getFlag(IGameActor::ActorFlagInScene)))
             {m_cityRoadAuthoring=nullptr;m_cityTerrain=nullptr;}
             if(!m_cityRoadAuthoring && !m_cityRoadAuthoringUUID.empty())
             {
                 for(auto candidate:core::IApplicationManager::instance()->getGameManager()->getActors())
-                    if(candidate && candidate->getScene()==currentScene)
+                    if(candidate && candidate->getScene()==currentScene && candidate->getFlag(IGameActor::ActorFlagInScene))
                         if(auto source=candidate->getComponent<CityRoadAuthoring>())
                             if(source->getHandle() && source->getHandle()->getUUIDAsString()==m_cityRoadAuthoringUUID)
                             {m_cityRoadAuthoring=source;break;}
-                if(!m_cityRoadAuthoring){m_generationError="The saved city road source is unavailable in this scene.";return false;}
+                if(!m_cityRoadAuthoring){clearGeneratedScene();m_generationError="The saved city road source is unavailable in this scene.";return false;}
             }
             if(m_cityRoadAuthoring)
             {
@@ -100,11 +104,11 @@ namespace workphone::scene
                 m_cityTerrain=m_cityRoadAuthoring->getTerrain();
                 if(!m_cityTerrain)
                     for(auto candidate:core::IApplicationManager::instance()->getGameManager()->getActors())
-                        if(candidate && candidate->getScene()==currentScene)
+                        if(candidate && candidate->getScene()==currentScene && candidate->getFlag(IGameActor::ActorFlagInScene))
                             if(auto terrain=candidate->getComponent<TerrainSystem>())
                                 if(terrain->getHandle() && terrain->getHandle()->getUUIDAsString()==m_cityRoadAuthoring->getTerrainBindingUUID())
                                 {m_cityTerrain=terrain;break;}
-                if(!m_cityTerrain){m_generationError="The saved city terrain binding is unavailable.";return false;}
+                if(!m_cityTerrain){clearGeneratedScene();m_generationError="The saved city terrain binding is unavailable.";return false;}
             }
         }
         // Saved source/terrain anchors are scene-owned. Only their derived city
@@ -423,17 +427,32 @@ namespace workphone::scene
         auto app = core::IApplicationManager::instance();
         if(Thread::getCurrentTask()==TaskId::Application && isLoaded() && isEnabled() && m_cityTerrainRoads)
         {
+            const auto currentScene=app->getGameManager()->getCurrentScene();
+            if(m_cityRoadAuthoring && (!m_cityRoadAuthoring->getActor() ||
+                m_cityRoadAuthoring->getActor()->getScene()!=currentScene ||
+                !m_cityRoadAuthoring->getActor()->getFlag(IGameActor::ActorFlagInScene)))
+            {
+                // A retained component pointer must not keep scenery/collision
+                // alive after its canonical source actor leaves the scene.
+                if(auto owner=m_cityRoadAuthoring->getActor())
+                    if(!owner->getFlag(IGameActor::ActorFlagInScene))m_cityRoadAuthoring->update();
+                regenerate();return;
+            }
             if(!m_cityRoadAuthoring && !m_cityRoadAuthoringUUID.empty())
             {
                 const auto scene=app->getGameManager()->getCurrentScene();
                 if(getActor() && getActor()->getScene()==scene)
                     for(auto candidate:app->getGameManager()->getActors())
-                        if(candidate && candidate->getScene()==scene)
+                        if(candidate && candidate->getScene()==scene && candidate->getFlag(IGameActor::ActorFlagInScene))
                             if(auto source=candidate->getComponent<CityRoadAuthoring>())
                                 if(source->getHandle() && source->getHandle()->getUUIDAsString()==m_cityRoadAuthoringUUID)
                                 {m_cityRoadAuthoring=source;break;}
             }
-            if(!m_cityRoadAuthoring)return;
+            if(!m_cityRoadAuthoring)
+            {
+                if(m_assets.roadAuthoring || !m_assets.actors.empty())regenerate();
+                return;
+            }
             const auto revision=m_cityRoadAuthoring->getActiveRevision();
             const auto snapshot=m_cityRoadAuthoring->getTerrainSnapshot();const auto placement=m_cityRoadAuthoring->getTerrainPlacement();
             const bool changed=m_assets.roadAuthoring!=m_cityRoadAuthoring || revision!=m_assets.cityAppliedSourceRevision || snapshot!=m_cityBuiltTerrain || placement!=m_cityBuiltTerrainPlacement;

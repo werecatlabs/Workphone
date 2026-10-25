@@ -19,6 +19,7 @@
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
+#include <Workphone/Scene/Components/CollisionMesh.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
@@ -199,6 +200,9 @@ namespace workphone
             bool valid=false,binding=false,revisions=false,renderer=false,route=false,islands=false,support=false,flatFallbackAbsent=false;
             bool roadPBRBindingsReady=false;
             u32 roadPBRTextures=0,roadPBRMaterials=0;
+            bool footwayReady=false,footwayCollisionReady=false;
+            u32 footwayActors=0,footwayNativeRayProbes=0,footwayRayCandidates=0;
+            f32 footwayRayHeightError=-1;
             size_t roads=0,junctions=0,triangles=0,routePoints=0,islandsChecked=0,rayProbes=0,buildingBodies=0,expectedBuildingBodies=0;
             f32 routeHeightError=0;
         };
@@ -246,9 +250,51 @@ namespace workphone
             }
             for(const auto &lot:assets.cityLayout.lots)result.expectedBuildingBodies+=procedural::OpenCityLayout::buildingVolumes(lot).size();
             result.flatFallbackAbsent=assets.ground && terrain->getActor()==assets.ground;
+            SmartPtr<scene::IGameActor> footway;
             for(const auto &actor:assets.actors)if(actor)
-            {if(actor->getName().find("Trackside collision: City building mass")==0)++result.buildingBodies;if(actor->getName()=="Circuit collision plane")result.flatFallbackAbsent=false;}
+            {
+                if(actor->getName().find("Trackside collision: City building mass")==0)++result.buildingBodies;
+                if(actor->getName()=="Circuit collision plane")result.flatFallbackAbsent=false;
+                if(actor->getName()=="Terrain city footways"){footway=actor;++result.footwayActors;}
+            }
             result.support=assets.cityBuildingSupportValid && assets.cityBuildingSupportChecks>=assets.cityLayout.lots.size() && result.buildingBodies==result.expectedBuildingBodies && result.buildingBodies>0;
+            if(footway && result.footwayActors==1)
+            {
+                auto collision=footway->getComponent<scene::CollisionMesh>();auto rigidbody=footway->getComponent<scene::Rigidbody>();
+                auto body=rigidbody?rigidbody->getRigidStatic():nullptr;
+                const auto identity=[](const auto &pose) {
+                    return pose.getPosition().length()<.00001f && (pose.getScale()-Vector3F::unit()).length()<.00001f &&
+                        (pose.getOrientation()*Vector3F::unitX()-Vector3F::unitX()).length()<.00001f &&
+                        (pose.getOrientation()*Vector3F::unitY()-Vector3F::unitY()).length()<.00001f;
+                };
+                result.footwayCollisionReady=collision && !collision->isConvex() && collision->getShape() && collision->getShape()->isAttached() &&
+                    body && body->getScene()==physics && identity(footway->getWorldTransform()) && identity(body->getTransform());
+                u32 inspectedPoints=0;
+                if(result.footwayCollisionReady)for(const auto &road:bake.roads)
+                {
+                    if(result.footwayNativeRayProbes || inspectedPoints>=128 || result.footwayRayCandidates>=256)break;
+                    const auto authored=std::find_if(source.roads.begin(),source.roads.end(),[&](const auto &candidate){return candidate.id==road.roadId;});
+                    if(authored==source.roads.end())continue;
+                    for(size_t offset=0;offset<road.points.size() && !result.footwayNativeRayProbes && inspectedPoints<128 && result.footwayRayCandidates<256;++offset)
+                    {
+                        ++inspectedPoints;
+                        const auto &point=road.points[(road.points.size()/2+offset)%road.points.size()];
+                        Vector3F across(-point.tangent.z,0,point.tangent.x);const float span=across.length();
+                        if(!std::isfinite(span) || span<=.00001f)continue;across/=span;
+                        for(const float side:{-1.f,1.f})
+                        {
+                            if(result.footwayNativeRayProbes || result.footwayRayCandidates>=256)break;
+                            ++result.footwayRayCandidates;auto p=point.position+across*(side*(authored->width*.5f+1.2f));f32 height=0;
+                            if(!render::sampleTerrainHeight(*sourceTerrain,authoring->getTerrainPlacement(),p,height))continue;
+                            height+=.15f;Vector3F hit,normal;SmartPtr<ISharedObject> object;
+                            if(physics->intersects({p.x,height+.2f,p.z},{p.x,height-.2f,p.z},hit,normal,object) && object==body &&
+                                std::isfinite(hit.y) && std::abs(hit.y-height)<=.001f && normal.y>.5f)
+                            {result.footwayNativeRayProbes=1;result.footwayRayHeightError=std::abs(hit.y-height);}
+                        }
+                    }
+                }
+            }
+            result.footwayReady=result.footwayCollisionReady && result.footwayNativeRayProbes==1;
             // Source-owned road runtime resources are outside SceneAssets' texture
             // inventory. Inspect the active world's bindings and actual uploads.
             auto app=core::IApplicationManager::instancePtr();auto manager=app?app->getGameManager():nullptr;
@@ -269,7 +315,7 @@ namespace workphone
             result.roadPBRMaterials=u32(materialNames.size());result.roadPBRTextures=u32(textures.size());const bool junctions=!source.roundabouts.empty();
             result.roadPBRBindingsReady=mapsReady && layers[0]==1 && layers[3]==1 && layers[1]==(junctions?1u:0u) && layers[2]==(junctions?1u:0u) &&
                 result.roadPBRMaterials==(junctions?4u:2u) && result.roadPBRTextures==(junctions?16u:6u);
-            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady;
+            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady && result.footwayReady;
             return result;
         }
 
@@ -448,6 +494,9 @@ namespace workphone
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            // Application::load catches createScene failures. Preserve the real
+            // cause before unload clears its component, for unattended runners.
+            std::cerr << "VehicleAdvanced Generation Error: " << e.what() << '\n';
             unload( data );
         }
     }
@@ -511,6 +560,19 @@ namespace workphone
 
     void SampleVehicleAdvanced::update()
     {
+        const auto generationFailed=[&]() {
+            const bool unattended=m_collisionSmokeTest || m_smokeTest || m_trackSmokeTest || m_audioSmokeTest || m_effectsSmokeTest ||
+                !m_capturePath.empty() || m_benchmarkSeconds>0;
+            if(!unattended || !m_raceScene || m_raceScene->isGenerated())return false;
+            const auto error=m_raceScene->getGenerationError();
+            if(error.empty())return false; // An unreported/pending startup is not a definitive failure.
+            WP_LOG_ERROR("VehicleAdvanced Generation Error: "+error);
+            std::cerr<<"VehicleAdvanced Generation Error: "<<error<<'\n';
+            m_smokeTestPassed=false;m_capturePassed=false;m_captureAttempted=true;
+            if(auto app=core::IApplicationManager::instancePtr())app->setQuit(true);
+            return true;
+        };
+        if(generationFailed())return;
         if( Thread::getCurrentTask() == TaskId::Physics )
         {
             if( !m_physicsConfigured &&
@@ -539,6 +601,7 @@ namespace workphone
         }
 
         Application::update();
+        if(generationFailed())return;
         if(m_collisionSmokeTest && m_assets.cityTerrainRoads && !m_cityRetentionSmokePrepared &&
            Thread::getCurrentTask()==TaskId::Application && m_physicsConfigured &&
            core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad()>3)
@@ -748,6 +811,8 @@ namespace workphone
                         <<",\"sourceBytes\":"<<(authoring?authoring->getSourceJSON().size():0)<<",\"roads\":"<<check.roads<<",\"roundabouts\":"<<check.junctions
                         <<",\"runtimeTriangles\":"<<check.triangles<<",\"terrainRendererReady\":"<<(check.renderer?"true":"false")
                         <<",\"roadPBRBindingsReady\":"<<(check.roadPBRBindingsReady?"true":"false")<<",\"roadPBRTextures\":"<<check.roadPBRTextures<<",\"roadPBRMaterials\":"<<check.roadPBRMaterials
+                        <<",\"footwayReady\":"<<(check.footwayReady?"true":"false")<<",\"footwayCollisionReady\":"<<(check.footwayCollisionReady?"true":"false")
+                        <<",\"footwayActors\":"<<check.footwayActors<<",\"footwayNativeRayProbes\":"<<check.footwayNativeRayProbes<<",\"footwayRayCandidates\":"<<check.footwayRayCandidates<<",\"footwayRayHeightError\":"<<check.footwayRayHeightError
                         <<",\"routeSamples\":"<<check.routePoints<<",\"routeDriveable\":"<<(check.route?"true":"false")<<",\"routeMaximumHeightError\":"<<check.routeHeightError
                         <<",\"raceRouteAvailable\":"<<(m_assets.cityRaceRouteAvailable?"true":"false")<<",\"raceRouteError\":"<<advanced::jsonString(m_assets.cityRaceRouteError)
                         <<",\"islandCentresChecked\":"<<check.islandsChecked<<",\"islandsExcluded\":"<<(check.islands?"true":"false")
@@ -1431,7 +1496,8 @@ namespace workphone
             if(refreshed==m_assets.cityLayout.lots.end() || std::abs(refreshed->groundHeight-oldGround-rise)>.00015f ||
                authoring->getSourceRevision()!=sourceRevision || replacement->getActiveTerrainSnapshot()!=authoring->getTerrainSnapshot())
                 throw std::runtime_error("Terrain-only snapshot refresh did not update retained parcel supports at the unchanged source revision.");
-            m_cityRetentionSmokeRoadId=roadId;m_cityRetentionSmokeWidth=width;m_cityRetentionSmokePrepared=true;
+            m_cityRetentionSmokeRoadId=roadId;m_cityRetentionSmokeWidth=width;
+            m_collisionProbeTime=app->getTimer()->getTimeSinceSceneLoad();m_cityRetentionSmokePrepared=true;
         }
         catch(const std::exception &error)
         {WP_LOG_ERROR(String("Terrain city edit/regeneration retention smoke: FAIL ")+error.what());m_smokeTestPassed=false;if(app)app->setQuit(true);}
@@ -1512,11 +1578,15 @@ namespace workphone
             if(m_assets.cityTerrainRoads)
             {
                 const auto check=checkTerrainCity(m_assets,physics);
-                if(!check.valid){fail("terrain-city source, fitted route, static building support, native surface probes or uploaded road PBR bindings failed");return;}
+                if(!check.roadPBRBindingsReady && app->getTimer()->getTimeSinceSceneLoad()-m_collisionProbeTime<5)return;
+                if(!check.valid){fail("terrain-city checks failed binding="+StringUtil::toString(check.binding)+" revisions="+StringUtil::toString(check.revisions)+
+                    " renderer="+StringUtil::toString(check.renderer)+" route="+StringUtil::toString(check.route)+" islands="+StringUtil::toString(check.islands)+
+                    " support="+StringUtil::toString(check.support)+" rays="+StringUtil::toString(u32(check.rayProbes))+" PBR="+StringUtil::toString(check.roadPBRBindingsReady)+
+                    " footway="+StringUtil::toString(check.footwayReady)+" footway rays="+StringUtil::toString(check.footwayNativeRayProbes));return;}
                 WP_LOG("Terrain city edit/regeneration retention smoke: PASS road="+String(m_cityRetentionSmokeRoadId.data(),m_cityRetentionSmokeRoadId.size())+
                        " width="+StringUtil::toString(m_cityRetentionSmokeWidth)+" source reused=true revision="+StringUtil::toString(m_assets.cityAppliedSourceRevision)+
                        " terrain rebound=true old terrain retired=true terrain snapshot refreshed=true native surface rays="+StringUtil::toString(u32(check.rayProbes))+" building support checks="+StringUtil::toString(m_assets.cityBuildingSupportChecks));
-                WP_LOG("Terrain city collision smoke: PASS native static boxes="+StringUtil::toString(u32(count))+" surface rays="+StringUtil::toString(u32(check.rayProbes))+" building masses="+StringUtil::toString(u32(check.buildingBodies))+" uploaded road PBR textures="+StringUtil::toString(check.roadPBRTextures));
+                WP_LOG("Terrain city collision smoke: PASS native static boxes="+StringUtil::toString(u32(count))+" surface rays="+StringUtil::toString(u32(check.rayProbes))+" building masses="+StringUtil::toString(u32(check.buildingBodies))+" uploaded road PBR textures="+StringUtil::toString(check.roadPBRTextures)+" footway native rays="+StringUtil::toString(check.footwayNativeRayProbes));
                 m_smokeTestPassed=true;app->setQuit(true);return;
             }
             if( m_assets.openCity )
@@ -2524,6 +2594,7 @@ int main( int argc, char **argv )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
         if(roadAuthoringShowcase && cityTerrainRoads)throw std::runtime_error("Choose road-authoring-showcase or city-terrain-roads.");
+        if(cityTerrainRoads && !materialExportDirectory.empty())throw std::runtime_error("Terrain-city source material export is unavailable.");
         if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) + int(effectsSmokeTest) > 1 ||
             ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
@@ -2570,6 +2641,8 @@ int main( int argc, char **argv )
         return 2;
     }
     int exitCode = 1;
+    const bool unattended=smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ||
+        !capturePath.empty() || benchmarkSeconds>0 || bool(sceneProfile);
 
     auto unloadApplication = [&app, &sceneProfile]() {
         if( app )
@@ -2652,7 +2725,7 @@ int main( int argc, char **argv )
         sceneProfileError = e.what();
         unloadApplication();
         unloadTypeManager();
-        if( sceneProfile ) std::cerr << sceneProfileError << '\n';
+        if( unattended ) std::cerr << sceneProfileError << '\n';
         else MessageBoxUtil::show( e.what() );
     }
     catch( std::exception &e )
@@ -2660,7 +2733,7 @@ int main( int argc, char **argv )
         sceneProfileError = e.what();
         unloadApplication();
         unloadTypeManager();
-        if( sceneProfile ) std::cerr << sceneProfileError << '\n';
+        if( unattended ) std::cerr << sceneProfileError << '\n';
         else MessageBoxUtil::show( e.what() );
     }
     catch( ... )
@@ -2668,7 +2741,7 @@ int main( int argc, char **argv )
         sceneProfileError = "Unknown error";
         unloadApplication();
         unloadTypeManager();
-        if( sceneProfile ) std::cerr << sceneProfileError << '\n';
+        if( unattended ) std::cerr << sceneProfileError << '\n';
         else MessageBoxUtil::show( "Unknown error" );
     }
 

@@ -3,6 +3,7 @@
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Interface/Physics/IMeshShape.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Mesh/MeshImposterGenerator.hpp>
@@ -14,6 +15,8 @@
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
+#include <Workphone/Scene/Components/CityRoadFootways.hpp>
+#include <Workphone/Scene/Components/CollisionMesh.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
@@ -1885,10 +1888,11 @@ namespace workphone::scene::race
             forge->setSeed( seed );
             SurfaceBakeParams surfaceParams;
             surfaceParams.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
-            auto cityAsphalt = raceAsphalt( assets, forge, surfaceParams, seed );
+            SmartPtr<render::IMaterial> cityAsphalt;
+            if(!assets.cityTerrainRoads)cityAsphalt=raceAsphalt( assets, forge, surfaceParams, seed );
             // World projection gives segments and intersections the same physical texture scale.
-            cityAsphalt->setUVProjection( 3 );
-            cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );
+            if(cityAsphalt)
+            {cityAsphalt->setUVProjection( 3 );cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );}
             Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
             struct CityPatch
             {
@@ -2340,10 +2344,10 @@ namespace workphone::scene::race
                     app->getGameManager()->getCurrentScene()->addActor( wall );
                 }
             }
-            mesh( assets, "City streets", asphalt, cityAsphalt );
+            if(!assets.cityTerrainRoads)mesh( assets, "City streets", asphalt, cityAsphalt );
             mesh( assets, "City sidewalks", pavement,
                   material( assets, { .42f, .43f, .44f, 1 }, .95f ) );
-            mesh( assets, "City lane markings", markings,
+            if(!assets.cityTerrainRoads)mesh( assets, "City lane markings", markings,
                   material( assets, { .85f, .82f, .65f, 1 }, .8f ) );
             const ColourF colours[] = { { .78f, .68f, .57f, 1 },
                                         { .86f, .83f, .75f, 1 },
@@ -2442,6 +2446,39 @@ namespace workphone::scene::race
                 pavingMaterial->setEditorFloat("aoStrength",.3f);
             }
             mesh( assets, "City block plazas", courtyards, pavingMaterial );
+            if(assets.cityTerrainRoads)
+            {
+                CityRoadTerrainMesh fitted;String error;
+                if(!buildCityRoadFootways(assets.roadAuthoring->getSource(),assets.roadAuthoring->getBake(),
+                    assets.roadAuthoring->getTerrainSnapshot(),assets.roadAuthoring->getTerrainPlacement(),fitted,error))
+                    throw std::runtime_error(error.c_str());
+                Geometry walks;
+                walks.positions.reserve(fitted.vertices.size());walks.normals.reserve(fitted.vertices.size());
+                walks.uv.reserve(fitted.vertices.size());walks.tangents.reserve(fitted.vertices.size());
+                walks.indices.reserve(fitted.indices.size());
+                for(const auto &vertex:fitted.vertices)
+                {
+                    walks.positions.push_back(vertex.position);walks.normals.push_back(vertex.normal);
+                    walks.uv.push_back({vertex.uv.x,vertex.uv.y,0});
+                    auto tangent=std::abs(vertex.normal.y)>.9f?Vector3F(1,0,0):Vector3F(-vertex.normal.z,0,vertex.normal.x);
+                    tangent-=vertex.normal*tangent.dotProduct(vertex.normal);
+                    tangent.normalise();walks.tangents.push_back({tangent.x,tangent.y,tangent.z,1});
+                }
+                for(const auto index:fitted.indices)walks.indices.push_back(index);
+                if(auto actor=mesh(assets,"Terrain city footways",walks,pavingMaterial))
+                {
+                    // One native concave mesh shares every fitted top/kerb face;
+                    // no per-paving-tile actor or simplified flat contact plane.
+                    actor->setStatic(true);
+                    auto collision=actor->addComponent<CollisionMesh>();
+                    if(!collision)throw std::runtime_error("Cannot create terrain-city footway collision.");
+                    auto resource=actor->getComponent<scene::Mesh>()->getMeshResource();
+                    collision->setConvex(false);collision->setMeshResource(resource);
+                    if(auto shape=dynamic_pointer_cast<physics::IMeshShape>(collision->getShape()))shape->setMeshResource(resource);
+                    if(!actor->addComponent<Rigidbody>())throw std::runtime_error("Cannot create terrain-city footway rigidbody.");
+                    app->getGameManager()->getCurrentScene()->registerAllUpdates(actor);
+                }
+            }
             mesh( assets, "City street furniture", streetMetal, material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );
             mesh( assets, "City lamp lenses", lampGlass, material( assets, { .80f, .82f, .76f, 1 }, .35f ) );
             mesh( assets, "City parks", parks, material( assets, { .20f, .34f, .14f, 1 }, 1 ) );

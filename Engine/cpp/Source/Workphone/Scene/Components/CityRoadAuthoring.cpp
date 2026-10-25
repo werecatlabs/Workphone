@@ -100,6 +100,9 @@ namespace workphone::scene
     {
         auto terrain = getTerrain();
         if( !terrain ) { error = "Bind an available terrain component before fitting roads."; return false; }
+        if(auto actor=terrain->getActor())
+            if(actor->getScene() && !actor->getFlag(IGameActor::ActorFlagInScene))
+            {error="The bound terrain actor has left its scene.";return false;}
         bool detached = false;
         terrain->getTerrainIntegrationState( snapshot, placement, serial, detached );
         if( detached ) { error = "The bound terrain has been detached or unloaded."; return false; }
@@ -183,7 +186,7 @@ namespace workphone::scene
         if( auto app = core::IApplicationManager::instancePtr() )
             if( auto manager = app->getGameManager() )
                 for( auto actor : manager->getActors() )
-                    if( actor )
+                    if( actor && actor->getFlag(IGameActor::ActorFlagInScene) )
                         if( auto terrain = actor->getComponent<TerrainSystem>() )
                             if( auto handle = terrain->getHandle() )
                                 if( handle->getUUIDAsString() == m_terrainBindingUUID )
@@ -294,11 +297,25 @@ namespace workphone::scene
 
     void CityRoadAuthoring::update()
     {
-        if( m_sourceJSON.empty() || !isEnabled() ) return;
         // Scene loading restores component properties before its owner is added
         // to the scene. Do not turn that temporary state into a failed generation
         // tuple that would suppress the first real publication after attachment.
-        if( auto actor = getActor() ) if( !actor->getScene() ) return;
+        if( auto actor = getActor() )
+        {
+            if(!actor->getScene())return;
+            if(!actor->getFlag(IGameActor::ActorFlagInScene))
+            {
+                if(m_activeRevision)
+                {
+                    clearRuntime();m_activeRevision=0;m_terrainSnapshot.reset();
+                    m_bake.roads.releaseStorage();m_bake.sourceRevision=0;
+                    m_pendingPublication=true;m_lastTerrainAttempt.reset();
+                    m_error="The road source actor has left its scene.";
+                }
+                return;
+            }
+        }
+        if( m_sourceJSON.empty() || !isEnabled() ) return;
         if( m_pendingPublication && m_source.roads.empty() && m_source.roundabouts.empty() )
         { String error; rebuild( error ); return; }
         if( m_source.roads.empty() && m_source.roundabouts.empty() ) return;
@@ -317,6 +334,10 @@ namespace workphone::scene
             }
             return;
         }
+        // A consumer may acknowledge the same immutable terrain/pose with a
+        // newer integration serial. It changes no road geometry or authored token.
+        if(!m_pendingPublication && m_activeRevision && snapshot==m_terrainSnapshot && placement==m_terrainPlacement)
+        {m_terrainSerial=serial;return;}
         if( m_pendingPublication || snapshot != m_terrainSnapshot || serial != m_terrainSerial || placement != m_terrainPlacement )
         {
             if( m_lastTerrainAttempt.lock() == snapshot && m_lastAttemptSerial == serial &&
@@ -324,7 +345,7 @@ namespace workphone::scene
             m_lastTerrainAttempt = snapshot; m_lastAttemptSerial = serial;
             m_lastAttemptSourceRevision = getSourceRevision(); m_lastAttemptPlacement = placement;
             bool published = false;
-            try { published = applySource( m_source, getSourceRevision(), m_pendingPublication, error ); }
+            try { published = applySource( m_source, getSourceRevision(), true, error ); }
             catch( const std::exception &e ) { m_error = e.what(); }
             if( !published )
             {
@@ -373,19 +394,19 @@ namespace workphone::scene
             if( applySource( candidate, 0, !m_hasAcceptedSource, error ) ) { cancelDraft(); return; }
         }
         catch( const std::exception &e ) { error = e.what(); }
-        // Scene load can precede terrain actor creation or owner scene attachment.
-        // Retain the serialized intent without claiming a bake/native revision.
-        const auto actor = getActor();
-        if( !m_hasAcceptedSource && ( ( !getTerrain() && !binding.empty() ) ||
-                                      ( actor && !actor->getScene() ) ) )
+        // First restoration owns valid serialized intent even when the owner and
+        // terrain exist but their GPU/physics generation is not active yet. Only
+        // later edits are transactional against a previously accepted document.
+        if( !m_hasAcceptedSource )
         {
+            const auto publicationError=error;
             SourceBudgetText canonical;
             if( procedural::serializeCityRoadSplineSource( candidate, canonical, error ) )
             {
                 m_source.swap( candidate ); m_sourceJSON.swap( canonical );
                 m_hasAcceptedSource = true; m_pendingPublication = true;
                 m_bake.roads.clear(); m_bake.sourceRevision = 0;
-                m_error = "Road source restored; waiting for its scene and terrain before publication.";
+                m_error = "Road source restored; waiting for publication: "+publicationError;
                 return;
             }
         }

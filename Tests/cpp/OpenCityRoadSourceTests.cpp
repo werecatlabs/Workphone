@@ -61,6 +61,35 @@ namespace
             }
         }
     }
+    unsigned approachContracts( const CityRoadSplineSource &source )
+    {
+        unsigned longApproaches = 0;
+        for( const auto &junction : source.roundabouts ) for( const auto &port : junction.ports )
+        {
+            need( port.length >= 4 && port.length <= 18, "Generated approach escaped its 4..18 m bound" );
+            if( port.length >= 12 ) ++longApproaches;
+            const auto found = std::find_if( source.roads.begin(), source.roads.end(),
+                [&]( const auto &road ) { return road.id == port.approachId; } );
+            need( found != source.roads.end(), "Generated approach lost its source-road identity" );
+            const float direction = std::hypot( port.outward.x, port.outward.z );
+            const Vector3F expected = junction.center + port.outward * ( ( junction.outerRadius + port.length ) / direction );
+            const auto a = found->knots.front().position, b = found->knots.back().position;
+            const auto xz = []( Vector3F p, Vector3F q ) { return std::hypot( p.x - q.x, p.z - q.z ); };
+            need( std::min( xz( a, expected ), xz( b, expected ) ) <= .001f,
+                  "Generated approach and source road use different endpoint trims" );
+            need( xz( a, b ) >= 4, "Longer approaches consumed the remaining source road" );
+            for( const auto &neighbor : source.roundabouts ) if( neighbor.junctionId != junction.junctionId )
+                for( const auto &other : neighbor.ports ) if( other.approachId == port.approachId )
+                {
+                    const float firstRoom = std::hypot( junction.center.x, junction.center.z ) - junction.outerRadius - 4 - port.width * .5f;
+                    const float secondRoom = std::hypot( neighbor.center.x, neighbor.center.z ) - neighbor.outerRadius - 4 - other.width * .5f;
+                    if( firstRoom >= 18 && secondRoom >= 18 )
+                        need( std::abs( port.length - other.length ) <= .001f,
+                              "Neighbouring roundabouts did not share a constrained road symmetrically" );
+                }
+        }
+        return longApproaches;
+    }
     void generated( bool natural, int blocks, u32 seed, bool meshCheck )
     {
         const auto city = OpenCityLayout::generate( seed, blocks, 0, natural );
@@ -68,6 +97,7 @@ namespace
         OpenCityRoadSourceResult converted; String error;
         check( buildOpenCityRoadSource( city, policy, plane, converted, error ), error );
         uniqueIds( converted.source );
+        const auto longApproaches = approachContracts( converted.source );
         need( converted.source.version == 2 && converted.source.revision == 17 && !converted.source.roundabouts.empty() &&
               converted.source.roundabouts.size() <= policy.maximumRoundabouts && converted.source.roads.size() <= 128,
               "Generated source lost a real junction or exceeded the source codec budget" );
@@ -89,6 +119,38 @@ namespace
             scene::CityRoadTerrainMesh mesh;
             check( scene::buildCityRoadTerrainMesh( converted.source, sampled, terrain, {}, mesh, error ), error );
             need( !mesh.indices.empty(), "Generated editable source produced no shared terrain mesh/collision" );
+            std::cout << "base mesh " << ( natural ? "natural" : "grid" ) << " blocks=" << blocks <<
+                " junctions=" << converted.source.roundabouts.size() << " vertices=" << mesh.vertices.size() <<
+                " triangles=" << mesh.triangleKinds.size() << '\n';
+            need( longApproaches > 0, "Representative generated roundabouts have no approach long enough for splitter refuges" );
+            bool refuge = false;
+            for( const auto &junction : converted.source.roundabouts )
+            {
+                CityRoadRoundaboutBake baked; check( bakeCityRoadRoundabout( junction, plane, baked, error ), error );
+                for( size_t triangle = 0; triangle < baked.triangleKinds.size(); ++triangle )
+                    if( baked.triangleKinds[triangle] == CityRoadRoundaboutSurface::Island )
+                        for( unsigned corner = 0; corner < 3; ++corner )
+                        {
+                            const auto p = baked.vertices[baked.indices[triangle * 3 + corner]].position;
+                            refuge = refuge || std::hypot( p.x - junction.center.x, p.z - junction.center.z ) > junction.outerRadius;
+                        }
+            }
+            need( refuge, "Long approaches did not produce actual raised splitter refuge geometry" );
+            if( !natural && blocks == 6 && seed == 42 )
+                for( const int diagnosticBlocks : { 6, 10 } )
+                {
+                    auto diagnosticPolicy = options( seed ); diagnosticPolicy.maximumRoundabouts = 4;
+                    OpenCityRoadSourceResult diagnostic;
+                    check( buildOpenCityRoadSource( OpenCityLayout::generate( seed, diagnosticBlocks, 0, false ),
+                        diagnosticPolicy, plane, diagnostic, error ), error );
+                    CityRoadSplineBake diagnosticBake;
+                    check( sampleCityRoadSplines( diagnostic.source, {}, plane, diagnosticBake, error ), error );
+                    scene::CityRoadTerrainMesh diagnosticMesh;
+                    check( scene::buildCityRoadTerrainMesh( diagnostic.source, diagnosticBake, terrain, {}, diagnosticMesh, error ), error );
+                    std::cout << "base mesh diagnostic grid blocks=" << diagnosticBlocks << " junctions=4 vertices=" <<
+                        diagnosticMesh.vertices.size() << " triangles=" << diagnosticMesh.triangleKinds.size() << '\n';
+                    need( diagnosticMesh.vertices.size() < 350000, "Generated city base mesh exceeds its coalesced geometry budget" );
+                }
             const auto saved = reused;
             auto missing = converted.source; missing.roads.clear(); missing.roundabouts.clear();
             need( !fitOpenCityRoadRoute( city, missing, plane, reused, error ), "Missing pinned route silently acquired a fallback" );
@@ -96,7 +158,7 @@ namespace
         }
         std::cout << ( natural ? "natural" : "grid" ) << " seed=" << seed << " blocks=" << blocks <<
             " roads=" << converted.source.roads.size() << " junctions=" << converted.source.roundabouts.size() <<
-            " route=" << converted.route.size() << " merged=" << converted.mergedChains << '\n';
+            " longApproaches=" << longApproaches << " route=" << converted.route.size() << " merged=" << converted.mergedChains << '\n';
     }
     void failures()
     {

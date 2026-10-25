@@ -104,6 +104,44 @@ namespace
         check( buildCityRoadTerrainMesh( s, bake, data, placement, mesh, error ), error );
         agreement( mesh, data, placement, .025f );
     }
+    void collinearRuns()
+    {
+        auto data = terrain(); data->heights[35 * 65 + 34] = .12f;
+        const auto s = source(); const auto coarse = sample( s, data );
+        CityRoadSplineSampling options; options.maxStep = .125f;
+        CityRoadSplineBake dense; String error;
+        check( sampleCityRoadSplines( s, options, [data]( const Vector3F &p, float &height ) {
+            return render::sampleTerrainHeight( *data, {}, p, height );
+        }, dense, error ), error );
+        require( dense.roads[0].points.size() > 256 && dense.roads[0].points.size() > coarse.roads[0].points.size() * 8,
+            "Collinear regression did not exercise redundant Bezier subdivision" );
+        CityRoadTerrainMesh sparseMesh, denseMesh;
+        check( buildCityRoadTerrainMesh( s, coarse, data, {}, sparseMesh, error ), error );
+        check( buildCityRoadTerrainMesh( s, dense, data, {}, denseMesh, error ), error );
+        require( denseMesh.vertices.size() == sparseMesh.vertices.size() && denseMesh.indices.size() == sparseMesh.indices.size(),
+            "Straight road terrain geometry still grows with authored sampling density" );
+        agreement( denseMesh, data, {}, .025f );
+        float highest = 0; for( const auto &v : denseMesh.vertices ) highest = std::max( highest, v.position.y );
+        require( highest > .144f, "Collinear reduction flattened an interior terrain-cell ridge" );
+        const auto retained = checksum( denseMesh );
+        auto holes = terrain(); holes->holes.assign( 64 * 64, 0 ); holes->holes[32 * 64 + 34] = 1;
+        require( !buildCityRoadTerrainMesh( s, dense, holes, {}, denseMesh, error ) && checksum( denseMesh ) == retained,
+            "Collinear reduction skipped a covered hole or replaced last-good geometry" );
+
+        auto fixed = source(); auto &road = fixed.roads[0];
+        road.heightMode = CityRoadHeightMode::Fixed; road.heightOffset = 0;
+        road.knots[1].position = { 0, .02f, 0 };
+        road.knots.push_back( { "40000000-0000-4000-8000-000000000003", { 0, 0, -20 }, {}, {} } );
+        const auto flat = terrain(); const auto fixedBake = sample( fixed, flat );
+        check( buildCityRoadTerrainMesh( fixed, fixedBake, flat, {}, denseMesh, error ), error );
+        highest = 0; for( const auto &v : denseMesh.vertices ) highest = std::max( highest, v.position.y );
+        require( highest > .0199f, "Collinear reduction erased a Fixed road elevation break" );
+        auto poisoned = dense; poisoned.roads[0].points[poisoned.roads[0].points.size() / 2].left.y =
+            std::numeric_limits<float>::quiet_NaN();
+        const auto fixedChecksum = checksum( denseMesh );
+        require( !buildCityRoadTerrainMesh( s, poisoned, data, {}, denseMesh, error ) && checksum( denseMesh ) == fixedChecksum,
+            "Collinear reduction skipped a malformed interior bake sample" );
+    }
     void failures()
     {
         auto data = terrain(); auto s = source(); auto bake = sample( s, data );
@@ -250,7 +288,8 @@ int main()
     };
     try
     {
-        run( "conforming and transformed terrain", conforming ); run( "transactional invalid terrain/bake", failures );
+        run( "conforming and transformed terrain", conforming ); run( "bounded collinear runs", collinearRuns );
+        run( "transactional invalid terrain/bake", failures );
         run( "roundabout footprint and approach seams", roundaboutSupport ); run( "staged SourceCpu denial", budgetDenial );
         std::cout << "City road exact terrain mesh: support, ridges, holes, transforms, roundabouts, revisions and denial PASS\n";
     }

@@ -113,7 +113,9 @@ namespace workphone::procedural
                 SourceBudgetVector<u32> incident;
                 for( u32 i = 0; i < graph.edges.size(); ++i ) if( graph.edges[i].a == node || graph.edges[i].b == node ) incident.push_back( i );
                 if( incident.size() < 3 || incident.size() > 6 ) continue;
-                for( const float radius : { 14.f, 12.f } )
+                // The codec requires approach width strictly below outer radius.
+                // A 12 m street therefore needs a little more than a 12 m fallback.
+                for( const float radius : { 14.f, std::max( 12.f, options.roadWidth + .5f ) } )
                 {
                     const float trim = radius + 4, clearance = radius + options.roadWidth * .5f + 1;
                     const auto center = graph.nodes[node]; bool valid = distance( center, {} ) > trim + options.roadWidth * .5f + 4;
@@ -127,7 +129,7 @@ namespace workphone::procedural
                         const auto a = graph.nodes[other( graph.edges[incident[i]], node )], b = graph.nodes[other( graph.edges[incident[j]], node )];
                         const double cosine = ( ( a.x - center.x ) * ( b.x - center.x ) + ( a.z - center.z ) * ( b.z - center.z ) ) /
                             ( distance( a, center ) * distance( b, center ) );
-                        valid = valid && std::acos( std::clamp( cosine, -1., 1. ) ) >= half * 2 + .12;
+                        valid = valid && std::acos( std::clamp( cosine, -1., 1. ) ) >= half * 2 + .122;
                     }
                     for( auto edge : graph.edges ) if( edge.a != node && edge.b != node )
                         valid = valid && segmentDistance( center, graph.nodes[edge.a], graph.nodes[edge.b] ) > clearance;
@@ -179,7 +181,7 @@ namespace workphone::procedural
             need( chains.size() <= 128, "Generated topology needs more than v2's 128 editable roads; no branches were discarded." );
             return chains;
         }
-        struct Event { double arc = 0; u32 junction = 0; bool entry = false; Point position; };
+        struct Event { double arc = 0; u32 junction = 0; bool entry = false; Point position; u32 port = none; };
         void adaptRoute( const OpenCityLayout &city, const OpenCityRoadSourceOptions &options,
                          const CityRoadHeightSampler &terrain, const SourceBudgetVector<CityRoadRoundaboutBake> &junctions,
                          OpenCityRoadSourceResult &result )
@@ -197,7 +199,7 @@ namespace workphone::procedural
                 cumulative[i] = cumulative[i - 1] + length;
                 for( u32 j = 0; j < result.source.roundabouts.size(); ++j )
                 {
-                    const auto &spec = result.source.roundabouts[j]; const double radius = spec.outerRadius + 4;
+                    const auto &spec = result.source.roundabouts[j]; const double radius = spec.outerRadius;
                     const double dx = b.x - a.x, dz = b.z - a.z, ox = a.x - spec.center.x, oz = a.z - spec.center.z;
                     const double ab = dx * dx + dz * dz, bb = 2 * ( ox * dx + oz * dz ), cc = ox * ox + oz * oz - radius * radius;
                     const double discriminant = bb * bb - 4 * ab * cc; if( discriminant <= 1e-9 ) continue;
@@ -206,6 +208,34 @@ namespace workphone::procedural
                     for( unsigned k = 0; k < 2; ++k ) if( times[k] >= -1e-9 && times[k] < 1 - 1e-9 )
                     { need( events.size() < 256, "Race route has too many roundabout crossings." ); const double t = std::clamp( times[k], 0., 1. ); events.push_back( { cumulative[i - 1] + t * length, j, k == 0, interpolate( a, b, t ) } ); }
                 }
+            }
+            // First find crossings of the ring, then move each cut out to that
+            // port's actual endpoint. A single circle cannot represent unequal
+            // approach lengths and would retain centreline points over refuges.
+            for( auto &event : events )
+            {
+                const auto &spec = result.source.roundabouts[event.junction];
+                const double dx = event.position.x - spec.center.x, dz = event.position.z - spec.center.z;
+                const double run = std::hypot( dx, dz );
+                for( u32 i = 0; i < spec.ports.size(); ++i )
+                {
+                    const auto &port = spec.ports[i]; const double directionLength = std::hypot( port.outward.x, port.outward.z );
+                    if( ( dx * port.outward.x + dz * port.outward.z ) / ( run * directionLength ) > .999999 )
+                    { event.port = i; break; }
+                }
+                need( event.port != none, "Race route misses a solved roundabout approach port." );
+                const auto &port = spec.ports[event.port];
+                event.arc += event.entry ? -port.length : port.length;
+                need( event.arc >= 0 && event.arc <= cumulative.back(), "Edited roundabout approach consumes the race start or end." );
+                const auto upper = std::upper_bound( cumulative.begin(), cumulative.end(), event.arc );
+                const size_t after = std::min( size_t( upper - cumulative.begin() ), path.size() - 1 );
+                const size_t previous = after ? after - 1 : 0;
+                const double span = cumulative[after] - cumulative[previous];
+                event.position = span > 0 ? interpolate( path[previous], path[after], ( event.arc - cumulative[previous] ) / span ) : path[after];
+                const double scale = ( spec.outerRadius + port.length ) / std::hypot( port.outward.x, port.outward.z );
+                const Point expected{ spec.center.x + port.outward.x * scale, spec.center.z + port.outward.z * scale };
+                need( distance( event.position, expected ) <= .001,
+                      "Pinned route does not follow the full edited roundabout approach." );
             }
             std::sort( events.begin(), events.end(), []( const Event &a, const Event &b ) { return a.arc < b.arc; } );
             const auto append = [&]( Vector3F point, bool onJunction ) {
@@ -228,12 +258,7 @@ namespace workphone::procedural
                 const auto &entry = events[e], &exit = events[e + 1]; const auto &spec = result.source.roundabouts[entry.junction];
                 while( cursor < path.size() && cumulative[cursor] < entry.arc - 1e-7 ) append( grounded( path[cursor++], terrain, options.heightOffset ), false );
                 append( grounded( entry.position, terrain, options.heightOffset ), false );
-                const auto portAt = [&]( Point point ) -> const SourceBudgetText & {
-                    const double dx = point.x - spec.center.x, dz = point.z - spec.center.z, length = std::hypot( dx, dz );
-                    for( const auto &port : spec.ports ) if( ( dx * port.outward.x + dz * port.outward.z ) / length > .999999 ) return port.approachId;
-                    throw std::runtime_error( "Race route misses a solved roundabout approach port." );
-                };
-                const auto &entryId = portAt( entry.position ), &exitId = portAt( exit.position ); bool found = false;
+                const auto &entryId = spec.ports[entry.port].approachId, &exitId = spec.ports[exit.port].approachId; bool found = false;
                 for( const auto &route : junctions[entry.junction].routes ) if( route.entryApproachId == entryId && route.exitApproachId == exitId )
                 { for( const auto &point : route.points ) append( point, true ); found = true; break; }
                 need( found, "Race route requires an unsupported roundabout U-turn or missing movement." );
@@ -275,12 +300,35 @@ namespace workphone::procedural
             for( u32 i = 0; i < junctions.size(); ++i ) junctionAt[junctions[i].node] = int( i );
             auto chains = chainsFrom( graph, junctionAt ); candidate.mergedChains = u32( graph.edges.size() - chains.size() );
             SourceBudgetVector<u32> roadAtEdge( graph.edges.size(), none );
+            SourceBudgetVector<std::array<float, 2>> portLengths;
             for( const auto &chain : chains )
             {
                 const auto a = graph.nodes[chain.a], b = graph.nodes[chain.b]; const double length = distance( a, b );
-                const double ta = junctionAt[chain.a] < 0 ? 0 : junctions[junctionAt[chain.a]].radius + 4;
-                const double tb = junctionAt[chain.b] < 0 ? 0 : junctions[junctionAt[chain.b]].radius + 4;
-                need( length > ta + tb + 1, "Selected roundabouts consume an entire road link." );
+                const auto radiusAt = [&]( u32 node ) { return junctionAt[node] < 0 ? 0.f : junctions[junctionAt[node]].radius; };
+                const float ra = radiusAt( chain.a ), rb = radiusAt( chain.b );
+                const double minimumA = ra > 0 ? ra + 4 : 0, minimumB = rb > 0 ? rb + 4 : 0;
+                const auto requestedExtra = [&]( Point point, float radius ) {
+                    if( radius <= 0 ) return 0.;
+                    const double resetMargin = 4 + options.roadWidth * .5;
+                    return std::clamp( distance( point, {} ) - radius - resetMargin, 4., 18. ) - 4;
+                };
+                const double wantedA = requestedExtra( a, ra ), wantedB = requestedExtra( b, rb );
+                // Solve both ends together. Equal requests receive equal shares;
+                // a reset-limited end leaves the remaining room to its neighbour.
+                const double available = ra > 0 || rb > 0 ? length - minimumA - minimumB - 4.01 : 0;
+                need( available >= 0, "Selected roundabouts leave less than 4 m of source road." );
+                double extraA = wantedA, extraB = wantedB;
+                if( extraA + extraB > available )
+                {
+                    const double half = available * .5;
+                    if( wantedA <= half ) extraB = std::min( wantedB, available - wantedA );
+                    else if( wantedB <= half ) extraA = std::min( wantedA, available - wantedB );
+                    else extraA = extraB = half;
+                }
+                const std::array<float, 2> lengths{ ra > 0 ? float( 4 + extraA ) : 0.f, rb > 0 ? float( 4 + extraB ) : 0.f };
+                const double ta = ra > 0 ? ra + lengths[0] : 0, tb = rb > 0 ? rb + lengths[1] : 0;
+                need( ( ra <= 0 && rb <= 0 ) || length - ta - tb >= 4,
+                      "Roundabout approach rounding exhausted the remaining source road." );
                 const auto start = interpolate( a, b, ta / length ), finish = interpolate( a, b, 1 - tb / length );
                 auto startPoint = grounded( start, terrain, 0 ), finishPoint = grounded( finish, terrain, 0 );
                 const auto tangent = ( finishPoint - startPoint ) / 3.f;
@@ -294,7 +342,7 @@ namespace workphone::procedural
                 road.knots.push_back( { guid( ownerSpace, 0x4b4e4f5430, a, b ), startPoint, {}, tangent } );
                 road.knots.push_back( { guid( ownerSpace, 0x4b4e4f5431, a, b ), finishPoint, -tangent, {} } );
                 for( auto edge : chain.edges ) roadAtEdge[edge] = u32( candidate.source.roads.size() );
-                candidate.source.roads.push_back( std::move( road ) );
+                candidate.source.roads.push_back( std::move( road ) ); portLengths.push_back( lengths );
             }
             for( const auto &junction : junctions )
             {
@@ -309,7 +357,10 @@ namespace workphone::procedural
                     const auto neighbor = graph.nodes[other( graph.edges[i], junction.node )]; const double length = distance( center, neighbor );
                     CityRoadRoundaboutPort port; port.approachId = candidate.source.roads[roadAtEdge[i]].id;
                     port.outward = { float( ( neighbor.x - center.x ) / length ), 0, float( ( neighbor.z - center.z ) / length ) };
-                    port.width = options.roadWidth; port.length = 4; spec.ports.push_back( std::move( port ) );
+                    const auto roadIndex = roadAtEdge[i]; const auto &chain = chains[roadIndex];
+                    port.width = options.roadWidth;
+                    port.length = portLengths[roadIndex][chain.a == junction.node ? 0 : 1];
+                    spec.ports.push_back( std::move( port ) );
                 }
                 candidate.source.roundabouts.push_back( std::move( spec ) );
             }
@@ -341,6 +392,25 @@ namespace workphone::procedural
             adaptRoute( original, options, terrain, junctions, candidate );
             struct Bounds { float minX, maxX, minZ, maxZ; };
             SourceBudgetVector<Bounds> bounds;
+            SourceBudgetVector<Bounds> segmentBounds;
+            SourceBudgetVector<size_t> segmentOffsets;
+            size_t segmentCount = 0;
+            for( const auto &road : roads.roads ) segmentCount += road.points.size() - 1;
+            need( segmentCount <= 65536, "Pinned road segment index exceeds its sample budget." );
+            bounds.reserve( roads.roads.size() ); segmentOffsets.reserve( roads.roads.size() ); segmentBounds.reserve( segmentCount );
+            const auto contains = []( const Bounds &box, Vector3F point, float tolerance ) {
+                return point.x >= box.minX - tolerance && point.x <= box.maxX + tolerance &&
+                       point.z >= box.minZ - tolerance && point.z <= box.maxZ + tolerance;
+            };
+            const auto intersects = []( const Bounds &a, const Bounds &b ) {
+                return a.minX <= b.maxX && a.maxX >= b.minX && a.minZ <= b.maxZ && a.maxZ >= b.minZ;
+            };
+            const auto quadBounds = []( const CityRoadSplineSample &a, const CityRoadSplineSample &b ) {
+                return Bounds{ std::min( { a.left.x, a.right.x, b.left.x, b.right.x } ),
+                    std::max( { a.left.x, a.right.x, b.left.x, b.right.x } ),
+                    std::min( { a.left.z, a.right.z, b.left.z, b.right.z } ),
+                    std::max( { a.left.z, a.right.z, b.left.z, b.right.z } ) };
+            };
             for( const auto &road : roads.roads )
             {
                 Bounds box{ std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(),
@@ -348,7 +418,27 @@ namespace workphone::procedural
                 for( const auto &p : road.points ) for( const auto v : { p.left, p.right } )
                 { box.minX = std::min( box.minX, v.x ); box.maxX = std::max( box.maxX, v.x ); box.minZ = std::min( box.minZ, v.z ); box.maxZ = std::max( box.maxZ, v.z ); }
                 bounds.push_back( box );
+                segmentOffsets.push_back( segmentBounds.size() );
+                for( size_t i = 1; i < road.points.size(); ++i )
+                { need( segmentBounds.size() < 65536, "Pinned road segment index exceeds its sample budget." ); segmentBounds.push_back( quadBounds( road.points[i - 1], road.points[i] ) ); }
             }
+            struct JunctionBounds { Bounds box; double squaredExtent; };
+            SourceBudgetVector<JunctionBounds> junctionBounds;
+            junctionBounds.reserve( junctions.size() );
+            for( const auto &spec : current.roundabouts )
+            {
+                float extent = spec.outerRadius;
+                for( const auto &port : spec.ports ) extent = std::max( extent, spec.outerRadius + port.length + port.width * .5f );
+                extent += .001f;
+                junctionBounds.push_back( { { spec.center.x - extent, spec.center.x + extent,
+                    spec.center.z - extent, spec.center.z + extent }, double( extent ) * extent } );
+            }
+            constexpr u64 maximumGeometryVisits = 64000000;
+            u64 geometryVisits = 0;
+            const auto work = [&]( u64 amount = 1 ) {
+                need( amount <= maximumGeometryVisits - geometryVisits,
+                      "Pinned route geometric query work budget exceeded." ); geometryVisits += amount;
+            };
             const auto inTriangle = []( Vector3F p, Vector3F a, Vector3F b, Vector3F c, float &height ) {
                 const double denominator = ( b.z - c.z ) * double( a.x - c.x ) + ( c.x - b.x ) * double( a.z - c.z );
                 if( std::abs( denominator ) < 1e-10 ) return false;
@@ -362,10 +452,12 @@ namespace workphone::procedural
                 for( size_t r = 0; r < roads.roads.size(); ++r )
                 {
                     const auto &box = bounds[r];
-                    if( point.x < box.minX - .001f || point.x > box.maxX + .001f || point.z < box.minZ - .001f || point.z > box.maxZ + .001f ) continue;
+                    if( !contains( box, point, .001f ) ) continue;
                     const auto &samples = roads.roads[r].points;
                     for( size_t i = 1; i < samples.size(); ++i )
                     {
+                        work();
+                        if( !contains( segmentBounds[segmentOffsets[r] + i - 1], point, .001f ) ) continue;
                         float height = 0;
                         if( !inTriangle( point, samples[i - 1].left, samples[i - 1].right, samples[i].left, height ) &&
                             !inTriangle( point, samples[i - 1].right, samples[i].right, samples[i].left, height ) ) continue;
@@ -374,9 +466,15 @@ namespace workphone::procedural
                         top = std::max( top, height ); supported = true; break;
                     }
                 }
-                for( size_t j = 0; j < junctions.size(); ++j ) if( junctions[j].containsSurface( point.x, point.z ) )
+                for( size_t j = 0; j < junctions.size(); ++j )
                 {
                     const auto &spec = current.roundabouts[j];
+                    const auto &box = junctionBounds[j];
+                    if( !contains( box.box, point, 0 ) ) continue;
+                    const double dx = point.x - double( spec.center.x ), dz = point.z - double( spec.center.z );
+                    if( dx * dx + dz * dz > box.squaredExtent ) continue;
+                    work( junctions[j].triangleKinds.size() * 2 );
+                    if( !junctions[j].containsSurface( point.x, point.z ) ) continue;
                     top = std::max( top, spec.center.y + spec.gradeX * ( point.x - spec.center.x ) + spec.gradeZ * ( point.z - spec.center.z ) ); supported = true;
                 }
                 need( supported, "Edited city source no longer supports the pinned race route; race is unavailable." );
@@ -386,11 +484,12 @@ namespace workphone::procedural
             for( auto &point : candidate.route ) fit( point );
             struct Interval { double first = 0, last = 0; };
             SourceBudgetVector<Interval> coverage; coverage.reserve( 32 );
+            SourceBudgetVector<double> stations; stations.reserve( 64 );
+            Bounds routeBounds{};
             const auto coverTriangle = [&]( Vector3F start, Vector3F finish, Vector3F a, Vector3F b, Vector3F c ) {
-                const float minX = std::min( start.x, finish.x ) - .0001f, maxX = std::max( start.x, finish.x ) + .0001f;
-                const float minZ = std::min( start.z, finish.z ) - .0001f, maxZ = std::max( start.z, finish.z ) + .0001f;
-                if( std::max( { a.x, b.x, c.x } ) < minX || std::min( { a.x, b.x, c.x } ) > maxX ||
-                    std::max( { a.z, b.z, c.z } ) < minZ || std::min( { a.z, b.z, c.z } ) > maxZ ) return;
+                work();
+                if( std::max( { a.x, b.x, c.x } ) < routeBounds.minX || std::min( { a.x, b.x, c.x } ) > routeBounds.maxX ||
+                    std::max( { a.z, b.z, c.z } ) < routeBounds.minZ || std::min( { a.z, b.z, c.z } ) > routeBounds.maxZ ) return;
                 const auto side = []( Vector3F u, Vector3F v, Vector3F p ) {
                     return ( v.x - double( u.x ) ) * ( p.z - double( u.z ) ) -
                            ( v.z - double( u.z ) ) * ( p.x - double( u.x ) );
@@ -415,16 +514,19 @@ namespace workphone::procedural
             for( size_t i = 1; i < candidate.route.size(); ++i )
             {
                 const auto a = candidate.route[i - 1], b = candidate.route[i]; coverage.clear();
+                routeBounds = { std::min( a.x, b.x ) - .0001f, std::max( a.x, b.x ) + .0001f,
+                                std::min( a.z, b.z ) - .0001f, std::max( a.z, b.z ) + .0001f };
                 const double run = std::hypot( b.x - a.x, b.z - a.z );
                 need( run > 1e-8, "Pinned race route contains a zero horizontal step." );
                 for( size_t r = 0; r < roads.roads.size(); ++r )
                 {
                     const auto &box = bounds[r];
-                    if( std::min( a.x, b.x ) > box.maxX + .0001f || std::max( a.x, b.x ) < box.minX - .0001f ||
-                        std::min( a.z, b.z ) > box.maxZ + .0001f || std::max( a.z, b.z ) < box.minZ - .0001f ) continue;
+                    if( !intersects( routeBounds, box ) ) continue;
                     const auto &samples = roads.roads[r].points;
                     for( size_t p = 1; p < samples.size(); ++p )
                     {
+                        work();
+                        if( !intersects( routeBounds, segmentBounds[segmentOffsets[r] + p - 1] ) ) continue;
                         coverTriangle( a, b, samples[p - 1].left, samples[p - 1].right, samples[p].left );
                         coverTriangle( a, b, samples[p - 1].right, samples[p].right, samples[p].left );
                     }
@@ -435,9 +537,7 @@ namespace workphone::procedural
                     const Point center{ spec.center.x, spec.center.z };
                     const double clearance = segmentDistance( center, { a.x, a.z }, { b.x, b.z } );
                     need( clearance >= spec.islandRadius - .0001, "Pinned race route segment crosses a raised central island." );
-                    double extent = spec.outerRadius;
-                    for( const auto &port : spec.ports ) extent = std::max( extent, double( spec.outerRadius + port.length + port.width * .5f ) );
-                    if( clearance > extent ) continue;
+                    if( !intersects( routeBounds, junctionBounds[j].box ) || clearance * clearance > junctionBounds[j].squaredExtent ) continue;
                     const auto &junction = junctions[j];
                     for( size_t t = 0; t < junction.triangleKinds.size(); ++t )
                     {
@@ -461,12 +561,18 @@ namespace workphone::procedural
                 auto middle = ( a + b ) * .5f; fit( middle );
                 // Probe both sides of every exact triangle boundary. A geometric
                 // contact with a height step is not a continuous running surface.
-                for( const auto interval : coverage ) for( const double station : { interval.first, interval.last } )
+                stations.clear();
+                for( const auto interval : coverage ) { stations.push_back( interval.first ); stations.push_back( interval.last ); }
+                std::sort( stations.begin(), stations.end() );
+                stations.erase( std::unique( stations.begin(), stations.end() ), stations.end() );
+                for( const double station : stations )
                 {
                     const double delta = .001 / run;
                     const double beforeStation = std::max( 0., station - delta ), afterStation = std::min( 1., station + delta );
                     auto beforePoint = a + ( b - a ) * float( beforeStation );
-                    auto afterPoint = a + ( b - a ) * float( afterStation ); fit( beforePoint ); fit( afterPoint );
+                    auto afterPoint = a + ( b - a ) * float( afterStation );
+                    if( beforeStation == 0 ) beforePoint = a; else fit( beforePoint );
+                    if( afterStation == 1 ) afterPoint = b; else fit( afterPoint );
                     need( std::abs( beforePoint.y - afterPoint.y ) <= .001f + .35f * float( ( afterStation - beforeStation ) * run ),
                           "Edited city roads introduce a height discontinuity in the pinned race route." );
                 }

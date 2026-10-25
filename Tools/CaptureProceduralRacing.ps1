@@ -23,6 +23,7 @@ $ErrorActionPreference = 'Stop'
 if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }
+if ($CityTerrainRoads -and $ExportMaterials) { throw 'Terrain-city source material export is unavailable.' }
 if ($RoadAuthoringShowcase -and $FoliageWorld) { throw 'Road authoring showcase does not provide foliage-world generation.' }
 if ($RoadAuthoringShowcase -and !$PSBoundParameters.ContainsKey('Views')) { $Views = @('street', 'track') }
 if ($CityTerrainRoads -and !$PSBoundParameters.ContainsKey('Views')) { $Views = @('street', 'track') }
