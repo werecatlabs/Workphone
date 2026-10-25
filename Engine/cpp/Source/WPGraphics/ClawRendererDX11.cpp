@@ -10,6 +10,7 @@
 #include <WPGraphics/ClawWindow.hpp>
 #include <WPGraphics/ClawUtil.hpp>
 #include <Workphone/Graphics/FoliageData.hpp>
+#include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "ClawMeshMaterial.hpp"
 #include "ClawAssetBudget.hpp"
@@ -37,7 +38,10 @@ namespace workphone::render
 
         struct SkyEnvironmentEntry
         {
-            WeakPtr<ISky> sky;
+            // Frame/cache access is serialized with scene retirement. The
+            // independent lifetime token survives physical sky deallocation;
+            // legacy WeakPtr destruction would read that released sky storage.
+            ObjectObserver<ISky> sky;
             ClawCubemap cubemap;
         };
 
@@ -1374,6 +1378,12 @@ namespace workphone::render
                 }
             }
             auto &cache = g_skyEnvironmentCaches[this];
+            for( auto entry = cache.skies.begin(); entry != cache.skies.end(); )
+            {
+                if( !entry->second.sky.expired() ) { ++entry; continue; }
+                if( cache.active == &entry->second.cubemap ) cache.active = nullptr;
+                entry = cache.skies.erase( entry );
+            }
             auto &entry = cache.skies[sky.get()];
             if( entry.sky.lock() != sky )
             {

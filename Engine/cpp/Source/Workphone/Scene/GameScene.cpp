@@ -1295,10 +1295,10 @@ namespace workphone::scene
         WP_ASSERT( isValid() );
 
         auto &updateObjects = getRegisteredObjects( updateType, taskId );
+        // Erase/remove preserves the surviving registration order. Registration
+        // sorts this list; unregistration must not re-sort unrelated lists.
         updateObjects.erase( std::remove( updateObjects.begin(), updateObjects.end(), object ),
                              updateObjects.end() );
-
-        sortObjects();
     }
 
     void GameScene::unregisterAll( SmartPtr<IGameActor> object )
@@ -1317,7 +1317,7 @@ namespace workphone::scene
             }
         }
 
-        sortObjects();
+        // Each erase preserves its list's existing order; no re-sort is needed.
     }
 
     ConcurrentArray<SmartPtr<IGameActor>> &GameScene::getRegisteredObjects(

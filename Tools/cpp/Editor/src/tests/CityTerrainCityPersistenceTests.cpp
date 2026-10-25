@@ -15,6 +15,9 @@
 #include <fstream>
 #include <iterator>
 #include <set>
+#include <algorithm>
+#include <array>
+#include <vector>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -59,6 +62,69 @@ namespace
         BOOST_REQUIRE_MESSAGE( procedural::serializeCityRoadSplineSource( source, json, error ), error );
         return String( json.data(), json.size() );
     }
+
+    void registrationRemovalOrdering( SmartPtr<scene::IGameManager> manager )
+    {
+        auto registry = make_ptr<scene::GameScene>(); registry->load( nullptr ); BOOST_REQUIRE( registry->isLoaded() );
+        using Actor = SmartPtr<scene::IGameActor>;
+        std::array<Actor, 5> actors;
+        for( auto &actor : actors ) { actor = manager->createActor(); BOOST_REQUIRE( actor ); BOOST_REQUIRE( actor->getHandle() ); }
+        std::sort( actors.begin(), actors.end() );
+        const Actor removed = actors[1], added = actors[4];
+        const auto removedId = removed->getHandle()->getInstanceId();
+        constexpr auto phaseCount = static_cast<u32>( Thread::UpdateState::Count );
+        constexpr auto taskCount = static_cast<u32>( TaskId::Count );
+        using Lists = std::vector<Array<Actor>>;
+        const auto snapshot = [&] {
+            Lists lists; lists.reserve( phaseCount * taskCount );
+            for( u32 phase = 0; phase < phaseCount; ++phase ) for( u32 task = 0; task < taskCount; ++task )
+                lists.push_back( registry->getRegisteredObjects( static_cast<Thread::UpdateState>( phase ), static_cast<TaskId>( task ) ).snapshot() );
+            return lists;
+        };
+        const auto checkLists = [&]( const Lists &expected ) {
+            const auto actual = snapshot(); BOOST_REQUIRE_EQUAL( actual.size(), expected.size() );
+            for( size_t list = 0; list < actual.size(); ++list )
+            {
+                BOOST_TEST_CONTEXT( "registry phase=" << list / taskCount << " task=" << list % taskCount )
+                {
+                    BOOST_REQUIRE_EQUAL( actual[list].size(), expected[list].size() );
+                    for( size_t actor = 0; actor < actual[list].size(); ++actor ) BOOST_CHECK( actual[list][actor] == expected[list][actor] );
+                }
+            }
+        };
+        // The public setter permits an explicit schedule. Make every list
+        // deliberately non-sorted so a hidden global re-sort is observable.
+        const std::array<Actor, 4> schedule = { actors[3], actors[1], actors[0], actors[2] };
+        for( u32 phase = 0; phase < phaseCount; ++phase ) for( u32 task = 0; task < taskCount; ++task )
+        {
+            ConcurrentArray<Actor> ordered;
+            for( size_t actor = 0; actor < schedule.size(); ++actor ) ordered.push_back( schedule[( actor + phase + task ) % schedule.size()] );
+            registry->setRegisteredObjects( static_cast<Thread::UpdateState>( phase ), static_cast<TaskId>( task ), ordered );
+        }
+        auto expected = snapshot();
+        const auto registrationTask = TaskId::Application; const auto registrationPhase = Thread::UpdateState::Update;
+        const auto registrationList = static_cast<size_t>( registrationPhase ) * taskCount + static_cast<size_t>( registrationTask );
+        registry->registerUpdate( registrationTask, registrationPhase, added );
+        expected[registrationList].push_back( added ); std::sort( expected[registrationList].begin(), expected[registrationList].end() );
+        checkLists( expected );
+        registry->registerUpdate( registrationTask, registrationPhase, added ); checkLists( expected ); // Duplicate admission is a no-op.
+
+        const auto removalTask = TaskId::Physics; const auto removalPhase = Thread::UpdateState::PostUpdate;
+        const auto removalList = static_cast<size_t>( removalPhase ) * taskCount + static_cast<size_t>( removalTask );
+        registry->unregisterUpdate( removalTask, removalPhase, removed );
+        auto &single = expected[removalList]; single.erase( std::remove( single.begin(), single.end(), removed ), single.end() );
+        checkLists( expected );
+        registry->unregisterUpdate( removalTask, removalPhase, removed ); checkLists( expected ); // Repeated removal cannot disturb another schedule.
+
+        registry->unregisterAll( removed );
+        for( auto &list : expected ) list.erase( std::remove( list.begin(), list.end(), removed ), list.end() );
+        checkLists( expected );
+        for( const auto &list : snapshot() ) for( const auto &actor : list )
+            BOOST_CHECK( actor->getHandle()->getInstanceId() != removedId );
+        registry->unregisterAll( removed ); checkLists( expected );
+        registry->unload( nullptr );
+        for( const auto &actor : actors ) manager->destroyActor( actor, true );
+    }
 }
 
 BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
@@ -84,6 +150,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
         BOOST_REQUIRE_MESSAGE( !queue->hasJobs(), "Scene persistence callbacks did not drain" );
     };
     flush();
+    registrationRemovalOrdering( manager );
     auto terrainActor = manager->createActor(); BOOST_REQUIRE( terrainActor ); terrainActor->setName( "Terrain city persisted terrain" );
     auto terrain = terrainActor->addComponent<scene::TerrainSystem>(); BOOST_REQUIRE( terrain ); originalScene->addActor( terrainActor );
     if( auto renderer = dynamic_pointer_cast<render::Terrain>( terrain->getTerrain() ) ) renderer->setDeferredTerrainPublication( false );

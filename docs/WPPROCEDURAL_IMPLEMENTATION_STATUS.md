@@ -23,6 +23,18 @@ building collision, parks and existing foliage placement use the same fitted
 heights. Source roads own generated asphalt, kerb, turf and paint materials with
 semantic texture/mip bindings. Flat street overlays are omitted in terrain mode.
 
+The first fresh street capture exposed missing pedestrian edges and grass-only
+splitter tops. The next pass adds concrete splitter rims and fitted 2.4 m footways
+beside streets, approaches and roundabout edges. Footways sit 15 cm above terrain,
+retain exact cell ridges/holes, omit crossing mouths and unsupported pieces, and
+share their rendered top/kerb geometry with one concave collision mesh. Spatial
+admission and batched fitting bound candidate, vertex and validation work.
+
+Native iteration also found a redundant startup regeneration: terrain integration
+serial notifications advanced the authored source revision. Serial-only updates
+now acknowledge the unchanged snapshot/pose; actual terrain recooks preserve
+the authored token. Focused tests cover both paths and source detach/reattach.
+
 The native sample and capture script accept `--city-terrain-roads` and
 `-CityTerrainRoads`. Evidence checks actual source/terrain revisions, fitted lots,
 native surface rays, driveable route coverage and uploaded road material bindings.

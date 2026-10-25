@@ -2072,8 +2072,18 @@ namespace workphone
             for(const auto &junction:source.roundabouts)if(!junction.ports.empty())
             {
                 const float distance=(junction.center-m_cityOverviewCentre).lengthSquared();if(distance>=nearest)continue;nearest=distance;m_cityHasJunction=true;m_cityJunctionCentre=junction.center;
-                const auto cameraPoint=[&](const auto &port){auto p=junction.center+port.outward*(junction.outerRadius+port.length*.65f);f32 height=0;bool driveable=false;if(m_assets.roadAuthoring->getRuntimeSurface(p.x,p.z,height,driveable))p.y=height;return p;};
-                m_cityStreetCentre=cameraPoint(junction.ports.front());m_cityBoulevardCentre=cameraPoint(junction.ports[junction.ports.size()/2]);m_cityStreetForward=junction.ports.front().outward;
+                const auto cameraPoint=[&](const auto &port,bool pedestrian){
+                    auto p=junction.center+port.outward*(junction.outerRadius+port.length*.65f);
+                    f32 height=0;bool driveable=false;
+                    if(pedestrian)
+                    {
+                        p+=Vector3F(-port.outward.z,0,port.outward.x)*(port.width*.5f+1.2f);
+                        if(render::sampleTerrainHeight(*m_assets.roadAuthoring->getTerrainSnapshot(),m_assets.roadAuthoring->getTerrainPlacement(),p,height))p.y=height+.15f;
+                    }
+                    else if(m_assets.roadAuthoring->getRuntimeSurface(p.x,p.z,height,driveable))p.y=height;
+                    return p;
+                };
+                m_cityStreetCentre=cameraPoint(junction.ports.front(),false);m_cityBoulevardCentre=cameraPoint(junction.ports[junction.ports.size()/2],true);m_cityStreetForward=junction.ports.front().outward;
             }
         }
         else if( m_assets.cityRoadShowcase )
@@ -2243,7 +2253,7 @@ namespace workphone
                         if(m_assets.cityTerrainRoads)
                         {
                             if(m_cityHasJunction)
-                            {m_cameraActor->setPosition((m_captureView=="street"?m_cityStreetCentre:m_cityBoulevardCentre)+Vector3F(0,16,0));m_cameraActor->lookAt(m_cityJunctionCentre+Vector3F(0,2,0),Vector3F::unitY());}
+                            {const bool pedestrian=m_captureView=="boulevard";m_cameraActor->setPosition((pedestrian?m_cityBoulevardCentre:m_cityStreetCentre)+Vector3F(0,pedestrian?2.1f:16.f,0));m_cameraActor->lookAt(m_cityJunctionCentre+Vector3F(0,pedestrian?2.6f:2.f,0),Vector3F::unitY());}
                             else{m_cameraActor->setPosition(m_cityStreetCentre+Vector3F(0,4,0));m_cameraActor->lookAt(m_cityStreetCentre+m_cityStreetForward*40.f+Vector3F(0,5,0),Vector3F::unitY());}
                         }
                         else if(m_assets.cityRoadShowcase)

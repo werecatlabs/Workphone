@@ -47,6 +47,7 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <new>
 
 using namespace workphone;
 using namespace workphone::render;
@@ -362,6 +363,78 @@ namespace
         ok &= check(second->requests == newRequests && material->copies == 0,
             "empty material publication makes no stale texture requests");
         sky->setMaterial(nullptr); renderer.setCamera(nullptr); renderer.setRenderTarget(nullptr);
+        return ok;
+    }
+
+    bool testSkyEnvironmentOwnerRetirement( SmartPtr<IGraphicsWindow> window )
+    {
+        class RetiredSky final : public ClawSky
+        {
+        public:
+            explicit RetiredSky( unsigned &destroyed ) : destroyed( destroyed ) {}
+            ~RetiredSky() override { ++destroyed; }
+            static void *operator new( size_t bytes )
+            {
+                auto storage = VirtualAlloc( nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE );
+                if( !storage ) throw std::bad_alloc();
+                return storage;
+            }
+            static void operator delete( void *storage ) noexcept
+            { if( storage ) VirtualFree( storage, 0, MEM_RELEASE ); }
+        private:
+            unsigned &destroyed;
+        };
+        struct Face
+        {
+            ID3D11Texture2D *texture = nullptr;
+            ID3D11ShaderResourceView *view = nullptr;
+            ~Face() { if( view ) view->Release(); if( texture ) texture->Release(); }
+        };
+
+        bool ok = true;
+        for( unsigned cycle = 0; cycle < 3; ++cycle )
+        {
+            ClawRendererDX11 renderer; renderer.load( window );
+            if( !check( renderer.isLoaded(), "sky retirement requires the real loaded DX11 renderer" ) ) return false;
+            auto target = make_ptr<ClawRenderTarget>(); target->setSize( { 32, 32 } );
+            auto camera = make_ptr<ClawCamera>();
+            camera->setNearClipDistance( .1f ); camera->setFarClipDistance( 100 ); camera->setAspectRatio( 1 );
+            renderer.setRenderTarget( target ); renderer.setViewport( nullptr ); renderer.setCamera( camera );
+            auto *native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+            auto *device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) );
+            Face face; D3D11_TEXTURE2D_DESC description{};
+            description.Width = description.Height = description.MipLevels = description.ArraySize = 1;
+            description.Format = DXGI_FORMAT_R8G8B8A8_UNORM; description.SampleDesc.Count = 1;
+            description.Usage = D3D11_USAGE_IMMUTABLE; description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            const u32 colour = 0xffc08040u + cycle;
+            D3D11_SUBRESOURCE_DATA pixels{ &colour, sizeof( colour ), sizeof( colour ) };
+            if( !check( SUCCEEDED( device->CreateTexture2D( &description, &pixels, &face.texture ) ) &&
+                        SUCCEEDED( device->CreateShaderResourceView( face.texture, nullptr, &face.view ) ),
+                        "sky retirement requires an actual GPU face/view" ) ) return false;
+            auto texture = make_ptr<MaterialRoutingTexture>(); texture->currentView = face.view;
+            unsigned destroyed = 0;
+            for( unsigned replacement = 0; replacement < 2; ++replacement )
+            {
+                // Physical page release makes the former dangling WeakPtr read
+                // deterministic, rather than relying on CRT freed-heap reuse.
+                auto sky = SmartPtr<RetiredSky>( new RetiredSky( destroyed ) );
+#if WP_GARBAGE_COLLECTION == 1
+                sky->removeReference(); // Match make_ptr's initial-reference contract.
+#endif
+                sky->load( nullptr ); sky->setTextures( Array<SmartPtr<ITexture>>( 6, texture ) );
+                const auto references = sky->getReferences();
+                const auto requests = texture->requests;
+                renderer.clear( ColourF::Black ); renderer.renderSky( sky );
+                ok &= check( texture->requests >= requests + 6 && sky->getReferences() == references,
+                    "rendered sky cache must consume GPU faces without retaining the sky owner" );
+                sky = nullptr;
+                ok &= check( destroyed == replacement + 1, "sky must be physically destroyed before renderer retirement" );
+            }
+            renderer.setCamera( nullptr ); renderer.setRenderTarget( nullptr );
+            renderer.unload( nullptr ); // Exercises the actual private destroyRenderer cache erase.
+            ok &= check( !renderer.isLoaded() && destroyed == 2, "renderer teardown must release an expired sky cache safely" );
+            texture->currentView = nullptr;
+        }
         return ok;
     }
 
@@ -1098,6 +1171,7 @@ int main( int argc, char **argv )
             } catch(const std::exception &e) { ok &= check(false,e.what()); }
         }
         renderer.unload(nullptr);
+        ok &= testSkyEnvironmentOwnerRetirement( window );
         DestroyWindow(window->handle);
     }
     else ok = check(false,"hidden window must initialize");

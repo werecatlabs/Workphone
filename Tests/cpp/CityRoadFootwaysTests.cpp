@@ -144,6 +144,29 @@ namespace
         for( const auto &direction : directions ) for( float radius : { 14.2f, 15.5f, 18.f, 25.f, 32.f } )
             require( !topAt( mesh, direction.x * radius, direction.z * radius ), "Annular sidewalk seals a roundabout approach mouth" );
         require( topAt( mesh, 24, 7 ) && topAt( mesh, 7, -24 ), "Roundabout port-side footways are missing" );
+        for( const auto &direction : directions ) for( int side : { -1, 1 } )
+        {
+            const Vector3F across{ -direction.z, 0, direction.x };
+            const auto innerJoin = direction * float( std::sqrt( 14.05 * 14.05 - 6.05 * 6.05 ) ) + across * float( side * 6.05 );
+            const auto outerJoin = direction * float( std::sqrt( 16.45 * 16.45 - 8.45 * 8.45 ) ) + across * float( side * 8.45 );
+            const auto join = ( innerJoin + outerJoin ) * .5f;
+            const auto diagonalPoint = ( direction + across * float( side ) ) * float( diagonal );
+            const auto straightPoint = direction * 24.f + across * float( side * 7.25 );
+            for( const auto &leg : { std::make_pair( diagonalPoint, join ), std::make_pair( join, straightPoint ) } )
+                for( unsigned station = 0; station <= 256; ++station )
+                {
+                    const auto p = leg.first + ( leg.second - leg.first ) * ( station / 256.f );
+                    require( topAt( mesh, p.x, p.z ), "A roundabout annulus/approach pedestrian corridor is disconnected" );
+                }
+            for( size_t i = 0; i < mesh.indices.size(); i += 3 )
+            {
+                const auto &a = mesh.vertices[mesh.indices[i]], &b = mesh.vertices[mesh.indices[i + 1]], &c = mesh.vertices[mesh.indices[i + 2]];
+                if( a.normal.y > .5f ) continue;
+                const auto center = ( a.position + b.position + c.position ) / 3.f;
+                require( std::hypot( center.x - join.x, center.z - join.z ) > .7f,
+                    "An internal skirt blocks a connected roundabout pedestrian join" );
+            }
+        }
         for( size_t i = 0; i < mesh.indices.size(); i += 3 )
         {
             const auto &a = mesh.vertices[mesh.indices[i]], &b = mesh.vertices[mesh.indices[i + 1]], &c = mesh.vertices[mesh.indices[i + 2]];
@@ -151,6 +174,87 @@ namespace
             const auto center = ( a.position + b.position + c.position ) / 3.f;
             require( std::hypot( center.x, center.z ) > 14, "Footway intersects circulation or central island" );
         }
+    }
+    void tightEditableCurve()
+    {
+        // Radius8.2 admits the codec's adaptive centre/edge sampling, while the
+        // inner sidewalk's outer offset8.45 still crosses the curvature centre.
+        auto s = source(); addRoad( s, 0, { 8.2f, 0, 0 }, { 0, 0, 8.2f } );
+        auto &road = s.roads[0]; road.knots[0].outHandle = { 0, 0, 4.528735f };
+        road.knots[1].inHandle = { 4.528735f, 0, 0 };
+        auto data = terrain(); const auto bake = sample( s, data ); CityRoadTerrainMesh roadMesh, footways; String error;
+        check( buildCityRoadTerrainMesh( s, bake, data, {}, roadMesh, error ), error );
+        check( buildCityRoadFootways( s, bake, data, {}, footways, error ), error ); agreement( footways, data );
+        require( topAt( footways, 11, 11 ) && !topAt( footways, 0, 0 ),
+            "A tight valid road lost its outer sidewalk or emitted its folded inner sidewalk" );
+    }
+    void coalescedStraightAdmission()
+    {
+        auto data = terrain( 65, 4 ); auto s = source(); addRoad( s, 0, { 0, 0, -120 }, { 0, 0, 120 } );
+        CityRoadTerrainMesh mesh, dense; String error;
+        check( buildCityRoadFootways( s, sample( s, data ), data, {}, mesh, error ), error ); agreement( mesh, data );
+        auto unmerged = source(); CityRoadSplineBake unmergedBake; unmergedBake.sourceRevision = unmerged.revision;
+        const auto id = []( u32 value ) {
+            SourceBudgetText result = "91000000-0000-4000-8000-000000000000";
+            constexpr char hex[] = "0123456789abcdef";
+            for( size_t i = 0; i < 8; ++i ) { result[result.size() - 1 - i] = hex[value & 15]; value >>= 4; }
+            return result;
+        };
+        for( int side : { -1, 1 } ) for( unsigned piece = 0; piece < 60; ++piece )
+        {
+            const auto ordinal = u32( unmerged.roads.size() ); CityRoadSpline road; CityRoadSplineSamples samples;
+            road.id = id( ordinal * 3 + 1 ); road.width = 2.4f;
+            samples.roadId = road.id; samples.points.resize( 2 ); road.knots.resize( 2 );
+            for( unsigned end = 0; end < 2; ++end )
+            {
+                auto &p = samples.points[end]; const float z = -120.f + ( piece + end ) * 4.f;
+                p.position = { side * 7.25f, 0, z }; p.left = { side * 6.05f, 0, z }; p.right = { side * 8.45f, 0, z };
+                p.distance = end * 4.f; road.knots[end].position = p.position; road.knots[end].id = id( ordinal * 3 + 2 + end );
+            }
+            unmerged.roads.push_back( std::move( road ) ); unmergedBake.roads.push_back( std::move( samples ) );
+        }
+        check( buildCityRoadTerrainMesh( unmerged, unmergedBake, data, {}, dense, error ), error );
+        size_t topTriangles = 0, skirtTriangles = 0, skirtVertices = 0;
+        for( size_t i = 0; i < mesh.indices.size(); i += 3 )
+            if( mesh.vertices[mesh.indices[i]].normal.y > .5f ) ++topTriangles; else ++skirtTriangles;
+        for( const auto &vertex : mesh.vertices ) if( vertex.normal.y < .5f ) ++skirtVertices;
+        std::cout << "Footway straight spans: topTriangles=" << topTriangles << " dense4m=" << dense.triangleKinds.size()
+            << " skirtVertices=" << skirtVertices << " boundaryEdges=" << skirtTriangles / 2 << '\n';
+        // Two long rectangular walks have eight hard corners. All intermediate
+        // coplanar boundary endpoints should be shared, including terrain cuts.
+        require( skirtVertices <= skirtTriangles + 32,
+            "Straight footway skirts duplicate their shared terrain-cell endpoints" );
+        for( float z = -118; z <= 118; z += 4 ) require( topAt( mesh, 7, z ) && topAt( mesh, -7, z ),
+            "Straight span coalescing introduced a hole in the original admitted4m pieces" );
+    }
+    void obliqueBatchBoundary()
+    {
+        auto data = terrain( 321, 4 ); auto s = source();
+        // 400m gives more than128 admitted4m pieces across both footways. The
+        // shifted/oblique footprint exercises F32 precision and cell crossings.
+        addRoad( s, 0, { 240, 0, 130 }, { 560, 0, 370 } );
+        CityRoadTerrainMesh mesh; String error;
+        check( buildCityRoadFootways( s, sample( s, data ), data, {}, mesh, error ), error ); agreement( mesh, data );
+        size_t skirtTriangles = 0, skirtVertices = 0;
+        for( const auto &vertex : mesh.vertices ) if( vertex.normal.y < .5f ) ++skirtVertices;
+        for( size_t i = 0; i < mesh.indices.size(); i += 3 )
+        {
+            const auto &a = mesh.vertices[mesh.indices[i]], &b = mesh.vertices[mesh.indices[i + 1]], &c = mesh.vertices[mesh.indices[i + 2]];
+            if( a.normal.y > .5f ) continue; ++skirtTriangles;
+            const auto center = ( a.position + b.position + c.position ) / 3.f;
+            const double x = double( center.x ) - 400, z = double( center.z ) - 250;
+            const double along = x * .8 + z * .6, across = x * .6 - z * .8;
+            const double perimeter = std::min( { std::abs( std::abs( across ) - 6.05 ), std::abs( std::abs( across ) - 8.45 ),
+                                                std::abs( std::abs( along ) - 200 ) } );
+            if( perimeter > .001 ) throw std::runtime_error( "False internal skirt at along=" + std::to_string( along ) +
+                " across=" + std::to_string( across ) + " distance=" + std::to_string( perimeter ) );
+        }
+        require( skirtVertices <= skirtTriangles + 32, "Oblique footway skirts fail to share coplanar boundary endpoints" );
+        for( int side : { -1, 1 } ) for( double along = -196; along <= 196; along += 8 )
+            require( topAt( mesh, 400 + along * .8 + side * 7.25 * .6, 250 + along * .6 - side * 7.25 * .8 ),
+                     "An oblique batch boundary introduced a gap in an admitted sidewalk" );
+        std::cout << "Footway oblique batches: vertices=" << mesh.vertices.size() << " skirtVertices=" << skirtVertices
+            << " boundaryEdges=" << skirtTriangles / 2 << '\n';
     }
     void generatedProfiles()
     {
@@ -163,8 +267,12 @@ namespace
             OpenCityRoadSourceResult converted; String error; check( buildOpenCityRoadSource( city, options, plane, converted, error ), error );
             const auto bake = sample( converted.source, data ); CityRoadTerrainMesh mesh;
             check( buildCityRoadFootways( converted.source, bake, data, {}, mesh, error ), error ); agreement( mesh, data );
+            size_t topVertices = 0, skirtTriangles = 0;
+            for( const auto &vertex : mesh.vertices ) if( vertex.normal.y > .5f ) ++topVertices;
+            for( size_t i = 0; i < mesh.indices.size(); i += 3 ) if( mesh.vertices[mesh.indices[i]].normal.y < .5f ) ++skirtTriangles;
             std::cout << "Footways " << ( natural ? "natural" : "grid" ) << "10 seed=" << seed << " vertices=" << mesh.vertices.size()
-                << " triangles=" << mesh.indices.size() / 3 << '\n';
+                << " triangles=" << mesh.indices.size() / 3 << " topVertices=" << topVertices
+                << " skirtVertices=" << mesh.vertices.size() - topVertices << " boundaryEdges=" << skirtTriangles / 2 << '\n';
         }
     }
     void failuresAndBudget()
@@ -176,6 +284,12 @@ namespace
         auto poison = bake; poison.roads[0].points[1].left.z = std::numeric_limits<float>::quiet_NaN();
         require( !buildCityRoadFootways( s, poison, data, {}, mesh, error ) && checksum( mesh ) == original, "Malformed bake replaced last-good footways" );
         require( !buildCityRoadFootways( s, bake, {}, {}, mesh, error ) && checksum( mesh ) == original, "Absent terrain erased last-good footways" );
+        {
+            auto allHoles = terrain( 1025 ); allHoles->holes.assign( 1024 * 1024, 1 );
+            require( !buildCityRoadFootways( s, bake, allHoles, {}, mesh, error ) &&
+                error.find( "work budget" ) != String::npos && checksum( mesh ) == original,
+                "Recursive all-hole fitting hid unbounded full-terrain validation work or erased retained output" );
+        }
         auto scheduler = WorldStreamingScheduler::shared(); const auto stats = scheduler->stats(); const auto index = size_t( StreamMemoryClass::SourceCpu );
         struct Restore { std::shared_ptr<WorldStreamingScheduler> scheduler; u64 limit; ~Restore() { String error; scheduler->setBudget( StreamMemoryClass::SourceCpu, limit, error ); } } restore{ scheduler, stats.limits[index] };
         bool success = false; unsigned failures = 0;
@@ -200,6 +314,9 @@ int main()
     try
     {
         run( "streets and exact terrain", streetsAndTerrain ); run( "four-port roundabout", roundabout );
+        run( "tight editable curve", tightEditableCurve );
+        run( "coalesced straight admission", coalescedStraightAdmission );
+        run( "oblique batch boundary", obliqueBatchBoundary );
         run( "generated maximum profiles", generatedProfiles ); run( "transactional denial", failuresAndBudget );
         std::cout << "City road footways: exact support, open mouths, annulus, skirts and budgets PASS\n";
     }

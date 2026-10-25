@@ -6,6 +6,7 @@
 #include <limits>
 #include <new>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace workphone::scene
@@ -21,6 +22,7 @@ namespace workphone::scene
         {
             std::array<Point, 4> points;
             Bounds bounds;
+            bool valid = true;
             u32 stamp = 0;
         };
         void require( bool value, const char *message ) { if( !value ) throw std::runtime_error( message ); }
@@ -33,7 +35,7 @@ namespace workphone::scene
         Point add( Point a, Point b, double scale ) { return { a.x + b.x * scale, a.z + b.z * scale }; }
         Point interpolate( Point a, Point b, double t ) { return { a.x + ( b.x - a.x ) * t, a.z + ( b.z - a.z ) * t }; }
         double cross( Point a, Point b, Point c ) { return ( b.x - a.x ) * ( c.z - a.z ) - ( b.z - a.z ) * ( c.x - a.x ); }
-        Quad quad( Point a, Point b, Point c, Point d )
+        Quad quad( Point a, Point b, Point c, Point d, bool unsupportedFold = false )
         {
             Quad q{ { a, b, c, d }, { a.x, a.z, a.x, a.z } };
             double winding = 0;
@@ -45,9 +47,10 @@ namespace workphone::scene
                 q.bounds.x0 = std::min( q.bounds.x0, p.x ); q.bounds.x1 = std::max( q.bounds.x1, p.x );
                 q.bounds.z0 = std::min( q.bounds.z0, p.z ); q.bounds.z1 = std::max( q.bounds.z1, p.z );
                 const double turn = cross( p, q.points[( i + 1 ) % 4], q.points[( i + 2 ) % 4] );
-                require( std::abs( turn ) > 1e-8 && ( !winding || turn * winding > 0 ), "Footway or road ribbon is folded or degenerate." );
+                q.valid &= std::abs( turn ) > 1e-8 && ( !winding || turn * winding > 0 );
                 winding = turn;
             }
+            require( q.valid || unsupportedFold, "Footway or road ribbon is folded or degenerate." );
             return q;
         }
         bool overlaps( const Quad &a, const Quad &b )
@@ -115,13 +118,13 @@ namespace workphone::scene
         private:
             template<class F> static void cellsFor( const Bounds &b, F f )
             {
-                const auto x0 = static_cast<i32>( std::floor( b.x0 / cellSize ) ), x1 = static_cast<i32>( std::floor( b.x1 / cellSize ) );
-                const auto z0 = static_cast<i32>( std::floor( b.z0 / cellSize ) ), z1 = static_cast<i32>( std::floor( b.z1 / cellSize ) );
-                require( i64( x1 - x0 + 1 ) * ( z1 - z0 + 1 ) <= 4096, "Footway spatial footprint exceeds its bounded index." );
+                const auto x0 = static_cast<s32>( std::floor( b.x0 / cellSize ) ), x1 = static_cast<s32>( std::floor( b.x1 / cellSize ) );
+                const auto z0 = static_cast<s32>( std::floor( b.z0 / cellSize ) ), z1 = static_cast<s32>( std::floor( b.z1 / cellSize ) );
+                require( s64( x1 - x0 + 1 ) * ( z1 - z0 + 1 ) <= 4096, "Footway spatial footprint exceeds its bounded index." );
                 for( auto z = z0; z <= z1; ++z ) for( auto x = x0; x <= x1; ++x ) f( std::make_pair( x, z ) );
             }
             SourceBudgetVector<Quad> quads;
-            SourceBudgetMap<std::pair<i32, i32>, SourceBudgetVector<u32>> cells;
+            SourceBudgetMap<std::pair<s32, s32>, SourceBudgetVector<u32>> cells;
             u32 stamp = 0; size_t entries = 0;
         };
         size_t straightEnd( const SourceBudgetVector<procedural::CityRoadSplineSample> &p, size_t first )
@@ -158,10 +161,46 @@ namespace workphone::scene
                 message == "Road footprint is not completely supported by terrain cells." ||
                 message == "Covered terrain or junction carriageway exceeds the road grade limit.";
         }
-        using PositionKey = std::array<i64, 3>;
+        using PositionKey = std::array<s64, 3>;
         PositionKey positionKey( Vector3F p )
         { return { std::llround( double( p.x ) * 1000000 ), std::llround( double( p.y ) * 1000000 ), std::llround( double( p.z ) * 1000000 ) }; }
         struct Boundary { u32 a = 0, b = 0, count = 0; };
+        class BoundaryTopology
+        {
+        public:
+            u32 node( Vector3F p, u64 &work )
+            {
+                const auto key = positionKey( p ); const auto cached = exact.find( key );
+                if( cached != exact.end() ) return cached->second;
+                // A city-scale F32 coordinate has an ULP much larger than1um.
+                // Search neighbouring bins, rather than rounding to a coarser key
+                // whose own bucket boundary would merely move the same defect.
+                constexpr double tolerance = .0002;
+                const s64 x = s64( std::floor( double( p.x ) / tolerance ) ), z = s64( std::floor( double( p.z ) / tolerance ) );
+                u32 selected = std::numeric_limits<u32>::max();
+                for( s64 dz = -1; dz <= 1; ++dz ) for( s64 dx = -1; dx <= 1; ++dx )
+                {
+                    charge( work ); const auto found = cells.find( { x + dx, z + dz } );
+                    if( found == cells.end() ) continue;
+                    for( const auto index : found->second )
+                    {
+                        charge( work ); const auto q = positions[index];
+                        const double ox = double( p.x ) - q.x, oy = double( p.y ) - q.y, oz = double( p.z ) - q.z;
+                        if( ox * ox + oy * oy + oz * oz <= tolerance * tolerance ) selected = std::min( selected, index );
+                    }
+                }
+                if( selected == std::numeric_limits<u32>::max() )
+                {
+                    require( positions.size() < maximumVertices, "Footway boundary topology budget exceeded." );
+                    selected = u32( positions.size() ); positions.push_back( p ); cells[{ x, z }].push_back( selected );
+                }
+                exact.emplace( key, selected ); return selected;
+            }
+        private:
+            SourceBudgetVector<Vector3F> positions;
+            SourceBudgetMap<PositionKey, u32> exact;
+            SourceBudgetMap<std::pair<s64, s64>, SourceBudgetVector<u32>> cells;
+        };
         class Builder
         {
         public:
@@ -169,47 +208,22 @@ namespace workphone::scene
                      const Transform3<real_Num> &placement ) : terrain( terrain ), placement( placement )
             {
                 mesh.sourceRevision = source.revision; mesh.terrainRevision = terrain->revision;
-                strip.version = 2; strip.id = "b1000000-0000-4000-8000-000000000001";
-                strip.terrainResourceUuid = "b1000000-0000-4000-8000-000000000002"; strip.revision = source.revision;
-                procedural::CityRoadSpline road; road.id = "b1000000-0000-4000-8000-000000000003";
-                road.heightOffset = 0;
-                road.knots = { { "b1000000-0000-4000-8000-000000000004", {}, {}, {} },
-                               { "b1000000-0000-4000-8000-000000000005", {}, {}, {} } };
-                strip.roads.push_back( std::move( road ) );
-                stripBake.sourceRevision = source.revision; stripBake.roads.resize( 1 );
-                stripBake.roads[0].roadId = strip.roads[0].id; stripBake.roads[0].points.resize( 2 );
+                pending.reserve( 128 );
             }
-            void piece( const Quad &q, float grade, const procedural::CityRoadSplineSource &source, bool ring = false )
+            void piece( const Quad &q, float grade, const procedural::CityRoadSplineSource &source )
             {
                 require( ++pieces <= maximumPieces, "Footway candidate budget exceeds12000 pieces." );
+                if( !q.valid ) return; // A valid tight road can have an unsupported inner sidewalk radius.
                 if( obstacles.intersects( q, work ) || accepted.intersects( q, work ) ) return;
                 for( const auto &junction : source.roundabouts )
                 {
                     charge( work ); if( circleOverlap( q, point( junction.center ), junction.outerRadius ) ) return;
-                    if( ring ) for( const auto &port : junction.ports )
-                    {
-                        const double length = std::hypot( port.outward.x, port.outward.z );
-                        const Point direction{ port.outward.x / length, port.outward.z / length }, across{ -direction.z, direction.x };
-                        const Point center = point( junction.center );
-                        const auto a = add( center, direction, std::sqrt( junction.outerRadius * junction.outerRadius - port.width * port.width * .25 ) );
-                        const auto b = add( center, direction, junction.outerRadius + port.length );
-                        const double halfWidth = port.width * .5 + gap + width;
-                        if( overlaps( q, quad( add( a, across, -halfWidth ), add( a, across, halfWidth ),
-                                              add( b, across, halfWidth ), add( b, across, -halfWidth ) ) ) ) return;
-                    }
                 }
-                auto &road = strip.roads[0]; road.maxGrade = grade; road.width = float( width );
-                auto &samples = stripBake.roads[0].points;
-                for( size_t i = 0; i < 2; ++i )
-                {
-                    const auto a = q.points[i ? 3 : 0], b = q.points[i ? 2 : 1];
-                    samples[i].left = { float( a.x ), 0, float( a.z ) }; samples[i].right = { float( b.x ), 0, float( b.z ) };
-                    samples[i].position = ( samples[i].left + samples[i].right ) * .5f;
-                    road.knots[i].position = samples[i].position;
-                }
-                const float span = ( samples[1].position - samples[0].position ).length();
-                if( span <= .001f ) return;
-                samples[0].distance = 0; samples[1].distance = span;
+                const auto start = interpolate( q.points[0], q.points[1], .5 );
+                const auto end = interpolate( q.points[3], q.points[2], .5 );
+                // The canonical codec requires distinct knots by more than1cm.
+                // Tiny curved sample slivers cannot form an independent sweep.
+                if( std::hypot( end.x - start.x, end.z - start.z ) <= .011 ) return;
                 // Estimate the exact helper's local cell visits before entering
                 // it, so repeated unsupported pieces cannot consume unbounded CPU.
                 Bounds local{ std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
@@ -225,22 +239,148 @@ namespace workphone::scene
                 const double cells = ( std::ceil( ( local.x1 - local.x0 ) / terrain->spacing.x ) + 2 ) *
                                      ( std::ceil( ( local.z1 - local.z0 ) / terrain->spacing.y ) + 2 );
                 require( std::isfinite( cells ) && cells <= maximumWork, "Footway terrain-fit work budget exceeded." );
-                charge( work, u64( cells ) * 2 );
-                CityRoadTerrainMesh surface; String error; const auto denials = sourceBudgetDenialCount();
-                if( !buildCityRoadTerrainMesh( strip, stripBake, terrain, placement, surface, error ) )
+                pending.push_back( { q, grade, u64( cells ) * 2 } );
+                // Reserve geometry before terrain fitting so two neighbouring
+                // candidates never produce coincident tops. An unsupported piece
+                // can conservatively reserve its local corner, but emits nothing.
+                accepted.insert( q, work );
+                if( pending.size() == 128 ) flush();
+            }
+            void finish()
+            {
+                flush();
+                const size_t topVertices = mesh.vertices.size();
+                SourceBudgetMap<std::array<s64, 5>, u32> skirts;
+                const auto skirtVertex = [&]( Vector3F position, Vector3F normal, u32 node, u32 level ) {
+                    const std::array<s64, 5> key{ node, level, std::llround( normal.x * 10000. ),
+                        std::llround( normal.y * 10000. ), std::llround( normal.z * 10000. ) };
+                    auto found = skirts.find( key );
+                    if( found == skirts.end() )
+                    {
+                        if( mesh.vertices.size() >= maximumVertices )
+                            throw std::runtime_error( "Footway skirts exceed300000 vertices; top=" + std::to_string( topVertices ) +
+                                " skirt=" + std::to_string( mesh.vertices.size() - topVertices ) );
+                        const auto index = u32( mesh.vertices.size() );
+                        // The tangent follows the directed boundary. World UVs
+                        // permit sharing coplanar skirt endpoints across cells,
+                        // while a normal change still retains a hard kerb corner.
+                        const float u = ( position.x * normal.z - position.z * normal.x ) * .25f;
+                        mesh.vertices.push_back( { position, normal, { u, position.y * .25f } } );
+                        found = skirts.emplace( key, index ).first;
+                    }
+                    return found->second;
+                };
+                for( const auto &[key, edge] : boundary ) if( edge.count == 1 )
                 {
-                    if( unsupportedTerrain( error, denials ) ) return;
-                    throw std::runtime_error( error.c_str() );
+                    const auto a = mesh.vertices[edge.a].position, b = mesh.vertices[edge.b].position;
+                    const auto delta = b - a; const double length = std::hypot( delta.x, delta.z );
+                    if( length < .0001 ) continue;
+                    const Vector3F normal{ float( -delta.z / length ), 0, float( delta.x / length ) };
+                    const auto na = topology.node( a, work ), nb = topology.node( b, work );
+                    const auto ta = skirtVertex( a, normal, na, 1 ), ba = skirtVertex( a - Vector3F( 0, float( lift ), 0 ), normal, na, 0 );
+                    const auto bb = skirtVertex( b - Vector3F( 0, float( lift ), 0 ), normal, nb, 0 ), tb = skirtVertex( b, normal, nb, 1 );
+                    mesh.indices.insert( mesh.indices.end(), { ta, ba, bb, ta, bb, tb } );
+                    mesh.triangleKinds.insert( mesh.triangleKinds.end(), 2, CityRoadTerrainTriangleKind::Kerb ); charge( work );
                 }
-                require( !surface.indices.empty(), "Footway terrain fitting returned an empty supported piece." );
-                // Weld each piece's repeated cell-triangle vertices. UVs use the
+            }
+            Index obstacles, accepted; CityRoadTerrainMesh mesh; u64 work = 0;
+        private:
+            struct Pending { Quad quad; float grade; u64 cellVisits; };
+            static SourceBudgetText temporaryId( u32 value )
+            {
+                SourceBudgetText id = "b1000000-0000-4000-8000-000000000000";
+                constexpr char hex[] = "0123456789abcdef";
+                for( size_t i = 0; i < 8; ++i ) { id[id.size() - 1 - i] = hex[value & 15]; value >>= 4; }
+                return id;
+            }
+            void flush()
+            {
+                if( pending.empty() ) return;
+                fitBatch( 0, pending.size() ); pending.clear();
+            }
+            size_t coalescedEnd( size_t first, size_t limit, Quad &footprint )
+            {
+                footprint = pending[first].quad;
+                const auto inner = footprint.points[0], outer = footprint.points[1];
+                const auto end = footprint.points[3]; const double length = std::hypot( end.x - inner.x, end.z - inner.z );
+                const Point axis{ ( end.x - inner.x ) / length, ( end.z - inner.z ) / length };
+                const auto progress = [&]( Point a, Point origin ) { return ( a.x - origin.x ) * axis.x + ( a.z - origin.z ) * axis.z; };
+                const auto onLine = [&]( Point a, Point origin ) { return std::abs( ( a.x - origin.x ) * axis.z - ( a.z - origin.z ) * axis.x ) <= .0002; };
+                if( !onLine( footprint.points[2], outer ) ) return first + 1;
+                size_t next = first + 1;
+                for( ; next < limit; ++next )
+                {
+                    charge( work ); const auto &candidate = pending[next]; const auto &q = candidate.quad;
+                    if( std::abs( candidate.grade - pending[first].grade ) > 1e-7f ||
+                        std::hypot( q.points[0].x - footprint.points[3].x, q.points[0].z - footprint.points[3].z ) > .0002 ||
+                        std::hypot( q.points[1].x - footprint.points[2].x, q.points[1].z - footprint.points[2].z ) > .0002 ||
+                        std::hypot( q.points[3].x - inner.x, q.points[3].z - inner.z ) > 64.0001 ||
+                        std::hypot( q.points[2].x - outer.x, q.points[2].z - outer.z ) > 64.0001 ||
+                        !onLine( q.points[0], inner ) || !onLine( q.points[3], inner ) ||
+                        !onLine( q.points[1], outer ) || !onLine( q.points[2], outer ) ||
+                        progress( q.points[3], inner ) <= progress( footprint.points[3], inner ) ||
+                        progress( q.points[2], outer ) <= progress( footprint.points[2], outer ) ) break;
+                    footprint = quad( inner, outer, q.points[2], q.points[3] );
+                }
+                return next;
+            }
+            void fitBatch( size_t first, size_t count )
+            {
+                require( count && count <= 128, "Footway terrain batch exceeds128 pieces." );
+                // validateTerrainPlacement scans retained heights and their
+                // extrema. Charge both complete passes on every retry as well;
+                // hostile all-hole inputs cannot hide billions of validation visits.
+                charge( work, u64( terrain->heights.size() ) * 2 );
+                for( size_t i = first; i < first + count; ++i ) charge( work, pending[i].cellVisits );
+                CityRoadTerrainMesh surface; bool supported = false;
+                {
+                    procedural::CityRoadSplineSource strip; procedural::CityRoadSplineBake stripBake;
+                    strip.version = 2; strip.id = temporaryId( 1 ); strip.terrainResourceUuid = temporaryId( 2 );
+                    strip.revision = stripBake.sourceRevision = mesh.sourceRevision;
+                    strip.roads.reserve( count ); stripBake.roads.reserve( count );
+                    for( size_t i = first; i < first + count; )
+                    {
+                        const auto &piece = pending[i]; Quad footprint;
+                        const size_t next = coalescedEnd( i, first + count, footprint );
+                        const auto ordinal = u32( strip.roads.size() );
+                        procedural::CityRoadSpline road; procedural::CityRoadSplineSamples samples;
+                        road.id = temporaryId( ordinal * 3 + 3 ); road.width = float( width ); road.maxGrade = piece.grade;
+                        samples.roadId = road.id; samples.points.resize( 2 ); road.knots.resize( 2 );
+                        for( size_t end = 0; end < 2; ++end )
+                        {
+                            const auto a = footprint.points[end ? 3 : 0], b = footprint.points[end ? 2 : 1];
+                            auto &sample = samples.points[end];
+                            sample.left = { float( a.x ), 0, float( a.z ) }; sample.right = { float( b.x ), 0, float( b.z ) };
+                            sample.position = ( sample.left + sample.right ) * .5f;
+                            road.knots[end].position = sample.position;
+                            road.knots[end].id = temporaryId( ordinal * 3 + 4 + u32( end ) );
+                        }
+                        const float span = ( samples.points[1].position - samples.points[0].position ).length();
+                        require( span > .01f, "Footway piece has insufficient horizontal span." );
+                        samples.points[1].distance = span;
+                        strip.roads.push_back( std::move( road ) ); stripBake.roads.push_back( std::move( samples ) );
+                        i = next;
+                    }
+                    String error; const auto denials = sourceBudgetDenialCount();
+                    supported = buildCityRoadTerrainMesh( strip, stripBake, terrain, placement, surface, error );
+                    if( !supported && !unsupportedTerrain( error, denials ) ) throw std::runtime_error( error.c_str() );
+                }
+                if( supported ) { append( surface ); return; }
+                if( count == 1 ) return;
+                const size_t half = count / 2;
+                fitBatch( first, half ); fitBatch( first + half, count - half );
+            }
+            void append( const CityRoadTerrainMesh &surface )
+            {
+                require( !surface.indices.empty(), "Footway terrain fitting returned an empty supported batch." );
+                // Weld each batch's repeated cell-triangle vertices. UVs use the
                 // world surface so adjoining pieces have continuous concrete scale.
-                SourceBudgetMap<std::array<i64, 6>, u32> welded;
+                SourceBudgetMap<std::array<s64, 6>, u32> welded;
                 SourceBudgetVector<u32> remap; remap.reserve( surface.vertices.size() );
                 for( auto vertex : surface.vertices )
                 {
                     const auto p = positionKey( vertex.position );
-                    const std::array<i64, 6> key{ p[0], p[1], p[2], std::llround( vertex.normal.x * 10000. ),
+                    const std::array<s64, 6> key{ p[0], p[1], p[2], std::llround( vertex.normal.x * 10000. ),
                         std::llround( vertex.normal.y * 10000. ), std::llround( vertex.normal.z * 10000. ) };
                     auto found = welded.find( key );
                     if( found == welded.end() )
@@ -259,10 +399,15 @@ namespace workphone::scene
                     if( triangle[0] == triangle[1] || triangle[1] == triangle[2] || triangle[0] == triangle[2] ) continue;
                     mesh.indices.insert( mesh.indices.end(), triangle.begin(), triangle.end() );
                     mesh.triangleKinds.push_back( CityRoadTerrainTriangleKind::Kerb );
+                    const std::array<u32, 3> nodes{ topology.node( mesh.vertices[triangle[0]].position, work ),
+                        topology.node( mesh.vertices[triangle[1]].position, work ), topology.node( mesh.vertices[triangle[2]].position, work ) };
+                    // Keep exact fitted triangles, but an epsilon-thin sliver
+                    // contributes no separate boundary after endpoint matching.
+                    if( nodes[0] == nodes[1] || nodes[1] == nodes[2] || nodes[0] == nodes[2] ) continue;
                     for( size_t j = 0; j < 3; ++j )
                     {
                         const auto a = triangle[j], b = triangle[( j + 1 ) % 3];
-                        auto ka = positionKey( mesh.vertices[a].position ), kb = positionKey( mesh.vertices[b].position );
+                        const auto ka = nodes[j], kb = nodes[( j + 1 ) % 3];
                         if( ka == kb ) continue;
                         const auto key = ka < kb ? std::make_pair( ka, kb ) : std::make_pair( kb, ka );
                         auto &edge = boundary[key]; if( !edge.count ) { edge.a = a; edge.b = b; } ++edge.count;
@@ -270,31 +415,11 @@ namespace workphone::scene
                         charge( work );
                     }
                 }
-                accepted.insert( q, work );
             }
-            void finish()
-            {
-                for( const auto &[key, edge] : boundary ) if( edge.count == 1 )
-                {
-                    const auto a = mesh.vertices[edge.a].position, b = mesh.vertices[edge.b].position;
-                    const auto delta = b - a; const double length = std::hypot( delta.x, delta.z );
-                    if( length < .0001 ) continue;
-                    require( mesh.vertices.size() + 4 <= maximumVertices, "Footway skirts exceed300000 vertices." );
-                    const Vector3F normal{ float( -delta.z / length ), 0, float( delta.x / length ) };
-                    const auto base = u32( mesh.vertices.size() );
-                    mesh.vertices.push_back( { a, normal, { 0, float( lift ) } } );
-                    mesh.vertices.push_back( { a - Vector3F( 0, float( lift ), 0 ), normal, { 0, 0 } } );
-                    mesh.vertices.push_back( { b - Vector3F( 0, float( lift ), 0 ), normal, { float( length ), 0 } } );
-                    mesh.vertices.push_back( { b, normal, { float( length ), float( lift ) } } );
-                    mesh.indices.insert( mesh.indices.end(), { base, base + 1, base + 2, base, base + 2, base + 3 } );
-                    mesh.triangleKinds.insert( mesh.triangleKinds.end(), 2, CityRoadTerrainTriangleKind::Kerb ); charge( work );
-                }
-            }
-            Index obstacles, accepted; CityRoadTerrainMesh mesh; u64 work = 0;
-        private:
             render::TerrainSnapshot terrain; const Transform3<real_Num> &placement;
-            procedural::CityRoadSplineSource strip; procedural::CityRoadSplineBake stripBake;
-            SourceBudgetMap<std::pair<PositionKey, PositionKey>, Boundary> boundary;
+            SourceBudgetVector<Pending> pending;
+            BoundaryTopology topology;
+            SourceBudgetMap<std::pair<u32, u32>, Boundary> boundary;
             size_t pieces = 0;
         };
     }
@@ -352,7 +477,7 @@ namespace workphone::scene
                 {
                     const double t0 = double( i ) / count, t1 = double( i + 1 ) / count;
                     builder.piece( quad( interpolate( ai, bi, t0 ), interpolate( ao, bo, t0 ),
-                        interpolate( ao, bo, t1 ), interpolate( ai, bi, t1 ) ), grade, source );
+                        interpolate( ao, bo, t1 ), interpolate( ai, bi, t1 ), true ), grade, source );
                 }
             };
             for( const auto &run : runs )
@@ -373,27 +498,72 @@ namespace workphone::scene
             }
             for( const auto &junction : source.roundabouts )
             {
-                for( const auto &port : junction.ports )
+                struct PortWalk
                 {
+                    Point direction, across;
+                    double angle, innerAngle, outerAngle;
+                    std::array<Point, 2> inner, outer; // Negative/positive side of the approach.
+                };
+                std::array<PortWalk, 6> ports{};
+                constexpr double circle = 6.283185307179586;
+                const double innerRadius = junction.outerRadius + gap, outerRadius = innerRadius + width;
+                const auto center = point( junction.center );
+                for( size_t i = 0; i < junction.ports.size(); ++i )
+                {
+                    const auto &port = junction.ports[i]; auto &walk = ports[i];
                     const double run = std::hypot( port.outward.x, port.outward.z );
-                    const Point direction{ port.outward.x / run, port.outward.z / run }, across{ -direction.z, direction.x };
-                    const auto a = add( point( junction.center ), direction, junction.outerRadius );
-                    const auto b = add( point( junction.center ), direction, junction.outerRadius + port.length );
+                    walk.direction = { port.outward.x / run, port.outward.z / run }; walk.across = { -walk.direction.z, walk.direction.x };
+                    walk.angle = std::atan2( walk.direction.z, walk.direction.x ); if( walk.angle < 0 ) walk.angle += circle;
+                    const double innerAcross = port.width * .5 + gap, outerAcross = innerAcross + width;
+                    walk.innerAngle = std::asin( innerAcross / innerRadius ); walk.outerAngle = std::asin( outerAcross / outerRadius );
+                    const auto innerBase = add( center, walk.direction, std::sqrt( innerRadius * innerRadius - innerAcross * innerAcross ) );
+                    const auto outerBase = add( center, walk.direction, std::sqrt( outerRadius * outerRadius - outerAcross * outerAcross ) );
                     for( int side : { -1, 1 } )
-                        strip( add( a, across, side * ( port.width * .5 + gap ) ), add( a, across, side * ( port.width * .5 + gap + width ) ),
-                               add( b, across, side * ( port.width * .5 + gap ) ), add( b, across, side * ( port.width * .5 + gap + width ) ), junction.maxGrade );
+                    {
+                        const size_t index = side < 0 ? 0 : 1;
+                        walk.inner[index] = add( innerBase, walk.across, side * innerAcross );
+                        walk.outer[index] = add( outerBase, walk.across, side * outerAcross );
+                        const auto end = add( center, walk.direction, junction.outerRadius + port.length );
+                        // Both circular and straight domains share this exact
+                        // skew cross-section; whole-quad mouth culling previously
+                        // left an unbridgeable grass gap between these surfaces.
+                        strip( walk.inner[index], walk.outer[index], add( end, walk.across, side * innerAcross ),
+                               add( end, walk.across, side * outerAcross ), junction.maxGrade );
+                    }
                 }
-                const size_t count = size_t( std::ceil( 6.283185307179586 * ( junction.outerRadius + gap + width ) / 4. ) );
-                const double angle = 6.283185307179586 / count;
-                // The inner chord is tangent to R+.05; its endpoints must be
-                // circumscribed, otherwise four-metre arcs cut into the road.
-                const double inner = ( junction.outerRadius + gap ) / std::cos( angle * .5 );
-                const double outer = junction.outerRadius + gap + width;
-                for( size_t i = 0; i < count; ++i )
+                const size_t portCount = junction.ports.size();
+                std::sort( ports.begin(), ports.begin() + portCount,
+                    []( const PortWalk &a, const PortWalk &b ) { return a.angle < b.angle; } );
+                for( size_t i = 0; i < portCount; ++i )
                 {
-                    const Point a{ std::cos( i * angle ), std::sin( i * angle ) }, b{ std::cos( ( i + 1 ) * angle ), std::sin( ( i + 1 ) * angle ) };
-                    builder.piece( quad( add( point( junction.center ), a, inner ), add( point( junction.center ), a, outer ),
-                        add( point( junction.center ), b, outer ), add( point( junction.center ), b, inner ) ), junction.maxGrade, source, true );
+                    const auto &a = ports[i], &b = ports[( i + 1 ) % portCount];
+                    const double nextAngle = b.angle + ( i + 1 == portCount ? circle : 0 );
+                    const double innerStart = a.angle + a.innerAngle, innerEnd = nextAngle - b.innerAngle;
+                    const double outerStart = a.angle + a.outerAngle, outerEnd = nextAngle - b.outerAngle;
+                    // Acute authored approaches may not admit two full-width
+                    // walks. Keep that sector unsupported rather than cross a road.
+                    if( innerEnd <= innerStart || outerEnd <= outerStart ) continue;
+                    const size_t count = std::max<size_t>( 1, size_t( std::ceil( std::max( ( innerEnd - innerStart ) * innerRadius,
+                        ( outerEnd - outerStart ) * outerRadius ) / 3.5 ) ) );
+                    require( count <= maximumPieces, "Roundabout footway sector exceeds its candidate budget." );
+                    const double step = ( innerEnd - innerStart ) / count;
+                    Point previousInner = a.inner[1], previousOuter = a.outer[1];
+                    for( size_t segment = 0; segment <= count; ++segment )
+                    {
+                        Point nextInner = b.inner[0], nextOuter = b.outer[0];
+                        if( segment < count )
+                        {
+                            const double t = ( segment + .5 ) / count, innerAngle = innerStart + ( segment + .5 ) * step;
+                            const double outerAngle = outerStart + t * ( outerEnd - outerStart );
+                            // Tangent intersections circumscribe the inner offset
+                            // circle, including exact endpoint tangent contacts.
+                            const double inner = innerRadius / std::cos( step * .5 );
+                            nextInner = add( center, { std::cos( innerAngle ), std::sin( innerAngle ) }, inner );
+                            nextOuter = add( center, { std::cos( outerAngle ), std::sin( outerAngle ) }, outerRadius );
+                        }
+                        builder.piece( quad( previousInner, previousOuter, nextOuter, nextInner, true ), junction.maxGrade, source );
+                        previousInner = nextInner; previousOuter = nextOuter;
+                    }
                 }
             }
             builder.finish(); output.swap( builder.mesh ); error.clear(); return true;

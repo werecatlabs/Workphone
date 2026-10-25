@@ -8,6 +8,7 @@
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/TimerMT.hpp>
 #include <iostream>
 #include <stdexcept>
 
@@ -213,10 +214,14 @@ int main()
     core::IApplicationManager::setInstance( application );
     application->setFactoryManager( make_ptr<FactoryManager>() );
     application->setGameManager( make_ptr<GameManager>() );
+    // Assigning a real actor transform records its frame timestamps through the
+    // application timer, even in this renderer/physics-free fixture.
+    auto timer = make_ptr<TimerMT>(); timer->load( nullptr ); application->setTimer( timer );
     int result = 0;
     try { revisionAndPublication(); draftsAndPersistence(); pendingSceneRestore(); failedTerrainRefresh(); std::cout << "City road authoring: canonical source, revisions, publication failures, drafts and scene persistence PASS\n"; }
     catch( const std::exception &e ) { std::cerr << "City road authoring: " << e.what() << '\n'; result = 1; }
     application->setGameManager( nullptr ); application->setFactoryManager( nullptr );
+    application->setTimer( nullptr ); timer->unload( nullptr ); timer = nullptr;
     core::IApplicationManager::setInstance( nullptr ); application = nullptr;
     TypeManager::setInstance( nullptr ); types.unload(); WorldStreamingScheduler::shutdownShared(); return result;
 }

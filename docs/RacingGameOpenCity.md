@@ -132,6 +132,13 @@ Source or terrain changes trigger a rebuild of the derived city. Moving a road
 away from the pinned racing route disables racing until the route has continuous
 supported coverage again; free editing does not silently create a replacement lap.
 
+Terrain-city streets also have fitted 2.4 m pedestrian strips and roundabout-edge
+walks, 15 cm above terrain, with concrete kerbs and shared mesh collision. Road
+mouths and unsupported terrain pieces stay open. Splitter refuges retain their
+raised concrete rims and inset turf. `--view boulevard` places the terrain-city
+camera beside an approach at pedestrian height; `street` retains the elevated
+junction inspection view.
+
 ```powershell
 & .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
     -CityLayout lsystem -CityBlocks 6 -Quality high -Views street,track `
@@ -171,6 +178,11 @@ Validation:
   bounds, replay, route independence and closed sampled routes across the seed corpus.
 - `Tests/cpp/CityRoadSplineSourceTests.cpp` checks the real JSON example, retained edits,
   version-1/version-2 compatibility, bounded Bezier sampling and allocation-denial cleanup.
+- `OpenCityRoadSourceTests` checks generated-source identity, roundabout approach
+  clearances and continuous island-free routes across grid/natural seeds and sizes.
+  `CityRoadParcelSupportTests` checks whole-parcel support and road exclusions;
+  `CityRoadFootwaysTests` checks open junctions, terrain cells/holes, shifted oblique
+  seams, maximum cities and bounded transactional allocation failures.
 - `CityRoadRoundaboutTests`, `CityRoadTerrainMeshTests` and `CityRoadAuthoringTests`
   cover junction topology/routes, exact terrain coverage and component revision/lifetime
   behavior. `Editor.city_road_viewport_authoring_test` exercises native controls and
@@ -180,5 +192,9 @@ Validation:
   count, a road ray at Y=0 and a sidewalk ray at Y=0.15. It exits after those
   checks; the circuit mode retains its separate garage-impact test. This city
   probe does not certify a complete driving lap or vehicle handling.
+- With `--city-terrain-roads`, the smoke additionally exercises retained manual
+  road edits, terrain rebinding and a same-source-revision terrain refresh. It
+  checks native road/ring/island/ground rays, fitted footway collision, uploaded
+  road PBR bindings and the actual terrain-supported building masses.
 - Native sample captures and live Editor play sessions remain separate acceptance
   checks; a native build or CPU test does not establish either result.
