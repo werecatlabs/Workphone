@@ -249,7 +249,7 @@ namespace workphone::render
         StreamBudget budget = admit(sizeof(Data) + sizeof(MaterialProgramReloadDX11));
         StreamBudget selectionBudget;
         ComPtr<ID3D11Device> device;
-        MaterialShaderParameterLayout::Ptr layout, requestedLayout, baseLayout;
+        MaterialShaderParameterLayout::Ptr layout, requestedLayout;
         u64 schemaRevision=0;
         std::unique_ptr<detail::ShaderFilesDX11> files;
         bool watching=true, autoSchema=false, explicitSchema=false;
@@ -560,11 +560,11 @@ namespace workphone::render
         const auto vertexPath=vertex.empty()?String():String(std::filesystem::absolute(std::filesystem::u8path(vertex.c_str())).lexically_normal().u8string().c_str());
         const auto pixelPath=String(std::filesystem::absolute(std::filesystem::u8path(pixel.c_str())).lexically_normal().u8string().c_str());
         for(auto cached=Data::head;cached;cached=cached->next)
-            if(cached->autoSchema && cached->device.Get()==device && (cached->baseLayout==layout || cached->layout==layout) &&
+            if(cached->autoSchema && cached->device.Get()==device &&
                 cached->status.vertex==vertexPath.c_str() && cached->status.pixel==pixelPath.c_str())
             { error.clear();return cached->owner->shared_from_this(); }
         Ptr result(new MaterialProgramReloadDX11); auto &data=*result->m_data;
-        data.device=static_cast<ID3D11Device *>(device);data.baseLayout=layout;
+        data.device=static_cast<ID3D11Device *>(device);
         // Ordinary legacy materials have no CPU shader layout yet. Reflection
         // can install their first schema without changing live values up front.
         data.layout=layout?std::move(layout):MaterialShaderParameterLayout::Create({});

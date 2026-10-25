@@ -27,6 +27,8 @@
 #include <functional>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
+#include <thread>
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
@@ -1017,6 +1019,11 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     BOOST_CHECK(!ready->getPropertyAsBool("pending"));
     auto nativeMaterial=dynamic_cast<render::ClawMaterial *>(material.get());
     BOOST_REQUIRE(nativeMaterial);BOOST_CHECK(nativeMaterial->hasRuntimeProgram());
+    const Vector4F tint(.2f,.4f,.6f,.8f);
+    auto &configuredValues=nativeMaterial->getShaderParameters();
+    const auto tintHandle=configuredValues.FindParameter("Tint");
+    BOOST_REQUIRE(configuredValues.IsHandleValid(tintHandle,render::MaterialShaderParameterType::Vector4,sizeof(Vector4F)));
+    BOOST_REQUIRE(configuredValues.SetVector4(tintHandle,tint));
     auto pause=requestFor("setWatching");pause->setProperty("watching",false);
     processMaterialShaderReloadAction(material,pause);
     BOOST_REQUIRE(pause->getPropertyAsBool("queued"));ownerUpdate();
@@ -1024,6 +1031,11 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     BOOST_CHECK_EQUAL(saved->getProperty("runtimeShaderVertexFile"),vertexFile);
     BOOST_CHECK_EQUAL(saved->getProperty("runtimeShaderPixelFile"),pixelFile);
     BOOST_CHECK(!saved->getPropertyAsBool("runtimeShaderWatching"));
+    BOOST_REQUIRE(saved->getChild("runtimeShaderSchema"));
+    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.x"),tint.x);
+    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.y"),tint.y);
+    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.z"),tint.z);
+    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.w"),tint.w);
     auto parsed=make_ptr<Properties>();DataUtil::parse(DataUtil::toString(saved.get(),true),parsed.get());
     auto restored=workphone::dynamic_pointer_cast<render::IMaterial>(
         application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadRestored"));
@@ -1039,6 +1051,71 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     BOOST_CHECK_EQUAL(restoredStatus->getProperty("pixelFile"),pixelFile);
     auto nativeRestored=dynamic_cast<render::ClawMaterial *>(restored.get());
     BOOST_REQUIRE(nativeRestored);BOOST_CHECK(nativeRestored->hasRuntimeProgram());
+    BOOST_CHECK(nativeRestored->getShaderParameters().GetLayout()==nativeMaterial->getShaderParameters().GetLayout());
+    auto &restoredValues=nativeRestored->getShaderParameters();
+    const auto restoredTintHandle=restoredValues.FindParameter("Tint");
+    BOOST_REQUIRE(restoredValues.IsHandleValid(restoredTintHandle,render::MaterialShaderParameterType::Vector4,sizeof(Vector4F)));
+    const auto restoredTint=restoredValues.GetVector4f(restoredTintHandle);
+    BOOST_CHECK_EQUAL(restoredTint.x,tint.x);BOOST_CHECK_EQUAL(restoredTint.y,tint.y);
+    BOOST_CHECK_EQUAL(restoredTint.z,tint.z);BOOST_CHECK_EQUAL(restoredTint.w,tint.w);
+    auto edit=make_ptr<Properties>();edit->setProperty("ShaderParam.Tint.y",.9f);
+    restored->setProperties(edit);ownerUpdate();
+    const auto editedTint=restoredValues.GetVector4f(restoredValues.FindParameter("Tint"));
+    BOOST_CHECK_EQUAL(editedTint.x,tint.x);BOOST_CHECK_EQUAL(editedTint.y,.9f);
+    BOOST_CHECK_EQUAL(editedTint.z,tint.z);BOOST_CHECK_EQUAL(editedTint.w,tint.w);
+
+    // Use the actual inspector panels and the normal application update path.
+    // No Refresh action or selection change may complete these status changes.
+    auto editorUI=EditorManager::getSingletonPtr()->getUI();
+    auto objectWindow=editorUI->getObjectWindow();auto actorWindow=editorUI->getActorWindow();
+    BOOST_REQUIRE(objectWindow);BOOST_REQUIRE(actorWindow);
+    auto selection=application->getSelectionManager();selection->clearSelection();selection->addSelectedObject(material);
+    objectWindow->setWindowVisible(true);objectWindow->updateSelection();
+    std::function<bool(SmartPtr<ui::IUIElement>,const String &)> containsText;
+    containsText=[&](SmartPtr<ui::IUIElement> element,const String &text) {
+        if(!element) return false;
+        if(auto value=workphone::dynamic_pointer_cast<ui::IUIText>(element))
+            if(value->getText().find(text)!=String::npos) return true;
+        for(auto child:element->getChildren()) if(containsText(child,text)) return true;
+        return false;
+    };
+    const auto pollPanel=[&] {
+        for(int i=0;i<30;++i) app.updateApplication();
+        struct RestoreTask
+        {
+            decltype(Thread::getCurrentTask()) previous=Thread::getCurrentTask();
+            ~RestoreTask() { Thread::setCurrentTask(previous); }
+        } restoreTask;
+        Thread::setCurrentTask(application->getGraphicsSystem()->getStateTask());
+        application->getStateManager()->update();
+    };
+    auto queued=requestFor("reload");processMaterialShaderReloadAction(material,queued);
+    BOOST_REQUIRE(queued->getPropertyAsBool("queued"));
+    objectWindow->setWindowVisible(false);pollPanel();
+    BOOST_CHECK(!containsText(objectWindow->getParentWindow(),"Shader reload pending"));
+    objectWindow->setWindowVisible(true);pollPanel();
+    BOOST_CHECK(containsText(objectWindow->getParentWindow(),"Shader reload pending"));
+    ownerUpdate();pollPanel();
+    BOOST_CHECK(containsText(objectWindow->getParentWindow(),"Shader generation "));
+    BOOST_CHECK(!containsText(objectWindow->getParentWindow(),"Shader reload pending"));
+
+    auto actor=application->getGameManager()->createActor();
+    auto component=actor->addComponent<scene::Material>();component->setMaterial(material);
+    selection->clearSelection();selection->addSelectedObject(component);objectWindow->updateSelection();
+    BOOST_REQUIRE(actorWindow->isWindowVisible());
+    auto watch=requestFor("setWatching");watch->setProperty("watching",true);
+    processMaterialShaderReloadAction(material,watch);BOOST_REQUIRE(watch->getPropertyAsBool("queued"));ownerUpdate();
+    const auto replacePixel=[&](const char *text) {
+        std::ofstream output(files.pixel,std::ios::binary|std::ios::trunc);BOOST_REQUIRE(output);
+        output<<text;output.close();BOOST_REQUIRE(output);
+        std::this_thread::sleep_for(std::chrono::milliseconds(275));ownerUpdate();pollPanel();
+    };
+    replacePixel("This pixel shader does not compile");
+    BOOST_CHECK(containsText(actorWindow->getParentWindow(),"Shader reload failed;"));
+    replacePixel("cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}");
+    BOOST_CHECK(containsText(actorWindow->getParentWindow(),"Shader generation "));
+    BOOST_CHECK(!containsText(actorWindow->getParentWindow(),"Shader reload failed;"));
+    selection->clearSelection();objectWindow->updateSelection();application->getGameManager()->destroyActor(actor);
 #endif
 }
 

@@ -78,6 +78,8 @@ namespace workphone
              */
             void updateSelection() override;
 
+            void updateMaterialEditorStatus();
+
             WP_CLASS_REGISTER_DECL;
 
         protected:

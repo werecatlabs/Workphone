@@ -33,6 +33,9 @@ namespace workphone
 
             void setWindowVisible( bool visible ) override;
 
+            /** Refresh a visible material panel on the application task. */
+            static void updateMaterialEditorStatus( EditorWindow *window );
+
             SmartPtr<Properties> getProperties() const override;
 
             void setProperties( SmartPtr<Properties> properties ) override;

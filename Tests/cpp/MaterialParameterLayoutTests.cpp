@@ -4,6 +4,8 @@
 #include <Workphone/Graphics/MaterialPass.hpp>
 #include <Workphone/Graphics/MaterialTechnique.hpp>
 #include <Workphone/System/StateContext.hpp>
+#include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/System/FactoryManager.hpp>
 #include <Workphone/State/States/State.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
@@ -678,6 +680,69 @@ namespace
                   << " single_name_bytes=" << singleBytes << " five_strings_bytes=" << allBytes << '\n';
     }
 
+    void typedPropertyContracts()
+    {
+        // Resource property export uses the application's existing factory path.
+        // Supply that service even though this test has no renderer or window.
+        struct Services
+        {
+            SmartPtr<core::IApplicationManager> previous=core::IApplicationManager::instancePtr();
+            SmartPtr<core::ApplicationManager> app=make_ptr<core::ApplicationManager>();
+            Services()
+            {
+                auto factories=make_ptr<FactoryManager>();factories->load(nullptr);
+                app->setFactoryManager(factories);core::IApplicationManager::setInstance(app);
+            }
+            ~Services(){app->unload(nullptr);core::IApplicationManager::setInstance(previous);}
+        } services;
+        using Type = MaterialShaderParameterType;
+        const auto layout = MaterialShaderParameterLayout::Create({
+            {Type::Scalar,"Amount"},{Type::Int,"Index"},{Type::UInt,"Mode"},{Type::Bool,"Enabled"},
+            {Type::Colour,"Tint"},{Type::Vector2,"Offset"},{Type::Vector4,"Weights"},
+            {Type::IntVector2,"Cell"},{Type::IntVector4,"Indices"},{Type::Matrix,"Transform"}});
+        Material source;
+        auto &authored = source.getShaderParameters();authored.Reset(layout);
+        auto matrix = Matrix4F::identity();
+        for(u32 i=0;i<16;++i) matrix.ptr()[i]=f32(i+1);
+        require(authored.SetScalar(authored.FindParameter("Amount"),.625f) &&
+            authored.SetScalar(authored.FindParameter("Index"),s32(-7)) &&
+            authored.SetScalar(authored.FindParameter("Mode"),u32(12)) &&
+            authored.SetBool(authored.FindParameter("Enabled"),true) &&
+            authored.SetColour(authored.FindParameter("Tint"),ColourF(.2f,.4f,.6f,.8f)) &&
+            authored.SetVector2(authored.FindParameter("Offset"),Vector2F(2,3)) &&
+            authored.SetVector4(authored.FindParameter("Weights"),Vector4F(4,5,6,7)) &&
+            authored.SetVector2(authored.FindParameter("Cell"),Vector2<s32>(8,-9)) &&
+            authored.SetVector4(authored.FindParameter("Indices"),Vector4<s32>(10,-11,12,-13)) &&
+            authored.SetMatrix(authored.FindParameter("Transform"),matrix),"author unregistered typed property fixture");
+        require(source.getShaderID().empty() && !source.isDataDriven(),"typed file layout has no registered shader id");
+        auto properties = source.getProperties();
+        require(properties && properties->hasProperty("ShaderParam.Amount") &&
+            properties->hasProperty("ShaderParam.Transform.m15"),"valid legacy-workflow layout exports typed values");
+        Material restored;auto &values=restored.getShaderParameters();values.Reset(layout);
+        restored.setProperties(properties);
+        require(values.GetParameterMemory()==authored.GetParameterMemory() && restored.getShaderID().empty(),
+            "empty shader id roundtrips all typed properties into the existing layout");
+        values.Reset(layout);
+        properties->setProperty("Shader ID",String("UnregisteredFileSchemaContract"));
+        restored.setProperties(properties);
+        require(values.GetParameterMemory()==authored.GetParameterMemory() && values.GetLayout()==layout,
+            "unknown saved shader id still restores the current typed layout");
+        auto partial=make_ptr<Properties>();
+        partial->setProperty("ShaderParam.Weights.y",42.0f);
+        partial->setProperty("ShaderParam.Transform.m5",99.0f);
+        restored.setProperties(partial);
+        require(values.GetVector4f(values.FindParameter("Weights"))==Vector4F(4,42,6,7),
+            "partial vector property edit preserves every missing component");
+        auto expected=matrix;expected.ptr()[5]=99;
+        require(exactMatrix(values.GetMatrix(values.FindParameter("Transform")),expected) &&
+            values.GetScalar(values.FindParameter("Amount"))==.625f &&
+            values.GetColour(values.FindParameter("Tint"))==ColourF(.2f,.4f,.6f,.8f),
+            "partial matrix property edit preserves missing elements and unrelated typed values");
+        const auto revision=values.GetRevision();
+        restored.setProperties(make_ptr<Properties>());
+        require(values.GetRevision()==revision,"empty typed property bag preserves values and revision");
+    }
+
     void snapshotContracts()
     {
         TypeManager types;
@@ -686,6 +751,7 @@ namespace
         stringAuthoringContracts();
         surfaceStorageContracts();
         schemaMigrationPassOverrideContracts();
+        typedPropertyContracts();
         {
             Material material;
             auto &values = material.getShaderParameters();

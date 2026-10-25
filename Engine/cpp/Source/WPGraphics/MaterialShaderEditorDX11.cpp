@@ -42,6 +42,16 @@ namespace workphone::render
             vertex=status->getProperty("vertexFile");pixel=status->getProperty("pixelFile");
             watching=status->getPropertyAsBool("watching");
         }
+        struct ParameterKind { MaterialShaderParameterType type;const char *name; };
+        constexpr ParameterKind parameterKinds[] = {
+            {MaterialShaderParameterType::Scalar,"float"},{MaterialShaderParameterType::Colour,"colour"},
+            {MaterialShaderParameterType::Vector2,"float2"},{MaterialShaderParameterType::Vector4,"float4"},
+            {MaterialShaderParameterType::Matrix,"matrix4"},{MaterialShaderParameterType::Int,"int"},
+            {MaterialShaderParameterType::UInt,"uint"},{MaterialShaderParameterType::Bool,"bool"},
+            {MaterialShaderParameterType::IntVector2,"int2"},{MaterialShaderParameterType::IntVector4,"int4"},
+            {MaterialShaderParameterType::Texture,"texture"},{MaterialShaderParameterType::Buffer,"buffer"},
+            {MaterialShaderParameterType::Sampler,"sampler"}
+        };
     }
     namespace detail
     {
@@ -70,6 +80,30 @@ namespace workphone::render
             value->material=target;value->shaderName=found->second->shaderName;
             entries[target]=std::move(value);
         }
+        bool restoreShaderSchema(ClawMaterial *material,SmartPtr<Properties> properties)
+        {
+            const auto schema=properties->getChild("runtimeShaderSchema");
+            if(!schema || properties->getProperty("runtimeShaderPixelFile").empty()) return false;
+            u32 version=0;schema->getPropertyValue("version",version);
+            const auto fields=schema->getChildren();
+            if(version!=1 || fields.size()>64) throw std::invalid_argument("Invalid saved runtime shader schema");
+            Array<MaterialShaderParameterInfo> info;
+            for(const auto &field:fields)
+            {
+                if(!field) throw std::invalid_argument("Missing runtime shader parameter descriptor");
+                const auto name=field->getProperty("name"),kind=field->getProperty("type");
+                if(name.empty() || name.size()>255 || name.find('\0')!=String::npos)
+                    throw std::invalid_argument("Invalid saved runtime shader parameter name");
+                bool found=false;
+                for(const auto &known:parameterKinds) if(kind==known.name)
+                {info.push_back({known.type,name});found=true;break;}
+                if(!found) throw std::invalid_argument("Unknown saved runtime shader parameter type");
+            }
+            if(!MaterialShaderParameterLayout::Create(info)) throw std::invalid_argument("Invalid saved runtime shader layout");
+            if(properties->hasProperty(Material::shaderIDStr)) material->setShaderID(properties->getProperty(Material::shaderIDStr));
+            material->setShaderParameters(info);
+            return true;
+        }
         void appendShaderFiles(const ClawMaterial *material,SmartPtr<Properties> properties)
         {
             std::lock_guard<std::recursive_mutex> lock(mutex);
@@ -84,6 +118,18 @@ namespace workphone::render
             properties->setProperty("runtimeShaderVertexFile",static_cast<String>(vertex));
             properties->setProperty("runtimeShaderPixelFile",static_cast<String>(pixel));
             properties->setProperty("runtimeShaderWatching",watching);
+            if(!pixel.empty() && material->getShaderParameters().GetLayout())
+            {
+                auto schema=make_ptr<Properties>();schema->setName("runtimeShaderSchema");schema->setProperty("version",u32(1));
+                for(const auto &parameter:material->getShaderParameters().GetParameterInfo())
+                {
+                    auto field=make_ptr<Properties>();field->setName("parameter");field->setProperty("name",parameter.m_name);
+                    for(const auto &kind:parameterKinds) if(kind.type==parameter.m_type)
+                    {field->setProperty("type",String(kind.name));break;}
+                    schema->addChild(field);
+                }
+                properties->addChild(schema);
+            }
         }
     }
     bool ClawMaterial::requestRuntimeShaderFiles(const String &vertex,const String &pixel)

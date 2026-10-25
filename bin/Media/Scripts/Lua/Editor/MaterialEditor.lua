@@ -625,6 +625,7 @@ function MaterialEditor:_clearRefs()
 	self.selectedMaterial = nil;
 	self.materialNameEntry = nil;
 	self.shaderPathEntry = nil;
+	self.vertexShaderPathEntry = nil;
 	self.presetDropdown = nil;
 
 	self.transparent = nil;
@@ -731,6 +732,11 @@ function MaterialEditor:_clearRefs()
 	self.applyButton = nil;
 	self.saveButton = nil;
 	self.reloadShaderButton = nil;
+	self.configureShaderFilesButton = nil;
+	self.shaderWatchToggle = nil;
+	self.shaderReloadStatusButton = nil;
+	self.shaderReloadStatusText = nil;
+	self._shaderStatusPollFrames = 0;
 	self.validateButton = nil;
 	self.exportJsonButton = nil;
 	self.importJsonButton = nil;

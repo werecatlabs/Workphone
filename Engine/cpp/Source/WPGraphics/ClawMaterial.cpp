@@ -5,6 +5,7 @@
 #include "workphone_graphics_material.h"
 #include <Workphone/Graphics/MaterialPass.hpp>
 #include <Workphone/Graphics/MaterialTexture.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
@@ -24,7 +25,6 @@ namespace workphone
             MaterialProgramDX11::PublicationPtr publication;
             MaterialProgramReloadDX11::BindingPtr reload;
             MaterialProgramReloadDX11::Ptr controller;
-            MaterialShaderParameterLayout::Ptr layout;
             u64 shaderIDRevision = 0;
             u64 revision = 0;
             RuntimeState()
@@ -74,7 +74,6 @@ namespace workphone
             candidate->shaderIDRevision=getShaderIDRevision();
             candidate->publication = program->Capture(getShaderParameters(), resources);
             candidate->program = std::move(program); candidate->resources = std::move(resources);
-            candidate->layout = getShaderParameters().GetLayout();
             candidate->revision = getShaderParameters().GetRevision();
             m_runtime = std::move(candidate);
             detail::shaderReloadAttached(this,0);
@@ -103,7 +102,7 @@ namespace workphone
             // authoring token keeps unchanged warm submissions free of strings.
             if(m_runtime->shaderIDRevision!=getShaderIDRevision())
             { m_runtime.reset();detail::forgetShaderReload(this);return true; }
-            m_runtime->layout=getShaderParameters().GetLayout();return false;
+            return false;
         }
 
         void ClawMaterial::setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
@@ -115,7 +114,6 @@ namespace workphone
             detail::prepareShaderReloadStatus(this);
             candidate->resources=resources;candidate->controller=reload;
             candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));
-            candidate->layout=getShaderParameters().GetLayout();
             m_runtime = std::move(candidate);
             detail::shaderReloadAttached(this,reload->GetId());
         }
@@ -127,13 +125,13 @@ namespace workphone
             if(m_runtime->reload) return m_runtime->reload->GetPublication();
             const auto &values = getShaderParameters();
             if(!m_runtime->program->IsCurrent(values.GetLayout())) return {};
-            if(m_runtime->layout != values.GetLayout() || m_runtime->revision != values.GetRevision())
+            if(m_runtime->revision != values.GetRevision())
             {
                 MaterialProgramDX11::PublicationPtr candidate;
                 try { candidate = m_runtime->program->Capture(values, m_runtime->resources); }
                 catch(const std::runtime_error &) { return {}; } // incompatible schema: defer
                 m_runtime->publication = std::move(candidate);
-                m_runtime->layout = values.GetLayout(); m_runtime->revision = values.GetRevision();
+                m_runtime->revision = values.GetRevision();
             }
             return m_runtime->publication;
         }
@@ -721,7 +719,9 @@ namespace workphone
                     return;
                 }
 
+                MaterialPublicationScope publication;
                 Material::setProperties( properties );
+                if(detail::restoreShaderSchema(this,properties)) restoreShaderParameterProperties(properties);
                 String pixel,vertex;bool watching=true;
                 if(properties->getPropertyValue("runtimeShaderPixelFile",pixel) && !pixel.empty())
                 {

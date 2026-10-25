@@ -2,6 +2,7 @@
 #include <ui/ObjectWindow.hpp>
 #include <ui/ActorWindow.hpp>
 #include <ui/MaterialWindow.hpp>
+#include <ui/ScriptWindow.hpp>
 #include <ui/PropertiesWindow.hpp>
 #include <ui/FileViewWindow.hpp>
 #include <ui/ResourceWindow.hpp>
@@ -272,6 +273,12 @@ namespace workphone::editor
     void ObjectWindow::setWindow( SmartPtr<ui::IUIWindow> window )
     {
         m_window = window;
+    }
+
+    void ObjectWindow::updateMaterialEditorStatus()
+    {
+        if( isLoaded() && isWindowVisible() )
+            ScriptWindow::updateMaterialEditorStatus( m_materialWindow.get() );
     }
 
     void ObjectWindow::updateSelection()

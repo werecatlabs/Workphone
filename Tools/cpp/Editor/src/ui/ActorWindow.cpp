@@ -1326,6 +1326,12 @@ namespace workphone::editor
         }
     }
 
+    void ActorWindow::updateMaterialEditorStatus()
+    {
+        if( isLoaded() && isWindowVisible() )
+            ScriptWindow::updateMaterialEditorStatus( m_materialWindow.get() );
+    }
+
     void ActorWindow::updateSelection()
     {
         try

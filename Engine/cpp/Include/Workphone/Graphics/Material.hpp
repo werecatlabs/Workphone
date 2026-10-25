@@ -1323,6 +1323,8 @@ namespace workphone
             void seedLegacySurface( MaterialPassStateData &state ) const;
             void shaderParametersChanged( u8 mask ) noexcept;
             void applyShaderParametersToRenderer( u8 mask );
+            // Restore saved typed values after a backend installs its persisted layout.
+            void restoreShaderParameterProperties( SmartPtr<Properties> properties );
             /** @brief Initializes the internal state object for the material. */
             void createStateObject();
 

@@ -1659,10 +1659,9 @@ namespace workphone::render
             auto enumValues = GraphicsUtil::getMaterialTypesString();
             materialPathProperty.setAttribute( enumStr, enumValues );
 
-            // Data-driven shader (Esoterica integration, step 5): persist the bound shader id
-            // and each editable scalar/colour parameter so the choice survives save/reload.
+            // Reflected file layouts also have typed values without a registered shader id.
             properties->setProperty( shaderIDStr, getShaderID() );
-            if( isDataDriven() && m_shaderParameters.IsValid() )
+            if( m_shaderParameters.IsValid() )
             {
                 auto const &paramInfo = m_shaderParameters.GetParameterInfo();
                 for( u32 parameterIndex = 0; parameterIndex < paramInfo.size(); ++parameterIndex )
@@ -1783,7 +1782,7 @@ namespace workphone::render
                 }
             }
 
-            // Data-driven shader (step 5): rebind the saved shader and restore scalar/colour params.
+            // Rebind known registry shaders before restoring the current typed layout.
             String savedShaderID;
             if( properties->getPropertyValue( shaderIDStr, savedShaderID ) && !savedShaderID.empty() )
             {
@@ -1797,112 +1796,121 @@ namespace workphone::render
                     {
                         syncPBRToShaderParameters();
                     }
-                    auto const &paramInfo = m_shaderParameters.GetParameterInfo();
-                    for( u32 parameterIndex = 0; parameterIndex < paramInfo.size(); ++parameterIndex )
-                    {
-                        const auto &p = paramInfo[parameterIndex];
-                        auto handle = m_shaderParameters.GetParameter( parameterIndex );
-                        if( !handle.IsValid() )
-                        {
-                            continue;
-                        }
-                        auto key = shaderParamPrefixStr + p.m_name;
-                        if( p.m_type == MaterialShaderParameterType::Scalar )
-                        {
-                            f32 v = 0.0f;
-                            if( properties->getPropertyValue( key, v ) )
-                            {
-                                m_shaderParameters.SetScalar( handle, v );
-                            }
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Int )
-                        {
-                            s32 value = 0;
-                            if( properties->getPropertyValue( key, value ) )
-                                m_shaderParameters.SetScalar( handle, value );
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::UInt )
-                        {
-                            u32 value = 0;
-                            if( properties->getPropertyValue( key, value ) )
-                                m_shaderParameters.SetScalar( handle, value );
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Bool )
-                        {
-                            bool value = false;
-                            if( properties->getPropertyValue( key, value ) )
-                                m_shaderParameters.SetBool( handle, value );
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Colour )
-                        {
-                            ColourF c;
-                            if( properties->getPropertyValue( key, c ) )
-                            {
-                                m_shaderParameters.SetColour( handle, c );
-                            }
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Vector2 )
-                        {
-                            Vector2F v;
-                            if( properties->getPropertyValue( key, v ) )
-                            {
-                                m_shaderParameters.SetVector2( handle, v );
-                            }
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Vector4 )
-                        {
-                            Vector4F v;
-                            v.x = properties->getPropertyAsFloat( key + shaderParamVectorXStr, 0.0f );
-                            v.y = properties->getPropertyAsFloat( key + shaderParamVectorYStr, 0.0f );
-                            v.z = properties->getPropertyAsFloat( key + shaderParamVectorZStr, 0.0f );
-                            v.w = properties->getPropertyAsFloat( key + shaderParamVectorWStr, 0.0f );
-                            m_shaderParameters.SetVector4( handle, v );
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::IntVector2 )
-                        {
-                            Vector2<s32> value;
-                            m_shaderParameters.Get( MaterialParameterHandle<Vector2<s32>>{ handle }, value );
-                            properties->getPropertyValue( key + shaderParamVectorXStr, value.x );
-                            properties->getPropertyValue( key + shaderParamVectorYStr, value.y );
-                            m_shaderParameters.SetVector2( handle, value );
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::IntVector4 )
-                        {
-                            Vector4<s32> value;
-                            m_shaderParameters.Get( MaterialParameterHandle<Vector4<s32>>{ handle }, value );
-                            properties->getPropertyValue( key + shaderParamVectorXStr, value.x );
-                            properties->getPropertyValue( key + shaderParamVectorYStr, value.y );
-                            properties->getPropertyValue( key + shaderParamVectorZStr, value.z );
-                            properties->getPropertyValue( key + shaderParamVectorWStr, value.w );
-                            m_shaderParameters.SetVector4( handle, value );
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Texture )
-                        {
-                            String texPath;
-                            if( properties->getPropertyValue( shaderTexturePrefixStr + p.m_name,
-                                                              texPath ) )
-                            {
-                                setShaderTexture( p.m_name, texPath );
-                            }
-                        }
-                        else if( p.m_type == MaterialShaderParameterType::Matrix )
-                        {
-                            Matrix4<f32> m;
-                            f32 *p = m.ptr();
-                            for( u32 i = 0; i < 16; ++i )
-                            {
-                                p[i] = properties->getPropertyAsFloat( key + shaderParamMatrixSuffixStr[i],
-                                                                       0.0f );
-                            }
-                            m_shaderParameters.SetMatrix( handle, m );
-                        }
-                    }
                 }
             }
+            restoreShaderParameterProperties( properties );
         }
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+        }
+    }
+
+    void Material::restoreShaderParameterProperties( SmartPtr<Properties> properties )
+    {
+        if( !properties ) return;
+        auto parameterEdit = m_shaderParameters.Edit();
+        if( m_shaderParameters.IsValid() )
+        {
+            auto const &paramInfo = m_shaderParameters.GetParameterInfo();
+            for( u32 parameterIndex = 0; parameterIndex < paramInfo.size(); ++parameterIndex )
+            {
+                const auto &p = paramInfo[parameterIndex];
+                auto handle = m_shaderParameters.GetParameter( parameterIndex );
+                if( !handle.IsValid() )
+                {
+                    continue;
+                }
+                auto key = shaderParamPrefixStr + p.m_name;
+                if( p.m_type == MaterialShaderParameterType::Scalar )
+                {
+                    f32 v = 0.0f;
+                    if( properties->getPropertyValue( key, v ) )
+                    {
+                        m_shaderParameters.SetScalar( handle, v );
+                    }
+                }
+                else if( p.m_type == MaterialShaderParameterType::Int )
+                {
+                    s32 value = 0;
+                    if( properties->getPropertyValue( key, value ) )
+                        m_shaderParameters.SetScalar( handle, value );
+                }
+                else if( p.m_type == MaterialShaderParameterType::UInt )
+                {
+                    u32 value = 0;
+                    if( properties->getPropertyValue( key, value ) )
+                        m_shaderParameters.SetScalar( handle, value );
+                }
+                else if( p.m_type == MaterialShaderParameterType::Bool )
+                {
+                    bool value = false;
+                    if( properties->getPropertyValue( key, value ) )
+                        m_shaderParameters.SetBool( handle, value );
+                }
+                else if( p.m_type == MaterialShaderParameterType::Colour )
+                {
+                    ColourF c;
+                    if( properties->getPropertyValue( key, c ) )
+                    {
+                        m_shaderParameters.SetColour( handle, c );
+                    }
+                }
+                else if( p.m_type == MaterialShaderParameterType::Vector2 )
+                {
+                    Vector2F v;
+                    if( properties->getPropertyValue( key, v ) )
+                    {
+                        m_shaderParameters.SetVector2( handle, v );
+                    }
+                }
+                else if( p.m_type == MaterialShaderParameterType::Vector4 )
+                {
+                    auto v = m_shaderParameters.GetVector4f( handle );
+                    properties->getPropertyValue( key + shaderParamVectorXStr, v.x );
+                    properties->getPropertyValue( key + shaderParamVectorYStr, v.y );
+                    properties->getPropertyValue( key + shaderParamVectorZStr, v.z );
+                    properties->getPropertyValue( key + shaderParamVectorWStr, v.w );
+                    m_shaderParameters.SetVector4( handle, v );
+                }
+                else if( p.m_type == MaterialShaderParameterType::IntVector2 )
+                {
+                    Vector2<s32> value;
+                    m_shaderParameters.Get( MaterialParameterHandle<Vector2<s32>>{ handle }, value );
+                    properties->getPropertyValue( key + shaderParamVectorXStr, value.x );
+                    properties->getPropertyValue( key + shaderParamVectorYStr, value.y );
+                    m_shaderParameters.SetVector2( handle, value );
+                }
+                else if( p.m_type == MaterialShaderParameterType::IntVector4 )
+                {
+                    Vector4<s32> value;
+                    m_shaderParameters.Get( MaterialParameterHandle<Vector4<s32>>{ handle }, value );
+                    properties->getPropertyValue( key + shaderParamVectorXStr, value.x );
+                    properties->getPropertyValue( key + shaderParamVectorYStr, value.y );
+                    properties->getPropertyValue( key + shaderParamVectorZStr, value.z );
+                    properties->getPropertyValue( key + shaderParamVectorWStr, value.w );
+                    m_shaderParameters.SetVector4( handle, value );
+                }
+                else if( p.m_type == MaterialShaderParameterType::Texture )
+                {
+                    String texPath;
+                    if( properties->getPropertyValue( shaderTexturePrefixStr + p.m_name,
+                                                      texPath ) )
+                    {
+                        setShaderTexture( p.m_name, texPath );
+                    }
+                }
+                else if( p.m_type == MaterialShaderParameterType::Matrix )
+                {
+                    auto m = m_shaderParameters.GetMatrix( handle );
+                    f32 *p = m.ptr();
+                    for( u32 i = 0; i < 16; ++i )
+                    {
+                        properties->getPropertyValue( key + shaderParamMatrixSuffixStr[i], p[i] );
+                    }
+                    m_shaderParameters.SetMatrix( handle, m );
+                }
+            }
         }
     }
 

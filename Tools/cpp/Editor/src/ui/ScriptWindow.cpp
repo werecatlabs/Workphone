@@ -158,6 +158,13 @@ namespace workphone::editor
         EditorWindow::setWindowVisible( visible );
     }
 
+    void ScriptWindow::updateMaterialEditorStatus( EditorWindow *window )
+    {
+        if( window && window->isLoaded() && window->isWindowVisible() &&
+            window->getClassName() == "MaterialEditor" )
+            if( auto invoker = window->getInvoker() ) invoker->callObjectMember( "update" );
+    }
+
     void ScriptWindow::setProperties( SmartPtr<Properties> properties )
     {
         if( isWindowVisible() || getClassName() == "ProjectSettings" )

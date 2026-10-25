@@ -22,6 +22,7 @@
 #include <ui/ObjectWindow.hpp>
 #include <ui/PropertiesWindow.hpp>
 #include <ui/ActorWindow.hpp>
+#include <ui/MaterialWindow.hpp>
 #include <ui/ProjectWindow.hpp>
 #include <ui/ProjectTreeData.hpp>
 #include <ui/SceneWindow.hpp>
@@ -1110,12 +1111,16 @@ namespace workphone::editor
                     {
                         if( auto actorWindow = editorUI->getActorWindow() )
                         {
+                            actorWindow->updateMaterialEditorStatus();
                             auto propertiesWindow = actorWindow->getPropertiesWindow();
                             if( propertiesWindow && propertiesWindow->isLoaded() )
                             {
                                 propertiesWindow->update();
                             }
                         }
+                        if( auto objectWindow = editorUI->getObjectWindow() )
+                            objectWindow->updateMaterialEditorStatus();
+                        ScriptWindow::updateMaterialEditorStatus( editorUI->getMaterialWindow() );
                         if( auto propertiesWindow = editorUI->getPropertiesWindow() )
                         {
                             if( propertiesWindow->isLoaded() )
