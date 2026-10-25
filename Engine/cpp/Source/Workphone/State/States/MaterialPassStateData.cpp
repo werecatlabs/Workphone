@@ -119,6 +119,43 @@ namespace workphone
             return count;
         }
 
+        void assignNumericWord(SourceBudgetUniqueArray<u32> &words, u32 index, u32 value, u32 defaultValue)
+        {
+            const auto mask = numericMask( words.get() );
+            const auto bit = u64( 1 ) << index;
+            const bool present = ( mask & bit ) != 0;
+            const bool remove = value == defaultValue;
+            if( !present && remove ) return;
+            const auto rank = numericWordCount( mask & ( bit - 1 ) );
+            if( present && !remove )
+            {
+                words[2 + rank] = value;
+                return;
+            }
+            const auto nextMask = remove ? mask & ~bit : mask | bit;
+            if( !nextMask ) { words.reset(); return; }
+            const auto count = numericWordCount( mask );
+            const auto nextCount = remove ? count - 1 : count + 1;
+            auto next = makeSourceBudgetArray<u32>( 2 + nextCount );
+            std::memcpy( next.get(), &nextMask, sizeof( nextMask ) );
+            if( rank ) std::memcpy( next.get() + 2, words.get() + 2, rank * sizeof( u32 ) );
+            if( remove )
+            {
+                const auto tail = count - rank - 1;
+                if( tail ) std::memcpy( next.get() + 2 + rank, words.get() + 3 + rank,
+                                       tail * sizeof( u32 ) );
+            }
+            else
+            {
+                next[2 + rank] = value;
+                const auto tail = count - rank;
+                if( tail ) std::memcpy( next.get() + 3 + rank, words.get() + 2 + rank,
+                                       tail * sizeof( u32 ) );
+            }
+            // Publish the replacement only after allocation/copy succeeds.
+            words = std::move( next );
+        }
+
         template <class T>
         struct EditorField
         {
@@ -718,40 +755,20 @@ namespace workphone
     }
 
     void MaterialPassStateData::setNumericWord( u32 index, u32 value, u32 defaultValue )
+    { assignNumericWord(m_numericAuthoring,index,value,defaultValue); }
+
+    SourceBudgetUniqueArray<u32> MaterialPassStateData::prepareShaderRenderMode(u32 value) const
     {
-        const auto mask = numericMask( m_numericAuthoring.get() );
-        const auto bit = u64( 1 ) << index;
-        const bool present = ( mask & bit ) != 0;
-        const bool remove = value == defaultValue;
-        if( !present && remove ) return;
-        const auto rank = numericWordCount( mask & ( bit - 1 ) );
-        if( present && !remove )
+        const auto count = getNumericAuthoringStorageBytes()/sizeof(u32);
+        SourceBudgetUniqueArray<u32> next;
+        if(count)
         {
-            m_numericAuthoring[2 + rank] = value;
-            return;
+            next = makeSourceBudgetArray<u32>(count);
+            std::memcpy(next.get(),m_numericAuthoring.get(),count*sizeof(u32));
         }
-        const auto nextMask = remove ? mask & ~bit : mask | bit;
-        if( !nextMask ) { m_numericAuthoring.reset(); return; }
-        const auto count = numericWordCount( mask );
-        const auto nextCount = remove ? count - 1 : count + 1;
-        auto next = makeSourceBudgetArray<u32>( 2 + nextCount );
-        std::memcpy( next.get(), &nextMask, sizeof( nextMask ) );
-        if( rank ) std::memcpy( next.get() + 2, m_numericAuthoring.get() + 2, rank * sizeof( u32 ) );
-        if( remove )
-        {
-            const auto tail = count - rank - 1;
-            if( tail ) std::memcpy( next.get() + 2 + rank, m_numericAuthoring.get() + 3 + rank,
-                                   tail * sizeof( u32 ) );
-        }
-        else
-        {
-            next[2 + rank] = value;
-            const auto tail = count - rank;
-            if( tail ) std::memcpy( next.get() + 3 + rank, m_numericAuthoring.get() + 2 + rank,
-                                   tail * sizeof( u32 ) );
-        }
-        // Publish the replacement only after allocation/copy succeeds.
-        m_numericAuthoring = std::move( next );
+        const auto &field = UIntFields[static_cast<u32>(MaterialUIntSetting::renderMode)];
+        assignNumericWord(next,ColdFloatCount+field.coldIndex,value,field.defaultValue);
+        return next;
     }
 
     size_t MaterialPassStateData::getNumericAuthoringStorageBytes() const

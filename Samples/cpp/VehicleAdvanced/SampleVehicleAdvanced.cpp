@@ -579,7 +579,7 @@ namespace workphone
                 core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad() > 3 )
             {
                 m_raceScene->configurePhysics();
-                m_physicsConfigured = true;
+                m_physicsConfigured = m_raceScene->isPhysicsConfigured();
             }
             if( m_resetRequested.exchange( false ) )
             {
@@ -1139,6 +1139,7 @@ namespace workphone
 
     void SampleVehicleAdvanced::updateControls()
     {
+        if(!m_physicsConfigured){if(m_raceScene)m_raceScene->setControls(0,1,0);return;}
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto input = applicationManager ? applicationManager->getInputDeviceManager() : nullptr;
         auto car = m_vehicleActor ? m_vehicleActor->getComponent<scene::CarController>() : nullptr;
@@ -1535,7 +1536,11 @@ namespace workphone
                 if( !box || !box->getShape() || !body || !body->getRigidStatic() ||
                     body->getRigidStatic()->getScene() != physics || !box->getShape()->isAttached() )
                 {
-                    fail( actor->getName() + " has no static box body" );
+                    fail( actor->getName() + " has no static box body; actor state="+StringUtil::toString(u32(actor->getState()))+
+                        " box="+StringUtil::toString(bool(box))+" shape="+StringUtil::toString(box && box->getShape())+
+                        " rigidbody="+StringUtil::toString(bool(body))+" static="+StringUtil::toString(body && body->getRigidStatic())+
+                        " attached="+StringUtil::toString(box && box->getShape() && box->getShape()->isAttached())+
+                        " scene="+StringUtil::toString(body && body->getRigidStatic() && body->getRigidStatic()->getScene()==physics) );
                     return;
                 }
                 const auto centre = actor->getPosition();

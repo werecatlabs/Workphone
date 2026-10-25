@@ -1047,6 +1047,7 @@ namespace
 
 #include "CookedTerrainContracts.hpp"
 #include "CookedFoliageContracts.hpp"
+#include "CookedMaterialShaderContracts.hpp"
 
 int main()
 {
@@ -1054,6 +1055,7 @@ int main()
     {
         Fixture fixture;
         fixture.initialize();
+        cooked_material_shader_contracts::run( fixture );
         generatedAsphaltContracts( fixture );
         contracts( fixture );
         cooked_terrain_contracts::run( *fixture.graphics.renderer, fixture.folder );

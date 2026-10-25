@@ -111,6 +111,32 @@ namespace workphone::render
         MaterialShaderParametersInstance( MaterialShaderParametersInstance &&other ) noexcept;
         MaterialShaderParametersInstance &operator=( MaterialShaderParametersInstance &&other ) noexcept;
 
+        /** Owning-thread schema replacement. All allocation, exact name/type
+         * migration, legacy fallback and material pass snapshots are staged.
+         * Check every cohort token before committing any of them. Commit is a
+         * nonallocating swap and never invokes material/backend callbacks.
+         * The physical target must outlive its token; end edit/publication
+         * scopes before preparation. Values() is staging input until Commit.
+         */
+        class WPCore_API Migration
+        {
+        public:
+            ~Migration();
+            const MaterialShaderParametersInstance &Values() const;
+            bool IsCurrent() const noexcept;
+            bool Commit() noexcept;
+            Migration(const Migration &) = delete;
+            Migration &operator=(const Migration &) = delete;
+        private:
+            friend class MaterialShaderParametersInstance;
+            struct Data;
+            std::unique_ptr<Data> m_data;
+            Migration();
+        };
+        using MigrationPtr = std::shared_ptr<Migration>;
+        bool IsMigrationReady() const noexcept;
+        MigrationPtr PrepareMigration(MaterialShaderParameterLayout::Ptr layout);
+
         /** Coalesce supported material-semantic writes until the outer scope closes.
          * The instance must outlive the scope. Values/revisions update immediately;
          * readers of the material keep its previous immutable render snapshot.

@@ -7,6 +7,9 @@
 #include <FreeImage.h>
 
 #include <cmath>
+#include <cstring>
+#include <limits>
+#include <memory>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -51,47 +54,25 @@ namespace workphone::render
         // reject them so two tools cannot interpret the same authored settings differently.
         void validateUniqueKeys( const std::string &text )
         {
-            int depth = 0;
-            std::set<std::string> keys;
-            for( size_t i = 0; i < text.size(); ++i )
+            struct Frame { bool object; std::set<std::string> keys; };
+            std::vector<Frame> frames;
+            for(size_t i=0;i<text.size();++i)
             {
-                if( text[i] == '"' )
+                if(text[i]=='"')
                 {
-                    const auto start = i;
-                    for( ++i; i < text.size(); ++i )
+                    const auto start=i;
+                    for(++i;i<text.size();++i)
+                    { if(text[i]=='\\')++i;else if(text[i]=='"')break; }
+                    auto next=i+1;
+                    while(next<text.size() && (text[next]==' ' || text[next]=='\t' || text[next]=='\r' || text[next]=='\n'))++next;
+                    if(!frames.empty() && frames.back().object && next<text.size() && text[next]==':')
                     {
-                        if( text[i] == '\\' )
-                        {
-                            ++i;
-                        }
-                        else if( text[i] == '"' )
-                        {
-                            break;
-                        }
-                    }
-                    auto next = i + 1;
-                    while( next < text.size() && ( text[next] == ' ' || text[next] == '\t' ||
-                                                   text[next] == '\r' || text[next] == '\n' ) )
-                    {
-                        ++next;
-                    }
-                    if( depth == 1 && next < text.size() && text[next] == ':' )
-                    {
-                        const auto key =
-                            json::parse( json::string_view( text.data() + start, i - start + 1 ) )
-                                .as_string();
-                        require( keys.insert( std::string( key.data(), key.size() ) ).second,
-                                 "Duplicate graphics descriptor field" );
+                        const auto key=json::parse(json::string_view(text.data()+start,i-start+1)).as_string();
+                        require(frames.back().keys.insert(std::string(key.data(),key.size())).second,"Duplicate graphics descriptor field");
                     }
                 }
-                else if( text[i] == '{' || text[i] == '[' )
-                {
-                    ++depth;
-                }
-                else if( text[i] == '}' || text[i] == ']' )
-                {
-                    --depth;
-                }
+                else if(text[i]=='{' || text[i]=='[')frames.push_back({text[i]=='{',{}});
+                else if(text[i]=='}' || text[i]==']') { require(!frames.empty(),"Unbalanced graphics descriptor");frames.pop_back(); }
             }
         }
 
@@ -103,7 +84,7 @@ namespace workphone::render
                 readFile( fs::u8path( context.sourcePath.c_str() ), graphicsResourceDescriptorLimit );
             const std::string text( reinterpret_cast<const char *>( bytes.data() ), bytes.size() );
             json::parse_options options;
-            options.max_depth = 4;
+            options.max_depth = 8;
             auto value = json::parse( text, {}, options );
             require( value.is_object(), "Graphics descriptor must be a JSON object" );
             validateUniqueKeys( text );
@@ -215,11 +196,99 @@ namespace workphone::render
             return recipe;
         }
 
-        CookedMaterialData readMaterialRecipe( const resource::CompileContext &context )
+        void exactFields(const json::object &object, const std::set<std::string> &required,
+            const std::set<std::string> &optional={})
+        {
+            for(const auto &name:required)require(object.contains(name),"Missing shader descriptor field");
+            for(const auto &field:object)
+            { const std::string name(field.key().data(),field.key().size());
+              require(required.count(name) || optional.count(name),"Unsupported shader descriptor field"); }
+        }
+        u32 integer(const json::value &value, double minimum, double maximum)
+        {
+            require(value.is_number(),"Shader integer must be numeric");
+            const double number=value.to_number<double>();
+            require(std::isfinite(number) && std::floor(number)==number && number>=minimum && number<=maximum,
+                "Shader integer is outside its exact supported range");
+            return minimum<0 ? static_cast<u32>(static_cast<s32>(number)) : static_cast<u32>(number);
+        }
+        CookedMaterialShaderData readShaderRecipe(const resource::CompileContext &context,
+            const json::value &value, Array<String> *dependencies)
+        {
+            require(value.is_object(),"Material shader must be an object");const auto &object=value.as_object();
+            exactFields(object,{"id","schemaVersion","pixel","parameters","pixelBuffers","pixelResources","vertexBuffers","vertexResources"},{"vertex"});
+            CookedMaterialShaderData shader;shader.shaderID=stringField(object,"id");
+            shader.schemaVersion=integer(object.at("schemaVersion"),1,4294967295.0);
+            const auto bytecode=[&](const char *name,std::vector<u8> &bytes) {
+                if(!object.contains(name))return;
+                const auto source=stringField(object,name);AssetCatalogPath path;String error;
+                require(source.substr(0,7)=="data://","Shader bytecode source must use data://");
+                if(!canonicalAssetCatalogPath(context.sourceRoot,source.substr(7),path,error))throw std::runtime_error(error.c_str());
+                bytes=readFile(fs::u8path(context.sourceRoot.c_str())/fs::u8path(path.path.c_str()),graphicsMaterialShaderByteLimit/2);
+                if(dependencies)dependencies->push_back(source);
+            };
+            bytecode("vertex",shader.vertexDXBC);bytecode("pixel",shader.pixelDXBC);
+            const auto selection=[&](const char *name,Array<String> &output) {
+                const auto &values=object.at(name);require(values.is_array() && values.as_array().size()<=144,"Invalid shader ownership selection");
+                for(const auto &v:values.as_array())
+                { require(v.is_string() && !v.as_string().empty() && v.as_string().size()<=255,"Invalid shader ownership name");
+                  String item(v.as_string().data(),v.as_string().size());
+                  require(item.find('\0')==String::npos && std::find(output.begin(),output.end(),item)==output.end(),"Duplicate/invalid shader ownership name");output.push_back(item); }
+            };
+            selection("vertexBuffers",shader.vertexSelection.constantBuffers);selection("vertexResources",shader.vertexSelection.resources);
+            selection("pixelBuffers",shader.pixelSelection.constantBuffers);selection("pixelResources",shader.pixelSelection.resources);
+            const auto &parameters=object.at("parameters");require(parameters.is_array() && parameters.as_array().size()<=64,"Invalid shader parameter count");
+            for(const auto &v:parameters.as_array())
+            {
+                require(v.is_object(),"Shader parameter must be an object");const auto &p=v.as_object();
+                exactFields(p,{"name","type","value"});CookedMaterialShaderParameter parameter;parameter.name=stringField(p,"name");
+                const auto type=stringField(p,"type");using T=MaterialShaderParameterType;
+                u32 count=1;bool floats=false,signedValues=false;
+                if(type=="float") {parameter.type=T::Scalar;floats=true;}
+                else if(type=="colour") {parameter.type=T::Colour;count=4;floats=true;}
+                else if(type=="float2") {parameter.type=T::Vector2;count=2;floats=true;}
+                else if(type=="float4") {parameter.type=T::Vector4;count=4;floats=true;}
+                else if(type=="matrix4") {parameter.type=T::Matrix;count=16;floats=true;}
+                else if(type=="int") {parameter.type=T::Int;signedValues=true;}
+                else if(type=="uint")parameter.type=T::UInt;
+                else if(type=="int2") {parameter.type=T::IntVector2;count=2;signedValues=true;}
+                else if(type=="int4") {parameter.type=T::IntVector4;count=4;signedValues=true;}
+                else if(type=="bool")parameter.type=T::Bool;
+                else if(type=="sampler") {parameter.type=T::Sampler;count=4;}
+                else if(type=="texture")parameter.type=T::Texture;
+                else throw std::runtime_error("Unsupported persistent shader parameter/resource kind");
+                const auto &raw=p.at("value");
+                if(parameter.type==T::Bool) { require(raw.is_bool(),"Shader bool must be boolean");parameter.words[0]=raw.as_bool()?1:0; }
+                else if(parameter.type==T::Texture)
+                {
+                    require(raw.is_string(),"Shader texture value must be a texres ResourceID");
+                    const String id(raw.as_string().data(),raw.as_string().size());AssetCatalogPath path;String error;
+                    require(id.find('\0')==String::npos && id.substr(0,7)=="data://" && parameter.texture.id.set(id) && !parameter.texture.id.isSubResource() &&
+                        parameter.texture.id.type()==resource::ResourceTypeID("texres"),"Invalid shader texture ResourceID");
+                    if(!canonicalAssetCatalogPath(context.sourceRoot,parameter.texture.id.sourceRelativePath(),path,error))throw std::runtime_error(error.c_str());
+                }
+                else
+                {
+                    require(count==1 || (raw.is_array() && raw.as_array().size()==count),"Shader value has wrong component count");
+                    for(u32 i=0;i<count;++i)
+                    {
+                        const auto &component=count==1?raw:raw.as_array()[i];
+                        if(floats) { const auto f=scalar(component,-std::numeric_limits<float>::max(),std::numeric_limits<float>::max());std::memcpy(&parameter.words[i],&f,4); }
+                        else parameter.words[i]=integer(component,signedValues?-2147483648.0:0.0,signedValues?2147483647.0:4294967295.0);
+                    }
+                }
+                shader.parameters.push_back(std::move(parameter));
+            }
+            String error;
+            if(!validateCookedMaterialShaderRecipe(shader,error))throw std::runtime_error(error.c_str());
+            return shader;
+        }
+
+        CookedMaterialData readMaterialRecipe( const resource::CompileContext &context, Array<String> *shaderSources=nullptr )
         {
             const auto descriptor = readDescriptor(
                 context, { "version", "baseColour", "metalness", "roughness", "baseColourTexture" },
-                { "normalTexture", "ormTexture" } );
+                { "normalTexture", "ormTexture", "shader" } );
             CookedMaterialData recipe;
             const auto &colour = descriptor.at( "baseColour" );
             require( colour.is_array() && colour.as_array().size() == 4,
@@ -252,6 +321,7 @@ namespace workphone::render
             };
             optionalTexture( "normalTexture", recipe.normalTexture );
             optionalTexture( "ormTexture", recipe.ormTexture );
+            if(descriptor.contains("shader"))recipe.shader=readShaderRecipe(context,descriptor.at("shader"),shaderSources);
             recipe.target = context.target;
             recipe.packagedBuild = context.packagedBuild;
             return recipe;
@@ -426,10 +496,18 @@ namespace workphone::render
         CookedMaterialData compileMaterial( const resource::CompileContext &context )
         {
             auto data = readMaterialRecipe( context );
+            struct CachedPin { resource::ResourceID id;u64 source,payload,compiler;TextureMipFilter filter; };
+            Array<CachedPin> pinnedTextures;
             const auto pin = [&]( const resource::ResourceID &id, MaterialTextureSlot slot,
                                   u64 &sourceHash, u64 &payloadHash, u64 &compilerVersion ) {
                 AssetCatalogPath compiledPath;
                 String error;
+                for(const auto &cached:pinnedTextures)if(cached.id==id)
+                {
+                    CookedTextureData semantic;semantic.target=context.target;semantic.mipSettings.filter=cached.filter;
+                    if(!validateMaterialTextureSemantic(semantic,slot,error))throw std::runtime_error(error.c_str());
+                    sourceHash=cached.source;payloadHash=cached.payload;compilerVersion=cached.compiler;return;
+                }
                 const auto pinned = context.dependencyArtifacts.find( id.str() );
                 if( pinned == context.dependencyArtifacts.end() )
                     throw std::runtime_error( "Material compiler requires a pinned texture artifact" );
@@ -451,6 +529,7 @@ namespace workphone::render
                 sourceHash = dependency.header.sourceHash;
                 payloadHash = dependency.header.payloadHash;
                 compilerVersion = dependency.header.compilerVersion;
+                pinnedTextures.push_back({id,sourceHash,payloadHash,compilerVersion,texture.mipSettings.filter});
             };
             pin( data.textureId, MaterialTextureSlot::BaseColour, data.textureSourceHash,
                  data.texturePayloadHash, data.textureCompilerVersion );
@@ -458,6 +537,23 @@ namespace workphone::render
             {
                 auto &ref = slot == MaterialTextureSlot::Normal ? data.normalTexture : data.ormTexture;
                 if( ref.id.isValid() ) pin( ref.id, slot, ref.sourceHash, ref.payloadHash, ref.compilerVersion );
+            }
+            for(auto &p:data.shader.parameters)if(p.type==MaterialShaderParameterType::Texture)
+                pin(p.texture.id,MaterialTextureSlot::BaseColour,p.texture.sourceHash,p.texture.payloadHash,p.texture.compilerVersion);
+            if(data.shader.present())
+            {
+                std::unique_ptr<wp_shader_program,decltype(&wp_shader_program_destroy)> definition(wp_shader_program_create(),&wp_shader_program_destroy);
+                MaterialShaderParametersInstance values;String error;
+                if(!populateCookedMaterialShader(data.shader,values,definition.get(),error))throw std::runtime_error(error.c_str());
+                for(size_t stage=0;stage<2;++stage)
+                {
+                    const auto &code=stage==0?data.shader.vertexDXBC:data.shader.pixelDXBC;
+                    const auto &selection=stage==0?data.shader.vertexSelection:data.shader.pixelSelection;
+                    if(code.empty())continue;
+                    if(!CreateDX11MaterialProgramBindingMap(values.GetLayout(),definition.get(),1,
+                        stage==0?WORKPHONE_SHADER_TYPE_VERTEX:WORKPHONE_SHADER_TYPE_PIXEL,code.data(),code.size(),error,&selection))
+                        throw std::runtime_error(error.c_str());
+                }
             }
             return data;
         }
@@ -551,7 +647,7 @@ namespace workphone::render
     Array<resource::CompilerOutput> GraphicsResourceCompiler::outputs() const
     {
         return { { resource::ResourceTypeID( "texres" ), 2 },
-                 { resource::ResourceTypeID( "matres" ), 3 } };
+                 { resource::ResourceTypeID( "matres" ), 4 } };
     }
 
     bool GraphicsResourceCompiler::getDependencies( const resource::CompileContext &context,
@@ -572,7 +668,9 @@ namespace workphone::render
             }
             else if( context.resourceId.type() == resource::ResourceTypeID( "matres" ) )
             {
-                const auto recipe = readMaterialRecipe( context );
+                Array<String> shaderSources;
+                const auto recipe = readMaterialRecipe( context, &shaderSources );
+                for(const auto &source:shaderSources)dependencies.compileDependencies.push_back(resource::CompileDependency::data(source));
                 dependencies.compileDependencies.push_back(
                     resource::CompileDependency::resource( recipe.textureId ) );
                 dependencies.installDependencies.push_back( recipe.textureId );
@@ -583,6 +681,9 @@ namespace workphone::render
                     dependencies.compileDependencies.push_back( resource::CompileDependency::resource( ref.id ) );
                     dependencies.installDependencies.push_back( ref.id );
                 }
+                for(const auto &p:recipe.shader.parameters)
+                    if(p.type==MaterialShaderParameterType::Texture && std::find(dependencies.installDependencies.begin(),dependencies.installDependencies.end(),p.texture.id)==dependencies.installDependencies.end())
+                    { dependencies.compileDependencies.push_back(resource::CompileDependency::resource(p.texture.id));dependencies.installDependencies.push_back(p.texture.id); }
             }
             else
             {

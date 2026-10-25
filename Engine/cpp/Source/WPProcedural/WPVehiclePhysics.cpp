@@ -129,6 +129,50 @@ namespace workphone
                 }
             }
 
+            VehicleMassProperties calculateMassProperties( const VehiclePhysicsConfig &c )
+            {
+                VehicleMassProperties mass;
+                for( const auto &element : c.massElements )
+                {
+                    mass.massKg += element.massKg;
+                    mass.centreOfMass.x += element.massKg * element.centre.x;
+                    mass.centreOfMass.y += element.massKg * element.centre.y;
+                    mass.centreOfMass.z += element.massKg * element.centre.z;
+                }
+                if( mass.massKg > 0.0 )
+                {
+                    mass.centreOfMass.x /= mass.massKg;
+                    mass.centreOfMass.y /= mass.massKg;
+                    mass.centreOfMass.z /= mass.massKg;
+                }
+
+                for( const auto &e : c.massElements )
+                {
+                    const double dx = e.centre.x - mass.centreOfMass.x;
+                    const double dy = e.centre.y - mass.centreOfMass.y;
+                    const double dz = e.centre.z - mass.centreOfMass.z;
+                    const double localX =
+                        e.massKg * ( sqr( e.dimensions.y ) + sqr( e.dimensions.z ) ) / 12.0;
+                    const double localY =
+                        e.massKg * ( sqr( e.dimensions.x ) + sqr( e.dimensions.z ) ) / 12.0;
+                    const double localZ =
+                        e.massKg * ( sqr( e.dimensions.x ) + sqr( e.dimensions.y ) ) / 12.0;
+                    mass.inertia.xx += localX + e.massKg * ( dy * dy + dz * dz );
+                    mass.inertia.yy += localY + e.massKg * ( dx * dx + dz * dz );
+                    mass.inertia.zz += localZ + e.massKg * ( dx * dx + dy * dy );
+                    mass.inertia.xy -= e.massKg * dx * dy;
+                    mass.inertia.xz -= e.massKg * dx * dz;
+                    mass.inertia.yz -= e.massKg * dy * dz;
+                }
+
+                const double frontZ = 0.5 * ( c.wheels[0].hubPosition.z + c.wheels[1].hubPosition.z );
+                const double rearZ = 0.5 * ( c.wheels[2].hubPosition.z + c.wheels[3].hubPosition.z );
+                const double axleSpan = rearZ - frontZ;
+                mass.frontStaticWeightFraction =
+                    axleSpan > 0.0 ? clamp( ( rearZ - mass.centreOfMass.z ) / axleSpan, 0.0, 1.0 ) : 0.5;
+                return mass;
+            }
+
             void addError( VehiclePhysicsValidation &result, SourceBudgetStdString text )
             {
                 result.errors.push_back( std::move( text ) );
@@ -321,46 +365,7 @@ namespace workphone
 
         void WPVehiclePhysics::recomputeDerivedProperties( VehiclePhysicsConfig &c )
         {
-            VehicleMassProperties mass;
-            for( const auto &element : c.massElements )
-            {
-                mass.massKg += element.massKg;
-                mass.centreOfMass.x += element.massKg * element.centre.x;
-                mass.centreOfMass.y += element.massKg * element.centre.y;
-                mass.centreOfMass.z += element.massKg * element.centre.z;
-            }
-            if( mass.massKg > 0.0 )
-            {
-                mass.centreOfMass.x /= mass.massKg;
-                mass.centreOfMass.y /= mass.massKg;
-                mass.centreOfMass.z /= mass.massKg;
-            }
-
-            for( const auto &e : c.massElements )
-            {
-                const double dx = e.centre.x - mass.centreOfMass.x;
-                const double dy = e.centre.y - mass.centreOfMass.y;
-                const double dz = e.centre.z - mass.centreOfMass.z;
-                const double localX =
-                    e.massKg * ( sqr( e.dimensions.y ) + sqr( e.dimensions.z ) ) / 12.0;
-                const double localY =
-                    e.massKg * ( sqr( e.dimensions.x ) + sqr( e.dimensions.z ) ) / 12.0;
-                const double localZ =
-                    e.massKg * ( sqr( e.dimensions.x ) + sqr( e.dimensions.y ) ) / 12.0;
-                mass.inertia.xx += localX + e.massKg * ( dy * dy + dz * dz );
-                mass.inertia.yy += localY + e.massKg * ( dx * dx + dz * dz );
-                mass.inertia.zz += localZ + e.massKg * ( dx * dx + dy * dy );
-                mass.inertia.xy -= e.massKg * dx * dy;
-                mass.inertia.xz -= e.massKg * dx * dz;
-                mass.inertia.yz -= e.massKg * dy * dz;
-            }
-
-            const double frontZ = 0.5 * ( c.wheels[0].hubPosition.z + c.wheels[1].hubPosition.z );
-            const double rearZ = 0.5 * ( c.wheels[2].hubPosition.z + c.wheels[3].hubPosition.z );
-            const double axleSpan = rearZ - frontZ;
-            mass.frontStaticWeightFraction =
-                axleSpan > 0.0 ? clamp( ( rearZ - mass.centreOfMass.z ) / axleSpan, 0.0, 1.0 ) : 0.5;
-            c.massProperties = mass;
+            c.massProperties = calculateMassProperties( c );
             if( c.preset != VehiclePhysicsPreset::HelicopterLittleBird &&
                 c.preset != VehiclePhysicsPreset::Warbird )
             {
@@ -424,15 +429,14 @@ namespace workphone
                 }
             }
 
-            VehiclePhysicsConfig derived = c;
-            recomputeDerivedProperties( derived );
-            const double massTolerance = std::max( 0.001, derived.massProperties.massKg * 1.0e-6 );
-            if( std::abs( derived.massProperties.massKg - c.massProperties.massKg ) > massTolerance ||
-                std::abs( derived.massProperties.centreOfMass.x - c.massProperties.centreOfMass.x ) >
+            const auto derived = calculateMassProperties( c );
+            const double massTolerance = std::max( 0.001, derived.massKg * 1.0e-6 );
+            if( std::abs( derived.massKg - c.massProperties.massKg ) > massTolerance ||
+                std::abs( derived.centreOfMass.x - c.massProperties.centreOfMass.x ) >
                     1.0e-6 ||
-                std::abs( derived.massProperties.centreOfMass.y - c.massProperties.centreOfMass.y ) >
+                std::abs( derived.centreOfMass.y - c.massProperties.centreOfMass.y ) >
                     1.0e-6 ||
-                std::abs( derived.massProperties.centreOfMass.z - c.massProperties.centreOfMass.z ) >
+                std::abs( derived.centreOfMass.z - c.massProperties.centreOfMass.z ) >
                     1.0e-6 )
             {
                 addError( result, "derived mass properties are stale; call recomputeDerivedProperties" );

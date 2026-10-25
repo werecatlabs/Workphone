@@ -17,6 +17,8 @@
 #include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
 #include <Workphone/Scene/Components/CityRoadFootways.hpp>
 #include <Workphone/Scene/Components/CollisionMesh.hpp>
+#include <Workphone/Scene/Components/Collision.hpp>
+#include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
@@ -2887,6 +2889,88 @@ namespace workphone::scene::race
         return result;
     }
 
+    // Private module entry point shared with ProceduralRaceScene.cpp. Activation
+    // is deferred while a saved scene is reconstructing its actor hierarchy.
+    bool activateGeneratedScene( const SceneAssets &assets, SmartPtr<scene::IGameActor> owner, String &error )
+    {
+        error.clear();
+        auto app=core::IApplicationManager::instancePtr();auto manager=app?app->getGameManager():nullptr;
+        auto currentScene=manager?manager->getCurrentScene():nullptr;
+        if(!owner || !currentScene){error="Generated scene activation has no owner/current scene.";return false;}
+        if(currentScene->getSceneLoadingState()!=scene::IGameScene::SceneLoadingState::Loaded ||
+           !Thread::getTaskFlag(Thread::Application_Flag))return false;
+        try
+        {
+            // Children are not scene roots: Lua reparents generated scenery and
+            // the Sample attaches render children before adding its car actor.
+            // Require a live scene-owned ancestor, rather than hierarchy-enabled
+            // alone (which also accepts removed, still-loaded actors).
+            const auto inCurrentHierarchy=[&](SmartPtr<scene::IGameActor> candidate) {
+                bool anchored=false;size_t depth=0;
+                for(;candidate && depth<1024;candidate=candidate->getParent(),++depth)
+                {
+                    if(!candidate->isLoaded())return false;
+                    const auto candidateScene=candidate->getScene();
+                    if(candidateScene && candidateScene!=currentScene)return false;
+                    anchored|=candidateScene==currentScene && candidate->getFlag(scene::IGameActor::ActorFlagInScene);
+                }
+                return !candidate && anchored;
+            };
+            // Initial Sample construction and scene restoration can precede
+            // attaching the owner. Leave readiness false until that boundary.
+            if(!inCurrentHierarchy(owner))return false;
+            SourceBudgetVector<SmartPtr<scene::IGameActor>> cohort;
+            cohort.reserve(assets.actors.size()+2);
+            // Persistent anchors live outside assets.actors and must also have
+            // completed lifecycle activation after an explicit terrain rebind.
+            const auto terrainActor=assets.roadTerrain?assets.roadTerrain->getActor():nullptr;
+            const auto sourceActor=assets.roadAuthoring?assets.roadAuthoring->getActor():nullptr;
+            if(terrainActor)cohort.push_back(terrainActor);
+            if(sourceActor && sourceActor!=terrainActor)cohort.push_back(sourceActor);
+            for(const auto &generated:assets.actors)
+                if(generated && generated!=terrainActor && generated!=sourceActor)cohort.push_back(generated);
+            for(const auto &generated:cohort)
+                if(!inCurrentHierarchy(generated))throw std::runtime_error("Generated actor is detached from the current scene: "+generated->getName());
+            const auto actorState=app->isPlaying()?scene::IGameActor::State::Play:scene::IGameActor::State::Edit;
+            const auto componentState=app->isPlaying()?scene::IComponent::State::Play:scene::IComponent::State::Edit;
+            SourceBudgetVector<SmartPtr<scene::IGameActor>> ancestors;ancestors.reserve(16);
+            // Resolve parent poses directly before a Rigidbody Enter event can
+            // create native contacts. Do not pump unrelated scene updates.
+            for(const auto &generated:cohort)
+            {
+                ancestors.clear();auto parent=generated;
+                while(parent && ancestors.size()<1024){ancestors.push_back(parent);parent=parent->getParent();}
+                if(parent)throw std::runtime_error("Generated scene activation found an invalid hierarchy depth/cycle.");
+                for(auto it=ancestors.rbegin();it!=ancestors.rend();++it)if(auto transform=(*it)->getTransform())transform->update();
+            }
+            for(auto generated:cohort)
+            {
+                if(!generated->isLoaded())throw std::runtime_error("Generated actor is not loaded: "+generated->getName());
+                generated->setState(actorState,true);
+                // Same-state actors can still contain newly added components.
+                for(auto component:generated->getComponents())if(component && component->isLoaded())component->setState(componentState);
+                generated->updateTransform();
+                if(generated->getState()!=actorState)throw std::runtime_error("Generated actor lifecycle activation is deferred: "+generated->getName());
+            }
+            auto physicsManager=app->getPhysicsManager();auto physics=physicsManager?physicsManager->getPhysicsScene():nullptr;
+            if(!physics)throw std::runtime_error("Generated scene activation requires a native physics scene.");
+            for(const auto &generated:cohort)if(generated->isEnabledInScene())
+            {
+                auto collision=generated->getComponent<scene::Collision>();if(!collision || !collision->isEnabled())continue;
+                auto rigidbody=generated->getComponent<scene::Rigidbody>();auto body=rigidbody?rigidbody->getRigidStatic():nullptr;
+                if(!generated->isStatic() || !rigidbody || !body || !collision->getShape() || !collision->getShape()->isAttached() ||
+                   body->getScene()!=physics || body->getNumShapes()==0 || rigidbody->getState()!=componentState || collision->getState()!=componentState)
+                    throw std::runtime_error("Generated static collision publication is incomplete: "+generated->getName());
+                const auto expected=generated->getWorldTransform(),actual=body->getTransform();
+                if((expected.getPosition()-actual.getPosition()).length()>.001f ||
+                   (expected.getOrientation()*Vector3F::unitX()-actual.getOrientation()*Vector3F::unitX()).length()>.001f)
+                    throw std::runtime_error("Generated static collision pose is stale: "+generated->getName());
+            }
+            return true;
+        }
+        catch(const std::exception &failure){error=failure.what();return false;}
+    }
+
     void buildScene( SceneAssets &assets, SmartPtr<scene::IGameActor> actor, u32 seed,
                      VehicleAppearanceQuality quality )
     {
@@ -2945,6 +3029,8 @@ namespace workphone::scene::race
             }
         }
 
+        String activationError;
+        if(!activateGeneratedScene(assets,actor,activationError) && !activationError.empty())throw std::runtime_error(activationError.c_str());
         const auto generationMs =
             std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - started )
                 .count();

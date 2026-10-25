@@ -1,4 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
+#include <WPGraphics/ClawMaterial.hpp>
+#include <WPGraphics/MaterialProgramReloadDX11.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <stdexcept>
 #include "workphone_graphics_cull_job.h"
@@ -868,6 +870,12 @@ namespace workphone
                 }
 
                 materialUpdates.commit(); // Publish before immutable scene-job capture.
+                if(auto renderer=dynamic_pointer_cast<ClawRendererDX11>(getRenderer()))
+                {
+                    ClawMaterial::processRuntimeShaderReloads(*renderer);
+                    MaterialProgramReloadDX11::UpdateAll();
+                    ClawMaterial::processRuntimeShaderReloads(*renderer);
+                }
                 prepareFramePasses( deltaTime );
                 if( !wp_graphics_system_set_delta_time( m_sys, deltaTime ) )
                 {

@@ -78,9 +78,19 @@ namespace workphone
             bool wrecked = false;
         };
 
-        struct WPCore_API VehicleDamageValidation
+        struct WPCore_API VehicleDamageValidation : SourceBudgetObject
         {
-            std::vector<std::string> errors;
+            SourceBudgetVector<SourceBudgetStdString> errors;
+            VehicleDamageValidation() = default;
+            VehicleDamageValidation( const VehicleDamageValidation & ) = default;
+            VehicleDamageValidation( VehicleDamageValidation && ) noexcept = default;
+            VehicleDamageValidation &operator=( VehicleDamageValidation && ) noexcept = default;
+            VehicleDamageValidation &operator=( const VehicleDamageValidation &other )
+            {
+                if( this != &other ) { VehicleDamageValidation candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleDamageValidation &other ) noexcept { errors.swap( other.errors ); }
             bool isValid() const noexcept
             {
                 return errors.empty();

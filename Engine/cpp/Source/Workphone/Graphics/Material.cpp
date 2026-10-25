@@ -31,6 +31,8 @@
 #include <vector>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 
 namespace workphone::render
 {
@@ -3257,6 +3259,297 @@ namespace workphone::render
                 setTexture( path, binding.layer );
             }
         }
+    }
+
+    struct MaterialShaderParametersInstance::Migration::Data
+    {
+        StreamBudget budget = reserveSourceBudgetBytes(sizeof(Data)+sizeof(Migration));
+        MaterialShaderParametersInstance *target = nullptr;
+        MaterialShaderParametersInstance values;
+        MaterialShaderParameterLayout::Ptr expectedLayout;
+        u64 expectedRevision = 0, graphRevision = 0;
+        Material *owner = nullptr;
+        Material::ShaderWorkflow workflow = Material::ShaderWorkflow::Legacy;
+        SourceBudgetString shaderID;
+        bool hadAuthoring = false, dirty = false, committed = false;
+        u8 pending = 0;
+        bool hadFallback = false, replaceFallback = false;
+        Material::LegacySurfaceData beforeFallback;
+        SourceBudgetUnique<Material::LegacySurfaceData> fallback;
+        struct Pass
+        {
+            SmartPtr<IState> source;
+            SmartPtr<MaterialPassStateData> state;
+            MaterialRenderState::Ptr before, after;
+            std::array<u32,66> beforeNumeric{}; // 64 presence bits plus the mask.
+            size_t numericCount = 0;
+            bool replaceNumeric = false;
+            SourceBudgetUniqueArray<u32> numeric;
+        };
+        SourceBudgetArray<Pass> passes;
+    };
+
+    MaterialShaderParametersInstance::Migration::Migration() : m_data(new Data) {}
+    MaterialShaderParametersInstance::Migration::~Migration() = default;
+    const MaterialShaderParametersInstance &MaterialShaderParametersInstance::Migration::Values() const
+    { return m_data->values; }
+
+    bool MaterialShaderParametersInstance::Migration::IsCurrent() const noexcept
+    {
+        const auto &data = *m_data;
+        if(data.committed || !data.target || data.target->m_owner != data.owner ||
+            data.target->GetLayout() != data.expectedLayout || data.target->GetRevision() != data.expectedRevision)
+            return false;
+        const auto sameFallback = [](const Material::LegacySurfaceData &a,const Material::LegacySurfaceData &b) {
+            return a.mask == b.mask && std::memcmp(&a.opacity,&b.opacity,sizeof(f32)) == 0 &&
+                std::memcmp(&a.metalness,&b.metalness,sizeof(f32)) == 0 &&
+                std::memcmp(&a.roughness,&b.roughness,sizeof(f32)) == 0;
+        };
+        if(data.owner)
+        {
+            const auto &owner = *data.owner;
+            if(owner.m_graphRevision.load(std::memory_order_acquire) != data.graphRevision ||
+                owner.m_shaderWorkflow != data.workflow || owner.m_shaderParameterEditDepth || owner.m_batchActive ||
+                owner.m_synchronizingShaderParameters || MaterialPublicationScope::isActive() ||
+                owner.m_pendingShaderSemantics != data.pending || owner.m_shaderParametersDirty != data.dirty ||
+                bool(owner.m_shaderAuthoring) != data.hadAuthoring ||
+                (owner.m_shaderAuthoring && owner.m_shaderAuthoring->shaderID != data.shaderID) ||
+                bool(owner.m_legacySurface) != data.hadFallback ||
+                (owner.m_legacySurface && !sameFallback(*owner.m_legacySurface,data.beforeFallback))) return false;
+        }
+        for(const auto &pass : data.passes)
+        {
+            if(pass.source->getData().get() != pass.state.get() || pass.state->m_writeDepth || pass.state->m_pendingSurface ||
+                pass.state->getRenderState() != pass.before ||
+                pass.state->getNumericAuthoringStorageBytes()/sizeof(u32) != pass.numericCount ||
+                (pass.numericCount && std::memcmp(pass.state->m_numericAuthoring.get(),pass.beforeNumeric.data(),
+                    pass.numericCount*sizeof(u32)) != 0)) return false;
+        }
+        return true;
+    }
+
+    bool MaterialShaderParametersInstance::Migration::Commit() noexcept
+    {
+        if(!IsCurrent()) return false;
+        auto &data = *m_data;
+        data.target->m_layout.swap(data.values.m_layout);
+        data.target->m_parametersMemory.swap(data.values.m_parametersMemory);
+        data.target->m_revision = data.expectedRevision+1;
+        if(data.owner)
+        {
+            if(data.replaceFallback) data.owner->m_legacySurface.swap(data.fallback);
+            data.owner->m_pendingShaderSemantics = data.passes.empty() ?
+                static_cast<u8>((1u << static_cast<u32>(MaterialBuiltinParameter::Count))-1u) : 0;
+            data.owner->m_shaderParametersDirty = data.passes.empty();
+        }
+        for(auto &pass : data.passes)
+        {
+            // Existing authoring readers borrow the resting surface/numeric
+            // data under the state lock. Keep that protection even though the
+            // replacement itself was allocated before this commit boundary.
+            pass.state->StateData::lock();
+            if(pass.replaceNumeric) pass.state->m_numericAuthoring.swap(pass.numeric);
+            std::atomic_store(&pass.state->m_renderState,pass.after);
+            pass.state->StateData::unlock();
+        }
+        data.committed = true;
+        return true;
+    }
+
+    bool MaterialShaderParametersInstance::IsMigrationReady() const noexcept
+    {
+        if(!m_owner) return true;
+        if(m_owner->m_shaderParameterEditDepth || m_owner->m_batchActive || m_owner->m_synchronizingShaderParameters ||
+            MaterialPublicationScope::isActive()) return false;
+        try
+        {
+            // Indexed reads avoid the allocated getTechniques/getPasses snapshots
+            // used by the actual staging walk. All graph writes are owner-thread.
+            for(u32 i = 0; i < m_owner->m_techniques.size(); ++i)
+            {
+                const auto technique = m_owner->m_techniques[i];
+                if(!technique) continue;
+                for(u32 j = 0; j < technique->getNumPasses(); ++j)
+                {
+                    const auto pass = technique->getPass(j);
+                    if(!pass) continue;
+                    if(pass->getMaterial().get() != m_owner) return false;
+                    const auto context = pass->getStateContext();
+                    const auto source = context ? context->getStateById(pass->getId()) : nullptr;
+                    auto data = source ? source->getData() : nullptr;
+                    if(!data) continue;
+                    if(!data->isDerived<MaterialPassStateData>()) return false;
+                    const auto state = static_pointer_cast<MaterialPassStateData>(data);
+                    if(state->m_writeDepth || state->m_pendingSurface) return false;
+                }
+            }
+            return true;
+        }
+        catch(...) { return false; }
+    }
+
+    MaterialShaderParametersInstance::MigrationPtr MaterialShaderParametersInstance::PrepareMigration(
+        MaterialShaderParameterLayout::Ptr layout)
+    {
+        if(!layout) throw std::invalid_argument("Shader migration requires a valid replacement layout");
+        if(m_revision == std::numeric_limits<u64>::max()) throw std::overflow_error("Shader parameter revision exhausted");
+        if(!IsMigrationReady())
+            throw std::runtime_error("End material edit/publication scopes before shader migration");
+        MigrationPtr result(new Migration);
+        auto &data = *result->m_data;
+        data.target = this; data.owner = m_owner;
+        data.expectedLayout = m_layout; data.expectedRevision = m_revision;
+        data.values.Reset(layout);
+        const auto &memory = GetParameterMemory();
+        for(u32 i = 0; i < layout->GetParameterInfo().size(); ++i)
+        {
+            const auto &info = layout->GetParameterInfo()[i];
+            const auto previous = m_layout ? m_layout->FindParameter(info.m_name) : MaterialShaderParameterHandle{};
+            if(previous.IsValid() && GetParameterInfo()[previous.m_parameterIndex].m_type == info.m_type)
+                data.values.WriteBytes(layout->GetParameter(i),memory.data()+previous.m_offsetInBytes,
+                    info.m_strideInBytes,info.m_type);
+        }
+        if(m_owner)
+        {
+            auto &owner = *m_owner;
+            data.workflow = owner.m_shaderWorkflow;
+            data.graphRevision = owner.m_graphRevision.load(std::memory_order_acquire);
+            data.pending = owner.m_pendingShaderSemantics; data.dirty = owner.m_shaderParametersDirty;
+            data.hadAuthoring = bool(owner.m_shaderAuthoring);
+            if(owner.m_shaderAuthoring) data.shaderID = owner.m_shaderAuthoring->shaderID;
+            data.hadFallback = bool(owner.m_legacySurface);
+            if(owner.m_legacySurface) data.beforeFallback = *owner.m_legacySurface;
+            const bool active = data.workflow != Material::ShaderWorkflow::Legacy;
+            const bool pbr = data.workflow == Material::ShaderWorkflow::Pbr;
+            const bool colorOnly = data.workflow == Material::ShaderWorkflow::ColorOnly;
+            const auto valid = [](const MaterialShaderParametersInstance &values, MaterialBuiltinParameter semantic,
+                                  MaterialShaderParameterType type, u32 bytes) {
+                return values.IsHandleValid(values.GetBuiltin(semantic),type,bytes);
+            };
+            const bool nextOpacity = valid(data.values,MaterialBuiltinParameter::Opacity,MaterialShaderParameterType::Scalar,sizeof(f32));
+            const bool oldOpacity = valid(*this,MaterialBuiltinParameter::Opacity,MaterialShaderParameterType::Scalar,sizeof(f32));
+            f32 opacity = 1;
+            bool opacityTransfer = false;
+            if(active && nextOpacity != oldOpacity && shaderOwnsSurfaceScalar(layout,active,pbr,MaterialBuiltinParameter::Opacity) &&
+                readShaderSurfaceScalar(*this,pbr,MaterialBuiltinParameter::Opacity,opacity))
+            {
+                opacityTransfer = true;
+                if(nextOpacity) data.values.SetScalar(data.values.GetBuiltin(MaterialBuiltinParameter::Opacity),opacity);
+                else
+                {
+                    auto colour = data.values.GetColour(data.values.GetBuiltin(MaterialBuiltinParameter::Albedo));
+                    colour.a = opacity;
+                    data.values.SetColour(data.values.GetBuiltin(MaterialBuiltinParameter::Albedo),colour);
+                }
+            }
+            auto fallback = data.beforeFallback;
+            if(auto handoff = owner.prepareShaderSurfaceHandoff(layout)) fallback = *handoff;
+            for(const auto semantic : {MaterialBuiltinParameter::Metalness,MaterialBuiltinParameter::Roughness,MaterialBuiltinParameter::Opacity})
+                if(shaderOwnsSurfaceScalar(layout,active,pbr,semantic)) fallback.mask &= static_cast<u8>(~legacySurfaceMask(semantic));
+            const auto equal = [](const Material::LegacySurfaceData &a,const Material::LegacySurfaceData &b) {
+                return a.mask == b.mask && std::memcmp(&a.opacity,&b.opacity,sizeof(f32)) == 0 &&
+                    std::memcmp(&a.metalness,&b.metalness,sizeof(f32)) == 0 &&
+                    std::memcmp(&a.roughness,&b.roughness,sizeof(f32)) == 0;
+            };
+            data.replaceFallback = bool(fallback.mask) != data.hadFallback ||
+                (fallback.mask && !equal(fallback,data.beforeFallback));
+            if(data.replaceFallback && fallback.mask) data.fallback = makeSourceBudgetUnique<Material::LegacySurfaceData>(fallback);
+            const bool force = data.dirty && !data.pending;
+            const auto changed = [&](MaterialBuiltinParameter semantic,MaterialShaderParameterType type,u32 bytes) {
+                const auto next = data.values.GetBuiltin(semantic);
+                if(!data.values.IsHandleValid(next,type,bytes)) return false;
+                const auto old = GetBuiltin(semantic);
+                return force || (data.pending & (1u << static_cast<u32>(semantic))) || !IsHandleValid(old,type,bytes) ||
+                    std::memcmp(GetParameterMemory().data()+old.m_offsetInBytes,
+                        data.values.GetParameterMemory().data()+next.m_offsetInBytes,bytes) != 0;
+            };
+            for(auto technique : owner.getTechniques()) if(technique)
+                for(auto pass : technique->getPasses()) if(pass)
+                {
+                    const auto context = pass->getStateContext();
+                    const auto source = context ? context->getStateById(pass->getId()) : nullptr;
+                    auto raw = source ? source->getData() : nullptr;
+                    if(!raw) continue; // Unloaded passes seed from the committed owner later.
+                    if(!raw->isDerived<MaterialPassStateData>())
+                        throw std::runtime_error("Shader migration requires immutable material pass state");
+                    const auto state = static_pointer_cast<MaterialPassStateData>(raw);
+                    if(std::find_if(data.passes.begin(),data.passes.end(),[&](const Migration::Data::Pass &item) {
+                        return item.state == state; }) != data.passes.end()) continue;
+                    struct Lock
+                    {
+                        MaterialPassStateData &state;
+                        explicit Lock(MaterialPassStateData &value) : state(value) { state.StateData::lock(); }
+                        ~Lock() { state.StateData::unlock(); }
+                    } lock{*state};
+                    if(state->m_writeDepth || state->m_pendingSurface)
+                        throw std::runtime_error("End pass writes before shader migration");
+                    Migration::Data::Pass staged;
+                    staged.source = source; staged.state = state; staged.before = state->getRenderState();
+                    staged.numericCount = state->getNumericAuthoringStorageBytes()/sizeof(u32);
+                    if(staged.numericCount > staged.beforeNumeric.size()) throw std::logic_error("Material numeric mask capacity changed");
+                    if(staged.numericCount) std::memcpy(staged.beforeNumeric.data(),state->m_numericAuthoring.get(),staged.numericCount*sizeof(u32));
+                    auto surface = *staged.before; bool surfaceChanged = false;
+                    const auto assign = [&](auto &destination,const auto &value) {
+                        if(std::memcmp(&destination,&value,sizeof(value)) != 0) { destination=value; surfaceChanged=true; }
+                    };
+                    if(active)
+                    {
+                        const auto scalar = [&](MaterialBuiltinParameter semantic,f32 &destination) {
+                            if(changed(semantic,MaterialShaderParameterType::Scalar,sizeof(f32)))
+                                assign(destination,data.values.GetScalar(data.values.GetBuiltin(semantic)));
+                        };
+                        const auto colour = [&](MaterialBuiltinParameter semantic,ColourF &destination) {
+                            if(changed(semantic,MaterialShaderParameterType::Colour,sizeof(ColourF)))
+                            { assign(destination,data.values.GetColour(data.values.GetBuiltin(semantic))); return true; }
+                            return false;
+                        };
+                        if(pbr) { scalar(MaterialBuiltinParameter::Metalness,surface.metalness);
+                            scalar(MaterialBuiltinParameter::Roughness,surface.roughness); scalar(MaterialBuiltinParameter::AlphaClip,surface.alphaClip); }
+                        // Moving opacity between a scalar and Albedo alpha is
+                        // an alpha-only handoff, preserving each pass's local RGB.
+                        const bool alphaOnlyTransfer = pbr && opacityTransfer && !nextOpacity &&
+                            valid(*this,MaterialBuiltinParameter::Albedo,MaterialShaderParameterType::Colour,sizeof(ColourF)) &&
+                            valid(data.values,MaterialBuiltinParameter::Albedo,MaterialShaderParameterType::Colour,sizeof(ColourF)) &&
+                            !(data.pending & (1u << static_cast<u32>(MaterialBuiltinParameter::Albedo))) && !force;
+                        const bool diffuse = !alphaOnlyTransfer && (colorOnly || pbr) &&
+                            colour(colorOnly ? MaterialBuiltinParameter::Color : MaterialBuiltinParameter::Albedo,surface.diffuseColour);
+                        if(colorOnly && diffuse) assign(surface.emissiveColour,surface.diffuseColour);
+                        else if(!colorOnly) colour(MaterialBuiltinParameter::Emissive,surface.emissiveColour);
+                        const bool opacityChanged = diffuse || opacityTransfer || changed(MaterialBuiltinParameter::Opacity,MaterialShaderParameterType::Scalar,sizeof(f32)) ||
+                            (pbr && (data.pending & shaderAlphaOnly) && valid(data.values,MaterialBuiltinParameter::Albedo,MaterialShaderParameterType::Colour,sizeof(ColourF)));
+                        if(opacityChanged)
+                        {
+                            auto value = surface.opacity;
+                            if(nextOpacity) value = data.values.GetScalar(data.values.GetBuiltin(MaterialBuiltinParameter::Opacity));
+                            else if(pbr && valid(data.values,MaterialBuiltinParameter::Albedo,MaterialShaderParameterType::Colour,sizeof(ColourF)))
+                                value = data.values.GetColour(data.values.GetBuiltin(MaterialBuiltinParameter::Albedo)).a;
+                            value = Math<f32>::clamp(value,0.0f,1.0f);
+                            assign(surface.opacity,value); auto diffuseColour = surface.diffuseColour; diffuseColour.a=value;
+                            assign(surface.diffuseColour,diffuseColour);
+                            if(value < .999f)
+                            {
+                                assign(surface.flags,surface.flags | transparentFlag);
+                                u32 renderMode = 0; state->getUIntSetting(MaterialUIntSetting::renderMode,renderMode);
+                                if(renderMode < 2u)
+                                {
+                                    staged.numeric = state->prepareShaderRenderMode(3u); staged.replaceNumeric = true;
+                                    assign(surface.flags,surface.flags & ~cutoutFlag); assign(surface.blendMode,1u);
+                                }
+                            }
+                        }
+                    }
+                    if(surfaceChanged)
+                    {
+                        if(staged.before->revision == std::numeric_limits<u64>::max()) throw std::overflow_error("Material surface revision exhausted");
+                        auto next = std::allocate_shared<MaterialRenderState>(SourceBudgetAllocator<MaterialRenderState>{},surface);
+                        next->revision = staged.before->revision+1; staged.after = std::move(next);
+                    }
+                    else staged.after = staged.before;
+                    data.passes.push_back(std::move(staged));
+                }
+        }
+        data.values.m_revision = data.expectedRevision+1;
+        return result;
     }
 
     void Material::setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,

@@ -16,6 +16,7 @@
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <Workphone/Graphics/Texture.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <chrono>
 #include <fstream>
 #include <iterator>
@@ -26,6 +27,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <cmath>
+#include <limits>
 using namespace workphone;
 using namespace workphone::procedural;
 namespace
@@ -42,6 +44,119 @@ namespace
         auto result = factories->createObjectFromType<T>( name );
         require( static_cast<bool>( result ), "Missing default procedural service factory" );
         return result;
+    }
+    bool sameVector( const VehiclePhysicsVector3 &a, const VehiclePhysicsVector3 &b )
+    { return a.x == b.x && a.y == b.y && a.z == b.z; }
+    bool sameEffectState( const VehicleEffectsState &a, const VehicleEffectsState &b )
+    {
+        if( a.randomState != b.randomState || a.exhaustAccumulator != b.exhaustAccumulator ||
+            a.damageSmokeAccumulator != b.damageSmokeAccumulator ) return false;
+        for( size_t i = 0; i < 4; ++i )
+            if( !sameVector( a.previousContact[i], b.previousContact[i] ) ||
+                a.hasPreviousContact[i] != b.hasPreviousContact[i] ||
+                a.smokeAccumulator[i] != b.smokeAccumulator[i] || a.sprayAccumulator[i] != b.sprayAccumulator[i] ) return false;
+        return true;
+    }
+    bool sameEffect( const VehicleEffectEvent &a, const VehicleEffectEvent &b )
+    {
+        return a.type == b.type && a.wheel == b.wheel && sameVector( a.position, b.position ) &&
+            sameVector( a.endPosition, b.endPosition ) && sameVector( a.velocity, b.velocity ) &&
+            sameVector( a.linearColor, b.linearColor ) && a.intensity == b.intensity &&
+            a.sizeM == b.sizeM && a.lifetimeSeconds == b.lifetimeSeconds;
+    }
+    void checkEffectBudgetContracts( const SmartPtr<IVehicleEffects> &effects, const VehiclePhysicsConfig &physics )
+    {
+        auto scheduler = WorldStreamingScheduler::shared();
+        constexpr auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto original = scheduler->stats().limits[source];
+        struct Restore
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler;
+            u64 limit;
+            ~Restore() { String error; scheduler->setBudget( StreamMemoryClass::SourceCpu, limit, error ); }
+        } restore{ scheduler, original };
+        const auto used = [&] { return scheduler->stats().used[source]; };
+        const auto limit = [&]( u64 value ) {
+            String error; require( scheduler->setBudget( StreamMemoryClass::SourceCpu, value, error ), "Effect Source budget applies" );
+        };
+        const auto storage = []( size_t count ) { return sourceBudgetStorageBytes( count * sizeof(VehicleEffectEvent), alignof(VehicleEffectEvent) ); };
+        VehicleDynamicsState dynamics;
+        VehicleDynamicsTelemetry telemetry; telemetry.speedMps = 20;
+        for( auto &wheel : telemetry.wheels ) { wheel.grounded = true; wheel.longitudinalSlipRatio = 1; }
+        VehiclePresentationState presentation; presentation.exhaustIntensity = 1;
+        VehicleDamageTelemetry damage; damage.smoke = 1;
+        const auto initial = [&] {
+            auto value = effects->reset( 73 ); value.exhaustAccumulator = .9;
+            for( size_t i = 0; i < 4; ++i ) { value.hasPreviousContact[i] = true; value.smokeAccumulator[i] = .9; }
+            return value;
+        }();
+        VehicleEffectEvent prefix; prefix.type = VehicleEffectType::BrakeSpark; prefix.intensity = 123;
+        const auto fixtureBase = used();
+        Array<VehicleEffectEvent> expected; expected.reserve( 31 ); expected.push_back( prefix );
+        auto expectedState = initial;
+        require( effects->emit( {}, physics, dynamics, telemetry, presentation, damage, {}, .1, expectedState, expected ) &&
+                     expected.size() > 1 && expected.size() <= 31 && expected.get_allocator().isSourceBudgeted(),
+                 "Effect reference emission owns a bounded admitted generation" );
+
+        Array<VehicleEffectEvent> events; events.reserve( 31 ); events.push_back( prefix );
+        auto state = initial;
+        const auto baseline = used(); const auto capacityCost = storage( events.capacity() );
+        const auto old = events.data();
+        limit( baseline + capacityCost - 1 ); bool rejected = false;
+        try { effects->emit( {}, physics, dynamics, telemetry, presentation, damage, {}, .1, state, events ); }
+        catch( const std::bad_alloc & ) { rejected = true; }
+        require( rejected && events.data() == old && events.size() == 1 && events[0].intensity == 123 &&
+                     !events.get_allocator().isSourceBudgeted() && sameEffectState( state, initial ) && used() == baseline,
+                 "Denied foreign event canonicalization preserves caller buffer, RNG and every accumulator" );
+        limit( baseline + capacityCost );
+        require( effects->emit( {}, physics, dynamics, telemetry, presentation, damage, {}, .1, state, events ) &&
+                     events.size() == expected.size() && events.capacity() == 31 && events.get_allocator().isSourceBudgeted() &&
+                     sameEffectState( state, expectedState ) && used() == baseline + capacityCost,
+                 "Exact Source admission normalizes event spare capacity and retries the unconsumed frame" );
+        for( size_t i = 0; i < events.size(); ++i ) require( sameEffect( events[i], expected[i] ), "Retried effects preserve deterministic event values" );
+
+        events.clear(); state = initial; const auto warm = events.data();
+        limit( used() ); const auto denials = sourceBudgetDenialCount(); const auto warmUsed = used();
+        require( effects->emit( {}, physics, dynamics, telemetry, presentation, damage, {}, .1, state, events ) &&
+                     events.data() == warm && events.size() + 1 == expected.size() && sameEffectState( state, expectedState ) &&
+                     used() == warmUsed && sourceBudgetDenialCount() == denials,
+                 "Warm Source event appends reuse physical capacity at a full quota" );
+        for( size_t i = 0; i < events.size(); ++i ) require( sameEffect( events[i], expected[i + 1] ), "Warm effects match cold generation without advancing RNG twice" );
+        events.clear(); auto quietState = effects->reset( 7 ); VehicleEffectConfig quiet;
+        quiet.maximumEventsPerStep = std::numeric_limits<size_t>::max();
+        require( effects->emit( quiet, physics, dynamics, {}, {}, {}, {}, .1, quietState, events ) && events.empty() &&
+                     events.data() == warm && used() == warmUsed && sourceBudgetDenialCount() == denials,
+                 "Quiet full-cap frames allocate nothing and do not reserve arbitrary configured maxima" );
+
+        state = initial; VehicleEffectConfig large; large.maximumEventsPerStep = 200; large.smokeEventsPerSecond = 2000;
+        rejected = false;
+        try { effects->emit( large, physics, dynamics, telemetry, presentation, damage, {}, .1, state, events ); }
+        catch( const std::bad_alloc & ) { rejected = true; }
+        require( rejected && events.empty() && events.data() == warm && sameEffectState( state, initial ) && used() == warmUsed,
+                 "Actual output beyond stack staging requires Source admission before consuming caller state" );
+
+        limit( original ); auto small = makeSourceBudgetSnapshot<VehicleEffectEvent>(); small.reserve( 1 ); small.push_back( prefix );
+        state = initial; const auto smallBefore = used(); const auto smallPointer = small.data();
+        const auto finalCapacity = expected.size(); limit( smallBefore + storage( finalCapacity ) - 1 ); rejected = false;
+        try { effects->emit( {}, physics, dynamics, telemetry, presentation, damage, {}, .1, state, small ); }
+        catch( const std::bad_alloc & ) { rejected = true; }
+        require( rejected && small.data() == smallPointer && small.size() == 1 && sameEffect( small[0], prefix ) &&
+                     sameEffectState( state, initial ) && used() == smallBefore,
+                 "Denied admitted-output growth leaves previous output and simulation state unchanged" );
+        limit( smallBefore + storage( finalCapacity ) );
+        require( effects->emit( {}, physics, dynamics, telemetry, presentation, damage, {}, .1, state, small ) &&
+                     small.size() == expected.size() && sameEffectState( state, expectedState ),
+                 "Output growth retries after exact old/new overlap admission" );
+
+        limit( original ); Array<VehicleEffectEvent> many; auto manyState = initial; const auto beforeLarge = used();
+        require( effects->emit( large, physics, dynamics, telemetry, presentation, damage, {}, .1, manyState, many ) &&
+                     many.size() == 200 && many.get_allocator().isSourceBudgeted() && used() == beforeLarge + storage( many.capacity() ),
+                 "Admitted output beyond stack staging retires its separate scratch before return" );
+        limit( used() ); const auto beforeRetirement = sourceBudgetDenialCount();
+        expected = makeSourceBudgetSnapshot<VehicleEffectEvent>(); events = makeSourceBudgetSnapshot<VehicleEffectEvent>();
+        small = makeSourceBudgetSnapshot<VehicleEffectEvent>(); many = makeSourceBudgetSnapshot<VehicleEffectEvent>();
+        require( used() == fixtureBase && sourceBudgetDenialCount() == beforeRetirement,
+                 "Final effect output owners release every physical reservation at the Source cap" );
     }
 }  // namespace
 void checkClientContracts( SmartPtr<IFactoryManager> factories )
@@ -121,6 +236,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     require( effects->emit( {}, first.physics, state, telemetry, pose, damageTelemetry, {}, 1.0 / 120.0,
                             effectState, events ),
              "Effects adapter failed" );
+    checkEffectBudgetContracts( effects, first.physics );
     SurfaceBakeParams params;
     params.size = 16;
     textures->setSeed( 42 );

@@ -52,31 +52,31 @@ namespace workphone
             {
                 if( !finite( value ) )
                 {
-                    result.errors.push_back( "damage configuration contains a non-finite value" );
+                    result.errors.emplace_back( "damage configuration contains a non-finite value" );
                     return result;
                 }
             }
             if( c.minimumSeverity < 0.0 || c.minimumSeverity > 1.0 ||
                 c.wreckSeverity <= c.minimumSeverity || c.wreckSeverity > 1.0 )
             {
-                result.errors.push_back( "damage severity thresholds are inconsistent" );
+                result.errors.emplace_back( "damage severity thresholds are inconsistent" );
             }
             if( c.hitCooldownSeconds < 0.0 || c.damagePerSeverity < 0.0 || c.repairDelaySeconds < 0.0 ||
                 c.repairRatePerSecond < 0.0 || c.engineCutSeconds < 0.0 ||
                 c.wreckControlLockSeconds < 0.0 )
             {
-                result.errors.push_back( "damage times and rates cannot be negative" );
+                result.errors.emplace_back( "damage times and rates cannot be negative" );
             }
             if( c.permanentFraction < 0.0 || c.permanentFraction > 1.0 ||
                 c.maximumPermanentDamage < 0.0 || c.maximumPermanentDamage > 1.0 )
             {
-                result.errors.push_back( "permanent damage settings must be in [0,1]" );
+                result.errors.emplace_back( "permanent damage settings must be in [0,1]" );
             }
             if( c.torquePenaltyAtFullDamage < 0.0 || c.torquePenaltyAtFullDamage > 0.95 ||
                 c.gripPenaltyAtFullDamage < 0.0 || c.gripPenaltyAtFullDamage > 0.95 ||
                 c.steeringPullAtFullDamage < 0.0 || c.steeringPullAtFullDamage > 0.5 )
             {
-                result.errors.push_back( "damage penalties exceed safe limits" );
+                result.errors.emplace_back( "damage penalties exceed safe limits" );
             }
             return result;
         }
@@ -98,7 +98,7 @@ namespace workphone
             {
                 if( !finite( value ) )
                 {
-                    result.errors.push_back( "damage state contains a non-finite value" );
+                    result.errors.emplace_back( "damage state contains a non-finite value" );
                     return result;
                 }
             }
@@ -106,7 +106,7 @@ namespace workphone
                 s.permanentDamage > s.damage + 1e-9 || s.hitCooldownRemaining < 0.0 ||
                 s.engineCutRemaining < 0.0 || s.controlLockRemaining < 0.0 )
             {
-                result.errors.push_back( "damage state is outside its permitted range" );
+                result.errors.emplace_back( "damage state is outside its permitted range" );
             }
             return result;
         }

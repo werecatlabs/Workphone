@@ -28,9 +28,9 @@ namespace workphone
             }
 
             void addIssue( Array<VehicleGenerationIssue> &issues, bool error, const char *component,
-                           const std::string &message )
+                           SourceBudgetStdString message )
             {
-                issues.push_back( { error, component, message } );
+                issues.push_back( { error, component, std::move( message ) } );
             }
 
             std::uint64_t fnvBytes( std::uint64_t hash, const void *data, std::size_t size )
@@ -408,7 +408,7 @@ namespace workphone
 
         Array<VehicleGenerationIssue> WPVehicleGenerator::validate( const GeneratedVehicle &vehicle )
         {
-            Array<VehicleGenerationIssue> issues;
+            auto issues = makeSourceBudgetSnapshot<VehicleGenerationIssue>();
             const auto appearance = WPVehicleAppearance::validate( vehicle.appearance );
             for( const auto &issue : appearance.issues )
             {

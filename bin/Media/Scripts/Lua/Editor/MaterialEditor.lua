@@ -38,6 +38,7 @@ MaterialEditorTypes =
 	MaterialNameId = 112,
 	ShaderPathId = 113,
 	PresetId = 114,
+	VertexShaderPathId = 115,
 
 	RenderModeId = 120,
 	WorkflowId = 121,
@@ -142,6 +143,9 @@ MaterialEditorTypes =
 	CreateInstanceId = 708,
 	ExportJsonId = 709,
 	ImportJsonId = 710,
+	WatchShaderFilesId = 711,
+	ShaderReloadStatusId = 712,
+	ConfigureShaderFilesId = 713,
 }
 
 local MaterialEditorTextureSlots =
@@ -170,6 +174,7 @@ local MaterialEditorDefaults =
 	filePath = "None",
 	materialName = "",
 	shaderPath = "",
+	vertexShaderPath = "",
 	materialType = 0,
 	preset = 0,
 	renderMode = 0,
@@ -1008,7 +1013,8 @@ function MaterialEditor:load()
 	self.window:setDroppable(self.selectedMaterialFile, true);
 
 	self.materialNameEntry = self:addBoundEntry(ui, assetHeader, "Material Name", MaterialEditorTypes.MaterialNameId, "materialName", "setName");
-	self.shaderPathEntry = self:addBoundEntry(ui, assetHeader, "Shader", MaterialEditorTypes.ShaderPathId, "shaderPath", "setShaderPath");
+	self.shaderPathEntry = self:addBoundEntry(ui, assetHeader, "Pixel Shader File", MaterialEditorTypes.ShaderPathId, "shaderPath", nil);
+	self.vertexShaderPathEntry = self:addBoundEntry(ui, assetHeader, "Vertex Shader File (optional)", MaterialEditorTypes.VertexShaderPathId, "vertexShaderPath", nil);
 
 	self.selectedMaterial = self:addBoundDropdown(ui, assetHeader, "Workflow Type", MaterialEditorTypes.MaterialTypeId, "materialType",
 		MaterialTypeOptions, "setMaterialType");
@@ -1249,6 +1255,14 @@ function MaterialEditor:load()
 	self.applyButton = addButton(ui, actionsHeader, "Apply", MaterialEditorTypes.ApplyId, false);
 	self.saveButton = addButton(ui, actionsHeader, "Save", MaterialEditorTypes.SaveId, true);
 	self.reloadShaderButton = addButton(ui, actionsHeader, "Reload Shader", MaterialEditorTypes.ReloadShaderId, true);
+	self.configureShaderFilesButton = addButton(ui, actionsHeader, "Use Shader Files", MaterialEditorTypes.ConfigureShaderFilesId, false);
+	self.shaderWatchToggle = addToggle(ui, actionsHeader, "Watch Shader Files", MaterialEditorTypes.WatchShaderFilesId, false);
+	self.shaderReloadStatusButton = addButton(ui, actionsHeader, "Refresh Shader Status", MaterialEditorTypes.ShaderReloadStatusId, false);
+	self.shaderReloadStatusText = addText(ui, actionsHeader, "Select a material to configure shader files.");
+	self:registerControl(self.configureShaderFilesButton, "configureShaderFiles", "button", nil);
+	-- A runtime control: it is queued explicitly and is not reapplied by Save.
+	self:registerControl(self.shaderWatchToggle, "shaderWatch", "runtime", nil);
+	self:registerControl(self.shaderReloadStatusButton, "shaderReloadStatus", "button", nil);
 	self.validateButton = addButton(ui, actionsHeader, "Validate", MaterialEditorTypes.ValidateId, false);
 	self.exportJsonButton = addButton(ui, actionsHeader, "Export JSON", MaterialEditorTypes.ExportJsonId, true);
 	self.importJsonButton = addButton(ui, actionsHeader, "Import JSON", MaterialEditorTypes.ImportJsonId, true);
@@ -1327,6 +1341,7 @@ function MaterialEditor:updateSelection()
 	self.material = nil;
 	self.materialComponent = nil;
 	self.materialSettings = copyTable(MaterialEditorDefaults);
+	self._shaderPathsDirty = false;
 
 	if self.selectedMaterialFile then
 		self.selectedMaterialFile:setText("None");
@@ -1441,6 +1456,7 @@ function MaterialEditor:updateSelectedMaterial()
 	end
 
 	self:syncToControls();
+	self:refreshShaderReloadStatus();
 end
 
 function MaterialEditor:syncDerivedSettingsFromMaterial()
@@ -1540,6 +1556,9 @@ end
 function MaterialEditor:applySettingToMaterial(binding, value)
 	if self.material == nil or binding == nil then
 		return;
+	end
+	if binding.key == "shaderPath" or binding.key == "vertexShaderPath" then
+		self._shaderPathsDirty = true;
 	end
 
 	self:storeEditorSetting(binding.key, value, binding.valueType);
@@ -1843,14 +1862,117 @@ function MaterialEditor:validateMaterial()
 	end
 end
 
+-- The native bridge queues graphics-thread work and returns a published
+-- status snapshot. Reading this panel never compiles or updates a shader.
+function MaterialEditor:setShaderReloadMessage(message)
+	self.shaderReloadMessage = message or "";
+	if self.shaderReloadStatusText then self.shaderReloadStatusText:setText(self.shaderReloadMessage); end
+end
+
+function MaterialEditor:performShaderReloadAction(action, watching)
+	if self.material == nil then
+		self._shaderReloadAvailable = false;
+		self._shaderReloadPending = false;
+		self:setShaderReloadMessage("Select a material before configuring shader reloads.");
+		safeCall(self.shaderWatchToggle, "setEnabled", false, false);
+		safeCall(self.reloadShaderButton, "setEnabled", false, false);
+		safeCall(self.configureShaderFilesButton, "setEnabled", false, false);
+		return false;
+	end
+	local ok, request = pcall(function()
+		local app = IApplicationManager.instance();
+		if app == nil or self.window == nil then error("Shader reload service is unavailable."); end
+		local properties = app:getFactoryManager():make_object("Properties");
+		if properties == nil then error("Could not create the shader reload request."); end
+		properties:setPropertyAsString("action", action);
+		if action == "setWatching" then properties:setPropertyAsBool("watching", watching == true); end
+		if action == "configureFiles" then
+			local pixel = self.materialSettings.shaderPath or "";
+			local vertex = self.materialSettings.vertexShaderPath or "";
+			local readPixel, pixelValue = safeCall(self.shaderPathEntry, "getText");
+			local readVertex, vertexValue = safeCall(self.vertexShaderPathEntry, "getText");
+			if readPixel and pixelValue ~= nil then pixel = pixelValue; end
+			if readVertex and vertexValue ~= nil then vertex = vertexValue; end
+			properties:setPropertyAsString("pixelFile", pixel);
+			properties:setPropertyAsString("vertexFile", vertex);
+		end
+		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("materialShaderReloadAction"),
+			Parameters(), self.material, properties, nil);
+		return properties;
+	end);
+	if not ok then
+		self:setShaderReloadMessage("Shader reload failed: "..tostring(request));
+		return false;
+	end
+	if not request:hasProperty("success") then
+		self:setShaderReloadMessage("Shader reload service is unavailable. Restart the Editor after updating its binaries.");
+		return false;
+	end
+	local accepted = request:getPropertyAsBool("success");
+	if action == "configureFiles" and accepted then self._shaderPathsDirty = false; end
+	safeCall(self.configureShaderFilesButton, "setEnabled", true, false);
+	self._shaderReloadAvailable = request:getPropertyAsBool("available");
+	self._shaderReloadPending = request:getPropertyAsBool("pending");
+	local status = request:getPropertyAsString("status") or "";
+	local diagnostic = request:getPropertyAsString("diagnostic") or "";
+	local generation = request:getPropertyAsString("generation") or "0";
+	local message = status;
+	if self._shaderReloadPending then
+		message = "Shader reload pending; active generation "..generation..".";
+	elseif self._shaderReloadAvailable then
+		if request:getPropertyAsBool("runtimeSuccess") then
+			message = "Shader generation "..generation.." active.";
+		else
+			message = "Shader reload failed; active generation "..generation.." retained.";
+		end
+	end
+	if status ~= "" and status ~= message then message = message.."\n"..status; end
+	if diagnostic ~= "" and not string.find(message, diagnostic, 1, true) then message = message.."\n"..diagnostic; end
+	if message == "" then message = accepted and "Shader status read." or "Shader reload is unavailable."; end
+	self:setShaderReloadMessage(message);
+	if self.shaderWatchToggle and not self._shaderReloadPending then
+		safeCall(self.shaderWatchToggle, "setValue", request:getPropertyAsBool("watching"));
+	end
+	local pixelFile = request:getPropertyAsString("pixelFile") or "";
+	local vertexFile = request:getPropertyAsString("vertexFile") or "";
+	if self._shaderReloadAvailable and not self._shaderReloadPending and not self._shaderPathsDirty then
+		self.materialSettings.shaderPath = pixelFile;
+		self.materialSettings.vertexShaderPath = vertexFile;
+		safeCall(self.shaderPathEntry, "setText", pixelFile);
+		safeCall(self.vertexShaderPathEntry, "setText", vertexFile);
+	end
+	local hasFiles = pixelFile ~= "";
+	safeCall(self.shaderWatchToggle, "setEnabled", self._shaderReloadAvailable and hasFiles, false);
+	safeCall(self.reloadShaderButton, "setEnabled", self._shaderReloadAvailable, false);
+	return accepted;
+end
+
+function MaterialEditor:refreshShaderReloadStatus()
+	return self:performShaderReloadAction("read");
+end
+
+function MaterialEditor:update()
+	if self.editorWindow == nil then return; end
+	local visible, isVisible = safeCall(self.editorWindow, "isVisible");
+	if visible and not isVisible then return; end
+	self._shaderStatusPollFrames = (self._shaderStatusPollFrames or 0) + 1;
+	if self._shaderStatusPollFrames >= 30 then
+		self._shaderStatusPollFrames = 0;
+		self:refreshShaderReloadStatus();
+	end
+end
+
 function MaterialEditor:handleAction(elementId)
 	if elementId == MaterialEditorTypes.ApplyId then
 		self:applyAllSettings();
 	elseif elementId == MaterialEditorTypes.SaveId then
 		self:saveMaterial();
 	elseif elementId == MaterialEditorTypes.ReloadShaderId then
-		if self.material then safeCall(self.material, "reloadShader"); end
-		if self.statusText then self.statusText:setText("Reload shader requested."); end
+		self:performShaderReloadAction("reload");
+	elseif elementId == MaterialEditorTypes.ShaderReloadStatusId then
+		self:refreshShaderReloadStatus();
+	elseif elementId == MaterialEditorTypes.ConfigureShaderFilesId then
+		self:performShaderReloadAction("configureFiles");
 	elseif elementId == MaterialEditorTypes.ValidateId then
 		self:validateMaterial();
 	elseif elementId == MaterialEditorTypes.ResetUvId then
@@ -2010,6 +2132,12 @@ function MaterialEditor:handleEvent(parameters, results)
 	local okElementId, elementId = safeCall(sender, "getElementId");
 	if not okElementId or elementId == nil then
 		print("MaterialEditor sender has no element id");
+		return;
+	end
+
+	if eventHash == IEvent.handleValueChanged and elementId == MaterialEditorTypes.WatchShaderFilesId then
+		local okValue, value = safeCall(sender, "getValue");
+		if okValue then self:performShaderReloadAction("setWatching", value); end
 		return;
 	end
 

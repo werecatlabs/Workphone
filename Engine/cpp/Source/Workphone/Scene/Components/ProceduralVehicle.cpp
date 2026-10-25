@@ -7,12 +7,32 @@
 #include <Workphone/Interface/Mesh/ISubMesh.hpp>
 #include <Workphone/Mesh/Mesh.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace workphone::scene
 {
+    namespace
+    {
+        struct VehicleEventScratch
+        {
+            Array<procedural::VehicleEffectEvent> &recycled;
+            Array<procedural::VehicleEffectEvent> staged{
+                Allocator<procedural::VehicleEffectEvent>(sourceBudget) };
+            explicit VehicleEventScratch(Array<procedural::VehicleEffectEvent> &storage) : recycled(storage)
+            { staged.swap(recycled); }
+            ~VehicleEventScratch() noexcept
+            {
+                if(staged.get_allocator().isSourceBudgeted())
+                {
+                    staged.clear();
+                    recycled.swap(staged);
+                }
+            }
+        };
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralVehicle, ProceduralMesh );
 
@@ -53,7 +73,10 @@ namespace workphone::scene
             {
                 if( issue.error )
                 {
-                    errors += issue.component + ": " + issue.message + "\n";
+                    errors += String(issue.component.data(), issue.component.size());
+                    errors += ": ";
+                    errors += String(issue.message.data(), issue.message.size());
+                    errors += "\n";
                 }
             }
             throw std::runtime_error( errors );
@@ -72,9 +95,15 @@ namespace workphone::scene
                 continue;
             }
 
-            Array<Vector3<real_Num>> positions, normals, uvs;
-            Array<Vector4F> tangents;
-            Array<u32> indices( section.indices.begin(), section.indices.end() );
+            auto positions=makeSourceBudgetSnapshot<Vector3<real_Num>>();
+            auto normals=makeSourceBudgetSnapshot<Vector3<real_Num>>();
+            auto uvs=makeSourceBudgetSnapshot<Vector3<real_Num>>();
+            auto tangents=makeSourceBudgetSnapshot<Vector4F>();
+            auto indices=makeSourceBudgetSnapshot<u32>();
+            indices.reserve(section.indices.size());
+            for(const auto index:section.indices) indices.push_back(index);
+            positions.reserve(section.vertices.size());normals.reserve(section.vertices.size());
+            uvs.reserve(section.vertices.size());tangents.reserve(section.vertices.size());
 
             for( const auto &v : section.vertices )
             {
@@ -85,11 +114,12 @@ namespace workphone::scene
             }
 
             auto part = MeshUtil::createMesh( positions, normals, tangents, uvs, indices );
+            if(!part) throw std::runtime_error("Cannot create generated vehicle geometry");
             for( auto sub : part->getSubMeshes() )
             {
                 const auto &material =
                     vehicle.appearance.material( m_generator->materialSlotFor( section.material ) );
-                sub->setMaterialName( material.name );
+                sub->setMaterialName( String(material.name.data(), material.name.size()) );
                 mesh->addSubMesh( sub );
             }
         }
@@ -146,7 +176,8 @@ namespace workphone::scene
         auto actor = getActor();
        
         auto app = core::IApplicationManager::instancePtr();
-        if( !actor || !app || !app->getGraphicsSystem() )
+        if( !actor || !app || !app->getGraphicsSystem() || !m_generator ||
+            m_lod>=m_vehicle.geometry.lods.size() )
         {
             return;
         }
@@ -158,30 +189,46 @@ namespace workphone::scene
             return;
         }
 
-        // Respect explicitly authored Material components on the actor.
+        const auto &sections=m_vehicle.geometry.lods[m_lod].sections;
+        const auto required=static_cast<size_t>(std::count_if(sections.begin(),sections.end(),
+            [](const auto &section){return section.hasGeometry();}));
+        if(!m_generatedMaterials.get_allocator().isSourceBudgeted())
+        {
+            auto admitted=makeSourceBudgetSnapshot(m_generatedMaterials);
+            m_generatedMaterials.swap(admitted);
+        }
+
+        // Respect explicitly authored Material components on the actor. Discovery
+        // is staged so a denied owner inventory cannot publish a partial match.
         if( m_generatedMaterials.empty() )
         {
             const auto existing = actor->getComponentsByType<Material>();
+            auto discovered=makeSourceBudgetSnapshot<SmartPtr<Material>>();
+            discovered.reserve(std::max(existing.capacity(),required));
             for( const auto &component : existing )
             {
                 const auto id = ";" + component->getHandle()->getUUIDAsString() + ";";
                 if( m_generatedMaterialIds.find( id ) != String::npos )
                 {
-                    m_generatedMaterials.push_back( component );
+                    discovered.push_back( component );
                 }
             }
 
-            if( m_generatedMaterials.empty() && !existing.empty() )
+            if( discovered.empty() && !existing.empty() )
             {
                 return;
             }
 
-            std::sort( m_generatedMaterials.begin(), m_generatedMaterials.end(),
+            std::sort( discovered.begin(), discovered.end(),
                        []( const auto &a, const auto &b ) { return a->getIndex() < b->getIndex(); } );
+            m_generatedMaterials.swap(discovered);
         }
+        // Admit every owner slot before any manager-owned material or actor
+        // component is created. Later configuration failures remain cleanup-owned.
+        m_generatedMaterials.reserve(required);
 
         u32 index = 0;
-        for( const auto &section : m_vehicle.geometry.lods[m_lod].sections )
+        for( const auto &section : sections )
         {
             if( !section.hasGeometry() )
             {
@@ -192,6 +239,7 @@ namespace workphone::scene
                 m_vehicle.appearance.material( m_generator->materialSlotFor( section.material ) );
             SmartPtr<Material> component;
             SmartPtr<render::IMaterial> material;
+            bool createdComponent=false;
             if( index < m_generatedMaterials.size() )
             {
                 component = m_generatedMaterials[index];
@@ -199,18 +247,13 @@ namespace workphone::scene
             }
             else
             {
-                const String name = "ProceduralVehicle/" + StringUtil::getUUID();
-                material = workphone::dynamic_pointer_cast<render::IMaterial>( materialManager->create( name ) );
-                if( !material )
-                {
-                    return;
-                }
                 component = actor->addComponent<Material>();
+                if(!component) throw std::runtime_error("Cannot create generated vehicle material component");
+                m_generatedMaterials.push_back(component);
+                createdComponent=true;
                 component->getHandle()->setUUID( StringUtil::getUUID() );
                 component->setIndex( index );
-                component->setMaterial( material );
-                component->setState( getState() );
-                m_generatedMaterials.push_back( component );
+                material=component->getMaterial();
             }
 
             if( !material )
@@ -219,10 +262,16 @@ namespace workphone::scene
                     materialManager->create( "ProceduralVehicle/" + StringUtil::getUUID() ) );
                 if( !material )
                 {
-                    return;
+                    throw std::runtime_error("Cannot create generated vehicle material");
                 }
-                component->setMaterial( material );
+                try { component->setMaterial(material); }
+                catch(...)
+                {
+                    try { materialManager->destroyResource(material); } catch(const std::bad_alloc&) {}
+                    throw;
+                }
             }
+            if(createdComponent) component->setState(getState());
 
             if( material )
             {
@@ -242,14 +291,14 @@ namespace workphone::scene
         while( m_generatedMaterials.size() > index )
         {
             auto component = m_generatedMaterials.back();
+            m_generatedMaterials.pop_back();
             auto material = component->getMaterial();
-            component->unload( nullptr );
-            actor->removeComponentInstance( component );
+            try { component->unload(nullptr); } catch(const std::bad_alloc&) {}
+            try { actor->removeComponentInstance(component); } catch(const std::bad_alloc&) {}
             if( material )
             {
-                materialManager->destroyResource( material );
+                try { materialManager->destroyResource(material); } catch(const std::bad_alloc&) {}
             }
-            m_generatedMaterials.pop_back();
         }
     }
 
@@ -276,7 +325,9 @@ namespace workphone::scene
         auto presentation = m_presentationState;
         auto effects = m_effectsState;
         VehicleDynamicsTelemetry telemetry;
-        Array<VehicleEffectEvent> events;
+        VehicleEventScratch stagedEvents(m_eventScratch);
+        auto &events=stagedEvents.staged;
+        const auto denialEpoch=sourceBudgetDenialCount();
         if( !m_damage->update( {}, deltaSeconds, damage ) )
         {
             return false;
@@ -303,13 +354,21 @@ namespace workphone::scene
         {
             return false;
         }
+        if(sourceBudgetDenialCount()!=denialEpoch) throw std::bad_alloc();
+        // Replaceable effects can assign a foreign Array. Admit its complete
+        // spare capacity before consuming the staged simulation tick/RNG state.
+        if(!events.get_allocator().isSourceBudgeted())
+        {
+            auto admitted=makeSourceBudgetSnapshot(events);
+            events.swap(admitted);
+        }
 
         m_dynamicsState = dynamics;
         m_damageState = damage;
         m_telemetry = telemetry;
         m_presentationState = presentation;
         m_effectsState = effects;
-        m_events = std::move( events );
+        m_events.swap(events);
         return true;
     }
 
@@ -435,33 +494,38 @@ namespace workphone::scene
 
     void ProceduralVehicle::unload( SmartPtr<ISharedObject> data )
     {
+        auto retiredMaterials=makeSourceBudgetSnapshot<SmartPtr<Material>>();
+        retiredMaterials.swap(m_generatedMaterials);
+        auto retiredGenerator=std::move(m_generator);m_generator=nullptr;
+        auto retiredDynamics=std::move(m_dynamics);m_dynamics=nullptr;
+        auto retiredDamage=std::move(m_damage);m_damage=nullptr;
+        auto retiredPresentation=std::move(m_presentation);m_presentation=nullptr;
+        auto retiredEffects=std::move(m_effects);m_effects=nullptr;
+        // Plain data producers retire before optional component notifications;
+        // the detached material inventory remains a physical owner through them.
+        m_vehicle = {};
+        m_events = makeSourceBudgetSnapshot<procedural::VehicleEffectEvent>();
+        m_eventScratch = makeSourceBudgetSnapshot<procedural::VehicleEffectEvent>();
+        String{}.swap(m_generatedMaterialIds);
         auto actor = getActor();
         auto app = core::IApplicationManager::instancePtr();
         auto graphics = app ? app->getGraphicsSystem() : nullptr;
         auto manager = graphics ? graphics->getMaterialManager() : nullptr;
-        for( auto &component : m_generatedMaterials )
+        for( auto &component : retiredMaterials )
         {
+            if(!component) continue;
             auto material = component->getMaterial();
-            component->unload( nullptr );
+            try { component->unload(nullptr); } catch(const std::bad_alloc&) {}
             if( actor )
             {
-                actor->removeComponentInstance( component );
+                try { actor->removeComponentInstance(component); } catch(const std::bad_alloc&) {}
             }
             if( manager && material )
             {
-                manager->destroyResource( material );
+                try { manager->destroyResource(material); } catch(const std::bad_alloc&) {}
             }
         }
-        m_generatedMaterials.clear();
-        m_generatedMaterialIds.clear();
         ProceduralMesh::unload( data );
-        m_generator = nullptr;
-        m_dynamics = nullptr;
-        m_damage = nullptr;
-        m_presentation = nullptr;
-        m_effects = nullptr;
-        m_vehicle = {};
-        m_events.clear();
     }
 
     const Array<workphone::procedural::VehicleEffectEvent> &ProceduralVehicle::getEffects() const

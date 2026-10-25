@@ -99,6 +99,13 @@ namespace workphone::render
             throw std::length_error( "too many captured materials" );
         Owner owner;
         owner.material = std::move( material );
+        Record record;
+        if(auto claw = dynamic_cast<ClawMaterial *>(owner.material.get()))
+        {
+            record.runtimeRequested = claw->hasRuntimeProgram();
+            owner.runtime = claw->getRuntimePublication();
+            record.runtime = owner.runtime.get();
+        }
         if( auto concrete = dynamic_cast<Material *>( owner.material.get() ) )
             owner.state = concrete->getRenderState();
         else if( owner.material )
@@ -110,13 +117,6 @@ namespace workphone::render
                         { owner.state = data->getRenderState(); break; }
                 if( owner.state ) break;
             }
-        Record record;
-        if(auto claw = dynamic_cast<ClawMaterial *>(owner.material.get()))
-        {
-            record.runtimeRequested = claw->hasRuntimeProgram();
-            owner.runtime = claw->getRuntimePublication();
-            record.runtime = owner.runtime.get();
-        }
         record.material = owner.material.get();
         record.state = owner.state.get();
         const auto index = static_cast<u32>( m_records.size() );

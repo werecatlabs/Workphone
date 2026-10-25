@@ -74,6 +74,7 @@ namespace workphone::render
         bool IsCurrent(const MaterialShaderParameterLayout::Ptr &) const;
     private:
         friend class MaterialProgramReloadDX11;
+        friend class ClawMaterialResource;
         void retainDefinitionOwner(std::shared_ptr<const void>);
         MaterialProgramDX11();
         struct Data;

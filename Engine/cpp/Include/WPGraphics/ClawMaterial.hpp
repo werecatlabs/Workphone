@@ -78,6 +78,11 @@ namespace workphone
             // capture. A null coordinator explicitly retires the attachment.
             void setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
                 std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
+            bool requestRuntimeShaderReload();
+            bool requestRuntimeShaderFiles(const String &vertexFile,const String &pixelFile);
+            bool setRuntimeShaderWatching(bool enabled);
+            SmartPtr<Properties> getRuntimeShaderReloadStatus() const;
+            static void processRuntimeShaderReloads(ClawRendererDX11 &renderer);
             bool hasRuntimeProgram() const;
             MaterialProgramDX11::PublicationPtr getRuntimePublication();
 
@@ -180,6 +185,7 @@ namespace workphone
             wp_graphics_material *m_material;  ///< Underlying Claw material handle.
 
         private:
+            std::shared_ptr<MaterialProgramResourcesDX11> runtimeShaderResources() const;
             struct RuntimeState;
             std::unique_ptr<RuntimeState> m_runtime;
             String authoringDocument() const;

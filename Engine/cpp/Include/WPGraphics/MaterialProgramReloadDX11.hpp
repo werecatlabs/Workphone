@@ -32,6 +32,8 @@ namespace workphone::render
                           wp_shader_program *authoring, u64 deviceGeneration, String &error,
                           const MaterialProgramReflectionSelection *pixelSelection = nullptr,
                           const MaterialProgramReflectionSelection *vertexSelection = nullptr);
+        static Ptr CreateFromFiles(void *device, MaterialShaderParameterLayout::Ptr layout,
+                          const String &vertexFile, const String &pixelFile, u64 deviceGeneration, String &error);
         ~MaterialProgramReloadDX11();
         // The values object must outlive its binding. ClawMaterial owns this
         // relationship; a binding never retains the material or creates a cycle.
@@ -42,6 +44,14 @@ namespace workphone::render
         // when CPU/GPU headroom increases, or after explicit RequestRetry().
         bool Update();
         void RequestRetry();
+        bool SetStageFiles(const String &vertexFile,const String &pixelFile,String &error);
+        void RequestSchema(MaterialShaderParameterLayout::Ptr layout);
+        static void UpdateAll();
+        u64 GetId() const;
+        static bool QueueReload(u64 id);
+        static bool QueueWatching(u64 id,bool enabled);
+        static SmartPtr<Properties> EditorStatus(u64 id);
+        bool HasProgram() const;
         u64 GetGeneration() const;
         u64 GetAttemptCount() const;
         u64 GetCompileCount() const;

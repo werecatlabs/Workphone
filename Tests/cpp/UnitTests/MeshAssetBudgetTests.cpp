@@ -25,6 +25,10 @@
 #include "../MeshImposterBudgetContracts.hpp"
 #include "../AnimatorPlaybackBudgetContracts.hpp"
 #include "../ProceduralBuffersBudgetContracts.hpp"
+#include "../VehicleStringBudgetContracts.hpp"
+#include "../VehicleGeometryBudgetContracts.hpp"
+#include "../VehiclePhysicsBudgetContracts.hpp"
+#include "../VehicleAppearanceBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -673,6 +677,30 @@ BOOST_AUTO_TEST_CASE( procedural_city_inventories_share_source_admission )
 {
     TestGuard guard;
     procedural_buffers_budget_contracts::inventories();
+}
+
+BOOST_AUTO_TEST_CASE( vehicle_text_storage_obeys_source_admission )
+{
+    TestGuard guard;
+    vehicle_string_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( vehicle_geometry_obeys_source_admission )
+{
+    TestGuard guard;
+    vehicle_geometry_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( vehicle_physics_obeys_source_admission )
+{
+    TestGuard guard;
+    vehicle_physics_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( vehicle_appearance_obeys_source_admission )
+{
+    TestGuard guard;
+    vehicle_appearance_budget_contracts::run();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

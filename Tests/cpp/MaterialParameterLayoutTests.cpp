@@ -1,4 +1,6 @@
 #include <Workphone/Graphics/MaterialShader.hpp>
+#include <Workphone/Graphics/Material.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/Properties.hpp>
@@ -244,6 +246,82 @@ namespace
         registry.find( "LayoutContract" )->buildInstance( b );
         require( a.Set( retained, 0.8f ) && !b.Set( retained, 0.8f ),
                  "registry growth/replacement preserves retained versions and rejects stale binding" );
+    }
+
+    void schemaMigrationContracts()
+    {
+        using Type = MaterialShaderParameterType;
+        const auto before = MaterialShaderParameterLayout::Create({{Type::Scalar,"Number"},{Type::Colour,"Tint"},
+            {Type::Texture,"Texture"},{Type::IntVector4,"Indices"},{Type::Matrix,"Transform"},{Type::Scalar,"Preserve"}});
+        const auto after = MaterialShaderParameterLayout::Create({{Type::Matrix,"Transform"},{Type::Scalar,"Added"},
+            {Type::UInt,"Number"},{Type::Texture,"Texture"},{Type::IntVector4,"Indices"},{Type::Colour,"Renamed"},
+            {Type::Scalar,"Preserve"},{Type::Sampler,"NewSampler"}});
+        require(before && after,"schema migration layouts finalize");
+        MaterialShaderParametersInstance first, second;
+        first.Reset(before); second.Reset(before);
+        const auto oldHandle = first.FindParameter("Preserve");
+        auto matrix = Matrix4F::identity(); matrix[0][1]=.125f; matrix[3][2]=9.5f;
+        require(first.SetScalar(first.FindParameter("Number"),2.75f) &&
+            first.SetColour(first.FindParameter("Tint"),ColourF(.1f,.2f,.3f,.4f)) &&
+            first.SetTexture(first.FindParameter("Texture"),0) &&
+            first.SetVector4(first.FindParameter("Indices"),Vector4<s32>(1,-2,3,-4)) &&
+            first.SetMatrix(first.FindParameter("Transform"),matrix) && first.SetScalar(oldHandle,.625f),
+            "migration fixture sets exact typed values, including numeric resource zero");
+        const auto oldRevision = first.GetRevision();
+        const auto oldBytes = first.GetParameterMemory();
+        const auto oldIdentity = first.GetValueStorageIdentity();
+        auto replacement = first.PrepareMigration(after);
+        const auto &values = replacement->Values();
+        Vector4<s32> indices;
+        require(replacement->IsCurrent() && first.GetLayout() == before && first.GetRevision() == oldRevision &&
+            first.GetParameterMemory() == oldBytes && first.GetValueStorageIdentity() == oldIdentity,
+            "preparation leaves live layout, values, identity and revision unchanged");
+        require(values.GetLayout() == after && values.GetRevision() == oldRevision+1 &&
+            values.GetScalar(values.FindParameter("Preserve")) == .625f &&
+            values.GetUInt(values.FindParameter("Number")) == 0 && values.GetScalar(values.FindParameter("Added")) == 0 &&
+            values.GetColour(values.FindParameter("Renamed")) == ColourF(0,0,0,0) &&
+            values.GetResource(values.FindParameter("Texture")) == 0 &&
+            values.GetResource(values.FindParameter("NewSampler")) == InvalidMaterialResourceHandle &&
+            values.Get(MaterialParameterHandle<Vector4<s32>>{values.FindParameter("Indices")},indices) &&
+            indices == Vector4<s32>(1,-2,3,-4) && values.GetMatrix(values.FindParameter("Transform")) == matrix,
+            "migration preserves exact name/type values through reorder and defaults renamed/new/type-changed fields");
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto source = size_t(StreamMemoryClass::SourceCpu);
+        struct Restore
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler;
+            u64 limit;
+            ~Restore() { String ignored; scheduler->setBudget(StreamMemoryClass::SourceCpu,limit,ignored); }
+        } restore{scheduler,scheduler->stats().limits[source]};
+        const auto prepared = scheduler->stats(); String error;
+        require(scheduler->setBudget(StreamMemoryClass::SourceCpu,prepared.used[source],error),"migration commit budget applies");
+        require(replacement->IsCurrent() && replacement->Commit() && !replacement->Commit(),
+            "a current replacement commits once, without allocating, at zero headroom");
+        const auto committed = scheduler->stats();
+        require(committed.used[source] == prepared.used[source] &&
+            committed.rejectedReservations[source] == prepared.rejectedReservations[source] &&
+            first.GetLayout() == after && first.GetRevision() == oldRevision+1 &&
+            !first.SetScalar(oldHandle,.8f) && !replacement->IsCurrent(),
+            "commit invalidates old handles once and performs no SourceCpu allocation/rejection");
+        scheduler->setBudget(StreamMemoryClass::SourceCpu,restore.limit,error);
+        auto stale = second.PrepareMigration(after);
+        second.SetScalar(second.FindParameter("Number"),4.0f);
+        const auto modified = second.GetParameterMemory();
+        require(!stale->IsCurrent() && !stale->Commit() && second.GetLayout() == before && second.GetParameterMemory() == modified,
+            "a concurrent owner-thread value edit invalidates staging and stale commit preserves newer values");
+        stale.reset(); replacement.reset();
+        const auto baseline = scheduler->stats();
+        require(scheduler->setBudget(StreamMemoryClass::SourceCpu,baseline.used[source],error),"migration denial budget applies");
+        bool denied = false;
+        try { second.PrepareMigration(after); } catch(const std::bad_alloc &) { denied = true; }
+        const auto failed = scheduler->stats();
+        scheduler->setBudget(StreamMemoryClass::SourceCpu,restore.limit,error);
+        require(denied && failed.used[source] == baseline.used[source] &&
+            failed.rejectedReservations[source] > baseline.rejectedReservations[source] &&
+            second.GetLayout() == before && second.GetParameterMemory() == modified,
+            "cold migration admission denial preserves all live state and rolls back exact lease usage");
+        auto retry = second.PrepareMigration(after);
+        require(retry->Commit() && second.GetLayout() == after,"restored admission permits migration retry");
     }
 
     void layoutStorageAccountingContracts()
@@ -530,6 +608,26 @@ namespace
         stringAuthoringContracts();
         surfaceStorageContracts();
         {
+            Material material;
+            auto &values = material.getShaderParameters();
+            const auto layout = MaterialShaderParameterLayout::Create({{MaterialShaderParameterType::Scalar,"Number"}});
+            values.Reset(layout);
+            require(values.IsMigrationReady(),"unloaded material owner is ready for schema staging");
+            {
+                auto edit = values.Edit();
+                require(!values.IsMigrationReady(),"parameter edit scope defers schema migration");
+                bool busy = false;
+                try { values.PrepareMigration(layout); } catch(const std::runtime_error &) { busy = true; }
+                require(busy && values.GetLayout() == layout,"busy edit migration preserves the live owner");
+            }
+            {
+                MaterialPublicationScope publication;
+                require(!values.IsMigrationReady(),"material publication scope defers schema migration");
+                publication.commit();
+                require(values.IsMigrationReady(),"publication commit restores migration readiness");
+            }
+        }
+        {
             MaterialPassStateData state;
             const auto original = state.getRenderState();
             require( original && original->roughness == 0.5f, "initial immutable defaults" );
@@ -729,6 +827,7 @@ int main( int argc, char **argv )
     {
         contracts();
         layoutStorageAccountingContracts();
+        schemaMigrationContracts();
         snapshotContracts();
         sharingContracts();
         if( argc > 1 && std::strcmp( argv[1], "--benchmark" ) == 0 ) benchmark();

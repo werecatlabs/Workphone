@@ -8,6 +8,11 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/CollisionBox.hpp>
+#include <Workphone/Scene/Components/Rigidbody.hpp>
+#include <Workphone/Interface/Physics/IPhysicsManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
+#include <Workphone/Interface/Physics/IPhysicsBody3.hpp>
 #include <Workphone/System/FSM.hpp>
 #include <Workphone/System/FSMManager.hpp>
 
@@ -129,6 +134,68 @@ namespace
         for( const auto &actor : actors ) manager->destroyActor( actor, true );
     }
 
+    void queuedSceneActivation( SmartPtr<scene::IGameManager> manager )
+    {
+        auto app = core::IApplicationManager::instancePtr(); BOOST_REQUIRE( app ); BOOST_REQUIRE( app->isEditor() );
+        BOOST_REQUIRE( Thread::getCurrentTask() == TaskId::Application );
+        struct ModeRestore
+        {
+            u32 flags = Thread::getTaskFlags(); bool playing = core::IApplicationManager::instancePtr()->isPlaying();
+            ~ModeRestore() { Thread::setTaskFlags( flags ); core::IApplicationManager::instancePtr()->setPlaying( playing ); }
+        } restore;
+        Thread::setTaskFlags( restore.flags | Thread::Application_Flag );
+        const auto physics = app->getPhysicsManager(); const auto physicsScene = physics ? physics->getPhysicsScene() : nullptr;
+        using Actor = SmartPtr<scene::IGameActor>;
+        for( bool play : { true, false } )
+        {
+            auto registry = make_ptr<scene::GameScene>(), other = make_ptr<scene::GameScene>();
+            registry->load( nullptr ); other->load( nullptr ); BOOST_REQUIRE( registry->isLoaded() && other->isLoaded() );
+            std::array<Actor, 3> actors;
+            struct ActorsCleanup
+            {
+                SmartPtr<scene::IGameManager> manager; SmartPtr<scene::GameScene> registry, other; std::array<Actor, 3> &actors;
+                ~ActorsCleanup()
+                {
+                    for( auto &actor : actors ) if( actor ) manager->destroyActor( actor, true );
+                    registry->unload( nullptr ); other->unload( nullptr );
+                }
+            } cleanup{ manager, registry, other, actors };
+            app->setPlaying( play );
+            registry->setState( play ? scene::IGameScene::State::Play : scene::IGameScene::State::Edit );
+            for( auto &actor : actors )
+            {
+                actor = manager->createActor(); BOOST_REQUIRE( actor && actor->isLoaded() ); actor->setStatic( true );
+                BOOST_REQUIRE( actor->addComponent<scene::CollisionBox>() ); BOOST_REQUIRE( actor->addComponent<scene::Rigidbody>() );
+                registry->addActor( actor );
+                // Enter through the real public load event, then drain the real
+                // deferred queues with preUpdate; no test-only queue mutation.
+                registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, actor, nullptr );
+            }
+            const auto removed = actors[0], active = actors[1], transferred = actors[2];
+            const auto removedState = removed->getState(), transferredState = transferred->getState();
+            auto removedBody = removed->getComponent<scene::Rigidbody>(), activeBody = active->getComponent<scene::Rigidbody>();
+            auto transferredBody = transferred->getComponent<scene::Rigidbody>();
+            BOOST_REQUIRE( removedBody && activeBody && transferredBody );
+            BOOST_REQUIRE( !removedBody->getRigidStatic() && !activeBody->getRigidStatic() && !transferredBody->getRigidStatic() );
+            registry->removeActor( removed ); registry->removeActor( transferred ); other->addActor( transferred );
+            BOOST_REQUIRE( removed->isLoaded() && !removed->getFlag( scene::IGameActor::ActorFlagInScene ) );
+            BOOST_REQUIRE( transferred->getFlag( scene::IGameActor::ActorFlagInScene ) && transferred->getScene() == other );
+            registry->preUpdate();
+            const auto actorState = play ? scene::IGameActor::State::Play : scene::IGameActor::State::Edit;
+            const auto componentState = play ? scene::IComponent::State::Play : scene::IComponent::State::Edit;
+            BOOST_CHECK( removed->getState() == removedState && !removedBody->getRigidStatic() );
+            BOOST_CHECK( transferred->getState() == transferredState && !transferredBody->getRigidStatic() );
+            BOOST_REQUIRE( active->getState() == actorState && activeBody->getState() == componentState );
+            const auto body = activeBody->getRigidStatic();
+            if( physicsScene ) { BOOST_REQUIRE( body ); BOOST_CHECK( body->getScene() == physicsScene ); BOOST_CHECK( body->getNumShapes() > 0 ); }
+            const auto bodyCount = physicsScene ? physicsScene->getActors().size() : 0;
+            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, active, nullptr ); registry->preUpdate();
+            BOOST_CHECK( active->getState() == actorState && activeBody->getState() == componentState && activeBody->getRigidStatic() == body );
+            if( physicsScene ) BOOST_CHECK_EQUAL( physicsScene->getActors().size(), bodyCount );
+            BOOST_CHECK( removed->getState() == removedState && transferred->getState() == transferredState );
+        }
+    }
+
     class CityPersistenceFSMManager : public FSMManager
     {
     public:
@@ -206,6 +273,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     };
     flush();
     registrationRemovalOrdering( manager );
+    queuedSceneActivation( manager );
     fsmFlagsSurviveStorageGrowth( app->getFsmManager() );
     auto terrainActor = manager->createActor(); BOOST_REQUIRE( terrainActor ); terrainActor->setName( "Terrain city persisted terrain" );
     auto terrain = terrainActor->addComponent<scene::TerrainSystem>(); BOOST_REQUIRE( terrain ); originalScene->addActor( terrainActor );

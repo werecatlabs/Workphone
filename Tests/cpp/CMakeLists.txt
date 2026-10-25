@@ -327,7 +327,7 @@ if (WP_BUILD_TESTS)
                     ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
                     ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
                 target_link_libraries(WPGraphicsCookedResourceTests PRIVATE
-                    WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
+                    WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11 d3dcompiler)
                 if(TARGET WPProcedural)
                     target_link_libraries(WPGraphicsCookedResourceTests PRIVATE WPProcedural)
                     target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE WP_COOKED_PROCEDURAL=1)

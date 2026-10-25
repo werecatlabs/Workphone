@@ -136,6 +136,7 @@ steam_appid.txt
 /project_graphics_effects_tests
 /project_luajit/
 **/.workphone/lua-debug.json
+**/.workphone/lua-breakpoints.json
 /project_network_contracts/
 /.github/*
 !/.github/workflows/

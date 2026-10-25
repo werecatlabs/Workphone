@@ -16,6 +16,7 @@
 #include <climits>
 #include <cstdlib>
 #include <string_view>
+#include <fstream>
 #ifdef _MSC_VER
 // Engine math uses /fp:fast; debugger expressions must retain Lua's NaN and
 // infinity comparison semantics regardless of renderer optimization flags.
@@ -43,6 +44,8 @@ namespace workphone
         int integer( const j::object &o, const char *key, int fallback = 0 )
         {
             auto p = o.if_contains( key );
+            if( p && p->is_double() && p->as_double() >= 0 && p->as_double() <= INT_MAX && std::floor( p->as_double() ) == p->as_double() )
+                return static_cast<int>( p->as_double() );
             return p && p->is_int64() && p->as_int64() >= 0 && p->as_int64() <= INT_MAX ?
                 static_cast<int>( p->as_int64() ) : fallback;
         }
@@ -107,6 +110,10 @@ namespace workphone
         std::thread network;
         std::mutex mutex;
         std::deque<Packet> requests;
+        std::deque<j::object> localRequests, localReplies;
+        std::string console, localError;
+        bool localDispatch = false;
+        std::atomic<unsigned> stopEpoch{ 0 };
         std::deque<std::pair<unsigned, std::string>> output;
         std::string token, root, exceptionText;
         bool initialized = false, attached = false, configured = false, pauseRequested = false, localMode = false;
@@ -123,6 +130,7 @@ namespace workphone
         std::map<int, Reference> references;
         std::function<bool()> pump;
         int hookedThreads = LUA_NOREF;
+        int originalPrint = LUA_NOREF;
         std::atomic<int> localAction{ 0 };
         bool abortExecution = false;
         std::string snapshot = "{}";
@@ -156,6 +164,32 @@ namespace workphone
                 }
             }
         }
+        static int print( lua_State *state )
+        {
+            const int count = lua_gettop( state );
+            if( !lua_checkstack( state, count + 1 ) ) return luaL_error( state, "Debugger print stack limit reached" );
+            lua_pushvalue( state, lua_upvalueindex( 1 ) );
+            for( int i = 1; i <= count; ++i ) lua_pushvalue( state, i );
+            // No C++ objects span this potentially throwing Lua call.
+            lua_call( state, count, 0 );
+            if( auto self = get( state ) )
+            {
+                try
+                {
+                    std::string text;
+                    for( int i = 1; i <= count && text.size() < 8192; ++i )
+                    {
+                        if( i > 1 ) text += '\t';
+                        if( lua_type( state, i ) == LUA_TSTRING )
+                        { size_t size; const auto p = lua_tolstring( state, i, &size ); text += safeText( std::string_view( p, size ), 1024 ); }
+                        else text += self->display( state, i );
+                    }
+                    self->event( "output", { { "category", "stdout" }, { "output", text + "\n" } } );
+                }
+                catch( ... ) {} // Debug output cannot change print's program behavior.
+            }
+            return 0;
+        }
         std::string path( std::string name ) const
         {
             if( !name.empty() && name[0] == '@' ) name.erase( 0, 1 );
@@ -170,7 +204,19 @@ namespace workphone
         }
         void send( j::object message )
         {
-            if( !connected ) return;
+            const bool localReply = localDispatch && stringValue( message, "type" ) == "response";
+            const bool isEvent = stringValue( message, "type" ) == "event";
+            if( isEvent && stringValue( message, "event" ) == "output" )
+            {
+                if( auto body = message.if_contains( "body" ); body && body->is_object() )
+                {
+                    std::lock_guard<std::mutex> lock( mutex );
+                    console += stringValue( body->as_object(), "output" );
+                    if( console.size() > 16384 ) console.erase( 0, console.size() - 8192 );
+                }
+            }
+            if( !localReply && ( !connected || ( isEvent && !attached ) ) ) return;
+            if( sequence == INT_MAX ) { closeClient = true; return; }
             message["seq"] = ++sequence;
             auto body = j::serialize( message );
             if( body.size() > maxMessage )
@@ -179,6 +225,12 @@ namespace workphone
                 message.erase( "body" ); message["success"] = false;
                 message["message"] = "Debugger response exceeds 64 KiB; request fewer variables or frames";
                 body = j::serialize( message );
+            }
+            if( localReply )
+            {
+                std::lock_guard<std::mutex> lock( mutex );
+                if( localReplies.size() == 8 ) localReplies.pop_front();
+                localReplies.push_back( std::move( message ) ); return;
             }
             auto bytes = "Content-Length: " + std::to_string( body.size() ) + "\r\n\r\n" + body;
             std::lock_guard<std::mutex> lock( mutex );
@@ -261,6 +313,7 @@ namespace workphone
         void pause( lua_State *state, const char *reason )
         {
             stopped = state; pauseRequested = false; step = 0; isPaused = true;
+            ++stopEpoch;
             j::array stack;
             lua_Debug frame{};
             for( int level = 0; level < 64 && lua_getstack( state, level, &frame ); ++level )
@@ -311,7 +364,13 @@ namespace workphone
             {
             case LUA_TNIL: return "nil";
             case LUA_TBOOLEAN: return lua_toboolean( state, index ) ? "true" : "false";
-            case LUA_TNUMBER: { std::ostringstream text; text.precision( 17 ); text << lua_tonumber( state, index ); return text.str(); }
+            case LUA_TNUMBER:
+            {
+#if LUA_VERSION_NUM >= 503
+                if( lua_isinteger( state, index ) ) return std::to_string( lua_tointeger( state, index ) );
+#endif
+                std::ostringstream text; text.precision( 17 ); text << lua_tonumber( state, index ); return text.str();
+            }
             case LUA_TSTRING:
             {
                 size_t size = 0; auto text = lua_tolstring( state, index, &size );
@@ -411,6 +470,8 @@ namespace workphone
             enum Kind { Nil, Boolean, Number, String, Object } kind = Nil;
             bool boolean = false;
             double number = 0;
+            bool integer = false;
+            lua_Integer integerValue = 0;
             std::string text;
             int index = 0;
             const void *pointer = nullptr;
@@ -477,6 +538,24 @@ namespace workphone
                 Value value; value.kind = Value::Number; char *end = nullptr;
                 value.number = std::strtod( text.c_str(), &end ); if( !end || *end ) error(); return value;
             }
+            int compareNumber( const Value &a, const Value &b, bool &ordered )
+            {
+                if( a.integer && b.integer ) return a.integerValue < b.integerValue ? -1 : a.integerValue > b.integerValue ? 1 : 0;
+                if( !a.integer && b.integer ) return -compareNumber( b, a, ordered );
+                if( std::isnan( b.number ) || ( !a.integer && std::isnan( a.number ) ) ) { ordered = false; return 0; }
+                if( a.integer )
+                {
+                    const auto upper = std::ldexp( 1.0, std::numeric_limits<lua_Integer>::digits );
+                    if( b.number >= upper ) return -1;
+                    if( b.number < -upper ) return 1;
+                    const auto integer = static_cast<lua_Integer>( b.number );
+                    if( a.integerValue < integer ) return -1;
+                    if( a.integerValue > integer ) return 1;
+                    const auto exact = static_cast<double>( integer );
+                    return b.number == exact ? 0 : b.number > exact ? -1 : 1;
+                }
+                return a.number < b.number ? -1 : a.number > b.number ? 1 : 0;
+            }
             Value primary( bool run )
             {
                 Value value;
@@ -485,11 +564,29 @@ namespace workphone
                 {
                     const auto op = token.text; next(); value = expression( 7, run ); if( !run ) return {};
                     if( op == "not" ) { value.boolean = !value.truth(); value.kind = Value::Boolean; }
-                    else if( op == "-" && value.kind == Value::Number ) value.number = -value.number;
-                    else if( op == "#" && value.kind == Value::String ) { value.number = static_cast<double>( value.text.size() ); value.kind = Value::Number; }
+                    else if( op == "-" && value.kind == Value::Number )
+                    {
+                        value.number = -value.number;
+                        if( value.integer ) { value.integerValue = static_cast<lua_Integer>( 0ull - static_cast<unsigned long long>( value.integerValue ) ); value.number = static_cast<double>( value.integerValue ); }
+                    }
+                    else if( op == "#" && value.kind == Value::String )
+                    {
+                        value.number = static_cast<double>( value.text.size() ); value.kind = Value::Number;
+#if LUA_VERSION_NUM >= 503
+                        value.integer = true; value.integerValue = static_cast<lua_Integer>( value.text.size() );
+#endif
+                    }
                     else error(); return value;
                 }
-                if( token.kind == 2 ) { value = scalar( token.text ); next(); return value; }
+                if( token.kind == 2 )
+                {
+                    value = scalar( token.text );
+#if LUA_VERSION_NUM >= 503
+                    if( token.text.find_first_not_of( "0123456789" ) == std::string::npos )
+                        try { value.integerValue = std::stoll( token.text ); value.integer = true; } catch( const std::out_of_range & ) {}
+#endif
+                    next(); return value;
+                }
                 if( token.kind == 3 ) { value.kind = Value::String; value.text = token.text; next(); return value; }
                 if( token.kind != 1 ) error();
                 auto name = token.text; next();
@@ -514,7 +611,13 @@ namespace workphone
                 {
                 case LUA_TNIL: break;
                 case LUA_TBOOLEAN: value.kind = Value::Boolean; value.boolean = lua_toboolean( state, -1 ) != 0; break;
-                case LUA_TNUMBER: value.kind = Value::Number; value.number = lua_tonumber( state, -1 ); break;
+                case LUA_TNUMBER:
+                    value.kind = Value::Number; value.number = lua_tonumber( state, -1 );
+#if LUA_VERSION_NUM >= 503
+                    value.integer = lua_isinteger( state, -1 ) != 0;
+                    if( value.integer ) value.integerValue = lua_tointeger( state, -1 );
+#endif
+                    break;
                 case LUA_TSTRING: { value.kind = Value::String; size_t size; auto p = lua_tolstring( state, -1, &size ); if( size > 4096 ) throw std::runtime_error( "String operand exceeds debugger limit" ); value.text.assign( p, size ); break; }
                 default: value.kind = Value::Object; value.index = index; value.pointer = lua_topointer( state, -1 ); return value;
                 }
@@ -533,14 +636,19 @@ namespace workphone
                     if( op == "or" ) { if( !left.truth() ) left = std::move( right ); continue; }
                     if( op == "==" || op == "~=" )
                     {
+                        bool ordered = true;
                         bool equal = left.kind == right.kind && ( left.kind == Value::Nil || ( left.kind == Value::Boolean && left.boolean == right.boolean ) ||
-                            ( left.kind == Value::Number && left.number == right.number ) || ( left.kind == Value::String && left.text == right.text ) || ( left.kind == Value::Object && left.pointer == right.pointer ) );
+                            ( left.kind == Value::Number && compareNumber( left, right, ordered ) == 0 && ordered ) || ( left.kind == Value::String && left.text == right.text ) ||
+                            ( left.kind == Value::Object && left.pointer == right.pointer && lua_type( state, left.index ) == lua_type( state, right.index ) ) );
                         left.kind = Value::Boolean; left.boolean = op == "==" ? equal : !equal; continue;
                     }
                     if( op == "<" || op == ">" || op == "<=" || op == ">=" )
                     {
                         if( left.kind == Value::Number && right.kind == Value::Number )
-                            left.boolean = op == "<" ? left.number < right.number : op == "<=" ? left.number <= right.number : op == ">" ? left.number > right.number : left.number >= right.number;
+                        {
+                            bool ordered = true; const auto comparison = compareNumber( left, right, ordered );
+                            left.boolean = ordered && ( op == "<" ? comparison < 0 : op == "<=" ? comparison <= 0 : op == ">" ? comparison > 0 : comparison >= 0 );
+                        }
                         else if( left.kind == Value::String && right.kind == Value::String )
                             left.boolean = op == "<" ? left.text < right.text : op == "<=" ? left.text <= right.text : op == ">" ? left.text > right.text : left.text >= right.text;
                         else error();
@@ -553,6 +661,24 @@ namespace workphone
                         left.text += right.text; continue;
                     }
                     if( left.kind != Value::Number || right.kind != Value::Number ) error();
+#if LUA_VERSION_NUM >= 503
+                    if( left.integer && right.integer && ( op == "+" || op == "-" || op == "*" || op == "%" ) )
+                    {
+                        const auto a = static_cast<unsigned long long>( left.integerValue ), b = static_cast<unsigned long long>( right.integerValue );
+                        if( op == "+" ) left.integerValue = static_cast<lua_Integer>( a + b );
+                        else if( op == "-" ) left.integerValue = static_cast<lua_Integer>( a - b );
+                        else if( op == "*" ) left.integerValue = static_cast<lua_Integer>( a * b );
+                        else
+                        {
+                            if( !right.integerValue ) throw std::runtime_error( "Integer modulo by zero" );
+                            auto remainder = right.integerValue == -1 ? 0 : left.integerValue % right.integerValue;
+                            if( remainder && ( remainder < 0 ) != ( right.integerValue < 0 ) ) remainder += right.integerValue;
+                            left.integerValue = remainder;
+                        }
+                        left.number = static_cast<double>( left.integerValue ); continue;
+                    }
+#endif
+                    left.integer = false;
                     if( op == "+" ) left.number += right.number; else if( op == "-" ) left.number -= right.number;
                     else if( op == "*" ) left.number *= right.number; else if( op == "/" ) left.number /= right.number;
                     else if( op == "%" ) left.number -= std::floor( left.number / right.number ) * right.number;
@@ -571,7 +697,7 @@ namespace workphone
                 {
                 case Value::Nil: lua_pushnil( state ); break;
                 case Value::Boolean: lua_pushboolean( state, value.boolean ); break;
-                case Value::Number: lua_pushnumber( state, value.number ); break;
+                case Value::Number: if( value.integer ) lua_pushinteger( state, value.integerValue ); else lua_pushnumber( state, value.number ); break;
                 case Value::String: lua_pushlstring( state, value.text.data(), value.text.size() ); break;
                 case Value::Object: lua_pushvalue( state, value.index ); break;
                 }
@@ -621,20 +747,61 @@ namespace workphone
                     { "exceptionBreakpointFilters", j::array{ j::object{ { "filter", "uncaught" }, { "label", "Uncaught Lua errors" }, { "default", false } } } } } );
                 return;
             }
-            if( !initialized ) { response( request, {}, "Initialize first" ); return; }
+            if( !initialized && !localDispatch ) { response( request, {}, "Initialize first" ); return; }
             if( command == "attach" )
             {
                 const auto supplied = stringValue( args, "token" );
                 size_t difference = supplied.size() ^ token.size();
                 for( size_t i = 0; i < token.size(); ++i ) difference |= token[i] ^ ( i < supplied.size() ? supplied[i] : 0 );
                 if( difference || attached ) { response( request, {}, "Attach denied" ); return; }
-                attached = true; pendingAttach = request;
+                attached = true; localMode = false; pendingAttach = request;
                 pauseRequested = flag( args, "stopOnEntry" );
                 event( "initialized" ); return;
             }
-            if( !attached ) { response( request, {}, "Authenticate with attach first" ); return; }
+            if( !attached && !localDispatch ) { response( request, {}, "Authenticate with attach first" ); return; }
+            if( localDispatch && ( command == "loadBreakpointPreferences" || command == "saveBreakpointPreferences" ) )
+            {
+                const auto destination = std::filesystem::u8path( root ) / ".workphone/lua-breakpoints.json";
+                if( command == "loadBreakpointPreferences" )
+                {
+                    if( !std::filesystem::exists( destination ) )
+                    { response( request, { { "version", 1 }, { "files", j::array{} }, { "breakOnException", false } } ); return; }
+                    if( std::filesystem::file_size( destination ) > maxMessage ) throw std::runtime_error( "Breakpoint preferences exceed 64 KiB" );
+                    std::ifstream input( destination, std::ios::binary );
+                    const std::string text( ( std::istreambuf_iterator<char>( input ) ), {} );
+                    auto preferences = j::parse( text ).as_object();
+                    if( integer( preferences, "version" ) != 1 || !preferences.if_contains( "files" ) || !preferences.at( "files" ).is_array() || preferences.at( "files" ).as_array().size() > 256 )
+                        throw std::runtime_error( "Invalid breakpoint preference schema" );
+                    response( request, std::move( preferences ) ); return;
+                }
+                auto preferences = args; preferences["version"] = 1;
+                if( !preferences.if_contains( "files" ) || !preferences.at( "files" ).is_array() || preferences.at( "files" ).as_array().size() > 256 )
+                    throw std::runtime_error( "Breakpoint preferences require a files array" );
+                std::filesystem::create_directories( destination.parent_path() );
+                auto temporary = destination;
+                temporary += "." + std::to_string( std::chrono::steady_clock::now().time_since_epoch().count() ) + ".tmp";
+                try
+                {
+                    std::ofstream output( temporary, std::ios::binary | std::ios::trunc );
+                    output.exceptions( std::ios::badbit | std::ios::failbit );
+                    output << j::serialize( preferences ); output.flush(); output.close();
+#ifdef _WIN32
+                    if( !MoveFileExW( temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                        throw std::runtime_error( "Cannot publish breakpoint preferences" );
+#else
+                    std::filesystem::rename( temporary, destination );
+#endif
+                }
+                catch( ... ) { std::error_code ignored; std::filesystem::remove( temporary, ignored ); throw; }
+                response( request ); return;
+            }
             if( command == "configurationDone" )
-            { configured = true; response( request ); if( !pendingAttach.empty() ) { response( pendingAttach ); pendingAttach.clear(); } return; }
+            {
+                configured = true; response( request );
+                if( !pendingAttach.empty() ) { response( pendingAttach ); pendingAttach.clear(); }
+                if( isPaused ) event( "stopped", { { "reason", "pause" }, { "threadId", 1 }, { "allThreadsStopped", true } } );
+                return;
+            }
             if( command == "disconnect" )
             { response( request ); event( "terminated" ); attached = false; isPaused = false; step = 0; return; }
             if( command == "threads" ) { response( request, { { "threads", j::array{ j::object{ { "id", 1 }, { "name", "Lua executor" } } } } } ); return; }
@@ -819,7 +986,11 @@ namespace workphone
                 isPaused = false;
             }
             if( activeGeneration != generation )
-            { reset(); activeGeneration = generation; }
+            {
+                auto interrupted = stopped; const bool localStop = localMode && isPaused;
+                reset(); activeGeneration = generation;
+                if( localStop ) { stopped = interrupted; isPaused = true; localMode = true; }
+            }
             for( int count = 0; count < 64; ++count )
             {
                 Packet packet;
@@ -827,6 +998,26 @@ namespace workphone
                 if( packet.session != activeGeneration || !connected ) continue;
                 try { handle( packet.request ); }
                 catch( const std::exception &error ) { response( packet.request, {}, error.what() ); }
+            }
+            for( int count = 0; count < 16; ++count )
+            {
+                j::object request;
+                { std::lock_guard<std::mutex> lock( mutex ); if( localRequests.empty() ) break; request = std::move( localRequests.front() ); localRequests.pop_front(); }
+                localDispatch = true;
+                const auto command = stringValue( request, "command" );
+                try
+                {
+                    if( !listeningPort ) response( request, {}, "Start the Editor with Lua debugging enabled" );
+                    else if( command == "attach" || command == "initialize" || command == "configurationDone" || command == "disconnect" ) response( request, {}, "Session requests are reserved for the remote client" );
+                    else if( attached && ( command == "setBreakpoints" || command == "setExceptionBreakpoints" ) ) response( request, {}, "Visual Studio owns breakpoint configuration while attached" );
+                    else
+                    {
+                        if( !attached ) localMode = true;
+                        handle( request );
+                    }
+                }
+                catch( const std::exception &error ) { response( request, {}, error.what() ); }
+                localDispatch = false;
             }
         }
         void serve( std::unique_ptr<tcp::acceptor> listener )
@@ -952,6 +1143,14 @@ namespace workphone
     {
         if( m_impl->main )
         {
+            if( m_impl->originalPrint != LUA_NOREF )
+            {
+                lua_getglobal( m_impl->main, "print" );
+                const bool ours = lua_iscfunction( m_impl->main, -1 ) && lua_tocfunction( m_impl->main, -1 ) == Impl::print;
+                lua_pop( m_impl->main, 1 );
+                if( ours ) { lua_rawgeti( m_impl->main, LUA_REGISTRYINDEX, m_impl->originalPrint ); lua_setglobal( m_impl->main, "print" ); }
+                luaL_unref( m_impl->main, LUA_REGISTRYINDEX, m_impl->originalPrint ); m_impl->originalPrint = LUA_NOREF;
+            }
             if( m_impl->hookedThreads != LUA_NOREF )
             {
                 lua_rawgeti( m_impl->main, LUA_REGISTRYINDEX, m_impl->hookedThreads );
@@ -971,6 +1170,15 @@ namespace workphone
         m_impl->main = state;
         if( state )
         {
+            ++m_impl->stopEpoch;
+            { std::lock_guard<std::mutex> lock( m_impl->mutex ); m_impl->localReplies.clear(); m_impl->localRequests.clear(); }
+            lua_getglobal( state, "print" );
+            if( lua_isfunction( state, -1 ) )
+            {
+                lua_pushvalue( state, -1 ); m_impl->originalPrint = luaL_ref( state, LUA_REGISTRYINDEX );
+                lua_pushcclosure( state, Impl::print, 1 ); lua_setglobal( state, "print" );
+            }
+            else lua_pop( state, 1 );
             lua_newtable( state ); lua_newtable( state ); lua_pushliteral( state, "k" );
             lua_setfield( state, -2, "__mode" ); lua_setmetatable( state, -2 );
             lua_pushthread( state ); lua_pushboolean( state, 1 ); lua_rawset( state, -3 );
@@ -1032,14 +1240,31 @@ namespace workphone
     void LuaDebugger::setPausePump( std::function<bool()> pump ) { m_impl->pump = std::move( pump ); }
     void LuaDebugger::command( const std::string &command )
     {
+        if( !command.empty() && command[0] == '{' )
+        {
+            try
+            {
+                if( command.size() > maxMessage ) throw std::runtime_error( "Editor debugger request exceeds 64 KiB" );
+                auto request = j::parse( command ).as_object();
+                if( integer( request, "seq" ) <= 0 || stringValue( request, "type" ) != "request" ) throw std::runtime_error( "Invalid Editor debugger request" );
+                std::lock_guard<std::mutex> lock( m_impl->mutex );
+                if( m_impl->localRequests.size() == 128 ) throw std::runtime_error( "Editor debugger queue is full" );
+                m_impl->localRequests.push_back( std::move( request ) ); m_impl->localError.clear();
+            }
+            catch( const std::exception &error ) { std::lock_guard<std::mutex> lock( m_impl->mutex ); m_impl->localError = error.what(); }
+            return;
+        }
         const int action = command == "pause" ? 1 : command == "continue" ? 2 : command == "stepIn" ? 3 : command == "next" ? 4 : command == "stepOut" ? 5 : 0;
         if( action ) m_impl->localAction = action;
     }
     std::string LuaDebugger::status() const
     {
         std::lock_guard<std::mutex> lock( m_impl->mutex );
+        j::array replies; for( const auto &reply : m_impl->localReplies ) replies.push_back( reply );
         return j::serialize( j::object{ { "port", port() }, { "paused", paused() },
-            { "connected", m_impl->connected.load() }, { "stop", j::parse( m_impl->snapshot ) } } );
+            { "connected", m_impl->connected.load() }, { "stop", j::parse( m_impl->snapshot ) },
+            { "epoch", m_impl->stopEpoch.load() }, { "ready", static_cast<bool>( m_impl->pump ) }, { "responses", std::move( replies ) },
+            { "output", m_impl->console }, { "error", m_impl->localError } } );
     }
     bool LuaDebugger::callbackAllowed( lua_State *state, int index ) const
     {

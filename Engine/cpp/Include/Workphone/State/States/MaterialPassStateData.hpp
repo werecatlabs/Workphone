@@ -15,7 +15,7 @@
 
 namespace workphone
 {
-    namespace render { class MaterialPass; }
+    namespace render { class MaterialPass; class MaterialShaderParametersInstance; }
     enum class MaterialFloatSetting : u32
     {
         alphaClip = 0,
@@ -219,6 +219,8 @@ namespace workphone
     private:
         friend class MaterialPublicationScope;
         friend class render::MaterialPass;
+        friend class render::MaterialShaderParametersInstance;
+        SourceBudgetUniqueArray<u32> prepareShaderRenderMode(u32 value) const;
         void setTextureBindingObserver( render::IMaterialPass *owner, void ( *observer )( void *, u32 ) );
         void notifyTextureBindingChanged( u32 slot );
         MaterialRenderState &writableSurfaceState();

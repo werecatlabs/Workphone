@@ -11,7 +11,7 @@ namespace workphone
 {
     namespace procedural
     {
-        /// Engine-independent, SI-unit vehicle data generated alongside procedural vehicles.
+        /// Renderer-neutral, SI-unit vehicle data generated alongside procedural vehicles.
         /// Coordinates match WPProcedural's vehicle meshes: +X right, +Y up, -Z forward.
         struct VehiclePhysicsVector3
         {

@@ -536,6 +536,10 @@ namespace workphone::editor
                         std::error_code ignored; std::filesystem::remove( temporary, ignored ); throw;
                     }
                     WP_LOG( "Lua debugger endpoint: " + m_luaDebuggerEndpoint );
+                    if( auto editor = EditorManager::getSingletonPtr() )
+                        if( auto ui = editor->getUI() )
+                            if( auto panel = ui->getLuaDebuggerWindow() )
+                                if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "onDebuggerReady" );
                 }
                 else WP_LOG_ERROR( "Could not start the Lua debugger" );
             }

@@ -15,6 +15,11 @@
 
 namespace workphone::scene
 {
+    namespace race
+    {
+        // Module-private declaration; no public/PCH API or layout change.
+        bool activateGeneratedScene( const SceneAssets &, SmartPtr<IGameActor>, String & );
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRaceScene, Component );
     ProceduralRaceScene::ProceduralRaceScene() = default;
@@ -207,6 +212,8 @@ namespace workphone::scene
             actor->getTransform()->setTask( TaskId::Physics );
             car->refreshWheels();
             configurePhysics();
+            if(!m_assets.body)
+                throw std::runtime_error(m_generationError.empty()?"Generated scene activation failed.":m_generationError.c_str());
 
             // Scene play can reconstruct the body and controller; configure again after settling.
             m_physicsConfigured = false;
@@ -339,6 +346,21 @@ namespace workphone::scene
     {
         if( isGenerated() && getCarController() && getCarController()->getVehicleController() )
         {
+            if(Thread::getTaskFlag(Thread::Application_Flag))
+            {
+                auto app=core::IApplicationManager::instancePtr();auto tasks=app?app->getTaskManager():nullptr;
+                auto renderLock=tasks?tasks->lockTask(TaskId::Render):TaskLock();
+                auto physicsLock=tasks?tasks->lockTask(TaskId::Physics):TaskLock();
+                std::lock_guard<std::recursive_mutex> presentationLock(m_presentationMutex);
+                String error;
+                if(!race::activateGeneratedScene(m_assets,getActor(),error))
+                {
+                    m_physicsConfigured=false;setControls(0,1,0);
+                    if(!error.empty()){clearGeneratedScene();m_generationError=error;WP_LOG_ERROR(error);}
+                    return;
+                }
+            }
+            else if(!m_physicsConfigured){setControls(0,1,0);return;}
             race::configurePhysics( m_assets, getActor() );
             m_physicsConfigured = true;
         }
@@ -425,6 +447,8 @@ namespace workphone::scene
     void ProceduralRaceScene::update()
     {
         auto app = core::IApplicationManager::instance();
+        if(Thread::getCurrentTask()==TaskId::Application && isLoaded() && isEnabled() && isGenerated() && !m_physicsConfigured)
+            configurePhysics();
         if(Thread::getCurrentTask()==TaskId::Application && isLoaded() && isEnabled() && m_cityTerrainRoads)
         {
             const auto currentScene=app->getGameManager()->getCurrentScene();
@@ -512,6 +536,7 @@ namespace workphone::scene
         {
             configurePhysics();
         }
+        if(!m_physicsConfigured){setControls(0,1,0);return;}
 
         if( m_resetRequested.exchange( false ) )
         {

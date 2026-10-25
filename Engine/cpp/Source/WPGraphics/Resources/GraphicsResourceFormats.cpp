@@ -218,12 +218,12 @@ namespace workphone::render
                 require(size <= bytes.size()-offset-8,"Truncated DXBC chunk");
                 for(u32 j=0;j<i;++j)
                 {
-                    const auto other=word(32+j*4), end=other+8ull+word(other+4);
+                    const auto other=word(32+j*4);const auto end=other+8ull+word(other+4);
                     require(offset+8ull+size <= other || offset >= end,"Overlapping DXBC chunks");
                 }
             }
         }
-        void validateShader(const CookedMaterialShaderData &shader)
+        void validateShader(const CookedMaterialShaderData &shader, bool pinned=true)
         {
             if(!shader.present())
             {
@@ -254,7 +254,7 @@ namespace workphone::render
                 if(p.type==T::Texture)
                     require(p.texture.id.isValid() && !p.texture.id.isSubResource() &&
                         p.texture.id.type()==resource::ResourceTypeID("texres") && p.texture.id.str().size()<=1024 &&
-                        p.texture.sourceHash && p.texture.payloadHash && p.texture.compilerVersion,
+                        (!pinned || (p.texture.sourceHash && p.texture.payloadHash && p.texture.compilerVersion)),
                         "Cooked shader texture requires a pinned durable texres identity");
                 else require(!p.texture.id.isValid() && !p.texture.sourceHash && !p.texture.payloadHash && !p.texture.compilerVersion,
                     "Numeric/sampler parameter contains a texture identity");
@@ -591,6 +591,79 @@ namespace workphone::render
         }
     }
 
+    bool validateCookedMaterialShaderRecipe(const CookedMaterialShaderData &shader,String &error)
+    {
+        error.clear();
+        try { validateShader(shader,false);return true; }
+        catch(const std::exception &exception){error=exception.what();return false;}
+    }
+
+    bool populateCookedMaterialShader(const CookedMaterialShaderData &shader,
+        MaterialShaderParametersInstance &values, wp_shader_program *program, String &error)
+    {
+        error.clear();
+        try
+        {
+            validateShader(shader);
+            require(shader.present() && program && wp_shader_program_get_param_count(program)==0,"Shader installation requires an empty native definition");
+            Array<MaterialShaderParameterInfo> info;
+            for(const auto &p:shader.parameters)info.emplace_back(p.type,p.name);
+            const auto &existing=values.GetParameterInfo();
+            bool same=existing.size()==info.size() && bool(values.GetLayout());
+            for(size_t i=0;same && i<info.size();++i)same=existing[i].m_type==info[i].m_type && existing[i].m_name==info[i].m_name;
+            if(!same)values.Reset(info);
+            require(bool(values.GetLayout()),"Cooked shader CPU schema could not be constructed");
+            auto edit=values.Edit();
+            for(size_t i=0;i<shader.parameters.size();++i)
+            {
+                const auto &p=shader.parameters[i];using T=MaterialShaderParameterType;
+                wp_uniform_type uniform=WORKPHONE_UNIFORM_TYPE_INT;
+                wp_shader_resource_kind resource=WORKPHONE_SHADER_RESOURCE_NONE;
+                switch(p.type)
+                {
+                case T::Scalar:uniform=WORKPHONE_UNIFORM_TYPE_FLOAT;break;
+                case T::Colour:case T::Vector4:uniform=WORKPHONE_UNIFORM_TYPE_VEC4;break;
+                case T::Vector2:uniform=WORKPHONE_UNIFORM_TYPE_VEC2;break;
+                case T::Matrix:uniform=WORKPHONE_UNIFORM_TYPE_MAT4;break;
+                case T::UInt:uniform=WORKPHONE_UNIFORM_TYPE_UINT;break;
+                case T::Bool:uniform=WORKPHONE_UNIFORM_TYPE_BOOL;break;
+                case T::IntVector2:uniform=WORKPHONE_UNIFORM_TYPE_IVEC2;break;
+                case T::IntVector4:uniform=WORKPHONE_UNIFORM_TYPE_IVEC4;break;
+                case T::Texture:resource=WORKPHONE_SHADER_RESOURCE_TEXTURE;break;
+                case T::Sampler:resource=WORKPHONE_SHADER_RESOURCE_SAMPLER;break;
+                case T::Int:break;
+                default:throw std::runtime_error("Unsupported cooked shader value type");
+                }
+                require(wp_shader_program_register_param(program,reinterpret_cast<const wp_c8 *>(p.name.c_str()),uniform,1,
+                    WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT,WORKPHONE_SHADER_AUTO_PARAM_NONE,resource)==i,
+                    "Cooked shader native parameter registration failed");
+                const auto handle=values.GetParameter(static_cast<u32>(i));
+                float f[16]{};s32 integers[4]{};
+                std::memcpy(f,p.words.data(),64);std::memcpy(integers,p.words.data(),16);
+                bool assigned=false;
+                switch(p.type)
+                {
+                case T::Scalar:assigned=values.SetScalar(handle,f[0]);break;
+                case T::Int:assigned=values.SetScalar(handle,integers[0]);break;
+                case T::UInt:assigned=values.SetScalar(handle,p.words[0]);break;
+                case T::Bool:assigned=values.SetBool(handle,p.words[0]!=0);break;
+                case T::Colour:assigned=values.SetColour(handle,ColourF(f[0],f[1],f[2],f[3]));break;
+                case T::Vector2:assigned=values.SetVector2(handle,Vector2F(f[0],f[1]));break;
+                case T::Vector4:assigned=values.SetVector4(handle,Vector4F(f[0],f[1],f[2],f[3]));break;
+                case T::IntVector2:assigned=values.SetVector2(handle,Vector2<s32>(integers[0],integers[1]));break;
+                case T::IntVector4:assigned=values.SetVector4(handle,Vector4<s32>(integers[0],integers[1],integers[2],integers[3]));break;
+                case T::Matrix:assigned=values.SetMatrix(handle,Matrix4F(f));break;
+                case T::Texture:assigned=values.SetTexture(handle,i+1);break;
+                case T::Sampler:assigned=values.SetSampler(handle,i+1);break;
+                default:break;
+                }
+                require(assigned,"Cooked shader typed value installation failed");
+            }
+            return true;
+        }
+        catch(const std::exception &exception){error=exception.what();return false;}
+    }
+
     bool writeCookedMaterial( const CookedMaterialData &data, std::ostream &output, String &error )
     {
         error.clear();
@@ -702,13 +775,14 @@ namespace workphone::render
         error.clear();
         try
         {
-            validateResource( value, "matres" );
             require( value.payload.size() <= graphicsMaterialShaderByteLimit+65536u, "Cooked material payload exceeds its size limit" );
+            validateResource( value, "matres" );
             Reader reader( value.payload );
             CookedMaterialData data;
             const auto version = readPrefix( reader, materialMagic, data.target, data.packagedBuild, 3 );
             require( value.header.compilerVersion != 2 || version == 1,
                      "Legacy material compiler cannot produce extended material payloads" );
+            require(version >= 3 || value.payload.size() <= 4096,"Legacy cooked material exceeds its size limit");
             require(value.header.compilerVersion >= 4 || version <= 2,
                 "Legacy material compiler cannot produce shader-schema payloads");
             data.baseColour.r = reader.readFloat();
@@ -764,6 +838,7 @@ namespace workphone::render
                     if( dependency && dependency->header.resourceId == id ) ++matches;
                 require( matches == 1, "Cooked material requires exactly one installed generation per texture" );
             }
+            Array<std::pair<resource::ResourceID,TextureMipFilter>> validatedTextures;
             const auto validateSlot = [&]( const resource::ResourceID &id, u64 sourceHash,
                                            u64 payloadHash, u64 compilerVersion, MaterialTextureSlot slot ) {
                 const resource::RuntimeResource *dependency = nullptr;
@@ -773,6 +848,12 @@ namespace workphone::render
                              dependency->header.payloadHash == payloadHash &&
                              dependency->header.compilerVersion == compilerVersion,
                          "Cooked material texture dependency generation does not match" );
+                for(const auto &cached:validatedTextures)if(cached.first==id)
+                {
+                    CookedTextureData semantic;semantic.target=data.target;semantic.mipSettings.filter=cached.second;
+                    if(!validateMaterialTextureSemantic(semantic,slot,error))throw std::runtime_error(error.c_str());
+                    return;
+                }
                 CookedTextureData texture;
                 if( !decodeCookedTexture( *dependency, texture, error ) )
                     throw std::runtime_error( error.c_str() );
@@ -780,6 +861,7 @@ namespace workphone::render
                          "Cooked material and texture target/build mode do not match" );
                 if( !validateMaterialTextureSemantic( texture, slot, error ) )
                     throw std::runtime_error( error.c_str() );
+                validatedTextures.emplace_back(id,texture.mipSettings.filter);
             };
             validateSlot( data.textureId, data.textureSourceHash, data.texturePayloadHash,
                           data.textureCompilerVersion, MaterialTextureSlot::BaseColour );

@@ -3,6 +3,7 @@
 #include <editor/Project.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/ProjectSettingsActions.hpp>
+#include <editor/MaterialShaderReloadActions.hpp>
 #include <ui/ProjectTreeData.hpp>
 #include <ui/UIManager.hpp>
 #include <commands/DragDropActorCmd.hpp>
@@ -202,6 +203,13 @@ namespace workphone::editor
                                         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
                                         SmartPtr<IEvent> event )
     {
+        if(eventType == EventType::UI &&
+           eventValue == static_cast<hash_type>(StringUtil::getHash32("materialShaderReloadAction")))
+        {
+            processMaterialShaderReloadAction(workphone::dynamic_pointer_cast<render::IMaterial>(sender),
+                workphone::dynamic_pointer_cast<Properties>(object));
+            return {};
+        }
         if( getClassName() == "ProjectSettings" && eventType == EventType::UI &&
             eventValue == static_cast<hash_type>( StringUtil::getHash32( "projectSettingsAction" ) ) )
         {

@@ -117,9 +117,9 @@ namespace workphone
                 return std::max( 0.0, torque );
             }
 
-            void addError( VehicleDynamicsValidation &v, const std::string &text )
+            void addError( VehicleDynamicsValidation &v, SourceBudgetStdString text )
             {
-                v.errors.push_back( text );
+                v.errors.push_back( std::move( text ) );
             }
 
             bool stateIsFinite( const VehicleDynamicsState &state )
@@ -195,7 +195,7 @@ namespace workphone
             const auto physicsValidation = WPVehiclePhysics::validate( physics );
             for( const auto &error : physicsValidation.errors )
             {
-                addError( result, std::string( "physics: " ) + error );
+                addError( result, SourceBudgetStdString( "physics: " ) + error );
             }
 
             const double values[] = { tuning.steeringRatePerSecond,

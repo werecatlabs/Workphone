@@ -119,9 +119,20 @@ namespace workphone
             std::array<VehicleWheelTelemetry, 4> wheels;
         };
 
-        struct WPCore_API VehicleDynamicsValidation
+        struct WPCore_API VehicleDynamicsValidation : SourceBudgetObject
         {
-            std::vector<std::string> errors;
+            SourceBudgetVector<SourceBudgetStdString> errors;
+
+            VehicleDynamicsValidation() = default;
+            VehicleDynamicsValidation( const VehicleDynamicsValidation & ) = default;
+            VehicleDynamicsValidation( VehicleDynamicsValidation && ) noexcept = default;
+            VehicleDynamicsValidation &operator=( VehicleDynamicsValidation && ) noexcept = default;
+            VehicleDynamicsValidation &operator=( const VehicleDynamicsValidation &other )
+            {
+                if( this != &other ) { VehicleDynamicsValidation candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( VehicleDynamicsValidation &other ) noexcept { errors.swap( other.errors ); }
 
             bool isValid() const noexcept
             {

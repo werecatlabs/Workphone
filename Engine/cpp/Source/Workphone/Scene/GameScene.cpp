@@ -697,7 +697,10 @@ namespace workphone::scene
                     SmartPtr<IGameActor> actor;
                     while( m_editQueue.try_pop( actor ) )
                     {
-                        if( actor && actor->isLoaded() && getState() == State::Edit )
+                        // A queued load can outlive removal or transfer. Retained
+                        // references must not re-enter component/physics states.
+                        if( actor && actor->isLoaded() && actor->getScene().get() == this &&
+                            actor->getFlag( IGameActor::ActorFlagInScene ) && getState() == State::Edit )
                         {
                             actor->setState( IGameActor::State::Edit );
                         }
@@ -709,7 +712,8 @@ namespace workphone::scene
                     SmartPtr<IGameActor> actor;
                     while( m_playQueue.try_pop( actor ) )
                     {
-                        if( actor && actor->isLoaded() && getState() == State::Play )
+                        if( actor && actor->isLoaded() && actor->getScene().get() == this &&
+                            actor->getFlag( IGameActor::ActorFlagInScene ) && getState() == State::Play )
                         {
                             actor->setState( IGameActor::State::Play );
                         }

@@ -105,6 +105,14 @@ namespace workphone::render
                                             String &error );
     WPGraphics_API bool writeCookedMaterial( const CookedMaterialData &data, std::ostream &output,
                                              String &error );
+    // Cold installation/compiler helper. The supplied program must be empty.
+    // Resource handles are generated locally from parameter indices, never read
+    // from the cooked payload. Callers retain durable resource owners separately.
+    WPGraphics_API bool populateCookedMaterialShader(const CookedMaterialShaderData &shader,
+        MaterialShaderParametersInstance &values, wp_shader_program *program, String &error);
+    // Validates authored shader fields before dependency cooking; durable texture
+    // generation pins are added by the compiler and mandatory in cooked payloads.
+    WPGraphics_API bool validateCookedMaterialShaderRecipe(const CookedMaterialShaderData &, String &error);
 }  // namespace workphone::render
 
 #endif

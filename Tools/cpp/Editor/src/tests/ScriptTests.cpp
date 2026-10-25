@@ -9,6 +9,8 @@
 #include <ui/UIManager.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
+#include <editor/MaterialShaderReloadActions.hpp>
+#include <Workphone/Interface/UI/IUITextEntry.hpp>
 #include <Workphone/System/FileSelection.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Input/Joystick.hpp>
@@ -909,4 +911,140 @@ BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
     }
     application->getGameManager()->destroyActor( actor );
 }
+
+BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto application = core::IApplicationManager::instance();
+    auto material = workphone::dynamic_pointer_cast<render::IMaterial>(
+        application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadActions"));
+    BOOST_REQUIRE(material);
+    const auto requestFor = [](const String &action) {
+        auto request = make_ptr<Properties>(); request->setProperty("action",action); return request;
+    };
+    auto missingMaterial = requestFor("read");
+    processMaterialShaderReloadAction(nullptr,missingMaterial);
+    BOOST_CHECK(!missingMaterial->getPropertyAsBool("success"));
+    BOOST_CHECK(missingMaterial->getProperty("status").find("Select a material") != String::npos);
+    auto unavailable = requestFor("read");
+    ScriptWindow bridge;
+    bridge.handleEvent(EventType::UI, StringUtil::getHash32("materialShaderReloadAction"),{},material,unavailable,nullptr);
+    BOOST_CHECK(!unavailable->getPropertyAsBool("success"));
+    BOOST_CHECK(!unavailable->getPropertyAsBool("available"));
+    BOOST_CHECK(!unavailable->getProperty("status").empty());
+    auto malformed = requestFor("configureFiles");
+    processMaterialShaderReloadAction(material,malformed);
+    BOOST_CHECK(!malformed->getPropertyAsBool("success"));
+    BOOST_CHECK(!malformed->getPropertyAsBool("queued"));
+    BOOST_CHECK(malformed->getProperty("status").find("pixel shader") != String::npos);
+    auto unknown = requestFor("pretendSuccess");
+    processMaterialShaderReloadAction(material,unknown);
+    BOOST_CHECK(!unknown->getPropertyAsBool("success"));
+    BOOST_CHECK(unknown->getProperty("status").find("Unknown") != String::npos);
+#if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+    auto reloadUnavailable = requestFor("reload");
+    processMaterialShaderReloadAction(material,reloadUnavailable);
+    BOOST_CHECK(!reloadUnavailable->getPropertyAsBool("success"));
+    BOOST_CHECK(!reloadUnavailable->getPropertyAsBool("queued"));
+    const auto missingPath = (std::filesystem::temp_directory_path() /
+        ("missing-editor-shader-"+std::string(StringUtil::getUUID().c_str())+".hlsl")).generic_string();
+    auto configure = requestFor("configureFiles");
+    configure->setProperty("pixelFile",String(missingPath.c_str()));
+    processMaterialShaderReloadAction(material,configure);
+    BOOST_REQUIRE_MESSAGE(configure->getPropertyAsBool("success"),configure->getProperty("status"));
+    BOOST_CHECK(configure->getPropertyAsBool("queued"));
+    BOOST_CHECK(configure->getPropertyAsBool("pending"));
+    BOOST_CHECK(!configure->getPropertyAsBool("runtimeSuccess"));
+    // Queueing must not compile on the UI thread. Owner update publishes the
+    // file failure, and the user can still request another reload afterwards.
+    const auto ownerUpdate = [&] {
+        struct RestoreTask
+        {
+            decltype(Thread::getCurrentTask()) previous = Thread::getCurrentTask();
+            ~RestoreTask() { Thread::setCurrentTask(previous); }
+        } restoreTask;
+        Thread::setCurrentTask(TaskId::Render);
+        application->getGraphicsSystem()->update();
+    };
+    ownerUpdate();
+    auto failed = requestFor("read");
+    processMaterialShaderReloadAction(material,failed);
+    BOOST_REQUIRE_MESSAGE(failed->getPropertyAsBool("success"),failed->getProperty("status"));
+    BOOST_CHECK(failed->getPropertyAsBool("available"));
+    BOOST_CHECK(!failed->getPropertyAsBool("pending"));
+    BOOST_CHECK(!failed->getPropertyAsBool("runtimeSuccess"));
+    BOOST_CHECK(!failed->getProperty("diagnostic").empty() || !failed->getProperty("status").empty());
+    auto retry = requestFor("reload");
+    processMaterialShaderReloadAction(material,retry);
+    BOOST_CHECK(retry->getPropertyAsBool("success"));
+    BOOST_CHECK(retry->getPropertyAsBool("queued"));
+    ownerUpdate();
+#endif
+}
+
+BOOST_AUTO_TEST_CASE( editor_material_shader_reload_controls_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto application = core::IApplicationManager::instance();
+    auto material = workphone::dynamic_pointer_cast<render::IMaterial>(
+        application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadControls"));
+    BOOST_REQUIRE(material);
+    application->getGraphicsSystem()->loadObject(material,true);
+    auto selection = application->getSelectionManager();
+    selection->clearSelection(); selection->addSelectedObject(material);
+    application->getScriptManager()->loadScriptFromString(R"(
+        class 'MaterialShaderReloadControlsProbe' (MaterialEditor)
+        function MaterialShaderReloadControlsProbe:__init(window)
+            MaterialEditor.__init(self, window)
+        end
+        function MaterialShaderReloadControlsProbe:load()
+            MaterialEditor.load(self)
+            self.probeWindow = IApplicationManager.instance():getUI():addElement(IUIWindow.typeInfo())
+            self.probeWindow:addChild(self.reloadShaderButton)
+            self.probeWindow:addChild(self.shaderWatchToggle)
+            self.probeWindow:addChild(self.shaderReloadStatusText)
+            self.probeWindow:addChild(self.configureShaderFilesButton)
+            self.probeWindow:addChild(self.shaderPathEntry)
+            self.probeWindow:addChild(self.vertexShaderPathEntry)
+            self.probeWindow:addChild(self.shaderReloadStatusButton)
+            self.window:setParent(self.probeWindow)
+        end
+    )");
+    auto window = make_ptr<ScriptWindow>();
+    window->setClassName("MaterialShaderReloadControlsProbe");
+    window->load(nullptr); window->setWindowVisible(true); window->updateSelection();
+    BOOST_REQUIRE(window->getParent());
+    const auto controls = window->getParent()->getChildren();
+    BOOST_REQUIRE_EQUAL(controls.size(),7u);
+    auto status = workphone::dynamic_pointer_cast<ui::IUIText>(controls[2]);
+    auto pixel = workphone::dynamic_pointer_cast<ui::IUITextEntry>(controls[4]);
+    BOOST_REQUIRE(status); BOOST_REQUIRE(pixel);
+    BOOST_CHECK(!controls[0]->isEnabled());
+    BOOST_CHECK(!controls[1]->isEnabled());
+    BOOST_CHECK(!status->getText().empty());
+    BOOST_CHECK(status->getText().find("requested") == String::npos);
+    pixel->setText("");
+    application->triggerEvent(EventType::UI,IEvent::handleSelection,{},controls[3],nullptr,nullptr,
+        false,Thread::Application_Flag);
+    BOOST_CHECK(status->getText().find("pixel shader") != String::npos);
+    BOOST_CHECK(status->getText().find("requested") == String::npos);
+    // Editing the path alone is a draft; the Use Shader Files control is the
+    // explicit queue boundary and must read current text without a change event.
+#if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+    const String missing((std::filesystem::temp_directory_path() /
+        ("missing-editor-ui-shader-"+std::string(StringUtil::getUUID().c_str())+".hlsl")).generic_string().c_str());
+    pixel->setText(missing);
+    application->triggerEvent(EventType::UI,IEvent::handleSelection,{},controls[3],nullptr,nullptr,
+        false,Thread::Application_Flag);
+    BOOST_CHECK(status->getText().find("pending") != String::npos);
+#endif
+    selection->clearSelection(); window->updateSelection();
+    BOOST_CHECK(status->getText().find("Select a material") != String::npos);
+    BOOST_CHECK(!controls[0]->isEnabled());
+    BOOST_CHECK(!controls[3]->isEnabled());
+    window->unload(nullptr);
+}
+
 #endif

@@ -10,6 +10,7 @@
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include "ClawAssetBudget.hpp"
+#include "MaterialShaderEditorDX11.hpp"
 
 namespace workphone
 {
@@ -55,6 +56,7 @@ namespace workphone
 
         ClawMaterial::~ClawMaterial()
         {
+            detail::forgetShaderReload(this);
             if( m_material )
             {
                 wp_graphics_material_destroy( m_material );
@@ -65,24 +67,29 @@ namespace workphone
         void ClawMaterial::setRuntimeProgram(MaterialProgramDX11::Ptr program,
             std::shared_ptr<MaterialProgramResourcesDX11> resources)
         {
-            if(!program) { m_runtime.reset(); return; }
+            if(!program) { m_runtime.reset(); detail::shaderReloadAttached(this,0); return; }
             auto candidate = std::make_unique<RuntimeState>();
             candidate->publication = program->Capture(getShaderParameters(), resources);
             candidate->program = std::move(program); candidate->resources = std::move(resources);
             candidate->layout = getShaderParameters().GetLayout();
             candidate->revision = getShaderParameters().GetRevision();
             m_runtime = std::move(candidate);
+            detail::shaderReloadAttached(this,0);
         }
+        std::shared_ptr<MaterialProgramResourcesDX11> ClawMaterial::runtimeShaderResources() const
+        { return m_runtime?m_runtime->resources:nullptr; }
 
         bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
 
         void ClawMaterial::setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
             std::shared_ptr<MaterialProgramResourcesDX11> resources)
         {
-            if(!reload) { m_runtime.reset(); return; }
+            if(!reload) { m_runtime.reset();detail::shaderReloadAttached(this,0);return; }
             auto candidate = std::make_unique<RuntimeState>();
+            candidate->resources=resources;
             candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));
             m_runtime = std::move(candidate);
+            detail::shaderReloadAttached(this,reload->GetId());
         }
 
         MaterialProgramDX11::PublicationPtr ClawMaterial::getRuntimePublication()
@@ -628,7 +635,8 @@ namespace workphone
                     WP_LOG_WARNING(
                         "ClawMaterial::getProperties: native material is null, returning base "
                         "properties." );
-                    return properties;
+                    detail::appendShaderFiles(this,properties);
+                return properties;
                 }
 
                 properties->setProperty(
@@ -685,6 +693,13 @@ namespace workphone
                 }
 
                 Material::setProperties( properties );
+                String pixel,vertex;bool watching=true;
+                if(properties->getPropertyValue("runtimeShaderPixelFile",pixel) && !pixel.empty())
+                {
+                    properties->getPropertyValue("runtimeShaderVertexFile",vertex);
+                    requestRuntimeShaderFiles(vertex,pixel);
+                    if(properties->getPropertyValue("runtimeShaderWatching",watching)) setRuntimeShaderWatching(watching);
+                }
 
                 if( !m_material )
                 {
