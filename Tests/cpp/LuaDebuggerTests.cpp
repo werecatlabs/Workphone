@@ -1,3 +1,4 @@
+#include <Workphone/WorkphoneConfig.hpp>
 #include <boost/asio.hpp>
 #include <boost/json.hpp>
 #include <WPLua/LuaManager.hpp>
@@ -96,6 +97,7 @@ int main()
             check( manager.startDebugger( 0, "workphone-debug-test-token", root.c_str() ), "Debugger did not listen" );
             check( manager.executeSource( "gameplayCalls=0; function gameplayCallback() gameplayCalls=gameplayCalls+1 end", "@gameplay.lua" ), "Gameplay fixture" );
             check( manager.executeSource( "editorCalls=0; function editorCallback() editorCalls=editorCalls+1 end", "@Editor/DebuggerFixture.lua" ), "Editor fixture" );
+            check( manager.executeSource( "pendingCo=coroutine.create(function()\nlocal marker=21\nfor i=1,3 do\n marker=marker+1\nend\nreturn marker\nend)", "@debug-coroutine.lua" ), "Pre-attach coroutine fixture" );
             manager.setDebuggerPausePump( [&]() {
                 ++pumps;
                 manager.callFunction( "gameplayCallback" );
@@ -112,10 +114,16 @@ int main()
                     const int attach = connection.request( "attach", { { "token", "workphone-debug-test-token" } } );
                     connection.event( "initialized" );
                     connection.reply( connection.request( "setBreakpoints", { { "source", j::object{ { "path", root + "/debug-contract.lua" } } },
-                        { "breakpoints", j::array{ j::object{ { "line", 5 } } } } } ) );
+                        { "breakpoints", j::array{
+                            j::object{ { "line", 2 }, { "condition", "false" } },
+                            j::object{ { "line", 4 }, { "logMessage", "captured={data.value}" }, { "condition", "data.value >= 12" }, { "hitCondition", ">=1" } },
+                            j::object{ { "line", 5 }, { "condition", "inner == 19 and not false" } } } } } ) );
                     connection.reply( connection.request( "setExceptionBreakpoints", { { "filters", j::array{ "uncaught" } } } ) );
+                    connection.reply( connection.request( "setBreakpoints", { { "source", j::object{ { "path", root + "/debug-coroutine.lua" } } },
+                        { "breakpoints", j::array{ j::object{ { "line", 4 }, { "hitCondition", "2" }, { "condition", "marker >= 21" } } } } ) );
                     connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach ); ready = true;
-                    check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Breakpoint was not hit" );
+                    check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "captured=12" ) != std::string::npos, "Logpoint did not evaluate its expression" );
+                    check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Conditional breakpoint was not hit" );
                     auto stack = connection.reply( connection.request( "stackTrace" ) ).at( "stackFrames" ).as_array();
                     check( !stack.empty() && stack.front().as_object().at( "line" ).as_int64() == 5, "Wrong paused line" );
                     const auto frame = stack.front().as_object().at( "id" ).as_int64();
@@ -127,6 +135,12 @@ int main()
                     check( inner, "Local value lost at breakpoint" );
                     auto evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "data.value" } } ) );
                     check( evaluated.at( "result" ) == "12", "Upvalue/table evaluation failed" );
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "(false and missing.value) or (inner + data.value * 2)" } } ) );
+                    check( evaluated.at( "result" ) == "43", "Read-only expression or short-circuit evaluation failed" );
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "-2^2 + #'abc'" } } ) );
+                    check( evaluated.at( "result" ) == "-1", "Expression precedence failed" );
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "(0/0) >= 0" } } ) );
+                    check( evaluated.at( "result" ) == "false", "NaN comparison changed Lua semantics" );
                     connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "os.exit()" } } ), false );
                     connection.reply( connection.request( "stepIn", { { "threadId", 1 } } ) );
                     connection.event( "stopped" );
@@ -147,6 +161,15 @@ int main()
                     }
                     check( steppedLine == 11, "Step over did not reach the next statement" );
                     connection.reply( connection.request( "continue", { { "threadId", 1 } } ) );
+                    check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Coroutine did not retain its pre-attach hook" );
+                    auto coroutineStack = connection.reply( connection.request( "stackTrace" ) ).at( "stackFrames" ).as_array();
+                    const auto coroutineFrame = coroutineStack.front().as_object().at( "id" );
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", coroutineFrame }, { "expression", "marker" } } ) );
+                    check( evaluated.at( "result" ) == "22", "Coroutine local inspection or hit count failed" );
+                    auto sourceReference = coroutineStack.front().as_object().at( "source" ).as_object().at( "sourceReference" );
+                    auto loadedSource = connection.reply( connection.request( "source", { { "sourceReference", sourceReference } } ) );
+                    check( std::string( loadedSource.at( "content" ).as_string() ).find( "coroutine.create" ) != std::string::npos, "Loaded coroutine source is unavailable" );
+                    connection.reply( connection.request( "continue", { { "threadId", 1 } } ) );
                     auto error = connection.event( "stopped" ); check( error.at( "reason" ) == "exception", "Uncaught error did not stop" );
                     auto info = connection.reply( connection.request( "exceptionInfo", { { "threadId", 1 } } ) );
                     check( std::string( info.at( "description" ).as_string() ).find( "debug exception" ) != std::string::npos, "Exception text lost" );
@@ -161,6 +184,7 @@ int main()
             check( ready && !failed, "DAP configuration failed" );
             check( manager.executeSource( "local outer=7\nlocal data={value=12}\nlocal function child()\n local inner=outer+data.value\n inner=inner+1\n return inner\nend\nresult=child()\nresult=result+1\nresult=child()\nresult=result+1", "@debug-contract.lua" ), "Debugged execution failed" );
             check( manager.executeSource( "assert(result==21)", "=result" ), "Stepping changed program behavior" );
+            check( manager.executeSource( "local ok,value=coroutine.resume(pendingCo); assert(ok and value==24)", "@resume-coroutine.lua" ), "Debugged coroutine failed" );
             check( !manager.executeSource( "local marker=42\nerror('debug exception')", "@debug-error.lua" ), "Lua error unexpectedly succeeded" );
             check( pumps > 0, "Paused Editor pump did not run" );
             check( done && !failed, "Client contracts failed" );

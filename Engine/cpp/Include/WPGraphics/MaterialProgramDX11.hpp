@@ -73,6 +73,8 @@ namespace workphone::render
         bool IsCurrent() const;
         bool IsCurrent(const MaterialShaderParameterLayout::Ptr &) const;
     private:
+        friend class MaterialProgramReloadDX11;
+        void retainDefinitionOwner(std::shared_ptr<const void>);
         MaterialProgramDX11();
         struct Data;
         std::unique_ptr<Data> m_data;

@@ -1057,6 +1057,13 @@ void wp_shader_program_retain( wp_shader_program *program )
         ++program->reference_count;
 }
 
+wp_size wp_shader_program_get_storage_size( const wp_shader_program *program )
+{
+    if( program == NULL )
+        return 0u;
+    return (wp_size)sizeof( wp_shader_program ) + (wp_size)program->param_buffer_capacity;
+}
+
 void wp_shader_program_destroy( wp_shader_program *program )
 {
     wp_s32 i;
@@ -1166,6 +1173,13 @@ wp_shader *wp_shader_program_get_shader( const wp_shader_program *program, wp_sh
         }
     }
     return NULL;
+}
+
+wp_shader *wp_shader_program_get_attached_shader( const wp_shader_program *program, wp_s32 slot )
+{
+    if( program == NULL || slot < 0 || slot >= WORKPHONE_SHADER_TYPE_COUNT )
+        return NULL;
+    return program->shaders[slot];
 }
 
 /* =========================================================================

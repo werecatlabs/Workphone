@@ -4,6 +4,7 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <WPGraphics/MaterialProgramDX11.hpp>
+#include <WPGraphics/MaterialProgramReloadDX11.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 
 struct wp_graphics_material;
@@ -72,6 +73,10 @@ namespace workphone
             // Owning-thread installation; packs a candidate before replacing the
             // current attachment. Draw records retain immutable prior values.
             void setRuntimeProgram(MaterialProgramDX11::Ptr program,
+                std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
+            // Subscribes to automatic transactional reload before publication
+            // capture. A null coordinator explicitly retires the attachment.
+            void setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
                 std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
             bool hasRuntimeProgram() const;
             MaterialProgramDX11::PublicationPtr getRuntimePublication();

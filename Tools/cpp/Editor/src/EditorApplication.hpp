@@ -60,6 +60,7 @@ namespace workphone
              * @param data The data to load.
              */
             void load( SmartPtr<ISharedObject> data ) override;
+            bool createScriptManager() override;
 
             /**
              * @brief Unloads the editor application.
@@ -304,6 +305,8 @@ namespace workphone
             // Renderer type selection
             render::IGraphicsSystem::RenderApi m_rendererType = render::IGraphicsSystem::RenderApi::DX11;
             bool m_rendererTypeExplicit = false;
+            String m_luaDebuggerToken;
+            String m_luaDebuggerEndpoint;
         };
     }  // end namespace editor
 }  // namespace workphone

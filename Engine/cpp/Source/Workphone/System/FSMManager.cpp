@@ -154,6 +154,7 @@ namespace workphone
     {
         try
         {
+            ScopedLock lock( &m_mutex );
             setLoadingState( LoadingState::Unloading );
 
             for( auto &fsm : m_fsms )
@@ -662,12 +663,16 @@ namespace workphone
 
     auto FSMManager::getFlags( u32 id ) -> u32
     {
+        ScopedLock lock( &m_mutex );
+        if( !isLoaded() ) return 0;
         WP_ASSERT( id < m_flags.size() );
         return m_flags[id];
     }
 
     void FSMManager::setFlags( u32 id, u32 flags )
     {
+        ScopedLock lock( &m_mutex );
+        if( !isLoaded() ) return;
         WP_ASSERT( id < m_flags.size() );
         m_flags[id] = flags;
     }

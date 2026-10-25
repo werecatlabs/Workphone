@@ -5,6 +5,7 @@
 #include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
 #include "ClawMeshBudgetContracts.hpp"
+#include "ClawMaterialReloadContracts.hpp"
 #include "ClawRTTJobContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Graphics/MaterialShader.hpp>
@@ -1403,6 +1404,7 @@ int main( int argc, char **argv )
             ok &= testMaterialUploadWork(renderer);
             ok &= testRenderedFeatures(renderer); // Run the same pixel contracts with split constants.
             ok &= testRuntimeMaterialProgram(renderer);
+            ok &= claw_material_reload_contracts::run(renderer);
             ok &= testPreparedMaterialEdits(renderer);
             ok &= testSkyMaterialPublications(renderer);
             ok &= testIdleMaterialRetirement(renderer);

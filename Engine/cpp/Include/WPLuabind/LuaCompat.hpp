@@ -52,6 +52,9 @@ inline void wpLuaRequire( lua_State *state, const char *name, lua_CFunction open
     luaL_requiref( state, name, open, 1 );
 #endif
 }
+#ifdef _MSC_VER
+#pragma float_control(precise, on, push)
+#endif
 inline lua_Integer wpLuaToIntegerExact( lua_State *state, int index, int *success )
 {
 #if LUA_VERSION_NUM < 503
@@ -66,4 +69,7 @@ inline lua_Integer wpLuaToIntegerExact( lua_State *state, int index, int *succes
     return lua_tointegerx( state, index, success );
 #endif
 }
+#ifdef _MSC_VER
+#pragma float_control(pop)
+#endif
 #endif

@@ -104,6 +104,7 @@ namespace workphone::render
         MaterialShaderParameterLayout::Ptr layout;
         wp_shader_program *program = nullptr; // Retained by both maps.
         u64 generation = 0;
+        std::shared_ptr<const void> definitionOwner;
         Stage stages[2]; // vertex, pixel
     };
     struct MaterialProgramDX11::Publication::Data
@@ -115,6 +116,8 @@ namespace workphone::render
     };
     MaterialProgramDX11::MaterialProgramDX11() : m_data(new Data) {}
     MaterialProgramDX11::~MaterialProgramDX11() = default;
+    void MaterialProgramDX11::retainDefinitionOwner(std::shared_ptr<const void> owner)
+    { m_data->definitionOwner = std::move(owner); }
     MaterialProgramDX11::Publication::Publication() : m_data(new Data) {}
     MaterialProgramDX11::Publication::~Publication() = default;
 

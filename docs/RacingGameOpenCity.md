@@ -145,6 +145,13 @@ junction inspection view.
     -FoliageWorld -NoEffects -Seconds 3
 ```
 
+For repeatable captures while other configurations are building, the harness
+also accepts `-BinaryDirectory <retained-build-folder>`. Retain the sample and
+all its plugin DLLs together, and set that folder's `wp_plugins_samples.cfg`
+`PluginFolder` to the same absolute directory. The manifest records those
+binary hashes; media still resolves from the normal configuration directory.
+This does not certify a source-free package or the freshness of retained files.
+
 The flat city remains the default. Once a scene has saved terrain/source anchors,
 switching that scene back to flat mode is explicitly rejected; use a separate
 scene for the flat generator. Terrain-city source material export is not yet

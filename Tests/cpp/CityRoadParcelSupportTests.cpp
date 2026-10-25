@@ -1,4 +1,5 @@
 #include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
+#include <Workphone/Scene/Components/CityRoadFootways.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>
 #include <cmath>
@@ -94,7 +95,7 @@ namespace
             "Moved authored road retained stale generated-road parcel exclusions" );
         auto tangent = input; tangent.lots = { lot( 204, 0, 26, 6, 6 ) };
         check( prepareCityRoadParcels( tangent, s, bake, terrain(), {}, output, culled, checks, error ), error );
-        require( culled == 1 && checks == 0 && output.lots.empty(), "Parcel touching road-width plus one-metre reservation was accepted" );
+        require( culled == 1 && checks == 0 && output.lots.empty(), "Parcel inside the road and pedestrian reservation was accepted" );
     }
     void fullTerrain()
     {
@@ -153,7 +154,7 @@ namespace
         s.roundabouts.push_back( junction ); const auto bake = sample( s );
         auto input = city();
         input.lots = { lot( 401, 16, 0, 4, 4 ), lot( 402, 22 * q, 22 * q, 4, 4 ),
-            lot( 403, 14 * q, 30 * q, 4, 4 ) };
+            lot( 403, 12 * q, 32 * q, 4, 4 ) };
         OpenCityLayout output; u32 culled = 0, checks = 0; String error;
         check( prepareCityRoadParcels( input, s, bake, terrain(), {}, output, culled, checks, error ), error );
         require( culled == 2 && checks == 1 && output.lots.size() == 1 && output.lots[0].id == 403,
@@ -164,6 +165,57 @@ namespace
             "Zero-direction junction port was silently converted into parcel culling" );
         require( culled == 91 && checks == 92, "Malformed junction input published partial parcel counters" );
         sameCity( retained, output );
+    }
+    void pavementReservations()
+    {
+        auto data = terrain(); auto input = city();
+        input.lots = { lot( 601, 0, 9.75f, 4, 4 ), lot( 602, 0, 13, 4, 4 ) };
+        auto s = source(); addRoad( s, 0, { -20, 0, -3 }, { 20, 0, -3 }, 12 );
+        OpenCityLayout output; u32 culled = 0, checks = 0; String error;
+        check( prepareCityRoadParcels( input, s, sample( s ), data, {}, output, culled, checks, error ), error );
+        require( culled == 0 && output.lots.size() == 2, "Initial authored road rejected clear pavement envelopes" );
+        ++s.revision; for( auto &knot : s.roads[0].knots ) knot.position.z = 0;
+        check( prepareCityRoadParcels( input, s, sample( s ), data, {}, output, culled, checks, error ), error );
+        require( culled == 1 && checks == 1 && output.lots.size() == 1 && output.lots[0].id == 602,
+            "Moved road admitted a foundation7.75m from its centre inside its8.45m sidewalk envelope" );
+
+        // The actual generated grid has parcel corners(11,11): radius15.556m.
+        // They clear anR14 road+1m shoulder but intersect its fitted outer walk.
+        auto grid = OpenCityLayout::generate( 42, 6 ); input = grid; input.lots.clear();
+        for( const auto &parcel : grid.lots )
+        {
+            const float x = std::max( std::abs( parcel.parcelX ) - parcel.parcelWidth * .5f, 0.f );
+            const float z = std::max( std::abs( parcel.parcelZ ) - parcel.parcelDepth * .5f, 0.f );
+            if( std::abs( x - 11 ) < .001f && std::abs( z - 11 ) < .001f ) input.lots.push_back( parcel );
+        }
+        require( input.lots.size() == 4, "Default-grid fixture did not select the four real corner parcels" );
+        for( const auto &parcel : grid.lots ) if( parcel.parcelX > 60 && parcel.parcelX < 80 && parcel.parcelZ > 60 && parcel.parcelZ < 80 )
+        { input.lots.push_back( parcel ); break; }
+        require( input.lots.size() == 5, "Default-grid fixture lacks its clear control parcel" );
+        const auto clearId = input.lots.back().id;
+        s = source(); CityRoadRoundaboutSpec junction; junction.junctionId = "50000000-0000-4000-8000-000000000001";
+        const Vector3F directions[] = { { 1, 0, 0 }, { 0, 0, 1 }, { -1, 0, 0 }, { 0, 0, -1 } };
+        for( unsigned i = 0; i < 4; ++i )
+        { addRoad( s, i, directions[i] * 32.f, directions[i] * 60.f, 12 ); junction.ports.push_back( { s.roads.back().id, directions[i], 12, 18 } ); }
+        s.roundabouts.push_back( junction ); const auto bake = sample( s );
+        data->dimensions = { 257, 257 }; data->origin = { -128, -128 }; data->heights.assign( 257 * 257, 0 );
+        CityRoadTerrainMesh footways; check( buildCityRoadFootways( s, bake, data, {}, footways, error ), error );
+        for( size_t parcel = 0; parcel < 4; ++parcel )
+        {
+            const auto &p = input.lots[parcel]; bool intersection = false;
+            for( const auto &v : footways.vertices ) if( v.normal.y > .5f &&
+                std::abs( v.position.x - p.parcelX ) < p.parcelWidth * .5f &&
+                std::abs( v.position.z - p.parcelZ ) < p.parcelDepth * .5f ) { intersection = true; break; }
+            require( intersection, "Generated-grid corner is not an actual fitted-pavement collision regression" );
+        }
+        check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error ), error );
+        require( culled == 4 && checks == 1 && output.lots.size() == 1 && output.lots[0].id == clearId,
+            "Default-gridR14 roundabout pavement still intersects a retained full parcel foundation" );
+
+        input = city(); input.lots = { lot( 603, 22, 7.75f, 2, 1 ), lot( 604, 22, 10.5f, 2, 1 ) };
+        check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error ), error );
+        require( culled == 1 && checks == 1 && output.lots.size() == 1 && output.lots[0].id == 604,
+            "Roundabout port admitted a parcel inside its real sidewalk shoulder beyond the circle" );
     }
     void transactionalFailures()
     {
@@ -204,7 +256,7 @@ namespace
 int main()
 {
     int result = 0;
-    try { canonicalRoads(); fullTerrain(); junctions(); transactionalFailures(); std::cout << "City parcels: canonical road/junction clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
+    try { canonicalRoads(); fullTerrain(); junctions(); pavementReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
     catch( const std::exception &e ) { std::cerr << "City parcel support: " << e.what() << '\n'; result = 1; }
     WorldStreamingScheduler::shutdownShared(); return result;
 }

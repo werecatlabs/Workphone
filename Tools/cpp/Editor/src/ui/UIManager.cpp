@@ -52,6 +52,7 @@
 
 namespace workphone::editor
 {
+    SmartPtr<EditorWindow> UIManager::getLuaDebuggerWindow() const { return m_luaDebuggerWindow; }
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager, ISharedObject );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::UpdateSelectionJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::MenuBarListener, IEventListener );

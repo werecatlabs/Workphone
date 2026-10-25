@@ -1,6 +1,7 @@
 #include <WPLua/LuaManager.hpp>
 #include <WPLua/LuaObjectData.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
+#include <WPLuabind/ParamConverter.hpp>
 #include <Workphone/Workphone.hpp>
 #include <luabind/luabind.hpp>
 #include <cstdio>
@@ -47,6 +48,21 @@ int main()
             manager.load( nullptr );
             auto state = manager.getLuaState();
             require( state != nullptr, "state allocation" );
+#ifdef WP_LUA_BACKEND_LUAJIT
+            require( manager.executeSource( "assert(jit and jit.status())", "=backend" ), "Selected engine is not LuaJIT" );
+#else
+            require( manager.executeSource( "assert(jit == nil)", "=backend" ), "Default engine backend changed" );
+#endif
+            lua_pushnumber( state, 3.75 );
+            luabind::default_converter<Parameter> converter;
+            require( converter.from( state, -1 ).getF64() == 3.75, "Fractional Parameter conversion truncated" );
+            lua_pop( state, 1 );
+            lua_pushnumber( state, std::numeric_limits<lua_Number>::quiet_NaN() );
+            require( converter.from( state, -1 ).type == ParameterType::PARAM_TYPE_F64, "NaN converted to integer" );
+            lua_pop( state, 1 );
+            lua_pushnumber( state, std::numeric_limits<lua_Number>::infinity() );
+            require( converter.from( state, -1 ).type == ParameterType::PARAM_TYPE_F64, "Infinity converted to integer" );
+            lua_pop( state, 1 );
             manager.load( nullptr );
             require( state == manager.getLuaState(), "double load replaced the state" );
             lua_pushinteger( state, 713 );

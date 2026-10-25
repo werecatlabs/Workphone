@@ -8,6 +8,8 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/System/FSM.hpp>
+#include <Workphone/System/FSMManager.hpp>
 
 #if WP_EDITOR_TESTS
 #include <boost/test/unit_test.hpp>
@@ -18,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <vector>
+#include <cstdint>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -125,6 +128,58 @@ namespace
         registry->unload( nullptr );
         for( const auto &actor : actors ) manager->destroyActor( actor, true );
     }
+
+    class CityPersistenceFSMManager : public FSMManager
+    {
+    public:
+        void growStorage( size_t size ) { resize( size ); }
+    };
+
+    void fsmFlagsSurviveStorageGrowth( SmartPtr<IFSMManager> applicationManager )
+    {
+        BOOST_REQUIRE( applicationManager );
+        // Use the real parallel-array implementation, isolated from the Editor's
+        // own FSMs. One explicit capacity growth avoids consuming thousands of IDs.
+        auto manager = make_ptr<CityPersistenceFSMManager>();
+        manager->setGrowSize( applicationManager->getNumFsms() + 64 ); manager->load( nullptr );
+        BOOST_REQUIRE( manager->isLoaded() ); auto first = manager->createFSM(); BOOST_REQUIRE( first );
+        auto concrete = dynamic_pointer_cast<FSM>( first ); BOOST_REQUIRE( concrete ); BOOST_REQUIRE( first->getHandle() );
+        const auto id = first->getHandle()->getInstanceId();
+        const u32 beforeFlags = IFSM::autoChangeStateFlag | IFSM::isPendingFlag | IFSM::isLockedFlag;
+        manager->setFlags( id, beforeFlags ); BOOST_REQUIRE_EQUAL( first->getFlags(), beforeFlags );
+        const auto oldAddress = reinterpret_cast<std::uintptr_t>( manager->getFlagsPtr( id ) );
+        manager->growStorage( manager->getSize() * 2 + 17 );
+        BOOST_REQUIRE( reinterpret_cast<std::uintptr_t>( manager->getFlagsPtr( id ) ) != oldAddress );
+        const u32 liveFlags = 0x5a000000u | IFSM::allowStateChangeFlag | IFSM::isStateChangeCompleteFlag | IFSM::isReadyFlag;
+        manager->setFlags( id, liveFlags );
+        // This is a value-level regression: the stale implementation reads the
+        // old allocation instead of this deliberately different live-slot pattern.
+        BOOST_REQUIRE_EQUAL( first->getFlags(), liveFlags );
+        BOOST_CHECK( !first->getAutoChangeState() ); BOOST_CHECK( !first->isPending() );
+        BOOST_CHECK( concrete->getAllowStateChange() ); BOOST_CHECK( concrete->isStateChangeComplete() );
+        first->setAutoChangeState( true ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags | IFSM::autoChangeStateFlag );
+        first->setAutoChangeState( false ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
+        concrete->setAllowStateChange( false ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags & ~IFSM::allowStateChangeFlag );
+        concrete->setAllowStateChange( true ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
+        concrete->setStateChangeComplete( false ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags & ~IFSM::isStateChangeCompleteFlag );
+        concrete->setStateChangeComplete( true ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
+        first->setFlags( liveFlags | IFSM::isPendingFlag );
+        BOOST_CHECK( first->isPending() ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags | IFSM::isPendingFlag );
+
+        first->setNewState( 17, false ); // Leave a real deferred queue reference alive through destruction.
+        manager->destroyFSM( first ); BOOST_CHECK( !first->isLoaded() );
+        const u32 retiredSlot = 0xa6000000u | IFSM::isReadyFlag;
+        manager->setFlags( id, retiredSlot );
+        first->setFlags( 0 ); first->setAutoChangeState( true ); concrete->setAllowStateChange( true ); concrete->setStateChangeComplete( true );
+        first->update(); first->updateState(); manager->update();
+        BOOST_CHECK_EQUAL( first->getFlags(), 0u ); BOOST_CHECK( !first->getAutoChangeState() ); BOOST_CHECK( !first->isPending() );
+        BOOST_CHECK( !concrete->getAllowStateChange() ); BOOST_CHECK( !concrete->isStateChangeComplete() );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), retiredSlot );
+        manager->unload( nullptr );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), 0u );
+        manager->setFlags( id, 0xffffffffu );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), 0u );
+    }
 }
 
 BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
@@ -151,6 +206,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     };
     flush();
     registrationRemovalOrdering( manager );
+    fsmFlagsSurviveStorageGrowth( app->getFsmManager() );
     auto terrainActor = manager->createActor(); BOOST_REQUIRE( terrainActor ); terrainActor->setName( "Terrain city persisted terrain" );
     auto terrain = terrainActor->addComponent<scene::TerrainSystem>(); BOOST_REQUIRE( terrain ); originalScene->addActor( terrainActor );
     if( auto renderer = dynamic_pointer_cast<render::Terrain>( terrain->getTerrain() ) ) renderer->setDeferredTerrainPublication( false );

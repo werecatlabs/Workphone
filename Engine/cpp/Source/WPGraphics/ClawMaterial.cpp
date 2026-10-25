@@ -21,6 +21,7 @@ namespace workphone
             MaterialProgramDX11::Ptr program;
             std::shared_ptr<MaterialProgramResourcesDX11> resources;
             MaterialProgramDX11::PublicationPtr publication;
+            MaterialProgramReloadDX11::BindingPtr reload;
             MaterialShaderParameterLayout::Ptr layout;
             u64 revision = 0;
             RuntimeState()
@@ -75,9 +76,19 @@ namespace workphone
 
         bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
 
+        void ClawMaterial::setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
+            std::shared_ptr<MaterialProgramResourcesDX11> resources)
+        {
+            if(!reload) { m_runtime.reset(); return; }
+            auto candidate = std::make_unique<RuntimeState>();
+            candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));
+            m_runtime = std::move(candidate);
+        }
+
         MaterialProgramDX11::PublicationPtr ClawMaterial::getRuntimePublication()
         {
             if(!m_runtime) return {};
+            if(m_runtime->reload) return m_runtime->reload->GetPublication();
             const auto &values = getShaderParameters();
             if(!m_runtime->program->IsCurrent(values.GetLayout())) return {};
             if(m_runtime->layout != values.GetLayout() || m_runtime->revision != values.GetRevision())

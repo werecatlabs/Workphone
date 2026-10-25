@@ -14,6 +14,9 @@ namespace workphone::scene
     {
         void require( bool valid, const char *message ) { if( !valid ) throw std::runtime_error( message ); }
         bool finite( Vector3F p ) { return std::isfinite( p.x ) && std::isfinite( p.y ) && std::isfinite( p.z ); }
+        // Match CityRoadFootways'0.05m carriageway gap +2.4m walk. Full parcel
+        // foundations must reserve the pedestrian surface as well as the road.
+        constexpr double pedestrianEnvelope = .05 + 2.4;
         struct Rectangle { double x, z, width, depth; };
         struct Segment { double ax, az, bx, bz, clearance; };
         double pointSegmentSquared( double x, double z, const Segment &segment )
@@ -49,7 +52,7 @@ namespace workphone::scene
         {
             const double dx = std::max( std::abs( r.x - junction.center.x ) - r.width * .5, 0. );
             const double dz = std::max( std::abs( r.z - junction.center.z ) - r.depth * .5, 0. );
-            const double radius = junction.outerRadius + 1.;
+            const double radius = junction.outerRadius + pedestrianEnvelope;
             if( dx * dx + dz * dz <= radius * radius ) return true;
             for( const auto &port : junction.ports )
             {
@@ -57,12 +60,12 @@ namespace workphone::scene
                 require( std::isfinite( run ) && run > .001, "Parcel junction approach has an invalid horizontal direction." );
                 const double inverse = 1. / run;
                 const double ux = port.outward.x * inverse, uz = port.outward.z * inverse;
-                const double along = port.length * .5 + 1, across = port.width * .5 + 1;
+                const double along = port.length * .5 + pedestrianEnvelope, across = port.width * .5 + pedestrianEnvelope;
                 const double cx = junction.center.x + ux * ( junction.outerRadius + port.length * .5 );
                 const double cz = junction.center.z + uz * ( junction.outerRadius + port.length * .5 );
                 const double x = r.x - cx, z = r.z - cz;
-                // Four separating axes give exact AABB/expanded oriented-strip
-                // overlap; the extra metre conservatively reserves the shoulders.
+                // Four separating axes reserve the oriented approach and both
+                // sidewalks; the circle also contains their skew miter contacts.
                 if( std::abs( x ) > r.width * .5 + std::abs( ux ) * along + std::abs( uz ) * across ||
                     std::abs( z ) > r.depth * .5 + std::abs( uz ) * along + std::abs( ux ) * across ||
                     std::abs( x * ux + z * uz ) > along + std::abs( ux ) * r.width * .5 + std::abs( uz ) * r.depth * .5 ||
@@ -122,7 +125,7 @@ namespace workphone::scene
                     if( !i ) continue;
                     const auto a = points[i - 1].position, b = points[i].position;
                     require( std::hypot( b.x - a.x, b.z - a.z ) > 1e-5f, "Parcel road bake has a zero horizontal segment." );
-                    segments.push_back( { a.x, a.z, b.x, b.z, source.roads[road].width * .5 + 1 } );
+                    segments.push_back( { a.x, a.z, b.x, b.z, source.roads[road].width * .5 + pedestrianEnvelope } );
                 }
             }
             SourceBudgetSet<u64> ids;

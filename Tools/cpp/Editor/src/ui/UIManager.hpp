@@ -352,7 +352,7 @@ namespace workphone
 
             /** @brief Default constructor. Sets up internal listeners and state. */
             UIManager();
-            SmartPtr<EditorWindow> getLuaDebuggerWindow() const { return m_luaDebuggerWindow; }
+            SmartPtr<EditorWindow> getLuaDebuggerWindow() const;
 
             /** @brief Destructor. Cleans up UI references. */
             ~UIManager() override;

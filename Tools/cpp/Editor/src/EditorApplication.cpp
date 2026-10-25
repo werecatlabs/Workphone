@@ -1,8 +1,8 @@
+#include <EditorPCH.hpp>
 #include <boost/json.hpp>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <EditorPCH.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <EditorApplication.hpp>
@@ -443,12 +443,28 @@ namespace workphone::editor
         debug->drawText( 0, Vector2F::unit() * 0.5f, "Hello world!", 0 );
     }
 
+    bool EditorApplication::createScriptManager()
+    {
+        if( !Application::createScriptManager() ) return false;
+        if( !m_luaDebuggerToken.empty() )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto root = app->getProjectPath();
+            if( root.empty() ) root = std::filesystem::current_path().u8string().c_str();
+            // Start before project scripts create coroutines: Lua 5.5 threads
+            // inherit their parent's hook at creation time.
+            return app->getScriptManager()->startDebugger( 0, m_luaDebuggerToken, root );
+        }
+        return true;
+    }
+
     void EditorApplication::load( SmartPtr<ISharedObject> data )
     {
         const auto debugOption = std::getenv( "WP_LUA_DEBUGGER" );
         const bool luaDebugging = debugOption && std::string( debugOption ) == "1";
         // Luabind execution and the paused UI pump share one physical owner.
-        if( luaDebugging ) setActiveThreads( 0 );
+        if( luaDebugging ) { setActiveThreads( 0 ); m_luaDebuggerToken = StringUtil::getUUID(); }
+        else m_luaDebuggerToken.clear();
         if( isDebugMode() )
         {
             loadDebug( data );
@@ -465,8 +481,8 @@ namespace workphone::editor
             {
                 auto root = app->getProjectPath();
                 if( root.empty() ) root = std::filesystem::current_path().u8string().c_str();
-                const auto token = StringUtil::getUUID();
-                if( scripts->startDebugger( 0, token, root ) )
+                const auto token = m_luaDebuggerToken;
+                if( scripts->getDebuggerPort() || scripts->startDebugger( 0, token, root ) )
                 {
                     scripts->setDebuggerPausePump( [this]() {
                         auto app = core::IApplicationManager::instancePtr();
@@ -495,9 +511,28 @@ namespace workphone::editor
                     } );
                     const auto directory = std::filesystem::u8path( root.c_str() ) / ".workphone";
                     std::filesystem::create_directories( directory );
-                    std::ofstream endpoint( directory / "lua-debug.json", std::ios::binary | std::ios::trunc );
-                    endpoint << boost::json::serialize( boost::json::object{
-                        { "port", scripts->getDebuggerPort() }, { "token", token.c_str() }, { "sourceRoot", root.c_str() } } );
+                    const auto destination = directory / "lua-debug.json";
+                    auto temporary = destination;
+                    temporary += std::string( "." ) + token.c_str() + ".tmp";
+                    try
+                    {
+                        std::ofstream endpoint( temporary, std::ios::binary | std::ios::trunc );
+                        endpoint.exceptions( std::ios::badbit | std::ios::failbit );
+                        endpoint << boost::json::serialize( boost::json::object{
+                            { "port", scripts->getDebuggerPort() }, { "token", token.c_str() }, { "sourceRoot", root.c_str() } } );
+                        endpoint.flush(); endpoint.close();
+#ifdef _WIN32
+                        if( !MoveFileExW( temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                            throw std::runtime_error( "Cannot publish Lua debugger endpoint" );
+#else
+                        std::filesystem::rename( temporary, destination );
+#endif
+                        m_luaDebuggerEndpoint = destination.u8string().c_str();
+                    }
+                    catch( ... )
+                    {
+                        std::error_code ignored; std::filesystem::remove( temporary, ignored ); throw;
+                    }
                     WP_LOG( "Lua debugger endpoint: " + root + "/.workphone/lua-debug.json" );
                 }
                 else WP_LOG_ERROR( "Could not start the Lua debugger" );
@@ -516,6 +551,28 @@ namespace workphone::editor
 
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
+
+                if( auto scripts = applicationManager->getScriptManager() )
+                {
+                    scripts->setDebuggerPausePump( {} );
+                    scripts->stopDebugger();
+                }
+                if( !m_luaDebuggerEndpoint.empty() )
+                {
+                    try
+                    {
+                        std::ifstream input( std::filesystem::u8path( m_luaDebuggerEndpoint.c_str() ) );
+                        const std::string text( ( std::istreambuf_iterator<char>( input ) ), {} );
+                        auto endpoint = boost::json::parse( text ).as_object();
+                        if( endpoint.at( "token" ).as_string() == m_luaDebuggerToken.c_str() )
+                        {
+                            std::error_code ignored;
+                            std::filesystem::remove( std::filesystem::u8path( m_luaDebuggerEndpoint.c_str() ), ignored );
+                        }
+                    }
+                    catch( ... ) {} // Another instance may have replaced the endpoint.
+                    m_luaDebuggerEndpoint.clear();
+                }
 
                 if( m_editorApplicationListener )
                 {

@@ -1,6 +1,6 @@
+#include <WPLua/LuaDebugger.hpp>
 #include <boost/asio.hpp>
 #include <boost/json.hpp>
-#include <WPLua/LuaDebugger.hpp>
 #include <WPLuabind/LuaCompat.hpp>
 #include <atomic>
 #include <chrono>
@@ -14,6 +14,12 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cstdlib>
+#ifdef _MSC_VER
+// Engine math uses /fp:fast; debugger expressions must retain Lua's NaN and
+// infinity comparison semantics regardless of renderer optimization flags.
+#pragma float_control(precise, on, push)
+#endif
 #ifdef WP_LUA_BACKEND_LUAJIT
 extern "C" {
 #include <luajit.h>
@@ -62,6 +68,13 @@ namespace workphone
         struct Source { std::string path, text; int id = 0, lines = 1; };
         struct Reference { int kind = 0, level = 0, registry = LUA_NOREF; };
         struct Packet { unsigned session; j::object request; };
+        struct StopRule
+        {
+            std::string condition, message;
+            unsigned long long hits = 0, target = 0;
+            char comparison = '=';
+            bool log = false, disabled = false;
+        };
         lua_State *main = nullptr, *stopped = nullptr;
         std::atomic<bool> stopping{ false }, connected{ false }, isPaused{ false }, closeClient{ false };
         std::atomic<unsigned> generation{ 0 };
@@ -80,11 +93,14 @@ namespace workphone
         size_t sourceBytes = 0;
         std::map<std::string, std::set<int>> breakpoints;
         std::map<std::string, std::map<int, int>> breakpointIds;
+        std::map<std::string, std::map<int, StopRule>> stopRules;
         int nextBreakpoint = 1;
         std::map<int, int> frames;
         std::map<int, Reference> references;
         std::function<bool()> pump;
+        int hookedThreads = LUA_NOREF;
         std::atomic<int> localAction{ 0 };
+        bool abortExecution = false;
         std::string snapshot = "{}";
 
         static Impl *get( lua_State *state )
@@ -100,8 +116,20 @@ namespace workphone
             if( auto self = get( state ) )
             {
                 if( self->suppress ) return;
+                if( self->hookedThreads != LUA_NOREF )
+                {
+                    lua_rawgeti( state, LUA_REGISTRYINDEX, self->hookedThreads );
+                    lua_pushthread( state ); lua_pushboolean( state, 1 ); lua_rawset( state, -3 ); lua_pop( state, 1 );
+                }
                 try { self->onHook( state, frame ); }
                 catch( const std::exception & ) { self->closeClient = true; self->isPaused = false; }
+                if( self->abortExecution )
+                {
+                    self->abortExecution = false;
+                    // All C++ frames with non-trivial locals have returned.
+                    lua_pushliteral( state, "Lua execution cancelled by the debugger host" );
+                    lua_error( state );
+                }
             }
         }
         std::string path( std::string name ) const
@@ -121,7 +149,13 @@ namespace workphone
             if( !connected ) return;
             message["seq"] = ++sequence;
             auto body = j::serialize( message );
-            if( body.size() > maxMessage ) { closeClient = true; return; }
+            if( body.size() > maxMessage )
+            {
+                if( stringValue( message, "type" ) != "response" ) return;
+                message.erase( "body" ); message["success"] = false;
+                message["message"] = "Debugger response exceeds 64 KiB; request fewer variables or frames";
+                body = j::serialize( message );
+            }
             auto bytes = "Content-Length: " + std::to_string( body.size() ) + "\r\n\r\n" + body;
             std::lock_guard<std::mutex> lock( mutex );
             if( output.size() >= 128 ) { closeClient = true; return; }
@@ -151,7 +185,8 @@ namespace workphone
             stopped = nullptr; isPaused = false; attached = initialized = configured = false;
             pauseRequested = breakOnException = false; step = 0;
             localMode = false;
-            breakpoints.clear(); breakpointIds.clear(); pendingAttach.clear(); exceptionText.clear();
+            abortExecution = false;
+            breakpoints.clear(); breakpointIds.clear(); stopRules.clear(); pendingAttach.clear(); exceptionText.clear();
         }
         int depth( lua_State *state )
         {
@@ -171,7 +206,28 @@ namespace workphone
                 auto source = path( frame->source ? frame->source : "" );
                 auto entry = breakpoints.find( source );
                 if( entry != breakpoints.end() && entry->second.count( frame->currentline ) )
-                { stop = true; reason = "breakpoint"; }
+                {
+                    auto &rule = stopRules[source][frame->currentline];
+                    StackGuard guard( state );
+                    if( rule.hits != std::numeric_limits<unsigned long long>::max() ) ++rule.hits;
+                    bool hit = !rule.disabled && ( !rule.target || ( rule.comparison == '=' ? rule.hits == rule.target :
+                        rule.comparison == '%' ? rule.hits % rule.target == 0 : rule.comparison == '>' ? rule.hits > rule.target : rule.hits >= rule.target ) );
+                    try
+                    {
+                        if( hit && !rule.condition.empty() ) hit = Expression( *this, state, 0, rule.condition ).parse().truth();
+                        if( hit && rule.log ) event( "output", { { "category", "console" },
+                            { "output", logText( state, rule.message, true ) + "\n" }, { "source", sourceObject( source ) },
+                            { "line", frame->currentline - ( linesAtOne ? 0 : 1 ) } } );
+                        else if( hit ) { stop = true; reason = "breakpoint"; }
+                    }
+                    catch( const std::exception &error )
+                    {
+                        rule.disabled = true;
+                        event( "breakpoint", { { "reason", "changed" }, { "breakpoint", j::object{
+                            { "id", breakpointIds[source][frame->currentline] }, { "verified", false }, { "message", error.what() } } } } );
+                        event( "output", { { "category", "stderr" }, { "output", std::string( "Breakpoint disabled: " ) + error.what() + "\n" } } );
+                    }
+                }
                 if( step && ( step == 1 || ( step == 2 && depth( state ) <= stepDepth ) ||
                                             ( step == 3 && depth( state ) < stepDepth ) ) )
                 { stop = true; reason = "step"; }
@@ -205,7 +261,7 @@ namespace workphone
                     bool keep = false;
                     try { keep = pump(); } catch( ... ) { suppress = false; throw; }
                     suppress = false;
-                    if( !keep ) { closeClient = true; break; }
+                    if( !keep ) { closeClient = true; abortExecution = true; break; }
                 }
                 std::this_thread::sleep_for( std::chrono::milliseconds( 2 ) );
             }
@@ -262,6 +318,7 @@ namespace workphone
         }
         bool lookup( lua_State *state, int level, const std::string &expression )
         {
+            if( !lua_checkstack( state, 8 ) ) throw std::runtime_error( "Lua inspection stack limit reached" );
             // Inspection is read-only. No __index, __tostring, functions or Lua
             // evaluation can run arbitrary engine code while a frame is stopped.
             size_t at = 0;
@@ -325,6 +382,204 @@ namespace workphone
             }
             return true;
         }
+        struct Value
+        {
+            enum Kind { Nil, Boolean, Number, String, Object } kind = Nil;
+            bool boolean = false;
+            double number = 0;
+            std::string text;
+            int index = 0;
+            const void *pointer = nullptr;
+            bool truth() const { return kind != Nil && ( kind != Boolean || boolean ); }
+        };
+        // A bounded observer expression language. Never executes Lua functions,
+        // metamethods, assignments or native bindings in a stopped program.
+        struct Expression
+        {
+            Impl &owner; lua_State *state; int level; const std::string &input;
+            size_t at = 0; int recursion = 0;
+            struct Token { std::string text; int kind = 0; } token;
+            Expression( Impl &o, lua_State *s, int l, const std::string &i ) : owner( o ), state( s ), level( l ), input( i ) { next(); }
+            [[noreturn]] void error() { throw std::runtime_error( "Unsupported read-only expression near byte " + std::to_string( at ) ); }
+            void next()
+            {
+                while( at < input.size() && std::isspace( static_cast<unsigned char>( input[at] ) ) ) ++at;
+                token = {};
+                if( at == input.size() ) return;
+                const auto begin = at; const char c = input[at++];
+                if( std::isalpha( static_cast<unsigned char>( c ) ) || c == '_' )
+                {
+                    while( at < input.size() && ( std::isalnum( static_cast<unsigned char>( input[at] ) ) || input[at] == '_' ) ) ++at;
+                    token = { input.substr( begin, at - begin ), 1 }; return;
+                }
+                if( std::isdigit( static_cast<unsigned char>( c ) ) ||
+                    ( c == '.' && at < input.size() && std::isdigit( static_cast<unsigned char>( input[at] ) ) ) )
+                {
+                    while( at < input.size() && ( std::isdigit( static_cast<unsigned char>( input[at] ) ) ||
+                        ( input[at] == '.' && ( at + 1 == input.size() || input[at + 1] != '.' ) ) ) ) ++at;
+                    if( at < input.size() && ( input[at] == 'e' || input[at] == 'E' ) )
+                    { ++at; if( at < input.size() && ( input[at] == '+' || input[at] == '-' ) ) ++at; while( at < input.size() && std::isdigit( static_cast<unsigned char>( input[at] ) ) ) ++at; }
+                    token = { input.substr( begin, at - begin ), 2 }; return;
+                }
+                if( c == '\'' || c == '"' )
+                {
+                    token.kind = 3;
+                    while( at < input.size() && input[at] != c )
+                    {
+                        char value = input[at++];
+                        if( value == '\\' )
+                        {
+                            if( at == input.size() ) error(); value = input[at++];
+                            if( value == 'n' ) value = '\n'; else if( value == 'r' ) value = '\r'; else if( value == 't' ) value = '\t';
+                            else if( value != '\\' && value != '\'' && value != '"' ) error();
+                        }
+                        token.text += value;
+                    }
+                    if( at == input.size() ) error(); ++at; return;
+                }
+                token = { std::string( 1, c ), 4 };
+                if( at < input.size() && ( ( ( c == '=' || c == '~' || c == '<' || c == '>' ) && input[at] == '=' ) || ( c == '.' && input[at] == '.' ) ) ) token.text += input[at++];
+            }
+            int precedence() const
+            {
+                if( token.kind != 1 && token.kind != 4 ) return 0;
+                const auto &s = token.text;
+                if( token.kind == 1 && s != "and" && s != "or" ) return 0;
+                return s == "or" ? 1 : s == "and" ? 2 : s == "==" || s == "~=" || s == "<" || s == ">" || s == "<=" || s == ">=" ? 3 :
+                    s == ".." ? 4 : s == "+" || s == "-" ? 5 : s == "*" || s == "/" || s == "%" ? 6 : s == "^" ? 8 : 0;
+            }
+            Value scalar( const std::string &text )
+            {
+                Value value; value.kind = Value::Number; char *end = nullptr;
+                value.number = std::strtod( text.c_str(), &end ); if( !end || *end ) error(); return value;
+            }
+            Value primary( bool run )
+            {
+                Value value;
+                if( token.kind == 4 && token.text == "(" ) { next(); value = expression( 1, run ); if( token.text != ")" || token.kind != 4 ) error(); next(); return value; }
+                if( ( token.kind == 4 && ( token.text == "-" || token.text == "#" ) ) || ( token.kind == 1 && token.text == "not" ) )
+                {
+                    const auto op = token.text; next(); value = expression( 7, run ); if( !run ) return {};
+                    if( op == "not" ) { value.boolean = !value.truth(); value.kind = Value::Boolean; }
+                    else if( op == "-" && value.kind == Value::Number ) value.number = -value.number;
+                    else if( op == "#" && value.kind == Value::String ) { value.number = static_cast<double>( value.text.size() ); value.kind = Value::Number; }
+                    else error(); return value;
+                }
+                if( token.kind == 2 ) { value = scalar( token.text ); next(); return value; }
+                if( token.kind == 3 ) { value.kind = Value::String; value.text = token.text; next(); return value; }
+                if( token.kind != 1 ) error();
+                auto name = token.text; next();
+                if( name == "nil" ) return value;
+                if( name == "true" || name == "false" ) { value.kind = Value::Boolean; value.boolean = name == "true"; return value; }
+                while( token.kind == 4 && ( token.text == "." || token.text == "[" ) )
+                {
+                    const auto op = token.text; next();
+                    if( op == "." ) { if( token.kind != 1 ) error(); name += "." + token.text; next(); }
+                    else
+                    {
+                        if( token.kind == 2 && token.text.find_first_not_of( "0123456789" ) == std::string::npos ) name += "[" + token.text + "]";
+                        else if( token.kind == 3 && token.text.find_first_of( "\"\\" ) == std::string::npos ) name += "[\"" + token.text + "\"]";
+                        else error();
+                        next(); if( token.text != "]" ) error(); next();
+                    }
+                }
+                if( !run ) return {};
+                if( !owner.lookup( state, level, name ) ) error();
+                const int index = lua_gettop( state );
+                switch( lua_type( state, -1 ) )
+                {
+                case LUA_TNIL: break;
+                case LUA_TBOOLEAN: value.kind = Value::Boolean; value.boolean = lua_toboolean( state, -1 ) != 0; break;
+                case LUA_TNUMBER: value.kind = Value::Number; value.number = lua_tonumber( state, -1 ); break;
+                case LUA_TSTRING: { value.kind = Value::String; size_t size; auto p = lua_tolstring( state, -1, &size ); if( size > 4096 ) throw std::runtime_error( "String operand exceeds debugger limit" ); value.text.assign( p, size ); break; }
+                default: value.kind = Value::Object; value.index = index; value.pointer = lua_topointer( state, -1 ); return value;
+                }
+                lua_pop( state, 1 ); return value;
+            }
+            Value expression( int minimum, bool run )
+            {
+                if( ++recursion > 64 ) error();
+                auto left = primary( run );
+                for( int p; ( p = precedence() ) >= minimum; )
+                {
+                    const auto op = token.text; next();
+                    auto right = expression( p + ( op == "^" || op == ".." ? 0 : 1 ), run && !( op == "and" && !left.truth() ) && !( op == "or" && left.truth() ) );
+                    if( !run ) continue;
+                    if( op == "and" ) { if( left.truth() ) left = std::move( right ); continue; }
+                    if( op == "or" ) { if( !left.truth() ) left = std::move( right ); continue; }
+                    if( op == "==" || op == "~=" )
+                    {
+                        bool equal = left.kind == right.kind && ( left.kind == Value::Nil || ( left.kind == Value::Boolean && left.boolean == right.boolean ) ||
+                            ( left.kind == Value::Number && left.number == right.number ) || ( left.kind == Value::String && left.text == right.text ) || ( left.kind == Value::Object && left.pointer == right.pointer ) );
+                        left.kind = Value::Boolean; left.boolean = op == "==" ? equal : !equal; continue;
+                    }
+                    if( op == "<" || op == ">" || op == "<=" || op == ">=" )
+                    {
+                        if( left.kind == Value::Number && right.kind == Value::Number )
+                            left.boolean = op == "<" ? left.number < right.number : op == "<=" ? left.number <= right.number : op == ">" ? left.number > right.number : left.number >= right.number;
+                        else if( left.kind == Value::String && right.kind == Value::String )
+                            left.boolean = op == "<" ? left.text < right.text : op == "<=" ? left.text <= right.text : op == ">" ? left.text > right.text : left.text >= right.text;
+                        else error();
+                        left.kind = Value::Boolean;
+                        continue;
+                    }
+                    if( op == ".." )
+                    {
+                        if( left.kind != Value::String || right.kind != Value::String || left.text.size() + right.text.size() > 4096 ) error();
+                        left.text += right.text; continue;
+                    }
+                    if( left.kind != Value::Number || right.kind != Value::Number ) error();
+                    if( op == "+" ) left.number += right.number; else if( op == "-" ) left.number -= right.number;
+                    else if( op == "*" ) left.number *= right.number; else if( op == "/" ) left.number /= right.number;
+                    else if( op == "%" ) left.number -= std::floor( left.number / right.number ) * right.number;
+                    else if( op == "^" ) left.number = std::pow( left.number, right.number );
+                }
+                --recursion; return left;
+            }
+            Value parse( bool run = true )
+            {
+                if( input.empty() || input.size() > 1024 ) error();
+                auto value = expression( 1, run ); if( token.kind ) error(); return value;
+            }
+            void push( const Value &value )
+            {
+                switch( value.kind )
+                {
+                case Value::Nil: lua_pushnil( state ); break;
+                case Value::Boolean: lua_pushboolean( state, value.boolean ); break;
+                case Value::Number: lua_pushnumber( state, value.number ); break;
+                case Value::String: lua_pushlstring( state, value.text.data(), value.text.size() ); break;
+                case Value::Object: lua_pushvalue( state, value.index ); break;
+                }
+            }
+        };
+        std::string logText( lua_State *state, const std::string &message, bool run )
+        {
+            if( message.size() > 4096 ) throw std::runtime_error( "Logpoint message exceeds limit" );
+            std::string text;
+            for( size_t at = 0; at < message.size(); )
+            {
+                const char c = message[at++];
+                if( ( c == '{' || c == '}' ) && at < message.size() && message[at] == c ) { text += c; ++at; continue; }
+                if( c == '}' ) throw std::runtime_error( "Unmatched logpoint brace" );
+                if( c != '{' ) { text += c; continue; }
+                const auto begin = at; char quote = 0;
+                for( ; at < message.size(); ++at )
+                {
+                    const char current = message[at];
+                    if( quote ) { if( current == '\\' ) ++at; else if( current == quote ) quote = 0; }
+                    else if( current == '\'' || current == '"' ) quote = current;
+                    else if( current == '}' ) break;
+                }
+                if( at >= message.size() ) throw std::runtime_error( "Unclosed logpoint expression" );
+                const auto expression = message.substr( begin, at++ - begin );
+                Expression evaluator( *this, state, 0, expression ); auto result = evaluator.parse( run );
+                if( run )
+                { evaluator.push( result ); text += display( state, -1 ); lua_pop( state, 1 ); }
+                if( text.size() > 8192 ) throw std::runtime_error( "Logpoint output exceeds limit" );
+            }
+            return text;
+        }
         void handle( const j::object &request )
         {
             const auto command = stringValue( request, "command" );
@@ -337,6 +592,7 @@ namespace workphone
                 initialized = true;
                 if( auto p = args.if_contains( "linesStartAt1" ); p && p->is_bool() ) linesAtOne = p->as_bool();
                 response( request, { { "supportsConfigurationDoneRequest", true }, { "supportsEvaluateForHovers", true },
+                    { "supportsConditionalBreakpoints", true }, { "supportsHitConditionalBreakpoints", true }, { "supportsLogPoints", true },
                     { "supportsExceptionInfoRequest", true }, { "supportsLoadedSourcesRequest", true },
                     { "exceptionBreakpointFilters", j::array{ j::object{ { "filter", "uncaught" }, { "label", "Uncaught Lua errors" }, { "default", false } } } } } );
                 return;
@@ -366,7 +622,7 @@ namespace workphone
                 if( source.empty() ) { response( request, {}, "A source path is required" ); return; }
                 if( ( !breakpoints.count( source ) && breakpoints.size() >= 256 ) || nextBreakpoint > INT_MAX - 1024 )
                 { response( request, {}, "Breakpoint source limit reached" ); return; }
-                auto &lines = breakpoints[source]; lines.clear(); j::array result;
+                auto &lines = breakpoints[source]; lines.clear(); stopRules[source].clear(); j::array result;
                 if( auto b = args.if_contains( "breakpoints" ); b && b->is_array() )
                 {
                     if( b->as_array().size() > 1024 ) { response( request, {}, "Too many breakpoints" ); return; }
@@ -374,7 +630,27 @@ namespace workphone
                     {
                         if( !item.is_object() ) continue;
                         const auto &o = item.as_object(); const int line = integer( o, "line", -1 ) + ( linesAtOne ? 0 : 1 );
-                        bool valid = line > 0 && !o.if_contains( "condition" ) && !o.if_contains( "hitCondition" ) && !o.if_contains( "logMessage" );
+                        bool valid = line > 0; std::string problem; StopRule rule;
+                        try
+                        {
+                            for( const char *name : { "condition", "hitCondition", "logMessage" } )
+                                if( auto value = o.if_contains( name ); value && !value->is_string() ) throw std::runtime_error( "Breakpoint options must be strings" );
+                            rule.condition = stringValue( o, "condition" );
+                            if( !rule.condition.empty() ) Expression( *this, main, 0, rule.condition ).parse( false );
+                            rule.log = o.if_contains( "logMessage" ) != nullptr; rule.message = stringValue( o, "logMessage" );
+                            if( rule.log ) logText( main, rule.message, false );
+                            auto hits = stringValue( o, "hitCondition" );
+                            hits.erase( std::remove_if( hits.begin(), hits.end(), []( unsigned char c ) { return std::isspace( c ) != 0; } ), hits.end() );
+                            if( !hits.empty() )
+                            {
+                                if( hits.compare( 0, 2, ">=" ) == 0 ) { rule.comparison = '+'; hits.erase( 0, 2 ); }
+                                else if( hits.compare( 0, 2, "==" ) == 0 ) hits.erase( 0, 2 );
+                                else if( hits[0] == '%' || hits[0] == '>' ) { rule.comparison = hits[0]; hits.erase( 0, 1 ); }
+                                if( hits.empty() || hits.size() > 9 || hits.find_first_not_of( "0123456789" ) != std::string::npos ) throw std::runtime_error( "Hit condition must be N, ==N, >=N, >N or %N" );
+                                rule.target = std::stoull( hits ); if( !rule.target ) throw std::runtime_error( "Hit count must be positive" );
+                            }
+                        }
+                        catch( const std::exception &error ) { valid = false; problem = error.what(); }
                         int id = 0;
                         if( valid )
                         {
@@ -382,10 +658,11 @@ namespace workphone
                             auto &assigned = breakpointIds[source][line];
                             if( !assigned ) assigned = nextBreakpoint++;
                             id = assigned;
+                            stopRules[source][line] = std::move( rule );
                         }
                         const auto known = sources.find( source );
                         result.push_back( j::object{ { "id", id }, { "verified", valid && known != sources.end() && line <= known->second.lines },
-                            { "line", line - ( linesAtOne ? 0 : 1 ) }, { "message", valid ? "Bound when this source executes" : "Invalid line or unsupported conditional breakpoint" } } );
+                            { "line", line - ( linesAtOne ? 0 : 1 ) }, { "message", valid ? "Bound when this source executes" : problem.empty() ? "Invalid breakpoint line" : problem } } );
                     }
                 }
                 response( request, { { "breakpoints", std::move( result ) } } ); return;
@@ -479,8 +756,8 @@ namespace workphone
                 int level = 0;
                 if( auto id = args.if_contains( "frameId" ) )
                 { auto frame = frames.find( integer( args, "frameId" ) ); if( frame == frames.end() ) { response( request, {}, "Stale frame" ); return; } level = frame->second; }
-                if( expression.size() > 1024 || !lookup( stopped, level, expression ) )
-                { response( request, {}, "Read-only evaluation supports names and table paths, e.g. actor.position[1]" ); return; }
+                Expression evaluator( *this, stopped, level, expression );
+                const auto evaluated = evaluator.parse(); evaluator.push( evaluated );
                 auto value = variable( stopped, expression, -1 ); auto result = value.at( "value" );
                 value["result"] = std::move( result ); value.erase( "name" ); value.erase( "value" ); response( request, std::move( value ) ); return;
             }
@@ -532,10 +809,27 @@ namespace workphone
                     {
                         auto end = input.find( "\r\n\r\n" );
                         if( end == std::string::npos ) { if( input.size() > 256 ) closeClient = true; break; }
-                        if( end > 256 || input.compare( 0, 16, "Content-Length: " ) != 0 ) { closeClient = true; break; }
-                        const auto header = input.substr( 16, end - 16 );
-                        if( header.empty() || header.size() > 6 || header.find_first_not_of( "0123456789" ) != std::string::npos ) { closeClient = true; break; }
-                        const size_t length = std::stoul( header );
+                        if( end > 256 ) { closeClient = true; break; }
+                        size_t length = 0, offset = 0; bool hasLength = false;
+                        while( offset < end )
+                        {
+                            auto lineEnd = input.find( "\r\n", offset );
+                            if( lineEnd == std::string::npos || lineEnd > end ) lineEnd = end;
+                            const auto colon = input.find( ':', offset );
+                            if( colon == std::string::npos || colon >= lineEnd ) { closeClient = true; break; }
+                            auto name = input.substr( offset, colon - offset );
+                            for( auto &c : name ) c = static_cast<char>( std::tolower( static_cast<unsigned char>( c ) ) );
+                            if( name == "content-length" )
+                            {
+                                auto value = input.substr( colon + 1, lineEnd - colon - 1 );
+                                const auto first = value.find_first_not_of( " \t" ), last = value.find_last_not_of( " \t" );
+                                value = first == std::string::npos ? "" : value.substr( first, last - first + 1 );
+                                if( hasLength || value.empty() || value.size() > 6 || value.find_first_not_of( "0123456789" ) != std::string::npos ) { closeClient = true; break; }
+                                length = std::stoul( value ); hasLength = true;
+                            }
+                            offset = lineEnd + 2;
+                        }
+                        if( closeClient || !hasLength ) { closeClient = true; break; }
                         if( !length || length > maxMessage ) { closeClient = true; break; }
                         if( input.size() < end + 4 + length ) break;
                         boost::system::error_code parseError;
@@ -596,16 +890,34 @@ namespace workphone
     {
         if( m_impl->main )
         {
-            lua_sethook( m_impl->main, nullptr, 0, 0 );
+            if( m_impl->hookedThreads != LUA_NOREF )
+            {
+                lua_rawgeti( m_impl->main, LUA_REGISTRYINDEX, m_impl->hookedThreads );
+                lua_pushnil( m_impl->main );
+                while( lua_next( m_impl->main, -2 ) )
+                {
+                    auto thread = lua_tothread( m_impl->main, -2 );
+                    if( thread && lua_gethook( thread ) == Impl::hook ) lua_sethook( thread, nullptr, 0, 0 );
+                    lua_pop( m_impl->main, 1 );
+                }
+                lua_pop( m_impl->main, 1 );
+                luaL_unref( m_impl->main, LUA_REGISTRYINDEX, m_impl->hookedThreads );
+                m_impl->hookedThreads = LUA_NOREF;
+            }
             lua_pushlightuserdata( m_impl->main, &debuggerKey ); lua_pushnil( m_impl->main ); lua_rawset( m_impl->main, LUA_REGISTRYINDEX );
         }
         m_impl->main = state;
         if( state )
         {
+            lua_newtable( state ); lua_newtable( state ); lua_pushliteral( state, "k" );
+            lua_setfield( state, -2, "__mode" ); lua_setmetatable( state, -2 );
+            lua_pushthread( state ); lua_pushboolean( state, 1 ); lua_rawset( state, -3 );
+            m_impl->hookedThreads = luaL_ref( state, LUA_REGISTRYINDEX );
             lua_pushlightuserdata( state, &debuggerKey ); lua_pushlightuserdata( state, m_impl.get() ); lua_rawset( state, LUA_REGISTRYINDEX );
             lua_sethook( state, Impl::hook, LUA_MASKLINE | LUA_MASKCOUNT, 1000 );
 #ifdef WP_LUA_BACKEND_LUAJIT
             luaJIT_setmode( state, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF );
+            luaJIT_setmode( state, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_FLUSH );
 #endif
         }
     }
@@ -685,3 +997,6 @@ namespace workphone
         for( const auto &entry : other.m_impl->sources ) source( entry.second.path, entry.second.text );
     }
 }
+#ifdef _MSC_VER
+#pragma float_control(pop)
+#endif

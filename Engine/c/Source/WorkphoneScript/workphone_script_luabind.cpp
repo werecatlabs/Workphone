@@ -1,4 +1,3 @@
-#include <WPLuabind/LuaCompat.hpp>
 extern "C" {
 #include "workphone_script_luabind.h"
 #include "workphone_script_method.h"
@@ -14,6 +13,10 @@ extern "C" {
 #endif
 
 #include <lua.hpp>
+#ifndef NULL
+#    define NULL nullptr
+#endif
+#include <WPLuabind/LuaCompat.hpp>
 #include <luabind/detail/class_rep.hpp>
 #include <luabind/detail/object_rep.hpp>
 #include <luabind/luabind.hpp>

@@ -347,10 +347,17 @@ void wp_shader_set_native( wp_shader *shader, void *native );
 wp_shader_program *wp_shader_program_create( void );
 void wp_shader_program_retain( wp_shader_program *program );
 void wp_shader_program_destroy( wp_shader_program *program );
+/** Physical descriptor plus allocated parameter-buffer capacity. Excludes
+ * attached shader descriptors, native objects and allocator bookkeeping.
+ * Returns zero for a null program; querying does not mutate the program. */
+wp_size wp_shader_program_get_storage_size( const wp_shader_program *program );
 
 void wp_shader_program_attach( wp_shader_program *program, wp_shader *shader );
 void wp_shader_program_detach( wp_shader_program *program, wp_shader_type type );
 wp_shader *wp_shader_program_get_shader( const wp_shader_program *program, wp_shader_type type );
+/** Borrow the shader stored in an attachment slot without searching by its
+ * current type or repairing topology. Invalid slots and null programs return null. */
+wp_shader *wp_shader_program_get_attached_shader( const wp_shader_program *program, wp_s32 slot );
 
 /* =========================================================================
  * Shader program API - legacy uniform registry

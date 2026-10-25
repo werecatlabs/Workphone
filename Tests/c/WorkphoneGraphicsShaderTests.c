@@ -194,6 +194,108 @@ static int material_storage_contracts( void )
     return ok;
 }
 
+static int program_introspection_contracts( void )
+{
+    wp_shader_program *program;
+    wp_shader_program *resource_program;
+    wp_shader *vertex;
+    wp_shader *pixel;
+    wp_size base, scalar_storage, grown_storage, resource_storage;
+    wp_u32 revision;
+    wp_s32 texture_index;
+    int ok;
+
+    program = wp_shader_program_create();
+    resource_program = wp_shader_program_create();
+    vertex = wp_shader_create( WORKPHONE_SHADER_TYPE_VERTEX, WORKPHONE_SHADER_LANGUAGE_HLSL,
+                               "void main(){}", "main" );
+    pixel = wp_shader_create( WORKPHONE_SHADER_TYPE_PIXEL, WORKPHONE_SHADER_LANGUAGE_HLSL,
+                              "float4 main():SV_TARGET{return 1;}", "main" );
+    if( !program || !resource_program || !vertex || !pixel )
+    {
+        wp_shader_program_destroy( program );
+        wp_shader_program_destroy( resource_program );
+        wp_shader_destroy( vertex );
+        wp_shader_destroy( pixel );
+        return check( 0, "program introspection fixture creation" );
+    }
+    base = wp_shader_program_get_storage_size( program );
+    revision = wp_shader_program_get_revision( program );
+    ok = check( base > 0u && wp_shader_program_get_storage_size( NULL ) == 0u &&
+                    wp_shader_program_get_storage_size( program ) == base &&
+                    wp_shader_program_get_revision( program ) == revision,
+                "program storage query is null-safe and reports a stable empty descriptor without mutation" );
+    texture_index = wp_shader_program_register_param( resource_program, "image", WORKPHONE_UNIFORM_TYPE_INT,
+        1u, WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT, WORKPHONE_SHADER_AUTO_PARAM_NONE,
+        WORKPHONE_SHADER_RESOURCE_TEXTURE );
+    resource_storage = wp_shader_program_get_storage_size( resource_program );
+    /* Legacy resource registrations reserve parameter slots too. The query
+     * accounts those bytes; changing a bound pointer must not grow capacity. */
+    ok &= check( texture_index == 0 && wp_shader_program_get_param_buffer_size( resource_program ) > 0u &&
+                     resource_storage > base &&
+                     resource_storage - base >= wp_shader_program_get_param_buffer_size( resource_program ),
+                 "resource-only registrations retain and account their existing legacy parameter backing" );
+    ok &= check( wp_shader_program_set_resource( resource_program, texture_index, &g_shader_native ) &&
+                     wp_shader_program_get_resource( resource_program, texture_index ) == &g_shader_native &&
+                     wp_shader_program_get_storage_size( resource_program ) == resource_storage &&
+                     wp_shader_program_set_resource( resource_program, texture_index, NULL ) &&
+                     wp_shader_program_get_storage_size( resource_program ) == resource_storage,
+                 "resource pointer replacement and removal do not allocate parameter bytes" );
+    wp_shader_program_destroy( resource_program );
+    ok &= check( wp_shader_program_register_uniform( program, "weight", WORKPHONE_UNIFORM_TYPE_FLOAT ) == 0,
+                 "storage fixture registers a real numeric uniform" );
+    scalar_storage = wp_shader_program_get_storage_size( program );
+    ok &= check( scalar_storage > base &&
+                     scalar_storage - base > wp_shader_program_get_param_buffer_size( program ),
+                 "program storage counts allocated capacity rather than only logical uniform bytes" );
+    ok &= check( wp_shader_program_register_uniform( program, "colour", WORKPHONE_UNIFORM_TYPE_VEC4 ) == 1 &&
+                     wp_shader_program_get_storage_size( program ) == scalar_storage,
+                 "a uniform admitted inside existing capacity does not increase physical storage" );
+    ok &= check( wp_shader_program_register_param( program, "matrices", WORKPHONE_UNIFORM_TYPE_MAT4,
+        64u, WORKPHONE_SHADER_PARAM_VARIABILITY_PER_OBJECT, WORKPHONE_SHADER_AUTO_PARAM_NONE,
+        WORKPHONE_SHADER_RESOURCE_NONE ) == 2,
+                 "storage fixture admits an array that grows the parameter allocation" );
+    grown_storage = wp_shader_program_get_storage_size( program );
+    ok &= check( grown_storage > scalar_storage &&
+                     grown_storage - base >= wp_shader_program_get_param_buffer_size( program ),
+                 "program storage follows grown parameter capacity" );
+    wp_shader_program_attach( program, vertex );
+    wp_shader_program_attach( program, pixel );
+    wp_shader_set_native( vertex, &g_shader_native );
+    wp_shader_program_set_native( program, &g_program_native );
+    ok &= check( wp_shader_program_get_storage_size( program ) == grown_storage,
+                 "program storage excludes attached shader descriptors and native objects" );
+    ok &= check( wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_VERTEX ) == vertex &&
+                     wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_PIXEL ) == pixel &&
+                     wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_GEOMETRY ) == NULL &&
+                     wp_shader_program_get_attached_shader( program, -1 ) == NULL &&
+                     wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_COUNT ) == NULL &&
+                     wp_shader_program_get_attached_shader( NULL, 0 ) == NULL,
+                 "indexed attachments expose actual stored slots and reject null or invalid indices" );
+    wp_shader_set_type( vertex, WORKPHONE_SHADER_TYPE_PIXEL );
+    revision = wp_shader_program_get_pipeline_revision( program );
+    ok &= check( wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_VERTEX ) == vertex &&
+                     wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_PIXEL ) == pixel &&
+                     wp_shader_program_get_shader( program, WORKPHONE_SHADER_TYPE_VERTEX ) == NULL &&
+                     wp_shader_program_get_shader( program, WORKPHONE_SHADER_TYPE_PIXEL ) == vertex &&
+                     wp_shader_program_get_pipeline_revision( program ) == revision,
+                 "indexed inspection preserves moved-stage identity without repairing topology or changing legacy lookup" );
+    wp_shader_destroy( vertex );
+    wp_shader_destroy( pixel );
+    wp_shader_program_retain( program );
+    wp_shader_program_destroy( program );
+    ok &= check( wp_shader_program_get_storage_size( program ) == grown_storage &&
+                     wp_shader_program_get_attached_shader( program, WORKPHONE_SHADER_TYPE_VERTEX ) == vertex &&
+                     wp_shader_get_type( vertex ) == WORKPHONE_SHADER_TYPE_PIXEL,
+                 "program introspection remains valid through a retained program and its retained attachments" );
+    wp_shader_program_destroy( program );
+    program = NULL;
+    ok &= check( wp_shader_program_get_storage_size( program ) == 0u &&
+                     wp_shader_program_get_attached_shader( program, 0 ) == NULL,
+                 "released-owner null queries remain safe without accessing retired storage" );
+    return ok;
+}
+
 static int parameter_definition_contracts( void )
 {
     wp_shader_program *program;
@@ -320,6 +422,7 @@ int main( void )
     int ok;
 
     ok = material_storage_contracts();
+    ok &= program_introspection_contracts();
     ok &= parameter_definition_contracts();
     unbacked = wp_shader_create( WORKPHONE_SHADER_TYPE_VERTEX, WORKPHONE_SHADER_LANGUAGE_HLSL,
                                  "void main(){}", "main" );

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'RelWithDebInfo')][string]$Configuration = 'Debug',
+    [string]$BinaryDirectory,
     [string]$OutputDirectory,
     [ValidateRange(0, 4294967295)][long]$Seed = 42,
     [ValidateSet('low', 'medium', 'high', 'cinematic')][string]$Quality = 'high',
@@ -31,11 +32,25 @@ if ($Scene -ne 'city' -and ($Views -contains 'street' -or $Views -contains 'boul
     throw 'Street-level views and city layout options require -Scene city.'
 }
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$binaryRoot = Join-Path $repoRoot "bin/windows/v145/x64/MD/$Configuration"
+$sampleWorkingDirectory = Join-Path $repoRoot "bin/windows/v145/x64/MD/$Configuration"
+$binaryRoot = $sampleWorkingDirectory
+if ($BinaryDirectory) {
+    $binaryRoot = (Resolve-Path -LiteralPath $BinaryDirectory).Path
+    if (!(Test-Path -LiteralPath $binaryRoot -PathType Container)) { throw 'BinaryDirectory must be an existing build snapshot directory.' }
+}
 $executable = Join-Path $binaryRoot 'SampleVehicleAdvanced.exe'
 $plugins = Join-Path $binaryRoot 'wp_plugins_samples.cfg'
 if (!(Test-Path -LiteralPath $executable)) { throw "Build SampleVehicleAdvanced $Configuration first." }
 if (!(Test-Path -LiteralPath $plugins)) { throw "Missing sample plugin configuration: $plugins" }
+if ($BinaryDirectory) {
+    $pluginFolders = @(Get-Content -LiteralPath $plugins | Where-Object { $_ -match '^\s*PluginFolder\s*=' })
+    if ($pluginFolders.Count -ne 1) { throw 'Retained binaries require one explicit PluginFolder.' }
+    $pluginFolder = ($pluginFolders[0] -split '=', 2)[1].Trim()
+    if (![IO.Path]::IsPathRooted($pluginFolder)) { $pluginFolder = Join-Path $sampleWorkingDirectory $pluginFolder }
+    if ([IO.Path]::GetFullPath($pluginFolder).TrimEnd('\', '/') -ine $binaryRoot.TrimEnd('\', '/')) {
+        throw 'Retained PluginFolder must resolve to BinaryDirectory so captures cannot mix plugin builds.'
+    }
+}
 if (!$OutputDirectory) { $OutputDirectory = Join-Path $repoRoot ('artifacts/procedural/' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { throw 'Choose a fresh output directory to preserve previous evidence.' }
@@ -59,11 +74,13 @@ $diffPath = Join-Path $output 'working-tree.patch'
 if ($LASTEXITCODE -ne 0) { throw 'Cannot capture local diff.' }
 $sourceRoots = @('Engine/cpp/Include/WPProcedural', 'Engine/cpp/Source/WPProcedural', 'Engine/cpp/Include/WPGraphics', 'Engine/cpp/Source/WPGraphics', 'Engine/cpp/Include/WPImGui', 'Engine/cpp/Source/WPImGui', 'Engine/cpp/Include/Workphone/Graphics', 'Engine/cpp/Source/Workphone/Graphics', 'Engine/cpp/Include/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Interface/Procedural', 'Engine/cpp/Source/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Scene', 'Engine/cpp/Source/Workphone/Scene', 'Engine/c/Include/WorkphoneGraphics', 'Engine/c/Source/WorkphoneGraphics', 'Engine/c/Include/WorkphonePlatformWin32', 'Engine/c/Source/WorkphonePlatformWin32', 'Samples/cpp/VehicleAdvanced')
 $sources = @($sourceRoots | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $repoRoot $_) -Recurse -File | Where-Object { $_.Extension -in '.cpp', '.c', '.hpp', '.h', '.txt' } } | Sort-Object FullName -Unique | ForEach-Object { Get-Identity $_.FullName })
+$sources += @('Engine/cpp/Source/Workphone/System/FSM.cpp', 'Engine/cpp/Source/Workphone/System/FSMManager.cpp', 'Engine/cpp/Include/Workphone/System/FSM.hpp', 'Engine/cpp/Include/Workphone/System/FSMManager.hpp') | ForEach-Object { Get-Identity (Join-Path $repoRoot $_) }
 $binaries = @(Get-ChildItem -LiteralPath $binaryRoot -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'SampleVehicleAdvanced.exe' } | Sort-Object Name | ForEach-Object { Get-Identity $_.FullName })
 $assets = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'bin/Media') -Recurse -File | Where-Object { $_.Extension -in '.png', '.jpg', '.jpeg', '.tga', '.dds', '.mesh', '.hdr', '.texres', '.matres', '.folspec', '.folworld' } | Sort-Object FullName | ForEach-Object { Get-Identity $_.FullName })
 $manifest = [ordered]@{
     schema = 'workphone.procedural-capture-set.v1'; startedUtc = [DateTime]::UtcNow.ToString('o')
     revision = $revision; configuration = $Configuration; seed = $Seed; quality = $Quality
+    binaryDirectory = $binaryRoot; retainedBinaries = [bool]$BinaryDirectory; assetWorkingDirectory = $sampleWorkingDirectory
     scene = $Scene; cityBlocks = $(if ($Scene -eq 'city' -and !$RoadAuthoringShowcase) { $CityBlocks } else { $null }); cityRoute = $(if ($Scene -eq 'city' -and !$RoadAuthoringShowcase) { $CityRoute } else { $null })
     cityLayout = $(if ($RoadAuthoringShowcase) { 'authored-splines' } elseif ($Scene -eq 'city') { $CityLayout } else { $null })
     roadAuthoringShowcase = [bool]$RoadAuthoringShowcase
@@ -88,7 +105,7 @@ try {
         if ($FoliageWorld) { $arguments += '--foliage-world' }
         if ($ExportMaterials) { $arguments += @('--export-materials', (Quote-ProcessArgument (Join-Path $output "$view-materials"))) }
         Write-Host "Capturing $Scene/$view ($Quality, seed $Seed)"
-        $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $binaryRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output "$view.stdout.log") -RedirectStandardError (Join-Path $output "$view.stderr.log") -PassThru
+        $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $sampleWorkingDirectory -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output "$view.stdout.log") -RedirectStandardError (Join-Path $output "$view.stderr.log") -PassThru
         $timedOut = !$process.WaitForExit($TimeoutSeconds * 1000)
         if ($timedOut) { $process.Kill(); $process.WaitForExit() }
         $process.Refresh()

@@ -39,7 +39,8 @@ The native sample and capture script accept `--city-terrain-roads` and
 `-CityTerrainRoads`. Evidence checks actual source/terrain revisions, fitted lots,
 native surface rays, driveable route coverage and uploaded road material bindings.
 Collision smoke additionally exercises manual edit retention, regeneration,
-terrain rebinding and a same-source-revision terrain refresh.
+terrain rebinding and a same-source-revision terrain refresh. That stronger
+repeated-generation retention gate has not passed within its 180-second limit.
 
 `RacingGameOpenCity` now persists/forwards the terrain mode and canonical source
 UUID. Quality/seed/source changes reuse the native vehicle/camera/component in
@@ -49,17 +50,18 @@ session-local until a stable edited-route fingerprint is exposed; regeneration
 and detected route changes reset them and the UI states the policy. The real Lua city/component suites pass with fixture
 checks for retained knot IDs/widths, cache invalidation and source restoration.
 
-Debug sample, Editor and focused targets build. The final city/Editor CTest run
-passes 12/12 in 138.56 seconds, including all seed/size source profiles, maximum
-footway profiles, exact support/holes/grade, eight connected roundabout pedestrian
+The retained build-21 baseline built the Debug sample, Editor and focused
+targets. Its city/Editor CTest run passed 12/12 in 138.56 seconds, including all
+seed/size source profiles, maximum footway profiles, exact support/holes/grade,
+eight connected roundabout pedestrian
 corridors, oblique seams, allocation rollback, source revisions and save/reopen.
-The existing production-render GPU suite passes in 26.74 seconds. Both real Lua
-city/component fixture runs pass, including 50 component scripts. These Editor
+The existing production-render GPU suite passed in 26.74 seconds. Both real Lua
+city/component fixture runs passed, including 50 component scripts. These Editor
 fixtures prove native controls and saved anchors; recorded mouse/DPI interaction
 and a complete restored driving scene remain separate acceptance gates.
 
-Fresh native evidence uses six-block cities, high quality, foliage, 1280x720,
-braked replay and the actual DX11 HDR path:
+The preserved build-21 native baseline uses six-block cities, high quality,
+foliage, 1280x720, braked replay and the actual DX11 HDR path:
 
 | Capture | Roads / roundabouts | Supported parcels / building masses | Result |
 |---|---|---|---|
@@ -91,10 +93,33 @@ are 207.61/234.37 ms and 258.42/442.61 ms; natural pedestrian mean/P95 are
 runs, including concurrent workspace activity, do not certify hardware speed.
 
 Capture 04 records the verified build and source/binary hashes. Capture 05 uses
-the same binary hashes; material/Lua source edits began concurrently afterward.
-Later shared Debug DLL replacements are preserved. The separate retained-binary
-retention diagnostic records its own inputs and does not certify those unrelated
-changes or a source-free package.
+the same binary hashes; concurrent material/Lua work subsequently replaced shared
+Debug DLLs. The later retention runs use a separately frozen binary set, not the
+04/05 baseline, and do not certify unrelated concurrent changes.
+
+| Retention evidence | Observed outcome |
+|---|---|
+| [06: original smoke](../artifacts/procedural/city-terrain-retention-20261025-06/manifest.json) | Timed out at 180.37 s; the original timing failure remains open |
+| [07: extended diagnostic](../artifacts/procedural/city-terrain-retention-20261025-07-diagnostic/manifest.json) | Same frozen binaries/fixture, separate 600 s limit; access violation `0xc0000005` after 259.52 s |
+| [08: CDB diagnostic](../artifacts/procedural/city-terrain-retention-20261025-08-debugger/outcome.json) | Same frozen binaries under launch-time debugging; fourth generation still progressing at the 600 s timeout, no reproduced exception stack or functional pass |
+
+For 07, Windows Error Reporting identifies `Workphone.dll+0x14511c8`; following
+the frozen DLL's export thunks resolves it to `FSM::getAutoChangeState+0x18`.
+Source inspection found an FSM cached pointer into manager flag storage that can
+move when the manager grows. The fix resolves the current slot through locked
+manager access and prevents unloaded FSMs/deferred references from touching a
+retired slot. The Editor regression forces storage relocation and checks live
+flag values plus retired-queue behaviour. This diagnosis uses the recorded fault
+address and source evidence; 08 did not capture a matching exception stack.
+
+The FSM fix and a separate parcel exclusion correction reserving the full
+2.45 m roadside pavement extent are awaiting the final combined test/native
+validation. New parcel/cull counts must come from those captures. Build 22 has
+completed, but subsequent focused rebuilds and the final city/Editor/FSM/GPU
+matrix remain in progress. CDB launch may perturb allocation costs; 08 is not
+performance evidence, and neither extended run closes the original 180-second gate.
+Hardware performance, recorded Editor pointer/DPI acceptance and source-free
+reconstruction remain open.
 
 Remaining gates include ordinary junction reconstruction, automatic grading,
 arbitrary edited-lap topology, transport/water integration, representative GPU
