@@ -558,12 +558,13 @@ namespace workphone::scene
 
     void GameActor::preUpdate()
     {
-        if( m_componentsHead )
+        // Script/component callbacks can acquire the graphics lock. Render-side
+        // UI traversal takes that lock before reading an ancestor's components,
+        // so never retain the membership mutex while crossing this boundary.
+        auto components = snapshotComponents();
+        for( auto &component : components )
         {
-            ScopedLock lock( &m_componentsMutex, false );
-
-            for( auto component = m_componentsHead; component != nullptr;
-                 component = component->m_next.load() )
+            if( component->getActorPtr() == this )
             {
                 component->preUpdate();
             }
@@ -605,12 +606,10 @@ namespace workphone::scene
 
     void GameActor::update()
     {
-        if( m_componentsHead )
+        auto components = snapshotComponents();
+        for( auto &component : components )
         {
-            ScopedLock lock( &m_componentsMutex, false );
-
-            for( auto component = m_componentsHead; component != nullptr;
-                 component = component->m_next.load() )
+            if( component->getActorPtr() == this )
             {
                 component->update();
             }
@@ -619,12 +618,10 @@ namespace workphone::scene
 
     void GameActor::postUpdate()
     {
-        if( m_componentsHead )
+        auto components = snapshotComponents();
+        for( auto &component : components )
         {
-            ScopedLock lock( &m_componentsMutex, false );
-
-            for( auto component = m_componentsHead; component != nullptr;
-                 component = component->m_next.load() )
+            if( component->getActorPtr() == this )
             {
                 component->postUpdate();
             }

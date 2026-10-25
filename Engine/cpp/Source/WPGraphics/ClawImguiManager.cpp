@@ -9,6 +9,7 @@
 
 #if defined WP_PLATFORM_WIN32
 #    include "backends/imgui_impl_win32.h"
+#    include <WPGraphics/ClawWin32Ime.hpp>
 #endif
 
 #include <algorithm>
@@ -28,6 +29,20 @@ namespace workphone
     {
         namespace
         {
+#if defined WP_PLATFORM_WIN32
+            void postPlatformImeData( ImGuiViewport *viewport, ImGuiPlatformImeData *data )
+            {
+                auto hwnd = static_cast<HWND>( viewport->PlatformHandleRaw );
+#    ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+                if( !hwnd ) hwnd = static_cast<HWND>( ImGui::GetIO().ImeWindowHandle );
+#    endif
+                detail::postPlatformImeUpdate(
+                    hwnd, data->WantVisible,
+                    detail::platformImeCoordinate( data->InputPos.x - viewport->Pos.x ),
+                    detail::platformImeCoordinate( data->InputPos.y - viewport->Pos.y ) );
+            }
+#endif
+
             // Dear ImGui packs vertex colours as ImU32 == 0xAABBGGRR
             // (A in bits 24-31, B in 16-23, G in 8-15, R in 0-7).
             //
@@ -286,6 +301,10 @@ namespace workphone
             m_renderer = renderer;
 
 #if defined WP_PLATFORM_WIN32
+            // ImGui ends its frame under the GraphicsSystem render lock. Its
+            // default IME hook sends synchronously to the main HWND thread,
+            // which may itself be waiting for that lock during scene teardown.
+            io.SetPlatformImeDataFn = postPlatformImeData;
             if( applicationManager )
             {
                 if( auto graphicsSystem = applicationManager->getGraphicsSystem() )

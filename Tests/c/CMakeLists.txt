@@ -1,5 +1,11 @@
 project(WorkphonePhysicsCollisionTests C)
 
+add_executable(WorkphoneCoreButtonInputTests WorkphoneCoreButtonInputTests.c)
+target_include_directories(WorkphoneCoreButtonInputTests PRIVATE ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+target_link_libraries(WorkphoneCoreButtonInputTests PRIVATE WorkphoneCore)
+set_target_properties(WorkphoneCoreButtonInputTests PROPERTIES FOLDER Tests/C)
+add_test(NAME WorkphoneCore.button_input COMMAND WorkphoneCoreButtonInputTests)
+
 add_executable(WorkphonePhysicsNarrowphaseTests
     WorkphonePhysicsNarrowphaseTests.c WorkphonePhysicsNarrowphaseReference.c)
 target_include_directories(WorkphonePhysicsNarrowphaseTests PRIVATE

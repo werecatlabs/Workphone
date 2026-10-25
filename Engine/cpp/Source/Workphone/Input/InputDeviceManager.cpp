@@ -237,7 +237,10 @@ namespace workphone
 
             m_currentInputEvent = workphone::make_ptr<InputEvent>();
             m_currentMouseState = workphone::make_ptr<MouseState>();
-            m_currentKeyboardState = workphone::make_ptr<KeyboardState>();
+            {
+                ScopedLock lock( &m_mutex );
+                m_currentKeyboardState = workphone::make_ptr<KeyboardState>();
+            }
             m_mouseScroll = Vector3<real_Num>::zero();
             m_mousePosition = Vector2<real_Num>::zero();
             m_dragStartPosition = Vector2<real_Num>::zero();
@@ -322,7 +325,10 @@ namespace workphone
 
             m_currentInputEvent = nullptr;
             m_currentMouseState = nullptr;
-            m_currentKeyboardState = nullptr;
+            {
+                ScopedLock lock( &m_mutex );
+                m_currentKeyboardState = nullptr;
+            }
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -747,6 +753,9 @@ namespace workphone
 
     SmartPtr<IKeyboardState> InputDeviceManager::getCurrentKeyboardState() const
     {
+        // Acquiring the strong reference must be serialized with replacement;
+        // the snapshot's reference count alone cannot protect this copy gap.
+        ScopedLock lock( &m_mutex, false );
         return m_currentKeyboardState;
     }
 
@@ -1314,7 +1323,10 @@ namespace workphone
             }
 
             owner->m_currentInputEvent = inputEvent;
-            owner->m_currentKeyboardState = keyboardState;
+            {
+                ScopedLock lock( &owner->m_mutex );
+                owner->m_currentKeyboardState = keyboardState;
+            }
             owner->postEvent( inputEvent );
             break;
         }
@@ -1343,7 +1355,10 @@ namespace workphone
             keyboardState->setChar( 0 );
 
             owner->m_currentInputEvent = inputEvent;
-            owner->m_currentKeyboardState = keyboardState;
+            {
+                ScopedLock lock( &owner->m_mutex );
+                owner->m_currentKeyboardState = keyboardState;
+            }
             owner->postEvent( inputEvent );
             break;
         }

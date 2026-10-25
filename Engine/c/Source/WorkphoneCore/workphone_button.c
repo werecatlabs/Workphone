@@ -116,7 +116,11 @@ wp_bool wp_button_behavior( wp_flags *state, struct wp_rect r, const struct wp_i
 #ifdef WORKPHONE_BUTTON_TRIGGER_ON_RELEASE
                       wp_input_is_mouse_released( i, WORKPHONE_BUTTON_LEFT );
 #else
-                      wp_input_is_mouse_pressed( i, WORKPHONE_BUTTON_LEFT );
+                      /* Two or more transitions contain a new press even when
+                       * its release was also queued before this frame drew. A
+                       * lone release after a prior-frame press must not repeat. */
+                      ( wp_input_is_mouse_pressed( i, WORKPHONE_BUTTON_LEFT ) ||
+                        i->mouse.buttons[WORKPHONE_BUTTON_LEFT].clicked > 1 );
 #endif
         }
     }

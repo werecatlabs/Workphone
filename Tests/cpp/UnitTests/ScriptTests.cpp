@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <Workphone/IO/MemoryFile.hpp>
+#include <Workphone/Input/KeyboardState.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Script/ScriptInvoker.hpp>
 #include <Workphone/Interface/Script/IScriptManager.hpp>
@@ -1259,6 +1260,61 @@ BOOST_AUTO_TEST_CASE( script_stream_returns_retain_native_ownership_and_support_
     scriptManager->callFunction( "verifyFilePreflight", parameters, results );
     BOOST_REQUIRE_EQUAL( results.size(), 1 );
     BOOST_CHECK( results[0].getBool() );
+}
+
+BOOST_AUTO_TEST_CASE( script_keyboard_snapshots_retain_native_ownership_and_event_identity )
+{
+    TestGuard guard;
+    auto scriptManager = guard.factoryManager->make_object<IScriptManager>( "Lua" );
+    BOOST_REQUIRE( scriptManager );
+    scriptManager->load( nullptr );
+    guard.addCleanup( [scriptManager]() mutable { scriptManager->unload( nullptr ); } );
+    BOOST_REQUIRE( scriptManager->isLoaded() );
+    scriptManager->loadScriptFromString( R"(
+        function retainKeyboardSnapshot(parameters, results)
+            retainedKeyboard = parameters:getAsObject(0)
+            expectedKeyboardId = parameters:getAsInt(1)
+            results:addAsBool(retainedKeyboard ~= nil)
+        end
+        function verifyKeyboardSnapshot(parameters, results)
+            assert(retainedKeyboard:getId() == expectedKeyboardId)
+            assert(retainedKeyboard:getKeyCode() == KeyCode.Escape)
+            assert(not retainedKeyboard:isPressedDown())
+            assert(retainedKeyboard:getId() == retainedKeyboard:getId())
+            retainedKeyboard = nil
+            collectgarbage("collect")
+            results:addAsBool(true)
+        end
+    )" );
+    SmartPtr<IKeyboardState> current = make_ptr<KeyboardState>();
+    current->setKeyCode( static_cast<u32>( KeyCodes::KEY_ESCAPE ) );
+    current->setPressedDown( false );
+    const auto originalId = current->getId();
+    WeakPtr<IKeyboardState> lifetime( current );
+    Parameters parameters{ Parameter( SmartPtr<ISharedObject>( current ) ),
+                           Parameter( static_cast<s32>( originalId ) ) }, results;
+    scriptManager->callFunction( "retainKeyboardSnapshot", parameters, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 1 );
+    BOOST_REQUIRE( results[0].getBool() );
+    // InputDeviceManager replaces its last snapshot on the next Windows key
+    // message. Neither its newer snapshot nor transient Parameters own the old one.
+    current = make_ptr<KeyboardState>();
+    BOOST_CHECK_NE( current->getId(), originalId );
+    parameters.clear();
+    scriptManager->garbageCollect();
+    const auto retained = !lifetime.expired();
+    if( !retained )
+    {
+        // Fail safely on the old non-owning wrapper without dereferencing it.
+        scriptManager->loadScriptFromString( "retainedKeyboard=nil; collectgarbage('collect')" );
+    }
+    BOOST_REQUIRE_MESSAGE( retained, "Lua must own retained keyboard snapshots after native input replaces them" );
+    results.clear();
+    scriptManager->callFunction( "verifyKeyboardSnapshot", {}, results );
+    BOOST_REQUIRE_EQUAL( results.size(), 1 );
+    BOOST_CHECK( results[0].getBool() );
+    scriptManager->garbageCollect();
+    BOOST_CHECK_MESSAGE( lifetime.expired(), "clearing the Lua keyboard snapshot must release native ownership" );
 }
 
 BOOST_AUTO_TEST_CASE( script_resource_returns_preserve_prefab_and_mesh_interfaces )

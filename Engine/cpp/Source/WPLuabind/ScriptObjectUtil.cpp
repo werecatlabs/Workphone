@@ -2,6 +2,7 @@
 #include <WPLuabind/ScriptObjectUtil.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/Interface/Input/IKeyboardState.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Interface/Scene/IGamePrefab.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
@@ -718,6 +719,15 @@ namespace workphone
         if( scriptObj->isDerived<IInputDeviceManager>() )
         {
             luabind::detail::convert_to_lua( L, SmartPtr<IInputDeviceManager>( scriptObj ) );
+            return true;
+        }
+
+        if( scriptObj->isDerived<IKeyboardState>() )
+        {
+            // Input replaces its last-event snapshot on the next key message.
+            // Lua must own its copy while reading the event instead of using
+            // SmartPtrConverter's unrecognized-type raw-pointer fallback.
+            luabind::detail::convert_to_lua( L, SmartPtr<IKeyboardState>( scriptObj ) );
             return true;
         }
 

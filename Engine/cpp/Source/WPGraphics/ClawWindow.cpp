@@ -15,6 +15,7 @@
 #    if WP_BUILD_IMGUI
 #        include "imgui.h"
 #        include "backends/imgui_impl_win32.h"
+#        include <WPGraphics/ClawWin32Ime.hpp>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler( HWND hwnd, UINT message, WPARAM wParam,
                                                               LPARAM lParam );
@@ -43,6 +44,11 @@ namespace workphone
             wp_s32 forwardWindowEvent( void *userData, HWND hwnd, UINT message, WPARAM wParam,
                                        LPARAM lParam )
             {
+#    if WP_BUILD_IMGUI
+                // Consume value-only IME updates on the native window owner;
+                // they are neither gameplay input nor ImGui backend events.
+                if( detail::handlePlatformImeMessage( hwnd, message, wParam, lParam ) ) return 1;
+#    endif
                 auto window = static_cast<ClawWindow *>( userData );
                 auto event = workphone::make_ptr<WindowMessageData>();
                 event->setWindowHandle( hwnd );
