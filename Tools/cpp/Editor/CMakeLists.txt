@@ -1108,6 +1108,11 @@ if (WP_EDITOR_TESTS)
         editor_material_shader_reload_controls_test
         editor_ui_control_unload_test
         editor_cubemap_face_preview_test
+        editor_property_nested_mesh_import_settings_test
+        editor_property_deep_groups_and_multiselection_test
+        editor_property_invalid_and_readonly_context_test
+        editor_property_nested_buttons_and_resource_metadata_test
+        editor_property_grid_nested_button_owner_event_test
         procedural_components_road_properties
         city_road_viewport_authoring_test
         terrain_city_source_anchor_roundtrip_test

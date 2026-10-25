@@ -21,7 +21,11 @@ namespace workphone
         void setProperties( SmartPtr<Properties> replacement ) override
         {
             if( reject && replacement->getProperty( "texture" ) != "old-value" ) return;
+            auto nested = resolvePropertyGroup( replacement, nestedPath );
+            const bool nestedChanged = nested && nested->getProperty( "texture" ) != "nested-old";
+            if( rejectNested && nestedChanged ) return;
             data = make_ptr<Properties>( *replacement );
+            if( throwNested && nestedChanged ) throw std::runtime_error( "Nested setter rejected after writing" );
             if( regenerateType )
                 data->getPropertyObject( "texture" ).setAttribute( "resourceType",
                     data->getProperty( "texture" ) == "old-value" ? String( "Texture" ) :
@@ -30,6 +34,9 @@ namespace workphone
         SmartPtr<Properties> data;
         bool reject = false;
         bool regenerateType = false;
+        PropertyGroupPath nestedPath;
+        bool rejectNested = false;
+        bool throwNested = false;
         WP_CLASS_REGISTER_DECL;
     };
     WP_CLASS_REGISTER_DERIVED( workphone, ReferenceContractTarget, ISharedObject );
@@ -89,6 +96,91 @@ namespace
                "Reference edits must preserve property metadata and unrelated values" );
         check( change.undo( catalog ) && target->data->getProperty( "texture" ) == "old-value",
                "Reference undo must restore the previous exact value" );
+
+        auto nestedTarget = make_ptr<ReferenceContractTarget>();
+        auto firstLayer = make_ptr<Properties>(); firstLayer->setName( "layer" );
+        firstLayer->setProperty( "texture", "first-layer" );
+        auto secondLayer = make_ptr<Properties>(); secondLayer->setName( "layer" );
+        secondLayer->setProperty( "unrelated", "second-layer" );
+        auto nestedDetails = make_ptr<Properties>(); nestedDetails->setName( "details" );
+        nestedDetails->setProperty( "texture", "nested-old" );
+        nestedDetails->getPropertyObject( "texture" ).setAttribute( "resourceType", "Texture" );
+        nestedDetails->getPropertyObject( "texture" ).setAttribute( "label", "Nested texture" );
+        secondLayer->addChild( nestedDetails );
+        nestedTarget->data->addChild( firstLayer ); nestedTarget->data->addChild( secondLayer );
+        const PropertyGroupPath nestedPath = { { "layer", 1 }, { "details", 0 } };
+        nestedTarget->nestedPath = nestedPath;
+        AssetReferenceChange nestedChange;
+        check( nestedChange.prepare( catalog, entry, nestedTarget, "texture", render::ITexture::typeInfo(), nestedPath ) &&
+               nestedChange.apply( catalog ), "Nested reference assignment must resolve the chosen repeated group" );
+        auto installedDetails = resolvePropertyGroup( nestedTarget->data, nestedPath );
+        check( installedDetails && installedDetails->getProperty( "texture" ) == id &&
+               nestedTarget->data->getProperty( "texture" ) == "old-value" &&
+               nestedTarget->data->getChild( "layer" )->getProperty( "texture" ) == "first-layer" &&
+               installedDetails->getName() == "details" &&
+               installedDetails->getPropertyObject( "texture" ).getAttribute( "label" ) == "Nested texture" &&
+               nestedDetails->getProperty( "texture" ) == "nested-old",
+               "Nested references must preserve root and sibling leaves, group names, metadata and earlier snapshots" );
+        installedDetails->setProperty( "unrelated", "latest" );
+        check( nestedChange.undo( catalog ) &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == "nested-old" &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "unrelated" ) == "latest",
+               "Nested undo must change only its leaf and preserve independently edited siblings" );
+        check( nestedChange.apply( catalog ), "Nested reference redo must apply" );
+        resolvePropertyGroup( nestedTarget->data, nestedPath )->setProperty( "texture", "external" );
+        check( !nestedChange.undo( catalog ) &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == "external",
+               "Nested undo must reject an independently changed leaf" );
+        resolvePropertyGroup( nestedTarget->data, nestedPath )->setProperty( "texture", id );
+        check( nestedChange.undo( catalog ), "Nested undo must resume when the expected leaf is restored" );
+        auto lockedDetails = resolvePropertyGroup( nestedTarget->data, nestedPath );
+        lockedDetails->getPropertyObject( "texture" ).setReadOnly( true );
+        AssetReferenceChange nestedLocked;
+        check( !nestedLocked.prepare( catalog, entry, nestedTarget, "texture", render::ITexture::typeInfo(), nestedPath ),
+               "Nested read-only references must reject without falling back to a root property" );
+        lockedDetails->getPropertyObject( "texture" ).setReadOnly( false );
+        AssetReferenceChange nestedMissing;
+        check( !nestedMissing.prepare( catalog, entry, nestedTarget, "texture", render::ITexture::typeInfo(),
+                                     { { "missing-layer", 0 } } ),
+               "A missing nested reference group must reject without editing the root" );
+        AssetReferenceChange nestedRejected;
+        nestedTarget->rejectNested = true;
+        check( nestedRejected.prepare( catalog, entry, nestedTarget, "texture", render::ITexture::typeInfo(), nestedPath ) &&
+               !nestedRejected.apply( catalog ) &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == "nested-old",
+               "A rejected nested setter must leave the original group unchanged" );
+        nestedTarget->rejectNested = false; nestedTarget->throwNested = true;
+        AssetReferenceChange nestedThrown;
+        check( nestedThrown.prepare( catalog, entry, nestedTarget, "texture", render::ITexture::typeInfo(), nestedPath ) &&
+               !nestedThrown.apply( catalog ) &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == "nested-old" &&
+               nestedTarget->data->getProperty( "texture" ) == "old-value",
+               "A nested setter throwing after mutation must roll back the independent original hierarchy" );
+        nestedTarget->throwNested = false;
+#ifdef WP_EDITOR_ASSET_COMMAND_CONTRACTS
+        auto nestedSecond = make_ptr<ReferenceContractTarget>();
+        nestedSecond->data = clonePropertyTree( nestedTarget->data ); nestedSecond->nestedPath = nestedPath;
+        auto nestedCommand = make_ptr<editor::ModifyPropertyCmd>();
+        check( nestedCommand->configure( catalog, entry, { nestedTarget, nestedSecond }, "texture",
+                                         render::ITexture::typeInfo(), nestedPath ),
+               "Editor reference commands must capture the nested group path" );
+        nestedSecond->rejectNested = true; nestedCommand->execute();
+        check( !nestedCommand->wasApplied() &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == "nested-old" &&
+               resolvePropertyGroup( nestedSecond->data, nestedPath )->getProperty( "texture" ) == "nested-old",
+               "A rejected nested target must roll back every earlier target in the Editor command" );
+        nestedSecond->rejectNested = false; nestedCommand->execute();
+        check( nestedCommand->wasApplied() &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == id &&
+               resolvePropertyGroup( nestedSecond->data, nestedPath )->getProperty( "texture" ) == id,
+               "Editor reference commands must assign the nested leaf in every selected target" );
+        nestedCommand->undo();
+        check( !nestedCommand->wasApplied() &&
+               resolvePropertyGroup( nestedTarget->data, nestedPath )->getProperty( "texture" ) == "nested-old" &&
+               resolvePropertyGroup( nestedSecond->data, nestedPath )->getProperty( "texture" ) == "nested-old",
+               "Editor nested reference undo must restore every target" );
+        nestedCommand->redo(); check( nestedCommand->wasApplied(), "Editor nested reference redo must apply" );
+#endif
         check( bound->queryBound( "INSERT INTO resources(uuid,path,path_key,type,kind) VALUES('unrelated','other.png','other.png','Texture','file')", {} ) != nullptr,
                "Unrelated revision fixture must seed" );
         check( change.apply( catalog ), "Redo must tolerate unrelated catalog revisions in the same session" );

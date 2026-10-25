@@ -18,7 +18,8 @@ namespace workphone::editor
     bool ModifyPropertyCmd::configure( SmartPtr<AssetDatabaseManager> catalog,
                                        const AssetDatabaseManager::EntrySnapshot &entry,
                                        const Array<SmartPtr<ISharedObject>> &targets,
-                                       const String &property, hash_type expectedType )
+                                       const String &property, hash_type expectedType,
+                                       const PropertyGroupPath &groupPath )
     {
         if( !m_changes.empty() || targets.empty() || targets.size() > 256 )
         {
@@ -60,7 +61,7 @@ namespace workphone::editor
                 continue;
             }
             AssetReferenceChange change;
-            if( !change.prepare( catalog, entry, target, property, expectedType ) )
+            if( !change.prepare( catalog, entry, target, property, expectedType, groupPath ) )
             {
                 m_error = change.error();
                 m_changes.clear();

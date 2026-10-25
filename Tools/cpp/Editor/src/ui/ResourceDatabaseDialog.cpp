@@ -132,6 +132,7 @@ namespace workphone::editor
         m_uiListener = nullptr;
         m_dragSource = nullptr;
         m_currentObject = nullptr;
+        m_propertyPath.clear();
         m_targets.clear();
         m_targetSession.clear();
         m_browser.clear();
@@ -219,6 +220,7 @@ namespace workphone::editor
             m_targets.clear();
             m_targetSession.clear();
             m_currentObject = nullptr;
+            m_propertyPath.clear();
             m_browser.clear();
         }
         EditorWindow::setWindowVisible( visible );
@@ -401,7 +403,8 @@ namespace workphone::editor
                 return;
             }
             auto command = make_ptr<ModifyPropertyCmd>();
-            if( !command->configure( active, entry, targets, m_propertyName, m_resourceType ) )
+            if( !command->configure( active, entry, targets, m_propertyName, m_resourceType,
+                                     m_propertyPath ) )
             {
                 m_status->setText( command->getError() );
                 return;
@@ -461,6 +464,13 @@ namespace workphone::editor
     void ResourceDatabaseDialog::setPropertyName( const String &name )
     {
         m_propertyName = name;
+        // Existing root-property callers need not know about nested paths.
+        m_propertyPath.clear();
+    }
+
+    void ResourceDatabaseDialog::setPropertyPath( const PropertyGroupPath &path )
+    {
+        m_propertyPath = path;
     }
 
     Parameter ResourceDatabaseDialog::UIElementListener::handleEvent(

@@ -21,7 +21,7 @@ namespace workphone
             bool configure( SmartPtr<AssetDatabaseManager> catalog,
                             const AssetDatabaseManager::EntrySnapshot &entry,
                             const Array<SmartPtr<ISharedObject>> &targets, const String &property,
-                            hash_type expectedType );
+                            hash_type expectedType, const PropertyGroupPath &groupPath = {} );
             const String &getError() const;
             bool wasApplied() const;
 

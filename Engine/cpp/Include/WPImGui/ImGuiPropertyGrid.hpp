@@ -32,6 +32,11 @@ namespace workphone
             static void handlePropertyButtonClicked( SmartPtr<IUIPropertyGrid> propertyGrid,
                                                      const String &name, const String &value );
 
+            /** Emit the group that owns the clicked property, including nested groups. */
+            static void handlePropertyButtonClicked( SmartPtr<IUIPropertyGrid> propertyGrid,
+                                                     SmartPtr<Properties> properties,
+                                                     const String &name, const String &value );
+
             static void handlePropertyChanged( SmartPtr<IUIPropertyGrid> propertyGrid,
                                                SmartPtr<Properties> properties, const String &name,
                                                const String &str );

@@ -4,6 +4,7 @@
 #include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Core/PropertyPath.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
@@ -63,14 +64,15 @@ namespace workphone
         }
         bool prepare( SmartPtr<AssetDatabaseManager> catalog,
                       const AssetDatabaseManager::EntrySnapshot &entry, SmartPtr<ISharedObject> target,
-                      const String &property, hash_type expectedType )
+                      const String &property, hash_type expectedType,
+                      const PropertyGroupPath &groupPath = {} )
         {
             if( m_prepared )
                 return fail( "Reference edit has already been prepared." );
             if( !catalog || !target || !typeMatches( entry.type, expectedType ) ||
                 !catalog->isEntryCurrent( entry ) )
                 return fail( "Reference type or catalog generation no longer matches." );
-            auto properties = target->getProperties();
+            auto properties = resolvePropertyGroup( target->getProperties(), groupPath );
             if( !properties || !properties->hasProperty( property ) ||
                 properties->getPropertyObject( property ).isReadOnly() )
                 return fail( "Reference property is missing or read-only." );
@@ -80,16 +82,19 @@ namespace workphone
                 return fail( "Asset type does not match the property's declared reference type." );
             ObjectObserver<AssetDatabaseManager> catalogObserver;
             ObjectObserver<ISharedObject> targetObserver;
+            PropertyGroupPath preparedPath;
             try
             {
                 catalogObserver = catalog;
                 targetObserver = target;
+                preparedPath = groupPath;
             }
             catch(const std::bad_alloc &) { return fail("Budget exhausted"); }
             m_catalog = std::move(catalogObserver);
             m_target = std::move(targetObserver);
             m_entry = entry;
             m_property = property;
+            m_groupPath = std::move( preparedPath );
             m_before = properties->getProperty( property );
             m_prepared = true;
             m_error.clear();
@@ -164,7 +169,7 @@ namespace workphone
         bool propertyCurrent( const String &expected )
         {
             auto object = m_target.lock();
-            auto properties = object ? object->getProperties() : nullptr;
+            auto properties = object ? resolvePropertyGroup( object->getProperties(), m_groupPath ) : nullptr;
             const auto declared =
                 properties && properties->hasProperty( m_property )
                     ? properties->getPropertyObject( m_property ).getAttribute( "resourceType" )
@@ -187,13 +192,20 @@ namespace workphone
             if( !object )
                 return fail( "Reference target was destroyed." );
             auto properties = object->getProperties();
-            auto replacement = make_ptr<Properties>( *properties );
-            replacement->getPropertyObject( m_property ).setValue( value );
             try
             {
+                // Properties' copy constructor shares child groups. Keep every
+                // old descendant independent of the candidate and setter so
+                // rejection can restore the complete original snapshot.
+                auto replacement = clonePropertyTree( properties );
+                auto group = resolvePropertyGroup( replacement, m_groupPath );
+                if( !group || !group->hasProperty( m_property ) )
+                    return fail( "Reference property group was removed." );
+                group->getPropertyObject( m_property ).setValue( value );
                 object->setProperties( replacement );
-                auto installed = object->getProperties();
-                if( !installed || installed->getProperty( m_property ) != value )
+                auto installed = resolvePropertyGroup( object->getProperties(), m_groupPath );
+                if( !installed || !installed->hasProperty( m_property ) ||
+                    installed->getProperty( m_property ) != value )
                 {
                     object->setProperties( properties );
                     return fail( "The target did not accept the reference property." );
@@ -217,6 +229,7 @@ namespace workphone
         ObjectObserver<ISharedObject> m_target;
         AssetDatabaseManager::EntrySnapshot m_entry;
         String m_property;
+        PropertyGroupPath m_groupPath;
         String m_declaredType;
         String m_before;
         String m_error;

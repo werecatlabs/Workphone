@@ -262,6 +262,14 @@ namespace workphone::ui
     void ImGuiPropertyGrid::handlePropertyButtonClicked( SmartPtr<IUIPropertyGrid> propertyGrid,
                                                          const String &name, const String &value )
     {
+        handlePropertyButtonClicked( propertyGrid, propertyGrid ? propertyGrid->getProperties() : nullptr,
+                                     name, value );
+    }
+
+    void ImGuiPropertyGrid::handlePropertyButtonClicked( SmartPtr<IUIPropertyGrid> propertyGrid,
+                                                         SmartPtr<Properties> properties,
+                                                         const String &name, const String &value )
+    {
         WP_ASSERT( propertyGrid );
 
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -271,7 +279,7 @@ namespace workphone::ui
 
         args[0].setStr( name );
         args[1].setStr( value );
-        args[2].setObject( propertyGrid->getProperties() );
+        args[2].setObject( properties );
         applicationManager->triggerEvent( EventType::UI, IEvent::handlePropertyButtonClick, args,
                                           propertyGrid, propertyGrid, nullptr, false,
                                           Thread::Application_Flag );
@@ -445,7 +453,7 @@ namespace workphone::ui
         {
             if( ImGui::Button( StringUtil::isNullOrEmpty( value ) ? "None" : value.c_str() ) )
             {
-                handlePropertyButtonClicked( propertyGrid, name, value );
+                handlePropertyButtonClicked( propertyGrid, properties, name, value );
             }
         }
         else if( StringUtil::isEqual( type, Util::buttonTypeStr, true ) )
@@ -458,7 +466,7 @@ namespace workphone::ui
             if( ImGui::Button( label.c_str() ) )
             {
                 properties->setButtonPressed( name, true );
-                handlePropertyButtonClicked( propertyGrid, name, value );
+                handlePropertyButtonClicked( propertyGrid, properties, name, value );
             }
         }
         else if( StringUtil::isEqual( type, Util::intStr, true ) )

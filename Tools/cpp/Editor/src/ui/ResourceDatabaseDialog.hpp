@@ -2,6 +2,7 @@
 #define ResourceDatabaseDialog_h__
 #include "ui/EditorWindow.hpp"
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
+#include <Workphone/Core/PropertyPath.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 
 namespace workphone::editor
@@ -67,6 +68,7 @@ namespace workphone::editor
         void setCurrentObject( SmartPtr<ISharedObject> object );
         String getPropertyName() const;
         void setPropertyName( const String &name );
+        void setPropertyPath( const PropertyGroupPath &path );
         void updateSelection() override;
         void setWindowVisible( bool visible ) override;
 
@@ -95,6 +97,7 @@ namespace workphone::editor
         ObjectObserver<ISharedObject> m_currentObject;
         Array<ObjectObserver<ISharedObject>> m_targets;
         String m_propertyName;
+        PropertyGroupPath m_propertyPath;
         String m_selectedObject;
         AssetCatalogBrowser m_browser;
         AssetCatalogSession m_targetSession;

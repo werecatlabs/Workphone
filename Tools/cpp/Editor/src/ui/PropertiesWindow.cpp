@@ -1,5 +1,6 @@
 #include <EditorPCH.hpp>
 #include <Workphone/Database/AssetReferenceChange.hpp>
+#include <Workphone/Core/PropertyPath.hpp>
 #include <ui/PropertiesWindow.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
@@ -12,6 +13,33 @@
 
 namespace workphone::editor
 {
+    namespace
+    {
+        SmartPtr<ISharedObject> propertyTarget( SmartPtr<ISharedObject> object )
+        {
+            auto file = dynamic_pointer_cast<FileSelection>( object );
+            if( !file ) return object;
+            auto app = core::IApplicationManager::instancePtr();
+            auto resources = app ? app->getResourceDatabase() : nullptr;
+            if( !resources ) return nullptr;
+            const auto path = file->getFilePath();
+            const auto extension = StringUtil::make_lower( Path::getFileExtension( path ) );
+            if( extension == ".mat" )
+            {
+                auto graphics = app->getGraphicsSystem();
+                auto materials = graphics ? graphics->getMaterialManager() : nullptr;
+                return materials ? materials->loadFromFile( path ) : nullptr;
+            }
+            if( ApplicationUtil::isSupportedMesh( path ) )
+                return resources->loadDirectorFromResourcePath( path, scene::MeshResourceDirector::typeInfo() );
+            if( ApplicationUtil::isSupportedTexture( path ) )
+                return resources->loadDirectorFromResourcePath( path, scene::TextureResourceDirector::typeInfo() );
+            if( ApplicationUtil::isSupportedSound( path ) )
+                return resources->loadDirectorFromResourcePath( path, scene::SoundResourceDirector::typeInfo() );
+            return resources->loadResource( path );
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone, PropertiesWindow, EditorWindow );
     WP_CLASS_REGISTER_DERIVED( workphone, PropertiesWindow::PropertiesDropTarget, ui::IUIDropTarget );
     WP_CLASS_REGISTER_DERIVED( workphone, PropertiesWindow::UpdateSelectionJob, Job );
@@ -911,6 +939,15 @@ namespace workphone::editor
             WP_ASSERT( ui );
 
             auto resourceType = (hash_type)ISharedObject::typeInfo();
+            PropertyGroupPath propertyPath;
+            if( auto root = m_propertyGrid ? m_propertyGrid->getProperties() : nullptr )
+            {
+                if( properties && !findPropertyGroupPath( root, properties, propertyPath ) )
+                {
+                    WP_LOG_ERROR( "Ignored an edit from a stale property group." );
+                    return;
+                }
+            }
 
             if( auto selected = getSelected() )
             {
@@ -937,19 +974,11 @@ namespace workphone::editor
 
                             if( auto selected = getSelected() )
                             {
-                                SmartPtr<ISharedObject> target = selected;
-                                if( auto file = dynamic_pointer_cast<FileSelection>( selected ) )
+                                auto target = propertyTarget( selected );
+                                if( !target )
                                 {
-                                    auto resources = applicationManager->getResourceDatabase();
-                                    target = resources ? resources->loadResource( file->getFilePath() )
-                                                       : nullptr;
-                                    if( !target )
-                                    {
-                                        WP_LOG_ERROR(
-                                            "Import this asset before assigning its resource "
-                                            "references." );
-                                        return;
-                                    }
+                                    WP_LOG_ERROR( "The property target is no longer available." );
+                                    return;
                                 }
                                 resourceDatabaseDialog->setCurrentObject( target );
                             }
@@ -959,6 +988,7 @@ namespace workphone::editor
                             }
 
                             resourceDatabaseDialog->setPropertyName( name );
+                            resourceDatabaseDialog->setPropertyPath( propertyPath );
                             resourceDatabaseDialog->setWindowVisible( true );
                             resourceDatabaseDialog->updateSelection();
                         }
@@ -978,206 +1008,48 @@ namespace workphone::editor
                                                 SmartPtr<ISharedObject> object, const String &name,
                                                 const String &value, bool isButton )
     {
-        if( !object )
-        {
-            return ISharedObject::typeInfo();
-        }
+        if( !object ) return 0;
 
-        if( !properties )
-        {
-            properties = object->getProperties();
-        }
+        // Events identify the owning group in the displayed snapshot. Resolve
+        // its path before loading a fresh director or another selected object.
+        auto root = m_propertyGrid ? m_propertyGrid->getProperties() : nullptr;
+        if( !root ) root = properties;
+        if( !root ) root = object->getProperties();
+        if( !properties ) properties = root;
+        PropertyGroupPath path;
+        if( !findPropertyGroupPath( root, properties, path ) || !properties->hasProperty( name ) )
+            return 0;
 
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
+        auto target = propertyTarget( object );
+        if( !target ) return 0;
+        auto fileResource = dynamic_pointer_cast<FileSelection>( object ) ?
+                                dynamic_pointer_cast<IResource>( target ) : nullptr;
 
-        auto typeManager = TypeManager::instance();
+        auto targetRoot = target->getProperties();
+        auto group = resolvePropertyGroup( targetRoot, path );
+        if( !group || !group->hasProperty( name ) ) return 0;
+        const auto &descriptor = group->getPropertyObject( name );
+        if( descriptor.isReadOnly() ) return 0;
+        const auto resourceType = AssetReferenceChange::referenceType( descriptor.getAttribute( "resourceType" ) );
+        if( isButton && resourceType != 0 ) return resourceType;
 
-        auto resourceDatabase = applicationManager->getResourceDatabase();
+        // Never replace a target with the displayed group's snapshot: another
+        // selected object can have different sibling settings. Preserve types,
+        // attributes and siblings, and apply the supplied value to this leaf.
+        auto replacement = clonePropertyTree( targetRoot );
+        auto edited = resolvePropertyGroup( replacement, path );
+        auto &property = edited->getPropertyObject( name );
+        if( isButton ) property.setValueAsButton( true );
+        else property.setValue( value );
+        target->setProperties( replacement );
+        // A director's Save action is dispatched by setProperties itself.
+        const bool dispatchedSave = isButton && path.empty() && name == scene::ResourceDirector::saveStr &&
+                                    dynamic_pointer_cast<scene::ResourceDirector>( target );
+        if( fileResource && !dispatchedSave ) fileResource->save();
 
-        auto application = applicationManager->getApplication();
-
-        auto selectionManager = applicationManager->getSelectionManager();
-        WP_ASSERT( selectionManager );
-
-        auto editorManager = EditorManager::getSingletonPtr();
-        WP_ASSERT( editorManager );
-
-        auto ui = editorManager->getUI();
-        WP_ASSERT( ui );
-
-        auto propertyChanged = properties->getPropertyObject( name );
-        if( !properties->hasProperty( name ) )
-        {
-            if( isButton )
-            {
-                propertyChanged.setName( name );
-                propertyChanged.setValue( "true" );
-            }
-            else
-            {
-                propertyChanged.setName( name );
-                propertyChanged.setValue( value );
-            }
-        }
-
-        auto resourceTypeName = propertyChanged.getAttribute( "resourceType" );
-        auto resourceType = AssetReferenceChange::referenceType( resourceTypeName );
-        if( isButton && resourceType != 0 )
-        {
-            return propertyChanged.isReadOnly() ? 0 : resourceType;
-        }
-
-        if( object->isDerived<FileSelection>() )
-        {
-            auto fileSelection = workphone::static_pointer_cast<FileSelection>( object );
-            if( fileSelection )
-            {
-                auto filePath = fileSelection->getFilePath();
-                auto fileExt = Path::getFileExtension( filePath );
-                fileExt = StringUtil::make_lower( fileExt );
-
-                if( fileExt == ".mat" )
-                {
-                    auto graphicsSystem = applicationManager->getGraphicsSystem();
-                    WP_ASSERT( graphicsSystem );
-
-                    auto materialManager = graphicsSystem->getMaterialManager();
-                    WP_ASSERT( materialManager );
-
-                    auto material = materialManager->loadFromFile( filePath );
-                    if( material )
-                    {
-                        auto properties = material->getProperties();
-                        if( properties )
-                        {
-                            properties->setProperty( name, value );
-
-                            if( isButton )
-                            {
-                                properties->setButtonPressed( name, true );
-
-                                auto &property = properties->getPropertyObject( name );
-
-                                auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
-                            }
-
-                            material->setProperties( properties );
-                        }
-
-                        material->save();
-                    }
-                }
-                else if( ApplicationUtil::isSupportedMesh( filePath ) )
-                {
-                    auto meshResource = resourceDatabase->loadDirectorFromResourcePath(
-                        filePath, scene::MeshResourceDirector::typeInfo() );
-                    if( meshResource )
-                    {
-                        auto properties = meshResource->getProperties();
-                        if( properties )
-                        {
-                            properties->setProperty( name, value );
-
-                            if( isButton )
-                            {
-                                properties->setButtonPressed( name, true );
-
-                                auto &property = properties->getPropertyObject( name );
-
-                                auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
-                            }
-
-                            meshResource->setProperties( properties );
-                            meshResource->save();
-                        }
-                    }
-                }
-                else if( ApplicationUtil::isSupportedTexture( filePath ) )
-                {
-                    auto textureResource = resourceDatabase->loadDirectorFromResourcePath(
-                        filePath, scene::TextureResourceDirector::typeInfo() );
-                    if( textureResource )
-                    {
-                        auto properties = textureResource->getProperties();
-                        if( properties )
-                        {
-                            properties->setProperty( name, value );
-
-                            if( isButton )
-                            {
-                                properties->setButtonPressed( name, true );
-
-                                auto &property = properties->getPropertyObject( name );
-
-                                auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
-                            }
-
-                            textureResource->setProperties( properties );
-                            textureResource->save();
-                        }
-                    }
-                }
-                else if( ApplicationUtil::isSupportedSound( filePath ) )
-                {
-                    auto soundResource = resourceDatabase->loadDirectorFromResourcePath(
-                        filePath, scene::SoundResourceDirector::typeInfo() );
-                    if( soundResource )
-                    {
-                        auto properties = soundResource->getProperties();
-                        if( properties )
-                        {
-                            properties->setProperty( name, value );
-
-                            if( isButton )
-                            {
-                                properties->setButtonPressed( name, true );
-
-                                auto &property = properties->getPropertyObject( name );
-
-                                auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
-                            }
-
-                            soundResource->setProperties( properties );
-                            soundResource->save();
-                        }
-                    }
-                }
-                else
-                {
-                    auto resource = resourceDatabase->loadResource( filePath );
-                    if( resource )
-                    {
-                        auto properties = resource->getProperties();
-                        if( properties )
-                        {
-                            properties->setProperty( name, value );
-                            resource->setProperties( properties );
-                        }
-
-                        resource->save();
-                    }
-                }
-            }
-        }
-        else
-        {
-            auto objectProperties = object->getProperties();
-            objectProperties->setProperty( propertyChanged );
-            object->setProperties( objectProperties );
-            if( auto project = editorManager->getProject() )
-            {
-                if( object == project->getGraphicsSettingsDirector() )
-                {
-                    project->setDirty( true );
-                }
-            }
-        }
-
+        if( auto editor = EditorManager::getSingletonPtr() )
+            if( auto project = editor->getProject() )
+                if( target == project->getGraphicsSettingsDirector() ) project->setDirty( true );
         return resourceType;
     }
 
@@ -1187,9 +1059,11 @@ namespace workphone::editor
     {
         if( auto owner = getOwner() )
         {
+            if( arguments.size() < 3 ) return {};
             auto name = arguments[0].str;
             auto value = arguments[1].str;
-            auto properties = arguments[2].object;
+            auto properties = workphone::dynamic_pointer_cast<Properties>( arguments[2].object );
+            if( !properties ) return {};
 
             if( eventValue == IEvent::handlePropertyButtonClick )
             {
@@ -1271,16 +1145,18 @@ namespace workphone::editor
 
             if( eventValue == IEvent::handleDrop )
             {
-                auto properties = owner->getProperties();
+                if( arguments.size() < 4 ) return {};
+                auto properties = dynamic_pointer_cast<Properties>( arguments[3].object );
+                if( !properties ) return {};
+                auto dragData = workphone::make_ptr<Properties>();
                 auto dataStr = arguments[0].getStr();
                 auto name = arguments[1].getStr();
-                auto value = arguments[2].getStr();
+                DataUtil::parse( dataStr, dragData.get() );
 
-                DataUtil::parse( dataStr, properties.get() );
-
-                auto filePath = properties->getProperty( "filePath" );
+                auto filePath = dragData->getProperty( "filePath" );
                 if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
+                    if( !resourceDatabase ) return {};
                     auto resource = resourceDatabase->loadResource( filePath );
                     if( !resource )
                     {
@@ -1292,15 +1168,13 @@ namespace workphone::editor
                         auto handle = resource->getHandle();
                         auto uuid = handle->getUUIDAsString();
 
-                        properties->setProperty( name, uuid );
                         owner->propertyChange( properties, name, uuid, false );
                     }
                 }
                 else
                 {
-                    auto uuid = properties->getProperty( "actorUUID" );
-
-                    owner->propertyChange( properties, name, uuid, false );
+                    auto uuid = dragData->getProperty( "actorUUID" );
+                    if( !uuid.empty() ) owner->propertyChange( properties, name, uuid, false );
                 }
             }
         }
