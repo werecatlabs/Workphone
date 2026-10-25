@@ -178,7 +178,11 @@ namespace workphone
                     .def( "reserve", &StringVector::reserve )
                     .def( "size", &StringVector::size )
                     .def( "empty", &StringVector::empty )
-                    .def( "at", static_cast<String &(StringVector::*)( size_t )>( &StringVector::at ) )];
+                    // The Workphone String converter handles values. A reference
+                    // return is interpreted as an unregistered Lua class.
+                    .def( "at", +[]( const StringVector &values, size_t index ) -> String {
+                        return values.at( index );
+                    } )];
 
         module( L )[class_<Parameters>( "Parameters" )
                         .def( constructor<>() )
