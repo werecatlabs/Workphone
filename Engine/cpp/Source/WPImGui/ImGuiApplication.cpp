@@ -47,6 +47,29 @@ namespace workphone::ui
 {
     namespace
     {
+        // City tool replies contain enabled, world-space line pairs and handle points.
+        // This overlay is a draft only; scene meshes/collision publish through the component.
+        void drawCityRoadPreview(const Parameter &reply,SmartPtr<render::IGraphicsCamera> camera,
+                                 ImVec2 minimum,ImVec2 size)
+        {
+            const auto &parts=reply.getArray();if(parts.size()!=3 || !parts[0].getBool())return;
+            const auto clip=Matrix4F(camera->getProjectionMatrix().ptr())*Matrix4F(camera->getViewMatrix().ptr());
+            const auto project=[&](const Parameter &value,ImVec2 &screen)
+            {
+                const auto p=value.getVector3();const auto w=clip[3][0]*p.x+clip[3][1]*p.y+clip[3][2]*p.z+clip[3][3];
+                if(!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || w<=.000001f)return false;
+                const auto x=(clip[0][0]*p.x+clip[0][1]*p.y+clip[0][2]*p.z+clip[0][3])/w;
+                const auto y=(clip[1][0]*p.x+clip[1][1]*p.y+clip[1][2]*p.z+clip[1][3])/w;
+                const auto z=(clip[2][0]*p.x+clip[2][1]*p.y+clip[2][2]*p.z+clip[2][3])/w;
+                screen={minimum.x+f32(x*.5f+.5f)*size.x,minimum.y+f32(.5f-y*.5f)*size.y};
+                return std::isfinite(screen.x) && std::isfinite(screen.y) && std::isfinite(z) && z>=-1 && z<=1;
+            };
+            auto draw=ImGui::GetWindowDrawList();draw->PushClipRect(minimum,{minimum.x+size.x,minimum.y+size.y},true);
+            const auto &lines=parts[1].getArray();const auto &points=parts[2].getArray();
+            for(size_t i=1;i<lines.size() && i<16384;i+=2){ImVec2 a,b;if(project(lines[i-1],a) && project(lines[i],b))draw->AddLine(a,b,IM_COL32(255,195,60,230),2);}
+            for(size_t i=0;i<points.size() && i<12288;++i){ImVec2 p;if(project(points[i],p)){draw->AddCircleFilled(p,4,IM_COL32(45,215,255,255));draw->AddCircle(p,5,IM_COL32(10,25,35,255));}}
+            draw->PopClipRect();
+        }
         // A prepared recipe is an editor-only overlay. It never changes active
         // gameplay queries or collision before the normal commit/publication gate.
         void drawTerrainRecipePreview( const Parameter &reply, SmartPtr<render::IGraphicsCamera> camera,
@@ -2027,8 +2050,36 @@ namespace workphone::ui
                                                    Parameter( f64( direction.x ) ),
                                                    Parameter( f64( direction.y ) ),
                                                    Parameter( f64( direction.z ) ) };
+                            // City edits persist while the pointer visits their settings panel.
+                            // OS focus loss, Escape, hidden viewport and asset drag cancel drafts.
+                            const auto &toolIO=ImGui::GetIO();
+                            const bool imageFocused=ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+                            const char *cityPhase="hover";
+                            if(sceneAssetDragging || toolIO.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape))cityPhase="cancel";
+                            else if(imageFocused && !toolIO.WantTextInput && toolIO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))cityPhase=toolIO.KeyShift?"redo":"undo";
+                            else if(imageFocused && !toolIO.WantTextInput && toolIO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y))cityPhase="redo";
+                            else if(imageFocused && !toolIO.WantTextInput && toolIO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S))cityPhase="save";
+                            else if(imageFocused && !toolIO.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Enter))cityPhase="finish";
+                            else if(imageFocused && !toolIO.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete))cityPhase="remove";
+                            else if(ImGui::IsMouseReleased(ImGuiMouseButton_Left))cityPhase="commit";
+                            else if(hovered && !toolIO.KeyAlt && ImGui::IsMouseClicked(ImGuiMouseButton_Left))cityPhase="begin";
+                            else if(hovered && !toolIO.KeyAlt && ImGui::IsMouseDown(ImGuiMouseButton_Left))cityPhase="update";
+                            auto cityArgs=args;cityArgs[0]=Parameter(String(cityPhase));bool cityToolActive=false;
+                            for(auto listener:renderWindow->getObjectListeners())
+                            {
+                                const auto reply=listener->handleEvent(EventType::UI,StringUtil::getHash("cityRoadViewportTool"),cityArgs,renderWindow,nullptr,nullptr);
+                                const auto &parts=reply.getArray();if(parts.empty() || !parts[0].getBool())continue;
+                                cityToolActive=sceneToolActive=true;ImGuizmo::Enable(false);
+                                drawCityRoadPreview(reply,renderCamera,sceneRectMin,sceneRectSize);
+                            }
                             for( auto listener : renderWindow->getObjectListeners() )
                             {
+                                if(cityToolActive)
+                                {
+                                    auto cancel=args;cancel[0]=Parameter(String("cancel"));
+                                    listener->handleEvent(EventType::UI,StringUtil::getHash("terrainViewportBrush"),cancel,renderWindow,nullptr,nullptr);
+                                    continue;
+                                }
                                 const auto reply = listener->handleEvent(
                                     EventType::UI, StringUtil::getHash( "terrainViewportBrush" ), args,
                                     renderWindow, nullptr, nullptr );
@@ -2471,9 +2522,13 @@ namespace workphone::ui
                                              Parameter( 0.0 ),      Parameter( 0.0 ), Parameter( -1.0 ),
                                              Parameter( 0.0 ) };
                     for( auto listener : renderWindow->getObjectListeners() )
+                    {
                         listener->handleEvent( EventType::UI,
                                                StringUtil::getHash( "terrainViewportBrush" ), cancel,
                                                renderWindow, nullptr, nullptr );
+                        auto cityCancel=cancel;cityCancel[0]=Parameter(String("cancel"));
+                        listener->handleEvent(EventType::UI,StringUtil::getHash("cityRoadViewportTool"),cityCancel,renderWindow,nullptr,nullptr);
+                    }
                 }
             }
 

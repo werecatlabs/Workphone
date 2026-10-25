@@ -50,6 +50,8 @@ namespace workphone
         void setFoliageWorldEnabled( bool enabled ) { m_foliageWorldEnabled = enabled; }
         void setCityOptions( bool enabled, s32 blocks, s32 route, bool naturalRoads = false )
         { m_openCity = enabled; m_cityBlocks = blocks; m_cityRoute = route; m_cityNaturalRoads = naturalRoads; }
+        void setRoadAuthoringShowcase(bool enabled) { m_roadAuthoringShowcase=enabled; }
+        void setCityTerrainRoads(bool enabled) { m_cityTerrainRoads=enabled; }
         void setMaterialExportDirectory( const std::string &path ) { m_materialExportDirectory = path; }
         void setEvidenceOptions( const std::string &path, const std::string &replay,
                                  std::vector<advanced::ReviewControl> controls )
@@ -142,10 +144,16 @@ namespace workphone
         bool m_foliageWorldEnabled = false;
         bool m_openCity = false;
         bool m_cityNaturalRoads = false;
+        bool m_roadAuthoringShowcase = false;
+        bool m_cityTerrainRoads = false;
         s32 m_cityBlocks = 8, m_cityRoute = 0;
         f32 m_cityExtent = 0, m_citySpacing = 0;
         f32 m_cityOverviewExtent = 0;
         Vector3F m_cityOverviewCentre{}, m_cityStreetCentre{};
+        Vector3F m_cityJunctionCentre{};
+        Vector3F m_cityBoulevardCentre{};
+        Vector3F m_generatedSpawnPosition{0,.42f,0};
+        bool m_cityHasJunction = false;
         Vector3F m_cityStreetForward{ 0, 0, -1 };
         s32 m_forcedLOD = -1;
         s32 m_forcedVehicleLOD = -1;
@@ -176,7 +184,11 @@ namespace workphone
         f64 m_nextDebugLog = 0.0;
         bool m_trackSmokeTest = false;
         void updateCollisionSmokeTest();
+        void prepareCityRetentionSmoke();
         bool m_collisionSmokeTest = false, m_collisionProbeStarted = false;
+        bool m_cityRetentionSmokePrepared = false;
+        SourceBudgetText m_cityRetentionSmokeRoadId;
+        f32 m_cityRetentionSmokeWidth = 0;
         f64 m_collisionProbeTime = 0;
         bool m_smokeTest = false;
         bool m_smokeTestPassed = false;

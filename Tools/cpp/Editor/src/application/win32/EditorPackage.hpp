@@ -59,7 +59,14 @@ namespace workphone::editor
                 }
                 else if( argument == "--package-smoke" ) smoke = true;
             }
-            if( !installed && !explicitRoot && !smoke && workspace.empty() ) { root.clear(); return; }
+            if( !installed && !explicitRoot && !smoke && workspace.empty() )
+            {
+                // Development plugin/media paths are relative to the executable,
+                // including when a desktop launcher supplies a different CWD.
+                std::filesystem::current_path( std::filesystem::path( executable ).parent_path() );
+                root.clear();
+                return;
+            }
             root = std::filesystem::canonical( root );
             if( workspace.empty() )
             {

@@ -552,6 +552,26 @@ if(TARGET Workphone)
     add_test(NAME Workphone.city_road_spline_source COMMAND CityRoadSplineSourceTests
         ${WP_ROOT}/docs/examples/city-road-source-v1.cityroads.json)
     set_tests_properties(Workphone.city_road_spline_source PROPERTIES TIMEOUT 60)
+    foreach(city_road_test IN ITEMS CityRoadRoundabout CityRoadTerrainMesh CityRoadAuthoring OpenCityRoadSource CityRoadParcelSupport)
+        add_executable(${city_road_test}Tests ${city_road_test}Tests.cpp)
+        target_compile_definitions(${city_road_test}Tests PRIVATE BOOST_ALL_NO_LIB)
+        target_include_directories(${city_road_test}Tests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
+        target_link_libraries(${city_road_test}Tests PRIVATE Workphone)
+        if(WIN32)
+            target_link_directories(${city_road_test}Tests PRIVATE
+                ${WP_ROOT}/Dependencies/lib/windows/boost
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        endif()
+        set_target_properties(${city_road_test}Tests PROPERTIES FOLDER Tests/Cpp)
+    endforeach()
+    add_test(NAME Workphone.city_road_roundabout COMMAND CityRoadRoundaboutTests)
+    add_test(NAME Workphone.city_road_terrain_mesh COMMAND CityRoadTerrainMeshTests)
+    add_test(NAME Workphone.city_road_authoring COMMAND CityRoadAuthoringTests)
+    add_test(NAME Workphone.open_city_road_source COMMAND OpenCityRoadSourceTests)
+    add_test(NAME Workphone.city_road_parcel_support COMMAND CityRoadParcelSupportTests)
+    set_tests_properties(Workphone.city_road_roundabout Workphone.city_road_terrain_mesh
+        Workphone.city_road_authoring Workphone.city_road_parcel_support PROPERTIES TIMEOUT 90)
+    set_tests_properties(Workphone.open_city_road_source PROPERTIES TIMEOUT 180)
 endif()
 
 if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)

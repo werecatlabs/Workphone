@@ -90,18 +90,37 @@ Traffic, opponents, interiors and streamed world sectors are not implemented.
 
 ## Editable splines, terrain and connected transport
 
-[The authoring plan](WPPROCEDURAL_CITY_AUTHORING_PLAN.md) specifies drawing/editing
-splines through the existing Editor viewport and retaining source IDs and manual edits.
-[The transport/water plan](WPPROCEDURAL_CITY_TRANSPORT_WATER_PLAN.md) adds rivers,
-road/rail bridges and train tracks to that workflow. Those native authoring and world
-features are planned, not working runtime controls.
+[The authoring plan](WPPROCEDURAL_CITY_AUTHORING_PLAN.md) documents the native
+**Window > City Roads** tool: bind a selected terrain, click/drag Bezier knots and
+handles, commit or cancel drafts, edit road fields, and undo/redo committed edits.
+The scene's `CityRoadAuthoring` component owns canonical source and a persistent
+terrain binding. Generated render and collision meshes are disposable caches.
 
-`CityRoadSplineSource` provides a strict version-1 JSON/Bezier CPU foundation and a
-[valid hand-editable example](examples/city-road-source-v1.cityroads.json). Its terrain
-callback samples the centre and both edges, rejects grade/crossfall/local folding and
-keeps last-good outputs on failure. Sampling does not prove continuous terrain-cell or
-hole coverage. The city renderer still uses a flat physics plane; the codec does not
-yet load into `ProceduralRaceScene`, draw Editor handles, carve terrain or build bridges.
+`CityRoadSplineSource` retains strict version-1 compatibility and the
+[hand-editable example](examples/city-road-source-v1.cityroads.json). Version 2 adds
+empty documents and typed roundabouts with three to six connected approach ports,
+raised islands/kerbs and directed circulation routes. The Editor placement tool
+creates four approaches. Exact road fitting clips footprints against terrain cell
+triangles, rejecting holes, unsupported coverage, excessive grades and disconnected
+junction joins. Roads and junctions share their fitted render/collision geometry;
+terrain edits that cannot be recooked deactivate stale road collision while retaining
+the authored source. Terrain grading and fully atomic terrain/city replacement remain
+unfinished.
+
+The generated grid/L-system city retains its flat-support path. The separate native
+authoring showcase exercises the real terrain, spline and roundabout components:
+
+```powershell
+& .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
+    -RoadAuthoringShowcase -Quality high -Views street,track -NoEffects -Seconds 3
+```
+
+`--road-authoring-showcase` also selects this mode directly in `SampleVehicleAdvanced`.
+Evidence checks terrain publication, native road/ring/island/terrain ray hits,
+island exclusion from driveable surfaces and route circulation/height agreement.
+This diagnostic fixture does not convert generated cities into editable sources.
+[Rivers, road/rail bridges and train tracks](WPPROCEDURAL_CITY_TRANSPORT_WATER_PLAN.md),
+project asset import and country-specific junction approval remain planned.
 
 Validation:
 
@@ -115,7 +134,11 @@ Validation:
 - `Tests/cpp/OpenCityRoadNetworkTests.cpp` checks planar connected graph topology,
   bounds, replay, route independence and closed sampled routes across the seed corpus.
 - `Tests/cpp/CityRoadSplineSourceTests.cpp` checks the real JSON example, retained edits,
-  bounded Bezier sampling, terrain fitting failures and allocation-denial cleanup.
+  version-1/version-2 compatibility, bounded Bezier sampling and allocation-denial cleanup.
+- `CityRoadRoundaboutTests`, `CityRoadTerrainMeshTests` and `CityRoadAuthoringTests`
+  cover junction topology/routes, exact terrain coverage and component revision/lifetime
+  behavior. `Editor.city_road_viewport_authoring_test` exercises native controls and
+  queued viewport rays with a test publication adapter; it is not a live visual check.
 - The native sample's `--collision-smoke-test` supports `--city`: it checks native
   static shape attachment/poses and short face probes, the exact building-mass
   count, a road ray at Y=0 and a sidewalk ray at Y=0.15. It exits after those

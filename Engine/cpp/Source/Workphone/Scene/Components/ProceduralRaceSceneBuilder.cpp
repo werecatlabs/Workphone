@@ -9,8 +9,13 @@
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 #include <Workphone/Interface/Procedural/OpenCityStreetDetails.hpp>
+#include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
@@ -22,11 +27,14 @@
 #include <chrono>
 #include <stdexcept>
 #include <map>
+#include <cstdio>
 
 namespace workphone::scene::race
 {
     SceneAssets::SceneAssets(const SceneAssets &other) :
-        openCity(other.openCity), useFoliageWorld(other.useFoliageWorld), cityNaturalRoads(other.cityNaturalRoads), foliageTerrain(other.foliageTerrain),
+        openCity(other.openCity), useFoliageWorld(other.useFoliageWorld), cityNaturalRoads(other.cityNaturalRoads), cityRoadShowcase(other.cityRoadShowcase), cityTerrainRoads(other.cityTerrainRoads), roadAuthoring(other.roadAuthoring), roadTerrain(other.roadTerrain),
+        cityLayout(other.cityLayout), cityBuildingSupportChecks(other.cityBuildingSupportChecks), cityCulledParcels(other.cityCulledParcels),
+        cityBuildingSupportValid(other.cityBuildingSupportValid), citySourceReused(other.citySourceReused), cityRaceRouteAvailable(other.cityRaceRouteAvailable), cityRaceRouteError(other.cityRaceRouteError), cityAppliedSourceRevision(other.cityAppliedSourceRevision), foliageTerrain(other.foliageTerrain),
         cityBlocks(other.cityBlocks), cityRoute(other.cityRoute), vehicle(other.vehicle), circuit(other.circuit),
         wheels(other.wheels), body(other.body), shadow(other.shadow), reflectionActor(other.reflectionActor), ground(other.ground),
         reflectionTexture(other.reflectionTexture), vehicleMaterials(other.vehicleMaterials), materials(other.materials),
@@ -41,6 +49,11 @@ namespace workphone::scene::race
     {
         using std::swap;
         swap(openCity,other.openCity);swap(useFoliageWorld,other.useFoliageWorld);swap(cityNaturalRoads,other.cityNaturalRoads);swap(foliageTerrain,other.foliageTerrain);
+        swap(cityRoadShowcase,other.cityRoadShowcase);swap(roadAuthoring,other.roadAuthoring);swap(roadTerrain,other.roadTerrain);
+        swap(cityTerrainRoads,other.cityTerrainRoads);cityLayout.swap(other.cityLayout);
+        swap(cityBuildingSupportChecks,other.cityBuildingSupportChecks);swap(cityCulledParcels,other.cityCulledParcels);
+        swap(cityBuildingSupportValid,other.cityBuildingSupportValid);swap(citySourceReused,other.citySourceReused);
+        swap(cityRaceRouteAvailable,other.cityRaceRouteAvailable);swap(cityRaceRouteError,other.cityRaceRouteError);swap(cityAppliedSourceRevision,other.cityAppliedSourceRevision);
         swap(cityBlocks,other.cityBlocks);swap(cityRoute,other.cityRoute);swap(vehicle,other.vehicle);circuit.swap(other.circuit);
         wheels.swap(other.wheels);swap(body,other.body);swap(shadow,other.shadow);swap(reflectionActor,other.reflectionActor);swap(ground,other.ground);
         swap(reflectionTexture,other.reflectionTexture);vehicleMaterials.swap(other.vehicleMaterials);materials.swap(other.materials);
@@ -1150,7 +1163,8 @@ namespace workphone::scene::race
             auto scene = app->getGraphicsSystem()->getGraphicsScene();
             // Reuse the terrain attachment consumed by ClawScene, including its page stream,
             // per-view instance bins, wind, shadow LOD and publication diagnostics.
-            auto carrier = scene->addGraphicsObjectByType<render::IGraphicsTerrain>();
+            auto carrier = assets.cityTerrainRoads && assets.roadTerrain ? assets.roadTerrain->getTerrain() :
+                scene->addGraphicsObjectByType<render::IGraphicsTerrain>();
             assets.foliageTerrain = dynamic_pointer_cast<render::Terrain>( carrier );
             if( !assets.foliageTerrain )
             {
@@ -1165,7 +1179,7 @@ namespace workphone::scene::race
             ground.spacing = { 1100, 1100 };
             ground.holes = { 1 };  // Existing meadow/collision own the ground; no duplicate surface.
             String error;
-            if( !assets.foliageTerrain->applyTerrainData( ground, error ) )
+            if( !assets.cityTerrainRoads && !assets.foliageTerrain->applyTerrainData( ground, error ) )
             {
                 throw std::runtime_error( "Cannot prepare foliage attachment: " + error );
             }
@@ -1274,7 +1288,7 @@ namespace workphone::scene::race
                 throw std::runtime_error(
                     "Generated foliage atlas lost its registered texture identity." );
             }
-            const auto city = assets.openCity
+            const auto city = assets.cityTerrainRoads ? assets.cityLayout : assets.openCity
                                   ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute, assets.cityNaturalRoads )
                                   : OpenCityLayout{};
             auto world = std::make_shared<render::FoliageWorldData>();
@@ -1359,7 +1373,7 @@ namespace workphone::scene::race
                     const auto cell = u32( round * 73 + render::foliageStableHash( lot.id ) ) & 255u;
                     const float u = ( float( cell & 15u ) + .2f + .6f * scalar( key ^ 0xa341316cu ) ) / 16;
                     const float v = ( float( cell >> 4 ) + .2f + .6f * scalar( key ^ 0xc8013ea4u ) ) / 16;
-                    p = { lot.parcelX + ( u - .5f ) * std::max( 0.f, lot.parcelWidth - 4 ), .16f,
+                    p = { lot.parcelX + ( u - .5f ) * std::max( 0.f, lot.parcelWidth - 4 ), lot.groundHeight + .16f,
                           lot.parcelZ + ( v - .5f ) * std::max( 0.f, lot.parcelDepth - 4 ) };
                 }
                 else if( ( p - assets.circuit.samples[assets.circuit.nearest( p )].position ).length() <
@@ -1425,7 +1439,7 @@ namespace workphone::scene::race
                 if( !lot.park ) { frontages.push_back( &lot ); continue; }
                 parkLots.push_back( &lot );
                 const float hx = lot.parcelWidth * .5f, hz = lot.parcelDepth * .5f;
-                const Vector3F centre( lot.parcelX, .166f, lot.parcelZ );
+                const Vector3F centre( lot.parcelX, lot.groundHeight + .166f, lot.parcelZ );
                 // The perimeter loop stays inside the two-metre tree exclusion margin.
                 // Corners belong to the transverse strips only, avoiding coplanar overlaps.
                 for( int side : { -1, 1 } )
@@ -1443,7 +1457,7 @@ namespace workphone::scene::race
                     horizontal( dark, centre + Vector3F( side * ( hx - 2.f ), .001f, 0 ),
                                 .025f, lot.parcelDepth - 4.f );
                 }
-                if( !city.naturalRoads )
+                if( !city.naturalRoads && !assets.cityTerrainRoads )
                 {
                     const auto normal = normalFor( lot.frontage );
                     const auto tangent = Vector3F( normal.z, 0, -normal.x );
@@ -1470,7 +1484,7 @@ namespace workphone::scene::race
                 const bool xFace = std::abs( normal.x ) > .5f;
                 const float half = ( xFace ? lot.parcelWidth : lot.parcelDepth ) * .5f;
                 const float span = xFace ? lot.parcelDepth : lot.parcelWidth;
-                const auto p = Vector3F( lot.parcelX, .15f, lot.parcelZ ) + normal * ( half + ( city.naturalRoads ? -.8f : 1.1f ) ) -
+                const auto p = Vector3F( lot.parcelX, lot.groundHeight + .15f, lot.parcelZ ) + normal * ( half + ( city.naturalRoads || assets.cityTerrainRoads ? -.8f : 1.1f ) ) -
                     tangent * std::min( 6.f, span * .25f );
                 for( int plank = -2; plank <= 2; ++plank )
                     axisBox( wood, p + Vector3F( 0, .46f, 0 ) + normal * ( plank * .085f ),
@@ -1488,7 +1502,7 @@ namespace workphone::scene::race
                 staticBox( assets, "City bench", p + Vector3F( 0, .515f, 0 ),
                     xFace ? Vector3F( .55f, 1.03f, 1.84f ) : Vector3F( 1.84f, 1.03f, .55f ) );
             }
-            const size_t planterCount = city.naturalRoads ? 0 : std::min<size_t>( frontages.size(), preview ? 8 : 16 );
+            const size_t planterCount = city.naturalRoads || assets.cityTerrainRoads ? 0 : std::min<size_t>( frontages.size(), preview ? 8 : 16 );
             for( size_t i = 0; i < planterCount; ++i )
             {
                 const auto &lot = *frontages[i];
@@ -1529,7 +1543,7 @@ namespace workphone::scene::race
                 staticBox( assets, "City planter", p + Vector3F( 0, .275f, 0 ),
                     xFace ? Vector3F( .7f, .55f, 1.6f ) : Vector3F( 1.6f, .55f, .7f ) );
             }
-            const size_t binCount = city.naturalRoads ? 0 : std::min<size_t>( frontages.size(), preview ? 4 : 8 );
+            const size_t binCount = city.naturalRoads || assets.cityTerrainRoads ? 0 : std::min<size_t>( frontages.size(), preview ? 4 : 8 );
             for( size_t i = 0; i < binCount; ++i )
             {
                 const auto &lot = *frontages[( i * 3 + 1 ) % frontages.size()];
@@ -1551,7 +1565,7 @@ namespace workphone::scene::race
             std::sort( walks.begin(), walks.end(), []( const auto *a, const auto *b ) {
                 return a->x * a->x + a->z * a->z < b->x * b->x + b->z * b->z;
             } );
-            const size_t detailedWalks = std::min<size_t>( walks.size(), preview ? 32 : 64 );
+            const size_t detailedWalks = assets.cityTerrainRoads ? 0 : std::min<size_t>( walks.size(), preview ? 32 : 64 );
             for( size_t i = 0; i < detailedWalks; ++i )
             {
                 const auto &walk = *walks[i];
@@ -1764,9 +1778,93 @@ namespace workphone::scene::race
             }
         }
 
-        void buildCity( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
+        SourceBudgetVector<Vector3F> prepareTerrainCity( SceneAssets &assets, OpenCityLayout &city,
+                                                         SmartPtr<IGameActor> vehicle, u32 seed )
         {
-            const auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute, assets.cityNaturalRoads );
+            auto app=core::IApplicationManager::instance();auto manager=app->getGameManager();auto scene=manager->getCurrentScene();
+            const auto persistentActor=[&](const String &name) {
+                auto actor=manager->createActor();if(!actor)throw std::runtime_error("Cannot create persistent city source actor.");
+                actor->setName(name);actor->setStatic(true);actor->setPosition(Vector3F::zero());
+                actor->setOrientation(QuaternionF::identity());actor->setScale(Vector3F::unit());
+                scene->addActor(actor);scene->registerAllUpdates(actor);return actor;
+            };
+            String error;
+            if(!assets.roadTerrain)
+            {
+                auto actor=persistentActor("Generated city terrain");assets.roadTerrain=actor->addComponent<TerrainSystem>();
+                if(!assets.roadTerrain || !actor->addComponent<CollisionTerrain>() || !actor->addComponent<Rigidbody>())
+                    throw std::runtime_error("Terrain city requires native terrain and collision components.");
+                assets.roadTerrain->load(nullptr);assets.roadTerrain->setTreesEnabled(false);assets.roadTerrain->setGrassEnabled(false);
+                const float radius=std::ceil((city.extent+96)/4)*4;const u32 side=u32(radius*.5f)+1;
+                render::TerrainData data;data.dimensions={s32(side),s32(side)};data.spacing={4,4};data.origin={-radius,-radius};
+                data.heights.resize(size_t(side)*side);data.layerWeights.resize(size_t(side)*side);
+                data.layers[0].tint={.30f,.37f,.20f,1};data.layers[1].tint={.35f,.30f,.22f,1};
+                data.appearance.macroScale=.022f;data.appearance.macroStrength=.3f;data.appearance.macroSeed=seed;
+                data.appearance.macroTint={.29f,.35f,.19f,1};
+                for(u32 z=0;z<side;++z)for(u32 x=0;x<side;++x)
+                {
+                    const float px=-radius+x*4,pz=-radius+z*4;
+                    const float outside=std::clamp((std::max(std::abs(px),std::abs(pz))-city.extent-20)/76,0.f,1.f);
+                    data.heights[size_t(z)*side+x]=2+.005f*px+.003f*pz+outside*outside*3*std::sin(px*.019f)*std::cos(pz*.017f);
+                    data.layerWeights[size_t(z)*side+x]={1-outside*.4f,outside*.4f,0,0};
+                }
+                auto renderer=dynamic_pointer_cast<render::Terrain>(assets.roadTerrain->getTerrain());
+                const bool deferred=renderer && renderer->isTerrainPublicationDeferred();
+                if(deferred)renderer->setDeferredTerrainPublication(false);
+                const bool applied=assets.roadTerrain->applyTerrainData(data,error);
+                if(deferred)renderer->setDeferredTerrainPublication(true);
+                if(!applied)throw std::runtime_error(error.c_str());
+            }
+            const bool newSource=!assets.roadAuthoring;
+            if(newSource)assets.roadAuthoring=persistentActor("Editable generated city roads")->addComponent<CityRoadAuthoring>();
+            if(!assets.roadAuthoring)throw std::runtime_error("Terrain city requires a canonical road source.");
+            assets.citySourceReused=!newSource;
+            if(assets.roadAuthoring->getTerrain()!=assets.roadTerrain && !assets.roadAuthoring->bindTerrain(assets.roadTerrain,error))
+                throw std::runtime_error(error.c_str());
+            const auto terrain=assets.roadAuthoring->getTerrainSnapshot();const auto placement=assets.roadAuthoring->getTerrainPlacement();
+            if(!terrain)throw std::runtime_error("Terrain city has no retained terrain snapshot.");
+            const auto height=[&](const Vector3F &point,float &y){return render::sampleTerrainHeight(*terrain,placement,point,y);};
+            SourceBudgetVector<Vector3F> route;
+            if(newSource)
+            {
+                procedural::OpenCityRoadSourceOptions options;options.seed=seed;
+                options.sourceId=assets.roadAuthoring->getSource().id;
+                const auto binding=assets.roadAuthoring->getTerrainBindingUUID();options.terrainResourceUuid.assign(binding.data(),binding.size());
+                options.terrainRevision=terrain->revision;options.maximumRoundabouts=4;
+                procedural::OpenCityRoadSourceResult generated;
+                if(!procedural::buildOpenCityRoadSource(city,options,height,generated,error))throw std::runtime_error(error.c_str());
+                SourceBudgetText json;if(!procedural::serializeCityRoadSplineSource(generated.source,json,error) ||
+                    !assets.roadAuthoring->setSourceJSON(String(json.data(),json.size()),assets.roadAuthoring->getSourceRevision(),error))
+                    throw std::runtime_error(error.c_str());
+                route=std::move(generated.route);
+            }
+            else
+            {
+                if(assets.roadAuthoring->getActiveRevision()!=assets.roadAuthoring->getSourceRevision() && !assets.roadAuthoring->rebuild(error))
+                    throw std::runtime_error(error.c_str());
+                assets.cityRaceRouteAvailable=procedural::fitOpenCityRoadRoute(city,assets.roadAuthoring->getSource(),height,route,error);
+                if(!assets.cityRaceRouteAvailable)assets.cityRaceRouteError=error;
+            }
+            OpenCityLayout supported;
+            if(!prepareCityRoadParcels(city,assets.roadAuthoring->getSource(),assets.roadAuthoring->getBake(),terrain,placement,
+                supported,assets.cityCulledParcels,assets.cityBuildingSupportChecks,error))throw std::runtime_error(error.c_str());
+            city=std::move(supported);city.route.clear();for(const auto &point:route)city.route.push_back({point.x,point.z});
+            assets.cityLayout=city;assets.cityAppliedSourceRevision=assets.roadAuthoring->getSourceRevision();
+            assets.ground=assets.roadTerrain->getActor();assets.triangles+=assets.roadAuthoring->getRuntimeTriangleCount()+u64(terrain->dimensions.x-1)*(terrain->dimensions.y-1)*2;
+            Vector3F spawn=route.empty()?Vector3F(0,0,0):route.front();bool driveable=false;float y=0;
+            if(!assets.roadAuthoring->getRuntimeSurface(spawn.x,spawn.z,y,driveable) || !driveable)
+                if(!height(spawn,y))throw std::runtime_error("Edited city has no supported vehicle spawn.");
+            spawn.y=y+.42f;vehicle->setPosition(spawn);vehicle->updateTransform();
+            if(auto rigidbody=vehicle->getComponent<Rigidbody>())if(auto body=rigidbody->getRigidDynamic())
+                body->setTransform(Transform3F(spawn,vehicle->getOrientation()));
+            return route;
+        }
+
+        void buildCity( SceneAssets &assets, SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
+        {
+            auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute, assets.cityNaturalRoads );
+            SourceBudgetVector<Vector3F> fittedRoute;
+            if(assets.cityTerrainRoads)fittedRoute=prepareTerrainCity(assets,city,vehicle,seed);
             auto app = core::IApplicationManager::instance();
             auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>( "IRoadSystem" );
             if( !roads )
@@ -1830,7 +1928,17 @@ namespace workphone::scene::race
             };
             const int half = city.blocks / 2;
             u32 segmentSeed = seed;
-            if( city.naturalRoads )
+            if( assets.cityTerrainRoads )
+            {
+                for(const auto &lot:city.lots)
+                {
+                    const float top=lot.groundHeight+.15f,bottom=lot.groundMinimumHeight-.25f;
+                    const Vector3F centre(lot.parcelX,(top+bottom)*.5f,lot.parcelZ);
+                    const Vector3F size(lot.parcelWidth,top-bottom,lot.parcelDepth);
+                    courtyards.box(centre,size);staticBox(assets,"City terrain foundation",centre,size);
+                }
+            }
+            else if( city.naturalRoads )
             {
                 buildNaturalCityStreets( assets, city, asphalt, pavement, markings,
                     streetMetal, lampGlass, quality );
@@ -1923,14 +2031,14 @@ namespace workphone::scene::race
             {
                 if( lot.park )
                 {
-                    parks.box( { lot.parcelX, .155f, lot.parcelZ },
+                    parks.box( { lot.parcelX, lot.groundHeight + .155f, lot.parcelZ },
                                { lot.parcelWidth - 1, .01f, lot.parcelDepth - 1 } );
                     continue;
                 }
                 const auto key = std::make_pair( int( std::floor( lot.x / 128 ) ), int( std::floor( lot.z / 128 ) ) );
                 const Vector3F origin( key.first * 128.f + 64, 0, key.second * 128.f + 64 );
                 auto &patch = patches[key];
-                patch.bounds.push_back( { Vector3F( lot.x, lot.height * .5f, lot.z ) - origin,
+                patch.bounds.push_back( { Vector3F( lot.x, lot.groundHeight + lot.height * .5f, lot.z ) - origin,
                     std::max( { lot.width, lot.depth, lot.height } ) } );
                 const auto volumes = OpenCityLayout::buildingVolumes( lot );
                 const bool office = lot.district == OpenCityLayout::District::Commercial;
@@ -1943,7 +2051,7 @@ namespace workphone::scene::race
                 {
                     const Vector3F centre( volume.x, volume.bottom + volume.height * .5f, volume.z );
                     const Vector3F size( volume.width, volume.height, volume.depth );
-                    const bool groundFloor = volume.bottom == 0;
+                    const bool groundFloor = volume.bottom == lot.groundHeight;
                     const u32 family = civic ? 1u : office ?
                         ( groundFloor && lot.variant % 3 == 0 ? 1u : 2u ) : ( lot.variant % 5 == 0 ? 1u : 0u );
                     auto &opaque = patch.walls[family];
@@ -2157,8 +2265,14 @@ namespace workphone::scene::race
             {
                 for( int side : { -1, 1 } )
                 {
-                    const Vector3F p =
+                    Vector3F p =
                         axis ? Vector3F( 0, .6f, side * boundary ) : Vector3F( side * boundary, .6f, 0 );
+                    if(assets.cityTerrainRoads)
+                    {
+                        float height=0;if(!render::sampleTerrainHeight(*assets.roadAuthoring->getTerrainSnapshot(),
+                            assets.roadAuthoring->getTerrainPlacement(),p,height))throw std::runtime_error("City boundary leaves its terrain.");
+                        p.y+=height;
+                    }
                     const Vector3F size =
                         axis ? Vector3F( boundary * 2, 1.2f, 1 ) : Vector3F( 1, 1.2f, boundary * 2 );
                     pavement.box( p, size );
@@ -2266,21 +2380,40 @@ namespace workphone::scene::race
                 String error;
                 if( !lod->validate( &error ) ) throw std::runtime_error( "Invalid city LOD patch: " + error );
             }
-            mesh( assets, "City block plazas", courtyards, material( assets, { .40f, .41f, .38f, 1 }, .92f ) );
+            auto pavingMaterial=material( assets, assets.cityTerrainRoads?ColourF(.54f,.53f,.48f,1):ColourF(.40f,.41f,.38f,1), .92f );
+            if(assets.cityTerrainRoads)
+            {
+                auto paving=forge->bakeSurface(SurfaceTag::Concrete,surfaceParams);
+                maps(assets,pavingMaterial,paving.albedo,paving.normal,paving.orm);
+                pavingMaterial->setDiffuse({.54f,.53f,.48f,1});pavingMaterial->setUVProjection(1);
+                pavingMaterial->setEditorFloat("uvTriplanarScale",.5f);pavingMaterial->setNormalStrength(.12f);
+                pavingMaterial->setEditorFloat("aoStrength",.3f);
+            }
+            mesh( assets, "City block plazas", courtyards, pavingMaterial );
             mesh( assets, "City street furniture", streetMetal, material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );
             mesh( assets, "City lamp lenses", lampGlass, material( assets, { .80f, .82f, .76f, 1 }, .35f ) );
             mesh( assets, "City parks", parks, material( assets, { .20f, .34f, .14f, 1 }, 1 ) );
             buildCityStreetDressing( assets, city, quality );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
-            if( !city.naturalRoads )
+            if( !city.naturalRoads && !assets.cityTerrainRoads )
                 mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
             // Bounded driving remains inside the collision walls. A surrounding ground
             // surface gives the skyline context instead of ending the city in the sky.
             Geometry hinterland;
             const float horizon = city.extent + 1400;
-            hinterland.quad( { -horizon, -.12f, -horizon }, { horizon, -.12f, -horizon },
-                             { horizon, -.12f, horizon }, { -horizon, -.12f, horizon }, { 0, 1, 0 } );
+            if(assets.cityTerrainRoads)
+            {
+                const auto snapshot=assets.roadAuthoring->getTerrainSnapshot();
+                const float radius=std::max(std::abs(snapshot->origin.x),std::abs(snapshot->origin.y));
+                const auto plane=[](float x,float z){return 2+.005f*x+.003f*z-.2f;};
+                const auto strip=[&](float x0,float z0,float x1,float z1){hinterland.quad(
+                    {x0,plane(x0,z0),z0},{x1,plane(x1,z0),z0},{x1,plane(x1,z1),z1},{x0,plane(x0,z1),z1},{0,1,0});};
+                strip(-horizon,-horizon,horizon,-radius);strip(-horizon,radius,horizon,horizon);
+                strip(-horizon,-radius,-radius,radius);strip(radius,-radius,horizon,radius);
+            }
+            else hinterland.quad( { -horizon, -.12f, -horizon }, { horizon, -.12f, -horizon },
+                                  { horizon, -.12f, horizon }, { -horizon, -.12f, horizon }, { 0, 1, 0 } );
             auto land = material( assets, { .34f, .48f, .25f, 1 }, 1 );
             auto soil = forge->bakeSurface( SurfaceTag::Dirt, surfaceParams );
             maps( assets, land, soil.albedo, soil.normal, soil.orm );
@@ -2288,7 +2421,7 @@ namespace workphone::scene::race
             land->setUVProjection( 3 ); land->setEditorFloat( "uvTriplanarScale", .1f );
             land->setNormalStrength( .15f );
             land->setEditorFloat( "aoStrength", .4f );
-            if( city.naturalRoads ) mesh( assets, "City ground", ground, land );
+            if( city.naturalRoads && !assets.cityTerrainRoads ) mesh( assets, "City ground", ground, land );
             mesh( assets, "City surrounding landscape", hinterland, land );
             if( assets.useFoliageWorld )
             {
@@ -2298,11 +2431,13 @@ namespace workphone::scene::race
             for( size_t i = 0; i < city.route.size(); ++i )
             {
                 const auto p = city.route[i], next = city.route[( i + 1 ) % city.route.size()];
-                Vector3F forward( next.x - p.x, 0, next.z - p.z );
+                const auto position=assets.cityTerrainRoads?fittedRoute[i]:Vector3F(p.x,0,p.z);
+                const auto nextPosition=assets.cityTerrainRoads?fittedRoute[(i+1)%fittedRoute.size()]:Vector3F(next.x,0,next.z);
+                Vector3F forward=nextPosition-position;
                 forward.normalise();
                 assets.circuit.samples.push_back(
-                    { { p.x, 0, p.z }, { -forward.z, 0, forward.x }, assets.circuit.length } );
-                assets.circuit.length += std::hypot( next.x - p.x, next.z - p.z );
+                    { position, { -forward.z, 0, forward.x }, assets.circuit.length } );
+                assets.circuit.length += (nextPosition-position).length();
             }
             Geometry arrows;
             for( size_t i = 0; i < assets.circuit.samples.size(); i += 20 )
@@ -2314,8 +2449,86 @@ namespace workphone::scene::race
                 arrows.quad( p - sample.right * 1.5f, p + sample.right * 1.5f,
                              tip + sample.right * .01f, tip - sample.right * .01f, { 0, 1, 0 } );
             }
-            mesh( assets, "City race route arrows", arrows,
+            if(!assets.cityTerrainRoads)mesh( assets, "City race route arrows", arrows,
                   material( assets, { .05f, .7f, .9f, 1 }, .6f ) );
+        }
+
+        void buildRoadAuthoringShowcase(SceneAssets &assets,SmartPtr<scene::IGameActor> vehicle,u32,
+                                        VehicleAppearanceQuality)
+        {
+            auto app=core::IApplicationManager::instancePtr();auto manager=app->getGameManager();auto scene=manager->getCurrentScene();
+            const auto root=[&](const String &name)
+            {
+                reserveOwnerSlot(assets.actors);auto actor=manager->createActor();
+                if(!actor)throw std::runtime_error("Cannot create road authoring showcase root.");
+                assets.actors.push_back(actor);actor->setName(name);actor->setStatic(true);
+                actor->setPosition(Vector3F::zero());actor->setOrientation(QuaternionF::identity());actor->setScale(Vector3F::unit());
+                scene->addActor(actor);scene->registerAllUpdates(actor);return actor;
+            };
+            auto terrainActor=root("Road authoring showcase terrain");assets.ground=terrainActor;
+            assets.roadTerrain=terrainActor->addComponent<TerrainSystem>();
+            if(!assets.roadTerrain || !terrainActor->addComponent<CollisionTerrain>() || !terrainActor->addComponent<Rigidbody>())
+                throw std::runtime_error("Road showcase requires native terrain render and collision components.");
+            if(!assets.roadTerrain->isLoaded())assets.roadTerrain->load(nullptr);
+            auto terrainMaterial=terrainActor->addComponent<scene::Material>();if(terrainMaterial)terrainMaterial->setMaterialPath("DefaultTerrain.mat");
+            assets.roadTerrain->setTreesEnabled(false);assets.roadTerrain->setGrassEnabled(false);
+            render::TerrainData terrain;terrain.dimensions={97,97};terrain.spacing={2,2};terrain.origin={-96,-96};terrain.heights.resize(97*97);
+            terrain.layers[0].tint={.34f,.40f,.22f,1};terrain.layers[1].tint={.30f,.25f,.17f,1};terrain.layerWeights.resize(97*97);
+            terrain.appearance.macroScale=.025f;terrain.appearance.macroStrength=.22f;
+            terrain.appearance.macroSeed=42;terrain.appearance.macroTint={.32f,.39f,.22f,1};
+            for(int z=0;z<97;++z)for(int x=0;x<97;++x)
+            {
+                const float px=-96+x*2.f,pz=-96+z*2.f,r=std::hypot(px,pz),outside=std::clamp((r-40)/56.f,0.f,1.f);
+                terrain.heights[size_t(z)*97+x]=3+.015f*px+.008f*pz+2.1f*outside*outside*std::sin(px*.035f)*std::cos(pz*.035f);
+                terrain.layerWeights[size_t(z)*97+x]={1-outside*.35f,outside*.35f,0,0};
+            }
+            // This new root has no visible generation yet. Publish its initial CPU/
+            // collision snapshot before the first deferred GPU upload can run.
+            auto terrainRenderer=dynamic_pointer_cast<render::Terrain>(assets.roadTerrain->getTerrain());
+            const bool deferred=terrainRenderer && terrainRenderer->isTerrainPublicationDeferred();
+            if(deferred)terrainRenderer->setDeferredTerrainPublication(false);
+            String error;const bool terrainApplied=assets.roadTerrain->applyTerrainData(terrain,error);
+            if(deferred)terrainRenderer->setDeferredTerrainPublication(true);
+            if(!terrainApplied)throw std::runtime_error(error.c_str());
+            if(!assets.roadTerrain->getTerrain())throw std::runtime_error("Road showcase native terrain renderer is unavailable after component load.");
+            auto authoringActor=root("Road authoring showcase source");assets.roadAuthoring=authoringActor->addComponent<CityRoadAuthoring>();
+            if(!assets.roadAuthoring || !assets.roadAuthoring->bindTerrain(assets.roadTerrain,error))throw std::runtime_error(error.empty()?"Cannot bind showcase authoring terrain.":error.c_str());
+            const auto id=[](unsigned value){char text[37];std::snprintf(text,sizeof(text),"f1a00000-2026-4000-8000-%012u",value);return SourceBudgetText(text);};
+            procedural::CityRoadSplineSource source;source.version=2;source.id=id(1);
+            const auto binding=assets.roadAuthoring->getTerrainBindingUUID();source.terrainResourceUuid.assign(binding.data(),binding.size());
+            procedural::CityRoadRoundaboutSpec junction;junction.junctionId=id(2);junction.center={0,3.025f,0};junction.outerRadius=14;junction.islandRadius=8;
+            junction.clockwise=true;junction.gradeX=.015f;junction.gradeZ=.008f;junction.maxGrade=.08f;
+            const auto snapshot=assets.roadTerrain->getTerrainSnapshot();
+            for(unsigned i=0;i<4;++i)
+            {
+                const Vector3F outward=i==0?Vector3F(1,0,0):i==1?Vector3F(0,0,1):i==2?Vector3F(-1,0,0):Vector3F(0,0,-1);
+                const Vector3F side(-outward.z,0,outward.x);const float bend=i==3?1.5f:(i%2?10.f:-10.f);
+                procedural::CityRoadSpline road;road.id=id(10+i);road.width=6;road.maxGrade=.08f;road.heightOffset=.025f;
+                procedural::CityRoadRoundaboutPort port;port.approachId=road.id;port.outward=outward;port.width=6;port.length=18;junction.ports.push_back(port);
+                auto start=outward*32.f,end=outward*85.f+side*bend;
+                if(!snapshot || !render::sampleTerrainHeight(*snapshot,Transform3<real_Num>(),start,start.y) || !render::sampleTerrainHeight(*snapshot,Transform3<real_Num>(),end,end.y))
+                    throw std::runtime_error("Showcase spline endpoint escaped terrain coverage.");
+                auto out=outward*18.f,in=-outward*18.f-side*(bend*.5f);out.y=.015f*out.x+.008f*out.z;in.y=.015f*in.x+.008f*in.z;
+                road.knots.push_back({id(20+i*2),start,{},out});road.knots.push_back({id(21+i*2),end,in,{}});source.roads.push_back(std::move(road));
+            }
+            source.roundabouts.push_back(junction);SourceBudgetText text;
+            if(!procedural::serializeCityRoadSplineSource(source,text,error) || !assets.roadAuthoring->setSourceJSON(String(text.data(),text.size()),assets.roadAuthoring->getSourceRevision(),error))
+                throw std::runtime_error(error.c_str());
+            assets.triangles+=96*96*2+assets.roadAuthoring->getRuntimeTriangleCount();
+            assets.useFoliageWorld=false;assets.circuit={};
+            for(unsigned i=0;i<96;++i)
+            {
+                const float direction=junction.clockwise?1.f:-1.f,angle=direction*i*2*pi/96,next=direction*(i+1)*2*pi/96,radius=11;
+                Vector3F p(std::cos(angle)*radius,0,std::sin(angle)*radius),q(std::cos(next)*radius,0,std::sin(next)*radius);
+                bool pDriveable=false,qDriveable=false;
+                if(!assets.roadAuthoring->getRuntimeSurface(p.x,p.z,p.y,pDriveable) || !pDriveable ||
+                   !assets.roadAuthoring->getRuntimeSurface(q.x,q.z,q.y,qDriveable) || !qDriveable)
+                    throw std::runtime_error("Showcase circulation route left the published driveable roundabout surface.");
+                const auto forward=(q-p).normaliseCopy();assets.circuit.samples.push_back({p,{-forward.z,0,forward.x},assets.circuit.length});assets.circuit.length+=(q-p).length();
+            }
+            f32 spawnY=0;if(!render::sampleTerrainHeight(*snapshot,Transform3<real_Num>(),{0,0,-60},spawnY))throw std::runtime_error("Showcase spawn has no terrain.");
+            vehicle->setPosition({0,spawnY+.445f,-60});vehicle->updateTransform();
+            if(auto rigidbody=vehicle->getComponent<Rigidbody>())if(auto body=rigidbody->getRigidDynamic())body->setTransform(Transform3F(vehicle->getPosition(),QuaternionF::identity()));
         }
 
         void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle )
@@ -2591,9 +2804,13 @@ namespace workphone::scene::race
         assets.resourcePrefix = "__procedural/race/" + StringUtil::getUUID();
         const auto started = std::chrono::steady_clock::now();
         buildCar( assets, actor, seed, quality );
-        if( assets.openCity )
+        if( assets.cityRoadShowcase )
         {
-            buildCity( assets, seed, quality );
+            buildRoadAuthoringShowcase(assets,actor,seed,quality);
+        }
+        else if( assets.openCity )
+        {
+            buildCity( assets, actor, seed, quality );
         }
         else
         {

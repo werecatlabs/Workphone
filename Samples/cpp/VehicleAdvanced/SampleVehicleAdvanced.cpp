@@ -15,6 +15,8 @@
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMesh.hpp>
@@ -189,6 +191,63 @@ namespace workphone
             return checked > 0;
         }
 
+        struct TerrainCityCheck
+        {
+            bool valid=false,binding=false,revisions=false,renderer=false,route=false,islands=false,support=false,flatFallbackAbsent=false;
+            size_t roads=0,junctions=0,triangles=0,routePoints=0,islandsChecked=0,rayProbes=0,buildingBodies=0,expectedBuildingBodies=0;
+            f32 routeHeightError=0;
+        };
+        TerrainCityCheck checkTerrainCity(const advanced::SceneAssets &assets,SmartPtr<physics::IPhysicsScene3> physics)
+        {
+            TerrainCityCheck result;auto authoring=assets.roadAuthoring;auto terrain=assets.roadTerrain;
+            if(!authoring || !terrain || !physics)return result;
+            const auto sourceTerrain=terrain->getTerrainSnapshot(),activeTerrain=terrain->getActiveTerrainSnapshot();
+            if(!sourceTerrain)return result;
+            const auto &source=authoring->getSource();const auto &bake=authoring->getBake();const auto binding=authoring->getTerrainBindingUUID();
+            const auto same=[](const SourceBudgetText &a,const String &b){return std::string_view(a.data(),a.size())==std::string_view(b.data(),b.size());};
+            result.binding=authoring->getTerrain()==terrain && terrain->getHandle() && binding==terrain->getHandle()->getUUIDAsString() && same(source.terrainResourceUuid,binding) && !source.id.empty();
+            result.revisions=authoring->getSourceRevision()==authoring->getActiveRevision() && assets.cityAppliedSourceRevision==authoring->getSourceRevision() && source.terrainRevision==sourceTerrain->revision;
+            result.renderer=terrain->getTerrain() && activeTerrain && activeTerrain->revision==sourceTerrain->revision;
+            result.roads=source.roads.size();result.junctions=source.roundabouts.size();result.triangles=authoring->getRuntimeTriangleCount();result.routePoints=assets.circuit.samples.size();
+            result.route=assets.cityRaceRouteAvailable && result.routePoints>=3;
+            for(size_t i=0;i<result.routePoints;++i)
+            {
+                const auto p=assets.circuit.samples[i].position,q=assets.circuit.samples[(i+1)%result.routePoints].position;f32 height=0;bool driveable=false;
+                const bool hit=authoring->getRuntimeSurface(p.x,p.z,height,driveable);const auto step=(q-p).length();
+                if(hit && std::isfinite(p.y))result.routeHeightError=std::max(result.routeHeightError,std::abs(p.y-height));
+                result.route=result.route && hit && driveable && p.isFinite() && std::isfinite(step) && step>.0001f && std::abs(p.y-height)<=.001f;
+            }
+            result.islands=!source.roundabouts.empty();
+            for(const auto &junction:source.roundabouts)
+            {f32 height=0;bool driveable=true;const bool valid=authoring->getRuntimeSurface(junction.center.x,junction.center.z,height,driveable) && !driveable;if(valid)++result.islandsChecked;result.islands=result.islands && valid;}
+            const auto ray=[&](Vector3F p,bool driveable,bool ground=false)
+            {
+                f32 height=0;bool actualDriveable=false;
+                bool valid=ground?render::sampleTerrainHeight(*sourceTerrain,authoring->getTerrainPlacement(),p,height):authoring->getRuntimeSurface(p.x,p.z,height,actualDriveable);
+                valid=valid && (ground || actualDriveable==driveable);Vector3F hit,normal;SmartPtr<ISharedObject> object;
+                valid=valid && physics->intersects({p.x,height+.25f,p.z},{p.x,height-.25f,p.z},hit,normal,object) && object && std::isfinite(hit.y) && std::abs(hit.y-height)<.035f && normal.y>.5f;
+                if(valid)++result.rayProbes;
+            };
+            for(const auto &road:bake.roads)if(!road.points.empty()){ray(road.points[road.points.size()/2].position,true);break;}
+            if(!source.roundabouts.empty())
+            {const auto &j=source.roundabouts.front();const float radius=(j.outerRadius+j.islandRadius)*.5f;ray(j.center+Vector3F(radius*.70710678f,0,radius*.70710678f),true);ray(j.center,false);}
+            bool terrainProbe=false;const auto placement=authoring->getTerrainPlacement().getTransformationMatrix();
+            for(const auto uv:{Vector2F(.02f,.02f),Vector2F(.98f,.02f),Vector2F(.02f,.98f),Vector2F(.98f,.98f),Vector2F(.5f,.02f),Vector2F(.5f,.98f)})
+            {
+                auto p=placement.transformAffine(Vector3F(sourceTerrain->origin.x+uv.x*(sourceTerrain->dimensions.X()-1)*sourceTerrain->spacing.x,0,sourceTerrain->origin.y+uv.y*(sourceTerrain->dimensions.Y()-1)*sourceTerrain->spacing.y));
+                bool clear=true;for(const auto &lot:assets.cityLayout.lots)if(std::abs(p.x-lot.x)<lot.width*.5f+2 && std::abs(p.z-lot.z)<lot.depth*.5f+2){clear=false;break;}
+                f32 height=0;bool driveable=false;if(authoring->getRuntimeSurface(p.x,p.z,height,driveable) && driveable)clear=false;
+                if(clear){const auto before=result.rayProbes;ray(p,false,true);if(result.rayProbes>before){terrainProbe=true;break;}}
+            }
+            for(const auto &lot:assets.cityLayout.lots)result.expectedBuildingBodies+=procedural::OpenCityLayout::buildingVolumes(lot).size();
+            result.flatFallbackAbsent=assets.ground && terrain->getActor()==assets.ground;
+            for(const auto &actor:assets.actors)if(actor)
+            {if(actor->getName().find("Trackside collision: City building mass")==0)++result.buildingBodies;if(actor->getName()=="Circuit collision plane")result.flatFallbackAbsent=false;}
+            result.support=assets.cityBuildingSupportValid && assets.cityBuildingSupportChecks>=assets.cityLayout.lots.size() && result.buildingBodies==result.expectedBuildingBodies && result.buildingBodies>0;
+            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0;
+            return result;
+        }
+
         Vector3<real_Num> getVehicleSpawnPosition()
         {
             return Vector3<real_Num>::unitY() * vehicleSpawnHeight;
@@ -316,7 +375,7 @@ namespace workphone
 #endif
             // Application::load logs scene exceptions instead of propagating them.
             // Do not enter Play with a partially generated vehicle/circuit.
-            if( !m_raceScene || !m_raceScene->isGenerated() || m_assets.circuit.samples.empty() ||
+            if( !m_raceScene || !m_raceScene->isGenerated() || (!m_assets.cityTerrainRoads && m_assets.circuit.samples.empty()) ||
                 !m_cameraActor )
             {
                 const auto error = m_raceScene ? m_raceScene->getGenerationError() : String();
@@ -408,6 +467,8 @@ namespace workphone
             m_cityOverviewExtent = 0;
             m_cityOverviewCentre = m_cityStreetCentre = Vector3F::zero();
             m_cityStreetForward = { 0, 0, -1 };
+            m_cityHasJunction=false;m_cityJunctionCentre=m_cityBoulevardCentre={};m_generatedSpawnPosition={0,.42f,0};
+            m_cityRetentionSmokePrepared=false;SourceBudgetText{}.swap(m_cityRetentionSmokeRoadId);m_cityRetentionSmokeWidth=0;
 
             if( core::IApplicationManager::instance() )
             {
@@ -453,6 +514,10 @@ namespace workphone
         }
 
         Application::update();
+        if(m_collisionSmokeTest && m_assets.cityTerrainRoads && !m_cityRetentionSmokePrepared &&
+           Thread::getCurrentTask()==TaskId::Application && m_physicsConfigured &&
+           core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad()>3)
+            prepareCityRetentionSmoke();
         if ( m_audioSmokeTest && m_audioEnabled && Thread::getCurrentTask() == TaskId::Physics )
             updateVehicleAudio();
         if( m_collisionSmokeTest && Thread::getCurrentTask() == TaskId::Physics )
@@ -643,9 +708,88 @@ namespace workphone
                          << ",\n  \"renderUpdatesMeasured\": " << m_profileFrames
                          << ",\n  \"sceneMeshes\": " << m_assets.meshes.size()
                          << ",\n  \"sceneTextures\": " << m_assets.textures.size();
-                evidence << ",\n  \"sceneMode\": " << advanced::jsonString( m_assets.openCity ? "city" : "circuit" );
-                bool cityValid = m_assets.openCity == m_openCity;
-                if( m_assets.openCity )
+                evidence << ",\n  \"sceneMode\": " << advanced::jsonString( m_assets.cityTerrainRoads?"terrain-city":m_assets.cityRoadShowcase?"road-authoring-showcase":m_assets.openCity ? "city" : "circuit" );
+                bool cityValid = m_assets.openCity == m_openCity && m_assets.cityRoadShowcase==m_roadAuthoringShowcase && m_assets.cityTerrainRoads==m_cityTerrainRoads;
+                if(m_assets.cityTerrainRoads)
+                {
+                    const auto check=checkTerrainCity(m_assets,app->getPhysicsManager()->getPhysicsScene());cityValid=cityValid && check.valid;
+                    auto authoring=m_assets.roadAuthoring;const auto snapshot=m_assets.roadTerrain?m_assets.roadTerrain->getTerrainSnapshot():nullptr;
+                    const auto &layout=m_assets.cityLayout;size_t parks=0;for(const auto &lot:layout.lots)parks+=lot.park?1:0;
+                    evidence<<",\n  \"terrainCity\": {\"sourceId\":"<<advanced::jsonString(authoring?String(authoring->getSource().id.data(),authoring->getSource().id.size()):String())
+                        <<",\"terrainBindingUUID\":"<<advanced::jsonString(authoring?authoring->getTerrainBindingUUID():String())
+                        <<",\"bindingValid\":"<<(check.binding?"true":"false")<<",\"sourceReused\":"<<(m_assets.citySourceReused?"true":"false")
+                        <<",\"sourceRevision\":"<<(authoring?authoring->getSourceRevision():0)<<",\"appliedSourceRevision\":"<<m_assets.cityAppliedSourceRevision
+                        <<",\"activeRevision\":"<<(authoring?authoring->getActiveRevision():0)<<",\"terrainRevision\":"<<(snapshot?snapshot->revision:0)
+                        <<",\"sourceBytes\":"<<(authoring?authoring->getSourceJSON().size():0)<<",\"roads\":"<<check.roads<<",\"roundabouts\":"<<check.junctions
+                        <<",\"runtimeTriangles\":"<<check.triangles<<",\"terrainRendererReady\":"<<(check.renderer?"true":"false")
+                        <<",\"routeSamples\":"<<check.routePoints<<",\"routeDriveable\":"<<(check.route?"true":"false")<<",\"routeMaximumHeightError\":"<<check.routeHeightError
+                        <<",\"raceRouteAvailable\":"<<(m_assets.cityRaceRouteAvailable?"true":"false")<<",\"raceRouteError\":"<<advanced::jsonString(m_assets.cityRaceRouteError)
+                        <<",\"islandCentresChecked\":"<<check.islandsChecked<<",\"islandsExcluded\":"<<(check.islands?"true":"false")
+                        <<",\"nativeRayProbesPassed\":"<<check.rayProbes<<",\"flatFallbackAbsent\":"<<(check.flatFallbackAbsent?"true":"false")
+                        <<",\"lots\":"<<layout.lots.size()<<",\"buildingLots\":"<<layout.lots.size()-parks<<",\"parkLots\":"<<parks
+                        <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
+                        <<",\"buildingSupportChecks\":"<<m_assets.cityBuildingSupportChecks<<",\"culledParcels\":"<<m_assets.cityCulledParcels
+                        <<",\"buildingSupportValid\":"<<(check.support?"true":"false")<<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
+                    if(!cityValid)WP_LOG_ERROR("Terrain city: source, fitted route, native collision or building support validation failed.");
+                }
+                else if(m_assets.cityRoadShowcase)
+                {
+                    auto authoring=m_assets.roadAuthoring;auto terrain=m_assets.roadTerrain;
+                    const auto snapshot=terrain?terrain->getTerrainSnapshot():nullptr;
+                    const auto activeTerrain=terrain?terrain->getActiveTerrainSnapshot():nullptr;
+                    const bool terrainRenderReady=terrain && terrain->getTerrain() && activeTerrain && snapshot && activeTerrain->revision==snapshot->revision;
+                    const auto physicsManager=app->getPhysicsManager();auto physics=physicsManager?physicsManager->getPhysicsScene():nullptr;
+                    const size_t triangles=authoring?authoring->getRuntimeTriangleCount():0;
+                    bool probesValid=bool(authoring && snapshot && physics);size_t probeCount=0;
+                    bool islandDriveable=true;f32 islandHeight=0;bool islandValid=authoring && authoring->getRuntimeSurface(0,0,islandHeight,islandDriveable) && !islandDriveable;
+                    const auto probe=[&](Vector3F p,bool expectedDriveable,bool terrainOnly)
+                    {
+                        f32 height=0;bool driveable=false;
+                        bool valid=terrainOnly?render::sampleTerrainHeight(*snapshot,Transform3<real_Num>(),p,height):authoring->getRuntimeSurface(p.x,p.z,height,driveable);
+                        if(!terrainOnly)valid=valid && driveable==expectedDriveable;
+                        Vector3F hit,normal;SmartPtr<ISharedObject> object;
+                        valid=valid && physics->intersects({p.x,height+5,p.z},{p.x,height-5,p.z},hit,normal,object) && object && std::isfinite(hit.y) && std::abs(hit.y-height)<.035f && normal.y>.5f;
+                        if(valid)++probeCount;probesValid=probesValid && valid;
+                    };
+                    if(probesValid)
+                    {
+                        probe({11,0,0},true,false);probe({0,0,0},false,false);probe({-70,0,-70},false,true);
+                        const auto &bake=authoring->getBake();
+                        if(!bake.roads.empty() && !bake.roads.front().points.empty())probe(bake.roads.front().points[bake.roads.front().points.size()/2].position,true,false);
+                        else probesValid=false;
+                    }
+                    bool flatFallbackAbsent=m_assets.ground && terrain && terrain->getActor()==m_assets.ground;
+                    for(const auto &actor:m_assets.actors)if(actor && actor->getName()=="Circuit collision plane")flatFallbackAbsent=false;
+                    const bool revisions=authoring && snapshot && authoring->getSourceRevision()==authoring->getActiveRevision() && authoring->getSource().terrainRevision==snapshot->revision;
+                    bool circulationMatchesSource=authoring && authoring->getSource().roundabouts.size()==1 && m_assets.circuit.samples.size()>=3;
+                    bool routeSurfaceHeightsMatch=circulationMatchesSource;
+                    if(circulationMatchesSource)
+                    {
+                        const auto &junction=authoring->getSource().roundabouts.front();
+                        for(size_t i=0;i<m_assets.circuit.samples.size();++i)
+                        {
+                            const auto p=m_assets.circuit.samples[i].position,q=m_assets.circuit.samples[(i+1)%m_assets.circuit.samples.size()].position;
+                            const float crossY=(p-junction.center).crossProduct(q-junction.center).y;
+                            circulationMatchesSource=circulationMatchesSource && std::isfinite(crossY) && (junction.clockwise?crossY<-.0001f:crossY>.0001f);
+                            f32 height=0;bool driveable=false;
+                            routeSurfaceHeightsMatch=routeSurfaceHeightsMatch && authoring->getRuntimeSurface(p.x,p.z,height,driveable) && driveable && std::isfinite(p.y) && std::abs(p.y-height)<=.001f;
+                        }
+                    }
+                    cityValid=cityValid && revisions && terrainRenderReady && triangles>0 && authoring->getSource().roads.size()==4 && authoring->getSource().roundabouts.size()==1 &&
+                        probesValid && probeCount==4 && islandValid && flatFallbackAbsent && circulationMatchesSource && routeSurfaceHeightsMatch;
+                    evidence<<",\n  \"roadAuthoring\": {\"sourceRevision\":"<<(authoring?authoring->getSourceRevision():0)
+                        <<",\"activeRevision\":"<<(authoring?authoring->getActiveRevision():0)<<",\"terrainRevision\":"<<(snapshot?snapshot->revision:0)
+                        <<",\"roads\":"<<(authoring?authoring->getSource().roads.size():0)<<",\"roundabouts\":"<<(authoring?authoring->getSource().roundabouts.size():0)
+                        <<",\"runtimeTriangles\":"<<triangles<<",\"terrainSamples\":"<<(snapshot?snapshot->heights.size():0)
+                        <<",\"terrainActiveRevision\":"<<(activeTerrain?activeTerrain->revision:0)<<",\"terrainRendererReady\":"<<(terrainRenderReady?"true":"false")
+                        <<",\"nativeRayProbesPassed\":"<<probeCount<<",\"nativeRayProbesValid\":"<<(probesValid?"true":"false")
+                        <<",\"islandDriveable\":"<<(islandDriveable?"true":"false")<<",\"islandHeight\":"<<islandHeight
+                        <<",\"flatFallbackAbsent\":"<<(flatFallbackAbsent?"true":"false")<<",\"foliageAvailability\":\"unavailable-in-fixture\""
+                        <<",\"circulationMatchesSource\":"<<(circulationMatchesSource?"true":"false")<<",\"routeSurfaceHeightsMatch\":"<<(routeSurfaceHeightsMatch?"true":"false")
+                        <<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
+                    if(!cityValid)WP_LOG_ERROR("Road authoring showcase: runtime, revision, terrain or native collision validation failed.");
+                }
+                else if( m_assets.openCity )
                 {
                     const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
                                                                             m_assets.cityNaturalRoads );
@@ -893,8 +1037,11 @@ namespace workphone
         m_lastTrackIndex = 0;
         if( m_cameraActor )
         {
-            m_cameraActor->setPosition( getInitialCameraPosition() );
-            m_cameraActor->lookAt( getVehicleSpawnPosition(), Vector3<real_Num>::unitY() );
+            const bool terrainRoads=m_assets.roadAuthoring && m_assets.roadTerrain;
+            const auto target=terrainRoads?m_vehicleActor->getPosition():getVehicleSpawnPosition();
+            if(terrainRoads)m_generatedSpawnPosition=target;
+            m_cameraActor->setPosition( terrainRoads?target+Vector3F(0,cameraHeight,cameraDistance):getInitialCameraPosition() );
+            m_cameraActor->lookAt( target, Vector3<real_Num>::unitY() );
             m_cameraActor->updateTransform();
         }
     }
@@ -955,6 +1102,8 @@ namespace workphone
         steering *= float( steerScale );
         if( m_trackSmokeTest && m_physicsConfigured )
         {
+            if(m_assets.circuit.samples.empty() || m_assets.circuit.length<=0 || (m_assets.cityTerrainRoads && !m_assets.cityRaceRouteAvailable))
+            {WP_LOG_ERROR("VehicleAdvanced full circuit unavailable: "+m_assets.cityRaceRouteError);m_raceScene->setControls(0,1,0);applicationManager->setQuit(true);return;}
             const auto position = m_vehicleActor->getPosition();
             const auto &circuit = m_assets.circuit;
             const auto nearest = circuit.nearest( position );
@@ -974,7 +1123,8 @@ namespace workphone
             auto flat = position - circuit.samples[nearest].position;
             flat.y = 0;
             const auto now = applicationManager->getTimer()->getTimeSinceSceneLoad();
-            if( position.y < .1f || position.y > 1.f || flat.length() > 12.f || now > 300 )
+            f32 groundY=0;bool driveable=false;if(m_assets.roadAuthoring)m_assets.roadAuthoring->getRuntimeSurface(position.x,position.z,groundY,driveable);
+            if( position.y-groundY < .1f || position.y-groundY > 1.f || flat.length() > 12.f || now > 300 )
             {
                 WP_LOG_ERROR( String( "VehicleAdvanced full circuit: FAIL position=" ) +
                               StringUtil::toString( position ) +
@@ -1158,11 +1308,56 @@ namespace workphone
         m_audioSmokeTime = 0;
     }
 
+    void SampleVehicleAdvanced::prepareCityRetentionSmoke()
+    {
+        auto app=core::IApplicationManager::instancePtr();
+        try
+        {
+            auto authoring=m_assets.roadAuthoring;auto terrain=m_assets.roadTerrain;
+            if(!authoring || !terrain || !m_raceScene)throw std::runtime_error("Native editable city anchors are missing.");
+            auto edited=authoring->getSource();const auto sourceId=edited.id;const auto binding=authoring->getTerrainBindingUUID();
+            SourceBudgetSet<SourceBudgetText> referenced;
+            for(const auto &junction:edited.roundabouts)for(const auto &port:junction.ports)referenced.insert(port.approachId);
+            auto road=std::find_if(edited.roads.begin(),edited.roads.end(),[&](const auto &candidate){return !referenced.count(candidate.id) && candidate.width>=.75f;});
+            if(road==edited.roads.end())throw std::runtime_error("No eligible non-junction road exists for the required width edit.");
+            const auto roadId=road->id;SourceBudgetVector<SourceBudgetText> knotIds;for(const auto &knot:road->knots)knotIds.push_back(knot.id);
+            road->width-=.25f;const float width=road->width;SourceBudgetText bytes;String error;
+            if(!procedural::serializeCityRoadSplineSource(edited,bytes,error) ||
+               !authoring->setSourceJSON(String(bytes.data(),bytes.size()),authoring->getSourceRevision(),error))throw std::runtime_error(error.c_str());
+            m_physicsConfigured=false;
+            if(!m_raceScene->regenerate())throw std::runtime_error(m_raceScene->getGenerationError().c_str());
+            m_assets=m_raceScene->getAssets();m_boxGround=m_assets.ground;m_chassisMeshActor=m_assets.body;m_wheelActors=m_assets.wheels;
+            m_generatedSpawnPosition=m_vehicleActor->getPosition();
+#if WP_GRAPHICS_SYSTEM_CLAW
+            if(auto scene=dynamic_pointer_cast<render::ClawScene>(app->getGraphicsSystem()->getGraphicsScene()))
+                if(!scene->setPrimaryDirectionalLight(m_assets.sun))throw std::runtime_error("Regenerated city sunlight could not be selected.");
+#endif
+            if(m_assets.vehicleLOD)m_assets.vehicleLOD->setForcedLOD(m_forcedVehicleLOD);
+            for(auto &group:m_assets.treeLODs)group->setForcedLOD(m_forcedLOD);
+            if(m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod(m_forcedLOD,error))throw std::runtime_error(error.c_str());
+            m_raceScene->initializePresentation();
+            if(m_assets.roadAuthoring!=authoring || m_assets.roadTerrain!=terrain || !m_assets.citySourceReused ||
+               authoring->getSource().id!=sourceId || authoring->getTerrainBindingUUID()!=binding ||
+               m_assets.cityAppliedSourceRevision!=authoring->getSourceRevision() || authoring->getActiveRevision()!=authoring->getSourceRevision())
+                throw std::runtime_error("Regeneration replaced an anchor/source identity or failed to apply the retained source revision.");
+            const auto &retained=authoring->getSource();const auto match=std::find_if(retained.roads.begin(),retained.roads.end(),[&](const auto &candidate){return candidate.id==roadId;});
+            if(match==retained.roads.end() || std::abs(match->width-width)>.000001f || match->knots.size()!=knotIds.size())
+                throw std::runtime_error("Regeneration discarded the road width edit or control-point identities.");
+            for(size_t i=0;i<knotIds.size();++i)if(match->knots[i].id!=knotIds[i])throw std::runtime_error("Regeneration changed a retained control-point GUID.");
+            if(!m_assets.cityBuildingSupportValid || m_assets.cityBuildingSupportChecks<m_assets.cityLayout.lots.size())
+                throw std::runtime_error("Regenerated building support checks failed.");
+            m_cityRetentionSmokeRoadId=roadId;m_cityRetentionSmokeWidth=width;m_cityRetentionSmokePrepared=true;
+        }
+        catch(const std::exception &error)
+        {WP_LOG_ERROR(String("Terrain city edit/regeneration retention smoke: FAIL ")+error.what());m_smokeTestPassed=false;if(app)app->setQuit(true);}
+    }
+
     void SampleVehicleAdvanced::updateCollisionSmokeTest()
     {
         auto app = core::IApplicationManager::instance();
         if( !m_physicsConfigured || app->getTimer()->getTimeSinceSceneLoad() <= 3 )
             return;
+        if(m_assets.cityTerrainRoads && !m_cityRetentionSmokePrepared)return;
         auto physics = app->getPhysicsManager()->getPhysicsScene();
         auto chassis = m_vehicleActor->getComponent<scene::Rigidbody>()->getRigidDynamic();
         if( m_assets.openCity && m_collisionProbeStarted ) return;
@@ -1229,6 +1424,16 @@ namespace workphone
             }
             Vector3F hitPosition, hitNormal;
             SmartPtr<ISharedObject> object;
+            if(m_assets.cityTerrainRoads)
+            {
+                const auto check=checkTerrainCity(m_assets,physics);
+                if(!check.valid){fail("terrain-city source, fitted route, static building support or native surface probes failed");return;}
+                WP_LOG("Terrain city edit/regeneration retention smoke: PASS road="+String(m_cityRetentionSmokeRoadId.data(),m_cityRetentionSmokeRoadId.size())+
+                       " width="+StringUtil::toString(m_cityRetentionSmokeWidth)+" source reused=true revision="+StringUtil::toString(m_assets.cityAppliedSourceRevision)+
+                       " native surface rays="+StringUtil::toString(u32(check.rayProbes))+" building support checks="+StringUtil::toString(m_assets.cityBuildingSupportChecks));
+                WP_LOG("Terrain city collision smoke: PASS native static boxes="+StringUtil::toString(u32(count))+" surface rays="+StringUtil::toString(u32(check.rayProbes))+" building masses="+StringUtil::toString(u32(check.buildingBodies)));
+                m_smokeTestPassed=true;app->setQuit(true);return;
+            }
             if( m_assets.openCity )
             {
                 // Registration/pose/face checks above cover every authored static box.
@@ -1400,7 +1605,7 @@ namespace workphone
             performReset();
             passed =
                 passed &&
-                ( body->getTransform().getPosition() - getVehicleSpawnPosition() ).length() < 0.01f &&
+                ( body->getTransform().getPosition() - (m_assets.roadAuthoring && m_assets.roadTerrain?m_generatedSpawnPosition:getVehicleSpawnPosition()) ).length() < 0.01f &&
                 body->getLinearVelocity().length() < 0.01f &&
                 body->getAngularVelocity().length() < 0.01f;
             break;
@@ -1456,13 +1661,19 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
-        if( !m_hudEnabled || !timer || !m_vehicleActor || m_assets.circuit.samples.empty() ||
+        if( !m_hudEnabled || !timer || !m_vehicleActor ||
             timer->getTime() < m_nextDebugUpdate )
         {
             return;
         }
         const auto now = timer->getTime();
         m_nextDebugUpdate = now + 0.1;
+        if(m_assets.circuit.samples.empty() || (m_assets.cityTerrainRoads && !m_assets.cityRaceRouteAvailable))
+        {
+            if(auto graphics=applicationManager->getGraphicsSystem())if(auto debug=graphics->getDebug())
+            {debug->drawText(debugTextId,Vector2F(.02f,.14f),"Race route unavailable",0);debug->drawText(debugTextId+1,Vector2F(.02f,.18f),m_assets.cityRaceRouteError,0);debug->drawText(debugTextId+2,Vector2F(.02f,.22f),"Free city driving remains available.",0);}
+            return;
+        }
         if( m_lapStart == 0 )
             m_lapStart = now;
         auto car = m_vehicleActor->getComponent<scene::CarController>();
@@ -1677,6 +1888,8 @@ namespace workphone
             properties->setProperty( "City Blocks", m_cityBlocks );
             properties->setProperty( "City Route", m_cityRoute );
             properties->setProperty( "City Natural Roads", m_cityNaturalRoads );
+            properties->setProperty( "Road Authoring Showcase", m_roadAuthoringShowcase );
+            properties->setProperty( "City Terrain Roads", m_cityTerrainRoads );
             m_raceScene->setProperties( properties );
         }
         if( !m_raceScene->regenerate() )
@@ -1686,7 +1899,33 @@ namespace workphone
         m_cityOverviewExtent = 0;
         m_cityOverviewCentre = m_cityStreetCentre = Vector3F::zero();
         m_cityStreetForward = { 0, 0, -1 };
-        if( m_assets.openCity )
+        m_cityHasJunction=false;m_cityJunctionCentre=m_cityBoulevardCentre={};m_generatedSpawnPosition=m_vehicleActor->getPosition();
+        if(m_assets.cityTerrainRoads && m_assets.roadAuthoring && m_assets.roadTerrain)
+        {
+            const auto &layout=m_assets.cityLayout;const auto &bake=m_assets.roadAuthoring->getBake();const auto &source=m_assets.roadAuthoring->getSource();
+            m_citySpacing=layout.spacing;float minX=std::numeric_limits<float>::max(),minZ=minX,minY=minX,maxX=-minX,maxZ=-minX,maxY=-minX;
+            const auto include=[&](Vector3F p){minX=std::min(minX,p.x);minZ=std::min(minZ,p.z);minY=std::min(minY,p.y);maxX=std::max(maxX,p.x);maxZ=std::max(maxZ,p.z);maxY=std::max(maxY,p.y);};
+            size_t longest=0;
+            for(const auto &road:bake.roads)
+            {
+                for(const auto &point:road.points)include(point.position);
+                if(road.points.size()>longest){longest=road.points.size();m_cityStreetCentre=road.points[road.points.size()/2].position;m_cityStreetForward=road.points[road.points.size()/2].tangent;}
+            }
+            for(const auto &lot:layout.lots){include({lot.x-lot.width*.5f,lot.groundHeight,lot.z-lot.depth*.5f});include({lot.x+lot.width*.5f,lot.groundHeight,lot.z+lot.depth*.5f});}
+            if(minX<=maxX){m_cityExtent=std::max({std::abs(minX),std::abs(maxX),std::abs(minZ),std::abs(maxZ)});m_cityOverviewExtent=std::max(maxX-minX,maxZ-minZ)*.5f+20;m_cityOverviewCentre={(minX+maxX)*.5f,(minY+maxY)*.5f+8,(minZ+maxZ)*.5f};}
+            float nearest=std::numeric_limits<float>::max();
+            for(const auto &junction:source.roundabouts)if(!junction.ports.empty())
+            {
+                const float distance=(junction.center-m_cityOverviewCentre).lengthSquared();if(distance>=nearest)continue;nearest=distance;m_cityHasJunction=true;m_cityJunctionCentre=junction.center;
+                const auto cameraPoint=[&](const auto &port){auto p=junction.center+port.outward*(junction.outerRadius+port.length*.65f);f32 height=0;bool driveable=false;if(m_assets.roadAuthoring->getRuntimeSurface(p.x,p.z,height,driveable))p.y=height;return p;};
+                m_cityStreetCentre=cameraPoint(junction.ports.front());m_cityBoulevardCentre=cameraPoint(junction.ports[junction.ports.size()/2]);m_cityStreetForward=junction.ports.front().outward;
+            }
+        }
+        else if( m_assets.cityRoadShowcase )
+        {
+            m_cityExtent=m_cityOverviewExtent=96;m_citySpacing=32;m_cityOverviewCentre={0,3,0};
+        }
+        else if( m_assets.openCity )
         {
             const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
                                                                     m_assets.cityNaturalRoads );
@@ -1760,8 +1999,10 @@ namespace workphone
         WP_ASSERT( m_cameraActor );
         m_cameraActor->setName( "Vehicle Follow Camera" );
         m_cameraActor->setSmoothMotion( true );
-        m_cameraActor->setPosition( getInitialCameraPosition() );
-        m_cameraActor->lookAt( getVehicleSpawnPosition(), Vector3<real_Num>::unitY() );
+        const bool terrainRoads=m_assets.roadAuthoring && m_assets.roadTerrain;
+        const auto cameraTarget=terrainRoads?m_generatedSpawnPosition:getVehicleSpawnPosition();
+        m_cameraActor->setPosition(terrainRoads?cameraTarget+Vector3F(0,cameraHeight,cameraDistance):getInitialCameraPosition());
+        m_cameraActor->lookAt(cameraTarget,Vector3<real_Num>::unitY());
 
         m_cameraController = m_cameraActor->addComponent<scene::VehicleCameraController>();
         WP_ASSERT( m_cameraController );
@@ -1811,12 +2052,12 @@ namespace workphone
                     {
                         const auto elapsed = core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad();
                         const auto angle = float( std::max( elapsed - 5.0, 0.0 ) * .15 );
-                        const auto target = m_assets.circuit.samples.front().position + Vector3F( 0, 1, 0 );
+                        const auto target = (m_assets.circuit.samples.empty()?m_cityOverviewCentre:m_assets.circuit.samples.front().position) + Vector3F( 0, 1, 0 );
                         const auto radius = 45.f + 35.f * ( 1 + std::sin( angle * .5f ) );
                         m_cameraActor->setPosition( target + Vector3F( std::sin(angle)*radius, 8, std::cos(angle)*radius ) );
                         m_cameraActor->lookAt( target, Vector3F::unitY() );
                     }
-                    else if( m_captureView == "corner" )
+                    else if( m_captureView == "corner" && !m_assets.circuit.samples.empty() )
                     {
                         const auto &point =
                             m_assets.circuit.samples[m_assets.circuit.samples.size() / 4];
@@ -1826,7 +2067,11 @@ namespace workphone
                     }
                     else if( m_captureView == "track" )
                     {
-                        if( m_openCity )
+                        if( m_assets.cityRoadShowcase )
+                        {
+                            m_cameraActor->setPosition({110,150,110});m_cameraActor->lookAt({0,3,0},Vector3F::unitY());
+                        }
+                        else if( m_openCity )
                         {
                             m_cameraActor->setPosition( m_cityOverviewCentre + Vector3F(
                                 m_cityOverviewExtent * 1.2f, m_cityOverviewExtent * 1.9f, m_cityOverviewExtent * 1.35f ) );
@@ -1840,6 +2085,19 @@ namespace workphone
                     }
                     else if( m_captureView == "street" || m_captureView == "boulevard" )
                     {
+                        if(m_assets.cityTerrainRoads)
+                        {
+                            if(m_cityHasJunction)
+                            {m_cameraActor->setPosition((m_captureView=="street"?m_cityStreetCentre:m_cityBoulevardCentre)+Vector3F(0,16,0));m_cameraActor->lookAt(m_cityJunctionCentre+Vector3F(0,2,0),Vector3F::unitY());}
+                            else{m_cameraActor->setPosition(m_cityStreetCentre+Vector3F(0,4,0));m_cameraActor->lookAt(m_cityStreetCentre+m_cityStreetForward*40.f+Vector3F(0,5,0),Vector3F::unitY());}
+                        }
+                        else if(m_assets.cityRoadShowcase)
+                        {
+                            m_cameraActor->setPosition(m_captureView=="street"?Vector3F(24,22,28):Vector3F(-24,22,-28));
+                            m_cameraActor->lookAt({0,3,0},Vector3F::unitY());
+                        }
+                        else
+                        {
                         const float travel = m_captureView == "boulevard" ? -1.f : 1.f;
                         const Vector3F right( -m_cityStreetForward.z, 0, m_cityStreetForward.x );
                         m_cameraActor->setPosition( m_cityStreetCentre +
@@ -1847,6 +2105,7 @@ namespace workphone
                         m_cameraActor->lookAt( m_cityStreetCentre +
                             m_cityStreetForward * ( travel * m_citySpacing * .60f ) +
                             right * ( travel * m_citySpacing * .24f ) + Vector3F( 0, 8, 0 ), Vector3F::unitY() );
+                        }
                     }
                     else
                     {
@@ -1999,6 +2258,8 @@ int main( int argc, char **argv )
                    "  --city-blocks 6|8|10           Blocks per side (requires --city; default 8)\n"
                    "  --city-route 0|1|2             Street race route (requires --city; default 0)\n"
                    "  --city-layout grid|lsystem     Road network layout (requires --city; default grid)\n"
+                   "  --road-authoring-showcase       Terrain-fitted editable roads and roundabout (implies --city)\n"
+                   "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
@@ -2032,6 +2293,8 @@ int main( int argc, char **argv )
     bool foliageWorld = false;
     bool openCity = false, cityOptionsExplicit = false;
     bool cityNaturalRoads = false;
+    bool roadAuthoringShowcase = false;
+    bool cityTerrainRoads = false;
     s32 cityBlocks = 8, cityRoute = 0;
     s32 forcedLOD = -1;
     s32 forcedVehicleLOD = -1;
@@ -2063,6 +2326,10 @@ int main( int argc, char **argv )
                 foliageWorld = true;
             else if( String( argv[i] ) == "--city" )
                 openCity = true;
+            else if( String( argv[i] ) == "--road-authoring-showcase" )
+            { roadAuthoringShowcase = true; openCity = true; }
+            else if( String( argv[i] ) == "--city-terrain-roads" )
+            { cityTerrainRoads = true; openCity = true; }
             else if( String( argv[i] ) == "--city-blocks" && i + 1 < argc )
             {
                 const std::string value = argv[++i];
@@ -2170,6 +2437,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "View must be follow, car, track, corner, street, or boulevard." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
+        if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
+        if(roadAuthoringShowcase && cityTerrainRoads)throw std::runtime_error("Choose road-authoring-showcase or city-terrain-roads.");
         if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) + int(effectsSmokeTest) > 1 ||
             ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
@@ -2270,6 +2539,8 @@ int main( int argc, char **argv )
         app->setEvidenceOptions( evidencePath, replayPath, std::move( replayControls ) );
         app->setFoliageWorldEnabled( foliageWorld );
         app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
+        app->setRoadAuthoringShowcase( roadAuthoringShowcase );
+        app->setCityTerrainRoads( cityTerrainRoads );
         app->setMaterialExportDirectory( materialExportDirectory );
         if( !pluginsConfig.empty() )
             app->setPluginsConfigFilePath( pluginsConfig );

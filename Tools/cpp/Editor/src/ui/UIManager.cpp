@@ -44,6 +44,7 @@
 #include <ui/TagDialog.hpp>
 #include <ui/TagManager.hpp>
 #include <ui/TerrainWindow.hpp>
+#include <ui/CityRoadWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -468,6 +469,9 @@ namespace workphone::editor
                                ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SceneWindowId ),
                                ICON_FA_FILM " Scene", "Scene", ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::CityRoadWindowId ),
+                               "City Roads", "Draw and edit road splines on terrain",
+                               ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SoundWindowId ),
                                ICON_FA_MUSIC " Sound", "Sound", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ParticleWindowId ),
@@ -716,6 +720,10 @@ namespace workphone::editor
         setProjectSettingsWindow( projectSettingsWindow );
         projectSettingsWindow->setWindowVisible( false );
 
+        m_cityRoadWindow = workphone::make_ptr<CityRoadWindow>();
+        m_cityRoadWindow->load( nullptr );
+        m_cityRoadWindow->setWindowVisible( false );
+
         auto proceduralModelEditorWindow = factoryManager->make_ptr<ScriptWindow>();
         proceduralModelEditorWindow->setClassName( "ProceduralModelEditor" );
         proceduralModelEditorWindow->load( nullptr );
@@ -891,6 +899,11 @@ namespace workphone::editor
         {
             terrainWindow->unload( nullptr );
             setTerrainWindow( nullptr );
+        }
+        if( m_cityRoadWindow )
+        {
+            m_cityRoadWindow->unload( nullptr );
+            m_cityRoadWindow = nullptr;
         }
 
         if( auto fileWindow = getFileWindow() )
@@ -1152,6 +1165,10 @@ namespace workphone::editor
     TerrainWindow *UIManager::getTerrainWindow() const
     {
         return m_terrainWindow;
+    }
+    SmartPtr<CityRoadWindow> UIManager::getCityRoadWindow() const
+    {
+        return m_cityRoadWindow;
     }
 
     void UIManager::setTerrainWindow( TerrainWindow *val )
@@ -1506,20 +1523,12 @@ namespace workphone::editor
             break;
             case WidgetId::UndoId:
             {
-                auto cmd = commandManager->getPreviousCommand();
-                if( cmd != nullptr )
-                {
-                    cmd->undo();
-                }
+                String error;CityRoadEditCommand::dispatchHistory(commandManager,false,error);if(!error.empty())WP_LOG_ERROR(error);
             }
             break;
             case WidgetId::RedoId:
             {
-                auto cmd = commandManager->getNextCommand();
-                if( cmd != nullptr )
-                {
-                    cmd->redo();
-                }
+                String error;CityRoadEditCommand::dispatchHistory(commandManager,true,error);if(!error.empty())WP_LOG_ERROR(error);
             }
             break;
             case WidgetId::CutId:
@@ -1727,6 +1736,15 @@ namespace workphone::editor
                 auto owner = getOwner();
                 auto window = owner->getSceneWindow();
                 window->setWindowVisible( true );
+            }
+            break;
+            case WidgetId::CityRoadWindowId:
+            {
+                if( auto window = uiManager->getCityRoadWindow() )
+                {
+                    window->setWindowVisible( true );
+                    window->updateSelection();
+                }
             }
             break;
             case WidgetId::GenerateSkyboxMaterialsId:
@@ -2368,6 +2386,10 @@ namespace workphone::editor
         if( terrainWindow )
         {
             terrainWindow->updateSelection();
+        }
+        if( auto cityRoadWindow = ui->getCityRoadWindow() )
+        {
+            cityRoadWindow->updateSelection();
         }
 
         if( auto animationWindow = ui->getAnimationWindow() )

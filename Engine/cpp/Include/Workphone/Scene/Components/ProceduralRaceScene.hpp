@@ -7,12 +7,15 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
 #include <array>
 #include <mutex>
 #include <vector>
 #include <Workphone/System/SourceBudgetVector.hpp>
 
+namespace workphone::scene { class CityRoadAuthoring; class TerrainSystem; }
 namespace workphone::scene::race
 {
 
@@ -69,7 +72,15 @@ namespace workphone::scene::race
      */
     struct WPCore_API SceneAssets : SourceBudgetObject
     {
-        bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false;
+        bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false, cityRoadShowcase = false, cityTerrainRoads = false;
+        SmartPtr<CityRoadAuthoring> roadAuthoring;
+        SmartPtr<TerrainSystem> roadTerrain;
+        procedural::OpenCityLayout cityLayout;
+        u32 cityBuildingSupportChecks = 0, cityCulledParcels = 0;
+        bool cityBuildingSupportValid = true, citySourceReused = false;
+        bool cityRaceRouteAvailable = true;
+        String cityRaceRouteError;
+        u64 cityAppliedSourceRevision = 0;
         SmartPtr<render::Terrain> foliageTerrain;
         int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
@@ -318,6 +329,12 @@ namespace workphone::scene
         /** Select open-city generation instead of the standalone circuit. */
         bool m_openCity = false;
         bool m_cityNaturalRoads = false;
+        bool m_cityRoadShowcase = false;
+        bool m_cityTerrainRoads = false;
+        String m_cityRoadAuthoringUUID;
+        SmartPtr<CityRoadAuthoring> m_cityRoadAuthoring;
+        SmartPtr<TerrainSystem> m_cityTerrain;
+        u64 m_cityLastRefreshAttemptRevision = 0;
         bool m_foliageWorldEnabled = false;
         String m_materialExportDirectory;
 

@@ -24,6 +24,7 @@
 #include <ui/AnimationWindow.hpp>
 #include <ui/TransformWindow.hpp>
 #include <ui/TerrainWindow.hpp>
+#include <ui/CityRoadWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <ui/ProjectAssetsWindow.hpp>
 #include <Workphone/Workphone.hpp>
@@ -1263,6 +1264,10 @@ namespace workphone::editor
         FactoryUtil::addFactory<ProjectAssetsWindow>();
         FactoryUtil::addFactory<SceneWindow>();
         FactoryUtil::addFactory<TerrainWindow>();
+        FactoryUtil::addFactory<CityRoadWindow>();
+        FactoryUtil::addFactory<CityRoadWindow::Listener>();
+        FactoryUtil::addFactory<CityRoadWindow::ViewportJob>();
+        FactoryUtil::addFactory<CityRoadEditCommand>();
         FactoryUtil::addFactory<TransformWindow>();
         FactoryUtil::addFactory<TransformWindow::VectorListener>();
 

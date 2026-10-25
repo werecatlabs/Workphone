@@ -4,6 +4,8 @@
 
 using namespace workphone;
 
+static int runInteractiveEditor( int argc, char *argv[] );
+
 #if WP_EDITOR_TESTS
 #    include <tests/EditorAllocationDiagnostics.hpp>
 #    define BOOST_TEST_ALTERNATIVE_INIT_API
@@ -11,6 +13,10 @@ using namespace workphone;
 
 int main( int argc, char *argv[] )
 {
+    // A Debug build remains usable as an Editor. CTest supplies explicit Boost
+    // arguments; launching the executable normally opens the real native UI.
+    if( argc == 1 || ( argc > 1 && strcmp( argv[1], "--interactive" ) == 0 ) )
+        return runInteractiveEditor( argc, argv );
     try
     {
         workphone::editor::tests::initialiseAllocationDiagnostics();
@@ -46,8 +52,14 @@ int main( int argc, char *argv[] )
     return EXIT_FAILURE;
 }
 #else
-#    include "EditorPackage.hpp"
 int main( int argc, char *argv[] )
+{
+    return runInteractiveEditor( argc, argv );
+}
+#endif
+
+#    include "EditorPackage.hpp"
+static int runInteractiveEditor( int argc, char *argv[] )
 {
     try
     {
@@ -55,7 +67,7 @@ int main( int argc, char *argv[] )
         {
             if( strcmp( argv[i], "--help" ) == 0 || strcmp( argv[i], "-h" ) == 0 )
             {
-                printf( "Usage: Editor [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke]\n" );
+                printf( "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke]\n" );
                 return EXIT_SUCCESS;
             }
         }
@@ -162,4 +174,3 @@ int main( int argc, char *argv[] )
 
     return EXIT_FAILURE;
 }
-#endif

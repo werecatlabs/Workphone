@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/WorkphonePlugin.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Jobs/RunCommandJob.hpp>
 #include <Workphone/IO/FolderListing.hpp>
 #include <Workphone/IO/FileSystem.hpp>
@@ -162,6 +163,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::ProceduralVehicle>();
         FactoryUtil::addFactory<scene::ProceduralRaceScene>();
         FactoryUtil::addFactory<scene::ProceduralRoad>();
+        FactoryUtil::addFactory<scene::CityRoadAuthoring>();
         FactoryUtil::addFactory<scene::ProceduralSky>();
         FactoryUtil::addFactory<scene::ProceduralSurfaceTexture>();
 
@@ -707,6 +709,7 @@ namespace workphone
         FactoryUtil::removeFactory<scene::ProceduralVehicle>();
         FactoryUtil::removeFactory<scene::ProceduralRaceScene>();
         FactoryUtil::removeFactory<scene::ProceduralRoad>();
+        FactoryUtil::removeFactory<scene::CityRoadAuthoring>();
         FactoryUtil::removeFactory<scene::ProceduralSky>();
         FactoryUtil::removeFactory<scene::ProceduralSurfaceTexture>();
 

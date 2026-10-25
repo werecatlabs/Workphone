@@ -12,6 +12,7 @@ namespace workphone
 {
     namespace editor
     {
+        class CityRoadWindow;
 
         /**
          * @file UIManager.hpp
@@ -345,6 +346,7 @@ namespace workphone
                 AboutId,
 
                 ID_SampleItem,
+                CityRoadWindowId,
             };
 
             /** @brief Default constructor. Sets up internal listeners and state. */
@@ -402,6 +404,7 @@ namespace workphone
              * Note: caller must not assume ownership; lifetime is managed by UIManager.
              */
             TerrainWindow *getTerrainWindow() const;
+            SmartPtr<CityRoadWindow> getCityRoadWindow() const;
 
             /**
              * @brief Set the TerrainWindow instance used by the manager.
@@ -832,6 +835,7 @@ namespace workphone
             SmartPtr<ObjectBrowserDialog> m_objectBrowserDialog;        ///< Object browser dialog.
             SmartPtr<ObjectWindow> m_objectWindow;                      ///< Object management window.
             SmartPtr<SceneWindow> m_sceneWindow;                        ///< Scene editing window.
+            SmartPtr<CityRoadWindow> m_cityRoadWindow;
             SmartPtr<EditorWindow> m_inputManagerWindow;                ///< Input management window.
             SmartPtr<LayerManager> m_layerManager;                      ///< Central actor layer list.
             SmartPtr<LayerDialog> m_layerDialog;                    ///< Actor layer management dialog.

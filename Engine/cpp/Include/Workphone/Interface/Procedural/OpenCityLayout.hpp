@@ -29,6 +29,8 @@ namespace workphone::procedural
             District district = District::Residential;
             Frontage frontage = Frontage::North;
             float parcelX = 0, parcelZ = 0, parcelWidth = 0, parcelDepth = 0;
+            float groundHeight = 0; // Level foundation datum; legacy layouts retain zero.
+            float groundMinimumHeight = 0;
         };
         struct BuildingVolume
         {
@@ -149,16 +151,16 @@ namespace workphone::procedural
             SourceBudgetVector<BuildingVolume> result;
             if( lot.park || !std::isfinite( lot.x ) || !std::isfinite( lot.z ) ||
                 !std::isfinite( lot.width ) || !std::isfinite( lot.depth ) || !std::isfinite( lot.height ) ||
-                lot.width <= 0 || lot.depth <= 0 || lot.height <= 0 ) return result;
+                lot.width <= 0 || lot.depth <= 0 || lot.height <= 0 || !std::isfinite( lot.groundHeight ) ) return result;
             result.reserve( 3 );
             if( lot.district == District::Residential || lot.height < 12 )
             {
-                result.push_back( { lot.x, lot.z, lot.width, lot.depth, 0, lot.height } );
+                result.push_back( { lot.x, lot.z, lot.width, lot.depth, lot.groundHeight, lot.height } );
                 return result;
             }
             const float baseHeight = std::min( lot.height * .35f,
                 lot.district == District::Commercial ? 10.8f : 6.4f );
-            result.push_back( { lot.x, lot.z, lot.width, lot.depth, 0, baseHeight } );
+            result.push_back( { lot.x, lot.z, lot.width, lot.depth, lot.groundHeight, baseHeight } );
             const float width = lot.width * ( .68f + .10f * random( lot.variant, 6 ) );
             const float depth = lot.depth * ( .66f + .12f * random( lot.variant, 7 ) );
             const float x = lot.x + ( lot.frontage == Frontage::West ? 1.f :
@@ -167,10 +169,10 @@ namespace workphone::procedural
                 lot.frontage == Frontage::South ? -1.f : 0 ) * ( lot.depth - depth ) * .20f;
             const float crownHeight = lot.district == District::Commercial ?
                 std::min( lot.height * .12f, 5.4f ) : 0;
-            result.push_back( { x, z, width, depth, baseHeight, lot.height - baseHeight - crownHeight } );
+            result.push_back( { x, z, width, depth, lot.groundHeight + baseHeight, lot.height - baseHeight - crownHeight } );
             if( crownHeight > 0 )
                 result.push_back( { x, z, width * .84f, depth * .84f,
-                    lot.height - crownHeight, crownHeight } );
+                    lot.groundHeight + lot.height - crownHeight, crownHeight } );
             return result;
         }
 

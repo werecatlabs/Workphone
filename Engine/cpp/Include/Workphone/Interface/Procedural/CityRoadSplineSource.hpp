@@ -3,6 +3,7 @@
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
+#include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
 #include <functional>
 #include <string_view>
 
@@ -28,6 +29,7 @@ namespace workphone::procedural
         SourceBudgetText id, terrainResourceUuid;
         u64 revision = 1, terrainRevision = 0;
         SourceBudgetVector<CityRoadSpline> roads;
+        SourceBudgetVector<CityRoadRoundaboutSpec> roundabouts; // Version 2, ports reference road GUIDs.
         CityRoadSplineSource() = default;
         CityRoadSplineSource( const CityRoadSplineSource & ) = default;
         CityRoadSplineSource( CityRoadSplineSource && ) noexcept = default;
@@ -39,6 +41,7 @@ namespace workphone::procedural
             using std::swap; swap( version, other.version ); swap( revision, other.revision );
             swap( terrainRevision, other.terrainRevision ); id.swap( other.id );
             terrainResourceUuid.swap( other.terrainResourceUuid ); roads.swap( other.roads );
+            roundabouts.swap( other.roundabouts );
         }
     };
     struct CityRoadSplineSample

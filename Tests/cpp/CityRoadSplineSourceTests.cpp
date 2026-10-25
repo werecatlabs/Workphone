@@ -74,6 +74,87 @@ namespace
         invalid=edited;invalid.roads[0].knots[0].position.x=std::numeric_limits<float>::infinity();
         require(!validateCityRoadSplineSource(invalid,error),"Infinite Bezier position accepted");
     }
+    CityRoadSplineSource roundaboutSource()
+    {
+        auto s=source();s.version=2;s.roads.clear();
+        CityRoadRoundaboutSpec junction;
+        junction.junctionId="50000000-0000-4000-8000-000000000001";
+        junction.center={3,2,-7};junction.clockwise=false;junction.ringSamples=128;
+        junction.islandHeight=.22f;junction.kerbWidth=.3f;junction.gradeX=.01f;junction.gradeZ=-.02f;
+        junction.maxGrade=.07f;junction.maxTerrainDeviation=.2f;junction.terrainSampleStep=1;
+        junction.maximumTerrainSamples=32768;
+        for(unsigned i=0;i<3;++i)
+        {
+            CityRoadSpline road;road.id="30000000-0000-4000-8000-000000000001";road.id.back()=char('1'+i);
+            road.width=8;road.heightMode=CityRoadHeightMode::Fixed;
+            const float angle=6.283185307179586f*i/3;
+            const Vector3F outward{std::cos(angle),0,std::sin(angle)};
+            const float length=18+i;
+            auto a=junction.center+outward*(junction.outerRadius+length),b=a+outward*24;
+            const auto fit=[&](Vector3F &p){p.y=junction.center.y+junction.gradeX*(p.x-junction.center.x)+junction.gradeZ*(p.z-junction.center.z);};
+            fit(a);fit(b);const auto tangent=(b-a)/3.f;
+            CityRoadSplineKnot first,second;first.id="40000000-0000-4000-8000-000000000001";
+            second.id=first.id;first.id.back()=char('1'+i*2);second.id.back()=char('2'+i*2);
+            first.position=a;first.outHandle=tangent;second.position=b;second.inHandle=-tangent;
+            road.knots={first,second};junction.ports.push_back({road.id,outward,road.width,length});s.roads.push_back(std::move(road));
+        }
+        s.roundabouts.push_back(std::move(junction));return s;
+    }
+    void versionTwoCodec()
+    {
+        auto empty=source();empty.version=2;empty.roads.clear();String error;
+        const auto emptyJson=encode(empty);CityRoadSplineSource loaded;
+        check(deserializeCityRoadSplineSource(std::string_view(emptyJson.data(),emptyJson.size()),loaded,error),error);
+        require(loaded.version==2 && loaded.roads.empty() && loaded.roundabouts.empty() && encode(loaded)==emptyJson,
+            "Canonical empty version 2 source cannot be saved/reopened");
+        CityRoadSplineBake emptyBake;emptyBake.sourceRevision=999;
+        check(sampleCityRoadSplines(loaded,{}, {},emptyBake,error),error);
+        require(emptyBake.sourceRevision==empty.revision && emptyBake.roads.empty(),"Empty version 2 retained stale sampled roads");
+        const auto authored=roundaboutSource();const auto canonical=encode(authored);
+        check(deserializeCityRoadSplineSource(std::string_view(canonical.data(),canonical.size()),loaded,error),error);
+        require(encode(loaded)==canonical && loaded.version==2 && loaded.roads.size()==3 && loaded.roundabouts.size()==1,
+            "Roundabout source did not roundtrip all version 2 fields");
+        const auto &junction=loaded.roundabouts[0];
+        require(junction.junctionId==authored.roundabouts[0].junctionId && !junction.clockwise && junction.ringSamples==128 &&
+            junction.maximumTerrainSamples==32768 && junction.islandHeight==.22f && junction.kerbWidth==.3f &&
+            junction.gradeX==.01f && junction.gradeZ==-.02f && junction.ports.size()==3,
+            "Version 2 lost authored junction identity/profile/circulation");
+        for(size_t i=0;i<junction.ports.size();++i)
+            require(junction.ports[i].approachId==loaded.roads[i].id &&
+                junction.ports[i].length==18+i && junction.ports[i].width==loaded.roads[i].width &&
+                pointsNear(junction.ports[i].outward,authored.roundabouts[0].ports[i].outward,0),
+                "Roundabout port road GUID/profile changed on reopen");
+        const auto reject=[&](const std::string &bad)
+        {
+            require(!deserializeCityRoadSplineSource(bad,loaded,error) && !error.empty(),"Invalid version 2 junction record accepted");
+            require(encode(loaded)==canonical,"Invalid version 2 import replaced last-good source");
+        };
+        const std::string original(canonical.data(),canonical.size());
+        auto bad=original;auto field=bad.find("\"version\":2");require(field!=std::string::npos,"Version 2 tag missing");
+        bad.replace(field,11,"\"version\":3");reject(bad);
+        bad=original;bad.replace(field,11,"\"version\":1");reject(bad); // Version 1 cannot hide/drop junctions.
+        bad=original;field=bad.find("\"roundabouts\"");bad.replace(field,13,"\"junctions\"");reject(bad);
+        bad=original;field=bad.find("\"center\"");bad.replace(field,8,"\"centre\"");reject(bad);
+        bad=original;field=bad.find("\"center\"");bad.insert(field,"\"type\":\"trafficSignals\",");reject(bad);
+        bad=original;field=bad.find("\"ports\"");bad.replace(field,7,"\"portz\"");reject(bad);
+        bad=original;field=bad.find("\"roadId\":\"30000000-0000-4000-8000-000000000001\"");
+        require(field!=std::string::npos,"Roundabout fixture road reference missing");
+        bad.replace(field+10,36,"30000000-0000-4000-8000-000000000009");reject(bad);
+        bad=original;field=bad.find("\"roadId\":\"30000000-0000-4000-8000-000000000002\"");
+        require(field!=std::string::npos,"Second roundabout reference missing");
+        bad.replace(field+10,36,"30000000-0000-4000-8000-000000000001");reject(bad);
+        bad=original;field=bad.find("\"roadId\"");bad.insert(field,"\"nodeIndex\":17,");reject(bad);
+        auto invalid=authored;invalid.roundabouts[0].ports[0].approachId="30000000-0000-4000-8000-000000000009";
+        require(!validateCityRoadSplineSource(invalid,error),"Missing source road GUID accepted as a roundabout port");
+        invalid=authored;invalid.roundabouts[0].ports[1].approachId=invalid.roundabouts[0].ports[0].approachId;
+        require(!validateCityRoadSplineSource(invalid,error),"Duplicate roundabout port road GUID accepted");
+        invalid=authored;invalid.roundabouts[0].junctionId=invalid.roads[0].id;
+        require(!validateCityRoadSplineSource(invalid,error),"Junction GUID aliased a road GUID");
+        invalid=authored;invalid.roundabouts.push_back(invalid.roundabouts[0]);
+        require(!validateCityRoadSplineSource(invalid,error),"Duplicate stable junction GUID accepted");
+        invalid=authored;invalid.version=1;SourceBudgetText retained="retained";
+        require(!serializeCityRoadSplineSource(invalid,retained,error) && retained=="retained","Version 1 serialization silently discarded roundabouts");
+    }
     void sampling()
     {
         auto s=source();String error;CityRoadSplineSampling options;options.tolerance=.02f;options.maxStep=.75f;
@@ -189,7 +270,7 @@ namespace
 int main( int argc, char **argv )
 {
     int result=0;
-    try {codec();sampling();terrain();budgetDenials();if(argc>1)fixture(argv[1]);std::cout<<"City road spline source: codec, Bezier, closed loop, terrain, allocation denials and transactional failures PASS\n";}
+    try {codec();versionTwoCodec();sampling();terrain();budgetDenials();if(argc>1)fixture(argv[1]);std::cout<<"City road spline source: v1/v2 codec, roundabout GUID references, Bezier, terrain, allocation denials and transactional failures PASS\n";}
     catch(const std::exception &e){std::cerr<<"City road spline source: "<<e.what()<<'\n';result=1;}
     WorldStreamingScheduler::shutdownShared();return result;
 }

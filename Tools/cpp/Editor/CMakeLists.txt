@@ -1071,6 +1071,8 @@ if (WP_EDITOR_TESTS)
         editor_ui_control_unload_test
         editor_cubemap_face_preview_test
         procedural_components_road_properties
+        city_road_viewport_authoring_test
+        terrain_city_source_anchor_roundtrip_test
         procedural_components_texture_resolution
         procedural_components_texture_properties
         procedural_components_sky_bounds
