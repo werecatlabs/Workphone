@@ -24,8 +24,9 @@ namespace workphone::scene
         String m_manifestPath, m_openPath, m_error;
         SceneWorldStreamOptions m_options;
         WeakPtr<IGameActor> m_observer;
-        bool m_previewEditorCamera = false, m_reopen = false;
-        std::unique_ptr<SceneWorldStreamer> m_streamer;
+        bool m_previewEditorCamera = false, m_followActiveCamera = false, m_instanceWorld = false;
+        bool m_reopen = false, m_updating = false, m_unloading = false;
+        std::shared_ptr<SceneWorldStreamer> m_streamer;
     };
 }
 #endif

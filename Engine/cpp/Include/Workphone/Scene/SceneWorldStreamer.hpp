@@ -41,6 +41,12 @@ namespace workphone::scene
         ~SceneWorldStreamer();
         bool open( const String &manifest, SmartPtr<IGameScene> scene,
                    const SceneWorldStreamOptions &options, String &error );
+        // An optional prefab owner supplies placement and an identity namespace.
+        // Observers and radii use world units; installed roots become its children.
+        // This mode requires the cooked manifest's exact object inventories.
+        bool open( const String &manifest, SmartPtr<IGameScene> scene,
+                   const SceneWorldStreamOptions &options, SmartPtr<IGameActor> instanceOwner,
+                   String &error );
         bool update( const Array<Vector3F> &observers, String &error );
         void close();
         SceneWorldStreamStatistics statistics() const;

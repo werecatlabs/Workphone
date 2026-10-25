@@ -4,6 +4,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/IO/FileDataStream.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Mesh/Mesh.hpp>
@@ -18,6 +19,7 @@
 #include <unordered_map>
 #include <cmath>
 #include <limits>
+#include <memory>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
@@ -36,7 +38,7 @@ namespace workphone::scene
             const std::string path( name.c_str() );
             return !path.empty() && path.size() < 160 && path.find( ".." ) == std::string::npos &&
                    path.find_first_of( "/\\:" ) == std::string::npos &&
-                   fs::path( path ).extension() == ".wpcell";
+                   fs::u8path( path ).extension() == ".wpcell";
         }
         Array<u8> read( const fs::path &path, u64 limit )
         {
@@ -71,13 +73,84 @@ namespace workphone::scene
             fn( node );
             for( const auto &child : node.getChildren() ) visit( *child, fn );
         }
+        void addUniqueDefinition( Array<const Properties *> &definitions, const Properties &data )
+        {
+            if( std::find( definitions.begin(), definitions.end(), &data ) == definitions.end() )
+                definitions.push_back( &data );
+        }
+        void addComponentDefinitions( Array<const Properties *> &definitions, const Properties &data )
+        {
+            if( data.hasProperty( GameActorUtil::componentTypeStr ) )
+            {
+                addUniqueDefinition( definitions, data );
+                return;
+            }
+            for( const auto &child : data.getChildrenByName( GameActorUtil::componentStr ) )
+                addComponentDefinitions( definitions, *child );
+        }
+        void addActorDefinitions( Array<const Properties *> &definitions, const Properties &data )
+        {
+            if( data.getNumProperties() > 0 || data.hasChild( GameActorUtil::localTransformStr ) ||
+                data.hasChild( GameActorUtil::worldTransformStr ) || data.hasChild( GameActorUtil::componentStr ) ||
+                data.hasChild( GameActorUtil::componentsStr ) )
+            {
+                addUniqueDefinition( definitions, data );
+                return;
+            }
+            for( const auto &child : data.getChildren() )
+                if( child->getName() == GameActorUtil::childStr || child->getName() == GameActorUtil::childrenStr )
+                    addActorDefinitions( definitions, *child );
+        }
+        // Match GameActorUtil::createInstanceData's definition schema. Nested
+        // resource data may also contain uuid fields and must never be indexed.
+        void visitDefinitions( const Properties &actor,
+                               const std::function<void( const Properties &, bool )> &fn )
+        {
+            fn( actor, true );
+            Array<const Properties *> components, children;
+            for( const auto &child : actor.getChildren() )
+                if( child->getName() == GameActorUtil::componentStr || child->getName() == GameActorUtil::componentsStr )
+                    addComponentDefinitions( components, *child );
+                else if( child->getName() == GameActorUtil::childStr || child->getName() == GameActorUtil::childrenStr )
+                    addActorDefinitions( children, *child );
+            for( const auto *component : components ) fn( *component, false );
+            for( const auto *child : children ) visitDefinitions( *child, fn );
+        }
+        bool validObjectId( const String &id )
+        {
+            if( id.empty() || id.size() > 256 ) return false;
+            for( const auto c : id )
+                if( static_cast<unsigned char>( c ) <= 32 || c == ';' || c == 127 ) return false;
+            return true;
+        }
+        void collectIdentities( const Properties &root, Array<String> &actorIds, Array<String> &objectIds,
+                                std::set<String> &definitions )
+        {
+            visitDefinitions( root, [&]( const Properties &definition, bool actor ) {
+                const auto uuid = definition.hasProperty( GameActorUtil::uuidStr ) ?
+                    definition.getPropertyObject( GameActorUtil::uuidStr ).getValue() : String();
+                if( !validObjectId( uuid ) || !definitions.insert( uuid ).second )
+                    throw std::runtime_error( "Missing, invalid or duplicate world object identity" );
+                if( actor ) actorIds.push_back( uuid );
+                objectIds.push_back( uuid );
+            } );
+        }
+        void readIdentities( const Properties &entry, const char *name, Array<String> &identities )
+        {
+            const auto encoded = entry.getPropertyObject( name ).getValue();
+            // Properties string arrays are semicolon-terminated. Reject a
+            // malformed tail rather than silently dropping its last identity.
+            if( encoded.empty() || encoded.back() != ';' )
+                throw std::runtime_error( "Invalid world identity inventory encoding" );
+            entry.getPropertyValue( name, identities );
+            for( const auto &id : identities )
+                if( !validObjectId( id ) )
+                    throw std::runtime_error( "Invalid world object identity" );
+        }
         u32 countActors( const Properties &root )
         {
             u32 count = 0;
-            visit( root, [&]( const Properties &p ) {
-                if( p.getName() == GameActorUtil::childStr || p.getName() == ApplicationUtil::actorsStr )
-                    ++count;
-            } );
+            visitDefinitions( root, [&]( const Properties &, bool actor ) { if( actor ) ++count; } );
             return count;
         }
         bool renderOnly( const Properties &node )
@@ -161,7 +234,15 @@ namespace workphone::scene
             mesh->updateAABB( true );
             // Use the established cooked serializer: both the CPU resource
             // manager and the native renderer can reload this file directly.
-            MeshSerializer serializer; serializer.exportMesh( mesh.get(), String( file.generic_string().c_str() ) );
+            // The filename overload opens a narrow fstream. Open the native
+            // filesystem path here, then retain the established mesh wire codec.
+            auto output = std::make_unique<std::fstream>( file, std::ios::binary | std::ios::out | std::ios::trunc );
+            if( !*output ) throw std::runtime_error( "Could not open HLOD proxy mesh" );
+            auto stream = make_ptr<FileDataStream>( String( file.generic_u8string().c_str() ), output.get(), 0, true );
+            output.release();  // FileDataStream owns the successfully wrapped stream.
+            MeshSerializer serializer;
+            try { serializer.exportMesh( mesh.get(), stream ); stream->close(); }
+            catch( ... ) { stream->close(); throw; }
             if( !fs::exists( file ) || !fs::file_size( file ) )
                 throw std::runtime_error( "Could not write HLOD proxy mesh" );
         }
@@ -191,13 +272,13 @@ namespace workphone::scene
                 !options.maximumActorsPerCell || options.maximumActorsPerCell > WP_MAX_ACTORS ||
                 !options.maximumCellBytes || options.maximumCellBytes > ( 64ull << 20 ) )
                 throw std::runtime_error( "Invalid world cook limits" );
-            fs::path output( directory.c_str() );
+            auto output = fs::u8path( directory.c_str() );
             fs::path proxyDirectory;
             if( options.generateHlod )
             {
                 if( options.assetRoot.empty() ) throw std::runtime_error( "HLOD cooking requires an asset root" );
                 proxyDirectory = fs::absolute( output ).lexically_normal().lexically_relative(
-                    fs::absolute( options.assetRoot.c_str() ).lexically_normal() );
+                    fs::absolute( fs::u8path( options.assetRoot.c_str() ) ).lexically_normal() );
                 if( proxyDirectory.empty() || *proxyDirectory.begin() == ".." )
                     throw std::runtime_error( "HLOD output must be inside the asset root" );
             }
@@ -216,7 +297,15 @@ namespace workphone::scene
                     throw std::runtime_error( "Cook the source scene, not an existing world streaming bootstrap" );
                 for( const auto &property : p.getPropertiesAsArray() )
                     if( property.getName() != GameActorUtil::uuidStr )
+                    {
                         ++references[property.getValue().c_str()];
+                        if( property.getValue().find( ';' ) != String::npos )
+                        {
+                            Array<String> values;
+                            StringUtil::parseArray( property.getValue(), values );
+                            for( const auto &value : values ) ++references[value.c_str()];
+                        }
+                    }
             } );
             std::map<std::pair<int,int>, Array<SmartPtr<Properties>>> groups;
             std::map<const Properties *, std::pair<Vector3F, Vector3F>> bounds;
@@ -262,8 +351,8 @@ namespace workphone::scene
                         if( !component->getPropertyValue( "Mesh Path", meshPath ) || meshPath.empty() ) continue;
                         try
                         {
-                            auto file = fs::path( meshPath.c_str() );
-                            if( !file.is_absolute() ) file = fs::path( options.assetRoot.c_str() ) / file;
+                            auto file = fs::u8path( meshPath.c_str() );
+                            if( !file.is_absolute() ) file = fs::u8path( options.assetRoot.c_str() ) / file;
                             auto bytes = read( file, 64ull << 20 );
                             auto mesh = wp_graphics_mesh_read_from_buffer( bytes.data(), static_cast<wp_u32>( bytes.size() ) );
                             if( !mesh ) { knownBounds = false; continue; }
@@ -319,6 +408,7 @@ namespace workphone::scene
             if( scene.hasProperty( GameActorUtil::uuidStr ) )
                 partition( scene, Transform3F::identity() );
 
+            std::set<String> definitions;
             std::function<void( const String &, const Array<SmartPtr<Properties>> &,
                                 Vector3F, Vector3F, const String & )> emit;
             emit = [&]( const String &id, const Array<SmartPtr<Properties>> &actors,
@@ -337,6 +427,9 @@ namespace workphone::scene
                 if( !count ) return;
                 if( count > options.maximumActorsPerCell )
                     throw std::runtime_error( "An indivisible actor group exceeds the cell actor limit" );
+                Array<String> actorIds, objectIds;
+                for( const auto &actor : actors )
+                    collectIdentities( *actor, actorIds, objectIds, definitions );
                 auto bytes = PropertiesBinarySerializer::serialize( *payload );
                 if( bytes.size() > options.maximumCellBytes )
                     throw std::runtime_error( "An indivisible actor group exceeds the cell byte limit" );
@@ -349,6 +442,7 @@ namespace workphone::scene
                 entry->setProperty( "bytes", u64( bytes.size() ) );
                 entry->setProperty( "decodedBytes", u64( bytes.size() ) * 8 + u64( count ) * 4096 );
                 entry->setProperty( "actors", count );
+                entry->setProperty( "actorIds", actorIds ); entry->setProperty( "objectIds", objectIds );
                 if( !proxyOf.empty() ) entry->setProperty( "proxyOf", proxyOf );
                 manifest->addChild( entry );
                 if( options.generateHlod && id != "persistent" && proxyOf.empty() )
@@ -374,7 +468,7 @@ namespace workphone::scene
                         component->setProperty( GameActorUtil::uuidStr, StringUtil::getUUID() );
                         component->setProperty( GameActorUtil::componentTypeStr, "workphone::scene::" + type );
                         if( type == "Mesh" ) component->setProperty( "Mesh Path",
-                            ( proxyDirectory / meshFile.c_str() ).generic_string().c_str() );
+                            ( proxyDirectory / meshFile.c_str() ).generic_u8string().c_str() );
                         proxy->addChild( component );
                     }
                     bounds[proxy.get()] = { minimum, maximum };
@@ -412,14 +506,17 @@ namespace workphone::scene
                 throw std::runtime_error( "World must contain between one and 65536 cells" );
             const auto temporary = output / ( "world_" + std::string( StringUtil::getUUID().c_str() ) + ".tmp" );
             const auto destination = output / "world.wpworld";
-            write( temporary, PropertiesBinarySerializer::serialize( *manifest ) );
+            const auto manifestBytes = PropertiesBinarySerializer::serialize( *manifest );
+            if( manifestBytes.size() > ( 8ull << 20 ) )
+                throw std::runtime_error( "World manifest exceeds its admission limit" );
+            write( temporary, manifestBytes );
 #ifdef _WIN32
             if( !MoveFileExW( temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
                 throw std::runtime_error( "Could not publish world manifest" );
 #else
             fs::rename( temporary, destination );
 #endif
-            manifestPath = destination.generic_string().c_str();
+            manifestPath = destination.generic_u8string().c_str();
             return true;
         }
         catch( const std::exception &e ) { error = e.what(); return false; }
@@ -430,7 +527,7 @@ namespace workphone::scene
         error.clear();
         try
         {
-            auto bytes = read( fs::path( path.c_str() ), 8ull << 20 );
+            auto bytes = read( fs::u8path( path.c_str() ), 8ull << 20 );
             auto data = make_ptr<Properties>();
             if( !PropertiesBinarySerializer::deserialize( bytes, *data, &error ) ) return false;
             u32 version = 0;
@@ -442,6 +539,7 @@ namespace workphone::scene
                 !std::isfinite( candidate.cellSize ) || candidate.cellSize <= 0 )
                 throw std::runtime_error( "Unsupported or invalid world manifest" );
             std::set<u64> keys;
+            std::set<String> definitions;
             std::map<u64, String> proxies;
             std::map<String, u32> byId;
             for( const auto &entry : data->getChildrenByName( "cell" ) )
@@ -473,6 +571,27 @@ namespace workphone::scene
                     cell.decodedBytes > ( 512ull << 20 ) || !cell.actors || cell.actors > WP_MAX_ACTORS ||
                     !keys.insert( cell.key ).second || candidate.cells.size() >= 65536 )
                     throw std::runtime_error( "Invalid or duplicate world cell" );
+                const auto hasActorIds = entry->hasProperty( "actorIds" );
+                const auto hasObjectIds = entry->hasProperty( "objectIds" );
+                if( hasActorIds != hasObjectIds )
+                    throw std::runtime_error( "Incomplete world identity inventories" );
+                if( hasActorIds )
+                {
+                    readIdentities( *entry, "actorIds", cell.actorIds );
+                    readIdentities( *entry, "objectIds", cell.objectIds );
+                    if( cell.actorIds.size() != cell.actors || cell.objectIds.size() < cell.actorIds.size() )
+                        throw std::runtime_error( "World identity inventory count mismatch" );
+                    std::set<String> actors( cell.actorIds.begin(), cell.actorIds.end() );
+                    std::set<String> objects( cell.objectIds.begin(), cell.objectIds.end() );
+                    if( actors.size() != cell.actorIds.size() || objects.size() != cell.objectIds.size() )
+                        throw std::runtime_error( "Duplicate world object identity" );
+                    for( const auto &uuid : actors )
+                        if( !objects.count( uuid ) )
+                            throw std::runtime_error( "World actor identity is missing from its object inventory" );
+                    for( const auto &uuid : objects )
+                        if( !definitions.insert( uuid ).second )
+                            throw std::runtime_error( "Duplicate world object identity across cells" );
+                }
                 byId.emplace( cell.id, u32( candidate.cells.size() ) );
                 candidate.cells.push_back( std::move( cell ) );
             }
@@ -499,7 +618,7 @@ namespace workphone::scene
         try
         {
             if( !cellFile( cell.file ) ) throw std::runtime_error( "Invalid cell file" );
-            auto bytes = read( fs::path( manifestPath.c_str() ).parent_path() / cell.file.c_str(), cell.bytes );
+            auto bytes = read( fs::u8path( manifestPath.c_str() ).parent_path() / fs::u8path( cell.file.c_str() ), cell.bytes );
             if( bytes.size() != cell.bytes ) throw std::runtime_error( "Stale or truncated cell" );
             auto data = make_ptr<Properties>();
             if( !PropertiesBinarySerializer::deserialize( bytes, *data, &error ) ) return nullptr;
@@ -509,6 +628,19 @@ namespace workphone::scene
             for( const auto &actor : data->getChildrenByName( ApplicationUtil::actorsStr ) ) count += countActors( *actor );
             if( ( version != 1 && version != WorldManifest::version ) || id != cell.id || count != cell.actors )
                 throw std::runtime_error( "Cell identity, version or actor count mismatch" );
+            if( !cell.actorIds.empty() || !cell.objectIds.empty() )
+            {
+                Array<String> actorIds, objectIds;
+                std::set<String> definitions;
+                for( const auto &actor : data->getChildrenByName( ApplicationUtil::actorsStr ) )
+                    collectIdentities( *actor, actorIds, objectIds, definitions );
+                if( actorIds.size() != cell.actorIds.size() || objectIds.size() != cell.objectIds.size() ||
+                    std::set<String>( actorIds.begin(), actorIds.end() ) !=
+                        std::set<String>( cell.actorIds.begin(), cell.actorIds.end() ) ||
+                    std::set<String>( objectIds.begin(), objectIds.end() ) !=
+                        std::set<String>( cell.objectIds.begin(), cell.objectIds.end() ) )
+                    throw std::runtime_error( "Cell object identities do not match the manifest inventories" );
+            }
             return data;
         }
         catch( const std::exception &e ) { error = e.what(); return nullptr; }

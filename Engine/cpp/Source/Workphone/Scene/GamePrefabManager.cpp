@@ -7,6 +7,7 @@
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
+#include <Workphone/Scene/Components/WorldStreaming.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSceneNode.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/Mesh/IMeshLoader.hpp>
@@ -23,6 +24,45 @@ namespace workphone::scene
 
     namespace
     {
+        bool isStreamingWorldComponent( const Properties &data )
+        {
+            String type; bool instanceWorld = false;
+            data.getPropertyValue( GameActorUtil::componentTypeStr, type );
+            data.getPropertyValue( "Instance World", instanceWorld );
+            if( instanceWorld && ( type == "WorldStreaming" || type == "workphone::scene::WorldStreaming" ) )
+                return true;
+            for( const auto &child : data.getChildrenByName( GameActorUtil::componentStr ) )
+                if( isStreamingWorldComponent( *child ) ) return true;
+            return false;
+        }
+
+        bool isStreamingWorldRoot( const Properties &actor )
+        {
+            for( const auto &child : actor.getChildren() )
+                if( child->getName() == GameActorUtil::componentStr ||
+                    child->getName() == GameActorUtil::componentsStr )
+                    if( isStreamingWorldComponent( *child ) ) return true;
+            return false;
+        }
+
+        bool isStreamingWorldOwner( const SmartPtr<IGameActor> &actor )
+        {
+            bool instanceWorld = false;
+            if( auto streaming = actor->getComponent<WorldStreaming>() )
+                streaming->getProperties()->getPropertyValue( "Instance World", instanceWorld );
+            return instanceWorld;
+        }
+
+        void preparePrefabSave( SmartPtr<IGameActor> actor )
+        {
+            actor->setFlag( IGameActor::ActorFlagDontSave, false, false );
+            actor->setFlag( IGameActor::ActorFlagPrefab, true, false );
+            // A streaming owner can appear at any depth in an authored prefab.
+            // Its resident graph belongs to the referenced world generation.
+            if( isStreamingWorldOwner( actor ) ) return;
+            for( const auto &child : actor->getChildren() ) preparePrefabSave( child );
+        }
+
         SmartPtr<Properties> parsePrefabData( const String &dataStr, DataFormat preferredFormat )
         {
             auto data = workphone::make_ptr<Properties>();
@@ -135,6 +175,28 @@ namespace workphone::scene
 
         if( ApplicationUtil::isSupportedMesh( filePath ) )
         {
+            // Streaming imports publish a thin actor prefab. Direct preview/load paths
+            // must use it too, rather than recreating the entire source hierarchy.
+            const auto cachedPath = ApplicationUtil::getPrefabPath( filePath );
+            if( fileSystem->isExistingFile( cachedPath ) )
+            {
+                const auto text = fileSystem->readAllText( cachedPath );
+                // Ordinary cached city prefabs can be large. Avoid constructing a
+                // second detailed property graph just to continue the source import.
+                if( text.find( "meshImportStreaming" ) != String::npos ||
+                    text.find( "WorldStreaming" ) != String::npos )
+                {
+                    auto cachedData = parsePrefabData( text, getDataFormat() );
+                    bool streamingImport = false;
+                    cachedData->getPropertyValue( "meshImportStreaming", streamingImport );
+                    if( streamingImport || isStreamingWorldRoot( *cachedData ) )
+                    {
+                        prefab->setData( cachedData );
+                        return prefab;
+                    }
+                }
+            }
+
             auto meshLoader = applicationManager->getMeshLoader();
             if( !meshLoader )
             {
@@ -445,12 +507,18 @@ namespace workphone::scene
             auto fileSystem = applicationManager->getFileSystemPtr();
             WP_ASSERT( fileSystem );
 
-            prefab->setFlag( IGameActor::ActorFlagDontSave, false, true );
-            prefab->setFlag( IGameActor::ActorFlagPrefab, true, true );
+            const bool streamingWrapper = isStreamingWorldOwner( prefab );
+            // Resident cell roots belong to their world generation and remain
+            // excluded when saving its live prefab owner. Clearing their flags
+            // would embed one neighborhood alongside the streaming reference.
+            preparePrefabSave( prefab );
 
             const auto fmt = getDataFormat();
 
             auto data = prefab->toData();
+            if( streamingWrapper )
+                if( auto properties = dynamic_pointer_cast<Properties>( data ) )
+                    properties->setProperty( "meshImportStreaming", true );
             auto dataStr = DataUtil::toString( data.get(), true, fmt );
 
             String error;

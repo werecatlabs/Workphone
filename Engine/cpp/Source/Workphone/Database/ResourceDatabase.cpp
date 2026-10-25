@@ -4,6 +4,7 @@
 #include <Workphone/Database/AssetImportQueue.hpp>
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
 #include <Workphone/Database/ResourceReference.hpp>
 #include <Workphone/System/Director.hpp>
@@ -13,6 +14,8 @@
 #include <Workphone/Scene/Directors/LightingDirector.hpp>
 #include <Workphone/Scene/Directors/SoundResourceDirector.hpp>
 #include <Workphone/Scene/GameManager.hpp>
+#include <Workphone/Scene/MeshImportStreaming.hpp>
+#include <Workphone/Scene/SceneWorld.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IDatabaseManager.hpp>
 #include <Workphone/Interface/Database/IDatabaseQuery.hpp>
@@ -27,6 +30,7 @@
 #include <Workphone/Interface/Graphics/ITextureManager.hpp>
 #include <Workphone/Interface/IO/IFolderExplorer.hpp>
 #include <Workphone/Interface/Mesh/IMeshLoader.hpp>
+#include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Interface/System/IFSMManager.hpp>
@@ -47,6 +51,7 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 #include <initializer_list>
 #include <set>
@@ -682,8 +687,8 @@ namespace workphone
                 if( object ) object->unload( nullptr );
             }
 
-            decltype(m_resourceMap) empty;
-            m_resourceMap = std::move(empty);
+            decltype(m_resourceIdentities) empty;
+            m_resourceIdentities = std::move(empty);
             m_instances.releaseStorage();
             setDatabaseManager( nullptr );
             setMediaCatalog( nullptr );
@@ -2232,77 +2237,64 @@ namespace workphone
         m_databaseManager = databaseManager;
     }
 
+    namespace
+    {
+        auto createOrRetrieveManagedResource( hash_type type, const String &path, const String &uuid )
+            -> Pair<SmartPtr<IResource>, bool>
+        {
+            try
+            {
+                auto applicationManager = core::IApplicationManager::instance();
+                WP_ASSERT( applicationManager );
+
+                static const auto fontType = render::IFont::typeInfo();
+                static const auto materialType = render::IMaterial::typeInfo();
+                static const auto meshResourceType = IMeshResource::typeInfo();
+                auto typeManager = TypeManager::instance();
+                WP_ASSERT( typeManager );
+
+                // Resolve ownership in the manager on every request. A missing
+                // catalog identity uses its path lookup instead of inventing a new
+                // UUID before checking whether that resource already exists.
+                if( typeManager->isDerived( static_cast<u32>( type ), meshResourceType ) )
+                {
+                    if( auto manager = applicationManager->getMeshManager() )
+                        return uuid.empty() ? manager->createOrRetrieve( path ) :
+                                              manager->createOrRetrieve( uuid, path, "" );
+                }
+                if( auto graphics = applicationManager->getGraphicsSystem() )
+                {
+                    if( typeManager->isDerived( static_cast<u32>( type ), materialType ) )
+                    {
+                        if( auto manager = graphics->getMaterialManager() )
+                            return uuid.empty() ? manager->createOrRetrieve( path ) :
+                                                  manager->createOrRetrieve( uuid, path, "" );
+                    }
+                    if( typeManager->isDerived( static_cast<u32>( type ), fontType ) )
+                    {
+                        if( auto manager = graphics->getFontManager() )
+                            return uuid.empty() ? manager->createOrRetrieve( path ) :
+                                                  manager->createOrRetrieve( uuid, path, "" );
+                    }
+                }
+            }
+            catch( std::exception &e )
+            {
+                WP_LOG_EXCEPTION( e );
+            }
+
+            return {};
+        }
+    }  // namespace
+
     auto ResourceDatabase::createOrRetrieveFromDirector( hash_type type, const String &path,
                                                          SmartPtr<IBuildDirector> director )
         -> Pair<SmartPtr<IResource>, bool>
     {
-        try
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            static const auto fontType = render::IFont::typeInfo();
-            static const auto materialType = render::IMaterial::typeInfo();
-
-            Pair<SmartPtr<IResource>, bool> result;
-
-            if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
-            {
-                auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
-                auto meshManager = applicationManager->getMeshManager();
-                auto fontManager = graphicsSystem->getFontManager();
-
-                static const auto materialType = render::IMaterial::typeInfo();
-                static const auto meshResourceType = IMeshResource::typeInfo();
-
-                String uuid;
-
-                auto resourceDirector =
-                    workphone::dynamic_pointer_cast<scene::ResourceDirector>( director );
-                if( resourceDirector )
-                {
-                    uuid = resourceDirector->getResourceUUID();
-                }
-
-                if( StringUtil::isNullOrEmpty( uuid ) )
-                {
-                    uuid = StringUtil::getUUID();
-                }
-
-                auto typeManager = TypeManager::instance();
-                WP_ASSERT( typeManager );
-
-                if( typeManager->isDerived( static_cast<u32>( type ), materialType ) )
-                {
-                    if( materialManager )
-                    {
-                        result = materialManager->createOrRetrieve( uuid, path, "" );
-                    }
-                }
-
-                if( typeManager->isDerived( static_cast<u32>( type ), meshResourceType ) )
-                {
-                    if( meshManager )
-                    {
-                        result = meshManager->createOrRetrieve( uuid, path, "" );
-                    }
-                }
-
-                if( typeManager->isDerived( static_cast<u32>( type ), fontType ) )
-                {
-                    result = fontManager->createOrRetrieve( uuid, path, "" );
-                }
-
-                result.second = false;  // false = resource already exists
-                return result;
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
-
-        return {};
+        String uuid;
+        if( auto resourceDirector = dynamic_pointer_cast<scene::ResourceDirector>( director ) )
+            uuid = resourceDirector->getResourceUUID();
+        return createOrRetrieveManagedResource( type, path, uuid );
     }
 
     auto ResourceDatabase::createOrRetrieve( hash_type type, const String &path )
@@ -2318,40 +2310,47 @@ namespace workphone
             WP_ASSERT( type != 0 );
             WP_ASSERT( !StringUtil::isNullOrEmpty( path ) );
 
-            // Check if the resource already exists in the database.
-            auto it = m_resourceMap.find( type );
-            if( it != m_resourceMap.end() )
-            {
-                auto resIt = it->second.findAs( path );
-                if( resIt != it->second.end() )
-                {
-                    if( auto resource = resIt->second.lock() )
-                    {
-                        // The resource already exists in memory.
-                        return Pair<SmartPtr<IResource>, bool>( resource, false );
-                    }
-                }
-            }
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
             auto assetDatabaseManager =
                 workphone::static_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-
-            if( !assetDatabaseManager )
+            auto director = assetDatabaseManager ?
+                assetDatabaseManager->getResourceEntryFromPath( path ) : nullptr;
+            String rememberedUuid;
+            if( !director )
             {
-                WP_LOG_ERROR( "AssetDatabaseManager is null!" );
-                return {};
+                auto identities = m_resourceIdentities.readLocked();
+                auto previous = identities.get().findAs( path );
+                if( previous != identities.end() && previous->second.type == type )
+                    rememberedUuid = static_cast<String>( previous->second.uuid );
             }
-
-            auto director = assetDatabaseManager->getResourceEntryFromPath( path );
-
-            auto result = createOrRetrieveFromDirector( type, path, director );
+            auto result = rememberedUuid.empty() ? createOrRetrieveFromDirector( type, path, director ) :
+                createOrRetrieveManagedResource( type, path, rememberedUuid );
 
             if( result.first )
             {
-                m_resourceMap[type][SourceBudgetString(path)] = result.first;
+                const auto handle = result.first->getHandle();
+                const auto uuid = handle ? handle->getUUIDAsString() : String();
+                bool changed = true;
+                {
+                    auto identities = m_resourceIdentities.readLocked();
+                    auto previous = identities.get().findAs( path );
+                    changed = previous == identities.end() || previous->second.type != type ||
+                              previous->second.uuid != uuid;
+                }
+                if( changed )
+                {
+                    try
+                    {
+                        ResourceIdentity identity;
+                        identity.type = type;
+                        identity.uuid = uuid;
+                        m_resourceIdentities.insert( SourceBudgetString( path ), std::move( identity ) );
+                    }
+                    catch( const std::bad_alloc & )
+                    {
+                        // Optional routing metadata must not reject a resource
+                        // already acquired safely from its owning manager.
+                    }
+                }
             }
 
             return result;
@@ -2375,19 +2374,13 @@ namespace workphone
 
             WP_ASSERT( !StringUtil::isNullOrEmpty( path ) );
 
-            // Check if the resource already exists in the database.
-            for( auto &[hash, map] : m_resourceMap )
+            hash_type rememberedType = 0;
             {
-                auto resIt = map.findAs( path );
-                if( resIt != map.end() )
-                {
-                    if( auto resource = resIt->second.lock() )
-                    {
-                        // The resource already exists in memory.
-                        return Pair<SmartPtr<IResource>, bool>( resource, false );
-                    }
-                }
+                auto identities = m_resourceIdentities.readLocked();
+                auto previous = identities.get().findAs( path );
+                if( previous != identities.end() ) rememberedType = previous->second.type;
             }
+            if( rememberedType != 0 ) return createOrRetrieve( rememberedType, path );
 
             static const auto materialType = render::IMaterial::typeInfo();
             static const auto meshResourceType = IMeshResource::typeInfo();
@@ -2395,7 +2388,9 @@ namespace workphone
 
             u32 type = 0;
 
-            if( ApplicationUtil::isSupportedMesh( path ) )
+            const auto extension = Path::getFileExtension( path );
+            if( ApplicationUtil::isSupportedMesh( path ) || extension == ".fbmeshbin" ||
+                extension == ".FBMESHBIN" )
             {
                 type = meshResourceType;
             }
@@ -2413,22 +2408,7 @@ namespace workphone
                 return {};
             }
 
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto assetDatabaseManager =
-                workphone::static_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-
-            auto director = assetDatabaseManager->getResourceEntryFromPath( path );
-
-            auto result = createOrRetrieveFromDirector( type, path, director );
-
-            if( result.first )
-            {
-                m_resourceMap[type][SourceBudgetString(path)] = result.first;
-            }
-
-            return result;
+            return createOrRetrieve( type, path );
         }
         catch( std::exception &e )
         {
@@ -3094,26 +3074,170 @@ namespace workphone
                     meshLoader->setOverwrite( overwrite );
 
                     auto actor = meshLoader->loadActor( filePath );
-                    if( actor )
+                    try
                     {
-                        if( graphicsSystem )
+                        if( !currentImportSession || !currentImportSession() )
+                            throw std::runtime_error( "Mesh import project changed while loading the source" );
+                        if( actor )
                         {
-                            auto converter = graphicsSystem->getMeshConverter();
+                            // Read from this import's captured project, even if the Editor
+                            // changes its active project while the source loader is running.
+                            auto director = make_ptr<scene::MeshResourceDirector>();
+                            if( fileSystem->isExistingFile( fileDataPath ) )
+                            {
+                                auto savedOptions = make_ptr<Properties>();
+                                DataUtil::parse( fileSystem->readAllText( fileDataPath ), savedOptions.get() );
+                                director->setProperties( savedOptions );
+                            }
+                            const auto streaming = director->getStreamingOptions();
+                            auto converter = graphicsSystem ? graphicsSystem->getMeshConverter() : nullptr;
                             if( converter )
                             {
+                                // Cells must refer to the converted cache meshes, not the source file.
                                 converter->writeMesh( actor );
+                            }
+                            else if( streaming.enabled )
+                            {
+                                throw std::runtime_error(
+                                    "Streaming mesh import requires an available mesh converter" );
                             }
                             else
                             {
                                 WP_LOG_ERROR( "Mesh converter is not available." );
                             }
-                        }
 
-                        auto prefabFilePath = ApplicationUtil::getPrefabPath( filePath );
-                        if( overwrite || !fileSystem->isExistingFile( prefabFilePath ) )
-                        {
-                            prefabManager->savePrefab( prefabFilePath, actor );
+                            const auto prefabFilePath = cachePath + Path::getFileName( filePath ) + "." +
+                                StringUtil::toString( filePathHash ) + ".prefab";
+                            if( overwrite || !fileSystem->isExistingFile( prefabFilePath ) )
+                            {
+                                if( streaming.enabled )
+                                {
+                                    actor->setFlag( scene::IGameActor::ActorFlagDontSave, false, true );
+                                    actor->setFlag( scene::IGameActor::ActorFlagPrefab, true, true );
+                                    auto sourceData = dynamic_pointer_cast<Properties>( actor->toData() );
+                                    if( !sourceData )
+                                        throw std::runtime_error( "Streaming mesh import has no actor data" );
+
+                                    // Each prefab publication owns an immutable world generation. A cook or
+                                    // prefab-save failure leaves the previously published world reachable.
+                                    const auto generation = std::filesystem::u8path( projectPath.c_str() ) /
+                                        "Cache" / "Worlds" / StringUtil::toString( filePathHash ).c_str() /
+                                        StringUtil::getUUID().c_str();
+                                    SmartPtr<Properties> prefabData;
+                                    String manifest, error;
+                                    if( !scene::MeshImportStreaming::buildPrefab(
+                                            *sourceData, streaming, projectPath,
+                                            String( generation.generic_u8string().c_str() ), prefabData,
+                                            manifest, error ) )
+                                        throw std::runtime_error( ( "Streaming mesh import failed: " + error ).c_str() );
+                                    if( !currentImportSession || !currentImportSession() )
+                                        throw std::runtime_error( "Streaming mesh import project changed before publication" );
+
+                                    // The converter catalogs source geometry before cooking. HLOD geometry
+                                    // is produced afterward and must have the same file-resource identities
+                                    // before any prefab can make this generation reachable.
+                                    const auto &importSession = currentImportSession;
+                                    const auto requireImportSession = [&]() {
+                                        if( !importSession || !importSession() )
+                                            throw std::runtime_error(
+                                                "Streaming mesh import project changed while registering HLOD assets" );
+                                    };
+                                    scene::WorldManifest cookedWorld;
+                                    if( !scene::SceneWorld::readManifest( manifest, cookedWorld, error ) )
+                                        throw std::runtime_error( ( "Streaming HLOD manifest validation failed: " + error ).c_str() );
+                                    std::set<String, std::less<String>, SourceBudgetAllocator<String>>
+                                        generatedMeshes, generatedFolders;
+                                    // Catalog path validation expects captured canonical roots. The
+                                    // import session may use an equivalent Windows 8.3 project spelling.
+                                    String registrationProjectRoot, generationRoot;
+                                    if( !canonicalAssetCatalogRoot( projectPath, registrationProjectRoot, error ) ||
+                                        !canonicalAssetCatalogRoot( String( generation.generic_u8string().c_str() ),
+                                                                   generationRoot, error ) )
+                                        throw std::runtime_error( ( "Invalid streaming HLOD registration root: " + error ).c_str() );
+                                    for( const auto &cell : cookedWorld.cells )
+                                    {
+                                        if( !cell.detailKey ) continue;
+                                        requireImportSession();
+                                        auto payload = scene::SceneWorld::readCell( manifest, cell, error );
+                                        if( !payload )
+                                            throw std::runtime_error( ( "Streaming HLOD payload validation failed: " + error ).c_str() );
+                                        bool hasMesh = false;
+                                        const auto collectMeshes = [&]( const auto &self, const Properties &properties ) -> void {
+                                            if( properties.hasProperty( "Mesh Path" ) )
+                                            {
+                                                const auto meshPath = properties.getPropertyObject( "Mesh Path" ).getValue();
+                                                AssetCatalogPath projectAsset, generationAsset;
+                                                if( !canonicalAssetCatalogPath( registrationProjectRoot, meshPath, projectAsset, error ) )
+                                                    throw std::runtime_error( ( "Invalid streaming HLOD mesh path: " + error ).c_str() );
+                                                const auto absoluteMesh = std::filesystem::u8path( registrationProjectRoot.c_str() ) /
+                                                    std::filesystem::u8path( projectAsset.path.c_str() );
+                                                if( !canonicalAssetCatalogPath( generationRoot,
+                                                        String( absoluteMesh.generic_u8string().c_str() ), generationAsset, error ) ||
+                                                    StringUtil::make_lower( Path::getFileExtension( projectAsset.path ) ) != builtinMeshExt ||
+                                                    !std::filesystem::is_regular_file( absoluteMesh ) )
+                                                    throw std::runtime_error(
+                                                        "Streaming HLOD mesh must be a generated fbmeshbin file inside this generation" );
+                                                generatedMeshes.insert( projectAsset.path );
+                                                // Archive relative names use the active captured project
+                                                // spelling, even when canonical validation expanded an alias.
+                                                const auto archiveMesh = std::filesystem::u8path( projectPath.c_str() ) /
+                                                    std::filesystem::u8path( projectAsset.path.c_str() );
+                                                generatedFolders.insert( archiveMesh.parent_path().generic_u8string().c_str() );
+                                                hasMesh = true;
+                                            }
+                                            for( const auto &child : properties.getChildren() ) self( self, *child );
+                                        };
+                                        collectMeshes( collectMeshes, *payload );
+                                        if( !hasMesh )
+                                            throw std::runtime_error( "Streaming HLOD proxy has no generated mesh" );
+                                    }
+                                    auto meshManager = applicationManager->getMeshManager();
+                                    if( !generatedMeshes.empty() && !meshManager )
+                                        throw std::runtime_error( "Streaming HLOD registration requires a mesh manager" );
+                                    for( const auto &folder : generatedFolders )
+                                    {
+                                        requireImportSession();
+                                        // A new generation was absent from the project's existing folder
+                                        // archives. Index its direct files without rescanning the city.
+                                        fileSystem->addFolder( folder, false );
+                                    }
+                                    for( const auto &meshPath : generatedMeshes )
+                                    {
+                                        requireImportSession();
+                                        auto mesh = dynamic_pointer_cast<IMeshResource>( meshManager->loadFromFile( meshPath ) );
+                                        if( !mesh || !mesh->isLoaded() || !mesh->getMesh() || mesh->getMesh()->getSubMeshes().empty() )
+                                            throw std::runtime_error( ( "Could not load generated streaming HLOD mesh: " + meshPath ).c_str() );
+                                        requireImportSession();
+                                        if( assetDatabaseManager->hasResourceEntry( mesh ) )
+                                            assetDatabaseManager->updateResourceEntry( mesh );
+                                        else
+                                            assetDatabaseManager->addResourceEntry( mesh );
+                                        requireImportSession();
+                                        auto entry = dynamic_pointer_cast<scene::ResourceDirector>(
+                                            assetDatabaseManager->getResourceEntryFromPath( meshPath ) );
+                                        if( !entry || entry->getResourceUUID() != mesh->getHandle()->getUUIDAsString() )
+                                            throw std::runtime_error( ( "Could not catalog generated streaming HLOD mesh: " + meshPath ).c_str() );
+                                        auto resolved = resourceDatabase->loadResourceByType<IMeshResource>( meshPath );
+                                        if( !resolved || !resolved->isLoaded() || !resolved->getMesh() ||
+                                            resolved->getMesh()->getSubMeshes().empty() )
+                                            throw std::runtime_error( ( "Generated streaming HLOD mesh cannot be resolved from the catalog: " + meshPath ).c_str() );
+                                    }
+                                    requireImportSession();
+                                    if( !saveAssetDocumentText( prefabFilePath, prefabData,
+                                            DataUtil::toString( prefabData.get(), true, DataFormat::XML ), error ) )
+                                        throw std::runtime_error( ( "Streaming prefab publication failed: " + error ).c_str() );
+                                }
+                                else
+                                {
+                                    prefabManager->savePrefab( prefabFilePath, actor );
+                                }
+                            }
                         }
+                    }
+                    catch( ... )
+                    {
+                        if( sceneManager && actor ) sceneManager->destroyActor( actor );
+                        throw;
                     }
 
                     if( sceneManager )

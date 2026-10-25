@@ -732,7 +732,10 @@ namespace workphone
                     auto path = Path::getFilePath( fileDataPath );
                     if( fileSystem->isExistingFile( fileDataPath ) )
                     {
-                        fileSystem->refreshPath( path, true );
+                        // This load immediately queries the settings file below.
+                        // Complete its index refresh before that lookup, including
+                        // inline imports and CLI callers without a job queue.
+                        fileSystem->refreshPath( path, false );
                     }
 
                     FileInfo fileInfo;

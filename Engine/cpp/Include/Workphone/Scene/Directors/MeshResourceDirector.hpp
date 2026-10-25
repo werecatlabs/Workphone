@@ -79,6 +79,20 @@ namespace workphone
             /** Property group containing progressive mesh import defaults. */
             static const String progressiveMeshOptionsStr;
 
+            /** Property group controlling opt-in streaming prefab generation. */
+            static const String streamingOptionsStr;
+
+            struct StreamingOptions
+            {
+                bool enabled = false;
+                f32 cellSize = 256.0f;
+                u32 maxActorsPerCell = 64;
+                f32 loadRadius = 512.0f;
+                f32 retainRadius = 768.0f;
+                bool enableHlod = true;
+                bool previewEditorCamera = true;
+            };
+
             /**
              * @brief Construct a MeshResourceDirector with sensible defaults.
              */
@@ -308,6 +322,13 @@ namespace workphone
 
             void setProgressiveMeshOptions( const ProgressiveMeshOptions &options );
 
+            /** Settings copied into an automatically cooked streaming prefab.
+             * Disabled by default; existing imports retain their normal prefab. */
+            const StreamingOptions &getStreamingOptions() const;
+
+            /** Normalize finite dimensions/radii and bounded cell actor counts. */
+            void setStreamingOptions( const StreamingOptions &options );
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
@@ -367,6 +388,8 @@ namespace workphone
 
             /** Progressive mesh defaults copied to components created by this import. */
             ProgressiveMeshOptions m_progressiveMeshOptions;
+
+            StreamingOptions m_streamingOptions;
         };
     }  // namespace scene
 }  // namespace workphone

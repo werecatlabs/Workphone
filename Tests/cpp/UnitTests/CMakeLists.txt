@@ -809,3 +809,7 @@ add_test(NAME Workphone.actor_scene_streaming COMMAND WPActorSceneTests
     --run_test=SceneWorldStreamingTests,MeshAssetBudgetTests,ProgressiveMeshOptionsTests,MeshImportWindingTests,ActorTransformTests,GameSceneAsyncLoadingTests,GameSceneLoadingTests,mesh_queued_*,pool_*)
 set_tests_properties(Workphone.actor_scene_streaming PROPERTIES TIMEOUT 120
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;streaming;headless")
+add_test(NAME Workphone.mesh_import_streaming COMMAND WPActorSceneTests
+    --run_test=MeshImportStreamingTests,MeshImportStreamingIntegrationTests,SceneWorldIdentityTests,SceneWorldStreamingPrefabTests,ResourceDatabaseLifetimeTests)
+set_tests_properties(Workphone.mesh_import_streaming PROPERTIES TIMEOUT 120
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;streaming;import;headless")

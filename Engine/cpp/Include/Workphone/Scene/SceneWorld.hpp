@@ -18,6 +18,9 @@ namespace workphone::scene
         // identities and are excluded from the spatial index's detail entries.
         u64 detailKey = 0, proxyKey = 0;
         u32 actors = 0;
+        // Optional definition inventories in version 2 manifests. Resource UUIDs
+        // are excluded; instance remapping covers only these actors/components.
+        Array<String> actorIds, objectIds;
         double distanceSquared( const Vector3F &position ) const;
     };
 

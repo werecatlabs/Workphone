@@ -60,12 +60,21 @@ namespace workphone
                 }
 
                 writeU32( static_cast<u32>( value.size() ) );
-                m_bytes.insert( m_bytes.end(), value.begin(), value.end() );
+                writeBytes( reinterpret_cast<const u8 *>( value.data() ), value.size() );
             }
 
             void writeBytes( const u8 *bytes, size_Num size )
             {
-                m_bytes.insert( m_bytes.end(), bytes, bytes + size );
+                if( !size ) return;
+                const auto offset = m_bytes.size();
+                if( size > m_bytes.max_size() - offset )
+                    throw std::length_error( "Binary scene byte buffer exceeds the allocator size limit." );
+                // Array range insertion rebuilds the old buffer even when it has
+                // spare capacity. Resize retains its admitted allocator and
+                // geometric growth, then copies only this append's new bytes.
+                // All callers supply storage independent of m_bytes.
+                m_bytes.resize( offset + size );
+                std::memcpy( m_bytes.data() + offset, bytes, size );
             }
 
             void writeProperties( const Properties &properties, u32 depth )

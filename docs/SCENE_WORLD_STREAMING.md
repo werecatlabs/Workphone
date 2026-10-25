@@ -2,6 +2,28 @@
 
 The existing actor, component, prefab and scene APIs remain available. Static actors reuse their transform publications until their pose, descendants or render objects change. Large worlds can opt into independently cooked actor cells through `WorldStreaming`.
 
+## Automatic setup during mesh import
+
+Select the source mesh asset in the Editor and expand its MeshResourceDirector `streamingOptions` group. `enabled` defaults to **false**, including existing import settings that have no streaming group. To generate a streaming prefab:
+
+1. Enable `streamingOptions.enabled`. Set `cellSize` (default 256) and `maxActorsPerCell` (64) for the imported asset's cell grid. Set `loadRadius` (512) and `retainRadius` (768) in world units after prefab placement. Keep retain at least as large as load; account for the source import scale when choosing distances.
+2. Choose `enableHlod` and `previewEditorCamera` (both default true within the disabled group). HLOD generates coarse building-bounds skyline proxies; it does not preserve facade detail or textures.
+3. Click **Save**, then **Import**. The importer first writes normal converted mesh assets, cooks a unique generation under `Cache/Worlds/<source hash>/<generation>/`, and atomically publishes the cached prefab after cooking succeeds.
+4. Insert the source asset into the scene again. The new prefab is a thin actor with a configured `WorldStreaming` component; already placed detailed instances are not rewritten. The generated component references the project-relative manifest and enables `Instance World`, `Follow Active Camera`, and the chosen Editor preview setting. No manual CLI cooking or component attachment is required.
+5. Inspect the component's resident-cell/actor counts and `Streaming Error`. Outside Play it uses the Editor camera when preview is enabled; during Play it follows an enabled active Camera in the same scene. An explicit `Observer` takes priority. With no eligible camera it uses the prefab owner.
+
+For `new_york_3.glb` imported at scale 100, the native validation uses `cellSize=25600`, `maxActorsPerCell=64`, `loadRadius=51200`, and `retainRadius=76800`, with HLOD enabled. Its runtime check sets the generated component's `Maximum Resident Actors` to 128 and `Maximum Resident Cells` to 8; these test limits are separate from the import defaults.
+
+Moving, rotating or scaling the prefab places its streamed contents; duplicate instances use separate actor/component identities while sharing asset resources. Streaming radii remain in world units. Scene saves retain the world reference and omit resident cell actors. Session edits to streamed contents remain in memory overlays; persist permanent changes in the source assets or a separate save system.
+
+Automatic conversion makes render-only imported groups static and flattens componentless grouping nodes where safe. Animated, scripted, physical, unknown-component and externally referenced groups remain persistent. One inseparable oversized group fails cooking instead of being silently split. A single monolithic mesh remains one streaming unit; author separate building/block objects for useful spatial streaming. Initial import builds the source authoring graph and converted caches once; normal prefab use reads the cooked cells.
+
+A failed cook or prefab publication leaves the previous cached prefab and its world generation reachable. Normal mesh/material conversion still uses the existing shared cache, so this is not a transaction over all imported asset dependencies. Old and failed world generations remain on disk until safe cleanup. Keep the manifest, cells, proxy meshes and converted asset dependencies together when moving or packaging the project. Turning `enabled` off, saving and reimporting restores the normal detailed prefab for future insertions. Import settings do not override the application's shared CPU/GPU budgets.
+
+The automatic import workflow was validated in RelWithDebInfo on 2026-10-25: both registered streaming gates passed (130 existing actor cases and 27 import/prefab/lifetime cases). The exact New York GLB passed a full source import, HLOD cook, native streaming/eviction and clean shutdown with 331 assertions. It produced 41 detail cells, 41 proxy cells and one persistent cell; the bounded runtime moved from 128 resident actors in seven cells to 32 actors in one cell, evicted six cells and released 44 mesh resources, with no failed cells or shared-budget rejections. The original project, source and import settings remained unchanged. The run copied the source into an isolated test project with matching import scale/settings and used hidden native test windows; live Editor click-through and framebuffer verification remain unverified because computer-use window capture timed out.
+
+That validation also exposed and fixed a resource-database lifetime fault: its path cache now retains type/UUID metadata and resolves live bodies through the owning managers, allowing eviction before later lookup or database unload. Focused tests require physical body retirement, same-identity reload and warm acquisition at the full shared SourceCpu limit. Streaming prefab tests cover descendant updates, resident Edit/Play transitions, reentrant shutdown, Unicode paths, placement, duplicate identities and saves that omit resident cells.
+
 ## Cooking a city
 
 Build the `WorkphoneSceneWorld` target. Import the GLB normally once to produce the engine's prefab, meshes, materials and textures, then cook that prefab offline:
@@ -17,6 +39,8 @@ Geometry bounds determine cell ownership, including meshes with all actor positi
 Use project-relative asset paths and place the output under the project directory for relocation. Package the manifest, its referenced payloads, the existing cooked mesh/material/texture dependencies and their resource catalog. Runtime consumes cooked files, not the source GLB. This version reads loose world files through the filesystem; world files inside archive packages require an additional I/O adapter.
 
 `--hlod` opts into coarse skyline proxies. The cooker emits one batched bounds-box mesh and a separate proxy cell for each eligible detail cell. This preserves building extents with a much smaller actor count; it does not preserve facade textures or detailed silhouettes. HLOD output must be under the asset root so generated mesh references remain portable. The version 2 manifest records explicit detail/proxy links, and the reader still accepts version 1 worlds.
+
+The mesh-director workflow registers generated HLOD mesh resources in the project catalog before publishing its prefab. A standalone CLI cook writes those files without updating a running project's catalog. Before previewing CLI-generated HLOD, index that output folder with `fileSystem->addFolder(outputDirectory, true)` and import it through `resourceDatabase->importFolder(outputDirectory)` in the same project. Runtime resource lookup requires those mesh identities and does not import missing assets.
 
 ## Editor and runtime
 

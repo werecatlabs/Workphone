@@ -1,6 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Directors/MeshResourceDirector.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
+#include <algorithm>
+#include <cmath>
 
 namespace workphone::scene
 {
@@ -25,6 +27,7 @@ namespace workphone::scene
     const String MeshResourceDirector::hasSharedVertexDataStr = String( "hasSharedVertexData" );
     const String MeshResourceDirector::useMeshInstancingStr = String( "useMeshInstancing" );
     const String MeshResourceDirector::progressiveMeshOptionsStr = String( "progressiveMeshOptions" );
+    const String MeshResourceDirector::streamingOptionsStr = String( "streamingOptions" );
 
     MeshResourceDirector::MeshResourceDirector() = default;
 
@@ -58,6 +61,17 @@ namespace workphone::scene
         properties->setProperty( useMeshInstancingStr, m_useMeshInstancing );
         properties->addChild( m_progressiveMeshOptions.toProperties( progressiveMeshOptionsStr ) );
 
+        auto streaming = workphone::make_ptr<Properties>();
+        streaming->setName( streamingOptionsStr );
+        streaming->setProperty( "enabled", m_streamingOptions.enabled );
+        streaming->setProperty( "cellSize", m_streamingOptions.cellSize );
+        streaming->setProperty( "maxActorsPerCell", m_streamingOptions.maxActorsPerCell );
+        streaming->setProperty( "loadRadius", m_streamingOptions.loadRadius );
+        streaming->setProperty( "retainRadius", m_streamingOptions.retainRadius );
+        streaming->setProperty( "enableHlod", m_streamingOptions.enableHlod );
+        streaming->setProperty( "previewEditorCamera", m_streamingOptions.previewEditorCamera );
+        properties->addChild( streaming );
+
         return properties;
     }
 
@@ -86,6 +100,7 @@ namespace workphone::scene
         auto joinIdenticalVertices = getJoinIdenticalVertices();
         auto sharedVertexData = hasSharedVertexData();
         auto useMeshInstancing = getUseMeshInstancing();
+        auto streamingOptions = getStreamingOptions();
 
         properties->getPropertyValue( scaleStr, scale );
         properties->getPropertyValue( constraintsStr, constraints );
@@ -105,6 +120,19 @@ namespace workphone::scene
         properties->getPropertyValue( joinIdenticalVerticesStr, joinIdenticalVertices );
         properties->getPropertyValue( hasSharedVertexDataStr, sharedVertexData );
         properties->getPropertyValue( useMeshInstancingStr, useMeshInstancing );
+
+        const auto streamingProperties = properties->getChildrenByName( streamingOptionsStr );
+        if( !streamingProperties.empty() )
+        {
+            const auto streaming = streamingProperties.front();
+            streaming->getPropertyValue( "enabled", streamingOptions.enabled );
+            streaming->getPropertyValue( "cellSize", streamingOptions.cellSize );
+            streaming->getPropertyValue( "maxActorsPerCell", streamingOptions.maxActorsPerCell );
+            streaming->getPropertyValue( "loadRadius", streamingOptions.loadRadius );
+            streaming->getPropertyValue( "retainRadius", streamingOptions.retainRadius );
+            streaming->getPropertyValue( "enableHlod", streamingOptions.enableHlod );
+            streaming->getPropertyValue( "previewEditorCamera", streamingOptions.previewEditorCamera );
+        }
 
         const auto progressiveMeshProperties =
             properties->getChildrenByName( progressiveMeshOptionsStr );
@@ -131,6 +159,7 @@ namespace workphone::scene
         setJoinIdenticalVertices( joinIdenticalVertices );
         setHasSharedVertexData( sharedVertexData );
         setUseMeshInstancing( useMeshInstancing );
+        setStreamingOptions( streamingOptions );
 
         // Save/Import buttons must observe the options from this property update.
         ResourceDirector::setProperties( properties );
@@ -324,6 +353,27 @@ namespace workphone::scene
     void MeshResourceDirector::setProgressiveMeshOptions( const ProgressiveMeshOptions &options )
     {
         m_progressiveMeshOptions = options;
+    }
+
+    const MeshResourceDirector::StreamingOptions &MeshResourceDirector::getStreamingOptions() const
+    {
+        return m_streamingOptions;
+    }
+
+    void MeshResourceDirector::setStreamingOptions( const StreamingOptions &options )
+    {
+        auto normalized = options;
+        constexpr f32 maximumDistance = 1000000.0f;
+        normalized.cellSize = std::isfinite( normalized.cellSize ) && normalized.cellSize > 0.0f
+                                  ? ( std::min )( normalized.cellSize, maximumDistance ) : 256.0f;
+        normalized.maxActorsPerCell = std::clamp( normalized.maxActorsPerCell, 1u,
+                                                static_cast<u32>( WP_MAX_ACTORS - 1 ) );
+        normalized.loadRadius = std::isfinite( normalized.loadRadius ) && normalized.loadRadius >= 0.0f
+                                    ? ( std::min )( normalized.loadRadius, maximumDistance ) : 512.0f;
+        normalized.retainRadius = std::isfinite( normalized.retainRadius ) && normalized.retainRadius >= 0.0f
+                                      ? ( std::min )( normalized.retainRadius, maximumDistance ) : 768.0f;
+        normalized.retainRadius = ( std::max )( normalized.retainRadius, normalized.loadRadius );
+        m_streamingOptions = normalized;
     }
 
 }  // namespace workphone::scene

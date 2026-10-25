@@ -268,6 +268,8 @@ namespace
                     String id; entry->getPropertyValue( "id", id ); if( id != cell.id ) continue;
                     entry->setProperty( "bytes", u64( bytes.size() ) );
                     entry->setProperty( "decodedBytes", u64( bytes.size() ) * 8 + u64( cell.actors ) * 4096 );
+                    // This device-independent fixture intentionally removes component definitions.
+                    entry->setProperty( "objectIds", cell.actorIds );
                 }
             }
             writeProperties( std::filesystem::path( path.c_str() ), *index );
@@ -1489,3 +1491,9 @@ BOOST_AUTO_TEST_CASE( transform_callbacks_allow_concurrent_hierarchy_capture )
                         "Render capture must not wait on hierarchy locks held across component callbacks" );
 }
 BOOST_AUTO_TEST_SUITE_END()
+
+#include "SceneWorldIdentityTests.hpp"
+#include "SceneWorldStreamingPrefabTests.hpp"
+#include "MeshImportStreamingTests.hpp"
+#include "MeshImportStreamingIntegrationTests.hpp"
+#include "ResourceDatabaseLifetimeTests.hpp"

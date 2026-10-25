@@ -351,12 +351,17 @@ namespace workphone
         void getSceneObjects( SmartPtr<scene::IGameActor> actor,
                               Array<SmartPtr<ISharedObject>> &objects ) const;
 
-        /**
-         * @brief Map of resource type hash to a map of resource path -> weak pointer.
-         *
-         * This structure provides fast lookup of resources by type and path.
-         */
-        SourceBudgetConcurrentMap<hash_type, SourceBudgetConcurrentMap<SourceBudgetString, WeakPtr<IResource>, SourceBudgetStringLess>> m_resourceMap;
+        struct ResourceIdentity
+        {
+            hash_type type = 0;
+            SourceBudgetString uuid;
+        };
+
+        // Remember routing/identity only. Resource bodies can be physically freed
+        // by their manager during eviction, so even intrusive weak pointers are
+        // unsafe here. Managers remain the authority for live resource ownership.
+        SourceBudgetConcurrentMap<SourceBudgetString, ResourceIdentity, SourceBudgetStringLess>
+            m_resourceIdentities;
 
         /** Database manager used for persistence and queries. */
         SmartPtr<IDatabaseManager> m_databaseManager;

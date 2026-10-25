@@ -15,9 +15,12 @@
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Math/Transform3.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/System/Job.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <chrono>
 #include <filesystem>
@@ -32,6 +35,8 @@ namespace workphone::scene
     namespace
     {
         using Clock = std::chrono::steady_clock;
+        using InstanceIdentities = std::map<String, String, std::less<String>,
+            SourceBudgetAllocator<std::pair<const String, String>>>;
         struct CellPayload { SmartPtr<Properties> data; };
         bool finite( const Vector3F &v )
         { return std::isfinite( v.x ) && std::isfinite( v.y ) && std::isfinite( v.z ); }
@@ -55,6 +60,44 @@ namespace workphone::scene
             u64 hash = 14695981039346656037ull;
             for( auto byte : bytes ) { hash ^= byte; hash *= 1099511628211ull; }
             return hash;
+        }
+        // Serialized world poses include the prefab owner's placement. Store
+        // authored cell poses instead, so moving an instance neither creates an
+        // edit overlay nor reapplies the placement when an overlay is reloaded.
+        void canonicalInstancePose( Properties &actor, const Transform3F &parent )
+        {
+            Transform3F local;
+            if( auto data = actor.getChild( GameActorUtil::localTransformStr ) ) local.setProperties( data );
+            Transform3F world( parent.getPosition() + parent.getOrientation() * ( parent.getScale() * local.getPosition() ),
+                               parent.getOrientation() * local.getOrientation(), parent.getScale() * local.getScale() );
+            actor.removeChild( GameActorUtil::worldTransformStr );
+            auto data = world.getProperties(); data->setName( GameActorUtil::worldTransformStr ); actor.addChild( data );
+            for( auto child : actor.getChildren() )
+                if( child->getName() == GameActorUtil::childStr ) canonicalInstancePose( *child, world );
+        }
+        SmartPtr<Properties> remapInstanceData( const Properties &source, const InstanceIdentities &identities )
+        {
+            // Match createInstanceData's exact-value/reference-array behavior;
+            // only declared actor/component identities enter this map. Resource
+            // UUIDs, paths and other external referents retain their identity.
+            auto result = make_ptr<Properties>(); result->setName( source.getName() );
+            for( auto property : source.getPropertiesAsArray() )
+            {
+                auto found = identities.find( property.getValue() );
+                if( found != identities.end() ) property.setValue( found->second );
+                else if( property.getValue().find( ';' ) != String::npos )
+                {
+                    Array<String> values; StringUtil::parseArray( property.getValue(), values );
+                    bool changed = false;
+                    for( auto &value : values )
+                        if( auto entry = identities.find( value ); entry != identities.end() )
+                        { value = entry->second; changed = true; }
+                    if( changed ) property.setValue( StringUtil::toString( values ) );
+                }
+                result->setProperty( property );
+            }
+            for( const auto &child : source.getChildren() ) result->addChild( remapInstanceData( *child, identities ) );
+            return result;
         }
     }
     struct SceneWorldStreamer::Impl
@@ -82,6 +125,10 @@ namespace workphone::scene
         std::shared_ptr<WorldStreamingScheduler> scheduler;
         std::shared_ptr<WorldStreamProducer> producer;
         SmartPtr<IGameScene> scene;
+        IGameScene::State observedSceneMode = IGameScene::State::None;
+        WeakPtr<IGameActor> instanceOwner;
+        String instanceOwnerId;
+        InstanceIdentities instanceIdentities;
         u64 sceneGeneration = 0;
         String path;
         WorldManifest manifest;
@@ -110,6 +157,7 @@ namespace workphone::scene
         u64 lastGraphicsRetryCell = 0;
         WeakPtr<MeshManager> retirementManager;
         bool refreshRequests = false;
+        bool updating = false, closing = false, closeRequested = false;
 
         // Registration runs on Primary. Coroutine registration itself is not
         // thread-safe in every queue implementation, so it never occurs directly
@@ -174,6 +222,7 @@ namespace workphone::scene
                 if( actor && actor->isLoaded() )
                 {
                     auto root = GameActorUtil::toData( actor );
+                    if( !instanceOwnerId.empty() ) canonicalInstancePose( *root, Transform3F::identity() );
                     root->setName( ApplicationUtil::actorsStr ); data->addChild( root );
                 }
             return data;
@@ -183,6 +232,33 @@ namespace workphone::scene
             if( !actor->isStatic() ) return true;
             for( const auto &child : actor->getChildren() ) if( dynamic( child ) ) return true;
             return false;
+        }
+        void registerInstanceUpdates( const SmartPtr<IGameActor> &actor )
+        {
+            if( !actor || !actor->isLoaded() || actor->getScene() != scene )
+                throw std::runtime_error( "Streaming prefab actor was removed before update registration" );
+            // Parenting supplies placement and ownership, but does not enroll
+            // children in the scene's actor update lists. Persistent gameplay
+            // components need the same pre/update/post lifecycle as scene roots.
+            scene->registerAllUpdates( actor );
+            for( const auto &child : actor->getChildren() ) registerInstanceUpdates( child );
+        }
+        bool synchronizeSceneMode()
+        {
+            const auto mode = scene->getState();
+            if( mode == observedSceneMode ) return true;
+            // Synchronize only a scene transition. Gameplay is free to change
+            // individual child states while that scene mode remains unchanged.
+            observedSceneMode = mode;
+            if( mode != IGameScene::State::Edit && mode != IGameScene::State::Play ) return true;
+            const auto actorMode = mode == IGameScene::State::Edit ? IGameActor::State::Edit : IGameActor::State::Play;
+            for( auto &resident : residents )
+                for( auto actor : resident.second.actors )
+                {
+                    if( closeRequested ) return false;
+                    if( actor && actor->isLoaded() ) actor->setState( actorMode, true );
+                }
+            return !closeRequested;
         }
         bool graphicsReady( const SmartPtr<IGameActor> &actor ) const
         {
@@ -384,8 +460,16 @@ namespace workphone::scene
     bool SceneWorldStreamer::open( const String &path, SmartPtr<IGameScene> scene,
                                     const SceneWorldStreamOptions &options, String &error )
     {
+        return open( path, scene, options, nullptr, error );
+    }
+
+    bool SceneWorldStreamer::open( const String &path, SmartPtr<IGameScene> scene,
+                                    const SceneWorldStreamOptions &options,
+                                    SmartPtr<IGameActor> instanceOwner, String &error )
+    {
         error.clear();
         auto &s = *m_impl;
+        if( s.updating || s.closing ) { error = "Cannot reopen a streaming world during its update or close"; return false; }
         Impl::PublishOnExit publish{ s };
         try
         {
@@ -401,19 +485,42 @@ namespace workphone::scene
                 !options.maximumResidentCells || !options.maximumPendingCells || options.maximumPendingCells > 256 ||
                 !options.maximumInstallsPerUpdate || !options.maximumDecodedCellBytes )
                 throw std::runtime_error( "Invalid scene world streaming configuration" );
-            const auto size = std::filesystem::file_size( std::filesystem::path( path.c_str() ) );
+            const auto size = std::filesystem::file_size( std::filesystem::u8path( path.c_str() ) );
             if( size > ( 8ull << 20 ) ) throw std::runtime_error( "World index exceeds limit" );
             auto budget = s.scheduler->reserve( StreamMemoryClass::SourceCpu, size * 8 + 4096, error );
             if( !budget ) return false;
             WorldManifest manifest;
             if( !SceneWorld::readManifest( path, manifest, error ) ) return false;
+            String instanceOwnerId;
+            InstanceIdentities instanceIdentities;
+            if( instanceOwner )
+            {
+                if( !instanceOwner->isLoaded() || instanceOwner->getScene() != scene ||
+                    !instanceOwner->getHandle() || instanceOwner->getHandle()->getUUIDAsString().empty() )
+                    throw std::runtime_error( "A streaming prefab requires a loaded owner in its destination scene" );
+                instanceOwnerId = instanceOwner->getHandle()->getUUIDAsString();
+                std::set<String, std::less<String>, SourceBudgetAllocator<String>> generated;
+                for( const auto &cell : manifest.cells )
+                {
+                    if( cell.actorIds.size() != cell.actors || cell.objectIds.empty() )
+                        throw std::runtime_error( "Streaming prefab requires cooked actor and component identity inventories; recook this world" );
+                    for( const auto &identity : cell.objectIds )
+                    {
+                        const auto replacement = StringUtil::toString( StringUtil::getUUID( instanceOwnerId + ":" + identity ) );
+                        if( replacement == instanceOwnerId || !generated.insert( replacement ).second ||
+                            !instanceIdentities.emplace( identity, replacement ).second )
+                            throw std::runtime_error( "Streaming prefab identity namespace collides" );
+                    }
+                }
+            }
             for( const auto &cell : manifest.cells )
                 if( cell.decodedBytes > options.maximumDecodedCellBytes || cell.actors > options.maximumResidentActors )
                     throw std::runtime_error( "World cell exceeds configured decoded or actor capacity" );
             auto concrete = dynamic_cast<GameScene *>( scene.get() );
             const auto generation = concrete ? concrete->getLoadGeneration() : 0;
             const bool sameSession = s.producer && s.path == path && s.scene == scene &&
-                s.sceneGeneration == generation && s.manifest.generation == manifest.generation;
+                s.sceneGeneration == generation && s.manifest.generation == manifest.generation &&
+                s.instanceOwner.lock() == instanceOwner && s.instanceOwnerId == instanceOwnerId;
             if( sameSession )
                 for( const auto &overlay : s.overlays )
                     if( overlay.second.budget->bytes() > options.maximumDecodedCellBytes )
@@ -445,27 +552,72 @@ namespace workphone::scene
             s.path = path; s.manifest = std::move( manifest ); s.options = options;
             s.index = std::move( index ); s.requestLimit = limits.maximumPending;
             s.manifestBudget = std::move( budget ); s.producer = std::move( producer ); s.scene = scene;
+            s.instanceOwner = instanceOwner; s.instanceOwnerId = std::move( instanceOwnerId );
+            s.instanceIdentities = std::move( instanceIdentities );
             s.sceneGeneration = generation;
+            s.observedSceneMode = scene->getState();
             s.stats = {}; s.stats.manifestBytes = size;
             return true;
         }
         catch( const std::exception &e ) { error = e.what(); return false; }
     }
 
-    bool SceneWorldStreamer::update( const Array<Vector3F> &observers, String &error )
+    bool SceneWorldStreamer::update( const Array<Vector3F> &worldObservers, String &error )
     {
         error.clear();
         auto &s = *m_impl;
+        if( s.updating || s.closing ) { error = "Reentrant world streaming update or close"; return false; }
         Impl::PublishOnExit publish{ s };
         if( !isOpen() ) { error = "No streaming world is open"; return false; }
+        s.updating = true;
+        struct UpdateOnExit
+        {
+            SceneWorldStreamer &stream; Impl &state;
+            ~UpdateOnExit()
+            {
+                state.updating = false;
+                if( state.closeRequested ) { state.closeRequested = false; stream.close(); }
+            }
+        } operation{ *this, s };
         auto concrete = dynamic_cast<GameScene *>( s.scene.get() );
         if( !s.scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != s.sceneGeneration ) )
         { close(); error = "Scene world session was replaced"; return false; }
-        if( observers.empty() || observers.size() > 8 ||
-            std::any_of( observers.begin(), observers.end(), []( auto p ) { return !finite( p ); } ) )
+        if( worldObservers.empty() || worldObservers.size() > 8 ||
+            std::any_of( worldObservers.begin(), worldObservers.end(), []( auto p ) { return !finite( p ); } ) )
         { error = "World streaming requires one to eight finite observers"; return false; }
         try
         {
+            auto instanceOwner = s.instanceOwner.lock();
+            if( !s.instanceOwnerId.empty() && ( !instanceOwner || !instanceOwner->isLoaded() ||
+                                               instanceOwner->getScene() != s.scene ) )
+            { close(); error = "Streaming prefab owner was removed"; return false; }
+            Array<Vector3F> instanceObservers;
+            const auto *observations = &worldObservers;
+            Vector3F placementScale = Vector3F::unit();
+            double inverseMinimumScale = 1;
+            if( instanceOwner )
+            {
+                const auto placement = instanceOwner->getWorldTransform();
+                const auto scale = placement.getScale();
+                if( !std::isfinite( scale.x ) || !std::isfinite( scale.y ) || !std::isfinite( scale.z ) ||
+                    std::abs( scale.x ) <= 1e-8 || std::abs( scale.y ) <= 1e-8 || std::abs( scale.z ) <= 1e-8 )
+                    throw std::runtime_error( "Streaming prefab placement must have finite nonzero scale" );
+                placementScale = Vector3F( float( std::abs( scale.x ) ), float( std::abs( scale.y ) ), float( std::abs( scale.z ) ) );
+                if( !finite( placementScale ) ) throw std::runtime_error( "Streaming prefab scale exceeds supported coordinates" );
+                inverseMinimumScale = 1.0 / std::min( { double( placementScale.x ), double( placementScale.y ), double( placementScale.z ) } );
+                instanceObservers = worldObservers;
+                for( auto &observer : instanceObservers )
+                {
+                    const auto local = placement.inverseTransformPoint(
+                        Vector3<real_Num>( observer.x, observer.y, observer.z ) );
+                    observer = Vector3F( float( local.x ), float( local.y ), float( local.z ) );
+                    if( !finite( observer ) ) throw std::runtime_error( "Streaming prefab placement is not invertible" );
+                }
+                observations = &instanceObservers;
+            }
+            const auto &observers = *observations;
+            if( !s.synchronizeSceneMode() )
+                throw std::runtime_error( "Streaming world was closed during a scene mode transition" );
             s.reclaim();
             // Authored static content can become gameplay content at runtime.
             // Promote its ownership before distance eviction can destroy it.
@@ -480,7 +632,8 @@ namespace workphone::scene
             s.stats.indexNodesVisited = 0; s.stats.indexCellsTested = 0;
             const auto queryRadius = s.options.enableHlod ? s.options.proxyRetainRadius : s.options.retainRadius;
             for( const auto &observer : observers )
-                s.index.query( s.manifest, observer, double( queryRadius ) * queryRadius,
+                s.index.query( s.manifest, observer,
+                               double( queryRadius ) * queryRadius * inverseMinimumScale * inverseMinimumScale,
                                nearby, s.stats.indexNodesVisited, s.stats.indexCellsTested );
             // Existing residents must also be considered outside the query for
             // explicit pins and the minimum-residency/teleport policy.
@@ -496,7 +649,21 @@ namespace workphone::scene
             {
                 const auto &cell = s.manifest.cells[i];
                 double distance = std::numeric_limits<double>::max();
-                for( const auto &observer : observers ) distance = std::min( distance, cell.distanceSquared( observer ) );
+                for( const auto &observer : observers )
+                {
+                    if( !instanceOwner ) distance = std::min( distance, cell.distanceSquared( observer ) );
+                    else
+                    {
+                        // Owner rotation preserves lengths; scaled local
+                        // offsets give exact world distance to the placed box.
+                        // The index query above expands conservatively by the
+                        // smallest absolute scale, retaining world-unit radii.
+                        const double x = std::max( { double( cell.minimum.x ) - observer.x, 0.0, double( observer.x ) - cell.maximum.x } ) * placementScale.x;
+                        const double y = std::max( { double( cell.minimum.y ) - observer.y, 0.0, double( observer.y ) - cell.maximum.y } ) * placementScale.y;
+                        const double z = std::max( { double( cell.minimum.z ) - observer.z, 0.0, double( observer.z ) - cell.maximum.z } ) * placementScale.z;
+                        distance = std::min( distance, x * x + y * y + z * z );
+                    }
+                }
                 auto resident = s.residents.find( cell.key );
                 const bool present = resident != s.residents.end();
                 const bool pinned = cell.id == "persistent" || ( present && ( resident->second.pinned ||
@@ -683,6 +850,8 @@ namespace workphone::scene
                 auto payload = static_cast<const CellPayload *>( ready->second.payload.get() );
                 Impl::Resident resident;
                 resident.source = overlay == s.overlays.end() ? payload->data : overlay->second.data;
+                if( instanceOwner && overlay == s.overlays.end() )
+                    resident.source = remapInstanceData( *resident.source, s.instanceIdentities );
                 resident.sourceBudget = std::move( sourceBudget );
                 resident.count = cell.actors; resident.installed = Clock::now();
                 resident.nextGraphicsRetry = resident.installed + std::chrono::milliseconds( 250 );
@@ -696,6 +865,9 @@ namespace workphone::scene
                             pause = std::make_unique<TaskLock>( renderTask );
                     resident.actors = GameActorUtil::loadSceneActors(
                         resident.source->getChildrenByName( ApplicationUtil::actorsStr ), s.scene );
+                    if( s.closeRequested ) throw std::runtime_error( "Streaming world was closed during cell installation" );
+                    if( instanceOwner && ( !instanceOwner->isLoaded() || instanceOwner->getScene() != s.scene ) )
+                        throw std::runtime_error( "Streaming prefab owner was removed during cell installation" );
                     if( cell.detailKey || cell.proxyKey )
                     {
                         resident.visible = false;
@@ -703,11 +875,21 @@ namespace workphone::scene
                     }
                     for( auto actor : resident.actors )
                     {
+                        if( s.closeRequested ) throw std::runtime_error( "Streaming world was closed during cell publication" );
+                        if( instanceOwner && ( !instanceOwner->isLoaded() || instanceOwner->getScene() != s.scene ) )
+                            throw std::runtime_error( "Streaming prefab owner was removed during cell publication" );
                         // Save the world reference, not a duplicate of whichever
                         // neighborhood happened to be resident in the Editor.
                         actor->setFlag( IGameActor::ActorFlagDontSave, true );
-                        s.scene->addActor( actor );
+                        if( instanceOwner )
+                        {
+                            instanceOwner->addChild( actor );
+                            s.registerInstanceUpdates( actor );
+                        }
+                        else s.scene->addActor( actor );
                     }
+                    if( instanceOwner && ( !instanceOwner->isLoaded() || instanceOwner->getScene() != s.scene ) )
+                        throw std::runtime_error( "Streaming prefab owner was removed during cell publication" );
                     // Whole-scene loads activate actors through sceneLoaded.
                     // A cell joins an already active scene, so adopt its mode
                     // after publishing every root and before capturing edits.
@@ -718,6 +900,7 @@ namespace workphone::scene
                             IGameActor::State::Edit : IGameActor::State::Play;
                         for( auto actor : resident.actors ) actor->setState( actorMode, true );
                     }
+                    if( s.closeRequested ) throw std::runtime_error( "Streaming world was closed during cell activation" );
                     resident.baseline = fingerprint( *s.snapshot( resident ) );
                     s.residents.emplace( cell.key, std::move( resident ) );
                     ++s.stats.installedCells; ++installed;
@@ -732,6 +915,7 @@ namespace workphone::scene
                 s.ready.erase( ready );
             }
             s.publishRepresentations();
+            if( s.closeRequested ) throw std::runtime_error( "Streaming world was closed during its update" );
             // Once a bounded request batch drains, request the remainder without
             // cancelling active work or rereading cells which are already ready.
             auto state = s.producer->stats();
@@ -748,7 +932,14 @@ namespace workphone::scene
     void SceneWorldStreamer::close()
     {
         auto &s = *m_impl;
+        // Scene and component callbacks may ask to close the world from inside
+        // an install/retirement. Finish unwinding that transaction before
+        // invalidating its manifest, candidate references or resident iterator.
+        if( s.updating ) { s.closeRequested = true; return; }
+        if( s.closing ) return;
         Impl::PublishOnExit publish{ s };
+        s.closing = true;
+        struct Closing { bool &value; ~Closing() { value = false; } } closing{ s.closing };
         if( s.producer ) s.producer->drain();
         s.producer.reset(); s.ready.clear(); s.demand.clear(); s.failed.clear();
         s.representationTargets.clear();
@@ -792,6 +983,8 @@ namespace workphone::scene
         }
         s.retirementManager = nullptr;
         s.scene = nullptr; s.manifest = {}; s.index = {}; s.manifestBudget.reset(); s.path.clear();
+        s.instanceOwner = nullptr; s.instanceOwnerId.clear(); s.instanceIdentities.clear();
+        s.observedSceneMode = IGameScene::State::None;
     }
 
     bool SceneWorldStreamer::pinActor( const String &uuid )
