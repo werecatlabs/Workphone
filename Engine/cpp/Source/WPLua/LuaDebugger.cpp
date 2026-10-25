@@ -129,6 +129,7 @@ namespace workphone
         std::map<int, int> frames;
         std::map<int, Reference> references;
         std::function<bool()> pump;
+        std::function<void(bool)> pauseObserver;
         int hookedThreads = LUA_NOREF;
         int originalPrint = LUA_NOREF;
         std::atomic<int> localAction{ 0 };
@@ -312,6 +313,12 @@ namespace workphone
         }
         void pause( lua_State *state, const char *reason )
         {
+            struct PauseBoundary
+            {
+                Impl &owner;
+                explicit PauseBoundary( Impl &value ) : owner( value ) { if( owner.pauseObserver ) owner.pauseObserver( true ); }
+                ~PauseBoundary() { if( owner.pauseObserver ) try { owner.pauseObserver( false ); } catch( ... ) {} }
+            } boundary( *this );
             stopped = state; pauseRequested = false; step = 0; isPaused = true;
             ++stopEpoch;
             j::array stack;
@@ -761,6 +768,32 @@ namespace workphone
             if( !attached && !localDispatch ) { response( request, {}, "Authenticate with attach first" ); return; }
             if( localDispatch && ( command == "loadBreakpointPreferences" || command == "saveBreakpointPreferences" ) )
             {
+                auto validate = []( j::object &preferences ) {
+                    if( integer( preferences, "version" ) != 1 ) throw std::runtime_error( "Unsupported breakpoint preference version" );
+                    auto files = preferences.if_contains( "files" );
+                    if( files && files->is_object() && files->as_object().empty() ) *files = j::array{};
+                    if( !files || !files->is_array() || files->as_array().size() > 256 ) throw std::runtime_error( "Breakpoint preferences require at most 256 source groups" );
+                    auto errors = preferences.if_contains( "breakOnException" );
+                    if( !errors || !errors->is_bool() ) throw std::runtime_error( "breakOnException must be a boolean" );
+                    for( auto &entry : files->as_array() )
+                    {
+                        if( !entry.is_object() ) throw std::runtime_error( "Invalid breakpoint source group" );
+                        auto &group = entry.as_object(); auto source = group.if_contains( "source" );
+                        if( !source || !source->is_object() || stringValue( source->as_object(), "path" ).empty() || stringValue( source->as_object(), "path" ).size() > 4096 )
+                            throw std::runtime_error( "Breakpoint source path is required" );
+                        auto points = group.if_contains( "breakpoints" );
+                        if( points && points->is_object() && points->as_object().empty() ) *points = j::array{};
+                        if( !points || !points->is_array() || points->as_array().size() > 1024 ) throw std::runtime_error( "Invalid breakpoint array" );
+                        for( auto &point : points->as_array() )
+                        {
+                            if( !point.is_object() || integer( point.as_object(), "line", -1 ) < 1 ) throw std::runtime_error( "Breakpoint line must be positive" );
+                            for( const char *key : { "condition", "hitCondition", "logMessage" } )
+                                if( auto field = point.as_object().if_contains( key ); field && ( !field->is_string() || field->as_string().size() > 4096 ) )
+                                    throw std::runtime_error( "Invalid breakpoint option" );
+                        }
+                    }
+                    if( j::serialize( preferences ).size() > maxMessage ) throw std::runtime_error( "Breakpoint preferences exceed 64 KiB" );
+                };
                 const auto destination = std::filesystem::u8path( root ) / ".workphone/lua-breakpoints.json";
                 if( command == "loadBreakpointPreferences" )
                 {
@@ -770,13 +803,11 @@ namespace workphone
                     std::ifstream input( destination, std::ios::binary );
                     const std::string text( ( std::istreambuf_iterator<char>( input ) ), {} );
                     auto preferences = j::parse( text ).as_object();
-                    if( integer( preferences, "version" ) != 1 || !preferences.if_contains( "files" ) || !preferences.at( "files" ).is_array() || preferences.at( "files" ).as_array().size() > 256 )
-                        throw std::runtime_error( "Invalid breakpoint preference schema" );
+                    validate( preferences );
                     response( request, std::move( preferences ) ); return;
                 }
                 auto preferences = args; preferences["version"] = 1;
-                if( !preferences.if_contains( "files" ) || !preferences.at( "files" ).is_array() || preferences.at( "files" ).as_array().size() > 256 )
-                    throw std::runtime_error( "Breakpoint preferences require a files array" );
+                validate( preferences );
                 std::filesystem::create_directories( destination.parent_path() );
                 auto temporary = destination;
                 temporary += "." + std::to_string( std::chrono::steady_clock::now().time_since_epoch().count() ) + ".tmp";
@@ -1238,6 +1269,7 @@ namespace workphone
     unsigned short LuaDebugger::port() const { return m_impl->listeningPort; }
     bool LuaDebugger::paused() const { return m_impl->isPaused; }
     void LuaDebugger::setPausePump( std::function<bool()> pump ) { m_impl->pump = std::move( pump ); }
+    void LuaDebugger::setPauseObserver( std::function<void(bool)> observer ) { m_impl->pauseObserver = std::move( observer ); }
     void LuaDebugger::command( const std::string &command )
     {
         if( !command.empty() && command[0] == '{' )

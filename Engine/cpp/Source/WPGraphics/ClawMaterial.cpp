@@ -23,6 +23,7 @@ namespace workphone
             std::shared_ptr<MaterialProgramResourcesDX11> resources;
             MaterialProgramDX11::PublicationPtr publication;
             MaterialProgramReloadDX11::BindingPtr reload;
+            MaterialProgramReloadDX11::Ptr controller;
             MaterialShaderParameterLayout::Ptr layout;
             u64 revision = 0;
             RuntimeState()
@@ -79,6 +80,15 @@ namespace workphone
         std::shared_ptr<MaterialProgramResourcesDX11> ClawMaterial::runtimeShaderResources() const
         { return m_runtime?m_runtime->resources:nullptr; }
 
+        void ClawMaterial::copyRuntimeShaderTo(ClawMaterial &target) const
+        {
+            if(!m_runtime) return;
+            target.setShaderID(getShaderID());
+            target.getShaderParameters()=getShaderParameters();
+            if(m_runtime->controller) target.setRuntimeReload(m_runtime->controller,m_runtime->resources);
+            else target.setRuntimeProgram(m_runtime->program,m_runtime->resources);
+        }
+
         bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
 
         void ClawMaterial::setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
@@ -86,7 +96,7 @@ namespace workphone
         {
             if(!reload) { m_runtime.reset();detail::shaderReloadAttached(this,0);return; }
             auto candidate = std::make_unique<RuntimeState>();
-            candidate->resources=resources;
+            candidate->resources=resources;candidate->controller=reload;
             candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));
             m_runtime = std::move(candidate);
             detail::shaderReloadAttached(this,reload->GetId());

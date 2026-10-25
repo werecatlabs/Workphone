@@ -96,6 +96,7 @@ namespace workphone::render
             clonedMaterial->fromData( material->toData() );
             clonedMaterial->setName( clonedMaterialName );
             clonedMaterial->load( nullptr );
+            if(auto source=dynamic_cast<ClawMaterial *>(material.get())) source->copyRuntimeShaderTo(*clonedMaterial);
 
             m_materials.emplace_back( clonedMaterial );
             return clonedMaterial;

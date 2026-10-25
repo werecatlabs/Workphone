@@ -5,6 +5,8 @@
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <boost/json.hpp>
 #include <FreeImage.h>
+#include <d3dcompiler.h>
+#include <wrl/client.h>
 
 #include <cmath>
 #include <cstring>
@@ -212,22 +214,122 @@ namespace workphone::render
                 "Shader integer is outside its exact supported range");
             return minimum<0 ? static_cast<u32>(static_cast<s32>(number)) : static_cast<u32>(number);
         }
+        struct ShaderInput
+        {
+            String logical;
+            std::vector<u8> bytes;
+        };
+        ShaderInput shaderInput(const resource::CompileContext &context,const String &relative,Array<String> *dependencies)
+        {
+            AssetCatalogPath path;String error;
+            if(!canonicalAssetCatalogPath(context.sourceRoot,relative,path,error))throw std::runtime_error(error.c_str());
+            ShaderInput input;input.logical="data://"+path.path;
+            String captured;
+            if(context.snapshotInput)
+            {
+                if(!context.snapshotInput(input.logical,true,captured,error) || captured.empty())
+                    throw std::runtime_error(error.empty()?"Shader input snapshot failed":error.c_str());
+            }
+            const auto physical=captured.empty()?fs::u8path(context.sourceRoot.c_str())/fs::u8path(path.path.c_str()):fs::u8path(captured.c_str());
+            input.bytes=readFile(physical,graphicsMaterialShaderByteLimit/2);
+            if(dependencies && std::find(dependencies->begin(),dependencies->end(),input.logical)==dependencies->end())
+                dependencies->push_back(input.logical);
+            return input;
+        }
+        class ShaderIncludes final : public ID3DInclude
+        {
+        public:
+            ShaderIncludes(const resource::CompileContext &context,const ShaderInput &root,Array<String> *dependencies) :
+                context(context),root(root),dependencies(dependencies),total(root.bytes.size()) {}
+            HRESULT __stdcall Open(D3D_INCLUDE_TYPE,const char *name,const void *parent,const void **output,UINT *size) override
+            {
+                try
+                {
+                    require(name && *name && output && size && depth<32,"Shader include depth or arguments are invalid");
+                    String parentId=root.logical;
+                    if(parent && parent!=root.bytes.data())
+                    {
+                        bool found=false;
+                        for(const auto &file:files)if(file->bytes.data()==parent){parentId=file->logical;found=true;break;}
+                        require(found,"Shader include has an unknown parent snapshot");
+                    }
+                    require(std::strlen(name)<=1024,"Shader include path exceeds its limit");
+                    const auto include=fs::u8path(name);
+                    require(!include.is_absolute(),"Absolute shader includes are not portable asset inputs");
+                    const auto relative=(fs::u8path(parentId.substr(7).c_str()).parent_path()/include).lexically_normal().generic_u8string();
+                    AssetCatalogPath canonical;String error;
+                    if(!canonicalAssetCatalogPath(context.sourceRoot,relative.c_str(),canonical,error))throw std::runtime_error(error.c_str());
+                    const String logical="data://"+canonical.path;
+                    const ShaderInput *input=nullptr;
+                    for(const auto &file:files)if(file->logical==logical){input=file.get();break;}
+                    if(!input)
+                    {
+                        require(files.size()<128,"Shader include file count exceeds its limit");
+                        auto file=std::make_unique<ShaderInput>(shaderInput(context,canonical.path,dependencies));
+                        require(file->bytes.size()<=8ull*1024*1024-total,"Shader source/include closure exceeds its byte limit");
+                        total+=file->bytes.size();input=file.get();files.push_back(std::move(file));
+                    }
+                    *output=input->bytes.data();*size=static_cast<UINT>(input->bytes.size());++depth;return S_OK;
+                }
+                catch(const std::exception &failure)
+                {
+                    try { diagnostic=failure.what(); } catch(...) { return E_OUTOFMEMORY; }
+                    return E_FAIL;
+                }
+                catch(...){return E_OUTOFMEMORY;}
+            }
+            HRESULT __stdcall Close(const void *) override { if(depth)--depth;return S_OK; }
+            const resource::CompileContext &context;
+            const ShaderInput &root;
+            Array<String> *dependencies;
+            std::vector<std::unique_ptr<ShaderInput>> files;
+            size_t total;
+            u32 depth=0;
+            String diagnostic;
+        };
+        std::vector<u8> compileShaderInput(const resource::CompileContext &context,const String &source,
+            const String &entry,const char *profile,Array<String> *dependencies)
+        {
+            require(source.substr(0,7)=="data://","HLSL source must use data://");
+            auto input=shaderInput(context,source.substr(7),dependencies);
+            ShaderIncludes includes(context,input,dependencies);
+            Microsoft::WRL::ComPtr<ID3DBlob> bytecode,diagnostics;
+            const auto result=D3DCompile(input.bytes.data(),input.bytes.size(),input.logical.c_str(),nullptr,&includes,
+                entry.c_str(),profile,D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&bytecode,&diagnostics);
+            if(FAILED(result))
+            {
+                if(!includes.diagnostic.empty())throw std::runtime_error(includes.diagnostic.c_str());
+                throw std::runtime_error(diagnostics?static_cast<const char *>(diagnostics->GetBufferPointer()):"Cooked HLSL compilation failed");
+            }
+            require(bytecode && bytecode->GetBufferSize()<=graphicsMaterialShaderByteLimit/2,"Compiled shader exceeds its byte limit");
+            const auto begin=static_cast<const u8 *>(bytecode->GetBufferPointer());
+            return std::vector<u8>(begin,begin+bytecode->GetBufferSize());
+        }
         CookedMaterialShaderData readShaderRecipe(const resource::CompileContext &context,
             const json::value &value, Array<String> *dependencies)
         {
             require(value.is_object(),"Material shader must be an object");const auto &object=value.as_object();
-            exactFields(object,{"id","schemaVersion","pixel","parameters","pixelBuffers","pixelResources","vertexBuffers","vertexResources"},{"vertex"});
+            exactFields(object,{"id","schemaVersion","parameters","pixelBuffers","pixelResources","vertexBuffers","vertexResources"},
+                {"pixel","vertex","pixelSource","vertexSource","pixelEntry","vertexEntry"});
+            require(object.contains("pixel") != object.contains("pixelSource"),"Specify exactly one pixel DXBC or HLSL source");
+            require(!(object.contains("vertex") && object.contains("vertexSource")),"Vertex DXBC and HLSL source are mutually exclusive");
+            require(!object.contains("pixelEntry") || object.contains("pixelSource"),"pixelEntry requires pixelSource");
+            require(!object.contains("vertexEntry") || object.contains("vertexSource"),"vertexEntry requires vertexSource");
             CookedMaterialShaderData shader;shader.shaderID=stringField(object,"id");
             shader.schemaVersion=integer(object.at("schemaVersion"),1,4294967295.0);
-            const auto bytecode=[&](const char *name,std::vector<u8> &bytes) {
+            const auto bytecode=[&](const char *name,const char *hlsl,const char *entry,const char *profile,std::vector<u8> &bytes) {
+                if(object.contains(hlsl))
+                {
+                    bytes=compileShaderInput(context,stringField(object,hlsl),object.contains(entry)?stringField(object,entry):String("main"),profile,dependencies);
+                    return;
+                }
                 if(!object.contains(name))return;
-                const auto source=stringField(object,name);AssetCatalogPath path;String error;
+                const auto source=stringField(object,name);
                 require(source.substr(0,7)=="data://","Shader bytecode source must use data://");
-                if(!canonicalAssetCatalogPath(context.sourceRoot,source.substr(7),path,error))throw std::runtime_error(error.c_str());
-                bytes=readFile(fs::u8path(context.sourceRoot.c_str())/fs::u8path(path.path.c_str()),graphicsMaterialShaderByteLimit/2);
-                if(dependencies)dependencies->push_back(source);
+                bytes=shaderInput(context,source.substr(7),dependencies).bytes;
             };
-            bytecode("vertex",shader.vertexDXBC);bytecode("pixel",shader.pixelDXBC);
+            bytecode("vertex","vertexSource","vertexEntry","vs_5_0",shader.vertexDXBC);
+            bytecode("pixel","pixelSource","pixelEntry","ps_5_0",shader.pixelDXBC);
             const auto selection=[&](const char *name,Array<String> &output) {
                 const auto &values=object.at(name);require(values.is_array() && values.as_array().size()<=144,"Invalid shader ownership selection");
                 for(const auto &v:values.as_array())

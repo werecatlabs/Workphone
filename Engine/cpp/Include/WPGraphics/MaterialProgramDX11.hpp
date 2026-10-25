@@ -76,6 +76,7 @@ namespace workphone::render
         friend class MaterialProgramReloadDX11;
         friend class ClawMaterialResource;
         void retainDefinitionOwner(std::shared_ptr<const void>);
+        bool matchesDevice(void *) const;
         MaterialProgramDX11();
         struct Data;
         std::unique_ptr<Data> m_data;

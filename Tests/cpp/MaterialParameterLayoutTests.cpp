@@ -271,6 +271,13 @@ namespace
         const auto oldBytes = first.GetParameterMemory();
         const auto oldIdentity = first.GetValueStorageIdentity();
         auto replacement = first.PrepareMigration(after);
+        {
+            auto alias = first.PrepareMigration(after);
+            auto independent = second.PrepareMigration(after);
+            require(!replacement->ConflictsWith(*replacement) && replacement->ConflictsWith(*alias) &&
+                !replacement->ConflictsWith(*independent),
+                "cohort preflight detects aliases and permits independent physical targets without allocation");
+        }
         const auto &values = replacement->Values();
         Vector4<s32> indices;
         require(replacement->IsCurrent() && first.GetLayout() == before && first.GetRevision() == oldRevision &&

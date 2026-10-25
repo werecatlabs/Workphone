@@ -124,6 +124,9 @@ namespace workphone::render
             ~Migration();
             const MaterialShaderParametersInstance &Values() const;
             bool IsCurrent() const noexcept;
+            // Reject distinct cohort tokens that would mutate one physical
+            // instance/owner/pass target twice. The same token is deduplicated.
+            bool ConflictsWith(const Migration &other) const noexcept;
             bool Commit() noexcept;
             Migration(const Migration &) = delete;
             Migration &operator=(const Migration &) = delete;

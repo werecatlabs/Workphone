@@ -28,6 +28,7 @@ set_target_properties(luajit PROPERTIES
 foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
     file(MAKE_DIRECTORY "${luajit_build_root}/${config}/src")
     string(TOUPPER "${config}" upper_config)
+    set_property(TARGET luajit APPEND PROPERTY IMPORTED_CONFIGURATIONS "${upper_config}")
     set_property(TARGET luajit PROPERTY "IMPORTED_LOCATION_${upper_config}"
         "${luajit_build_root}/${config}/lua51.lib")
 endforeach()
@@ -36,4 +37,7 @@ set_target_properties(LuaJitBuild PROPERTIES FOLDER Dependencies/lua)
 if(WP_BUILD_TESTS)
     add_test(NAME WPLua.luajit_backend_contracts
         COMMAND "${luajit_executable}" "${WP_ROOT}/Tests/lua/RuntimeBackendContracts.lua")
+    add_test(NAME WPLua.editor_debugger_panel
+        COMMAND "${luajit_executable}" "${WP_ROOT}/Tests/lua/LuaDebuggerPanelContracts.lua")
+    set_tests_properties(WPLua.editor_debugger_panel PROPERTIES WORKING_DIRECTORY "${WP_ROOT}" TIMEOUT 15)
 endif()

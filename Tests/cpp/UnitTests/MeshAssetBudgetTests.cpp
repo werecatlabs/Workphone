@@ -29,6 +29,7 @@
 #include "../VehicleGeometryBudgetContracts.hpp"
 #include "../VehiclePhysicsBudgetContracts.hpp"
 #include "../VehicleAppearanceBudgetContracts.hpp"
+#include "../VehicleManagerBudgetContracts.hpp"
 #include <array>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
@@ -701,6 +702,12 @@ BOOST_AUTO_TEST_CASE( vehicle_appearance_obeys_source_admission )
 {
     TestGuard guard;
     vehicle_appearance_budget_contracts::run();
+}
+
+BOOST_AUTO_TEST_CASE( vehicle_manager_snapshots_obey_source_admission )
+{
+    TestGuard guard;
+    vehicle_manager_budget_contracts::run();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

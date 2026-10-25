@@ -185,6 +185,7 @@ namespace workphone
     u16 LuaManager::getDebuggerPort() const { return m_debugger->port(); }
     bool LuaManager::isDebuggerPaused() const { return m_debugger->paused(); }
     void LuaManager::setDebuggerPausePump( std::function<bool()> pump ) { m_debugger->setPausePump( std::move( pump ) ); }
+    void LuaManager::setDebuggerPauseObserver( std::function<void(bool)> observer ) { m_debugger->setPauseObserver( std::move( observer ) ); }
     void LuaManager::debuggerCommand( const String &command ) { m_debugger->command( command.c_str() ); }
     String LuaManager::getDebuggerStatus() const { return m_debugger->status().c_str(); }
     void LuaManager::debuggerException( lua_State *state, const char *message ) { m_debugger->exception( state, message ); }

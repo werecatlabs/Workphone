@@ -268,6 +268,7 @@ namespace workphone
         virtual u16 getDebuggerPort() const { return 0; }
         virtual bool isDebuggerPaused() const { return false; }
         virtual void setDebuggerPausePump( std::function<bool()> pump ) {}
+        virtual void setDebuggerPauseObserver( std::function<void(bool)> observer ) {}
         virtual void debuggerCommand( const String &command ) {}
         virtual String getDebuggerStatus() const { return "{}"; }
 

@@ -38,6 +38,21 @@ if (UNIX)
     endif()
 endif()
 
+# Keep optional LuaJIT DLLs together: never load native plugins from the Lua build.
+if (WIN32 AND WP_LUA_BACKEND STREQUAL "LuaJIT")
+    set(WP_EDITOR_LUAJIT_PLUGINS "PluginFolder=.\n")
+    foreach(WP_EDITOR_PLUGIN WPGraphics WPAssimp WPSQLite WPPhysics WPLua WPAudio WPVehiclePhysics WPProcedural)
+        if (TARGET ${WP_EDITOR_PLUGIN})
+            get_target_property(WP_EDITOR_PLUGIN_TYPE ${WP_EDITOR_PLUGIN} TYPE)
+            if (WP_EDITOR_PLUGIN_TYPE STREQUAL "SHARED_LIBRARY" OR WP_EDITOR_PLUGIN_TYPE STREQUAL "MODULE_LIBRARY")
+                string(APPEND WP_EDITOR_LUAJIT_PLUGINS "Plugin=${WP_EDITOR_PLUGIN}\n")
+            endif()
+        endif()
+    endforeach()
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/luajit-editor/$<CONFIG>/wp_plugins_editor.cfg"
+        CONTENT "${WP_EDITOR_LUAJIT_PLUGINS}")
+endif()
+
 if (WP_EDITOR_TESTS)
     add_compile_definitions(
         $<$<CONFIG:Debug>:WP_EDITOR_TESTS=1>
@@ -308,6 +323,15 @@ source_group("Lua/Game" FILES ${LUA_GAME_SOURCES})
 
 if (WIN32)
     add_executable(Editor ${HEADER_FILES} ${SOURCE_FILES} ${LUA_AI_SOURCES} ${LUA_EDITOR_SOURCES} ${LUA_GAME_SOURCES})
+    if (WP_LUA_BACKEND STREQUAL "LuaJIT")
+        foreach(WP_EDITOR_PLUGIN WPGraphics WPAssimp WPSQLite WPPhysics WPLua WPAudio WPVehiclePhysics WPProcedural)
+            if (TARGET ${WP_EDITOR_PLUGIN})
+                add_dependencies(Editor ${WP_EDITOR_PLUGIN})
+            endif()
+        endforeach()
+        add_custom_command(TARGET Editor POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_BINARY_DIR}/luajit-editor/$<CONFIG>/wp_plugins_editor.cfg" "$<TARGET_FILE_DIR:Editor>/wp_plugins_editor.cfg")
+    endif()
     #add_executable(Editor WIN32 ${HEADER_FILES} ${SOURCE_FILES})
 elseif(APPLE)
     #add_executable(Editor ${HEADER_FILES} ${SOURCE_FILES} ${RESOURCES})
@@ -316,12 +340,24 @@ else()
     add_executable(Editor ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+# Public graphics material declarations include the native shader API.
+target_include_directories(Editor PRIVATE "${WP_ROOT}/Engine/c/Include")
+
 if (WIN32)
 target_link_options(Editor PUBLIC 
 $<$<CONFIG:Release>:/LTCG>
 $<$<CONFIG:MinSizeRel>:/LTCG>
 $<$<CONFIG:RelWithDebInfo>:/LTCG>
 )
+endif()
+
+if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW AND WP_BUILD_RENDERER_DX11 AND TARGET WPGraphics)
+    # The native shader-file action bridge consumes Claw's public C/C++ API.
+    target_include_directories(Editor PRIVATE
+        ${WP_ROOT}/Engine/c/Include
+        ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+        ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+    target_link_libraries(Editor WPGraphics WorkphoneGraphics)
 endif()
 
 if (NOT WP_STATIC_LIB)

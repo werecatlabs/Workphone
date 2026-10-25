@@ -46,7 +46,8 @@ namespace workphone::render
         void RequestRetry();
         bool SetStageFiles(const String &vertexFile,const String &pixelFile,String &error);
         void RequestSchema(MaterialShaderParameterLayout::Ptr layout);
-        static void UpdateAll();
+        void RecreateDevice(void *device,u64 deviceGeneration);
+        static void UpdateAll(void *device=nullptr,void *owner=nullptr);
         u64 GetId() const;
         static bool QueueReload(u64 id);
         static bool QueueWatching(u64 id,bool enabled);

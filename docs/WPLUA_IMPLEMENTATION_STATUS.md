@@ -1,6 +1,6 @@
 # Lua implementation status and usage
 
-Updated 10 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
+Updated 25 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
 
 ## Script assets and runtime resources
 
@@ -33,29 +33,36 @@ Remaining reload requirements include persisted override/runtime-state migration
 
 ## Optional LuaJIT
 
-`WP_BUILD_LUAJIT` defaults to `OFF`. On MSVC x64 with a Visual Studio CMake generator, enabling it adds an isolated upstream LuaJIT build and compatibility checks:
+`WP_LUA_BACKEND=Lua` remains the default bundled Lua 5.5 engine. `WP_LUA_BACKEND=LuaJIT` now selects the bundled LuaJIT 2.1 engine for WPLua, Luabind, CJSON, C script hosts, resource compilation and the Editor. This configuration supports MSVC x64 with the Visual Studio generator and bundled dependencies. The `luajit-windows` preset enables it in `project_luajit`.
 
 ```powershell
-cmake -S . -B project_x64 -DWP_BUILD_LUAJIT=ON
-cmake --build project_x64 --config RelWithDebInfo --target LuaJitBuild
-ctest --test-dir project_x64 -C RelWithDebInfo -R WPLua.luajit_backend_contracts --output-on-failure
+cmake --preset luajit-windows
+cmake --build project_luajit --config RelWithDebInfo --target Editor LuaRuntimeTests LuaDebuggerTests WorkphoneScriptTests --parallel 2
+ctest --test-dir project_luajit -C RelWithDebInfo -R 'WPLua.(runtime_contracts|debugger_integration|luajit_backend_contracts)' --output-on-failure
 ```
 
-VM code generation runs against a private source copy for each configuration. The default engine continues to use bundled Lua 5.5. The option currently builds/tests the standalone LuaJIT VM; it does **not** select LuaJIT for `WPLua`, Luabind, CJSON or native plugins. A selectable engine backend still requires a consistent Lua 5.1 API adapter, binding/conversion validation, and separate ABI-compatible build outputs. Do not link Lua 5.5 and LuaJIT into the same host. The legacy `WPLuaJit` directory remains unsupported.
+LuaJIT builds use `bin/windows/v145-luajit/x64/MD/RelWithDebInfo` and matching libraries, keeping native plugins separate from the default `v145` engine. The exact toolset segment follows the installed MSVC toolset. Generated VM files remain in a private per-configuration source copy. `WP_BUILD_LUAJIT=ON` with the default backend still builds only the standalone VM. The legacy `WPLuaJit` directory remains unsupported.
 
-## Visual Studio extension
+The compatibility adapter preserves exact integer conversion and the existing binding API. LuaJIT still has Lua 5.1 language semantics and double precision numbers; Lua 5.3+ syntax, integer precision and standard library differences need project-level compatibility checks. Compiler cache versions differ by backend. Native libraries exporting `bindLibrary` must export a matching `wp_lua_backend_abi` for LuaJIT; default Lua tolerates older untagged plugins. See [the debugging and backend guide](WPLUA_DEBUGGING.md).
 
-The VSIX now has an SDK-style project, manifest, compiled Tools menu command and tool-window registration. Build it with the `LuaDebuggerVsix` CMake target when C# tools are enabled, or build `Tools/csharp/LuaDebuggerVsix/LuaDebuggerVsix.csproj` with Visual Studio MSBuild.
+## Debugger, Editor and Visual Studio extension
 
-The connection client limits UTF-8 newline-delimited JSON frames to 64 KiB, serializes sends, closes malformed/truncated sessions, and isolates readers across reconnects. The WPF log is bounded and the window releases its connection. Protocol serialization uses .NET Framework libraries, avoiding an extra JSON runtime deployment requirement.
+The engine now provides an authenticated, loopback-only Debug Adapter Protocol service with bounded Content-Length frames. It supports breakpoints, conditions, hit counts, logpoints, pause/resume, step in/over/out, stack frames, locals/upvalues/globals, paged tables, read-only watch expressions, loaded sources, print output and protected-boundary exception stops. Lua operations stay on the owning execution thread; the transport thread only handles bytes and messages. Coroutine hooks and stale inspection handles are covered by the host integration fixture.
 
-This remains a debugger connection tool. The engine debugger backend, DAP integration, normal Visual Studio breakpoint/stack/locals/watch UI, responsive paused Editor execution, step in/over/out, exception stops, request correlation and authenticated attach are still open. Building a VSIX does not verify installation or an interactive debugging session.
+`WP_LUA_DEBUGGER=1` starts the Editor in its single-executor debugging profile before loading project scripts. LuaJIT compilation is disabled and flushed for this profile. The Editor publishes `.workphone/lua-debug.json` after its pause pump is ready. Its restricted pump keeps messages, input and rendering active while gameplay callbacks and simulation stay suspended. Suspension time is excluded from the engine clock. Stop/close releases the paused VM; VM reload transfers debugger ownership and source identities.
+
+Window > Lua Debugger exposes local breakpoints and conditions/logpoints, exception policy, stack/frame selection, scopes, table expansion, a read-only watch, source context and console output. It persists preferences atomically in `.workphone/lua-breakpoints.json`. Visual Studio owns breakpoint configuration while attached; the Editor restores local preferences after disconnect.
+
+The VSIX packages a .NET Framework 4.8 stdio adapter and registers Workphone Lua with Visual Studio's DebugAdapterHost. The tool window loads an endpoint or launches the Editor, then requests a standard Visual Studio debug session. Breakpoints, Call Stack, Locals, Watch, stepping and Exception Settings use that session. The old newline client is excluded from the extension build. Build/installation/interactive verification are reported separately below; source integration alone is not certification of a live debug session.
 
 ## Validation
 
 - `LuaRuntimeTests` uses the production C++ host and bindings, with initialized `TypeManager`. Its SQLite-backed asset checks cover source identity, headless lookup, component property round trips, generated class syntax, dependency installation, incremental compilation, failed/successful reload, packaged loading with source files absent, invalid payloads and module-name collisions.
 - `VehicleLuaBindingTests` covers the existing presentation binding contract.
-- `Tests/csharp/LuaDebuggerTransportTests` uses the actual transport/protocol sources with loopback sockets, fragmented UTF-8, concurrent sends, repeated reconnects, malformed/oversized frames and disposal.
+- `LuaDebuggerTests` exercises the production LuaManager over fragmented authenticated DAP sessions: conditions/logpoints, stepping, coroutine inspection, read-only watches, integer precision, NaN semantics, table paging, exceptions, disconnect recovery, callback suppression, suspension clock exclusion and local Editor RPC/preferences.
+- `Tests/python/LuaDebugAdapterTests.py` exercises the packaged stdio adapter with fragmented UTF-8 frames, stdout integrity, EOF and invalid arguments.
+- `Tests/lua/LuaDebuggerPanelContracts.lua` checks Editor control wiring, asynchronous inspection, preference saving and bounded requests using mock widgets. It does not replace a live Editor test.
+- `Tests/csharp/LuaDebuggerTransportTests` retains coverage of the old transport; that client is no longer used by the extension.
 - `Tests/lua/RuntimeBackendContracts.lua` checks the optional standalone LuaJIT VM's diagnostics, coroutines, collection and JIT toggling.
 - `editor_script_window_properties_bridge_test` exercises typed properties through a real Editor fixture. It requires a Debug Editor test build and has not yet been run for this implementation.
 

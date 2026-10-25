@@ -484,29 +484,44 @@ namespace workphone::editor
                 const auto token = m_luaDebuggerToken;
                 if( scripts->startDebugger( 0, token, root ) )
                 {
+                    scripts->setDebuggerPauseObserver( [started = std::chrono::steady_clock::time_point{}]( bool paused ) mutable {
+                        if( paused ) started = std::chrono::steady_clock::now();
+                        else if( auto app = core::IApplicationManager::instancePtr() )
+                            if( auto timer = dynamic_pointer_cast<TimerMT>( app->getTimer() ) )
+                                timer->excludeElapsed( std::chrono::duration<double>( std::chrono::steady_clock::now() - started ).count() );
+                    } );
                     scripts->setDebuggerPausePump( [this]() {
                         auto app = core::IApplicationManager::instancePtr();
                         if( !app || app->getQuit() ) return false;
                         // Do not run scene, physics, jobs, Play/Stop or reload
                         // while their interrupted Lua stack is still live.
                         const auto previousTask = Thread::getCurrentTask();
+                        const auto previousFlags = Thread::getTaskFlags();
                         try
                         {
                             if( auto graphics = app->getGraphicsSystem() )
                             {
                                 Thread::setCurrentTask( TaskId::Primary );
+                                Thread::setTaskFlags( Thread::Primary_Flag );
                                 graphics->messagePump();
-                                if( auto input = app->getInputDeviceManager() ) input->update();
+                                if( auto input = app->getInputDeviceManager() )
+                                { input->preUpdate(); input->update(); input->postUpdate(); }
                                 if( auto editor = EditorManager::getSingletonPtr() )
                                     if( auto ui = editor->getUI() )
                                         if( auto panel = ui->getLuaDebuggerWindow() )
+                                        {
+                                            if( !panel->isWindowVisible() ) panel->setWindowVisible( true );
                                             if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
+                                        }
                                 Thread::setCurrentTask( TaskId::Render );
+                                Thread::setTaskFlags( Thread::Render_Flag | Thread::Primary_Flag );
+                                if( auto states = app->getStateManager() ) states->update();
                                 graphics->update();
                             }
                         }
-                        catch( ... ) { Thread::setCurrentTask( previousTask ); throw; }
+                        catch( ... ) { Thread::setCurrentTask( previousTask ); Thread::setTaskFlags( previousFlags ); throw; }
                         Thread::setCurrentTask( previousTask );
+                        Thread::setTaskFlags( previousFlags );
                         return !app->getQuit();
                     } );
                     auto destination = std::filesystem::u8path( root.c_str() ) / ".workphone/lua-debug.json";
@@ -561,6 +576,7 @@ namespace workphone::editor
                 if( auto scripts = applicationManager->getScriptManager() )
                 {
                     scripts->setDebuggerPausePump( {} );
+                    scripts->setDebuggerPauseObserver( {} );
                     scripts->stopDebugger();
                 }
                 if( !m_luaDebuggerEndpoint.empty() )
@@ -1107,7 +1123,7 @@ namespace workphone::editor
                             }
                         }
                         if( auto panel = editorUI->getLuaDebuggerWindow() )
-                            if( panel->isWindowVisible() )
+                            if( panel->isWindowVisible() || applicationManager->getScriptManager()->getDebuggerPort() != 0 )
                                 if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
                         auto inputWindow = editorUI->getInputManagerWindow();
                         if( inputWindow && inputWindow->isLoaded() && inputWindow->isWindowVisible() )

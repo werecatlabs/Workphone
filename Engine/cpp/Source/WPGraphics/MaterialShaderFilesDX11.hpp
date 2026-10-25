@@ -23,7 +23,8 @@ namespace workphone::render::detail
             bool exists = false;
             uintmax_t size = 0;
             std::filesystem::file_time_type time{};
-            bool operator==(const Stamp &b) const { return exists==b.exists && size==b.size && time==b.time; }
+            u64 change=0,identity=0;
+            bool operator==(const Stamp &b) const { return exists==b.exists && size==b.size && time==b.time && change==b.change && identity==b.identity; }
         };
         static Stamp stamp(const std::filesystem::path &path)
         {
@@ -36,6 +37,17 @@ namespace workphone::render::detail
                 if(error) { result.exists=false; return result; }
                 result.time = std::filesystem::last_write_time(path,error);
                 if(error) result.exists=false;
+#if defined(_WIN32)
+                auto handle=CreateFileW(path.c_str(),FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+                if(handle!=INVALID_HANDLE_VALUE)
+                {
+                    FILE_BASIC_INFO basic{};BY_HANDLE_FILE_INFORMATION info{};
+                    if(GetFileInformationByHandleEx(handle,FileBasicInfo,&basic,sizeof(basic))) result.change=u64(basic.ChangeTime.QuadPart);
+                    if(GetFileInformationByHandle(handle,&info)) result.identity=(u64(info.nFileIndexHigh)<<32)|info.nFileIndexLow;
+                    CloseHandle(handle);
+                }
+#endif
             }
             return result;
         }
@@ -44,12 +56,16 @@ namespace workphone::render::detail
             StreamBudget budget;
             std::filesystem::path path;
             Stamp observed;
+            bool used=true;
+            bool read=false;
+            Stamp captured;
             File(const std::filesystem::path &value) : budget(reserveSourceBudgetBytes(
                 sizeof(File)+(value.native().capacity()+1)*sizeof(std::filesystem::path::value_type))),
                 path(value),observed(stamp(value)) {}
         };
         using FilePtr = std::shared_ptr<File>;
         using Files = std::vector<FilePtr,SourceBudgetAllocator<FilePtr>>;
+        StreamBudget m_budget=reserveSourceBudgetBytes(sizeof(ShaderFilesDX11));
         Files m_files;
         FilePtr m_roots[2];
         std::chrono::steady_clock::time_point m_next{};
@@ -57,7 +73,10 @@ namespace workphone::render::detail
         FilePtr track(const std::filesystem::path &path)
         {
             auto normalized = std::filesystem::absolute(path).lexically_normal();
-            for(auto &file : m_files) if(file->path == normalized) return file;
+            for(auto &file : m_files) if(file->path == normalized) { file->used=true;return file; }
+            if(m_files.size()>=128)
+                m_files.erase(std::remove_if(m_files.begin(),m_files.end(),[&](const auto &file) {
+                    return !file->used && file!=m_roots[0] && file!=m_roots[1]; }),m_files.end());
             if(m_files.size() >= 128) throw std::runtime_error("Shader include dependency limit exceeded");
             auto file = std::make_shared<File>(normalized);
             m_files.push_back(file); return file;
@@ -78,6 +97,7 @@ namespace workphone::render::detail
             bool read(Block &block)
             {
                 auto before=stamp(block.file->path);
+                if(block.file->read && !(before==block.file->captured)) { error="Shader file changed during candidate compilation";return false; }
                 if(!before.exists) { error=String("Shader file missing: ")+String(block.file->path.u8string().c_str()); return false; }
                 if(before.size > (4u<<20) || total+before.size > (16u<<20))
                 { error="Shader source/include byte limit exceeded"; return false; }
@@ -86,6 +106,7 @@ namespace workphone::render::detail
                 if(!input || !input.read(block.bytes.data(),std::streamsize(before.size)) || !(stamp(block.file->path)==before))
                 { error=String("Shader file changed or could not be read: ")+String(block.file->path.u8string().c_str()); return false; }
                 block.bytes[size_t(before.size)]=0;
+                block.file->captured=before;block.file->read=true;
                 total+=size_t(before.size); return true;
             }
             HRESULT __stdcall Open(D3D_INCLUDE_TYPE, LPCSTR name, LPCVOID parent, LPCVOID *data, UINT *bytes) override
@@ -126,6 +147,11 @@ namespace workphone::render::detail
             return changed;
         }
         u64 Revision() const { return m_revision; }
+        void BeginCandidate() { for(auto &file:m_files) {file->used=false;file->read=false;}for(auto &root:m_roots) if(root) root->used=true; }
+        bool ValidateCandidate() const
+        { for(const auto &file:m_files) if(file->used && file->read && !(stamp(file->path)==file->captured)) return false;return true; }
+        void CommitCandidate()
+        { m_files.erase(std::remove_if(m_files.begin(),m_files.end(),[](const auto &file) {return !file->used;}),m_files.end()); }
         String Path(size_t stage) const { return m_roots[stage] ? String(m_roots[stage]->path.u8string().c_str()) : String(); }
         bool HasStage(size_t stage) const { return bool(m_roots[stage]); }
         bool Compile(wp_shader *shader,size_t stage,Microsoft::WRL::ComPtr<ID3DBlob> &code,String &error)

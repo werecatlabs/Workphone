@@ -904,6 +904,11 @@ void wp_shader_set_compile_func( wp_shader *shader, wp_shader_compile_func func,
     }
 }
 
+wp_shader_compile_func wp_shader_get_compile_func( const wp_shader *shader )
+{
+    return shader ? shader->compile_func : NULL;
+}
+
 void wp_shader_set_release_func( wp_shader *shader, wp_shader_release_func func, void *user_data )
 {
     if( shader == NULL )

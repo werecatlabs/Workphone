@@ -52,6 +52,10 @@ namespace workphone
          */
         void update( f64 dt );
 
+        /// Exclude a host suspension without resetting ticks, deltas or fixed time.
+        /// Call only while all timer users are quiescent on the owning executor.
+        void excludeElapsed( f64 seconds );
+
         /**
          * @brief Updates the timer using a fixed time step.
          *

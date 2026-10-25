@@ -873,7 +873,9 @@ namespace workphone
                 if(auto renderer=dynamic_pointer_cast<ClawRendererDX11>(getRenderer()))
                 {
                     ClawMaterial::processRuntimeShaderReloads(*renderer);
-                    MaterialProgramReloadDX11::UpdateAll();
+                    auto native=renderer->getNativeRenderer();
+                    auto dx=native?wp_renderer_get_dx11(native):nullptr;
+                    MaterialProgramReloadDX11::UpdateAll(dx?wp_renderer_dx11_get_device(dx):nullptr,renderer.get());
                     ClawMaterial::processRuntimeShaderReloads(*renderer);
                 }
                 prepareFramePasses( deltaTime );

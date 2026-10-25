@@ -53,6 +53,7 @@ namespace workphone
         u16 getDebuggerPort() const override;
         bool isDebuggerPaused() const override;
         void setDebuggerPausePump( std::function<bool()> pump ) override;
+        void setDebuggerPauseObserver( std::function<void(bool)> observer ) override;
         void debuggerCommand( const String &command ) override;
         String getDebuggerStatus() const override;
         void debuggerException( lua_State *state, const char *message );

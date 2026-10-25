@@ -13,6 +13,8 @@ namespace workphone
 {
     namespace render
     {
+        class ClawRendererDX11;
+
         /**
          * @class ClawMaterial
          * @brief Production-ready material implementation backed by the C89 wp_graphics_material API.
@@ -78,6 +80,7 @@ namespace workphone
             // capture. A null coordinator explicitly retires the attachment.
             void setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
                 std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
+            void copyRuntimeShaderTo(ClawMaterial &target) const;
             bool requestRuntimeShaderReload();
             bool requestRuntimeShaderFiles(const String &vertexFile,const String &pixelFile);
             bool setRuntimeShaderWatching(bool enabled);

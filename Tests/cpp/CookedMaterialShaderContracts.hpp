@@ -30,12 +30,16 @@ namespace cooked_material_shader_contracts
         const char *pixel="cbuffer Values:register(b4){float4 Tint;} Texture2D Tex:register(t12); SamplerState Samp:register(s5);"
             "float4 main(float4 p:SV_POSITION):SV_TARGET{return Tint*Tex.Sample(Samp,float2(.5,.5));}";
         compile(pixel,"ps_5_0",source/"pixel.dxbc");
+        const char *hlsl="#include \"shade.hlsli\"\n"
+            "cbuffer Values:register(b4){float4 Tint;} Texture2D Tex:register(t12); SamplerState Samp:register(s5);"
+            "float4 main(float4 p:SV_POSITION):SV_TARGET{return Tint*Tex.Sample(Samp,float2(.5,.5))*float4(RED_SCALE,1,1,1);}";
+        writeText(source/"pixel.hlsl",hlsl);writeText(source/"shade.hlsli","#define RED_SCALE 1.0f\n");
         std::array<u8,22> white{};white[2]=2;white[12]=white[14]=1;white[16]=32;white[17]=0x28;
         white[18]=white[19]=white[20]=white[21]=255;
         {std::ofstream output(source/"white.tga",std::ios::binary);output.write(reinterpret_cast<const char *>(white.data()),white.size());}
         writeText(source/"white.texres",R"({"version":1,"source":"data://white.tga","mipFilter":"colour","atlasColumns":1,"alphaCutoff":0.5})");
         const std::string descriptor=R"({"version":1,"baseColour":[1,1,1,1],"metalness":0,"roughness":1,"baseColourTexture":"data://white.texres",
-            "shader":{"id":"Cooked.Contract","schemaVersion":7,"vertex":"data://vertex.dxbc","pixel":"data://pixel.dxbc",
+            "shader":{"id":"Cooked.Contract","schemaVersion":7,"vertex":"data://vertex.dxbc","pixelSource":"data://pixel.hlsl",
             "vertexBuffers":["VertexValues"],"vertexResources":[],"pixelBuffers":["Values"],"pixelResources":["Tex","Samp"],
             "parameters":[{"name":"Tint","type":"colour","value":[0,1,0,1]},
             {"name":"Scale","type":"float","value":1},{"name":"Tex","type":"texture","value":"data://white.texres"},
@@ -57,15 +61,28 @@ namespace cooked_material_shader_contracts
             data.shader.parameters.size()==9 && loaded->header.installDependencies.size()==1 && loaded->dependencies.size()==1,
             "v3 shader schema preserves identity/version and deduplicates durable texture dependencies");
         const auto bytes=data.shader.pixelDXBC;
-        // Raw shader changes must participate in the existing dependency build key.
-        compile("cbuffer Values:register(b4){float4 Tint;} Texture2D Tex:register(t12); SamplerState Samp:register(s5);"
-            "float4 main(float4 p:SV_POSITION):SV_TARGET{return Tint*Tex.Sample(Samp,float2(.5,.5))*float4(.5,1,1,1);}",
-            "ps_5_0",source/"pixel.dxbc");
-        const auto changed=resources->compileAffected("data://pixel.dxbc",options);
-        require(!changed.empty() && changed.back().succeeded(),"Shader DXBC is a tracked compile dependency");
+        // Includes are captured before reading during dependency scanning, and
+        // become explicit build-key inputs for device-free HLSL compilation.
+        writeText(source/"shade.hlsli","#define RED_SCALE .5f\n");
+        const auto changed=resources->compileAffected("data://shade.hlsli",options);
+        require(!changed.empty() && changed.back().succeeded(),"Shader include is a tracked compile dependency");
         loaded=resources->load(id,error);
         require(loaded && decodeCookedMaterial(*loaded,data,error) && data.shader.pixelDXBC!=bytes,
-            "Changed shader dependency publishes changed source-free program bytes");
+            "Changed HLSL include publishes changed source-free program bytes");
+        GraphicsResourceCompiler compiler;CompileContext probe;probe.resourceId=id;
+        probe.sourceRoot=config.sourceRoot;probe.sourcePath=pathText(source/"shader.matres");
+        probe.compiledRoot=config.compiledRoot;probe.target=config.target;DependencySet dependencies;
+        auto conflicting=descriptor;const auto field=conflicting.find("\"pixelSource\"");
+        conflicting.insert(field,"\"pixel\":\"data://pixel.dxbc\",");
+        writeText(source/"shader.matres",conflicting.c_str());
+        require(!compiler.getDependencies(probe,dependencies,error) && !error.empty(),
+            "Ambiguous DXBC/HLSL stage source rejects instead of choosing silently");
+        writeText(source/"shader.matres",descriptor.c_str());
+        writeText(fixture.folder/"outside.hlsli","#define RED_SCALE 1.0f\n");
+        writeText(source/"pixel.hlsl","#include \"../outside.hlsli\"\n");
+        require(!compiler.getDependencies(probe,dependencies,error) && !error.empty(),
+            "Shader include cannot escape the canonical asset source root");
+        writeText(source/"pixel.hlsl",hlsl);
         const auto reject=[&](RuntimeResource broken) {
             graphics_compiler_contracts::refreshIntegrity(broken);CookedMaterialData output;
             require(!decodeCookedMaterial(broken,output,error) && !error.empty() && output.target.empty(),
@@ -118,6 +135,6 @@ namespace cooked_material_shader_contracts
             "Malformed shader replacement preserves the previously published source-free draw");
         requireDraw(fixture,publisher.current(),true);
         require(publisher.unload(error),error);shipping.shutdown();
-        std::cout<<"PASS: v3 typed material schema, DXBC build keys, malformed payload rejection, source-free shader/texture/sampler installation and retained visible generation\n";
+        std::cout<<"PASS: v3 typed material schema, HLSL/DXBC/include build keys, malformed payload rejection, source-free shader/texture/sampler installation and retained visible generation\n";
     }
 }

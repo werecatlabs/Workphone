@@ -161,12 +161,15 @@ namespace workphone::render
             MaterialProgramReflectionSelection (&selections)[2])
         {
             using T=MaterialShaderParameterType;
-            auto info=existing->GetParameterInfo();
+            Array<MaterialShaderParameterInfo> info;
             const auto add=[&](const char *name,T type) {
+                const auto old=existing->FindParameter(name);
+                if(type==T::Vector4 && (!std::strcmp(name,"Albedo") || !std::strcmp(name,"Emissive") || !std::strcmp(name,"Color"))) type=T::Colour;
+                if(type==T::Vector4 && old.IsValid() && existing->GetParameterInfo()[old.m_parameterIndex].m_type==T::Colour) type=T::Colour;
                 for(auto &p:info) if(p.m_name==name)
                 {
-                    if(type==T::Vector4 && p.m_type==T::Colour) return;
-                    p.m_type=type;return;
+                    if(p.m_type!=type) throw std::runtime_error("Shader stages disagree on a parameter type");
+                    return;
                 }
                 if(info.size()>=WP_SHADER_MAX_PARAMS) throw std::runtime_error("Reflected shader exceeds CPU parameter capacity");
                 info.push_back({type,name});
@@ -215,7 +218,15 @@ namespace workphone::render
                     }
                 }
             }
-            const auto &old=existing->GetParameterInfo();bool same=old.size()==info.size();
+            const auto &old=existing->GetParameterInfo();
+            Array<MaterialShaderParameterInfo> ordered;
+            for(const auto &p:old) for(const auto &next:info) if(p.m_name==next.m_name && p.m_type==next.m_type) ordered.push_back(next);
+            for(const auto &next:info)
+            {
+                bool found=false;for(const auto &p:ordered) if(p.m_name==next.m_name) found=true;
+                if(!found) ordered.push_back(next);
+            }
+            info=std::move(ordered);bool same=old.size()==info.size();
             for(size_t i=0;same && i<old.size();++i) same=old[i].m_name==info[i].m_name && old[i].m_type==info[i].m_type;
             return same?existing:MaterialShaderParameterLayout::Create(info);
         }
@@ -241,6 +252,7 @@ namespace workphone::render
         u64 schemaRevision=0;
         std::unique_ptr<detail::ShaderFilesDX11> files;
         bool watching=true, autoSchema=false;
+        void *deviceOwner=nullptr;
         std::atomic<bool> reloadCommand{false};
         std::atomic<int> watchCommand{-1};
         static std::mutex registryMutex;
@@ -255,7 +267,7 @@ namespace workphone::render
         {
             std::lock_guard<std::mutex> lock(registryMutex);
             status.generation=generation;status.attempts=attempts;status.compiles=compiles;
-            status.success=!error[0] && bool(current); status.program=bool(current);status.watching=watching;
+            status.success=!error[0] && owner->HasProgram(); status.program=owner->HasProgram();status.watching=watching;
             status.error=error;
         }
         wp_shader_program *source = nullptr;
@@ -265,7 +277,8 @@ namespace workphone::render
         MaterialProgramDX11::Ptr current;
         Binding::Data *bindings = nullptr;
         SourceKey attempted{nullptr};
-        bool hasAttempted = false, force = false, budgetDenied = false, subscriberBlocked = false;
+        bool hasAttempted = false, force = false, budgetDenied = false, subscriberBlocked = false, conflictBlocked=false;
+        u64 subscriptionRevision=0,conflictRevision=0;
         std::array<u64,2> deniedHeadroom{};
         std::array<char,1024> error{};
         void diagnostic(const char *message)
@@ -294,6 +307,7 @@ namespace workphone::render
     {
         auto &binding = *m_data;
         if(!binding.linked) return;
+        ++binding.owner->m_data->subscriptionRevision;
         if(binding.previous) binding.previous->next = binding.next;
         else binding.owner->m_data->bindings = binding.next;
         if(binding.next) binding.next->previous = binding.previous;
@@ -354,7 +368,7 @@ namespace workphone::render
         data.revision=values.GetRevision();
         data.next = m_data->bindings;
         if(data.next) data.next->previous = &data;
-        m_data->bindings = &data; data.linked = true;
+        m_data->bindings = &data; data.linked = true;++m_data->subscriptionRevision;
         return binding;
     }
     bool MaterialProgramReloadDX11::Update()
@@ -369,7 +383,11 @@ namespace workphone::render
         const SourceKey key(data.source,data.files?data.files->Revision():0,data.schemaRevision);
         if(data.hasAttempted && key == data.attempted && !data.force)
         {
-            if(data.subscriberBlocked)
+            if(data.conflictBlocked)
+            {
+                if(data.conflictRevision==data.subscriptionRevision) return false;
+            }
+            else if(data.subscriberBlocked)
             {
                 for(auto binding = data.bindings; binding; binding = binding->next)
                     if(binding->values->GetLayout() != data.layout) return false;
@@ -381,8 +399,11 @@ namespace workphone::render
                 if(available[0] <= data.deniedHeadroom[0] && available[1] <= data.deniedHeadroom[1]) return false;
             }
         }
+        if(data.requestedLayout || data.autoSchema)
+            for(auto binding=data.bindings;binding;binding=binding->next)
+                if(!binding->values->IsMigrationReady()) return false; // transient, no attempt/compile while busy
         data.force = false; data.hasAttempted = true; data.attempted = key;
-        data.budgetDenied = data.subscriberBlocked = false;
+        data.budgetDenied = data.subscriberBlocked = data.conflictBlocked = false;
         ++data.attempts;
         try
         {
@@ -390,10 +411,14 @@ namespace workphone::render
                 if(i > 1 || key.stages[i].type != wp_shader_type(i))
                 { data.diagnostic("Reload supports only matching vertex/pixel stage attachments"); return false; }
             if(!key.stages[1].identity) { data.diagnostic("Reload requires a pixel shader"); return false; }
+            auto preparedDefinition=data.autoSchema?std::shared_ptr<Definition>{}:
+                std::make_shared<Definition>(data.source,data.requestedLayout);
+            if(data.files) data.files->BeginCandidate();
             Bytecode code[2]; String error;
             for(size_t i = 0; i < 2; ++i)
             {
                 bool compiled=true;
+                if(data.files && data.autoSchema && !data.files->HasStage(i)) continue;
                 if(data.files && data.files->HasStage(i))
                 {
                     ++data.compiles;
@@ -407,7 +432,7 @@ namespace workphone::render
             MaterialProgramReflectionSelection fileSelection[2];
             if(data.files && data.autoSchema) layout=fileSchema(code,layout,fileSelection);
             if(!layout) { data.diagnostic("Invalid reflected shader schema");return false; }
-            auto definition=std::make_shared<Definition>(data.source,(layout!=data.layout || data.autoSchema)?layout:nullptr);
+            auto definition=preparedDefinition?preparedDefinition:std::make_shared<Definition>(data.source,layout);
             auto candidate = MaterialProgramDX11::Create(data.device.Get(),layout,definition->program.get(),
                 data.deviceGeneration,code[1].bytes,code[0].bytes,error,
                 data.autoSchema?&fileSelection[1]:(data.selected[1] ? &data.selections[1] : nullptr),
@@ -439,7 +464,8 @@ namespace workphone::render
                 const auto revision = binding->values->GetRevision();
                 pending.push_back({binding,candidate->Capture(migration?migration->Values():*binding->values,binding->resources),revision,migration});
             }
-            bool changed = !(SourceKey(data.source,data.files?data.files->Revision():0,data.schemaRevision) == key);
+            bool changed = !(SourceKey(data.source,data.files?data.files->Revision():0,data.schemaRevision) == key) ||
+                (data.files && !data.files->ValidateCandidate());
             for(const auto &entry : pending)
                 changed = changed || entry.binding->values->GetRevision() != entry.revision ||
                     (entry.migration ? !entry.migration->IsCurrent() : entry.binding->values->GetLayout()!=layout);
@@ -450,6 +476,10 @@ namespace workphone::render
             }
             if(data.generation == std::numeric_limits<u64>::max())
             { data.diagnostic("Shader reload generation exhausted"); return false; }
+            for(size_t i=0;i<pending.size();++i) if(pending[i].migration)
+                for(size_t j=0;j<i;++j) if(pending[j].migration && pending[i].migration!=pending[j].migration &&
+                    pending[i].migration->ConflictsWith(*pending[j].migration))
+                { data.conflictBlocked=true;data.conflictRevision=data.subscriptionRevision;data.diagnostic("Shader schema subscribers share mutable pass state");return false; }
             // Owner-thread validation above makes each token non-stale throughout
             // this nonallocating, callback-free group commit. Deduplicate aliases.
             for(size_t i=0;i<pending.size();++i) if(pending[i].migration)
@@ -466,6 +496,7 @@ namespace workphone::render
                 entry.binding->revision = entry.binding->values->GetRevision();
             }
             data.layout=std::move(layout);data.requestedLayout.reset();
+            if(data.files) data.files->CommitCandidate();
             data.current = std::move(candidate); ++data.generation; data.error[0] = 0;
             return true;
         }
@@ -504,7 +535,7 @@ namespace workphone::render
         try
         {
             auto files=std::make_unique<detail::ShaderFilesDX11>(vertex,pixel);
-            SourceBudgetString v=files->Path(0).c_str(), p=files->Path(1).c_str();
+            SourceBudgetString v(files->Path(0)), p(files->Path(1));
             { std::lock_guard<std::mutex> lock(Data::registryMutex); m_data->status.vertex=std::move(v);m_data->status.pixel=std::move(p); }
             m_data->files=std::move(files);m_data->force=true;error.clear();return true;
         }
@@ -545,7 +576,7 @@ namespace workphone::render
         result->Update(); return result; // A failed initial generation stays watchable and reports its real error.
     }
     u64 MaterialProgramReloadDX11::GetId() const { return m_data->id; }
-    bool MaterialProgramReloadDX11::HasProgram() const { return bool(m_data->current); }
+    bool MaterialProgramReloadDX11::HasProgram() const { return m_data->current && m_data->current->matchesDevice(m_data->device.Get()); }
     bool MaterialProgramReloadDX11::QueueReload(u64 id)
     {
         std::lock_guard<std::mutex> lock(Data::registryMutex);
@@ -565,15 +596,31 @@ namespace workphone::render
             const auto &s=data->status; const bool pending=data->reloadCommand.load() || data->watchCommand.load()>=0;
             result->setProperty("available",true);result->setProperty("pending",pending);result->setProperty("success",s.success);
             result->setProperty("generation",s.generation);result->setProperty("attempts",s.attempts);result->setProperty("compiles",s.compiles);
-            result->setProperty("watching",s.watching);result->setProperty("vertexFile",String(s.vertex.c_str()));result->setProperty("pixelFile",String(s.pixel.c_str()));
+            result->setProperty("watching",s.watching);result->setProperty("vertexFile",static_cast<String>(s.vertex));result->setProperty("pixelFile",static_cast<String>(s.pixel));
             result->setProperty("diagnostic",String(s.error.data()));result->setProperty("status",pending?String("queued"):(s.success?String("ready"):String("failed")));
             return result;
         }
         result->setProperty("success",false);result->setProperty("status",String("unavailable"));return result;
     }
-    void MaterialProgramReloadDX11::UpdateAll()
+    void MaterialProgramReloadDX11::RecreateDevice(void *device,u64 generation)
     {
-        for(auto data=Data::head;data;) { auto next=data->next;data->owner->Update();data=next; }
+        if(!device || !generation) throw std::invalid_argument("Device and generation are required");
+        if(m_data->device.Get()==device && m_data->deviceGeneration==generation) return;
+        m_data->device=static_cast<ID3D11Device *>(device);m_data->deviceGeneration=generation;m_data->force=true;
+    }
+    void MaterialProgramReloadDX11::UpdateAll(void *device,void *owner)
+    {
+        for(auto data=Data::head;data;)
+        {
+            auto next=data->next;
+            if(device && owner)
+            {
+                if(!data->deviceOwner && data->device.Get()==device) data->deviceOwner=owner;
+                if(data->deviceOwner==owner && data->device.Get()!=device)
+                    data->owner->RecreateDevice(device,data->deviceGeneration+1);
+            }
+            data->owner->Update();data=next;
+        }
     }
 
     void MaterialProgramReloadDX11::RequestSchema(MaterialShaderParameterLayout::Ptr layout)

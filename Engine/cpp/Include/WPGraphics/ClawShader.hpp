@@ -133,6 +133,9 @@ namespace workphone
 
         protected:
             wp_shader *m_shader;  ///< Owned underlying Claw shader handle.
+            // An extra reference to the last successful default-compiler blob;
+            // no second payload copy. The C descriptor can outlive this wrapper.
+            void *m_compiledBlob = nullptr;
         };
     }  // namespace render
 }  // namespace workphone

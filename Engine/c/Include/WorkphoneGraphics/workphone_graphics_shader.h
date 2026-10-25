@@ -333,6 +333,8 @@ const wp_c8 *wp_shader_get_last_error( const wp_shader *shader );
 void wp_shader_set_last_error( wp_shader *shader, const wp_c8 *message );
 void wp_shader_set_compile_func( wp_shader *shader, wp_shader_compile_func compile_func,
                                  void *user_data );
+/** Inspect compiler identity without invoking it. Null shaders return null. */
+wp_shader_compile_func wp_shader_get_compile_func( const wp_shader *shader );
 void wp_shader_set_release_func( wp_shader *shader, wp_shader_release_func release_func,
                                  void *user_data );
 wp_s32 wp_shader_compile( wp_shader *shader );

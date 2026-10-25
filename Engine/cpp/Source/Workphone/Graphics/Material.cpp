@@ -3328,6 +3328,18 @@ namespace workphone::render
         return true;
     }
 
+    bool MaterialShaderParametersInstance::Migration::ConflictsWith(const Migration &other) const noexcept
+    {
+        if(this == &other || m_data->committed || other.m_data->committed) return false;
+        const auto &first = *m_data;
+        const auto &second = *other.m_data;
+        if(first.target == second.target || (first.owner && first.owner == second.owner)) return true;
+        for(const auto &a : first.passes)
+            for(const auto &b : second.passes)
+                if(a.state == b.state || a.source == b.source) return true;
+        return false;
+    }
+
     bool MaterialShaderParametersInstance::Migration::Commit() noexcept
     {
         if(!IsCurrent()) return false;

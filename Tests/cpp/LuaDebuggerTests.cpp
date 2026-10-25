@@ -3,10 +3,12 @@
 #include <boost/json.hpp>
 #include <WPLua/LuaManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/TimerMT.hpp>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <thread>
 
 namespace j = boost::json;
@@ -78,7 +80,7 @@ public:
     void close() { boost::system::error_code ignored; socket.close( ignored ); }
 };
 
-int main()
+int main( int argc, char **argv )
 {
     using namespace workphone;
     TypeManager types; types.load(); TypeManager::setInstance( &types );
@@ -92,11 +94,46 @@ int main()
         try
         {
             manager.load( nullptr );
+            // Optional manual IDE fixture uses the production host and service.
+            // Own a fresh directory; never point this at a user's project.
+            if( argc == 3 && std::string( argv[1] ) == "--ide-fixture" )
+            {
+                const auto fixture = std::filesystem::absolute( std::filesystem::u8path( argv[2] ) );
+                check( !std::filesystem::exists( fixture ), "IDE fixture requires a new directory" );
+                std::filesystem::create_directories( fixture );
+                const auto source = fixture / "DebugFixture.lua";
+                const std::string code = "local data={value=41}\nlocal function sample()\n local answer=data.value+1\n return answer\nend\nfixtureResult=sample()\n";
+                { std::ofstream output( source ); output << code; }
+                const auto token = "ide-fixture-" + std::to_string( Clock::now().time_since_epoch().count() );
+                check( manager.startDebugger( 0, token.c_str(), fixture.generic_u8string().c_str() ), "Cannot start IDE fixture" );
+                const auto until = Clock::now() + std::chrono::minutes( 5 );
+                manager.setDebuggerPausePump( [&]() { return Clock::now() < until && !std::filesystem::exists( fixture / "stop" ); } );
+                const auto endpoint = fixture / "lua-debug.json";
+                { std::ofstream output( endpoint ); output << j::serialize( j::object{ { "port", manager.getDebuggerPort() }, { "token", token }, { "sourceRoot", fixture.generic_u8string() } } ); }
+                while( Clock::now() < until && !std::filesystem::exists( fixture / "stop" ) )
+                {
+                    manager.executeSource( code.c_str(), ( "@" + source.generic_u8string() ).c_str() );
+                    manager.update(); std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
+                }
+                manager.stopDebugger(); manager.unload( nullptr );
+                std::filesystem::remove( endpoint );
+                TypeManager::setInstance( nullptr ); types.unload();
+                return 0;
+            }
+            auto timer = make_ptr<TimerMT>(); timer->load( nullptr );
+            Thread::setCurrentTask( TaskId::Application ); timer->update();
+            auto pauseStart = Clock::now(); int boundaries = 0;
+            manager.setDebuggerPauseObserver( [&]( bool paused ) {
+                ++boundaries;
+                if( paused ) pauseStart = Clock::now();
+                else timer->excludeElapsed( std::chrono::duration<double>( Clock::now() - pauseStart ).count() );
+            } );
             const auto root = std::filesystem::current_path().generic_u8string();
             check( !manager.startDebugger( 0, "short", root.c_str() ), "Short authentication token accepted" );
             check( manager.startDebugger( 0, "workphone-debug-test-token", root.c_str() ), "Debugger did not listen" );
             check( manager.executeSource( "gameplayCalls=0; function gameplayCallback() gameplayCalls=gameplayCalls+1 end", "@gameplay.lua" ), "Gameplay fixture" );
             check( manager.executeSource( "editorCalls=0; function editorCallback() editorCalls=editorCalls+1 end", "@Editor/DebuggerFixture.lua" ), "Editor fixture" );
+            check( manager.executeSource( "largeId=9007199254740993; huge={}; for i=1,160 do huge['field'..i]=string.rep('x',1200) end", "@values.lua" ), "Inspection budgets fixture" );
             check( manager.executeSource( "pendingCo=coroutine.create(function()\nlocal marker=21\nfor i=1,3 do\n marker=marker+1\nend\nreturn marker\nend)", "@debug-coroutine.lua" ), "Pre-attach coroutine fixture" );
             manager.setDebuggerPausePump( [&]() {
                 ++pumps;
@@ -126,6 +163,7 @@ int main()
                     connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach ); ready = true;
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "captured=12" ) != std::string::npos, "Logpoint did not evaluate its expression" );
                     check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Conditional breakpoint was not hit" );
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 1100 ) );
                     auto stack = connection.reply( connection.request( "stackTrace" ) ).at( "stackFrames" ).as_array();
                     check( !stack.empty() && stack.front().as_object().at( "line" ).as_int64() == 5, "Wrong paused line" );
                     const auto frame = stack.front().as_object().at( "id" ).as_int64();
@@ -143,6 +181,17 @@ int main()
                     check( evaluated.at( "result" ) == "-1", "Expression precedence failed" );
                     evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "(0/0) >= 0" } } ) );
                     check( evaluated.at( "result" ) == "false", "NaN comparison changed Lua semantics" );
+#ifndef WP_LUA_BACKEND_LUAJIT
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "largeId + 0" } } ) );
+                    check( evaluated.at( "result" ) == "9007199254740993", "64-bit integer watch lost precision" );
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "largeId == 9007199254740992.0" } } ) );
+                    check( evaluated.at( "result" ) == "false", "Integer/float comparison lost precision" );
+#endif
+                    evaluated = connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "huge" } } ) );
+                    auto page = connection.reply( connection.request( "variables", { { "variablesReference", evaluated.at( "variablesReference" ) } } ) ).at( "variables" ).as_array();
+                    check( !page.empty() && page.back().as_object().at( "name" ) == "[more variables]", "Large inspection was not paged" );
+                    auto nextPage = connection.reply( connection.request( "variables", { { "variablesReference", page.back().as_object().at( "variablesReference" ) } } ) ).at( "variables" ).as_array();
+                    check( !nextPage.empty(), "Inspection continuation lost its table" );
                     connection.reply( connection.request( "evaluate", { { "frameId", frame }, { "expression", "os.exit()" } } ), false );
                     connection.reply( connection.request( "stepIn", { { "threadId", 1 } } ) );
                     connection.event( "stopped" );
@@ -184,21 +233,66 @@ int main()
             auto deadline = Clock::now() + std::chrono::seconds( 20 );
             while( !ready && Clock::now() < deadline ) { manager.update(); std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); }
             check( ready && !failed, "DAP configuration failed" );
+            timer->update(); const auto ticks = timer->getTickCount(); const auto fixed = timer->getFixedTimeNow();
             check( manager.executeSource( "local outer=7\nlocal data={value=12}\nlocal function child()\n local inner=outer+data.value\n inner=inner+1\n return inner\nend\nresult=child()\nresult=result+1\nresult=child()\nresult=result+1", "@debug-contract.lua" ), "Debugged execution failed" );
             check( manager.executeSource( "assert(result==21)", "=result" ), "Stepping changed program behavior" );
             check( manager.executeSource( "local ok,value=coroutine.resume(pendingCo); assert(ok and value==24)", "@resume-coroutine.lua" ), "Debugged coroutine failed" );
-            check( !manager.executeSource( "local marker=42\nerror('debug exception')", "@debug-error.lua" ), "Lua error unexpectedly succeeded" );
+            check( !manager.executeSource( "local marker=42\nerror(string.char(255)..'debug exception')", "@debug-error.lua" ), "Lua error unexpectedly succeeded" );
             check( pumps > 0, "Paused Editor pump did not run" );
             check( done && !failed, "Client contracts failed" );
             if( client.joinable() ) client.join();
             check( clientError.empty(), clientError.c_str() );
+            timer->update();
+            check( timer->getDeltaTime() < 1.0 && timer->getFixedTimeNow() - fixed < 1.0,
+                   "Debugger suspension inflated frame or fixed time" );
+            check( timer->getTickCount() == ticks + 1 && boundaries >= 2 && boundaries % 2 == 0,
+                   "Pause observer reset ticks or missed a boundary" );
             const bool dispatch = manager.executeSource( "assert(gameplayCalls==0, 'gameplayCalls='..tostring(gameplayCalls)); assert(editorCalls>0, 'editorCalls='..tostring(editorCalls))", "=paused-dispatch" );
             check( dispatch, manager.getLastDiagnostic().c_str() );
-            int localStops = 0;
-            manager.setDebuggerPausePump( [&]() { ++localStops; manager.debuggerCommand( "continue" ); return true; } );
+            int sequence = 1000;
+            auto localRequest = [&]( const char *command, j::object arguments = {} ) {
+                const int id = ++sequence;
+                manager.debuggerCommand( j::serialize( j::object{ { "seq", id }, { "type", "request" }, { "command", command }, { "arguments", std::move( arguments ) } } ).c_str() );
+                return id;
+            };
+            auto localReply = [&]( int id ) {
+                const auto status = j::parse( manager.getDebuggerStatus().c_str() ).as_object();
+                for( const auto &reply : status.at( "responses" ).as_array() )
+                    if( reply.as_object().at( "request_seq" ).as_int64() == id ) return reply.as_object();
+                return j::object{};
+            };
+            const auto preferencesRoot = std::filesystem::temp_directory_path() / ( "workphone-lua-debug-" + std::to_string( Clock::now().time_since_epoch().count() ) );
+            check( manager.startDebugger( 0, "workphone-debug-test-token", preferencesRoot.generic_u8string().c_str() ), "Cannot rebase debugger" );
+            auto requestId = localRequest( "saveBreakpointPreferences", { { "files", j::array{ j::object{ { "source", j::object{ { "path", root + "/local-debug.lua" } } }, { "breakpoints", j::array{ j::object{ { "line", 2 } } } } } } }, { "breakOnException", true } } );
+            manager.update(); check( localReply( requestId ).at( "success" ).as_bool(), "Cannot save Editor breakpoint preferences" );
+            requestId = localRequest( "loadBreakpointPreferences" ); manager.update();
+            auto saved = localReply( requestId ).at( "body" ).as_object();
+            check( saved.at( "files" ).as_array().size() == 1 && saved.at( "breakOnException" ).as_bool(), "Editor breakpoint preferences did not round trip" );
+            requestId = localRequest( "saveBreakpointPreferences", { { "files", j::array{ 42 } }, { "breakOnException", false } } );
+            manager.update(); check( !localReply( requestId ).at( "success" ).as_bool(), "Malformed Editor preferences accepted" );
+            std::filesystem::remove( preferencesRoot / ".workphone/lua-breakpoints.json" );
+            std::filesystem::remove( preferencesRoot / ".workphone" ); std::filesystem::remove( preferencesRoot );
+            int localStops = 0, phase = 0, pending = 0;
+            manager.setDebuggerPausePump( [&]() {
+                ++localStops;
+                if( phase == 0 ) { pending = localRequest( "stackTrace" ); phase = 1; }
+                else if( phase == 1 )
+                {
+                    auto reply = localReply( pending ); if( reply.empty() ) return true;
+                    const auto frame = reply.at( "body" ).as_object().at( "stackFrames" ).as_array().front().as_object().at( "id" );
+                    pending = localRequest( "evaluate", { { "frameId", frame }, { "expression", "6 * 7" } } ); phase = 2;
+                }
+                else if( phase == 2 )
+                {
+                    auto reply = localReply( pending ); if( reply.empty() ) return true;
+                    check( reply.at( "body" ).as_object().at( "result" ) == "42", "Local Editor inspection failed" );
+                    phase = 3; manager.debuggerCommand( "continue" );
+                }
+                return true;
+            } );
             manager.debuggerCommand( "pause" );
             check( manager.executeSource( "localPaused=1\nlocalPaused=2", "@local-debug.lua" ), "Editor-only pause failed" );
-            check( localStops > 0, "Editor-only pause did not enter the pump" );
+            check( localStops > 0 && phase == 3, "Editor-only pause or asynchronous inspection failed" );
             manager.stopDebugger(); manager.unload( nullptr );
             std::puts( "Lua debugger integration: PASS" );
         }

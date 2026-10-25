@@ -40,23 +40,23 @@ namespace workphone::render
         {
             std::lock_guard<std::recursive_mutex> lock(mutex);
             if(!id && entries.find(material)==entries.end()) return;
-            auto value=entry(material);value->id=id;
+            auto value=entry(material);value->id=id;value->processed=value->version;
         }
         void forgetShaderReload(ClawMaterial *material) noexcept
         { try { std::lock_guard<std::recursive_mutex> lock(mutex);entries.erase(material); } catch(...) {} }
-        void appendShaderFiles(const ClawMaterial *material,const SmartPtr<Properties> &properties)
+        void appendShaderFiles(const ClawMaterial *material,SmartPtr<Properties> properties)
         {
             std::lock_guard<std::recursive_mutex> lock(mutex);
             auto found=entries.find(material);if(found==entries.end()) return;
-            properties->setProperty("runtimeShaderVertexFile",String(found->second->vertex.c_str()));
-            properties->setProperty("runtimeShaderPixelFile",String(found->second->pixel.c_str()));
+            properties->setProperty("runtimeShaderVertexFile",static_cast<String>(found->second->vertex));
+            properties->setProperty("runtimeShaderPixelFile",static_cast<String>(found->second->pixel));
             properties->setProperty("runtimeShaderWatching",found->second->watching);
         }
     }
     bool ClawMaterial::requestRuntimeShaderFiles(const String &vertex,const String &pixel)
     {
         if(pixel.empty()) return false;
-        SourceBudgetString v=vertex.c_str(),p=pixel.c_str();
+        SourceBudgetString v(vertex),p(pixel);
         std::lock_guard<std::recursive_mutex> lock(mutex);
         auto value=entry(this);value->vertex=std::move(v);value->pixel=std::move(p);++value->version;value->error.clear();return true;
     }
@@ -88,7 +88,7 @@ namespace workphone::render
             if(found!=entries.end())
             {
                 const auto &value=*found->second;id=value.id;pending=value.version!=value.processed;
-                vertex=value.vertex.c_str();pixel=value.pixel.c_str();error=value.error.c_str();watching=value.watching;configured=!value.pixel.empty();
+                vertex=static_cast<String>(value.vertex);pixel=static_cast<String>(value.pixel);error=static_cast<String>(value.error);watching=value.watching;configured=!value.pixel.empty();
             }
         }
         auto status=MaterialProgramReloadDX11::EditorStatus(id);
@@ -119,7 +119,7 @@ namespace workphone::render
                     if(value.version!=value.processed || (value.candidate && value.candidate->HasProgram()))
                     {
                         work=it->second;version=value.version;build=value.version!=value.processed;
-                        vertex=value.vertex.c_str();pixel=value.pixel.c_str();break;
+                        vertex=static_cast<String>(value.vertex);pixel=static_cast<String>(value.pixel);break;
                     }
                     ++it;
                 }
@@ -134,7 +134,7 @@ namespace workphone::render
                 std::lock_guard<std::recursive_mutex> lock(mutex);
                 if(work->version!=version) continue;
                 work->processed=version;
-                if(!candidate) { work->error=error.c_str();work->candidate.reset();continue; }
+                if(!candidate) { work->error=error;work->candidate.reset();continue; }
                 work->id=candidate->GetId();work->candidate=candidate;
                 MaterialProgramReloadDX11::QueueWatching(work->id,work->watching);
                 if(candidate->HasProgram())
@@ -147,7 +147,7 @@ namespace workphone::render
             catch(const std::exception &error)
             {
                 std::lock_guard<std::recursive_mutex> lock(mutex);
-                if(work->version==version) {work->processed=version;work->error=error.what();work->candidate.reset();}
+                if(work->version==version) {work->processed=version;work->error=String(error.what());work->candidate.reset();}
             }
         }
     }

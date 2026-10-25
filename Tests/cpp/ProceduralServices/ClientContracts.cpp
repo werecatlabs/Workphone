@@ -64,7 +64,7 @@ namespace
             sameVector( a.linearColor, b.linearColor ) && a.intensity == b.intensity &&
             a.sizeM == b.sizeM && a.lifetimeSeconds == b.lifetimeSeconds;
     }
-    void checkEffectBudgetContracts( const SmartPtr<IVehicleEffects> &effects, const VehiclePhysicsConfig &physics )
+    void checkEffectBudgetContracts( SmartPtr<IVehicleEffects> effects, const VehiclePhysicsConfig &physics )
     {
         auto scheduler = WorldStreamingScheduler::shared();
         constexpr auto source = size_t( StreamMemoryClass::SourceCpu );

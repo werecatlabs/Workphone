@@ -118,6 +118,7 @@ namespace workphone::render
     MaterialProgramDX11::~MaterialProgramDX11() = default;
     void MaterialProgramDX11::retainDefinitionOwner(std::shared_ptr<const void> owner)
     { m_data->definitionOwner = std::move(owner); }
+    bool MaterialProgramDX11::matchesDevice(void *device) const { return m_data->device.Get()==device; }
     MaterialProgramDX11::Publication::Publication() : m_data(new Data) {}
     MaterialProgramDX11::Publication::~Publication() = default;
 

@@ -253,7 +253,7 @@ namespace vehicle_geometry_budget_contracts
     class RetiringMaterial : public scene::Material
     {
     public:
-        Component *owner=nullptr;
+        vehicle_geometry_budget_contracts::Component *owner=nullptr;
         int callbacks=0;
         bool detached=false,reenter=false;
         void unload(SmartPtr<ISharedObject>) override
