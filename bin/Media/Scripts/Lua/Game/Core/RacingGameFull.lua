@@ -154,6 +154,23 @@ function RacingGameFull:showMainMenu()
     })
 end
 
+function RacingGameFull:stopForCircuitChange(available)
+    self.playerControl:enable(false)
+    self.manager:shutdown()
+    self.progress:RestartRace()
+    self:showMainMenu()
+    self.menu.status = available and "Circuit changed. Start a new run to reset race progress."
+        or ("Race route unavailable: " .. self:raceRouteError())
+    self.menu.view:setStatus(self.menu.status, not available)
+end
+
+function RacingGameFull:refreshCircuit()
+    if not self.started or not self.circuit.scene then return true, false end
+    local available, changed = self.circuit:refresh()
+    if changed then self:stopForCircuitChange(available) end
+    return available, changed
+end
+
 function RacingGameFull:setupSummary()
     return string.format("Track seed %d  |  %s\n%s  |  Track record %s", self.seed, qualities[self.quality + 1],
         self.mode == "timeTrial" and "Unlimited timed laps" or tostring(self.totalLaps) .. " lap challenge",
@@ -213,6 +230,9 @@ function RacingGameFull:startRace()
         if not ok then error(failure) end
         self:bindGeneratedScene()
     end
+
+    local available = self.circuit:refresh()
+    if not available then self:stopForCircuitChange(false); return false end
 	
     SampleVehicleAdvanced.reset(self)
     self.playerCamera:selectViewport(false)
@@ -332,6 +352,11 @@ function RacingGameFull:update()
             self.menu.view:setStatus("Unable to start: " .. tostring(failure), true)
         end
         return
+    end
+    if self.started then
+        local available, changed = self:refreshCircuit()
+        if changed then return end
+        if not available and not self.menu.visible then self:stopForCircuitChange(false); return end
     end
     if self.menu.visible then
         if keys.Up then self.menu:move(-1) end

@@ -335,6 +335,8 @@ namespace workphone::scene
         SmartPtr<CityRoadAuthoring> m_cityRoadAuthoring;
         SmartPtr<TerrainSystem> m_cityTerrain;
         u64 m_cityLastRefreshAttemptRevision = 0;
+        render::TerrainSnapshot m_cityBuiltTerrain, m_cityLastAttemptTerrain;
+        Transform3<real_Num> m_cityBuiltTerrainPlacement, m_cityLastAttemptPlacement;
         bool m_foliageWorldEnabled = false;
         String m_materialExportDirectory;
 

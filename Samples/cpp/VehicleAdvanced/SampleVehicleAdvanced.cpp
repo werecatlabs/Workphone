@@ -17,6 +17,9 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Material.hpp>
+#include <Workphone/Interface/Graphics/IMaterial.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMesh.hpp>
@@ -194,6 +197,8 @@ namespace workphone
         struct TerrainCityCheck
         {
             bool valid=false,binding=false,revisions=false,renderer=false,route=false,islands=false,support=false,flatFallbackAbsent=false;
+            bool roadPBRBindingsReady=false;
+            u32 roadPBRTextures=0,roadPBRMaterials=0;
             size_t roads=0,junctions=0,triangles=0,routePoints=0,islandsChecked=0,rayProbes=0,buildingBodies=0,expectedBuildingBodies=0;
             f32 routeHeightError=0;
         };
@@ -244,7 +249,27 @@ namespace workphone
             for(const auto &actor:assets.actors)if(actor)
             {if(actor->getName().find("Trackside collision: City building mass")==0)++result.buildingBodies;if(actor->getName()=="Circuit collision plane")result.flatFallbackAbsent=false;}
             result.support=assets.cityBuildingSupportValid && assets.cityBuildingSupportChecks>=assets.cityLayout.lots.size() && result.buildingBodies==result.expectedBuildingBodies && result.buildingBodies>0;
-            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0;
+            // Source-owned road runtime resources are outside SceneAssets' texture
+            // inventory. Inspect the active world's bindings and actual uploads.
+            auto app=core::IApplicationManager::instancePtr();auto manager=app?app->getGameManager():nullptr;
+            const auto currentScene=manager?manager->getCurrentScene():nullptr;
+            SourceBudgetSet<SourceBudgetText> materialNames;SourceBudgetSet<render::ITexture *> textures;
+            std::array<u32,4> layers{};bool mapsReady=bool(currentScene);
+            if(manager)for(const auto &actor:manager->getActors())if(actor && actor->getScene()==currentScene)
+            {
+                const auto name=actor->getName();const int layer=name=="Authored road carriageway"?0:name=="Roundabout island"?1:name=="Roundabout kerb"?2:name=="Road markings"?3:-1;
+                if(layer<0)continue;++layers[size_t(layer)];
+                auto component=actor->getComponent<scene::Material>();auto material=component?component->getMaterial():nullptr;
+                if(!material){mapsReady=false;continue;}
+                const auto materialName=material->getName();SourceBudgetText key(materialName.data(),materialName.size());
+                if(key.empty() || !materialNames.insert(key).second){mapsReady=false;continue;}
+                const auto uploaded=[&](u32 slot) {auto texture=material->getTexture(slot);void *native=nullptr;if(texture)texture->getTextureFinal(&native);if(native)textures.insert(texture.get());else mapsReady=false;};
+                uploaded(0);if(layer!=3)for(const u32 slot:{1u,22u,3u,2u})uploaded(slot);
+            }
+            result.roadPBRMaterials=u32(materialNames.size());result.roadPBRTextures=u32(textures.size());const bool junctions=!source.roundabouts.empty();
+            result.roadPBRBindingsReady=mapsReady && layers[0]==1 && layers[3]==1 && layers[1]==(junctions?1u:0u) && layers[2]==(junctions?1u:0u) &&
+                result.roadPBRMaterials==(junctions?4u:2u) && result.roadPBRTextures==(junctions?16u:6u);
+            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady;
             return result;
         }
 
@@ -722,6 +747,7 @@ namespace workphone
                         <<",\"activeRevision\":"<<(authoring?authoring->getActiveRevision():0)<<",\"terrainRevision\":"<<(snapshot?snapshot->revision:0)
                         <<",\"sourceBytes\":"<<(authoring?authoring->getSourceJSON().size():0)<<",\"roads\":"<<check.roads<<",\"roundabouts\":"<<check.junctions
                         <<",\"runtimeTriangles\":"<<check.triangles<<",\"terrainRendererReady\":"<<(check.renderer?"true":"false")
+                        <<",\"roadPBRBindingsReady\":"<<(check.roadPBRBindingsReady?"true":"false")<<",\"roadPBRTextures\":"<<check.roadPBRTextures<<",\"roadPBRMaterials\":"<<check.roadPBRMaterials
                         <<",\"routeSamples\":"<<check.routePoints<<",\"routeDriveable\":"<<(check.route?"true":"false")<<",\"routeMaximumHeightError\":"<<check.routeHeightError
                         <<",\"raceRouteAvailable\":"<<(m_assets.cityRaceRouteAvailable?"true":"false")<<",\"raceRouteError\":"<<advanced::jsonString(m_assets.cityRaceRouteError)
                         <<",\"islandCentresChecked\":"<<check.islandsChecked<<",\"islandsExcluded\":"<<(check.islands?"true":"false")
@@ -730,7 +756,7 @@ namespace workphone
                         <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
                         <<",\"buildingSupportChecks\":"<<m_assets.cityBuildingSupportChecks<<",\"culledParcels\":"<<m_assets.cityCulledParcels
                         <<",\"buildingSupportValid\":"<<(check.support?"true":"false")<<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
-                    if(!cityValid)WP_LOG_ERROR("Terrain city: source, fitted route, native collision or building support validation failed.");
+                    if(!cityValid)WP_LOG_ERROR("Terrain city: source, fitted route, native collision, building support or uploaded road PBR bindings validation failed.");
                 }
                 else if(m_assets.cityRoadShowcase)
                 {
@@ -1324,28 +1350,87 @@ namespace workphone
             road->width-=.25f;const float width=road->width;SourceBudgetText bytes;String error;
             if(!procedural::serializeCityRoadSplineSource(edited,bytes,error) ||
                !authoring->setSourceJSON(String(bytes.data(),bytes.size()),authoring->getSourceRevision(),error))throw std::runtime_error(error.c_str());
-            m_physicsConfigured=false;
-            if(!m_raceScene->regenerate())throw std::runtime_error(m_raceScene->getGenerationError().c_str());
-            m_assets=m_raceScene->getAssets();m_boxGround=m_assets.ground;m_chassisMeshActor=m_assets.body;m_wheelActors=m_assets.wheels;
-            m_generatedSpawnPosition=m_vehicleActor->getPosition();
+            const auto adoptScene=[&]() {
+                m_assets=m_raceScene->getAssets();m_boxGround=m_assets.ground;m_chassisMeshActor=m_assets.body;m_wheelActors=m_assets.wheels;
+                m_generatedSpawnPosition=m_vehicleActor->getPosition();
 #if WP_GRAPHICS_SYSTEM_CLAW
-            if(auto scene=dynamic_pointer_cast<render::ClawScene>(app->getGraphicsSystem()->getGraphicsScene()))
-                if(!scene->setPrimaryDirectionalLight(m_assets.sun))throw std::runtime_error("Regenerated city sunlight could not be selected.");
+                if(auto scene=dynamic_pointer_cast<render::ClawScene>(app->getGraphicsSystem()->getGraphicsScene()))
+                    if(!scene->setPrimaryDirectionalLight(m_assets.sun))throw std::runtime_error("Regenerated city sunlight could not be selected.");
 #endif
-            if(m_assets.vehicleLOD)m_assets.vehicleLOD->setForcedLOD(m_forcedVehicleLOD);
-            for(auto &group:m_assets.treeLODs)group->setForcedLOD(m_forcedLOD);
-            if(m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod(m_forcedLOD,error))throw std::runtime_error(error.c_str());
-            m_raceScene->initializePresentation();
-            if(m_assets.roadAuthoring!=authoring || m_assets.roadTerrain!=terrain || !m_assets.citySourceReused ||
-               authoring->getSource().id!=sourceId || authoring->getTerrainBindingUUID()!=binding ||
-               m_assets.cityAppliedSourceRevision!=authoring->getSourceRevision() || authoring->getActiveRevision()!=authoring->getSourceRevision())
-                throw std::runtime_error("Regeneration replaced an anchor/source identity or failed to apply the retained source revision.");
-            const auto &retained=authoring->getSource();const auto match=std::find_if(retained.roads.begin(),retained.roads.end(),[&](const auto &candidate){return candidate.id==roadId;});
-            if(match==retained.roads.end() || std::abs(match->width-width)>.000001f || match->knots.size()!=knotIds.size())
-                throw std::runtime_error("Regeneration discarded the road width edit or control-point identities.");
-            for(size_t i=0;i<knotIds.size();++i)if(match->knots[i].id!=knotIds[i])throw std::runtime_error("Regeneration changed a retained control-point GUID.");
-            if(!m_assets.cityBuildingSupportValid || m_assets.cityBuildingSupportChecks<m_assets.cityLayout.lots.size())
-                throw std::runtime_error("Regenerated building support checks failed.");
+                if(m_assets.vehicleLOD)m_assets.vehicleLOD->setForcedLOD(m_forcedVehicleLOD);
+                for(auto &group:m_assets.treeLODs)group->setForcedLOD(m_forcedLOD);
+                if(m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod(m_forcedLOD,error))throw std::runtime_error(error.c_str());
+                m_raceScene->initializePresentation();
+            };
+            const auto retainedSource=[&](SmartPtr<scene::TerrainSystem> expectedTerrain,const String &expectedBinding) {
+                const auto &retained=authoring->getSource();
+                if(m_assets.roadAuthoring!=authoring || m_assets.roadTerrain!=expectedTerrain || !m_assets.citySourceReused ||
+                   retained.id!=sourceId || authoring->getTerrain()!=expectedTerrain || authoring->getTerrainBindingUUID()!=expectedBinding ||
+                   std::string_view(retained.terrainResourceUuid.data(),retained.terrainResourceUuid.size())!=std::string_view(expectedBinding.data(),expectedBinding.size()) ||
+                   m_assets.cityAppliedSourceRevision!=authoring->getSourceRevision() || authoring->getActiveRevision()!=authoring->getSourceRevision())
+                    throw std::runtime_error("Regeneration replaced an anchor/source identity or failed to retain the canonical terrain binding.");
+                const auto match=std::find_if(retained.roads.begin(),retained.roads.end(),[&](const auto &candidate){return candidate.id==roadId;});
+                if(match==retained.roads.end() || std::abs(match->width-width)>.000001f || match->knots.size()!=knotIds.size())
+                    throw std::runtime_error("Regeneration discarded the road width edit or control-point identities.");
+                for(size_t i=0;i<knotIds.size();++i)if(match->knots[i].id!=knotIds[i])throw std::runtime_error("Regeneration changed a retained control-point GUID.");
+                if(!m_assets.cityBuildingSupportValid || m_assets.cityBuildingSupportChecks<m_assets.cityLayout.lots.size())
+                    throw std::runtime_error("Regenerated building support checks failed.");
+            };
+            const auto regenerate=[&]() {
+                m_physicsConfigured=false;
+                if(!m_raceScene->regenerate())throw std::runtime_error(m_raceScene->getGenerationError().c_str());
+                adoptScene();
+            };
+            regenerate();retainedSource(terrain,binding);
+
+            // Keep Terrain A scene-valid throughout the rebind/regeneration, so
+            // stale scene caches cannot accidentally pass by recreating it.
+            auto manager=app->getGameManager();auto currentScene=manager->getCurrentScene();auto oldActor=terrain->getActor();
+            const auto originalTerrain=terrain->getTerrainSnapshot();
+            if(!currentScene || !oldActor || !originalTerrain)throw std::runtime_error("The retained terrain cannot be copied for the rebind gate.");
+            auto replacementActor=manager->createActor();if(!replacementActor)throw std::runtime_error("Cannot create the replacement terrain actor.");
+            replacementActor->setName("Terrain city smoke replacement terrain");replacementActor->setStatic(true);
+            replacementActor->setPosition(oldActor->getPosition());replacementActor->setOrientation(oldActor->getOrientation());replacementActor->setScale(oldActor->getScale());
+            currentScene->addActor(replacementActor);currentScene->registerAllUpdates(replacementActor);
+            auto replacement=replacementActor->addComponent<scene::TerrainSystem>();
+            if(!replacement || !replacementActor->addComponent<scene::CollisionTerrain>() || !replacementActor->addComponent<scene::Rigidbody>())
+                throw std::runtime_error("Replacement terrain requires native terrain, collision and rigidbody components.");
+            if(!replacement->isLoaded())replacement->load(nullptr);
+            replacement->setTreesEnabled(false);replacement->setGrassEnabled(false);
+            const auto applyTerrain=[&](const render::TerrainData &data) {
+                auto renderer=dynamic_pointer_cast<render::Terrain>(replacement->getTerrain());
+                if(!renderer)throw std::runtime_error("Replacement terrain has no native renderer.");
+                const bool deferred=renderer->isTerrainPublicationDeferred();if(deferred)renderer->setDeferredTerrainPublication(false);
+                const bool applied=replacement->applyTerrainData(data,error);
+                if(deferred)renderer->setDeferredTerrainPublication(true);
+                if(!applied)throw std::runtime_error(error.c_str());
+            };
+            applyTerrain(*originalTerrain);
+            if(!authoring->bindTerrain(replacement,error))throw std::runtime_error(error.c_str());
+            const auto replacementBinding=authoring->getTerrainBindingUUID();
+            if(replacementBinding==binding)throw std::runtime_error("Replacement terrain did not receive a distinct persistent identity.");
+            regenerate();retainedSource(replacement,replacementBinding);
+            manager->destroyActor(oldActor,true);
+            if(oldActor->getScene())throw std::runtime_error("The old terrain actor remained in the scene after retirement.");
+
+            // Rebuild preserves the source token. Scenery must also observe the
+            // new retained terrain snapshot to refresh foundations and foliage.
+            if(m_assets.cityLayout.lots.empty())throw std::runtime_error("No admitted parcel exists for the terrain refresh gate.");
+            const auto parcelId=m_assets.cityLayout.lots.front().id;const float oldGround=m_assets.cityLayout.lots.front().groundHeight;
+            const auto beforeTerrain=replacement->getTerrainSnapshot();if(!beforeTerrain)throw std::runtime_error("Replacement terrain snapshot is unavailable.");
+            render::TerrainData raised=*beforeTerrain;
+            const float rise=.0005f,scale=raised.heightScale*replacementActor->getScale().y;
+            if(!std::isfinite(scale) || scale<=0)throw std::runtime_error("Replacement terrain height scale is invalid.");
+            for(auto &height:raised.heights)height+=rise/scale;
+            applyTerrain(raised);const auto sourceRevision=authoring->getSourceRevision();
+            if(!authoring->rebuild(error))throw std::runtime_error(error.c_str());
+            if(authoring->getSourceRevision()!=sourceRevision || authoring->getTerrainSnapshot()==beforeTerrain)
+                throw std::runtime_error("Explicit terrain rebuild changed the source token or retained the old snapshot.");
+            m_physicsConfigured=false;m_raceScene->update();adoptScene();retainedSource(replacement,replacementBinding);
+            const auto refreshed=std::find_if(m_assets.cityLayout.lots.begin(),m_assets.cityLayout.lots.end(),[&](const auto &lot){return lot.id==parcelId;});
+            if(refreshed==m_assets.cityLayout.lots.end() || std::abs(refreshed->groundHeight-oldGround-rise)>.00015f ||
+               authoring->getSourceRevision()!=sourceRevision || replacement->getActiveTerrainSnapshot()!=authoring->getTerrainSnapshot())
+                throw std::runtime_error("Terrain-only snapshot refresh did not update retained parcel supports at the unchanged source revision.");
             m_cityRetentionSmokeRoadId=roadId;m_cityRetentionSmokeWidth=width;m_cityRetentionSmokePrepared=true;
         }
         catch(const std::exception &error)
@@ -1427,11 +1512,11 @@ namespace workphone
             if(m_assets.cityTerrainRoads)
             {
                 const auto check=checkTerrainCity(m_assets,physics);
-                if(!check.valid){fail("terrain-city source, fitted route, static building support or native surface probes failed");return;}
+                if(!check.valid){fail("terrain-city source, fitted route, static building support, native surface probes or uploaded road PBR bindings failed");return;}
                 WP_LOG("Terrain city edit/regeneration retention smoke: PASS road="+String(m_cityRetentionSmokeRoadId.data(),m_cityRetentionSmokeRoadId.size())+
                        " width="+StringUtil::toString(m_cityRetentionSmokeWidth)+" source reused=true revision="+StringUtil::toString(m_assets.cityAppliedSourceRevision)+
-                       " native surface rays="+StringUtil::toString(u32(check.rayProbes))+" building support checks="+StringUtil::toString(m_assets.cityBuildingSupportChecks));
-                WP_LOG("Terrain city collision smoke: PASS native static boxes="+StringUtil::toString(u32(count))+" surface rays="+StringUtil::toString(u32(check.rayProbes))+" building masses="+StringUtil::toString(u32(check.buildingBodies)));
+                       " terrain rebound=true old terrain retired=true terrain snapshot refreshed=true native surface rays="+StringUtil::toString(u32(check.rayProbes))+" building support checks="+StringUtil::toString(m_assets.cityBuildingSupportChecks));
+                WP_LOG("Terrain city collision smoke: PASS native static boxes="+StringUtil::toString(u32(count))+" surface rays="+StringUtil::toString(u32(check.rayProbes))+" building masses="+StringUtil::toString(u32(check.buildingBodies))+" uploaded road PBR textures="+StringUtil::toString(check.roadPBRTextures));
                 m_smokeTestPassed=true;app->setQuit(true);return;
             }
             if( m_assets.openCity )

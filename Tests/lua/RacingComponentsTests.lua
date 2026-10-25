@@ -55,6 +55,19 @@ near(circuit.Length,40); near(circuit:GetRoutePosition(5).z,-5); near(circuit:Ge
 near(circuit:distanceAt(2),20)
 reject(function() circuit:SetWaypoints({Vector3F(0,0,0),Vector3F(0,0,0)}) end)
 near(circuit.Length,40) -- failed edits must preserve the working route
+local nativeCount, nativeLength = 4, 40
+local nativeRoute = {getCircuitLength=function() return nativeLength end, getCircuitSampleCount=function() return nativeCount end,
+    getCircuitPosition=function(_, index) assert(nativeCount > 1); return Vector3F(index,0,0) end,
+    nearestCircuitSample=function() assert(nativeCount > 1); return 0 end}
+local liveCircuit = WaypointCircuit(nil); liveCircuit:setProceduralScene(nativeRoute)
+nativeCount, nativeLength = 0, 0
+reject(function() liveCircuit:GetRoutePoint(2) end)
+assert(liveCircuit.numPoints == 0 and liveCircuit.Length == 0, "Queries must invalidate stale native dimensions before modulo/indexing")
+reject(function() liveCircuit:position(0) end); reject(function() liveCircuit:nearest(Vector3F(0,0,0)) end)
+nativeCount, nativeLength = 6, 60
+local available, changed = liveCircuit:refresh()
+assert(available and changed and liveCircuit.numPoints == 6 and liveCircuit.Length == 60)
+near(liveCircuit:position(7).x,1)
 local grid=SpawnpointContainer(nil); grid:generateGrid(circuit,4,6,2)
 local p,rotation=grid:GetStartTransform(1); assert(p and rotation)
 reject(function() grid:GetStartTransform(5) end)

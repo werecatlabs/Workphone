@@ -57,7 +57,11 @@ namespace workphone::scene
             if( auto manager = app->getGameManager() )
                 manager->registerComponentUpdate( TaskId::Application, Thread::UpdateState::Update, this );
         setLoadingState( LoadingState::Loaded );
-        if( !m_sourceJSON.empty() )
+        // The constructor's empty document is not restored authored intent.
+        // Scene admission loads a component before applying its saved properties;
+        // accepting that default here would disable pending-source restoration.
+        if( !m_sourceJSON.empty() && (m_hasAcceptedSource || !m_terrainBindingUUID.empty() ||
+            !m_source.roads.empty() || !m_source.roundabouts.empty()) )
         {
             String error;
             rebuild( error );

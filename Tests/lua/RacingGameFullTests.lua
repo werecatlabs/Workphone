@@ -265,6 +265,38 @@ game.mode = "timeTrial"; game:startRace()
 assert(game.generatedRoot == root and game.manager.session.mode == "timeTrial")
 game:nextCircuit(); game:startRace()
 assert(game.generatedRoot ~= root and game.generatedSeed == 8, "New track must regenerate")
+local oldCount, oldLength, oldPosition, oldNearest, oldError = race.getCircuitSampleCount, race.getCircuitLength,
+    race.getCircuitPosition, race.nearestCircuitSample, race.getGenerationError
+local routeCount, routeLength = 0, 0
+function race:getCircuitSampleCount() return routeCount end
+function race:getCircuitLength() return routeLength end
+function race:getGenerationError() return "Pinned route no longer fits the edited road" end
+function race:getCircuitPosition(index)
+    assert(routeCount > 1 and routeLength > 0, "Stale cached route indexed the empty native circuit")
+    return oldPosition(self, index)
+end
+function race:nearestCircuitSample(position)
+    assert(routeCount > 1 and routeLength > 0, "Stale cached route queried the empty native circuit")
+    return oldNearest(self, position)
+end
+app.now = app.now + 1; game:update()
+assert(game.circuit.numPoints == 0 and game.circuit.Length == 0, "Native route removal must clear both cached dimensions")
+assert(game.gameState == "main" and game.menu.visible and app.paused and race.controls[2] == 1)
+assert(game.manager.session.state == "idle" and game.progress.m_CurrentIndex == 0, "Edited routes must discard the old run")
+assert(game.menu.view.statusText.setTextValue:find("edited road", 1, true))
+assert(game:startRace() == false and game.gameState == "main", "An unavailable route must refuse a new race")
+keys[KeyCode.Down] = true; app.now = app.now + 1; game:update(); keys[KeyCode.Down] = false
+assert(game.menu.visible and game.menu.selected == 2 and game.menu.view.statusText.setTextValue:find("edited road", 1, true),
+    "Unavailable-route menu must remain interactive and retain its diagnostic")
+routeCount, routeLength = 120, 1500; app.now = app.now + 1; game:update()
+assert(game.circuit.numPoints == 120 and game.circuit.Length == 1500 and game.gameState == "main")
+game:startRace(); app.now = app.now + 1; game:update(); app.now = app.now + 3; game:update()
+assert(game.gameState == "racing")
+routeLength = 1600; app.now = app.now + 1; game:update()
+assert(game.gameState == "main" and game.circuit.Length == 1600 and race.controls[2] == 1,
+    "A changed live route length must stop an active race even if its sample count is unchanged")
+race.getCircuitSampleCount, race.getCircuitLength, race.getCircuitPosition, race.nearestCircuitSample, race.getGenerationError =
+    oldCount, oldLength, oldPosition, oldNearest, oldError
 game:quitGame()
 assert(not app.playing and not app.paused and app.edited and not app.quit)
 assert(not game.gameInitialized and game.hud == nil and game.menu == nil)

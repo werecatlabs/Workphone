@@ -1163,8 +1163,9 @@ namespace workphone::scene::race
             auto scene = app->getGraphicsSystem()->getGraphicsScene();
             // Reuse the terrain attachment consumed by ClawScene, including its page stream,
             // per-view instance bins, wind, shadow LOD and publication diagnostics.
-            auto carrier = assets.cityTerrainRoads && assets.roadTerrain ? assets.roadTerrain->getTerrain() :
-                scene->addGraphicsObjectByType<render::IGraphicsTerrain>();
+            // Population transforms below are world-space. Keep the existing
+            // identity carrier so a posed terrain cannot transform them twice.
+            auto carrier = scene->addGraphicsObjectByType<render::IGraphicsTerrain>();
             assets.foliageTerrain = dynamic_pointer_cast<render::Terrain>( carrier );
             if( !assets.foliageTerrain )
             {
@@ -1179,7 +1180,7 @@ namespace workphone::scene::race
             ground.spacing = { 1100, 1100 };
             ground.holes = { 1 };  // Existing meadow/collision own the ground; no duplicate surface.
             String error;
-            if( !assets.cityTerrainRoads && !assets.foliageTerrain->applyTerrainData( ground, error ) )
+            if( !assets.foliageTerrain->applyTerrainData( ground, error ) )
             {
                 throw std::runtime_error( "Cannot prepare foliage attachment: " + error );
             }
@@ -1794,7 +1795,8 @@ namespace workphone::scene::race
                 auto actor=persistentActor("Generated city terrain");assets.roadTerrain=actor->addComponent<TerrainSystem>();
                 if(!assets.roadTerrain || !actor->addComponent<CollisionTerrain>() || !actor->addComponent<Rigidbody>())
                     throw std::runtime_error("Terrain city requires native terrain and collision components.");
-                assets.roadTerrain->load(nullptr);assets.roadTerrain->setTreesEnabled(false);assets.roadTerrain->setGrassEnabled(false);
+                if(!assets.roadTerrain->isLoaded())assets.roadTerrain->load(nullptr);
+                assets.roadTerrain->setTreesEnabled(false);assets.roadTerrain->setGrassEnabled(false);
                 const float radius=std::ceil((city.extent+96)/4)*4;const u32 side=u32(radius*.5f)+1;
                 render::TerrainData data;data.dimensions={s32(side),s32(side)};data.spacing={4,4};data.origin={-radius,-radius};
                 data.heights.resize(size_t(side)*side);data.layerWeights.resize(size_t(side)*side);
@@ -1818,14 +1820,17 @@ namespace workphone::scene::race
             const bool newSource=!assets.roadAuthoring;
             if(newSource)assets.roadAuthoring=persistentActor("Editable generated city roads")->addComponent<CityRoadAuthoring>();
             if(!assets.roadAuthoring)throw std::runtime_error("Terrain city requires a canonical road source.");
-            assets.citySourceReused=!newSource;
             if(assets.roadAuthoring->getTerrain()!=assets.roadTerrain && !assets.roadAuthoring->bindTerrain(assets.roadTerrain,error))
                 throw std::runtime_error(error.c_str());
+            const auto &currentSource=assets.roadAuthoring->getSource();
+            const bool seedSource=newSource || (currentSource.roads.empty() && currentSource.roundabouts.empty() && currentSource.revision<=2);
+            assets.citySourceReused=!seedSource;
+            if(!seedSource && !assets.roadAuthoring->rebuild(error))throw std::runtime_error(error.c_str());
             const auto terrain=assets.roadAuthoring->getTerrainSnapshot();const auto placement=assets.roadAuthoring->getTerrainPlacement();
             if(!terrain)throw std::runtime_error("Terrain city has no retained terrain snapshot.");
             const auto height=[&](const Vector3F &point,float &y){return render::sampleTerrainHeight(*terrain,placement,point,y);};
             SourceBudgetVector<Vector3F> route;
-            if(newSource)
+            if(seedSource)
             {
                 procedural::OpenCityRoadSourceOptions options;options.seed=seed;
                 options.sourceId=assets.roadAuthoring->getSource().id;
@@ -1840,11 +1845,10 @@ namespace workphone::scene::race
             }
             else
             {
-                if(assets.roadAuthoring->getActiveRevision()!=assets.roadAuthoring->getSourceRevision() && !assets.roadAuthoring->rebuild(error))
-                    throw std::runtime_error(error.c_str());
                 assets.cityRaceRouteAvailable=procedural::fitOpenCityRoadRoute(city,assets.roadAuthoring->getSource(),height,route,error);
                 if(!assets.cityRaceRouteAvailable)assets.cityRaceRouteError=error;
             }
+            if(route.size()>1 && (route.front()-route.back()).lengthSquared()<1e-8f)route.pop_back();
             OpenCityLayout supported;
             if(!prepareCityRoadParcels(city,assets.roadAuthoring->getSource(),assets.roadAuthoring->getBake(),terrain,placement,
                 supported,assets.cityCulledParcels,assets.cityBuildingSupportChecks,error))throw std::runtime_error(error.c_str());
@@ -1936,6 +1940,54 @@ namespace workphone::scene::race
                     const Vector3F centre(lot.parcelX,(top+bottom)*.5f,lot.parcelZ);
                     const Vector3F size(lot.parcelWidth,top-bottom,lot.parcelDepth);
                     courtyards.box(centre,size);staticBox(assets,"City terrain foundation",centre,size);
+                }
+                SourceBudgetVector<Vector3F> lampCandidates;
+                const auto &source=assets.roadAuthoring->getSource();const auto &bake=assets.roadAuthoring->getBake();
+                for(size_t road=0;road<bake.roads.size();++road)
+                {
+                    const auto &points=bake.roads[road].points;float next=24;
+                    for(size_t i=1;i<points.size();++i)
+                    {
+                        const auto &a=points[i-1],&b=points[i];
+                        while(next<=b.distance)
+                        {
+                            const float t=std::clamp((next-a.distance)/(b.distance-a.distance),0.f,1.f);next+=60;
+                            const auto centre=a.position+(b.position-a.position)*t;
+                            auto forward=b.position-a.position;forward.y=0;forward.normalise();
+                            const Vector3F across(forward.z,0,-forward.x);
+                            for(int side:{-1,1})
+                            {
+                                auto point=centre+across*(side*(source.roads[road].width*.5f+1.3f));bool clear=true;
+                                for(const auto &junction:source.roundabouts)
+                                    if(std::hypot(point.x-junction.center.x,point.z-junction.center.z)<junction.outerRadius+2)clear=false;
+                                for(size_t other=0;clear && other<bake.roads.size();++other)
+                                {
+                                    const auto &samples=bake.roads[other].points;
+                                    for(size_t j=1;j<samples.size();++j)
+                                    {
+                                        const auto u=samples[j-1].position,v=samples[j].position;const float dx=v.x-u.x,dz=v.z-u.z;
+                                        const float s=std::clamp(((point.x-u.x)*dx+(point.z-u.z)*dz)/(dx*dx+dz*dz),0.f,1.f);
+                                        const float x=point.x-u.x-s*dx,z=point.z-u.z-s*dz,r=source.roads[other].width*.5f+.5f;
+                                        if(x*x+z*z<r*r){clear=false;break;}
+                                    }
+                                }
+                                float height=0;
+                                if(clear && lampCandidates.size()<2048 && render::sampleTerrainHeight(*assets.roadAuthoring->getTerrainSnapshot(),
+                                    assets.roadAuthoring->getTerrainPlacement(),point,height))
+                                {point.y=height;lampCandidates.push_back(point);}
+                            }
+                        }
+                    }
+                }
+                std::sort(lampCandidates.begin(),lampCandidates.end(),[](const auto &a,const auto &b){return a.lengthSquared()<b.lengthSquared();});
+                for(size_t i=0;i<std::min<size_t>(lampCandidates.size(),quality==VehicleAppearanceQuality::Preview?24:64);++i)
+                {
+                    const auto ground=lampCandidates[i],base=ground+Vector3F(0,.15f,0),top=base+Vector3F(0,6.2f,0);
+                    courtyards.box(ground+Vector3F(0,.075f,0),{.4f,.15f,.4f});
+                    streetMetal.beam(base,top,.055f);const Vector3F arm(.8f,-.1f,.45f);
+                    streetMetal.beam(top,top+arm,.04f);lampGlass.box(top+arm,{.5f,.1f,.5f});
+                    staticBox(assets,"City lamp foundation",ground+Vector3F(0,.075f,0),{.4f,.15f,.4f});
+                    staticBox(assets,"City lamp post",base+Vector3F(0,3.1f,0),{.12f,6.2f,.12f});
                 }
             }
             else if( city.naturalRoads )
@@ -2837,6 +2889,8 @@ namespace workphone::scene::race
         shadowGeometry.quad( { -1.6f, .025f, -3.7f }, { 1.6f, .025f, -3.7f }, { 1.6f, .025f, 3.7f },
                              { -1.6f, .025f, 3.7f }, { 0, 1, 0 } );
         assets.shadow = mesh( assets, "Vehicle contact shadow", shadowGeometry, shadowMaterial );
+        if(assets.cityTerrainRoads)
+            for(auto generated:assets.actors)generated->setFlag(IGameActor::ActorFlagDontSave,true);
         if( auto root = actor->getParent() )
         {
             auto scene = core::IApplicationManager::instance()->getGameManager()->getCurrentScene();

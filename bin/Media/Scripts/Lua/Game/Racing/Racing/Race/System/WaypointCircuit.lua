@@ -5,11 +5,25 @@ function WaypointCircuit:__init(component)
     BaseComponent.__init(self, component)
     self.points, self.distances, self.Length, self.numPoints = {}, {}, 0, 0
 end
-function WaypointCircuit:setProceduralScene(scene)
+local function proceduralShape(scene)
     local length, count = scene:getCircuitLength(), scene:getCircuitSampleCount()
-    RacingSupport.number(length, 0.001, 10000000, "circuit length")
-    RacingSupport.integer(count, 2, 1000000, "circuit samples")
+    RacingSupport.number(length, 0, 10000000, "circuit length")
+    RacingSupport.integer(count, 0, 1000000, "circuit samples")
+    if count < 2 or length <= 0 then return 0, 0 end
+    return length, count
+end
+function WaypointCircuit:setProceduralScene(scene)
+    local length, count = proceduralShape(scene)
     self.scene, self.Length, self.numPoints = scene, length, count
+    self.points, self.distances = {}, {}
+end
+-- A retained native scene can replace or remove its route after a source edit.
+function WaypointCircuit:refresh()
+    if not self.scene then return self.numPoints > 1 and self.Length > 0, false end
+    local length, count = proceduralShape(self.scene)
+    local changed = length ~= self.Length or count ~= self.numPoints
+    self.Length, self.numPoints = length, count
+    return count > 1 and length > 0, changed
 end
 function WaypointCircuit:SetWaypoints(points)
     RacingSupport.integer(#points, 2, 100000, "point count")
@@ -24,18 +38,18 @@ function WaypointCircuit:SetWaypoints(points)
     self.scene, self.points, self.distances, self.Length, self.numPoints = nil, copy, distances, length, #copy
 end
 function WaypointCircuit:position(index)
-    assert(self.numPoints > 1, "Circuit has no route")
+    assert(self:refresh(), "Circuit has no route")
     RacingSupport.integer(index, -100000000, 100000000, "sample index")
     if self.scene then return self.scene:getCircuitPosition(index % self.numPoints) end
     return RacingSupport.vector(self.points[index % self.numPoints + 1])
 end
 function WaypointCircuit:distanceAt(index)
-    assert(self.numPoints > 1, "Circuit has no route")
+    assert(self:refresh(), "Circuit has no route")
     index = index % self.numPoints
     return self.scene and index/self.numPoints*self.Length or self.distances[index+1]
 end
 function WaypointCircuit:nearest(position)
-    assert(self.numPoints > 1, "Circuit has no route")
+    assert(self:refresh(), "Circuit has no route")
     if self.scene then return self.scene:nearestCircuitSample(position) end
     local nearest, distance = 0, math.huge
     for i, point in ipairs(self.points) do
@@ -46,7 +60,7 @@ function WaypointCircuit:nearest(position)
     return nearest
 end
 function WaypointCircuit:GetRoutePoint(distance)
-    assert(self.numPoints > 1 and self.Length > 0, "Circuit has no route")
+    assert(self:refresh(), "Circuit has no route")
     local index, alpha
     RacingSupport.number(distance, -100000000, 100000000, "route distance")
     distance = distance % self.Length

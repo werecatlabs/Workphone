@@ -54,6 +54,7 @@ namespace workphone::scene
         }
 
         clearGeneratedScene();
+        m_cityRoadAuthoring=nullptr;m_cityTerrain=nullptr;
         Component::unload( data );
 
         setLoadingState( LoadingState::Unloaded );
@@ -74,10 +75,13 @@ namespace workphone::scene
             m_generationError = "Attach ProceduralRaceScene to a vehicle actor before generating.";
             return false;
         }
+        if(m_cityTerrainRoads && m_cityRoadShowcase)
+        {m_generationError="Choose a generated terrain city or the separate road authoring showcase.";return false;}
 
         auto currentScene=core::IApplicationManager::instance()->getGameManager()->getCurrentScene();
         if(m_cityTerrainRoads)
         {
+            if(m_cityTerrain && (!m_cityTerrain->getActor() || m_cityTerrain->getActor()->getScene()!=currentScene))m_cityTerrain=nullptr;
             if(m_cityRoadAuthoring && (!m_cityRoadAuthoring->getActor() || m_cityRoadAuthoring->getActor()->getScene()!=currentScene))
             {m_cityRoadAuthoring=nullptr;m_cityTerrain=nullptr;}
             if(!m_cityRoadAuthoring && !m_cityRoadAuthoringUUID.empty())
@@ -89,8 +93,10 @@ namespace workphone::scene
                             {m_cityRoadAuthoring=source;break;}
                 if(!m_cityRoadAuthoring){m_generationError="The saved city road source is unavailable in this scene.";return false;}
             }
-            if(m_cityRoadAuthoring && !m_cityTerrain)
+            if(m_cityRoadAuthoring)
             {
+                // The canonical source owns this binding; cached scenery must
+                // never reverse a user's rebind to another terrain.
                 m_cityTerrain=m_cityRoadAuthoring->getTerrain();
                 if(!m_cityTerrain)
                     for(auto candidate:core::IApplicationManager::instance()->getGameManager()->getActors())
@@ -188,6 +194,8 @@ namespace workphone::scene
                 m_cityRoadAuthoring=m_assets.roadAuthoring;m_cityTerrain=m_assets.roadTerrain;
                 m_cityRoadAuthoringUUID=m_cityRoadAuthoring->getHandle()->getUUIDAsString();
                 m_cityLayout=m_assets.cityLayout;m_cityLastRefreshAttemptRevision=m_assets.cityAppliedSourceRevision;
+                m_cityBuiltTerrain=m_cityRoadAuthoring->getTerrainSnapshot();m_cityBuiltTerrainPlacement=m_cityRoadAuthoring->getTerrainPlacement();
+                m_cityLastAttemptTerrain=m_cityBuiltTerrain;m_cityLastAttemptPlacement=m_cityBuiltTerrainPlacement;
             }
 
             // Render the chassis and attached meshes from the same sampled parent pose.
@@ -203,6 +211,7 @@ namespace workphone::scene
         }
         catch( const std::exception &e )
         {
+            if(m_cityTerrainRoads && m_assets.roadTerrain)m_cityTerrain=m_assets.roadTerrain;
             if(m_cityTerrainRoads && m_assets.roadAuthoring)
             {
                 m_cityRoadAuthoring=m_assets.roadAuthoring;m_cityTerrain=m_assets.roadTerrain;
@@ -387,8 +396,9 @@ namespace workphone::scene
             bool driveable=false;
             if(m_assets.roadAuthoring && m_assets.roadAuthoring->getRuntimeSurface(point.x,point.z,height,driveable) && driveable)
                 spawnPosition={point.x,height+.42f,point.z};
-            else if(snapshot && render::sampleTerrainHeight(*snapshot,Transform3<real_Num>(),point,height))
+            else if(snapshot && render::sampleTerrainHeight(*snapshot,m_assets.roadAuthoring?m_assets.roadAuthoring->getTerrainPlacement():Transform3<real_Num>(),point,height))
                 spawnPosition={point.x,height+.445f,point.z};
+            else {m_generationError="The edited city has no supported reset position.";return;}
         }
         const Transform3F spawn( spawnPosition, QuaternionF::identity() );
         if( auto rigidbody = actor->getComponent<Rigidbody>() )
@@ -411,11 +421,28 @@ namespace workphone::scene
     void ProceduralRaceScene::update()
     {
         auto app = core::IApplicationManager::instance();
-        if(Thread::getCurrentTask()==TaskId::Application && m_cityTerrainRoads && m_cityRoadAuthoring && isGenerated())
+        if(Thread::getCurrentTask()==TaskId::Application && isLoaded() && isEnabled() && m_cityTerrainRoads)
         {
+            if(!m_cityRoadAuthoring && !m_cityRoadAuthoringUUID.empty())
+            {
+                const auto scene=app->getGameManager()->getCurrentScene();
+                if(getActor() && getActor()->getScene()==scene)
+                    for(auto candidate:app->getGameManager()->getActors())
+                        if(candidate && candidate->getScene()==scene)
+                            if(auto source=candidate->getComponent<CityRoadAuthoring>())
+                                if(source->getHandle() && source->getHandle()->getUUIDAsString()==m_cityRoadAuthoringUUID)
+                                {m_cityRoadAuthoring=source;break;}
+            }
+            if(!m_cityRoadAuthoring)return;
             const auto revision=m_cityRoadAuthoring->getActiveRevision();
-            if(revision!=m_assets.cityAppliedSourceRevision && revision!=m_cityLastRefreshAttemptRevision)
-            {m_cityLastRefreshAttemptRevision=revision;regenerate();}
+            const auto snapshot=m_cityRoadAuthoring->getTerrainSnapshot();const auto placement=m_cityRoadAuthoring->getTerrainPlacement();
+            const bool changed=m_assets.roadAuthoring!=m_cityRoadAuthoring || revision!=m_assets.cityAppliedSourceRevision || snapshot!=m_cityBuiltTerrain || placement!=m_cityBuiltTerrainPlacement;
+            const bool attempted=revision==m_cityLastRefreshAttemptRevision && snapshot==m_cityLastAttemptTerrain && placement==m_cityLastAttemptPlacement;
+            if(changed && !attempted)
+            {
+                m_cityLastRefreshAttemptRevision=revision;m_cityLastAttemptTerrain=snapshot;m_cityLastAttemptPlacement=placement;
+                regenerate();
+            }
             return;
         }
         if( Thread::getCurrentTask() == TaskId::Render )
@@ -619,7 +646,12 @@ namespace workphone::scene
         auto yaw = std::atan2( -forward.x, -forward.z );
         f32 surfaceHeight=0;
         if((m_assets.cityRoadShowcase || m_assets.cityTerrainRoads) && m_assets.roadTerrain)
-        {const auto snapshot=m_assets.roadTerrain->getTerrainSnapshot();if(snapshot)render::sampleTerrainHeight(*snapshot,Transform3<real_Num>(),position,surfaceHeight);}
+        {
+            const auto snapshot=m_assets.roadTerrain->getTerrainSnapshot();
+            const auto placement=m_assets.roadAuthoring?m_assets.roadAuthoring->getTerrainPlacement():Transform3<real_Num>();
+            if(!snapshot || !render::sampleTerrainHeight(*snapshot,placement,position,surfaceHeight))
+            {m_assets.shadow->setVisible(false);return;}
+        }
         position.y = surfaceHeight+((m_assets.cityRoadShowcase || m_assets.cityTerrainRoads)?.025f:0.f);
         m_assets.shadow->setPosition( position );
         m_assets.shadow->setOrientation( QuaternionF::eulerDegrees( 0, yaw * 180.f / 3.14159265f, 0 ) );
@@ -738,8 +770,13 @@ namespace workphone::scene
         p->getPropertyValue( "City Route", m_cityRoute );
         p->getPropertyValue( "City Natural Roads", m_cityNaturalRoads );
         p->getPropertyValue( "Road Authoring Showcase", m_cityRoadShowcase );
-        p->getPropertyValue( "City Terrain Roads", m_cityTerrainRoads );
-        p->getPropertyValue( "City Road Authoring UUID", m_cityRoadAuthoringUUID );
+        bool terrainMode=m_cityTerrainRoads;p->getPropertyValue( "City Terrain Roads", terrainMode );
+        if(!terrainMode && m_cityTerrainRoads && (m_cityRoadAuthoring || !m_cityRoadAuthoringUUID.empty()))
+            m_generationError="Leaving terrain-city mode while its saved road/terrain anchors are active is unavailable; use a separate scene for the flat city.";
+        else m_cityTerrainRoads=terrainMode;
+        String binding=m_cityRoadAuthoringUUID;p->getPropertyValue( "City Road Authoring UUID", binding );
+        if(binding!=m_cityRoadAuthoringUUID)
+        {m_cityRoadAuthoringUUID=binding;m_cityRoadAuthoring=nullptr;m_cityTerrain=nullptr;m_cityLastAttemptTerrain.reset();}
         if(m_cityTerrainRoads)m_openCity=true;
         m_cityBlocks = std::clamp( m_cityBlocks / 2 * 2, 6, 10 );
         m_cityRoute = std::clamp( m_cityRoute, 0, 2 );
@@ -802,8 +839,7 @@ namespace workphone::scene
 
     bool ProceduralRaceScene::isGenerated() const
     {
-        return !m_assets.circuit.samples.empty() || (m_assets.cityTerrainRoads && m_assets.body &&
-            m_assets.roadAuthoring && m_assets.cityAppliedSourceRevision>0);
+        return !m_assets.circuit.samples.empty();
     }
 
     s32 ProceduralRaceScene::getQuality() const

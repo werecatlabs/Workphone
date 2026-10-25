@@ -288,5 +288,27 @@ assert(not ok and message:find("Missing WPProcedural") and app.playing)
 assert(sample.startFailed and not sample.started and #destroyed == 1)
 sample:update()
 assert(#destroyed == 1, "Failed generation must not retry every frame")
+
+sample, app, race, body, keys, destroyed, drawn = fixture()
+sample:generate(); app.playing = true
+local count, routeLength = 0, 0
+function race:getCircuitSampleCount() return count end
+function race:getCircuitLength() return routeLength end
+function race:getGenerationError() return "Pinned route crosses an edited island" end
+function race:nearestCircuitSample() error("Unavailable route must not query nearest sample") end
+function race:getCircuitPosition() error("Unavailable route must not index native samples") end
+sample:update()
+assert(race.playerControls and drawn[0x56454800] == "Race route unavailable")
+assert(drawn[0x56454801]:find("edited island", 1, true), "HUD must expose the native route diagnostic")
+count, routeLength = 1, 10; app.now = app.now + 1; sample:updateDebugText()
+assert(drawn[0x56454800] == "Race route unavailable", "A single sample cannot support a race")
+count, routeLength = 10, 0; app.now = app.now + 1; sample:updateDebugText()
+assert(drawn[0x56454800] == "Race route unavailable", "Zero length cannot be divided or wrapped")
+sample:setTrackSmokeTest(true)
+local report
+function sample:reportSmoke(message) report = message end
+sample:updateControls()
+assert(app.quit and not sample.smokePassed and report:find("edited island", 1, true))
+sample:shutdown()
 print("SampleVehicleAdvanced Lua behavior: PASS")
 return {fixture = fixture}

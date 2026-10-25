@@ -53,6 +53,17 @@ end
 function SampleVehicleAdvanced:resetRaceProgress()
     RaceSession.resetProgress(self)
     self.nextDebugUpdate, self.nextDebugLog = 0, 0
+    self.routeCount, self.routeLength = nil, nil
+end
+
+function SampleVehicleAdvanced:hasRaceRoute()
+    local count, distance = self.raceScene:getCircuitSampleCount(), self.raceScene:getCircuitLength()
+    return count >= 2 and distance > 0 and distance < math.huge, count, distance
+end
+
+function SampleVehicleAdvanced:raceRouteError()
+    local failure = self.raceScene:getGenerationError()
+    return failure ~= "" and failure or "The edited city has no supported closed race route."
 end
 
 function SampleVehicleAdvanced:resetSmokeProgress()
@@ -215,13 +226,17 @@ function SampleVehicleAdvanced:updateControls()
     steering = steering * math.min(1, wheelbase * 8 / (math.max(speed * speed * 0.25, 1) * maxSteer));
 	
     if self.trackSmokeTest and self.raceScene:isPhysicsConfigured() then
+        local available, count, circuitLength = self:hasRaceRoute()
+        if not available then
+            if not self.smokeFinished then self:finishSmokeTest(false, "Full circuit unavailable: " .. self:raceRouteError()) end
+            return
+        end
         local now = self.timer:getTime()
         self.trackSmokeStartedAt = self.trackSmokeStartedAt or now
         local position = self.vehicleActor:getPosition()
         local nearest = self.raceScene:nearestCircuitSample(position)
-        local count = self.raceScene:getCircuitSampleCount()
         local lookahead = math.max(8, speed * 0.75)
-        local index = (nearest + math.floor(lookahead * count / self.raceScene:getCircuitLength())) % count
+        local index = (nearest + math.floor(lookahead * count / circuitLength)) % count
         local target = self.raceScene:getCircuitPosition(index)
         local localTarget = self.vehicleActor:getWorldTransform():inverseTransformPoint(target)
         local angle = atan2(2 * wheelbase * localTarget.x,
@@ -257,9 +272,20 @@ end
 function SampleVehicleAdvanced:updateDebugText()
     local now = self.timer:getTime()
     if now < self.nextDebugUpdate then return end
+    local available, count, circuitLength = self:hasRaceRoute()
+    if self.routeCount ~= count or self.routeLength ~= circuitLength then
+        self:resetRaceProgress()
+        self.routeCount, self.routeLength = count, circuitLength
+    end
     self.nextDebugUpdate, self.lapStart = now + 0.1, self.lapStart or now
+    if not available then
+        self:drawText(DEBUG_TEXT_ID, 0.14, "Race route unavailable")
+        self:drawText(DEBUG_TEXT_ID + 1, 0.18, self:raceRouteError())
+        self:drawText(DEBUG_TEXT_ID + 2, 0.22, "Free city driving remains available.")
+        return
+    end
     local position = self.vehicleActor:getPosition()
-    local index, count = self.raceScene:nearestCircuitSample(position), self.raceScene:getCircuitSampleCount()
+    local index = self.raceScene:nearestCircuitSample(position)
     local offset = length(flat(position - self.raceScene:getCircuitPosition(index)))
     local onRoad = offset < 6.85
     RaceSession.advanceLap(self, index, count, onRoad, now)
@@ -274,7 +300,7 @@ function SampleVehicleAdvanced:updateDebugText()
             length(self.rigidbody:getLinearVelocity()) * 3.6, gearLabel, math.floor(rpm), self.lap),
         string.format("Lap time %.1f s | Last %.1f s | Best %.1f s", now - self.lapStart,
             self.lastLapTime, self.bestLapTime),
-        string.format("Circuit %.1f m | Seed %d%s", self.raceScene:getCircuitLength(), self.seed,
+        string.format("Circuit %.1f m | Seed %d%s", circuitLength, self.seed,
             offset > 11 and " | OFF TRACK" or "")
     }
     for i, line in ipairs(lines) do self:drawText(DEBUG_TEXT_ID + i - 1, 0.14 + (i - 1) * 0.04, line) end

@@ -286,8 +286,13 @@ namespace workphone::procedural
                 const auto tangent = ( finishPoint - startPoint ) / 3.f;
                 CityRoadSpline road; road.id = guid( space, 0x524f4144, a, b ); road.width = options.roadWidth;
                 road.maxGrade = options.maxGrade; road.heightOffset = options.heightOffset;
-                road.knots.push_back( { guid( space ^ pointHash( a ), 0x4b4e4f5430, a, b ), startPoint, {}, tangent } );
-                road.knots.push_back( { guid( space ^ pointHash( b ), 0x4b4e4f5431, a, b ), finishPoint, -tangent, {} } );
+                // Controls belong to their road, even when ordinary graph
+                // junctions share endpoint positions. Do not XOR the point hash
+                // into the namespace: guid's own point hash could cancel it and
+                // alias controls on parallel grid roads with equal spans.
+                const auto ownerSpace = namespaceHash( road.id, options.seed );
+                road.knots.push_back( { guid( ownerSpace, 0x4b4e4f5430, a, b ), startPoint, {}, tangent } );
+                road.knots.push_back( { guid( ownerSpace, 0x4b4e4f5431, a, b ), finishPoint, -tangent, {} } );
                 for( auto edge : chain.edges ) roadAtEdge[edge] = u32( candidate.source.roads.size() );
                 candidate.source.roads.push_back( std::move( road ) );
             }
@@ -375,11 +380,97 @@ namespace workphone::procedural
                     top = std::max( top, spec.center.y + spec.gradeX * ( point.x - spec.center.x ) + spec.gradeZ * ( point.z - spec.center.z ) ); supported = true;
                 }
                 need( supported, "Edited city source no longer supports the pinned race route; race is unavailable." );
+                need( std::isfinite( top ), "Pinned race route has a nonfinite surface height." );
                 point.y = top;
             };
             for( auto &point : candidate.route ) fit( point );
+            struct Interval { double first = 0, last = 0; };
+            SourceBudgetVector<Interval> coverage; coverage.reserve( 32 );
+            const auto coverTriangle = [&]( Vector3F start, Vector3F finish, Vector3F a, Vector3F b, Vector3F c ) {
+                const float minX = std::min( start.x, finish.x ) - .0001f, maxX = std::max( start.x, finish.x ) + .0001f;
+                const float minZ = std::min( start.z, finish.z ) - .0001f, maxZ = std::max( start.z, finish.z ) + .0001f;
+                if( std::max( { a.x, b.x, c.x } ) < minX || std::min( { a.x, b.x, c.x } ) > maxX ||
+                    std::max( { a.z, b.z, c.z } ) < minZ || std::min( { a.z, b.z, c.z } ) > maxZ ) return;
+                const auto side = []( Vector3F u, Vector3F v, Vector3F p ) {
+                    return ( v.x - double( u.x ) ) * ( p.z - double( u.z ) ) -
+                           ( v.z - double( u.z ) ) * ( p.x - double( u.x ) );
+                };
+                const double signedArea = side( a, b, c ); if( std::abs( signedArea ) < 1e-10 ) return;
+                const double sign = signedArea > 0 ? 1 : -1; double first = 0, last = 1;
+                const std::array<Vector3F, 3> triangle{ a, b, c };
+                for( unsigned edge = 0; edge < 3; ++edge )
+                {
+                    const auto u = triangle[edge], v = triangle[( edge + 1 ) % 3];
+                    const double tolerance = .0001 * std::hypot( v.x - u.x, v.z - u.z );
+                    const double from = sign * side( u, v, start ) + tolerance;
+                    const double to = sign * side( u, v, finish ) + tolerance;
+                    if( from < 0 && to < 0 ) return;
+                    if( from < 0 ) first = std::max( first, from / ( from - to ) );
+                    else if( to < 0 ) last = std::min( last, from / ( from - to ) );
+                    if( first > last ) return;
+                }
+                need( coverage.size() < 4096, "Pinned route segment coverage exceeds its 4096-interval scratch budget." );
+                coverage.push_back( { first, last } );
+            };
             for( size_t i = 1; i < candidate.route.size(); ++i )
-            { auto middle = ( candidate.route[i - 1] + candidate.route[i] ) * .5f; fit( middle ); }
+            {
+                const auto a = candidate.route[i - 1], b = candidate.route[i]; coverage.clear();
+                const double run = std::hypot( b.x - a.x, b.z - a.z );
+                need( run > 1e-8, "Pinned race route contains a zero horizontal step." );
+                for( size_t r = 0; r < roads.roads.size(); ++r )
+                {
+                    const auto &box = bounds[r];
+                    if( std::min( a.x, b.x ) > box.maxX + .0001f || std::max( a.x, b.x ) < box.minX - .0001f ||
+                        std::min( a.z, b.z ) > box.maxZ + .0001f || std::max( a.z, b.z ) < box.minZ - .0001f ) continue;
+                    const auto &samples = roads.roads[r].points;
+                    for( size_t p = 1; p < samples.size(); ++p )
+                    {
+                        coverTriangle( a, b, samples[p - 1].left, samples[p - 1].right, samples[p].left );
+                        coverTriangle( a, b, samples[p - 1].right, samples[p].right, samples[p].left );
+                    }
+                }
+                for( size_t j = 0; j < junctions.size(); ++j )
+                {
+                    const auto &spec = current.roundabouts[j];
+                    const Point center{ spec.center.x, spec.center.z };
+                    const double clearance = segmentDistance( center, { a.x, a.z }, { b.x, b.z } );
+                    need( clearance >= spec.islandRadius - .0001, "Pinned race route segment crosses a raised central island." );
+                    double extent = spec.outerRadius;
+                    for( const auto &port : spec.ports ) extent = std::max( extent, double( spec.outerRadius + port.length + port.width * .5f ) );
+                    if( clearance > extent ) continue;
+                    const auto &junction = junctions[j];
+                    for( size_t t = 0; t < junction.triangleKinds.size(); ++t )
+                    {
+                        const auto kind = junction.triangleKinds[t];
+                        if( kind != CityRoadRoundaboutSurface::Circulation && kind != CityRoadRoundaboutSurface::Approach ) continue;
+                        coverTriangle( a, b, junction.vertices[junction.indices[t * 3]].position,
+                            junction.vertices[junction.indices[t * 3 + 1]].position,
+                            junction.vertices[junction.indices[t * 3 + 2]].position );
+                    }
+                }
+                std::sort( coverage.begin(), coverage.end(), []( const Interval &left, const Interval &right ) {
+                    return left.first != right.first ? left.first < right.first : left.last < right.last;
+                } );
+                const double tolerance = .0001 / run; double covered = 0;
+                for( const auto interval : coverage )
+                {
+                    need( interval.first <= covered + tolerance, "Edited city roads leave an unsupported gap in the pinned race route." );
+                    covered = std::max( covered, interval.last );
+                }
+                need( covered >= 1 - tolerance, "Edited city roads do not continuously cover the pinned race route." );
+                auto middle = ( a + b ) * .5f; fit( middle );
+                // Probe both sides of every exact triangle boundary. A geometric
+                // contact with a height step is not a continuous running surface.
+                for( const auto interval : coverage ) for( const double station : { interval.first, interval.last } )
+                {
+                    const double delta = .001 / run;
+                    const double beforeStation = std::max( 0., station - delta ), afterStation = std::min( 1., station + delta );
+                    auto beforePoint = a + ( b - a ) * float( beforeStation );
+                    auto afterPoint = a + ( b - a ) * float( afterStation ); fit( beforePoint ); fit( afterPoint );
+                    need( std::abs( beforePoint.y - afterPoint.y ) <= .001f + .35f * float( ( afterStation - beforeStation ) * run ),
+                          "Edited city roads introduce a height discontinuity in the pinned race route." );
+                }
+            }
             output.swap( candidate.route ); error.clear(); return true;
         }
         catch( const std::exception &e ) { error = e.what(); return false; }

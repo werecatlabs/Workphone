@@ -109,8 +109,20 @@ namespace
             "Sloped full-parcel minimum/maximum foundation heights are wrong" );
         data = terrain(); data->heights[65 * 129 + 65] = .2f;
         check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error ), error );
-        require( output.lots.size() == 1 && std::abs( output.lots[0].groundHeight - .2f ) < .0001f && output.lots[0].groundMinimumHeight == 0,
+        std::cout << "Interior ridge support: lots=" << output.lots.size() << " culled=" << culled
+            << " checks=" << checks << " error=" << error;
+        if( !output.lots.empty() ) std::cout << " minimum=" << output.lots[0].groundMinimumHeight
+            << " maximum=" << output.lots[0].groundHeight;
+        std::cout << '\n';
+        require( culled == 0 && checks == 1 && output.lots.size() == 1 &&
+            std::abs( output.lots[0].groundHeight - .2f ) < .0001f &&
+            std::abs( output.lots[0].groundMinimumHeight ) < .0001f,
             "Full support missed an interior ridge between centre/edge queries" );
+        // A supported ridge must retain its interior extremum, while a sharper
+        // spike must still fail the same exact terrain-cell grade policy.
+        data->heights[65 * 129 + 65] = .7f;
+        check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error ), error );
+        require( culled == 1 && checks == 1 && output.lots.empty(), "Steep interior terrain spike bypassed parcel grade rejection" );
         data = terrain(); data->holes.assign( 128 * 128, 0 ); data->holes[65 * 128 + 65] = 1;
         check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error ), error );
         require( culled == 1 && checks == 1 && output.lots.empty(), "Interior terrain hole between coarse queries did not cull parcel" );
