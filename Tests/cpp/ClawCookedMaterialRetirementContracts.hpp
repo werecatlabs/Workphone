@@ -4,6 +4,8 @@
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/System/StateContext.hpp>
+#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <chrono>
 
 // Included after the existing cooked-resource Fixture and generated-image helpers.
@@ -84,7 +86,23 @@ namespace claw_cooked_material_retirement_contracts
                 static_cast<unsigned long long>( strings.liveBlocks ), static_cast<unsigned long long>( strings.freeBlocks ) );
 #endif
         };
-        std::array<u64, 10> sourceStages{};
+        std::array<u64, 12> sourceStages{};
+        const auto drainScheduling = [&] {
+            struct RestoreTask
+            {
+                TaskId previous = Thread::getCurrentTask();
+                ~RestoreTask() { Thread::setCurrentTask( previous ); }
+            } restore;
+            // State writes schedule strong context owners. A frame boundary
+            // normally consumes them even after the material inventory detaches
+            // and unloads its context. Exercise that normal owner-task path;
+            // do not clear scheduling internals or flush allocator pools.
+            for( u32 task = 0; task < static_cast<u32>( TaskId::Count ); ++task )
+            {
+                Thread::setCurrentTask( static_cast<TaskId>( task ) );
+                fixture.states->update();
+            }
+        };
         // The stable target and mesh are fixture owners, not per-generation
         // texture cost. Admit their real native storage before comparing the
         // exact two-texture GPU deltas, including during the disclosed warm-up.
@@ -140,6 +158,7 @@ namespace claw_cooked_material_retirement_contracts
             std::weak_ptr<const ClawMaterialResource::Candidate> oldCandidate, newCandidate;
             std::weak_ptr<const RuntimeResource> oldPayload, newPayload;
             std::weak_ptr<const MaterialRenderState> oldState, newState;
+            WeakPtr<IStateContext> oldContext, newContext;
             ComPtr<ID3D11ShaderResourceView> retainedView;
             ComPtr<ID3D11Resource> retainedResource;
             {
@@ -153,6 +172,8 @@ namespace claw_cooked_material_retirement_contracts
                 require( red && publisher.publish( red, error ), error );
                 oldCandidate = red;
                 oldState = red->material()->getRenderState();
+                oldContext = red->material()->getTechnique( 0 )->getPass( 0 )->getStateContext().get();
+                require( !oldContext.expired(), "Red generation has a live registered pass context" );
                 mesh.setMaterial( red->material() );
                 oldRecords.capture( &mesh );
                 oldRecords.seal( &cache );
@@ -169,6 +190,8 @@ namespace claw_cooked_material_retirement_contracts
                 require( green && publisher.publish( green, error ) && publisher.current() == green, error );
                 newCandidate = green;
                 newState = green->material()->getRenderState();
+                newContext = green->material()->getTechnique( 0 )->getPass( 0 )->getStateContext().get();
+                require( !newContext.expired(), "Green generation has a live registered pass context" );
                 mesh.setMaterial( green->material() );
                 newRecords.capture( &mesh );
                 newRecords.seal( &cache );
@@ -210,6 +233,18 @@ namespace claw_cooked_material_retirement_contracts
             require( scheduler->stats().used[gpu] == before.used[gpu],
                      "The last completed native resource release retires the exact physical GPU reservation" );
             sourceStages[9] = scheduler->stats().used[source];
+            require( !oldContext.expired() && !newContext.expired(),
+                     "Queued dirty notifications retain unloaded contexts until their normal task boundary" );
+            const auto previousTask = Thread::getCurrentTask();
+            drainScheduling();
+            require( Thread::getCurrentTask() == previousTask && oldContext.expired() && newContext.expired(),
+                     "Normal state task updates release both scheduled context owners and restore the caller task" );
+            sourceStages[10] = scheduler->stats().used[source];
+            // Engine weak references retain metadata until the observer itself
+            // releases it, so include that physical retirement in the boundary.
+            oldContext = nullptr;
+            newContext = nullptr;
+            sourceStages[11] = scheduler->stats().used[source];
         };
 
         // Disclose one complete peak-shape warm-up. It includes the native mesh,
@@ -231,14 +266,14 @@ namespace claw_cooked_material_retirement_contracts
         {
             cycle();
             const auto after = scheduler->stats();
-            if( ( index + 1 ) % 16 == 0 ) printInventory( "measured", index + 1 );
+            if( ( index + 1 ) % 64 == 0 ) printInventory( "measured", index + 1 );
             if( after.used[source] != baseline.used[source] || after.used[gpu] != baseline.used[gpu] ||
                 after.used[working] != baseline.used[working] ||
                 fixture.states->getStateContexts().size() != contextCount || MaterialPublicationScope::pendingEntryCount() ||
                 MaterialPublicationScope::retainedStorageBytes() != queueBytes )
             {
                 printInventory( "failed", index + 1 );
-                std::fprintf( stderr, "Cooked material retirement Source stages: before red_load red_stage green_load green_stage new_draw owner_unload old_draw record_clear native_release\n" );
+                std::fprintf( stderr, "Cooked material retirement Source stages: before red_load red_stage green_load green_stage new_draw owner_unload old_draw record_clear native_release state_task_update weak_release\n" );
                 for( size_t stage = 0; stage < sourceStages.size(); ++stage )
                     std::fprintf( stderr, "Cooked material retirement Source stage: stage=%zu warm=%llu current=%llu\n", stage,
                         static_cast<unsigned long long>( warmStages[stage] ), static_cast<unsigned long long>( sourceStages[stage] ) );
