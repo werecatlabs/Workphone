@@ -116,6 +116,22 @@ namespace claw_material_program_retirement_contracts
                 draw(redRecords,false); draw(greenRecords,true);
                 require(scheduler->stats().used[gpu]==before.used[gpu]+2*(textureBytes+programBytes),
                         "Two custom-program generations admit both textures and independent stage constant blocks");
+                {
+                    const auto resident=scheduler->stats();
+                    struct RestoreGpuLimit
+                    {
+                        std::shared_ptr<WorldStreamingScheduler> scheduler; u64 limit;
+                        ~RestoreGpuLimit() { String ignored; scheduler->setBudget(StreamMemoryClass::Gpu,limit,ignored); }
+                    } restoreGpu{scheduler,resident.limits[gpu]};
+                    String quotaError;
+                    // Admit the candidate texture and its first stage block,
+                    // then deny the second block. No replacement may publish.
+                    require(scheduler->setBudget(StreamMemoryClass::Gpu,
+                        resident.used[gpu]+textureBytes+blockBytes,quotaError),quotaError);
+                    auto denied=publisher.stageRuntime(payload,error);
+                    require(!denied && publisher.current()==green && scheduler->stats().used[gpu]==resident.used[gpu],
+                            "Late stage-buffer admission denial rolls back every partial lease and preserves the visible program");
+                }
                 require(publisher.unload(error) && !publisher.current(),error); mesh.setMaterial(nullptr);
             }
             require(redCandidate.expired() && greenCandidate.expired() &&
@@ -166,9 +182,9 @@ namespace claw_material_program_retirement_contracts
                     !MaterialPublicationScope::pendingEntryCount() && MaterialPublicationScope::retainedStorageBytes()==queueBytes,
                     "Every measured custom-program/native-resource cycle returns exact warmed ownership");
         }
-        std::fprintf(stderr,"Program retirement passed: cycles=%u programs=%llu stage_buffers=%llu retained_record_draws=%llu SourceCpu=%llu Gpu=%llu WorkingCpu=%llu elapsed_seconds=%.6f\n",
+        std::fprintf(stderr,"Program retirement passed: cycles=%u programs=%llu stage_buffers=%llu retained_record_draws=%llu denied_candidates=%u SourceCpu=%llu Gpu=%llu WorkingCpu=%llu elapsed_seconds=%.6f\n",
             cycles,static_cast<unsigned long long>(cycles)*2,static_cast<unsigned long long>(cycles)*4,
-            static_cast<unsigned long long>(cycles)*4,static_cast<unsigned long long>(baseline.used[source]),
+            static_cast<unsigned long long>(cycles)*4,cycles,static_cast<unsigned long long>(baseline.used[source]),
             static_cast<unsigned long long>(baseline.used[gpu]),static_cast<unsigned long long>(baseline.used[working]),
             std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count());
     }

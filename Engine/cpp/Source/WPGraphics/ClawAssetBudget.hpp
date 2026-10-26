@@ -91,6 +91,15 @@ namespace workphone::render::asset_budget
     {
         if( reservation ) static_cast<GpuReservation *>( reservation )->Release();
     }
+    inline bool retainResource( ID3D11Resource *resource, const StreamBudget &budget )
+    {
+        if( !resource || !budget ) return false;
+        auto owner = new( std::nothrow ) GpuReservation( budget );
+        if( !owner ) return false;
+        const bool retained = retainGpu( owner, resource ) != 0;
+        owner->Release();
+        return retained;
+    }
     inline bool retainTexture( void *view, StreamBudget budget )
     {
         if( !view || !budget ) return false;

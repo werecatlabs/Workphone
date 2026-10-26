@@ -25,6 +25,7 @@
 #include <limits>
 #include <stdexcept>
 #include <vector>
+#include "MaterialCpuAttributionClient.hpp"
 #if !defined(WP_MATERIAL_MEMORY_PROFILE_BASELINE)
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <WPGraphics/ClawMaterialDrawRecords.hpp>
@@ -116,6 +117,7 @@ namespace material_cpu_profile
         double updateNs = 0, prepareNs = 0, submitNs = 0, retireNs = 0;
         u64 draws = 0, preparations = 0, storageAllocations = 0;
         double checksum = 0;
+        material_cpu_attribution::Metrics attribution;
     };
 
     inline double ns(Clock::time_point begin, Clock::time_point end)
@@ -180,8 +182,10 @@ namespace material_cpu_profile
         // Fixed output storage avoids allocation/printing in timed intervals.
         std::array<std::array<Sample,31>,3> results{};
         u32 frameSerial = 0;
+        material_cpu_attribution::Client attribution;
         const auto execute = [&](u32 editsPercent, u32 measuredFrames) {
             Sample result;
+            attribution.reset();
             const auto before = statistics(native);
 #if !defined(WP_MATERIAL_MEMORY_PROFILE_BASELINE)
             const auto storageBefore = records.getStorageAllocationCount();
@@ -190,6 +194,7 @@ namespace material_cpu_profile
             for(u32 frame=0;frame<measuredFrames;++frame)
             {
                 const auto begin = Clock::now();
+                attribution.begin(material_cpu_attribution::Publication);
                 const auto edited = count * editsPercent / 100;
                 const f32 value = (++frameSerial % 2) ? 0.25f : 0.75f;
                 {
@@ -209,12 +214,16 @@ namespace material_cpu_profile
                     publication.commit();
 #endif
                 }
+                attribution.end(material_cpu_attribution::Publication);
                 const auto updated = Clock::now();
+                attribution.begin(material_cpu_attribution::Capture);
 #if !defined(WP_MATERIAL_MEMORY_PROFILE_BASELINE)
                 for(auto &mesh:meshes) records.capture(mesh.get());
                 renderer.prepareMaterialRecords(records);
 #endif
+                attribution.end(material_cpu_attribution::Capture);
                 const auto prepared = Clock::now();
+                attribution.begin(material_cpu_attribution::SubmitOwner);
                 for(u32 view=0;view<2;++view)
                     for(auto &mesh:meshes)
                     {
@@ -225,10 +234,13 @@ namespace material_cpu_profile
                                 "CPU profile captured records submit successfully");
 #endif
                     }
+                attribution.end(material_cpu_attribution::SubmitOwner);
                 const auto submitted = Clock::now();
+                attribution.begin(material_cpu_attribution::Retirement);
 #if !defined(WP_MATERIAL_MEMORY_PROFILE_BASELINE)
                 records.clear();
 #endif
+                attribution.end(material_cpu_attribution::Retirement);
                 const auto retired = Clock::now();
                 result.updateNs += ns(begin,updated); result.prepareNs += ns(updated,prepared);
                 result.submitNs += ns(prepared,submitted); result.retireNs += ns(submitted,retired);
@@ -245,6 +257,10 @@ namespace material_cpu_profile
             result.preparations = renderer.getMaterialRecordStatistics().preparations-preparedBefore;
             result.storageAllocations = records.getStorageAllocationCount()-storageBefore;
 #endif
+            result.attribution=attribution.read();
+            if(attribution.isEnabled()) require(!result.attribution.errors && !result.attribution.texturePaths &&
+                result.attribution.visitedSections==u64(count)*4*measuredFrames && result.attribution.sampledSections>0,
+                "Material CPU attribution covers all sections without native texture paths or clock failures");
             return result;
         };
         execute(100,3); // Warm compilation, geometry, driver and both value variants.
@@ -287,7 +303,22 @@ namespace material_cpu_profile
                 << " feature_level=" << featureLevel
                 << " driver_version_available=" << (driverVersionAvailable ? 1 : 0)
                 << " driver_version=" << static_cast<u64>(driverVersion.QuadPart)
-                << " material_only_attribution=0 representative_frame_acceptance=0\n";
+                << " material_only_attribution=0 representative_frame_acceptance=0";
+            if(attribution.isEnabled())
+            {
+                const auto &a=result.attribution;
+                std::cout << " attribution_protocol=material_cpu_scopes_v1 thread_cycle_clock=QueryThreadCycleTime"
+                    << " publication_cycles=" << a.stageCycles[material_cpu_attribution::Publication]
+                    << " capture_cycles=" << a.stageCycles[material_cpu_attribution::Capture]
+                    << " retirement_cycles=" << a.stageCycles[material_cpu_attribution::Retirement]
+                    << " submit_owner_cycles=" << a.stageCycles[material_cpu_attribution::SubmitOwner]
+                    << " material_sample_cycles=" << a.materialCycles << " material_sample_segments=" << a.materialSegments
+                    << " material_visited_sections=" << a.visitedSections << " material_sampled_sections=" << a.sampledSections
+                    << " material_sampling_stride=" << a.stride << " clock_overhead_median=" << a.overheadMedian
+                    << " clock_overhead_max=" << a.overheadMax << " clock_errors=" << a.errors
+                    << " native_texture_paths=" << a.texturePaths;
+            }
+            std::cout << '\n';
         }
     }
 }

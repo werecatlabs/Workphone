@@ -1,4 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
+#include "ClawAssetBudget.hpp"
 #include <WPGraphics/MaterialProgramDX11.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
@@ -96,7 +97,6 @@ namespace workphone::render
     struct MaterialProgramDX11::Data
     {
         StreamBudget cpu = admit(StreamMemoryClass::SourceCpu, sizeof(Data) + sizeof(MaterialProgramDX11));
-        StreamBudget gpu;
         ComPtr<ID3D11Device> device;
         ComPtr<ID3D11VertexShader> vertex;
         ComPtr<ID3D11PixelShader> pixel;
@@ -161,15 +161,21 @@ namespace workphone::render
                     data.stages[s].dimensions[binding.BindPoint] = binding.Dimension;
             }
         }
-        size_t gpuBytes = 0;
-        for(auto &stage : data.stages) if(stage.map)
+        // Admit the complete candidate before creating any native buffers, but
+        // keep independent leases so escaped native references retire each
+        // physical buffer independently of the C++ program/publication owner.
+        StreamBudget gpuReservations[2][D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];
+        for(size_t s = 0; s < 2; ++s) if(auto &stage = data.stages[s]; stage.map)
+        {
+            if(stage.map->GetBufferCount() > stage.buffers.size())
+                return fail("Too many material constant buffers");
             for(size_t i = 0; i < stage.map->GetBufferCount(); ++i)
             {
                 const auto buffer = stage.map->GetBuffer(i);
                 if(buffer->slot == 0) return fail("b0 is owned by geometry transforms");
-                gpuBytes += buffer->size;
+                gpuReservations[s][i] = admit(StreamMemoryClass::Gpu, buffer->size);
             }
-        if(gpuBytes) data.gpu = admit(StreamMemoryClass::Gpu, gpuBytes);
+        }
         if(FAILED(data.device->CreatePixelShader(pixel.data, pixel.size, nullptr, &data.pixel)))
             return fail("DX11 pixel shader creation failed");
         if(vertex.data)
@@ -184,7 +190,7 @@ namespace workphone::render
             if(FAILED(data.device->CreateInputLayout(elements, 4, vertex.data, vertex.size, &data.input)))
                 return fail("Vertex shader does not accept engine PNTC geometry");
         }
-        for(auto &stage : data.stages) if(stage.map)
+        for(size_t s = 0; s < 2; ++s) if(auto &stage = data.stages[s]; stage.map)
             for(size_t i = 0; i < stage.map->GetBufferCount(); ++i)
             {
                 D3D11_BUFFER_DESC desc{};
@@ -193,6 +199,14 @@ namespace workphone::render
                 desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
                 if(FAILED(data.device->CreateBuffer(&desc, nullptr, &stage.buffers[i])))
                     return fail("Material constant buffer creation failed");
+                if(!asset_budget::retainResource(stage.buffers[i].Get(), gpuReservations[s][i]))
+                {
+                    // Destroy the unretained resource while its local lease is
+                    // still held, including allocation/private-interface denial.
+                    stage.buffers[i].Reset();
+                    return fail("Material constant buffer reservation retention failed");
+                }
+                gpuReservations[s][i].reset();
             }
         return result;
     }
