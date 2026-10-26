@@ -46,15 +46,14 @@ namespace workphone
 
             try
             {
-                if( m_roadNetwork )
+                auto centers = std::move( m_cityCenters );
+                auto blocks = std::move( m_blocks );
+                auto network = std::exchange( m_roadNetwork, nullptr );
+                auto area = std::exchange( m_area, nullptr );
+                if( network )
                 {
-                    m_roadNetwork->unload( nullptr );
-                    m_roadNetwork = nullptr;
+                    network->unload( nullptr );
                 }
-
-                m_area = nullptr;
-                m_cityCenters.clear();
-                m_blocks.clear();
             }
             catch( std::exception &e )
             {
@@ -113,7 +112,13 @@ namespace workphone
 
         void CProceduralCity::setCityCenters( Array<SmartPtr<IProceduralCityCenter>> cityCenters )
         {
-            m_cityCenters = std::move( cityCenters );
+            if( cityCenters.get_allocator().isSourceBudgeted() )
+            {
+                m_cityCenters.swap( cityCenters );
+                return;
+            }
+            auto candidate = makeSourceBudgetSnapshot( cityCenters );
+            m_cityCenters.swap( candidate );
         }
 
         void CProceduralCity::addCenter( SmartPtr<IProceduralCityCenter> center )
@@ -223,14 +228,12 @@ namespace workphone
 
         Array<SmartPtr<IRoad>> CProceduralCity::getRoads() const
         {
-            WP_ASSERT( m_roadNetwork );
-
             if( m_roadNetwork )
             {
-                return m_roadNetwork->getRoads();
+                return makeSourceBudgetSnapshot( m_roadNetwork->getRoads() );
             }
 
-            return Array<SmartPtr<IRoad>>();
+            return makeSourceBudgetSnapshot<SmartPtr<IRoad>>();
         }
 
         Vector2<real_Num> CProceduralCity::getMinLatLong() const

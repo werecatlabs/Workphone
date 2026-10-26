@@ -242,6 +242,78 @@ def comparisons(runs):
     return result
 
 
+def resume_completed_runs(parent_path, expected_digest, report, output, counts, widths, frames, samples, repetitions):
+    """Import completed processes only after restoring the exact captured sources.
+
+    The abandoned live-source attempt remains abandoned. An immutable source
+    snapshot, identical frozen runtime pair and revalidated raw rows are required
+    before any completed measurement can contribute to the new protocol.
+    """
+    raw = parent_path.read_bytes()
+    if not re.fullmatch(r'[0-9a-f]{64}', expected_digest or '') or hashlib.sha256(raw).hexdigest() != expected_digest:
+        raise ValueError('resume parent manifest differs from its explicit SHA256')
+    parent = json.loads(raw)
+    if parent.get('status') != 'ABORTED_SOURCE_DRIFT':
+        raise ValueError('resume requires an explicitly source-drift-aborted capture')
+    for field in ('baseline_ref', 'optimized_ref', 'fixture_sha256', 'source_inputs_sha256',
+                  'all_engine_source_inputs_sha256'):
+        if parent.get(field) != report.get(field):
+            raise ValueError('resume source snapshot differs from captured input: ' + field)
+    if parent.get('baseline_ref') != BASELINE_REF:
+        raise ValueError('resume baseline is not the original revision')
+    for kind in ('baseline', 'optimized'):
+        matching_builds(parent['build_provenance'][kind], report['build_provenance'][kind])
+        expected = parent[kind + '_runtime_frozen_sha256']
+        actual = report[kind + '_runtime_source_sha256']
+        if {Path(name).name: value for name, value in expected.items()} != \
+                {Path(name).name: value for name, value in actual.items()}:
+            raise ValueError('resume frozen runtime differs: ' + kind)
+        original_exe = parent_path.parent / ('runtime_' + kind) / 'WPMaterialLoadSequenceTests.exe'
+        if modules(original_exe) != expected:
+            raise ValueError('resume parent runtime drift: ' + kind)
+    prepared = []
+    labels = set()
+    for run in parent['runs']:
+        name = run['name']
+        match = re.fullmatch(r'(baseline|optimized)_(\d+)x(8|32|128)_run([1-9]\d*)', name)
+        if not match or name in labels:
+            raise ValueError('invalid or duplicate completed resume process')
+        kind, count, width, repetition = match.groups()
+        count, width, repetition = int(count), int(width), int(repetition)
+        command = run['command']
+        if count not in counts or width not in widths or not 1 <= repetition <= repetitions or \
+                run['repetition'] != repetition or command != [
+                    str(parent_path.parent / ('runtime_' + kind) / 'WPMaterialLoadSequenceTests.exe'),
+                    '--profile-material-cpu', str(count), str(width), str(frames), str(samples)]:
+            raise ValueError('completed resume workload differs from requested dimensions')
+        stdout = parent_path.parent / (name + '.stdout.log')
+        stderr = parent_path.parent / (name + '.stderr.log')
+        if Path(run['stdout']).resolve() != stdout.resolve() or Path(run['stderr']).resolve() != stderr.resolve():
+            raise ValueError('resume raw output is outside its captured process')
+        rows = parse(stdout, 'baseline957' if kind == 'baseline' else 'optimized', count, width, frames, samples)
+        if rows != run['rows']:
+            raise ValueError('completed resume rows differ from guarded raw output')
+        prepared.append((run, stdout, stderr, digest(stdout), digest(stderr)))
+        labels.add(name)
+    if not prepared or digest(parent_path) != expected_digest:
+        raise ValueError('resume parent is empty or changed during validation')
+    for run, stdout, stderr, stdout_hash, stderr_hash in prepared:
+        copied_out, copied_err = output / stdout.name, output / stderr.name
+        shutil.copy2(stdout, copied_out); shutil.copy2(stderr, copied_err)
+        if digest(copied_out) != stdout_hash or digest(copied_err) != stderr_hash:
+            raise ValueError('resume output changed while copying')
+        imported = dict(run)
+        imported.update(stdout=str(copied_out), stderr=str(copied_err),
+                        stdout_sha256=stdout_hash, stderr_sha256=stderr_hash,
+                        execution_origin='validated_completed_parent_process')
+        report['runs'].append(imported)
+    (output / 'resume_parent_manifest.json').write_bytes(raw)
+    report['resume'] = {'manifest': str(parent_path), 'sha256': expected_digest,
+                        'imported_processes': len(prepared), 'exact_source_snapshot_restored': True,
+                        'original_status': parent['status']}
+    return labels
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-exe", type=Path, required=True)
@@ -258,7 +330,13 @@ def main():
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--timeout-seconds", type=int, default=1200)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument('--resume-from', type=Path)
+    parser.add_argument('--resume-sha256')
     args = parser.parse_args()
+    if bool(args.resume_from) != bool(args.resume_sha256):
+        parser.error('resume requires both the parent manifest and its explicit SHA256')
+    if args.resume_from:
+        args.resume_from = args.resume_from.resolve()
     for field in ("baseline_exe", "optimized_exe", "baseline_root", "optimized_root", "baseline_build", "optimized_build", "output"):
         setattr(args, field, getattr(args, field).resolve())
     if args.output.exists():
@@ -319,6 +397,8 @@ def main():
             executables[name] = frozen_exe; frozen_modules[name] = frozen
             report[f"{name}_runtime_source_sha256"] = original
             report[f"{name}_runtime_frozen_sha256"] = frozen
+        completed = resume_completed_runs(args.resume_from, args.resume_sha256, report, args.output,
+            args.counts, args.widths, args.frames, args.samples, args.repetitions) if args.resume_from else set()
         save()
         for repetition in range(args.repetitions):
             for count in args.counts:
@@ -329,6 +409,9 @@ def main():
                         if modules(executable) != frozen_modules[kind]:
                             raise ValueError("frozen runtime drift before CPU process")
                         label = f"{kind}_{count}x{width}_run{repetition+1}"
+                        if label in completed:
+                            print(f'resumed {label}', flush=True)
+                            continue
                         stdout, stderr = args.output / f"{label}.stdout.log", args.output / f"{label}.stderr.log"
                         command = [str(executable), "--profile-material-cpu", str(count), str(width), str(args.frames), str(args.samples)]
                         environment = dict(os.environ)
@@ -361,6 +444,8 @@ def main():
         report["frozen_runtime_changed_during_run"] = any(modules(executables[kind]) != frozen_modules[kind] for kind in executables)
         if report["source_changed_during_run"] or report["frozen_runtime_changed_during_run"]:
             raise ValueError("profile inputs changed during CPU protocol")
+        if digest(Path(__file__).resolve()) != report['runner_sha256']:
+            raise ValueError('CPU runner changed during protocol')
         report["status"] = "COMPLETE"
         report["full_inclusive_cpu_protocol_completed"] = not args.smoke
         save()

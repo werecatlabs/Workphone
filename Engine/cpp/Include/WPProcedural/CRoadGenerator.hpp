@@ -152,7 +152,8 @@ namespace workphone
             SmartPtr<IProceduralCity> m_city;
             SmartPtr<IRoadNetwork> m_roadNetwork;
             SmartPtr<ICityGenerator> m_cityGenerator;
-            Array<SmartPtr<IProceduralCity>> m_cities;
+            Array<SmartPtr<IProceduralCity>> m_cities{
+                Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
 
             SRoadGeneratorOptions m_options;
             bool m_finished = false;

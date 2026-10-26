@@ -10,7 +10,7 @@ namespace cooked_material_shader_contracts
     using namespace workphone::resource;
     using Microsoft::WRL::ComPtr;
     namespace fs=std::filesystem;
-    inline void run(Fixture &fixture)
+    inline void run(Fixture &fixture,u32 retirementCycles=16,bool retirementOnly=false)
     {
         const auto source=fixture.folder/"shader-source", compiled=fixture.folder/"shader-compiled";
         fs::create_directories(source);
@@ -177,6 +177,8 @@ namespace cooked_material_shader_contracts
         runtime.compiledRoot=config.compiledRoot;runtime.manifestPath=pathText(manifest);runtime.target=config.target;
         require(shipping.initializeRuntime(runtime,error),error);
         auto shipped=shipping.load(id,error);require(bool(shipped),error);
+        claw_material_program_retirement_contracts::run(fixture,shipped,config.target,retirementCycles);
+        if(retirementOnly) { shipping.shutdown(); return; }
         ClawMaterialResource publisher(nullptr,nullptr,"",{},fixture.graphics.renderer,config.target,true);
         auto candidate=publisher.stageRuntime(shipped,error);
         require(candidate && publisher.publish(candidate,error),error);

@@ -105,8 +105,9 @@ namespace workphone
 
             SmartPtr<IRoadNetwork> m_roadNetwork;  ///< Road network of the city
             SmartPtr<ICityMap> m_area;             ///< The map area representing the city layout
-            Array<SmartPtr<IProceduralCityCenter>> m_cityCenters;  ///< List of city centers
-            Array<SmartPtr<ICityBlock>> m_blocks;                  ///< List of city blocks
+            Array<SmartPtr<IProceduralCityCenter>> m_cityCenters{
+                Allocator<SmartPtr<IProceduralCityCenter>>( sourceBudget ) };
+            Array<SmartPtr<ICityBlock>> m_blocks{ Allocator<SmartPtr<ICityBlock>>( sourceBudget ) };
 
             SCityOptions m_options;
         };

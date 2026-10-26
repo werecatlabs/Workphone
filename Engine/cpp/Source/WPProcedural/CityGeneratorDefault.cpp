@@ -6,6 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
+#include <limits>
 
 namespace workphone
 {
@@ -167,23 +168,24 @@ namespace workphone
         void CityGeneratorDefault::unload( SmartPtr<ISharedObject> data )
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
-            // Releasing a coordinator must not unload an externally owned world or child generator.
-            m_steps.clear();
-            m_active = nullptr;
+            // Detach all owned inventories before releasing any callback owner.
+            auto steps = std::move( m_steps );
+            auto meshes = std::move( m_generatedMeshes );
+            auto scenes = std::move( m_scenes );
+            auto cities = std::move( m_cities );
+            auto active = std::exchange( m_active, nullptr );
+            auto terrain = std::exchange( m_terrainGenerator, nullptr );
+            auto road = std::exchange( m_roadGenerator, nullptr );
+            auto block = std::exchange( m_blockGenerator, nullptr );
+            auto mesh = std::exchange( m_meshGenerator, nullptr );
+            auto world = std::exchange( m_proceduralWorld, nullptr );
+            auto input = std::exchange( m_input, nullptr );
+            auto output = std::exchange( m_output, nullptr );
+            auto parent = std::exchange( m_parent, nullptr );
             m_running = false;
             m_finished = true;
             m_nextStep = 0;
-            m_generatedMeshes.clear();
-            m_terrainGenerator = nullptr;
-            m_roadGenerator = nullptr;
-            m_blockGenerator = nullptr;
-            m_meshGenerator = nullptr;
-            m_proceduralWorld = nullptr;
-            m_scenes.clear();
-            m_cities.clear();
-            m_input = nullptr;
-            m_output = nullptr;
-            m_parent = nullptr;
+            ++m_generation;
             setLoadingState( LoadingState::Unloaded );
         }
 
@@ -191,110 +193,53 @@ namespace workphone
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
             requireIdle();
-            m_steps.clear();
-            m_generatedMeshes.clear();
-            m_nextStep = 0;
-            m_finished = false;
+            // Prepare the complete run before replacing the previous result or
+            // invoking a producer. A denied plan leaves the last run intact.
+            auto steps = makeSourceBudgetSnapshot<Step>();
             auto scenes = m_scenes;
             auto cities = m_cities;
             auto appendUnique = []( auto &items, const auto &item ) {
                 if( item && std::find( items.begin(), items.end(), item ) == items.end() )
-                {
                     items.push_back( item );
-                }
             };
             if( m_proceduralWorld )
-            {
-                for( auto scene : m_proceduralWorld->getScenes() )
-                {
-                    appendUnique( scenes, scene );
-                }
-            }
+                for( auto scene : m_proceduralWorld->getScenes() ) appendUnique( scenes, scene );
+            size_t outputSlots = 0;
             for( auto scene : scenes )
             {
-                for( auto city : scene->getCities() )
-                {
-                    appendUnique( cities, city );
-                }
+                for( auto city : scene->getCities() ) appendUnique( cities, city );
                 if( auto terrain = m_terrainGenerator )
                 {
-                    m_steps.push_back( { terrain, [terrain, scene]() mutable {
-                                            terrain->setProceduralScene( scene );
-                                            terrain->generate();
-                                        } } );
+                    steps.push_back( { Step::Kind::Terrain, terrain, scene, nullptr, nullptr } );
                     if( auto mesh = m_meshGenerator )
                     {
-                        m_steps.push_back(
-                            { mesh, [this, terrain, mesh]() mutable {
-                                 if( auto data = terrain->getTerrain() )
-                                 {
-                                     auto result = mesh->generateFromTerrain( data );
-                                     if( !result )
-                                     {
-                                         throw std::runtime_error(
-                                             "CityGeneratorDefault: terrain mesh generation failed" );
-                                     }
-                                     m_generatedMeshes.push_back( result );
-                                 }
-                             } } );
+                        steps.push_back( { Step::Kind::TerrainMesh, mesh, nullptr, nullptr, terrain } );
+                        ++outputSlots;
                     }
                 }
             }
             for( auto city : cities )
             {
                 if( auto road = m_roadGenerator )
-                {
-                    m_steps.push_back( { road, [road, city]() mutable {
-                                            road->setCity( city );
-                                            road->generate();
-                                        } } );
-                }
+                    steps.push_back( { Step::Kind::Road, road, nullptr, city, nullptr } );
                 if( auto block = m_blockGenerator )
-                {
-                    m_steps.push_back( { block, [block, city]() mutable {
-                                            block->setCity( city );
-                                            block->generate();
-                                        } } );
-                }
+                    steps.push_back( { Step::Kind::Block, block, nullptr, city, nullptr } );
                 if( auto mesh = m_meshGenerator )
                 {
-                    m_steps.push_back(
-                        { mesh, [this, mesh, city]() mutable {
-                             if( auto network = city->getRoadNetwork() )
-                             {
-                                 if( !network->getRoads().empty() )
-                                 {
-                                     auto result = mesh->generate( network );
-                                     if( !result )
-                                     {
-                                         throw std::runtime_error(
-                                             "CityGeneratorDefault: road mesh generation failed" );
-                                     }
-                                     m_generatedMeshes.push_back( result );
-                                 }
-                             }
-                             Array<SmartPtr<IProceduralObject>> objects;
-                             for( auto block : city->getBlocks() )
-                             {
-                                 if( block )
-                                 {
-                                     objects.push_back( block );
-                                 }
-                             }
-                             if( !objects.empty() )
-                             {
-                                 auto result = mesh->generateFromObjects( objects );
-                                 if( !result )
-                                 {
-                                     throw std::runtime_error(
-                                         "CityGeneratorDefault: block mesh generation failed" );
-                                 }
-                                 m_generatedMeshes.push_back( result );
-                             }
-                         } } );
+                    steps.push_back( { Step::Kind::CityMesh, mesh, nullptr, city, nullptr } );
+                    if( outputSlots > std::numeric_limits<size_t>::max() - 2 )
+                        throw std::length_error( "City mesh inventory overflow" );
+                    outputSlots += 2;
                 }
             }
+            auto meshes = makeSourceBudgetSnapshot<SmartPtr<IMesh>>();
+            meshes.reserve( outputSlots );
+            m_steps.swap( steps );
+            m_generatedMeshes.swap( meshes );
+            m_nextStep = 0;
+            m_finished = false;
             m_running = true;
+            ++m_generation;
             advance();
         }
 
@@ -316,33 +261,102 @@ namespace workphone
                 }
             } guard{ m_advancing };
 
+            auto generation = m_generation;
             try
             {
                 while( m_running )
                 {
-                    if( m_active && !m_active->isFinished() )
+                    generation = m_generation;
+                    auto active = m_active;
+                    if( active && !active->isFinished() )
                     {
                         return;
                     }
+                    if( generation != m_generation ) continue;
                     m_active = nullptr;
                     if( m_nextStep == m_steps.size() )
                     {
                         m_running = false;
                         m_finished = true;
-                        m_steps.clear();
+                        auto retired = std::move( m_steps );
                         return;
                     }
                     // Copy the action so reentrant queries cannot invalidate its storage.
                     auto step = m_steps[m_nextStep++];
                     m_active = step.generator;
-                    step.run();
+                    // Typed stack values retain the owners through reentrant callbacks;
+                    // there are no erased heap captures or allocating action copies.
+                    switch( step.kind )
+                    {
+                    case Step::Kind::Terrain:
+                    {
+                        auto terrain = static_pointer_cast<ITerrainGenerator>( step.generator );
+                        terrain->setProceduralScene( step.scene );
+                        terrain->generate();
+                        break;
+                    }
+                    case Step::Kind::TerrainMesh:
+                    {
+                        auto mesh = static_pointer_cast<IMeshGenerator>( step.generator );
+                        if( auto data = step.terrain->getTerrain() )
+                        {
+                            auto result = mesh->generateFromTerrain( data );
+                            if( generation != m_generation || !m_running ) break;
+                            if( !result ) throw std::runtime_error( "CityGeneratorDefault: terrain mesh generation failed" );
+                            m_generatedMeshes.push_back( result );
+                        }
+                        break;
+                    }
+                    case Step::Kind::Road:
+                    {
+                        auto road = static_pointer_cast<IRoadGenerator>( step.generator );
+                        road->setCity( step.city );
+                        road->generate();
+                        break;
+                    }
+                    case Step::Kind::Block:
+                    {
+                        auto block = static_pointer_cast<IBlockGenerator>( step.generator );
+                        block->setCity( step.city );
+                        block->generate();
+                        break;
+                    }
+                    case Step::Kind::CityMesh:
+                    {
+                        auto mesh = static_pointer_cast<IMeshGenerator>( step.generator );
+                        if( auto network = step.city->getRoadNetwork() )
+                        {
+                            if( !network->getRoads().empty() )
+                            {
+                                auto result = mesh->generate( network );
+                                if( generation != m_generation || !m_running ) break;
+                                if( !result ) throw std::runtime_error( "CityGeneratorDefault: road mesh generation failed" );
+                                m_generatedMeshes.push_back( result );
+                            }
+                        }
+                        auto objects = makeSourceBudgetSnapshot<SmartPtr<IProceduralObject>>();
+                        for( auto block : step.city->getBlocks() )
+                            if( block ) objects.push_back( block );
+                        if( !objects.empty() )
+                        {
+                            auto result = mesh->generateFromObjects( objects );
+                            if( generation != m_generation || !m_running ) break;
+                            if( !result ) throw std::runtime_error( "CityGeneratorDefault: block mesh generation failed" );
+                            m_generatedMeshes.push_back( result );
+                        }
+                        break;
+                    }
+                    }
                 }
             }
             catch( ... )
             {
-                m_running = false;
-                m_active = nullptr;
-                m_steps.clear();
+                if( generation == m_generation )
+                {
+                    auto retired = std::move( m_steps );
+                    auto active = std::exchange( m_active, nullptr );
+                    m_running = false;
+                }
                 throw;
             }
         }

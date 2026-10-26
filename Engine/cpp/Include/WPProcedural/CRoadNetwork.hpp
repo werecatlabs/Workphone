@@ -220,17 +220,18 @@ namespace workphone
 
         private:
             // Node storage
-            Array<SmartPtr<IRoadNode>> m_nodes;
-            Array<SmartPtr<IRoadNode>> m_mergedNodes;
-            Array<SmartPtr<IRoadNode>> m_mergedNetworkNodes;
+            Array<SmartPtr<IRoadNode>> m_nodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
+            Array<SmartPtr<IRoadNode>> m_mergedNodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
+            Array<SmartPtr<IRoadNode>> m_mergedNetworkNodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
 
             // Road storage
-            Array<SmartPtr<IRoad>> m_roads;
-            Array<SmartPtr<IRoad>> m_majorRoads;
-            Array<SmartPtr<IRoad>> m_minorRoads;
+            Array<SmartPtr<IRoad>> m_roads{ Allocator<SmartPtr<IRoad>>( sourceBudget ) };
+            Array<SmartPtr<IRoad>> m_majorRoads{ Allocator<SmartPtr<IRoad>>( sourceBudget ) };
+            Array<SmartPtr<IRoad>> m_minorRoads{ Allocator<SmartPtr<IRoad>>( sourceBudget ) };
 
             // Connection storage
-            Array<SmartPtr<IRoadConnection>> m_roadConnections;
+            Array<SmartPtr<IRoadConnection>> m_roadConnections{
+                Allocator<SmartPtr<IRoadConnection>>( sourceBudget ) };
 
             // Cached mesh data for AAA quality rendering
             mutable std::unordered_map<IRoad *, std::optional<RoadSegmentResult>> m_cachedSegmentResults;

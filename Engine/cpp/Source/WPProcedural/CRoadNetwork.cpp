@@ -45,64 +45,29 @@ namespace workphone
 
         void CRoadNetwork::unload( SmartPtr<ISharedObject> data )
         {
-            try
-            {
-                for( auto &node : m_nodes )
+            // Detach every inventory before callbacks can inspect or mutate the network.
+            auto nodes = std::move( m_nodes );
+            auto merged = std::move( m_mergedNodes );
+            auto networkNodes = std::move( m_mergedNetworkNodes );
+            auto roads = std::move( m_roads );
+            auto major = std::move( m_majorRoads );
+            auto minor = std::move( m_minorRoads );
+            auto connections = std::move( m_roadConnections );
+            auto segments = std::move( m_cachedSegmentResults );
+            auto intersections = std::move( m_cachedIntersectionResults );
+            const auto retire = [&]( auto &items ) {
+                for( auto &item : items )
                 {
-                    if( node )
-                    {
-                        node->unload( data );
-                    }
+                    if( !item ) continue;
+                    try { item->unload( data ); }
+                    catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
                 }
-                m_nodes.clear();
-
-                for( auto &node : m_mergedNodes )
-                {
-                    if( node )
-                    {
-                        node->unload( data );
-                    }
-                }
-                m_mergedNodes.clear();
-
-                m_majorRoads.clear();
-                m_minorRoads.clear();
-
-                for( auto &node : m_mergedNetworkNodes )
-                {
-                    if( node )
-                    {
-                        node->unload( data );
-                    }
-                }
-                m_mergedNetworkNodes.clear();
-
-                for( auto &road : m_roads )
-                {
-                    if( road )
-                    {
-                        road->unload( data );
-                    }
-                }
-                m_roads.clear();
-
-                for( auto &roadConnection : m_roadConnections )
-                {
-                    if( roadConnection )
-                    {
-                        roadConnection->unload( data );
-                    }
-                }
-                m_roadConnections.clear();
-
-                // Clear cached mesh data
-                m_cachedSegmentResults.clear();
-                m_cachedIntersectionResults.clear();
-            }
-            catch( std::exception &e )
-            {
-                WP_LOG_EXCEPTION( e );
-            }
+            };
+            retire( nodes );
+            retire( merged );
+            retire( networkNodes );
+            retire( roads );
+            retire( connections );
         }
 
         // ---------------------------------------------------------------
@@ -164,7 +129,8 @@ namespace workphone
 
         void CRoadNetwork::setNodes( const Array<SmartPtr<IRoadNode>> &value )
         {
-            m_nodes = value;
+            auto candidate = makeSourceBudgetSnapshot( value );
+            m_nodes.swap( candidate );
         }
 
         Array<SmartPtr<IRoadNode>> CRoadNetwork::getMergedNodes() const
@@ -174,7 +140,8 @@ namespace workphone
 
         void CRoadNetwork::setMergedNodes( const Array<SmartPtr<IRoadNode>> &mergedNodes )
         {
-            m_mergedNodes = mergedNodes;
+            auto candidate = makeSourceBudgetSnapshot( mergedNodes );
+            m_mergedNodes.swap( candidate );
         }
 
         const Array<SmartPtr<IRoad>> &CRoadNetwork::getRoads() const
@@ -229,8 +196,7 @@ namespace workphone
 
                 m_roads.push_back( road );
 
-                // Initialize cached data for this road
-                m_cachedSegmentResults[road.get()] = std::nullopt;
+                // Result caches are populated only when an actual result exists.
             }
             catch( std::exception &e )
             {
@@ -275,7 +241,8 @@ namespace workphone
 
         void CRoadNetwork::setRoadConnections( const Array<SmartPtr<IRoadConnection>> &roadConnections )
         {
-            m_roadConnections = roadConnections;
+            auto candidate = makeSourceBudgetSnapshot( roadConnections );
+            m_roadConnections.swap( candidate );
         }
 
         void CRoadNetwork::removeRoadConnection( SmartPtr<IRoadConnection> roadConnection )
@@ -322,8 +289,7 @@ namespace workphone
 
                 m_roadConnections.push_back( roadConnection );
 
-                // Initialize cached data for this connection
-                m_cachedIntersectionResults[roadConnection.get()] = std::nullopt;
+                // Avoid a second allocation after publishing the inventory entry.
             }
             catch( std::exception &e )
             {

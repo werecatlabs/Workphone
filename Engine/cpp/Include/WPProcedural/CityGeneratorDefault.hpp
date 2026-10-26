@@ -4,8 +4,6 @@
 #include <Workphone/Interface/Procedural/ICityGenerator.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <WPProcedural/CProceduralGenerator.hpp>
-#include <functional>
-#include <vector>
 #include <Workphone/Thread/RecursiveMutex.hpp>
 
 namespace workphone
@@ -264,20 +262,25 @@ namespace workphone
         private:
             struct Step
             {
+                enum class Kind { Terrain, TerrainMesh, Road, Block, CityMesh };
+                Kind kind;
                 SmartPtr<IProceduralGenerator> generator;
-                std::function<void()> run;
+                SmartPtr<IProceduralScene> scene;
+                SmartPtr<IProceduralCity> city;
+                SmartPtr<ITerrainGenerator> terrain;
             };
 
             void advance();
             void requireIdle() const;
             Array<SmartPtr<IProceduralCity>> collectCities() const;
-            std::vector<Step> m_steps;
+            Array<Step> m_steps{ Allocator<Step>( sourceBudget ) };
             size_t m_nextStep = 0;
+            u64 m_generation = 0;
             SmartPtr<IProceduralGenerator> m_active;
             bool m_running = false;
             bool m_advancing = false;
             bool m_finished = true;
-            Array<SmartPtr<IMesh>> m_generatedMeshes;
+            Array<SmartPtr<IMesh>> m_generatedMeshes{ Allocator<SmartPtr<IMesh>>( sourceBudget ) };
 
         protected:
             /** @brief Path to the configuration file for city generation. */
@@ -299,10 +302,12 @@ namespace workphone
             SmartPtr<IRoadGenerator> m_roadGenerator;
 
             /** @brief Array of procedural scenes managed by this generator. */
-            Array<SmartPtr<IProceduralScene>> m_scenes;
+            Array<SmartPtr<IProceduralScene>> m_scenes{
+                Allocator<SmartPtr<IProceduralScene>>( sourceBudget ) };
 
             /** @brief Array of procedural cities managed by this generator. */
-            Array<SmartPtr<IProceduralCity>> m_cities;
+            Array<SmartPtr<IProceduralCity>> m_cities{
+                Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
 
             /** @brief Mutex for thread-safe access to generator data. */
             mutable RecursiveMutex m_mutex;

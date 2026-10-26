@@ -105,11 +105,11 @@ namespace workphone
 
         void CRoadGenerator::clear()
         {
-            m_city = nullptr;
-            m_roadNetwork = nullptr;
-            m_cityGenerator = nullptr;
-            m_cities.clear();
-            m_selectedLayer = nullptr;
+            auto cities = std::move( m_cities );
+            auto city = std::exchange( m_city, nullptr );
+            auto network = std::exchange( m_roadNetwork, nullptr );
+            auto generator = std::exchange( m_cityGenerator, nullptr );
+            auto layer = std::exchange( m_selectedLayer, nullptr );
             m_finished = false;
             m_isGenerating = false;
         }

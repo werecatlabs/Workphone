@@ -2,6 +2,7 @@
 
 import copy
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -171,6 +172,94 @@ class CpuEvidenceGuards(unittest.TestCase):
             new[category]["C" if category == "compiler" else "WorkphonePlatformWin32"][field] = value
             with self.subTest(category=category, field=field), self.assertRaises(ValueError):
                 profile.matching_builds(old, new)
+
+
+class CpuResumeGuards(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.parent_path = self.root / 'capture/manifest.json'
+        self.parent_path.parent.mkdir()
+        self.output = self.root / 'resumed'; self.output.mkdir()
+        builds = {'compiler': {'C': {'version': '19.51'}}, 'targets': {'Native': {'Optimization': 'MaxSpeed'}}}
+        self.parent = dict(status='ABORTED_SOURCE_DRIFT', baseline_ref=profile.BASELINE_REF,
+                           optimized_ref='1' * 40, fixture_sha256='2' * 64,
+                           source_inputs_sha256={'baseline': {'a.h': '3' * 64}, 'optimized': {'b.h': '4' * 64}},
+                           all_engine_source_inputs_sha256={'baseline': {'a.h': '3' * 64}, 'optimized': {'b.h': '4' * 64}},
+                           build_provenance={'baseline': builds, 'optimized': builds}, runs=[])
+        for kind in ('baseline', 'optimized'):
+            folder = self.parent_path.parent / ('runtime_' + kind); folder.mkdir()
+            exe = folder / 'WPMaterialLoadSequenceTests.exe'; exe.write_text(kind + ' exe')
+            (folder / 'Workphone.dll').write_text(kind + ' DLL')
+            self.parent[kind + '_runtime_frozen_sha256'] = profile.modules(exe)
+        self.label = 'baseline_1000x32_run1'
+        out = self.parent_path.parent / (self.label + '.stdout.log')
+        err = self.parent_path.parent / (self.label + '.stderr.log'); err.write_text('')
+        values = rows('baseline957')
+        out.write_text('\n'.join('material_cpu ' + ' '.join(f'{k}={v}' for k, v in value.items()) for value in values))
+        self.parent['runs'].append(dict(name=self.label, repetition=1, rows=values,
+            command=[str(self.parent_path.parent / 'runtime_baseline/WPMaterialLoadSequenceTests.exe'),
+                     '--profile-material-cpu', '1000', '32', '5', '2'], stdout=str(out), stderr=str(err)))
+        self.report = copy.deepcopy(self.parent); self.report['runs'] = []
+        for kind in ('baseline', 'optimized'):
+            self.report[kind + '_runtime_source_sha256'] = self.parent[kind + '_runtime_frozen_sha256']
+
+    def save(self):
+        self.parent_path.write_text(json.dumps(self.parent))
+        return profile.digest(self.parent_path)
+
+    def resume(self, checksum=None):
+        return profile.resume_completed_runs(self.parent_path, checksum or self.save(), self.report,
+            self.output, [1000], [32], 5, 2, 3)
+
+    def test_completed_process_requires_restored_sources_and_preserves_execution_origin(self):
+        self.assertEqual(self.resume(), {self.label})
+        self.assertEqual(len(self.report['runs']), 1)
+        self.assertEqual(self.report['runs'][0]['command'], self.parent['runs'][0]['command'])
+        self.assertEqual(self.report['runs'][0]['execution_origin'], 'validated_completed_parent_process')
+        self.assertEqual(profile.parse(self.output / (self.label + '.stdout.log'), 'baseline957', 1000, 32, 5, 2), rows('baseline957'))
+        self.assertTrue(self.report['resume']['exact_source_snapshot_restored'])
+        self.assertEqual(json.loads(self.parent_path.read_text())['status'], 'ABORTED_SOURCE_DRIFT')
+
+    def test_parent_digest_and_non_source_failures_reject(self):
+        self.save()
+        with self.assertRaises(ValueError): self.resume('0' * 64)
+        for status in ('RUNNING', 'REJECTED', 'COMPLETE'):
+            self.parent['status'] = status
+            with self.subTest(status=status), self.assertRaises(ValueError): self.resume()
+        self.assertFalse(self.report['runs'])
+
+    def test_snapshot_ref_fixture_required_and_unrelated_sources_must_match(self):
+        for field in ('optimized_ref', 'fixture_sha256', 'source_inputs_sha256', 'all_engine_source_inputs_sha256'):
+            old = self.report[field]; self.report[field] = {'different': 'value'}
+            with self.subTest(field=field), self.assertRaises(ValueError): self.resume()
+            self.report[field] = old
+        self.assertFalse(self.report['runs'])
+
+    def test_both_supplied_and_parent_native_runtime_bytes_are_checked(self):
+        key = 'optimized_runtime_source_sha256'
+        original = self.report[key]; self.report[key] = {'Workphone.dll': '0' * 64}
+        with self.assertRaises(ValueError): self.resume()
+        self.report[key] = original
+        (self.parent_path.parent / 'runtime_optimized/Workphone.dll').write_text('drift')
+        with self.assertRaises(ValueError): self.resume()
+
+    def test_duplicate_workloads_and_different_dimensions_are_not_imported(self):
+        self.parent['runs'].append(copy.deepcopy(self.parent['runs'][0]))
+        with self.assertRaises(ValueError): self.resume()
+        self.parent['runs'].pop(); self.parent['runs'][0]['command'][-1] = '7'
+        with self.assertRaises(ValueError): self.resume()
+        self.assertFalse(self.report['runs'])
+
+    def test_corrupt_raw_output_and_external_log_paths_reject(self):
+        run = self.parent['runs'][0]; original = run['stdout']
+        run['stdout'] = str(self.root / 'unrelated.log')
+        with self.assertRaises(ValueError): self.resume()
+        run['stdout'] = original
+        path = Path(original); path.write_text(path.read_text().replace('draws=20000', 'draws=1'))
+        with self.assertRaises(ValueError): self.resume()
+        self.assertFalse(self.report['runs'])
 
 
 if __name__ == "__main__":
