@@ -1143,3 +1143,24 @@ Remaining M6 gates:
 - Interactive visual/device-loss workflow, complete current Editor/package/release certification, unavailable external Ogre fixtures and broader full-suite acceptance after concurrent changes stabilize.
 
 The focused owner-retirement and affected material SDK gates are now closed within their documented scope. The supported M5 backend extensions remain separate, and **M6 is not complete**.
+
+## M6 full-edit publication fast path (26 October 2026)
+
+Public legacy diffuse/roughness edits now use indexed virtual selection when the graph has exactly one technique and one pass. This avoids constructing the technique and pass snapshot arrays for each setter. The selection checks the graph revision and pins both owners through the virtual pass call; no container lock is held while invoking the setter. Indexed technique lookup pins its result under a read lock. Graphs with multiple techniques/passes retain their existing snapshot traversal and broadcast behavior. Builtin shader-semantic ownership/publication remains unchanged. No persistent fields, caches or retained buffer capacities were added.
+
+The pre-change control was rebuilt from this checkout before applying the implementation change, with unchanged compiler/linker settings and fixture. An initial control build overlapped existing formatting work; its source-drift check rejected it and a fresh incremental control was rebuilt and frozen. `Tools/ProfileMaterialPublication.py` now runs paired control/candidate processes using the existing real-renderer fixture and draw/value/device guards. It rejects unexpected source changes, frozen-runtime drift or mismatched workload/driver/checksums, and reports update/publication separately from combined cost. The causal source difference is limited to `Material.cpp` and load-test wiring; the new regression header and runner dependencies are also hashed.
+
+Paired full-edit results (32 mixed parameters, WARP owner wall intervals):
+
+| Materials | Update/publication: control -> candidate | Reduction | Combined cost: control -> candidate | Reduction |
+| --- | --- | --- | --- | --- |
+| 1,000 | 35.706 -> 29.062 ms | **18.61%** | 80.580 -> 74.050 ms | **8.10%** |
+| 10,000 | 360.540 -> 293.790 ms | **18.51%** | 822.629 -> 776.138 ms | **5.65%** |
+
+The 1,000-material comparison has three process repetitions and 21 samples per variant/edit rate, with five frames per sample. The 10,000-material diagnostic has one repetition and three one-frame samples. No-edit combined time differed by -0.18% / -1.23%; partial-edit combined time was **0.33% / 1.69% higher**, despite lower publication cost. These observations do not establish statistical whole-frame nonregression. Rasterized pixels and hardware cache counters are unmeasured; translated geometry, standard uniform edited/unchanged cohorts and the same 32-parameter workload are retained.
+
+Fresh comparisons against original revision `9572201fa8b6100b4d53a0ffc2a239133aa100ea` also pass. Inclusive medians are **73.01-84.80% lower at 1,000 materials** and **76.97-86.24% lower at 10,000**, across 0/1/100% edit rates. Those figures describe this VM/WARP run, not a causal comparison with older reported timings. The paired control above isolates this change. Full-edit publication still costs more than the original mutable implementation (for example, **7.14 -> 29.66 ms** at 1,000 in the fresh original comparison); snapshot reservation/copy/ownership and commit costs remain further attribution work.
+
+Validation passes **8/8 focused RelWithDebInfo groups in 24.75 s**, including the new virtual-setter/coalescing, no-array-snapshot single-pass path, multi-pass fan-out and reentrant graph-detachment regressions. **18 Python guards pass**. The release retirement soak passes **1,000 cycles / 576,000 publications and texture retirements**, returning exactly to the **41,615,416-byte** warmed SourceCpu baseline. Frozen binaries and required source inputs remain unchanged during all accepted paired/original comparisons. Existing timeouts, budget-denial cases and burst-storage limits were preserved. Debug was not refreshed in this continuation; its prior evidence remains historical.
+
+Evidence and raw stages are indexed by `project_x64/material_m6_publication_validation.json`, with paired manifests under `material_m6_publication_ab_1000/` and `material_m6_publication_ab_10000/`, plus fresh original comparisons under `material_m6_publication_original_match/` and `material_m6_publication_original_large/`. This reduces the measured full-edit overhead without changing the M4 storage representation. M6's full matrix, isolated material attribution, representative hardware/frame/cache, Debug refresh and interactive/release certification gates remain open.

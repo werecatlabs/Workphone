@@ -37,6 +37,29 @@
 namespace workphone::render
 {
 
+    namespace
+    {
+        struct SinglePassEdit
+        {
+            SmartPtr<IMaterialTechnique> technique;
+            SmartPtr<IMaterialPass> pass;
+        };
+
+        SinglePassEdit singlePassEdit( const IMaterial &material,
+                                      const std::atomic<u64> &graphRevision )
+        {
+            const auto revision = graphRevision.load( std::memory_order_acquire );
+            if( material.getNumTechniques() != 1 ) return {};
+            auto technique = material.getTechnique( 0 );
+            if( !technique || technique->getNumPasses() != 1 ) return {};
+            auto pass = technique->getPass( 0 );
+            if( graphRevision.load( std::memory_order_acquire ) != revision ) return {};
+            // Pin both owners, then invoke the virtual setter outside container
+            // locks. A callback may replace/detach the selected graph.
+            return { std::move( technique ), std::move( pass ) };
+        }
+    }
+
     const String Material::materialTypeStr = String( "Material Type" );
     const String Material::materialTypeDataStr = String( "materialType" );
     const String Material::shaderIDStr = String( "Shader ID" );
@@ -1210,6 +1233,7 @@ namespace workphone::render
 
     SmartPtr<IMaterialTechnique> Material::getTechnique( u32 index ) const
     {
+        ScopedLock lock( &m_techniques, false );
         if( index < m_techniques.size() )
         {
             return m_techniques[index];
@@ -1303,6 +1327,11 @@ namespace workphone::render
             return;
         }
         rememberLegacySurface( MaterialBuiltinParameter::Roughness, roughness );
+        if( auto selected = singlePassEdit( *this, m_graphRevision ); selected.pass )
+        {
+            selected.pass->setRoughness( roughness );
+            return;
+        }
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -1352,6 +1381,11 @@ namespace workphone::render
                                         Math<f32>::clamp( diffuse.a, 0.0f, 1.0f ) );
                 return;
             }
+        }
+        if( auto selected = singlePassEdit( *this, m_graphRevision ); selected.pass )
+        {
+            selected.pass->setDiffuse( diffuse );
+            return;
         }
         auto techniques = getTechniques();
         for( auto technique : techniques )
