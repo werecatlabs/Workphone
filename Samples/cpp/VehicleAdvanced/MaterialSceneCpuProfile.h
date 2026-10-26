@@ -1,5 +1,5 @@
 #pragma once
-#include "../../../Tests/cpp/MaterialSceneCpuAttributionProbe.hpp"
+#include "MaterialSceneCpuAttributionProbe.hpp"
 #include <cstdlib>
 #include <ostream>
 #include <stdexcept>
@@ -55,3 +55,4 @@ namespace workphone::advanced
         material_scene_cpu::Metrics metrics;
     };
 }
+

@@ -1,4 +1,5 @@
 #pragma once
+#include "MaterialSceneCpuProfile.h"
 
 // Opt-in validation support for the real sample scene. The main function owns
 // this bounded observer until the application and TypeManager have retired.
@@ -116,6 +117,7 @@ namespace workphone::advanced
         {
 #if defined( _WIN32 )
             checkpoint( "scene_warmed_before_measurement" );
+            m_materialCpu.begin();
             marker( L"scene_profile_measurement_begin" );
             processTimes( m_cpuKernelBegin, m_cpuUserBegin );
             m_beginQpc = m_lastFrameQpc = qpc();
@@ -154,6 +156,7 @@ namespace workphone::advanced
 #if defined( _WIN32 )
             if( !m_measuring ) return;
             m_endQpc = qpc();
+            m_materialCpu.end();
             processTimes( m_cpuKernelEnd, m_cpuUserEnd );
             m_measuring = false;
             m_measuredObserverTicks = m_observerTicks - m_observerTicksAtBegin;
@@ -278,6 +281,7 @@ namespace workphone::advanced
                 << ",\"orderedGeometryFnv1a64\":" << m_workload.geometryDigest
                 << ",\"orderedCircuitFnv1a64\":" << m_workload.circuitDigest << "}";
             writeTelemetry( out );
+            m_materialCpu.write( out );
             out << ",\n\"memorySamples\":[";
             for( size_t i = 0; i < m_sampleCount; ++i )
             {
@@ -463,6 +467,7 @@ namespace workphone::advanced
         std::array<uint64_t, FrameCapacity> m_frameIntervals{};
         size_t m_sampleCount = 0;
         uint64_t m_droppedSamples = 0, m_frames = 0, m_frequency = 0;
+        MaterialSceneCpuProfile m_materialCpu;
         uint64_t m_beginQpc = 0, m_endQpc = 0, m_lastFrameQpc = 0, m_nextMemoryQpc = 0;
         uint64_t m_cpuKernelBegin = 0, m_cpuKernelEnd = 0, m_cpuUserBegin = 0, m_cpuUserEnd = 0;
         uint64_t m_intervalTotalTicks = 0, m_intervalMinTicks = ~uint64_t(0), m_intervalMaxTicks = 0;
