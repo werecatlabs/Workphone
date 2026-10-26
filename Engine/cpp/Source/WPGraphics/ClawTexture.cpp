@@ -7,8 +7,8 @@
 #include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Core/Properties.hpp>
-#include <Workphone/Interface/Database/IResourceDatabase.hpp>
-#include <Workphone/Scene/Directors/TextureResourceDirector.hpp>
+#include <Workphone/Core/JsonParser.hpp>
+#include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
@@ -344,29 +344,50 @@ namespace
         s32 recipeMipFilter = -1;
         try
         {
-            // Resolve the same typed owner as the Inspector, without adopting a
-            // borrowed texture pointer. Only a saved recipe changes raw decoding;
-            // uncataloged/unsaved sources retain their original resolution.
-            auto database = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
-            if( database )
+            // Match the Inspector's exact settings identity, but read an immutable
+            // saved recipe. Cached directors contain mutable, unsaved UI fields.
+            const auto folder = applicationManager ? applicationManager->getSettingsPath() : String();
+            const auto recipePath = folder + StringUtil::toString( StringUtil::getUUID( filePath ) ) +
+                                    ".resourcedata";
+            if( !folder.empty() && fileSystem && fileSystem->isExistingFile( recipePath ) )
             {
-                auto director = database->loadDirectorFromResourcePath(
-                    filePath, scene::TextureResourceDirector::typeInfo() );
-                if( director && fileSystem && fileSystem->isExistingFile( director->getFilePath() ) )
+                auto recipeStream = fileSystem->open( recipePath, true, true, false, false, false );
+                const auto bytes = recipeStream ? recipeStream->size() : 0;
+                if( !recipeStream || !bytes || bytes > ( 64u << 10 ) )
+                    throw std::runtime_error( "Saved texture recipe is unreadable, empty or exceeds 64 KiB" );
+                auto recipeBudget = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::WorkingCpu, bytes + 1u, budgetError );
+                if( !recipeBudget ) throw std::runtime_error( budgetError.c_str() );
+                auto text = std::make_unique<char[]>( static_cast<size_t>( bytes ) + 1u );
+                size_t offset = 0;
+                while( offset < bytes )
                 {
-                    auto settings = director->getProperties();
-                    s32 size = 0;
-                    if( settings && settings->getPropertyValue( "size", size ) )
-                    {
-                        if( size < 32 || size > 8192 || ( size & ( size - 1 ) ) )
-                            throw std::runtime_error( "Saved texture size must be a power of two from 32 to 8192" );
-                        maximumDimension = static_cast<u32>( size );
-                    }
-                    if( settings && settings->getPropertyValue( "mipmapFilter", recipeMipFilter ) &&
-                        ( recipeMipFilter < 0 || recipeMipFilter > 5 ) )
-                    {
-                        throw std::runtime_error( "Saved texture mip filter must be in the range 0 to 5" );
-                    }
+                    const auto read = recipeStream->read( text.get() + offset, bytes - offset );
+                    if( !read ) throw std::runtime_error( "Saved texture recipe changed during read" );
+                    offset += read;
+                }
+                char extra;
+                if( recipeStream->read( &extra, 1 ) )
+                    throw std::runtime_error( "Saved texture recipe grew during read" );
+                const auto denials = sourceBudgetDenialCount();
+                auto parsed = JsonParser( text.get(), static_cast<u32>( bytes ) ).parse();
+                const auto object = std::get_if<JsonObject>( &parsed );
+                if( !object ) throw std::runtime_error( "Saved texture recipe must be a valid JSON object" );
+                auto settings = make_ptr<Properties>();
+                JsonParser( text.get(), static_cast<u32>( bytes ) ).parseToProperties( settings.get() );
+                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                s32 size = 0;
+                // A saved TextureResourceDirector always records size. The legacy
+                // JSON parser can return an empty object after a syntax error;
+                // never turn an unreadable saved policy into an unbounded decode.
+                if( !settings->getPropertyValue( "size", size ) ||
+                    size < 32 || size > 8192 || ( size & ( size - 1 ) ) )
+                    throw std::runtime_error( "Saved texture recipe requires a power-of-two size from 32 to 8192" );
+                maximumDimension = static_cast<u32>( size );
+                if( settings->getPropertyValue( "mipmapFilter", recipeMipFilter ) &&
+                    ( recipeMipFilter < 0 || recipeMipFilter > 5 ) )
+                {
+                    throw std::runtime_error( "Saved texture mip filter must be in the range 0 to 5" );
                 }
             }
         }

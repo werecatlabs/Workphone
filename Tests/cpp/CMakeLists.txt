@@ -330,8 +330,9 @@ if (WP_BUILD_TESTS)
                 set_tests_properties(WPGraphics.material_cpu_profile_contract PROPERTIES
                     LABELS "graphics;material;cpu;dx11" TIMEOUT 60)
                 add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
-                target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB)
+                target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB FREEIMAGE_LIB)
                 target_include_directories(WPGraphicsCookedResourceTests PRIVATE
+                    ${WP_ROOT}/Dependencies/FreeImage/Source
                     ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost
                     ${WP_ROOT}/Engine/c/Include/WorkphoneCore
                     ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics

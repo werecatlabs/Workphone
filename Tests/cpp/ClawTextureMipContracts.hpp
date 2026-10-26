@@ -777,6 +777,7 @@ namespace claw_texture_mip_contracts
         {
         public:
             SmartPtr<scene::TextureResourceDirector> director = make_ptr<scene::TextureResourceDirector>();
+            u32 lookups = 0;
             Settings()
             {
                 director->setFilePath( "saved-texture.resourcedata" );
@@ -787,7 +788,8 @@ namespace claw_texture_mip_contracts
             }
             SmartPtr<IBuildDirector> loadDirectorFromResourcePath( const String &, u32 type ) override
             {
-                require( type == scene::TextureResourceDirector::typeInfo(), "Decode uses the Inspector texture recipe type" );
+                ++lookups;
+                require( type == scene::TextureResourceDirector::typeInfo(), "Texture recipe type is preserved" );
                 return director;
             }
         };
@@ -795,11 +797,16 @@ namespace claw_texture_mip_contracts
         {
         public:
             std::vector<u8> encoded;
-            bool saved = true;
+            String recipe = "{\"size\":\"1024\",\"mipmapFilter\":\"1\"}";
+            bool saved = true, readable = true;
             bool isExistingFile( const String &name, bool, bool ) const override
-            { return saved && name == "saved-texture.resourcedata"; }
-            SmartPtr<IStream> open( const String &name, bool, bool, bool, bool, bool ) override
-            { return make_ptr<MemoryFile>( encoded.data(), long( encoded.size() ), name, false ); }
+            { return saved && name.find( "bounded-settings/" ) == 0; }
+            SmartPtr<workphone::IStream> open( const String &name, bool, bool, bool, bool, bool ) override
+            {
+                if( name.find( "bounded-settings/" ) == 0 )
+                    return saved && readable ? make_ptr<MemoryFile>( recipe.data(), long( recipe.size() ), name, false ) : nullptr;
+                return make_ptr<MemoryFile>( encoded.data(), long( encoded.size() ), name, false );
+            }
         };
         const auto jpeg = []( u32 width, u32 height ) {
             FreeImage_Initialise( FALSE );
@@ -833,9 +840,17 @@ namespace claw_texture_mip_contracts
         roundtrip->setProperties( invalid );
         require( roundtrip->getProperties()->getPropertyValue( "mipmapFilter", filter ) && filter == 1,
                  "Invalid recipe mip filters retain the preceding valid choice" );
+        // The cached Inspector owner has unsaved edits; decoding must use the
+        // separately saved JSON snapshot without reading this mutable object.
+        auto unsaved = make_ptr<Properties>();
+        unsaved->setProperty( "size", 8192 );
+        unsaved->setProperty( "mipmapFilter", 0 );
+        settings->director->setProperties( unsaved );
         files->encoded = jpeg( 8192, 4096 );
         auto previousFiles = fixture.application->getFileSystem();
         auto previousDatabase = fixture.application->getResourceDatabase();
+        const auto previousSettings = fixture.application->getSettingsPath();
+        fixture.application->setSettingsPath( "bounded-settings/" );
         fixture.application->setFileSystem( files );
         fixture.application->setResourceDatabase( settings );
         auto scheduler = WorldStreamingScheduler::shared();
@@ -844,7 +859,7 @@ namespace claw_texture_mip_contracts
         const auto working = size_t( StreamMemoryClass::WorkingCpu );
         struct Restore
         {
-            Fixture &fixture; SmartPtr<IFileSystem> files; SmartPtr<IResourceDatabase> database;
+            Fixture &fixture; SmartPtr<IFileSystem> files; SmartPtr<IResourceDatabase> database; String settingsPath;
             std::shared_ptr<WorldStreamingScheduler> scheduler; WorldStreamStats stats;
             ~Restore()
             {
@@ -853,8 +868,9 @@ namespace claw_texture_mip_contracts
                     scheduler->setBudget( type, stats.limits[size_t( type )], error );
                 fixture.application->setFileSystem( files );
                 fixture.application->setResourceDatabase( database );
+                fixture.application->setSettingsPath( settingsPath );
             }
-        } restore{ fixture, previousFiles, previousDatabase, scheduler, baseline };
+        } restore{ fixture, previousFiles, previousDatabase, previousSettings, scheduler, baseline };
         String error;
         require( scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline.used[source] + ( 12ull << 20 ), error ) &&
                  scheduler->setBudget( StreamMemoryClass::WorkingCpu, baseline.used[working] + ( 8ull << 20 ), error ),
@@ -886,12 +902,43 @@ namespace claw_texture_mip_contracts
             texture.setFilePath( "bounded-retry.jpg" );
             const auto pressure = scheduler->stats();
             require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
-                         pressure.used[working] + files->encoded.size() + ( 64u << 10 ), error ), "Exhaust bounded JPEG bitmap capacity" );
+                         pressure.used[working] + files->encoded.size() + ( 64u << 10 ) + files->recipe.size() + 1u, error ), "Admit the saved recipe while exhausting bounded JPEG bitmap capacity" );
             require( !texture.getCpuBaseMip( error ) && scheduler->stats().used[working] == pressure.used[working],
                      "Bounded decode denial must not retain decoder buffers or publish a partial image" );
             require( scheduler->setBudget( StreamMemoryClass::WorkingCpu, baseline.used[working] + ( 8ull << 20 ), error ), "Restore bounded decode capacity" );
             require( texture.getCpuBaseMip( error ) != nullptr, "Bounded decode retries after denial without changing source or recipe" );
         }
+        {
+            ClawTexture texture;
+            texture.setFilePath( "recipe-retry.jpg" );
+            const auto validRecipe = files->recipe;
+            files->recipe = String( ( 64u << 10 ) + 1u, ' ' );
+            require( !texture.getCpuBaseMip( error ), "Oversized saved recipes are refused before parsing or pixel allocation" );
+            files->recipe = validRecipe;
+            files->readable = false;
+            require( !texture.getCpuBaseMip( error ), "An unreadable saved recipe must not become an unbounded decode" );
+            files->readable = true;
+            auto mip = texture.getCpuBaseMip( error );
+            require( mip && mip->width == 1024, "Recipe size and IO failures remain retryable without changing the image source" );
+        }
+        {
+            files->encoded = jpeg( 32, 32 ); // Full resolution fits; refusal must be recipe validation.
+            const auto validRecipe = files->recipe;
+            for( const auto &invalid : { String( "{}" ), String( "{\"size\":\"1024\",}" ),
+                                        String( "{\"size\":\"1024\"" ) } )
+            {
+                ClawTexture texture;
+                texture.setFilePath( "malformed-recipe.jpg" );
+                files->recipe = invalid;
+                require( !texture.getCpuBaseMip( error ),
+                         "Empty, trailing-comma and truncated saved recipes must fail closed even when full pixels fit" );
+                files->recipe = validRecipe;
+                auto mip = texture.getCpuBaseMip( error );
+                require( mip && mip->width == 32 && mip->height == 32,
+                         "A corrected saved recipe retries the same texture after syntax or missing-size refusal" );
+            }
+        }
+        require( settings->lookups == 0, "Graphics decoding never reads cached mutable Inspector directors" );
         files->encoded = jpeg( 8193, 1025 );
         {
             ClawTexture texture;
