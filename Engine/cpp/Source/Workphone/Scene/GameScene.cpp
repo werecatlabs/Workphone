@@ -697,10 +697,17 @@ namespace workphone::scene
                     size_t depth = 0;
                     for( ; actor && depth < 1024; actor = actor->getParent(), ++depth )
                     {
-                        if( !actor->isLoaded() ) return false;
+                        if( !actor->isLoaded() )
+                        {
+                            return false;
+                        }
                         const auto scene = actor->getScene();
-                        if( scene && scene.get() != this ) return false;
-                        anchored |= scene.get() == this && actor->getFlag( IGameActor::ActorFlagInScene );
+                        if( scene && scene.get() != this )
+                        {
+                            return false;
+                        }
+                        anchored |=
+                            scene.get() == this && actor->getFlag( IGameActor::ActorFlagInScene );
                     }
                     // Reparented children deliberately lose their root InScene
                     // flag. A live scene anchor admits them, while removed roots,
@@ -874,7 +881,7 @@ namespace workphone::scene
                     }
 
                     m_actors.push_back( actor );
-                    
+
                     // A cancelled load leaves an empty scene available for manual editing.
                     // Publishing a new actor makes that scene ready for state updates again.
                     if( getSceneLoadingState() == SceneLoadingState::Cancelled )

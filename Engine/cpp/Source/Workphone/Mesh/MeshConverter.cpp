@@ -76,8 +76,8 @@ namespace workphone
 
                             // The file is closed before notifying scene instances. Reimport keeps
                             // the same resource path, so assigning the mesh again will not reload it.
-                            applicationManager->triggerEvent( EventType::Renderer, IEvent::meshLoaded, {},
-                                                              nullptr, meshResource, nullptr, false,
+                            applicationManager->triggerEvent( EventType::Renderer, IEvent::meshLoaded,
+                                                              {}, nullptr, meshResource, nullptr, false,
                                                               Thread::Application_Flag );
                         }
                     }
@@ -107,7 +107,9 @@ namespace workphone
         auto app = core::IApplicationManager::instance();
         auto database = app->getResourceDatabase();
         if( !database )
+        {
             return;
+        }
         if( auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() ) )
         {
             catalog->addResourceEntries( writtenResources );
@@ -115,7 +117,9 @@ namespace workphone
         else
         {
             for( const auto &resource : writtenResources )
+            {
                 database->addResource( static_pointer_cast<IResource>( resource ) );
+            }
         }
     }
 

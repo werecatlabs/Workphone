@@ -24,6 +24,7 @@ namespace workphone::render
         f32 roughness = 1, metallic = 0, normalStrength = 1;
         // Height blending reads the linear ORM alpha channel; missing ORM has height zero.
         f32 heightScale = 1, heightBias = 0;
+
         bool operator==( const TerrainLayer &other ) const
         {
             return albedo == other.albedo && normal == other.normal && orm == other.orm &&
@@ -54,6 +55,7 @@ namespace workphone::render
         f32 wetness = 0, wetDarkening = .35f, wetRoughness = .12f;
         f32 snow = 0, snowRoughness = .8f;
         Vector4F snowTint = Vector4F( .9f, .95f, 1, 1 );
+
         bool operator==( const TerrainAppearance &o ) const
         {
             return projection == o.projection && triplanarSharpness == o.triplanarSharpness &&

@@ -36,7 +36,7 @@ namespace workphone::scene
             const auto index = ( reinterpret_cast<std::uintptr_t>( actor ) >> 4 ) % gates->size();
             return ( *gates )[index];
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameActor, Resource<IGameActor> );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameActor::FsmListener, FSMListener );
@@ -252,8 +252,11 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
-            if( isStatic() && transform->getLocalPosition() == localPosition &&
-                !transform->isDirty() && !transform->isLocalDirty() ) return;
+            if( isStatic() && transform->getLocalPosition() == localPosition && !transform->isDirty() &&
+                !transform->isLocalDirty() )
+            {
+                return;
+            }
             transform->setLocalPosition( localPosition );
             transform->setDirty( true );
         }
@@ -275,8 +278,11 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
-            if( isStatic() && transform->getLocalScale() == localScale &&
-                !transform->isDirty() && !transform->isLocalDirty() ) return;
+            if( isStatic() && transform->getLocalScale() == localScale && !transform->isDirty() &&
+                !transform->isLocalDirty() )
+            {
+                return;
+            }
             transform->setLocalScale( localScale );
             transform->setDirty( true );
         }
@@ -299,7 +305,10 @@ namespace workphone::scene
         if( auto transform = getTransform() )
         {
             if( isStatic() && transform->getLocalOrientation() == localOrientation &&
-                !transform->isDirty() && !transform->isLocalDirty() ) return;
+                !transform->isDirty() && !transform->isLocalDirty() )
+            {
+                return;
+            }
             transform->setLocalOrientation( localOrientation );
             transform->setDirty( true );
         }
@@ -366,8 +375,11 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
-            if( isStatic() && transform->getPosition() == position &&
-                !transform->isDirty() && !transform->isLocalDirty() ) return;
+            if( isStatic() && transform->getPosition() == position && !transform->isDirty() &&
+                !transform->isLocalDirty() )
+            {
+                return;
+            }
             transform->setPosition( position );
             transform->setLocalDirty( true );
         }
@@ -389,8 +401,11 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
-            if( isStatic() && transform->getScale() == scale &&
-                !transform->isDirty() && !transform->isLocalDirty() ) return;
+            if( isStatic() && transform->getScale() == scale && !transform->isDirty() &&
+                !transform->isLocalDirty() )
+            {
+                return;
+            }
             transform->setScale( scale );
             transform->setLocalDirty( true );
         }
@@ -412,8 +427,11 @@ namespace workphone::scene
     {
         if( auto transform = getTransform() )
         {
-            if( isStatic() && transform->getOrientation() == orientation &&
-                !transform->isDirty() && !transform->isLocalDirty() ) return;
+            if( isStatic() && transform->getOrientation() == orientation && !transform->isDirty() &&
+                !transform->isLocalDirty() )
+            {
+                return;
+            }
             transform->setOrientation( orientation );
             transform->setLocalDirty( true );
         }
@@ -652,7 +670,10 @@ namespace workphone::scene
             WP_ASSERT( component );
 
             m_staticWorldRevision = 0;
-            if( auto transform = getTransform() ) transform->setDirty( true, false );
+            if( auto transform = getTransform() )
+            {
+                transform->setDirty( true, false );
+            }
 
             if( auto actor = component->getActor() )
             {
@@ -1000,7 +1021,8 @@ namespace workphone::scene
             auto actorTransform = getTransform();
             auto concreteTransform = dynamic_cast<Transform *>( actorTransform.get() );
             auto &storage = TransformSystem::instance();
-            const auto handle = concreteTransform ? concreteTransform->storageHandle() : TransformSystem::Handle{};
+            const auto handle =
+                concreteTransform ? concreteTransform->storageHandle() : TransformSystem::Handle{};
             const auto before = storage.revisions( handle );
             const bool stationary = isStatic() && concreteTransform;
             const bool dirty = concreteTransform &&
@@ -1022,7 +1044,12 @@ namespace workphone::scene
                 // membership locks before crossing that ownership boundary.
                 auto children = snapshotChildren();
                 for( auto child : children )
-                    if( child->getParentPtr() == this ) child->updateTransform();
+                {
+                    if( child->getParentPtr() == this )
+                    {
+                        child->updateTransform();
+                    }
+                }
             }
 
             const auto worldRevision = storage.revisions( handle ).world;
@@ -1030,7 +1057,12 @@ namespace workphone::scene
             {
                 auto components = snapshotComponents();
                 for( auto component : components )
-                    if( component->getActorPtr() == this ) component->updateTransform();
+                {
+                    if( component->getActorPtr() == this )
+                    {
+                        component->updateTransform();
+                    }
+                }
             }
             m_staticWorldRevision = worldRevision;
             storage.acknowledgeSubtree( handle, before.subtree );
@@ -1307,7 +1339,8 @@ namespace workphone::scene
             auto parent = getParent();
             auto parentTransform = parent ? parent->getTransform() : nullptr;
             auto concreteParent = dynamic_cast<Transform *>( parentTransform.get() );
-            TransformSystem::instance().setParent( concrete->storageHandle(),
+            TransformSystem::instance().setParent(
+                concrete->storageHandle(),
                 concreteParent ? concreteParent->storageHandle() : TransformSystem::Handle{} );
             concrete->setDirty( true, false );
         }
@@ -1316,7 +1349,10 @@ namespace workphone::scene
         auto children = snapshotChildren();
         for( const auto &child : children )
         {
-            if( child->getParentPtr() != this ) continue;
+            if( child->getParentPtr() != this )
+            {
+                continue;
+            }
             auto childTransform = child->getTransform();
             if( auto concreteChild = dynamic_cast<Transform *>( childTransform.get() ) )
             {
@@ -1450,8 +1486,8 @@ namespace workphone::scene
 
             // Factory/Lua owners may release an actor again after scene teardown.
             // A fully detached actor has no work left that requires its managers.
-            if( getLoadingState() == LoadingState::Unloaded && !getTransform() &&
-                !getScene() && !getParent() && getChildren().empty() && getComponents().empty() )
+            if( getLoadingState() == LoadingState::Unloaded && !getTransform() && !getScene() &&
+                !getParent() && getChildren().empty() && getComponents().empty() )
             {
                 return;
             }
@@ -2041,7 +2077,8 @@ namespace workphone::scene
             {
                 auto parentTransform = parent ? parent->getTransform() : nullptr;
                 auto concreteParent = dynamic_cast<Transform *>( parentTransform.get() );
-                TransformSystem::instance().setParent( transform->storageHandle(),
+                TransformSystem::instance().setParent(
+                    transform->storageHandle(),
                     concreteParent ? concreteParent->storageHandle() : TransformSystem::Handle{} );
             }
             m_parent = parent;

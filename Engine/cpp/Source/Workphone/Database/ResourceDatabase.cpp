@@ -118,6 +118,7 @@ namespace workphone
         thread_local std::function<bool()> currentImportSession;
         struct ImportStatusContext;
         thread_local ImportStatusContext *currentImportStatus = nullptr;
+
         struct ImportStatusContext
         {
             ResourceDatabase *database;
@@ -130,10 +131,21 @@ namespace workphone
 
             ImportStatusContext( ResourceDatabase *owner, SmartPtr<scene::ResourceDirector> target,
                                  u64 token, const String &path, bool replace ) :
-                database( owner ), receiver( target ), request( token ), filePath( path ), overwrite( replace )
-            { currentImportStatus = this; }
-            ~ImportStatusContext() { currentImportStatus = previous; }
+                database( owner ),
+                receiver( target ),
+                request( token ),
+                filePath( path ),
+                overwrite( replace )
+            {
+                currentImportStatus = this;
+            }
+
+            ~ImportStatusContext()
+            {
+                currentImportStatus = previous;
+            }
         };
+
         auto importQueue = std::make_shared<AssetImportQueue>();
 
         class ImportPump : public Job
@@ -263,12 +275,15 @@ namespace workphone
             {
                 auto registry = objects.readLocked();
                 snapshot.reserve( registry.size() );
-                for( const auto &[id, object] : registry ) snapshot.push_back( object );
+                for( const auto &[id, object] : registry )
+                {
+                    snapshot.push_back( object );
+                }
             }
             return snapshot;
         }
 
-        template<class PreparePublication>
+        template <class PreparePublication>
         Array<SmartPtr<ISharedObject>> replaceObjectRegistry(
             SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
             const Array<SmartPtr<ISharedObject>> &replacement, PreparePublication &&preparePublication )
@@ -276,24 +291,34 @@ namespace workphone
             // Scene traversal and object metadata access must not run under the
             // registry lock. Readers acquire their strong references under it.
             SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>>::MapType candidate;
-            candidate.reserve(replacement.size());
+            candidate.reserve( replacement.size() );
             for( const auto &object : replacement )
+            {
                 if( object )
+                {
                     if( auto handle = object->getHandle() )
                     {
                         const auto uuid = handle->getUUID();
-                        if( !uuid.is_nil() ) candidate[uuid] = object;
+                        if( !uuid.is_nil() )
+                        {
+                            candidate[uuid] = object;
+                        }
                     }
+                }
+            }
 
             auto retired = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
             {
                 auto registry = objects.writeLocked();
                 preparePublication( registry, candidate );
                 retired.reserve( registry.size() );
-                for( const auto &[id, object] : registry ) retired.push_back( object );
+                for( const auto &[id, object] : registry )
+                {
+                    retired.push_back( object );
+                }
                 // Allocation/copy completes before publication; destruction of
                 // replaced owners and physical storage stays outside this lock.
-                registry.get().swap(candidate);
+                registry.get().swap( candidate );
             }
             // Destruction of replaced owners can re-enter the database. Keep
             // them alive until the complete publication transaction has ended.
@@ -712,11 +737,14 @@ namespace workphone
             auto objects = replaceObjectInventory( {} );
             for( auto object : objects )
             {
-                if( object ) object->unload( nullptr );
+                if( object )
+                {
+                    object->unload( nullptr );
+                }
             }
 
-            decltype(m_resourceIdentities) empty;
-            m_resourceIdentities = std::move(empty);
+            decltype( m_resourceIdentities ) empty;
+            m_resourceIdentities = std::move( empty );
             m_instances.releaseStorage();
             setDatabaseManager( nullptr );
             setMediaCatalog( nullptr );
@@ -942,22 +970,31 @@ namespace workphone
 
             objects = getSceneObjects();
         }
-        auto retired = replaceObjectRegistry( m_objects, objects, [&]( auto &registry, auto &candidate ) {
-            if( core::IApplicationManager::instance() != applicationManager ||
-                getDatabaseManager() != databaseManager ||
-                applicationManager->getProjectPath() != projectPath ||
-                applicationManager->getCachePath() != cachePath ||
-                applicationManager->getSettingsPath() != settingsPath ||
-                assetDatabaseManager->getDatabase() != catalogDatabase ||
-                assetDatabaseManager->getProjectRoot() != catalogRoot )
-                throw std::runtime_error( "Resource inventory refresh project changed before publication" );
-            // Merge the live cache at the commit boundary: an import director
-            // created during scene traversal must survive this refresh too.
-            // Candidate allocation can fail here; the old registry is still
-            // untouched and all retired owners leave after releasing its lock.
-            for( const auto &[id, object] : registry )
-                if( object && dynamic_cast<IBuildDirector *>( object.get() ) ) candidate[id] = object;
-        } );
+        auto retired =
+            replaceObjectRegistry( m_objects, objects, [&]( auto &registry, auto &candidate ) {
+                if( core::IApplicationManager::instance() != applicationManager ||
+                    getDatabaseManager() != databaseManager ||
+                    applicationManager->getProjectPath() != projectPath ||
+                    applicationManager->getCachePath() != cachePath ||
+                    applicationManager->getSettingsPath() != settingsPath ||
+                    assetDatabaseManager->getDatabase() != catalogDatabase ||
+                    assetDatabaseManager->getProjectRoot() != catalogRoot )
+                {
+                    throw std::runtime_error(
+                        "Resource inventory refresh project changed before publication" );
+                }
+                // Merge the live cache at the commit boundary: an import director
+                // created during scene traversal must survive this refresh too.
+                // Candidate allocation can fail here; the old registry is still
+                // untouched and all retired owners leave after releasing its lock.
+                for( const auto &[id, object] : registry )
+                {
+                    if( object && dynamic_cast<IBuildDirector *>( object.get() ) )
+                    {
+                        candidate[id] = object;
+                    }
+                }
+            } );
     }
 
     void ResourceDatabase::optimise()
@@ -1322,8 +1359,9 @@ namespace workphone
     {
         SmartPtr<scene::ResourceDirector> receiver;
         u64 request = 0;
-        if( currentImportStatus && currentImportStatus->database == this && !currentImportStatus->claimed &&
-            currentImportStatus->filePath == filePath && currentImportStatus->overwrite == overwrite )
+        if( currentImportStatus && currentImportStatus->database == this &&
+            !currentImportStatus->claimed && currentImportStatus->filePath == filePath &&
+            currentImportStatus->overwrite == overwrite )
         {
             currentImportStatus->claimed = true;
             receiver = currentImportStatus->receiver;
@@ -1336,7 +1374,10 @@ namespace workphone
         auto factory = application ? application->getFactoryManager() : nullptr;
         if( !factory )
         {
-            if( receiver ) receiver->setImportStatus( request, "Import unavailable: no resource factory." );
+            if( receiver )
+            {
+                receiver->setImportStatus( request, "Import unavailable: no resource factory." );
+            }
             return;
         }
         auto job = factory->make_ptr<ImportFileJob>();
@@ -1370,7 +1411,7 @@ namespace workphone
     }
 
     void ResourceDatabase::importFile( const String &filePath, bool overwrite,
-                                     SmartPtr<scene::ResourceDirector> receiver, u64 request )
+                                       SmartPtr<scene::ResourceDirector> receiver, u64 request )
     {
         // Preserve virtual two-argument overrides while supplying a receiver to
         // the default job implementation. Nested imports cannot steal it.
@@ -1379,11 +1420,18 @@ namespace workphone
         {
             importFile( filePath, overwrite );
             if( receiver && !status.claimed )
-                receiver->setImportStatus( request, "Import requested; completion is unavailable from this resource database." );
+            {
+                receiver->setImportStatus(
+                    request,
+                    "Import requested; completion is unavailable from this resource database." );
+            }
         }
         catch( ... )
         {
-            if( receiver ) receiver->setImportStatus( request, "Import failed" );
+            if( receiver )
+            {
+                receiver->setImportStatus( request, "Import failed" );
+            }
             throw;
         }
     }
@@ -2106,14 +2154,19 @@ namespace workphone
         }
 
         if( auto resourceDirector = dynamic_pointer_cast<scene::ResourceDirector>( director ) )
+        {
             resourceDirector->setResourcePath( filePath );
+        }
         director->getHandle()->setUUID( directorId );
         director->setFilePath( fileDataPath );
         director->setProperties( data );
         {
             auto registry = m_objects.writeLocked();
             const auto [entry, inserted] = registry.emplace( directorId, director );
-            if( !inserted ) return dynamic_pointer_cast<IBuildDirector>( entry->second );
+            if( !inserted )
+            {
+                return dynamic_pointer_cast<IBuildDirector>( entry->second );
+            }
         }
         return director;
     }
@@ -2337,22 +2390,28 @@ namespace workphone
                 if( typeManager->isDerived( static_cast<u32>( type ), meshResourceType ) )
                 {
                     if( auto manager = applicationManager->getMeshManager() )
-                        return uuid.empty() ? manager->createOrRetrieve( path ) :
-                                              manager->createOrRetrieve( uuid, path, "" );
+                    {
+                        return uuid.empty() ? manager->createOrRetrieve( path )
+                                            : manager->createOrRetrieve( uuid, path, "" );
+                    }
                 }
                 if( auto graphics = applicationManager->getGraphicsSystem() )
                 {
                     if( typeManager->isDerived( static_cast<u32>( type ), materialType ) )
                     {
                         if( auto manager = graphics->getMaterialManager() )
-                            return uuid.empty() ? manager->createOrRetrieve( path ) :
-                                                  manager->createOrRetrieve( uuid, path, "" );
+                        {
+                            return uuid.empty() ? manager->createOrRetrieve( path )
+                                                : manager->createOrRetrieve( uuid, path, "" );
+                        }
                     }
                     if( typeManager->isDerived( static_cast<u32>( type ), fontType ) )
                     {
                         if( auto manager = graphics->getFontManager() )
-                            return uuid.empty() ? manager->createOrRetrieve( path ) :
-                                                  manager->createOrRetrieve( uuid, path, "" );
+                        {
+                            return uuid.empty() ? manager->createOrRetrieve( path )
+                                                : manager->createOrRetrieve( uuid, path, "" );
+                        }
                     }
                 }
             }
@@ -2371,7 +2430,9 @@ namespace workphone
     {
         String uuid;
         if( auto resourceDirector = dynamic_pointer_cast<scene::ResourceDirector>( director ) )
+        {
             uuid = resourceDirector->getResourceUUID();
+        }
         return createOrRetrieveManagedResource( type, path, uuid );
     }
 
@@ -2390,18 +2451,21 @@ namespace workphone
 
             auto assetDatabaseManager =
                 workphone::static_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-            auto director = assetDatabaseManager ?
-                assetDatabaseManager->getResourceEntryFromPath( path ) : nullptr;
+            auto director =
+                assetDatabaseManager ? assetDatabaseManager->getResourceEntryFromPath( path ) : nullptr;
             String rememberedUuid;
             if( !director )
             {
                 auto identities = m_resourceIdentities.readLocked();
                 auto previous = identities.get().findAs( path );
                 if( previous != identities.end() && previous->second.type == type )
+                {
                     rememberedUuid = static_cast<String>( previous->second.uuid );
+                }
             }
-            auto result = rememberedUuid.empty() ? createOrRetrieveFromDirector( type, path, director ) :
-                createOrRetrieveManagedResource( type, path, rememberedUuid );
+            auto result = rememberedUuid.empty()
+                              ? createOrRetrieveFromDirector( type, path, director )
+                              : createOrRetrieveManagedResource( type, path, rememberedUuid );
 
             if( result.first )
             {
@@ -2456,9 +2520,15 @@ namespace workphone
             {
                 auto identities = m_resourceIdentities.readLocked();
                 auto previous = identities.get().findAs( path );
-                if( previous != identities.end() ) rememberedType = previous->second.type;
+                if( previous != identities.end() )
+                {
+                    rememberedType = previous->second.type;
+                }
             }
-            if( rememberedType != 0 ) return createOrRetrieve( rememberedType, path );
+            if( rememberedType != 0 )
+            {
+                return createOrRetrieve( rememberedType, path );
+            }
 
             static const auto materialType = render::IMaterial::typeInfo();
             static const auto meshResourceType = IMeshResource::typeInfo();
@@ -2844,7 +2914,10 @@ namespace workphone
         }
 
         auto components = actor->getComponents();
-        for( const auto &component : components ) objects.emplace_back( component );
+        for( const auto &component : components )
+        {
+            objects.emplace_back( component );
+        }
 
         auto children = actor->getChildren();
         for( auto &child : children )
@@ -3006,9 +3079,10 @@ namespace workphone
         return m_instances.snapshot();
     }
 
-    Array<SmartPtr<ISharedObject>> ResourceDatabase::replaceObjectInventory( const Array<SmartPtr<ISharedObject>> &objects )
+    Array<SmartPtr<ISharedObject>> ResourceDatabase::replaceObjectInventory(
+        const Array<SmartPtr<ISharedObject>> &objects )
     {
-        return replaceObjectRegistry(m_objects, objects);
+        return replaceObjectRegistry( m_objects, objects );
     }
 
     void ResourceDatabase::setInstances( const Array<SmartPtr<IResource>> &instances )
@@ -3025,8 +3099,13 @@ namespace workphone
     {
         if( m_statusReceiver && !m_statusComplete )
         {
-            try { completeStatus( "Import cancelled before completion.", "Import canceled" ); }
-            catch( ... ) { /* Teardown must remain safe under allocation denial. */ }
+            try
+            {
+                completeStatus( "Import cancelled before completion.", "Import canceled" );
+            }
+            catch( ... )
+            { /* Teardown must remain safe under allocation denial. */
+            }
         }
         ResourceDatabase::m_numJobs--;
     }
@@ -3048,9 +3127,13 @@ namespace workphone
             if( activeImport != resourceDatabase )
             {
                 if( auto database = dynamic_cast<ResourceDatabase *>( resourceDatabase ) )
+                {
                     database->importFile( filePath, getOverwrite(), m_statusReceiver, m_statusRequest );
+                }
                 else
+                {
                     resourceDatabase->importFile( filePath, getOverwrite() );
+                }
                 m_statusComplete = true;
                 return;
             }
@@ -3059,7 +3142,9 @@ namespace workphone
                 return;
             }
             if( m_statusReceiver )
+            {
                 m_statusReceiver->setImportStatus( m_statusRequest, "Importing '" + filePath + "'." );
+            }
             auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
 
             auto fileSystem = applicationManager->getFileSystemPtr();
@@ -3157,11 +3242,16 @@ namespace workphone
             else if( ApplicationUtil::isSupportedMesh( filePath ) )
             {
                 const auto prefabFilePath = cachePath + Path::getFileName( filePath ) + "." +
-                    StringUtil::toString( filePathHash ) + ".prefab";
-                if( fileSystem->isExistingFile( prefabFilePath ) ) previousPrefab = prefabFilePath;
+                                            StringUtil::toString( filePathHash ) + ".prefab";
+                if( fileSystem->isExistingFile( prefabFilePath ) )
+                {
+                    previousPrefab = prefabFilePath;
+                }
                 auto meshLoader = applicationManager->getMeshLoader();
                 if( !meshLoader )
+                {
                     throw std::runtime_error( "Mesh import requires an available mesh loader" );
+                }
                 if( meshLoader )
                 {
                     auto overwrite = getOverwrite();
@@ -3171,9 +3261,16 @@ namespace workphone
                     try
                     {
                         if( !actor )
-                            throw std::runtime_error( "The mesh loader did not produce an actor; check the source file and importer diagnostics" );
+                        {
+                            throw std::runtime_error(
+                                "The mesh loader did not produce an actor; check the source file and "
+                                "importer diagnostics" );
+                        }
                         if( !currentImportSession || !currentImportSession() )
-                            throw std::runtime_error( "Mesh import project changed while loading the source" );
+                        {
+                            throw std::runtime_error(
+                                "Mesh import project changed while loading the source" );
+                        }
                         if( actor )
                         {
                             // Read from this import's captured project, even if the Editor
@@ -3182,11 +3279,13 @@ namespace workphone
                             if( fileSystem->isExistingFile( fileDataPath ) )
                             {
                                 auto savedOptions = make_ptr<Properties>();
-                                DataUtil::parse( fileSystem->readAllText( fileDataPath ), savedOptions.get() );
+                                DataUtil::parse( fileSystem->readAllText( fileDataPath ),
+                                                 savedOptions.get() );
                                 director->setProperties( savedOptions );
                             }
                             const auto streaming = director->getStreamingOptions();
-                            auto converter = graphicsSystem ? graphicsSystem->getMeshConverter() : nullptr;
+                            auto converter =
+                                graphicsSystem ? graphicsSystem->getMeshConverter() : nullptr;
                             if( converter )
                             {
                                 // Cells must refer to the converted cache meshes, not the source file.
@@ -3208,14 +3307,19 @@ namespace workphone
                                 {
                                     actor->setFlag( scene::IGameActor::ActorFlagDontSave, false, true );
                                     actor->setFlag( scene::IGameActor::ActorFlagPrefab, true, true );
-                                    auto sourceData = dynamic_pointer_cast<Properties>( actor->toData() );
+                                    auto sourceData =
+                                        dynamic_pointer_cast<Properties>( actor->toData() );
                                     if( !sourceData )
-                                        throw std::runtime_error( "Streaming mesh import has no actor data" );
+                                    {
+                                        throw std::runtime_error(
+                                            "Streaming mesh import has no actor data" );
+                                    }
 
                                     // Each prefab publication owns an immutable world generation. A cook or
                                     // prefab-save failure leaves the previously published world reachable.
-                                    const auto generation = std::filesystem::u8path( projectPath.c_str() ) /
-                                        "Cache" / "Worlds" / StringUtil::toString( filePathHash ).c_str() /
+                                    const auto generation =
+                                        std::filesystem::u8path( projectPath.c_str() ) / "Cache" /
+                                        "Worlds" / StringUtil::toString( filePathHash ).c_str() /
                                         StringUtil::getUUID().c_str();
                                     SmartPtr<Properties> prefabData;
                                     String manifest, error;
@@ -3223,9 +3327,15 @@ namespace workphone
                                             *sourceData, streaming, projectPath,
                                             String( generation.generic_u8string().c_str() ), prefabData,
                                             manifest, error ) )
-                                        throw std::runtime_error( ( "Streaming mesh import failed: " + error ).c_str() );
+                                    {
+                                        throw std::runtime_error(
+                                            ( "Streaming mesh import failed: " + error ).c_str() );
+                                    }
                                     if( !currentImportSession || !currentImportSession() )
-                                        throw std::runtime_error( "Streaming mesh import project changed before publication" );
+                                    {
+                                        throw std::runtime_error(
+                                            "Streaming mesh import project changed before publication" );
+                                    }
 
                                     // The converter catalogs source geometry before cooking. HLOD geometry
                                     // is produced afterward and must have the same file-resource identities
@@ -3233,61 +3343,114 @@ namespace workphone
                                     const auto &importSession = currentImportSession;
                                     const auto requireImportSession = [&]() {
                                         if( !importSession || !importSession() )
+                                        {
                                             throw std::runtime_error(
-                                                "Streaming mesh import project changed while registering HLOD assets" );
+                                                "Streaming mesh import project changed while "
+                                                "registering HLOD assets" );
+                                        }
                                     };
                                     scene::WorldManifest cookedWorld;
-                                    if( !scene::SceneWorld::readManifest( manifest, cookedWorld, error ) )
-                                        throw std::runtime_error( ( "Streaming HLOD manifest validation failed: " + error ).c_str() );
+                                    if( !scene::SceneWorld::readManifest( manifest, cookedWorld,
+                                                                          error ) )
+                                    {
+                                        throw std::runtime_error(
+                                            ( "Streaming HLOD manifest validation failed: " + error )
+                                                .c_str() );
+                                    }
                                     std::set<String, std::less<String>, SourceBudgetAllocator<String>>
                                         generatedMeshes, generatedFolders;
                                     // Catalog path validation expects captured canonical roots. The
                                     // import session may use an equivalent Windows 8.3 project spelling.
                                     String registrationProjectRoot, generationRoot;
-                                    if( !canonicalAssetCatalogRoot( projectPath, registrationProjectRoot, error ) ||
-                                        !canonicalAssetCatalogRoot( String( generation.generic_u8string().c_str() ),
-                                                                   generationRoot, error ) )
-                                        throw std::runtime_error( ( "Invalid streaming HLOD registration root: " + error ).c_str() );
+                                    if( !canonicalAssetCatalogRoot( projectPath, registrationProjectRoot,
+                                                                    error ) ||
+                                        !canonicalAssetCatalogRoot(
+                                            String( generation.generic_u8string().c_str() ),
+                                            generationRoot, error ) )
+                                    {
+                                        throw std::runtime_error(
+                                            ( "Invalid streaming HLOD registration root: " + error )
+                                                .c_str() );
+                                    }
                                     for( const auto &cell : cookedWorld.cells )
                                     {
-                                        if( !cell.detailKey ) continue;
+                                        if( !cell.detailKey )
+                                        {
+                                            continue;
+                                        }
                                         requireImportSession();
-                                        auto payload = scene::SceneWorld::readCell( manifest, cell, error );
+                                        auto payload =
+                                            scene::SceneWorld::readCell( manifest, cell, error );
                                         if( !payload )
-                                            throw std::runtime_error( ( "Streaming HLOD payload validation failed: " + error ).c_str() );
+                                        {
+                                            throw std::runtime_error(
+                                                ( "Streaming HLOD payload validation failed: " + error )
+                                                    .c_str() );
+                                        }
                                         bool hasMesh = false;
-                                        const auto collectMeshes = [&]( const auto &self, const Properties &properties ) -> void {
+                                        const auto collectMeshes =
+                                            [&]( const auto &self,
+                                                 const Properties &properties ) -> void {
                                             if( properties.hasProperty( "Mesh Path" ) )
                                             {
-                                                const auto meshPath = properties.getPropertyObject( "Mesh Path" ).getValue();
+                                                const auto meshPath =
+                                                    properties.getPropertyObject( "Mesh Path" )
+                                                        .getValue();
                                                 AssetCatalogPath projectAsset, generationAsset;
-                                                if( !canonicalAssetCatalogPath( registrationProjectRoot, meshPath, projectAsset, error ) )
-                                                    throw std::runtime_error( ( "Invalid streaming HLOD mesh path: " + error ).c_str() );
-                                                const auto absoluteMesh = std::filesystem::u8path( registrationProjectRoot.c_str() ) /
-                                                    std::filesystem::u8path( projectAsset.path.c_str() );
-                                                if( !canonicalAssetCatalogPath( generationRoot,
-                                                        String( absoluteMesh.generic_u8string().c_str() ), generationAsset, error ) ||
-                                                    StringUtil::make_lower( Path::getFileExtension( projectAsset.path ) ) != builtinMeshExt ||
-                                                    !std::filesystem::is_regular_file( absoluteMesh ) )
+                                                if( !canonicalAssetCatalogPath( registrationProjectRoot,
+                                                                                meshPath, projectAsset,
+                                                                                error ) )
+                                                {
                                                     throw std::runtime_error(
-                                                        "Streaming HLOD mesh must be a generated fbmeshbin file inside this generation" );
+                                                        ( "Invalid streaming HLOD mesh path: " + error )
+                                                            .c_str() );
+                                                }
+                                                const auto absoluteMesh =
+                                                    std::filesystem::u8path(
+                                                        registrationProjectRoot.c_str() ) /
+                                                    std::filesystem::u8path( projectAsset.path.c_str() );
+                                                if( !canonicalAssetCatalogPath(
+                                                        generationRoot,
+                                                        String(
+                                                            absoluteMesh.generic_u8string().c_str() ),
+                                                        generationAsset, error ) ||
+                                                    StringUtil::make_lower( Path::getFileExtension(
+                                                        projectAsset.path ) ) != builtinMeshExt ||
+                                                    !std::filesystem::is_regular_file( absoluteMesh ) )
+                                                {
+                                                    throw std::runtime_error(
+                                                        "Streaming HLOD mesh must be a generated "
+                                                        "fbmeshbin file inside this generation" );
+                                                }
                                                 generatedMeshes.insert( projectAsset.path );
                                                 // Archive relative names use the active captured project
                                                 // spelling, even when canonical validation expanded an alias.
-                                                const auto archiveMesh = std::filesystem::u8path( projectPath.c_str() ) /
+                                                const auto archiveMesh =
+                                                    std::filesystem::u8path( projectPath.c_str() ) /
                                                     std::filesystem::u8path( projectAsset.path.c_str() );
-                                                generatedFolders.insert( archiveMesh.parent_path().generic_u8string().c_str() );
+                                                generatedFolders.insert( archiveMesh.parent_path()
+                                                                             .generic_u8string()
+                                                                             .c_str() );
                                                 hasMesh = true;
                                             }
-                                            for( const auto &child : properties.getChildren() ) self( self, *child );
+                                            for( const auto &child : properties.getChildren() )
+                                            {
+                                                self( self, *child );
+                                            }
                                         };
                                         collectMeshes( collectMeshes, *payload );
                                         if( !hasMesh )
-                                            throw std::runtime_error( "Streaming HLOD proxy has no generated mesh" );
+                                        {
+                                            throw std::runtime_error(
+                                                "Streaming HLOD proxy has no generated mesh" );
+                                        }
                                     }
                                     auto meshManager = applicationManager->getMeshManager();
                                     if( !generatedMeshes.empty() && !meshManager )
-                                        throw std::runtime_error( "Streaming HLOD registration requires a mesh manager" );
+                                    {
+                                        throw std::runtime_error(
+                                            "Streaming HLOD registration requires a mesh manager" );
+                                    }
                                     for( const auto &folder : generatedFolders )
                                     {
                                         requireImportSession();
@@ -3298,42 +3461,85 @@ namespace workphone
                                     for( const auto &meshPath : generatedMeshes )
                                     {
                                         requireImportSession();
-                                        auto mesh = dynamic_pointer_cast<IMeshResource>( meshManager->loadFromFile( meshPath ) );
-                                        if( !mesh || !mesh->isLoaded() || !mesh->getMesh() || mesh->getMesh()->getSubMeshes().empty() )
-                                            throw std::runtime_error( ( "Could not load generated streaming HLOD mesh: " + meshPath ).c_str() );
+                                        auto mesh = dynamic_pointer_cast<IMeshResource>(
+                                            meshManager->loadFromFile( meshPath ) );
+                                        if( !mesh || !mesh->isLoaded() || !mesh->getMesh() ||
+                                            mesh->getMesh()->getSubMeshes().empty() )
+                                        {
+                                            throw std::runtime_error(
+                                                ( "Could not load generated streaming HLOD mesh: " +
+                                                  meshPath )
+                                                    .c_str() );
+                                        }
                                         requireImportSession();
                                         if( assetDatabaseManager->hasResourceEntry( mesh ) )
+                                        {
                                             assetDatabaseManager->updateResourceEntry( mesh );
+                                        }
                                         else
+                                        {
                                             assetDatabaseManager->addResourceEntry( mesh );
+                                        }
                                         requireImportSession();
                                         auto entry = dynamic_pointer_cast<scene::ResourceDirector>(
                                             assetDatabaseManager->getResourceEntryFromPath( meshPath ) );
-                                        if( !entry || entry->getResourceUUID() != mesh->getHandle()->getUUIDAsString() )
-                                            throw std::runtime_error( ( "Could not catalog generated streaming HLOD mesh: " + meshPath ).c_str() );
-                                        auto resolved = resourceDatabase->loadResourceByType<IMeshResource>( meshPath );
+                                        if( !entry || entry->getResourceUUID() !=
+                                                          mesh->getHandle()->getUUIDAsString() )
+                                        {
+                                            throw std::runtime_error(
+                                                ( "Could not catalog generated streaming HLOD mesh: " +
+                                                  meshPath )
+                                                    .c_str() );
+                                        }
+                                        auto resolved =
+                                            resourceDatabase->loadResourceByType<IMeshResource>(
+                                                meshPath );
                                         if( !resolved || !resolved->isLoaded() || !resolved->getMesh() ||
                                             resolved->getMesh()->getSubMeshes().empty() )
-                                            throw std::runtime_error( ( "Generated streaming HLOD mesh cannot be resolved from the catalog: " + meshPath ).c_str() );
+                                        {
+                                            throw std::runtime_error(
+                                                ( "Generated streaming HLOD mesh cannot be resolved "
+                                                  "from the catalog: " +
+                                                  meshPath )
+                                                    .c_str() );
+                                        }
                                     }
                                     requireImportSession();
-                                    if( !saveAssetDocumentText( prefabFilePath, prefabData,
-                                            DataUtil::toString( prefabData.get(), true, DataFormat::XML ), error ) )
-                                        throw std::runtime_error( ( "Streaming prefab publication failed: " + error ).c_str() );
+                                    if( !saveAssetDocumentText(
+                                            prefabFilePath, prefabData,
+                                            DataUtil::toString( prefabData.get(), true,
+                                                                DataFormat::XML ),
+                                            error ) )
+                                    {
+                                        throw std::runtime_error(
+                                            ( "Streaming prefab publication failed: " + error )
+                                                .c_str() );
+                                    }
                                     prefabPublished = true;
-                                    successStatus = "Streaming import completed for '" + filePath +
+                                    successStatus =
+                                        "Streaming import completed for '" + filePath +
                                         "'. The new generation is available to future prefab instances. "
-                                        "Existing placed WorldStreaming instances keep their saved manifest and options; "
-                                        "replace them from this prefab or update their World Manifest and streaming settings.";
+                                        "Existing placed WorldStreaming instances keep their saved "
+                                        "manifest and options; "
+                                        "replace them from this prefab or update their World Manifest "
+                                        "and streaming settings.";
                                 }
                                 else
                                 {
-                                    auto checked = dynamic_pointer_cast<scene::GamePrefabManager>( prefabManager );
+                                    auto checked =
+                                        dynamic_pointer_cast<scene::GamePrefabManager>( prefabManager );
                                     String error;
                                     if( !checked )
-                                        throw std::runtime_error( "Mesh import requires a prefab manager with checked publication" );
+                                    {
+                                        throw std::runtime_error(
+                                            "Mesh import requires a prefab manager with checked "
+                                            "publication" );
+                                    }
                                     if( !checked->savePrefabChecked( prefabFilePath, actor, error ) )
-                                        throw std::runtime_error( ( "Prefab publication failed: " + error ).c_str() );
+                                    {
+                                        throw std::runtime_error(
+                                            ( "Prefab publication failed: " + error ).c_str() );
+                                    }
                                     prefabPublished = true;
                                 }
                             }
@@ -3341,7 +3547,10 @@ namespace workphone
                     }
                     catch( ... )
                     {
-                        if( sceneManager && actor ) sceneManager->destroyActor( actor );
+                        if( sceneManager && actor )
+                        {
+                            sceneManager->destroyActor( actor );
+                        }
                         throw;
                     }
 
@@ -3503,8 +3712,10 @@ namespace workphone
         {
             auto status = "Import failed for '" + filePath + "': " + e.what();
             if( !previousPrefab.empty() && !prefabPublished )
+            {
                 status += ". The previously published prefab is retained: " + previousPrefab +
                           ". Existing placed instances keep their previous generation.";
+            }
             completeStatus( status );
             WP_LOG_ERROR( status );
         }
@@ -3512,14 +3723,16 @@ namespace workphone
         {
             auto status = "Import failed for '" + filePath + "' with an unknown exception.";
             if( !previousPrefab.empty() && !prefabPublished )
+            {
                 status += " The previously published prefab and existing placed instances are retained.";
+            }
             completeStatus( status );
             WP_LOG_ERROR( status );
         }
     }
 
-    void ResourceDatabase::ImportFileJob::setStatusReceiver(
-        SmartPtr<scene::ResourceDirector> receiver, u64 request )
+    void ResourceDatabase::ImportFileJob::setStatusReceiver( SmartPtr<scene::ResourceDirector> receiver,
+                                                             u64 request )
     {
         m_statusReceiver = receiver;
         m_statusRequest = request;
@@ -3530,7 +3743,10 @@ namespace workphone
     {
         if( m_statusReceiver )
         {
-            try { m_statusReceiver->setImportStatus( m_statusRequest, status ); }
+            try
+            {
+                m_statusReceiver->setImportStatus( m_statusRequest, status );
+            }
             catch( const std::bad_alloc & )
             {
                 // Short terminal states fit inline when the full diagnostic's

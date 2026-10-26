@@ -14,7 +14,10 @@ namespace workphone::scene
      * each rectangle's shorter dimension must fit the existing <=60m road sweep.
      */
     WPCore_API bool prepareCityRoadParcels( const procedural::OpenCityLayout &input,
-        const procedural::CityRoadSplineSource &source, const procedural::CityRoadSplineBake &bake,
-        render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
-        procedural::OpenCityLayout &output, u32 &culled, u32 &supportChecks, String &error );
-}
+                                            const procedural::CityRoadSplineSource &source,
+                                            const procedural::CityRoadSplineBake &bake,
+                                            render::TerrainSnapshot terrain,
+                                            const Transform3<real_Num> &placement,
+                                            procedural::OpenCityLayout &output, u32 &culled,
+                                            u32 &supportChecks, String &error );
+}  // namespace workphone::scene

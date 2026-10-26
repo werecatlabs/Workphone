@@ -20,8 +20,9 @@ namespace workphone
     public:
         using SourceBudgetObject::operator new;
         using SourceBudgetObject::operator delete;
-        using VertexOffsetMap = std::unordered_map<u32, Vector3F, std::hash<u32>, std::equal_to<u32>,
-            SourceBudgetAllocator<std::pair<const u32, Vector3F>>>;
+        using VertexOffsetMap =
+            std::unordered_map<u32, Vector3F, std::hash<u32>, std::equal_to<u32>,
+                               SourceBudgetAllocator<std::pair<const u32, Vector3F>>>;
         /**
          * @brief Constructor.
          * @param target The target index for this pose.

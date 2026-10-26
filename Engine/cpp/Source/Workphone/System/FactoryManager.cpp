@@ -36,7 +36,7 @@ namespace workphone
 
         setLoadingState( LoadingState::Unloading );
 
-        auto factories = std::move(m_factories);
+        auto factories = std::move( m_factories );
 
         for( auto &factory : factories )
         {

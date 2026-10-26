@@ -62,6 +62,7 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/Graphics/GraphicsSettings.hpp>
 #include <Workphone/Mesh/MeshConverter.hpp>
+
 namespace workphone::render
 {
     WP_CLASS_REGISTER_DERIVED( workphone::render, GraphicsSystem,
@@ -138,6 +139,7 @@ namespace workphone::render
         m_unloadQueue.clear();
         m_pendingUnloadTickets.clear();
     }
+
     void GraphicsSystem::update()
     {
         MaterialPublicationScope materialUpdates;
@@ -237,12 +239,19 @@ namespace workphone::render
     GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssets( u32 maximumCandidates )
     {
         AssetResidencyRelease released;
-        if( !maximumCandidates ) return released;
+        if( !maximumCandidates )
+        {
+            return released;
+        }
         ScopedLock lifecycleLock( this );
         if( auto manager = dynamic_pointer_cast<MaterialManager>( getMaterialManager() ) )
+        {
             released.materials = manager->releaseUnusedResources( maximumCandidates );
+        }
         if( auto manager = dynamic_pointer_cast<TextureManager>( getTextureManager() ) )
+        {
             released.textures = manager->releaseUnusedResources( maximumCandidates );
+        }
         return released;
     }
 
@@ -256,7 +265,10 @@ namespace workphone::render
             {
                 auto obj = request.object;
                 auto pending = m_pendingUnloadTickets.find( obj.get() );
-                if( pending == m_pendingUnloadTickets.end() || pending->second != request.ticket ) continue;
+                if( pending == m_pendingUnloadTickets.end() || pending->second != request.ticket )
+                {
+                    continue;
+                }
                 m_pendingUnloadTickets.erase( pending );
                 obj->unload( nullptr );
             }
@@ -273,7 +285,10 @@ namespace workphone::render
             {
                 auto obj = request.object;
                 auto pending = m_pendingLoadTickets.find( obj.get() );
-                if( pending == m_pendingLoadTickets.end() || pending->second != request.ticket ) continue;
+                if( pending == m_pendingLoadTickets.end() || pending->second != request.ticket )
+                {
+                    continue;
+                }
                 m_pendingLoadTickets.erase( pending );
                 // Several components can queue the same resource before its first
                 // load completes. Keep later requests from rebuilding it again.
@@ -294,7 +309,10 @@ namespace workphone::render
         while( m_reloadQueue.try_pop( request ) )
         {
             auto pending = m_pendingReloadTickets.find( request.object.get() );
-            if( pending == m_pendingReloadTickets.end() || pending->second != request.ticket ) continue;
+            if( pending == m_pendingReloadTickets.end() || pending->second != request.ticket )
+            {
+                continue;
+            }
             m_pendingReloadTickets.erase( pending );
             request.object->reload( nullptr );
         }
@@ -862,7 +880,10 @@ namespace workphone::render
             // Retries and shared component requests use the existing queued
             // entry. It reads the object's latest state when the owner drains
             // it; superseding its ticket would retain another stale owner.
-            if( m_pendingLoadTickets.count( graphicsObject.get() ) ) return;
+            if( m_pendingLoadTickets.count( graphicsObject.get() ) )
+            {
+                return;
+            }
             const auto ticket = ++m_nextLoadTicket;
             m_pendingLoadTickets[graphicsObject.get()] = ticket;
             m_loadQueue.push( { graphicsObject, ticket } );
@@ -886,7 +907,10 @@ namespace workphone::render
             }
             else
             {
-                if( m_pendingLoadTickets.count( graphicsObject.get() ) ) return;
+                if( m_pendingLoadTickets.count( graphicsObject.get() ) )
+                {
+                    return;
+                }
                 const auto ticket = ++m_nextLoadTicket;
                 m_pendingLoadTickets[graphicsObject.get()] = ticket;
                 m_loadQueue.push( { graphicsObject, ticket } );

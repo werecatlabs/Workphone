@@ -24,6 +24,7 @@ namespace workphone::render
     struct TerrainTileKey
     {
         u32 tile = 0, lod = 0;
+
         bool operator==( const TerrainTileKey &other ) const
         {
             return tile == other.tile && lod == other.lod;
@@ -63,6 +64,7 @@ namespace workphone::render
         std::shared_ptr<const TerrainMeshData> mesh;
         String error;
     };
+
     struct TerrainStreamStats
     {
         u64 generation = 0, completed = 0, cancelled = 0;

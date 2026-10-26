@@ -348,7 +348,9 @@ namespace workphone
                 {
                     res.push_back( { nums[i], nums[lo++], nums[hi--] } );
                     while( lo < hi && nums[lo] == nums[lo - 1] )
+                    {
                         ++lo;
+                    }
                 }
             }
         }
@@ -372,7 +374,9 @@ namespace workphone
         int TestUtil::trap( Array<s32> &height )
         {
             if( height.empty() )
+            {
                 return 0;
+            }
 
             int ans = 0;
             int size = (int)height.size();
@@ -402,7 +406,9 @@ namespace workphone
         int TestUtil::trap_On( Array<s32> &height )
         {
             if( height.empty() )
+            {
                 return 0;
+            }
 
             int n = (int)height.size();
             Array<s32> leftMax( n );
@@ -411,16 +417,22 @@ namespace workphone
             leftMax[0] = height[0];
 
             for( int i = 1; i < n; i++ )
+            {
                 leftMax[i] = std::max( leftMax[i - 1], height[i] );
+            }
 
             rightMax[n - 1] = height[n - 1];
             for( int i = n - 2; i >= 0; i-- )
+            {
                 rightMax[i] = std::max( rightMax[i + 1], height[i] );
+            }
 
             int sum = 0;
 
             for( int i = 0; i < n; i++ )
+            {
                 sum += std::min( leftMax[i], rightMax[i] ) - height[i];
+            }
 
             return sum;
         }

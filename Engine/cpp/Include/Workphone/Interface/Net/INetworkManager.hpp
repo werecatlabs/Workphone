@@ -371,10 +371,12 @@ namespace workphone
         {
             return 0;
         }
+
         /** Poll on the Application task only. Constructors do not start sessions. */
         virtual void poll()
         {
         }
+
         /** Transport-associated sender: server=0, client=server-issued ID, unknown=-1.
             Association alone is not cryptographic authentication; check capabilities. */
         virtual s32 getPacketSenderId( SmartPtr<IPacket> ) const

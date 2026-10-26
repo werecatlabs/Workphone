@@ -212,8 +212,9 @@ namespace workphone
 
         // Empty during normal operation: capacity is admitted before publication,
         // but strong references are acquired only when shutdown closes the factory.
-        Array<SmartPtr<ISharedObject>> m_teardownScratch{Allocator<SmartPtr<ISharedObject>>(sourceBudget)};
-        bool m_instancesClosing = false; // protected by m_instances
+        Array<SmartPtr<ISharedObject>> m_teardownScratch{ Allocator<SmartPtr<ISharedObject>>(
+            sourceBudget ) };
+        bool m_instancesClosing = false;  // protected by m_instances
     };
 
     WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, FactoryTemplate, T, Factory );
@@ -271,7 +272,10 @@ namespace workphone
     {
         setLoadingState( LoadingState::Unloading );
 
-        { ScopedLock lock(&m_instances); m_instancesClosing = true; }
+        {
+            ScopedLock lock( &m_instances );
+            m_instancesClosing = true;
+        }
 
 #if WP_TRACK_REFERENCES
         if( !m_instances.empty() )
@@ -283,7 +287,7 @@ namespace workphone
 
         // WP_ASSERT( m_instances.empty() );  // instances not freed
 
-        auto instances = std::move(m_instances);
+        auto instances = std::move( m_instances );
         for( auto &instance : instances )
         {
             if( instance )
@@ -362,7 +366,10 @@ namespace workphone
                     }
                     catch( ... )
                     {
-                        if( object ) object->~T();
+                        if( object )
+                        {
+                            object->~T();
+                        }
                         pool->free_object( memory );
                         throw;
                     }
@@ -375,8 +382,13 @@ namespace workphone
 
         void *ptr;
         if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
-            ptr = allocateSourceBudgetStorage(sizeof(T), alignof(T));
-        else ptr = Factory::createObject();
+        {
+            ptr = allocateSourceBudgetStorage( sizeof( T ), alignof( T ) );
+        }
+        else
+        {
+            ptr = Factory::createObject();
+        }
         if( !ptr )
         {
             std::cout << "Out of memory." << std::endl;
@@ -392,9 +404,18 @@ namespace workphone
         }
         catch( ... )
         {
-            if( object ) object->~T();
-            if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(ptr, alignof(T));
-            else Factory::freeMemory( ptr );
+            if( object )
+            {
+                object->~T();
+            }
+            if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
+            {
+                freeSourceBudgetStorage( ptr, alignof( T ) );
+            }
+            else
+            {
+                Factory::freeMemory( ptr );
+            }
             throw;
         }
 
@@ -405,8 +426,13 @@ namespace workphone
     void *FactoryTemplate<T>::allocateMemory()
     {
         if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
-            return allocateSourceBudgetStorage(sizeof(T), alignof(T));
-        else return Factory::allocateMemory();
+        {
+            return allocateSourceBudgetStorage( sizeof( T ), alignof( T ) );
+        }
+        else
+        {
+            return Factory::allocateMemory();
+        }
     }
 
     template <class T>
@@ -423,16 +449,16 @@ namespace workphone
 
             const auto poolElement = pObject->isPoolElement();
             {
-                ScopedLock lock(&m_instances);
+                ScopedLock lock( &m_instances );
                 // Compact raw pointers in place and erase only the tail. The
                 // value-erase overload builds a mask; middle erase can rebuild
                 // the buffer. Neither is appropriate for object retirement.
                 auto end = m_instances.end();
-                auto removed = std::remove(m_instances.begin(), end, pObject);
-                m_instances.erase(removed, end);
+                auto removed = std::remove( m_instances.begin(), end, pObject );
+                m_instances.erase( removed, end );
             }
             pObject->~T();
-            releaseObjectMemory(pObject, poolElement);
+            releaseObjectMemory( pObject, poolElement );
         }
         catch( std::exception &e )
         {
@@ -451,8 +477,14 @@ namespace workphone
                 return;
             }
 
-            if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(object, alignof(T));
-            else Factory::freeMemory( object );
+            if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
+            {
+                freeSourceBudgetStorage( object, alignof( T ) );
+            }
+            else
+            {
+                Factory::freeMemory( object );
+            }
         }
         catch( std::exception &e )
         {
@@ -466,7 +498,7 @@ namespace workphone
         auto result = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
 
         // Pin while locked, before a caller can release any other instance.
-        ScopedLock lock(&m_instances, false);
+        ScopedLock lock( &m_instances, false );
         result.reserve( m_instances.size() );
 
         for( auto instance : m_instances )
@@ -484,12 +516,20 @@ namespace workphone
     Array<SmartPtr<ISharedObject>> FactoryTemplate<T>::takeInstanceObjectsForUnload()
     {
         auto result = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
-        ScopedLock lock(&m_instances);
-        if(m_instancesClosing) return result;
+        ScopedLock lock( &m_instances );
+        if( m_instancesClosing )
+        {
+            return result;
+        }
         m_instancesClosing = true;
-        result.swap(m_teardownScratch);
-        for(auto instance : m_instances)
-            if(instance) result.push_back(static_cast<ISharedObject *>(instance));
+        result.swap( m_teardownScratch );
+        for( auto instance : m_instances )
+        {
+            if( instance )
+            {
+                result.push_back( static_cast<ISharedObject *>( instance ) );
+            }
+        }
         return result;
     }
 
@@ -556,17 +596,23 @@ namespace workphone
             WP_ASSERT( object->isPoolElement() == poolElement );
             WP_ASSERT( object->getCreatorData() == this );
 
-            ScopedLock lock(&m_instances);
-            if(m_instancesClosing) throw std::bad_alloc();
+            ScopedLock lock( &m_instances );
+            if( m_instancesClosing )
+            {
+                throw std::bad_alloc();
+            }
             auto scratch = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
-            if(m_teardownScratch.capacity() < m_instances.size() + 1)
+            if( m_teardownScratch.capacity() < m_instances.size() + 1 )
             {
                 // Stage growth so a denied inventory insertion also retires scratch.
-                scratch.reserve(m_instances.capacity() > m_instances.size() ?
-                    m_instances.capacity() : m_instances.size() + 1);
+                scratch.reserve( m_instances.capacity() > m_instances.size() ? m_instances.capacity()
+                                                                             : m_instances.size() + 1 );
             }
             m_instances.push_back( object );
-            if(scratch.capacity()) m_teardownScratch.swap(scratch);
+            if( scratch.capacity() )
+            {
+                m_teardownScratch.swap( scratch );
+            }
         }
     }
 
@@ -591,8 +637,14 @@ namespace workphone
             return;
         }
 
-        if constexpr( std::is_base_of_v<SourceBudgetObject, T> ) freeSourceBudgetStorage(object, alignof(T));
-        else Factory::freeObject( object );
+        if constexpr( std::is_base_of_v<SourceBudgetObject, T> )
+        {
+            freeSourceBudgetStorage( object, alignof( T ) );
+        }
+        else
+        {
+            Factory::freeObject( object );
+        }
     }
 
 }  // namespace workphone

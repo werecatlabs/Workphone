@@ -64,8 +64,7 @@ namespace workphone::scene
         void setPublishCallback( PublishCallback callback );
         bool rebuild( String &error );
         bool publishRuntime( const procedural::CityRoadSplineSource &source,
-                             const procedural::CityRoadSplineBake &bake,
-                             render::TerrainSnapshot terrain,
+                             const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
                              const Transform3<real_Num> &placement, String &error );
         void clearRuntime();
         size_t getRuntimeTriangleCount() const;
@@ -73,8 +72,8 @@ namespace workphone::scene
         WP_CLASS_REGISTER_DECL;
 
     private:
-        bool captureTerrain( render::TerrainSnapshot &snapshot,
-                             Transform3<real_Num> &placement, u64 &serial, String &error ) const;
+        bool captureTerrain( render::TerrainSnapshot &snapshot, Transform3<real_Num> &placement,
+                             u64 &serial, String &error ) const;
         bool applySource( procedural::CityRoadSplineSource candidate, u64 expectedRevision,
                           bool preserveRevision, String &error );
         bool resolveTerrainBinding();
@@ -94,4 +93,4 @@ namespace workphone::scene
         PublishCallback m_publishCallback;
         std::shared_ptr<CityRoadRuntimeState> m_runtime;
     };
-}
+}  // namespace workphone::scene

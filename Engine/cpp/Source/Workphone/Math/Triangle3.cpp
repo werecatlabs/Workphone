@@ -47,7 +47,9 @@ namespace workphone
         T d3 = rca.getDistanceFrom( p );
 
         if( d1 < d2 )
+        {
             return d1 < d3 ? rab : rca;
+        }
 
         return d2 < d3 ? rbc : rca;
     }

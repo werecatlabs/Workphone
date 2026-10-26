@@ -580,6 +580,7 @@ namespace workphone
             {
                 u32 materials = 0, textures = 0;
             };
+
             /** Inspect a bounded number of cache entries under graphics lifecycle
              * ownership. Materials retire before textures so released bindings
              * can make their source pixels eligible in the same pass. */
@@ -772,6 +773,7 @@ namespace workphone
                 SmartPtr<ISharedObject> object;
                 u64 ticket = 0;
             };
+
             ConcurrentQueue<LoadRequest> m_loadQueue;
             UnorderedMap<ISharedObject *, u64> m_pendingLoadTickets;
             u64 m_nextLoadTicket = 0;

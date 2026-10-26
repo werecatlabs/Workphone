@@ -34,7 +34,9 @@ namespace workphone
             // Register readers under the same gate used by writers. Checking the
             // writer count and incrementing readers must be one admission step.
             while( writeRequest.exchange( true, std::memory_order_acquire ) )
+            {
                 std::this_thread::yield();
+            }
 
             if( writers.load( std::memory_order_acquire ) == 0 )
             {
@@ -65,13 +67,17 @@ namespace workphone
         thread_diagnostics::assertCanAcquireExclusive( this, "SpinRWMutex" );
 #endif
         while( writeRequest.exchange( true, std::memory_order_acquire ) )
+        {
             std::this_thread::yield();
+        }
 
         // Holding the admission gate stops new readers and other writers from
         // entering while existing owners drain. Unlock does not need the gate.
         while( readers.load( std::memory_order_acquire ) != 0 ||
                writers.load( std::memory_order_acquire ) != 0 )
+        {
             std::this_thread::yield();
+        }
 
         writers.store( 1, std::memory_order_relaxed );
         writeRequest.store( false, std::memory_order_release );
@@ -91,17 +97,25 @@ namespace workphone
     SpinRWMutex::ScopedLock::ScopedLock( SpinRWMutex &m, bool write ) : m_mutex( m ), m_write( write )
     {
         if( m_write )
+        {
             m_mutex.lock();
+        }
         else
+        {
             m_mutex.lock_shared();
+        }
     }
 
     SpinRWMutex::ScopedLock::~ScopedLock()
     {
         if( m_write )
+        {
             m_mutex.unlock();
+        }
         else
+        {
             m_mutex.unlock_shared();
+        }
     }
 
     SpinRWMutex::ScopedLock::operator bool() const

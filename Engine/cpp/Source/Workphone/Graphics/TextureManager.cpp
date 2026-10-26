@@ -19,7 +19,7 @@ namespace
 {
     // Headless/offline caches still need atomic create-or-retrieve and eviction.
     std::recursive_mutex g_headlessTextureLifecycle;
-}
+}  // namespace
 
 namespace workphone
 {
@@ -62,7 +62,10 @@ namespace workphone
         void TextureManager::destroyResource( SmartPtr<IResource> resource )
         {
             ScopedLock<TextureManager> lifecycle( this );
-            if( !resource ) return;
+            if( !resource )
+            {
+                return;
+            }
             if( resource->isDerived<ITexture>() )
             {
                 auto texture = workphone::static_pointer_cast<ITexture>( resource );
@@ -294,24 +297,39 @@ namespace workphone
         void TextureManager::lock()
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
-            if( graphicsSystem ) graphicsSystem->lock();
-            else g_headlessTextureLifecycle.lock();
+            auto graphicsSystem =
+                applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            if( graphicsSystem )
+            {
+                graphicsSystem->lock();
+            }
+            else
+            {
+                g_headlessTextureLifecycle.lock();
+            }
         }
 
         bool TextureManager::try_lock()
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            auto graphicsSystem =
+                applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
             return graphicsSystem ? graphicsSystem->try_lock() : g_headlessTextureLifecycle.try_lock();
         }
 
         void TextureManager::unlock()
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
-            if( graphicsSystem ) graphicsSystem->unlock();
-            else g_headlessTextureLifecycle.unlock();
+            auto graphicsSystem =
+                applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            if( graphicsSystem )
+            {
+                graphicsSystem->unlock();
+            }
+            else
+            {
+                g_headlessTextureLifecycle.unlock();
+            }
         }
 
         TextureManager::StateListener::StateListener() = default;

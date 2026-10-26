@@ -20,6 +20,7 @@ namespace workphone
         Collision,
         Count
     };
+
     struct WorldStreamLimits
     {
         u32 workers = 2, maximumProducers = 128, maximumPending = 2048, maximumReady = 64;
@@ -29,6 +30,7 @@ namespace workphone
                                                                       128ull << 20, 64ull << 20,
                                                                       512ull << 20, 512ull << 20 };
     };
+
     struct WorldStreamStats
     {
         u32 workers = 0, producers = 0, pending = 0, active = 0, ready = 0;
@@ -40,6 +42,7 @@ namespace workphone
         std::array<u64, size_t( StreamMemoryClass::Count )> peakUsed{}, rejectedReservations{};
     };
     struct StreamBudgetState;
+
     class WPCore_API StreamBudgetLease final
     {
     public:
@@ -56,6 +59,7 @@ namespace workphone
         StreamMemoryClass m_class;
         u64 m_bytes;
     };
+
     using StreamBudget = std::shared_ptr<StreamBudgetLease>;
 
     class StreamCancellation
@@ -65,6 +69,7 @@ namespace workphone
         {
             return m_cancelled && m_cancelled->load();
         }
+
         explicit StreamCancellation( std::shared_ptr<std::atomic<bool>> value ) :
             m_cancelled( std::move( value ) )
         {
@@ -73,12 +78,14 @@ namespace workphone
     private:
         std::shared_ptr<std::atomic<bool>> m_cancelled;
     };
+
     struct WorldStreamResult
     {
         u64 key = 0, generation = 0, bytes = 0;
         std::shared_ptr<const void> payload;  // Returned payload retains its result reservation.
         String error;
     };
+
     struct WorldStreamRequest
     {
         u64 key = 0;
@@ -86,11 +93,13 @@ namespace workphone
         u64 pendingBytes = 256, workingBytes = 0, maximumResultBytes = 0;
         std::function<WorldStreamResult( const StreamCancellation & )> execute;
     };
+
     struct WorldStreamProducerLimits
     {
         u32 maximumPending = 256, maximumActive = 1, maximumReady = 8;
         u64 maximumReadyBytes = 8ull << 20;
     };
+
     struct WorldStreamProducerStats
     {
         u64 generation = 0, completed = 0, cancelled = 0, readyBytes = 0;

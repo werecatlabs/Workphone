@@ -63,7 +63,9 @@ namespace workphone::resource
         {
             output.clear();
             if( input.size() != 36 )
+            {
                 return false;
+            }
             bool nonzero = false;
             for( size_t index = 0; index < input.size(); ++index )
             {
@@ -71,18 +73,24 @@ namespace workphone::resource
                 if( index == 8 || index == 13 || index == 18 || index == 23 )
                 {
                     if( byte != '-' )
+                    {
                         return false;
+                    }
                 }
                 else
                 {
                     if( !( ( byte >= '0' && byte <= '9' ) || ( byte >= 'a' && byte <= 'f' ) ||
                            ( byte >= 'A' && byte <= 'F' ) ) )
+                    {
                         return false;
+                    }
                     nonzero = nonzero || byte != '0';
                 }
             }
             if( !nonzero )
+            {
                 return false;
+            }
             output = input;
             std::transform( output.begin(), output.end(), output.begin(), []( unsigned char byte ) {
                 return static_cast<char>( std::tolower( byte ) );
@@ -98,7 +106,9 @@ namespace workphone::resource
             {
                 if( ( byte >= 'a' && byte <= 'z' ) || ( byte >= '0' && byte <= '9' ) || byte == '_' ||
                     byte == '-' )
+                {
                     encoded += static_cast<char>( byte );
+                }
                 else
                 {
                     encoded += '~';
@@ -110,7 +120,9 @@ namespace workphone::resource
             for( size_t offset = 0; offset < encoded.size(); offset += 80 )
             {
                 if( offset )
+                {
                     result += "/";
+                }
                 // Avoid Windows device names, trailing dots, and case-folding aliases.
                 result += "r" + encoded.substr( offset, 80 );
             }
@@ -155,7 +167,9 @@ namespace workphone::resource
             {
                 const auto byte = stream.get();
                 if( byte == std::char_traits<char>::eof() )
+                {
                     return false;
+                }
                 value |= static_cast<u64>( static_cast<unsigned char>( byte ) ) << ( index * 8 );
             }
             return true;
@@ -164,7 +178,9 @@ namespace workphone::resource
         bool writeManifestString( std::ostream &stream, const String &value )
         {
             if( value.empty() || value.size() > 4096 )
+            {
                 return false;
+            }
             writeManifestNumber( stream, value.size() );
             stream.write( value.data(), static_cast<std::streamsize>( value.size() ) );
             return stream.good();
@@ -174,11 +190,15 @@ namespace workphone::resource
         {
             u64 size = 0;
             if( !readManifestNumber( stream, size ) || size == 0 || size > 4096 )
+            {
                 return false;
+            }
             std::string bytes( static_cast<size_t>( size ), '\0' );
             stream.read( &bytes[0], static_cast<std::streamsize>( size ) );
             if( !stream || bytes.find( '\0' ) != std::string::npos )
+            {
                 return false;
+            }
             value = bytes.c_str();
             return true;
         }
@@ -199,7 +219,9 @@ namespace workphone::resource
         {
             RuntimeResource container;
             if( !CompiledResourceIO::read( path, container, error, maximumManifestBytes ) )
+            {
                 return false;
+            }
             if( container.header.resourceId != manifestResourceId ||
                 container.header.compilerVersion != 1 || !container.header.installDependencies.empty() )
             {
@@ -220,19 +242,25 @@ namespace workphone::resource
                 !readManifestString( input, manifest.target ) ||
                 !readManifestNumber( input, rootCount ) || rootCount == 0 ||
                 rootCount > maximumManifestResources )
+            {
                 return malformed();
+            }
             std::set<String> rootIds;
             for( u64 index = 0; index < rootCount; ++index )
             {
                 String id;
                 if( !readManifestString( input, id ) || !ResourceID::isValidString( id ) ||
                     !rootIds.insert( id ).second )
+                {
                     return malformed();
+                }
                 manifest.roots.emplace_back( id );
             }
             if( !readManifestNumber( input, resourceCount ) || resourceCount == 0 ||
                 resourceCount > maximumManifestResources )
+            {
                 return malformed();
+            }
             for( u64 index = 0; index < resourceCount; ++index )
             {
                 CompiledResourceHeader header;
@@ -245,7 +273,9 @@ namespace workphone::resource
                     !readManifestNumber( input, header.payloadSize ) ||
                     !readManifestNumber( input, dependencyCount ) ||
                     dependencyCount > maximumManifestDependencies )
+                {
                     return malformed();
+                }
                 header.resourceType = header.resourceId.type();
                 String artifact = header.resourceId.compiledRelativePath();
                 if( version >= 2 )
@@ -256,7 +286,9 @@ namespace workphone::resource
                         pathId.sourceRelativePath() != artifact ||
                         ( artifact.find( artifactNamespace( manifest.target ) ) != 0 &&
                           artifact.find( legacyArtifactNamespace( manifest.target ) ) != 0 ) )
+                    {
                         return malformed();
+                    }
                 }
                 manifest.artifacts[header.resourceId.str()] = artifact;
                 std::set<String> uniqueDependencies;
@@ -266,18 +298,24 @@ namespace workphone::resource
                     if( !readManifestString( input, dependency ) ||
                         !ResourceID::isValidString( dependency ) ||
                         !uniqueDependencies.insert( ResourceID( dependency ).str() ).second )
+                    {
                         return malformed();
+                    }
                     header.installDependencies.emplace_back( dependency );
                 }
                 if( !header.isValid() ||
                     !manifest.resources.emplace( header.resourceId.str(), std::move( header ) ).second )
+                {
                     return malformed();
+                }
             }
             if( version >= 3 )
             {
                 u64 count = 0;
                 if( !readManifestNumber( input, count ) || count > maximumManifestResources )
+                {
                     return malformed();
+                }
                 std::set<String> boundResources;
                 for( u64 index = 0; index < count; ++index )
                 {
@@ -288,11 +326,15 @@ namespace workphone::resource
                         !manifest.resources.count( resource.str() ) ||
                         !boundResources.insert( resource.str() ).second ||
                         !manifest.bindings.emplace( canonical, resource ).second )
+                    {
                         return malformed();
+                    }
                 }
             }
             if( input.peek() != std::char_traits<char>::eof() )
+            {
                 return malformed();
+            }
 
             std::set<String> visiting;
             std::set<String> visited;
@@ -300,18 +342,26 @@ namespace workphone::resource
             std::function<bool( const ResourceID &, u32 )> visit = [&]( const ResourceID &id,
                                                                         u32 depth ) {
                 if( depth > maximumManifestDepth || visiting.count( id.str() ) )
+                {
                     return false;
+                }
                 if( visited.count( id.str() ) )
+                {
                     return depth + subtreeDepths[id.str()] - 1 <= maximumManifestDepth;
+                }
                 const auto entry = manifest.resources.find( id.str() );
                 if( entry == manifest.resources.end() )
+                {
                     return false;
+                }
                 visiting.insert( id.str() );
                 u32 subtreeDepth = 1;
                 for( const auto &dependency : entry->second.installDependencies )
                 {
                     if( !visit( dependency, depth + 1 ) )
+                    {
                         return false;
+                    }
                     subtreeDepth = std::max( subtreeDepth, subtreeDepths[dependency.str()] + 1 );
                 }
                 visiting.erase( id.str() );
@@ -320,10 +370,16 @@ namespace workphone::resource
                 return true;
             };
             for( const auto &root : manifest.roots )
+            {
                 if( !visit( root, 1 ) )
+                {
                     return malformed();
+                }
+            }
             if( visited.size() != manifest.resources.size() )
+            {
                 return malformed();
+            }
             return true;
         }
 
@@ -344,9 +400,13 @@ namespace workphone::resource
                 auto native = path.native();
                 std::replace( native.begin(), native.end(), L'/', L'\\' );
                 if( native.rfind( L"\\\\?\\", 0 ) == 0 )
+                {
                     return fs::path( native );
+                }
                 if( native.rfind( L"\\\\", 0 ) == 0 )
+                {
                     return fs::path( L"\\\\?\\UNC\\" + native.substr( 2 ) );
+                }
                 return fs::path( L"\\\\?\\" + native );
             }
 #endif
@@ -360,9 +420,13 @@ namespace workphone::resource
             auto prefix = native.substr( 0, 8 );
             std::transform( prefix.begin(), prefix.end(), prefix.begin(), ::towupper );
             if( prefix == L"\\\\?\\UNC\\" )
+            {
                 return fs::path( L"\\\\" + native.substr( 8 ) );
+            }
             if( native.rfind( L"\\\\?\\", 0 ) == 0 )
+            {
                 return fs::path( native.substr( 4 ) );
+            }
 #endif
             return path;
         }
@@ -378,7 +442,9 @@ namespace workphone::resource
                     return static_cast<char>( std::tolower( c ) );
                 } );
                 if( scheme == "data://" )
+                {
                     path = path.substr( 7 );
+                }
             }
             if( path.empty() || path.front() == '/' || path.back() == '/' ||
                 path.find( "://" ) != String::npos || path.find( ':' ) != String::npos )
@@ -399,7 +465,9 @@ namespace workphone::resource
                     return {};
                 }
                 if( separator == String::npos )
+                {
                     break;
+                }
                 start = separator + 1;
             }
             return String( "data://" ) + path;
@@ -426,7 +494,9 @@ namespace workphone::resource
             {
                 if( candidateIterator == candidate.end() ||
                     !pathComponentEquals( *rootIterator, *candidateIterator ) )
+                {
                     return false;
+                }
             }
             return true;
         }
@@ -436,12 +506,15 @@ namespace workphone::resource
         {
             String normalized = normalizeLogicalDataPath( logicalPath, error );
             if( normalized.empty() )
+            {
                 return false;
+            }
 
             std::error_code filesystemError;
             fs::path candidate = root / fs::u8path( normalized.substr( 7 ).c_str() );
-            candidate = mustExist ? fs::canonical( fileSystemIOPath( candidate ), filesystemError )
-                                  : fs::weakly_canonical( fileSystemIOPath( candidate ), filesystemError );
+            candidate = mustExist
+                            ? fs::canonical( fileSystemIOPath( candidate ), filesystemError )
+                            : fs::weakly_canonical( fileSystemIOPath( candidate ), filesystemError );
             candidate = comparableFileSystemPath( candidate );
             if( filesystemError )
             {
@@ -476,7 +549,9 @@ namespace workphone::resource
         {
             if( !message.empty() &&
                 std::find( messages.begin(), messages.end(), message ) == messages.end() )
+            {
                 messages.push_back( message );
+            }
         }
 
         String makePayloadTemporaryPath( const String &outputPath )
@@ -501,16 +576,21 @@ namespace workphone::resource
                 cookedRoot( cooked )
             {
             }
+
             ~BuildInputs()
             {
                 if( root.empty() || !isUnderRoot( cookedRoot / ".staging", root ) )
+                {
                     return;
+                }
                 std::error_code ignored;
                 for( fs::recursive_directory_iterator item( root, ignored ), end; item != end;
                      item.increment( ignored ) )
                 {
                     if( ignored )
+                    {
                         break;
+                    }
                     fs::permissions( item->path(), fs::perms::owner_all, fs::perm_options::add,
                                      ignored );
                 }
@@ -522,7 +602,9 @@ namespace workphone::resource
                 pinned.clear();
                 const auto normalized = normalizeLogicalDataPath( logical, error );
                 if( normalized.empty() )
+                {
                     return false;
+                }
                 auto existing = entries.find( normalized );
                 if( existing != entries.end() )
                 {
@@ -542,7 +624,9 @@ namespace workphone::resource
                 }
                 fs::path actual;
                 if( !resolveUnderRoot( sourceRoot, normalized, false, actual, error ) )
+                {
                     return false;
+                }
                 std::error_code status;
                 const bool exists = fs::exists( actual, status );
                 if( status || ( !exists && required ) )
@@ -564,7 +648,9 @@ namespace workphone::resource
                 {
                     fs::path staging;
                     if( !resolveUnderRoot( cookedRoot, "data://.staging", false, staging, error ) )
+                    {
                         return false;
+                    }
                     fs::create_directories( staging, status );
                     if( status )
                     {
@@ -589,7 +675,9 @@ namespace workphone::resource
                 }
                 fs::path destination;
                 if( !resolveUnderRoot( root, normalized, false, destination, error ) )
+                {
                     return false;
+                }
                 fs::create_directories( destination.parent_path(), status );
                 if( status )
                 {
@@ -705,6 +793,7 @@ namespace workphone::resource
                 u64 size;
                 bool absent;
             };
+
             fs::path sourceRoot, cookedRoot, root;
             std::map<String, Entry> entries;
             u64 totalBytes = 0;
@@ -726,6 +815,7 @@ namespace workphone::resource
 #endif
                 }
             }
+
             bool acquire( const fs::path &path, String &error )
             {
                 std::error_code filesystemError;
@@ -740,7 +830,9 @@ namespace workphone::resource
                     _wsopen_s( &descriptor, path.c_str(), _O_CREAT | _O_RDWR | _O_BINARY | _O_NOINHERIT,
                                _SH_DENYRW, _S_IREAD | _S_IWRITE );
                 if( result != 0 )
+                {
                     descriptor = -1;
+                }
 #else
                 descriptor = open( path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600 );
                 if( descriptor >= 0 && flock( descriptor, LOCK_EX | LOCK_NB ) != 0 )
@@ -765,6 +857,7 @@ namespace workphone::resource
         struct TemporaryFile
         {
             String path;
+
             ~TemporaryFile()
             {
                 if( !path.empty() )
@@ -796,16 +889,19 @@ namespace workphone::resource
         {
             return { config.target, packaged };
         }
+
         String variantArtifactNamespace( bool packaged ) const
         {
             return artifactNamespace( config.target ) + ( packaged ? "package/" : "editor/" );
         }
+
         bool matchesVariantArtifact( const String &path, bool packaged ) const
         {
             return path.find( variantArtifactNamespace( packaged ) ) == 0 ||
                    path.find( legacyArtifactNamespace( config.target ) +
                               ( packaged ? "package/" : "editor/" ) ) == 0;
         }
+
         static String variantResourceKey( const String &id, bool packaged )
         {
             return String( packaged ? "package:" : "editor:" ) + id;
@@ -827,8 +923,12 @@ namespace workphone::resource
                     return;
                 }
                 for( const auto &dependent : dependents )
+                {
                     if( visited.insert( dependent ).second )
+                    {
                         pending.push_back( dependent );
+                    }
+                }
             }
         }
 
@@ -839,13 +939,17 @@ namespace workphone::resource
         {
             const auto completedIterator = completed.find( resourceId.str() );
             if( completedIterator != completed.end() )
+            {
                 return completedIterator->second;
+            }
 
             if( std::find( stack.begin(), stack.end(), resourceId.str() ) != stack.end() )
             {
                 String cycle;
                 for( const auto &entry : stack )
+                {
                     cycle += entry + " -> ";
+                }
                 cycle += resourceId.str();
                 auto report =
                     failureReport( resourceId, String( "Resource dependency cycle: " ) + cycle );
@@ -854,9 +958,11 @@ namespace workphone::resource
             }
 
             stack.push_back( resourceId.str() );
+
             struct StackGuard
             {
                 Array<String> &stack;
+
                 ~StackGuard()
                 {
                     stack.pop_back();
@@ -871,25 +977,33 @@ namespace workphone::resource
 
             const auto compiler = registry->getCompiler( resourceId.type() );
             if( !compiler )
+            {
                 return fail( String( "No compiler registered for resource type '" ) +
                              resourceId.type().str() + "'" );
+            }
 
             const u64 compilerVersion = compiler->versionFor( resourceId.type() );
             if( compilerVersion == 0 )
+            {
                 return fail( "The registered compiler did not declare this output type" );
+            }
 
             fs::path sourcePath;
             String error;
             if( !resolveUnderRoot( sourceRoot, String( "data://" ) + resourceId.sourceRelativePath(),
                                    true, sourcePath, error ) )
+            {
                 return fail( error );
+            }
 
             fs::path outputPath;
             if( !resolveUnderRoot( compiledRoot,
                                    String( "data://.staging/" ) +
                                        std::to_string( resourceId.pathHash() ).c_str() + ".wprs",
                                    false, outputPath, error ) )
+            {
                 return fail( error );
+            }
 
             CompileContext context;
             context.resourceId = resourceId;
@@ -900,16 +1014,22 @@ namespace workphone::resource
             context.target = config.target;
             context.packagedBuild = options.packagedBuild;
             if( resourceId.str().size() > 1024 || config.target.size() > 128 )
+            {
                 return fail( "Resource identity or target exceeds artifact namespace limits" );
+            }
 
             if( !inputs.capture( "data://" + resourceId.sourceRelativePath(), true, context.sourcePath,
                                  error ) )
+            {
                 return fail( error );
+            }
             Array<CompileDependency> scanInputs;
             context.snapshotInput = [&inputs, &scanInputs]( const String &logical, bool required,
                                                             String &path, String &captureError ) {
                 if( !inputs.capture( logical, required, path, captureError ) )
+                {
                     return false;
+                }
                 auto dependency = CompileDependency::data( logical );
                 dependency.optional = !required;
                 scanInputs.push_back( std::move( dependency ) );
@@ -919,13 +1039,17 @@ namespace workphone::resource
             u64 sourceFileHash = 0, sourceFileSize = 0;
             if( !CompiledResourceIO::hashFile( context.sourcePath, sourceFileHash, sourceFileSize,
                                                error ) )
+            {
                 return fail( error );
+            }
 
             DependencySet dependencies;
             try
             {
                 if( !compiler->getDependencies( context, dependencies, error ) )
+                {
                     return fail( error.empty() ? "Compiler failed to enumerate dependencies" : error );
+                }
             }
             catch( const std::exception &exception )
             {
@@ -951,9 +1075,13 @@ namespace workphone::resource
                 {
                     ResourceID dependencyId;
                     if( !dependencyId.set( dependency.path, &error ) )
+                    {
                         return fail( String( "Invalid resource dependency: " ) + error );
+                    }
                     if( dependencyId == resourceId )
+                    {
                         return fail( "A resource cannot depend on itself" );
+                    }
 
                     const auto childReport =
                         compileNode( dependencyId, options, completed, stack, pendingCommits, inputs );
@@ -974,18 +1102,26 @@ namespace workphone::resource
                 {
                     canonicalPath = normalizeLogicalDataPath( dependency.path, error );
                     if( canonicalPath.empty() )
+                    {
                         return fail( error );
+                    }
                     u64 dependencySize = 0;
                     String snapshot;
                     if( !inputs.capture( canonicalPath, !dependency.optional, snapshot, error ) )
+                    {
                         return fail( error );
+                    }
                     if( snapshot.empty() )
+                    {
                         dependencyHash = hashString( "optional-input-absent-v1" );
+                    }
                     else
                     {
                         if( !CompiledResourceIO::hashFile( snapshot, dependencyHash, dependencySize,
                                                            error ) )
+                        {
                             return fail( error );
+                        }
                         dependencyHash = combineHash( dependencyHash, dependencySize );
                     }
                 }
@@ -993,8 +1129,10 @@ namespace workphone::resource
                 const auto existing = canonicalDependencies.find( canonicalPath );
                 if( existing != canonicalDependencies.end() &&
                     existing->second != dependency.isResource )
+                {
                     return fail( String( "Dependency has conflicting resource/data classifications: " ) +
                                  canonicalPath );
+                }
                 canonicalDependencies[canonicalPath] = dependency.isResource;
                 dependencyHashes[canonicalPath] = dependencyHash;
             }
@@ -1002,9 +1140,13 @@ namespace workphone::resource
             for( const auto &dependencyId : dependencies.installDependencies )
             {
                 if( !dependencyId.isValid() )
+                {
                     return fail( "Compiler returned an invalid install dependency" );
+                }
                 if( dependencyId == resourceId )
+                {
                     return fail( "A resource cannot install-depend on itself" );
+                }
 
                 const auto childReport =
                     compileNode( dependencyId, options, completed, stack, pendingCommits, inputs );
@@ -1047,7 +1189,9 @@ namespace workphone::resource
                     fs::u8path( child.outputPath.c_str() ).lexically_relative( compiledRoot );
                 const String artifact = relative.generic_u8string().c_str();
                 if( !matchesVariantArtifact( artifact, options.packagedBuild ) )
+                {
                     return fail( "Install dependency artifact is outside the selected variant" );
+                }
                 installArtifacts.push_back( { artifact, child.sourceHash, child.outputHash } );
                 installIds.push_back( dependency.second );
                 sourceHash = hashString( artifact, sourceHash );
@@ -1057,11 +1201,15 @@ namespace workphone::resource
             u64 scannedHash = 0, scannedSize = 0;
             if( !CompiledResourceIO::hashFile( context.sourcePath, scannedHash, scannedSize, error ) ||
                 scannedHash != sourceFileHash || scannedSize != sourceFileSize )
+            {
                 return fail( "Source changed during dependency scanning" );
+            }
             if( !database->getRecord( resourceId.str(), variant( options.packagedBuild ),
                                       previousRecord ) )
+            {
                 return fail( String( "Failed to query compilation database: " ) +
                              database->getLastError() );
+            }
 
             if( !options.force && previousRecord.isValid() &&
                 previousRecord.compilerVersion == compilerVersion &&
@@ -1070,7 +1218,9 @@ namespace workphone::resource
             {
                 if( !resolveUnderRoot( compiledRoot, "data://" + previousRecord.outputPath, true,
                                        outputPath, error ) )
+                {
                     error.clear();
+                }
                 else
                 {
                     context.outputPath = pathString( outputPath );
@@ -1104,18 +1254,24 @@ namespace workphone::resource
                                        String( std::to_string( resourceId.pathHash() ).c_str() ) +
                                        ".wprs",
                                    false, outputPath, error ) )
+            {
                 return fail( error );
+            }
             context.outputPath = pathString( outputPath );
             fs::create_directories( outputPath.parent_path(), filesystemError );
             if( filesystemError )
+            {
                 return fail( String( "Failed to create compiled resource directory: " ) +
                              filesystemError.message().c_str() );
+            }
 
             TemporaryFile payloadFile{ makePayloadTemporaryPath( context.outputPath ) };
             std::ofstream payload( fs::u8path( payloadFile.path.c_str() ),
                                    std::ios::binary | std::ios::trunc );
             if( !payload )
+            {
                 return fail( "Failed to create temporary compiled payload" );
+            }
 
             CompilationStatus status = CompilationStatus::Failure;
             Array<String> compilerMessages;
@@ -1151,14 +1307,18 @@ namespace workphone::resource
                 return report;
             }
             if( !payloadWriteSucceeded )
+            {
                 return fail( "Resource compiler failed while writing its payload" );
+            }
 
             u64 checkedHash = 0, checkedSize = 0;
             if( !CompiledResourceIO::hashFile( context.sourcePath, checkedHash, checkedSize, error ) ||
                 checkedHash != sourceFileHash || checkedSize != sourceFileSize ||
                 compiler->versionFor( resourceId.type() ) != compilerVersion )
+            {
                 return fail(
                     "Source or compiler changed during compilation; artifact was not committed" );
+            }
             for( const auto &dependency : canonicalDependencies )
             {
                 if( dependency.second )
@@ -1169,14 +1329,18 @@ namespace workphone::resource
                         pinnedHeader.resourceId.str() != dependency.first ||
                         combineHash( pinnedHeader.sourceHash, pinnedHeader.payloadHash ) !=
                             dependencyHashes.at( dependency.first ) )
+                    {
                         return fail( "Compiled dependency changed during compilation" );
+                    }
                 }
             }
 
             u64 payloadHash = 0;
             u64 payloadSize = 0;
             if( !CompiledResourceIO::hashFile( payloadFile.path, payloadHash, payloadSize, error ) )
+            {
                 return fail( error );
+            }
 
             CompiledResourceHeader header;
             header.formatVersion = CompiledResourceHeader::currentFormatVersion;
@@ -1195,7 +1359,9 @@ namespace workphone::resource
                 "-" + std::to_string( payloadHash ).c_str() + ".wprs";
             if( !resolveUnderRoot( compiledRoot, "data://" + relativeArtifact, false, outputPath,
                                    error ) )
+            {
                 return fail( error );
+            }
             CompiledResourceHeader existing;
             if( fs::exists( outputPath ) &&
                 !CompiledResourceIO::validate( pathString( outputPath ), existing, error ) )
@@ -1209,25 +1375,33 @@ namespace workphone::resource
                                        ".wprs";
                     if( !resolveUnderRoot( compiledRoot, "data://" + relativeArtifact, false, outputPath,
                                            error ) )
+                    {
                         return fail( error );
+                    }
                 } while( fs::exists( outputPath ) );
             }
             context.outputPath = pathString( outputPath );
             fs::create_directories( outputPath.parent_path(), filesystemError );
             if( filesystemError )
+            {
                 return fail( filesystemError.message().c_str() );
+            }
             if( fs::exists( outputPath ) )
             {
                 if( !CompiledResourceIO::validate( context.outputPath, existing, error ) ||
                     !sameRuntimeHeader( existing, header ) )
+                {
                     return fail( "Artifact ownership/hash collision; existing generation retained" );
+                }
             }
             else
             {
                 TemporaryFile stagedContainer{ payloadFile.path + ".container" };
                 if( !CompiledResourceIO::writeAtomic( stagedContainer.path, header, payloadFile.path,
                                                       error ) )
+                {
                     return fail( error );
+                }
                 // Exclusive publication prevents another process's artifact from being replaced.
                 fs::create_hard_link( fs::u8path( stagedContainer.path.c_str() ), outputPath,
                                       filesystemError );
@@ -1235,7 +1409,9 @@ namespace workphone::resource
                     ( !fs::exists( outputPath ) ||
                       !CompiledResourceIO::validate( context.outputPath, existing, error ) ||
                       !sameRuntimeHeader( existing, header ) ) )
+                {
                     return fail( "Exclusive artifact publication failed; existing files retained" );
+                }
             }
 
             CompiledResourceRecord newRecord;
@@ -1249,7 +1425,9 @@ namespace workphone::resource
             Array<CompileDependencyRecord> databaseDependencies;
             databaseDependencies.reserve( canonicalDependencies.size() );
             for( const auto &dependency : canonicalDependencies )
+            {
                 databaseDependencies.push_back( { dependency.first, dependency.second } );
+            }
             // Artifacts are immutable candidates until the complete request succeeds.
             pendingCommits.push_back(
                 { newRecord, variant( options.packagedBuild ), std::move( databaseDependencies ) } );
@@ -1284,10 +1462,14 @@ namespace workphone::resource
                 runtimeCache.clear();
                 cacheLock.unlock();
                 for( const auto &entry : pendingCommits )
+                {
                     invalidateBuildEvidence( ResourceID( entry.record.resourceId ) );
+                }
             }
             for( const auto &entry : completed )
+            {
                 verifiedBuilds[variantResourceKey( entry.first, packaged )] = entry.second;
+            }
             activePackagedBuild = packaged;
             return true;
         }
@@ -1295,7 +1477,9 @@ namespace workphone::resource
         void abandonBatch( const std::map<String, CompilationReport> &completed )
         {
             for( const auto &entry : completed )
+            {
                 invalidateBuildEvidence( ResourceID( entry.first ) );
+            }
         }
 
         struct LoadRequest
@@ -1331,7 +1515,9 @@ namespace workphone::resource
                 }
             }
             else if( parentPin )
+            {
                 artifact = parentPin->path;
+            }
             else
             {
                 if( !database->getRecord( resourceId.str(), variant( request.packagedBuild ),
@@ -1399,13 +1585,17 @@ namespace workphone::resource
                 std::shared_lock<std::shared_mutex> lock( cacheMutex );
                 const auto iterator = runtimeCache.find( artifact );
                 if( !shallow && iterator != runtimeCache.end() )
+                {
                     cached = iterator->second.lock();
+                }
             }
             request.stack.insert( resourceId.str() );
+
             struct StackGuard
             {
                 std::set<String> &stack;
                 String id;
+
                 ~StackGuard()
                 {
                     stack.erase( id );
@@ -1418,14 +1608,18 @@ namespace workphone::resource
                 fs::path outputPath;
                 if( !resolveUnderRoot( compiledRoot, String( "data://" ) + artifact, true, outputPath,
                                        error ) )
+                {
                     return nullptr;
+                }
                 loaded = std::make_shared<RuntimeResource>();
                 const auto remaining = runtimeConfig.maxClosurePayloadBytes - request.payloadBytes;
                 if( !CompiledResourceIO::read(
                         pathString( outputPath ), *loaded, error,
                         std::min( payloadLimit,
                                   std::min( runtimeConfig.maxPayloadBytes, remaining ) ) ) )
+                {
                     return nullptr;
+                }
             }
             const auto &header = cached ? cached->header : loaded->header;
             if( header.resourceId != resourceId || header.resourceType != resourceId.type() )
@@ -1499,8 +1693,10 @@ namespace workphone::resource
                                                true, child, error ) )
                         {
                             if( error.empty() )
+                            {
                                 error =
                                     "Shallow dependency is outside the selected target and build mode";
+                            }
                             return nullptr;
                         }
                     }
@@ -1509,7 +1705,9 @@ namespace workphone::resource
             }
 
             if( loaded )
+            {
                 loaded->dependencies.reserve( header.installDependencies.size() );
+            }
             u32 subtreeDepth = 1;
             for( size_t index = 0; index < header.installDependencies.size(); ++index )
             {
@@ -1517,10 +1715,14 @@ namespace workphone::resource
                 const auto *pin = header.formatVersion >= 2 ? &header.installArtifacts[index] : nullptr;
                 auto dependency = loadNode( dependencyId, request, error, pin );
                 if( !dependency )
+                {
                     return nullptr;
+                }
                 subtreeDepth = std::max( subtreeDepth, request.subtreeDepth[dependencyId.str()] + 1 );
                 if( loaded )
+                {
                     loaded->dependencies.push_back( std::move( dependency ) );
+                }
             }
             std::shared_ptr<const RuntimeResource> result = cached ? cached : loaded;
             request.completed.emplace( resourceId.str(), result );
@@ -1561,10 +1763,14 @@ namespace workphone::resource
             request.packagedBuild = activePackagedBuild;
             auto loaded = loadNode( id, request, error );
             if( !loaded )
+            {
                 return nullptr;
+            }
             std::unique_lock<std::shared_mutex> cacheLock( cacheMutex );
             for( const auto &entry : request.completed )
+            {
                 runtimeCache[request.artifacts.at( entry.first )] = entry.second;
+            }
             return loaded;
         }
 
@@ -1655,17 +1861,25 @@ namespace workphone::resource
                                    String( std::to_string( hashString( config.target ) ).c_str() ) +
                                    ".lock",
                                false, leasePath, error ) )
+        {
             return false;
+        }
         auto writerLease = std::make_unique<WriterLease>();
         if( !writerLease->acquire( leasePath, error ) )
+        {
             return false;
+        }
 
         String databasePath = config.databasePath;
         if( databasePath.empty() )
+        {
             databasePath = pathString( compiled / ".resource_compilation.db" );
+        }
         auto databaseFile = fs::absolute( fs::u8path( databasePath.c_str() ), filesystemError );
         if( !filesystemError )
+        {
             databaseFile = fs::weakly_canonical( databaseFile, filesystemError );
+        }
         // Index paths are relative to this root. Sharing an index across roots can
         // bypass root/target admission and resolve another root's records incorrectly.
         if( filesystemError || !isUnderRoot( compiled, databaseFile ) ||
@@ -1724,7 +1938,10 @@ namespace workphone::resource
         std::error_code filesystemError;
         auto compiled = fs::absolute( fs::u8path( config.compiledRoot.c_str() ), filesystemError );
         if( !filesystemError )
-            compiled = comparableFileSystemPath( fs::canonical( fileSystemIOPath( compiled ), filesystemError ) );
+        {
+            compiled = comparableFileSystemPath(
+                fs::canonical( fileSystemIOPath( compiled ), filesystemError ) );
+        }
         if( filesystemError || !fs::is_directory( fileSystemIOPath( compiled ), filesystemError ) )
         {
             error = "Runtime compiled root must be an existing accessible directory";
@@ -1732,7 +1949,9 @@ namespace workphone::resource
         }
         RuntimeManifest manifest;
         if( !readManifest( config.manifestPath, manifest, error ) )
+        {
             return false;
+        }
         if( manifest.target != config.target )
         {
             error = "Runtime manifest target does not match the requested target";
@@ -1829,7 +2048,9 @@ namespace workphone::resource
             }
             if( !resolveUnderRoot( m_impl->compiledRoot, String( "data://" ) + record.outputPath, true,
                                    output, error ) )
+            {
                 return false;
+            }
             if( pathComponentEquals( destination, output ) )
             {
                 error = "A runtime manifest cannot replace one of its resource containers";
@@ -1837,7 +2058,9 @@ namespace workphone::resource
             }
             CompiledResourceHeader header;
             if( !CompiledResourceIO::validate( pathString( output ), header, error ) )
+            {
                 return false;
+            }
             const auto verified = m_impl->verifiedBuilds.find(
                 Impl::variantResourceKey( id.str(), m_impl->activePackagedBuild ) );
             if( !m_impl->database->getRecord( id.str(), m_impl->variant( m_impl->activePackagedBuild ),
@@ -1861,7 +2084,9 @@ namespace workphone::resource
             {
                 const auto &dependency = header.installDependencies[index];
                 if( !visit( dependency ) )
+                {
                     return false;
+                }
                 if( header.formatVersion >= 2 )
                 {
                     const auto &pin = header.installArtifacts[index];
@@ -1886,7 +2111,9 @@ namespace workphone::resource
         for( const auto &root : roots )
         {
             if( !visit( root ) )
+            {
                 return false;
+            }
             sortedRoots[root.str()] = root;
         }
 
@@ -1911,7 +2138,9 @@ namespace workphone::resource
         bool stringsValid = writeManifestString( encoded, manifest.target );
         writeManifestNumber( encoded, sortedRoots.size() );
         for( const auto &root : sortedRoots )
+        {
             stringsValid = writeManifestString( encoded, root.first ) && stringsValid;
+        }
         writeManifestNumber( encoded, manifest.resources.size() );
         for( const auto &entry : manifest.resources )
         {
@@ -1925,9 +2154,13 @@ namespace workphone::resource
             stringsValid =
                 writeManifestString( encoded, manifest.artifacts.at( entry.first ) ) && stringsValid;
             for( const auto &dependency : header.installDependencies )
+            {
                 stringsValid = writeManifestString( encoded, dependency.str() ) && stringsValid;
+            }
             if( encoded.tellp() > static_cast<std::streamoff>( maximumManifestBytes ) )
+            {
                 break;
+            }
         }
         if( !bindings.empty() )
         {
@@ -1993,11 +2226,17 @@ namespace workphone::resource
     }
 
     bool ResourceSystem::previewRuntimePackageChecked( const Array<ResourceID> &roots,
-        const RuntimePackageResolver &resolver, Array<RuntimePackagePreviewEntry> &entries, String &error )
+                                                       const RuntimePackageResolver &resolver,
+                                                       Array<RuntimePackagePreviewEntry> &entries,
+                                                       String &error )
     {
         entries.clear();
-        if(!resolver) { error = "Checked runtime preview requires a package resolver"; return false; }
-        return writeRuntimePackageImpl({}, roots, {}, resolver, error, &entries);
+        if( !resolver )
+        {
+            error = "Checked runtime preview requires a package resolver";
+            return false;
+        }
+        return writeRuntimePackageImpl( {}, roots, {}, resolver, error, &entries );
     }
 
     bool ResourceSystem::writeRuntimePackageImpl( const String &directory,
@@ -2016,25 +2255,26 @@ namespace workphone::resource
                 "package-mode build";
             return false;
         }
-        if( !preview && (directory.empty() || directory.find( '\0' ) != String::npos) )
+        if( !preview && ( directory.empty() || directory.find( '\0' ) != String::npos ) )
         {
             error = "A runtime package requires a valid destination directory";
             return false;
         }
         std::error_code ec;
-        const auto destination = preview ? m_impl->compiledRoot / "preview" :
-            fs::weakly_canonical( fs::u8path( directory.c_str() ), ec );
-        if( !preview && (ec || destination.empty() || destination == destination.root_path() ||
-            isUnderRoot( m_impl->sourceRoot, destination ) ||
-            isUnderRoot( destination, m_impl->sourceRoot ) ||
-            isUnderRoot( m_impl->compiledRoot, destination ) ||
-            isUnderRoot( destination, m_impl->compiledRoot )) )
+        const auto destination = preview ? m_impl->compiledRoot / "preview"
+                                         : fs::weakly_canonical( fs::u8path( directory.c_str() ), ec );
+        if( !preview && ( ec || destination.empty() || destination == destination.root_path() ||
+                          isUnderRoot( m_impl->sourceRoot, destination ) ||
+                          isUnderRoot( destination, m_impl->sourceRoot ) ||
+                          isUnderRoot( m_impl->compiledRoot, destination ) ||
+                          isUnderRoot( destination, m_impl->compiledRoot ) ) )
         {
             error = "Runtime package destination must be separate from source and cooked storage";
             return false;
         }
         const auto status = fs::symlink_status( destination, ec );
-        if( !preview && (( ec && ec != std::errc::no_such_file_or_directory ) || fs::exists( status )) )
+        if( !preview &&
+            ( ( ec && ec != std::errc::no_such_file_or_directory ) || fs::exists( status ) ) )
         {
             error = "Runtime package destination already exists or cannot be inspected";
             return false;
@@ -2052,6 +2292,7 @@ namespace workphone::resource
         struct Staging
         {
             fs::path path;
+
             ~Staging()
             {
                 if( !path.empty() )
@@ -2061,6 +2302,7 @@ namespace workphone::resource
                 }
             }
         } staging;
+
         for( unsigned attempt = 0; attempt < 64; ++attempt )
         {
             const auto candidate =
@@ -2075,7 +2317,9 @@ namespace workphone::resource
                 break;
             }
             if( ec && ec != std::errc::file_exists )
+            {
                 break;
+            }
             ec.clear();
         }
         if( staging.path.empty() )
@@ -2085,10 +2329,14 @@ namespace workphone::resource
         }
         const auto manifestPath = staging.path / "runtime.wprm";
         if( !writeRuntimeManifestLocked( pathString( manifestPath ), roots, bindings, error ) )
+        {
             return false;
+        }
         RuntimeManifest manifest;
         if( !readManifest( pathString( manifestPath ), manifest, error ) )
+        {
             return false;
+        }
         RuntimePackageAdmission admission;
         if( resolver )
         {
@@ -2096,11 +2344,15 @@ namespace workphone::resource
             context.sourceRoot = pathString( m_impl->sourceRoot );
             context.target = m_impl->config.target;
             for( const auto &entry : manifest.resources )
+            {
                 context.resources.push_back( entry.second.resourceId );
+            }
             if( !resolver( context, admission, error ) )
             {
                 if( error.empty() )
+                {
                     error = "Runtime package admission was rejected";
+                }
                 return false;
             }
             if( !admission.lifetime || admission.bindings.size() != manifest.resources.size() )
@@ -2110,10 +2362,14 @@ namespace workphone::resource
             }
             if( !writeRuntimeManifestLocked( pathString( manifestPath ), roots, admission.bindings,
                                              error ) )
+            {
                 return false;
+            }
             RuntimeManifest rebound;
             if( !readManifest( pathString( manifestPath ), rebound, error ) )
+            {
                 return false;
+            }
             if( rebound.artifacts != manifest.artifacts ||
                 rebound.resources.size() != manifest.resources.size() )
             {
@@ -2121,30 +2377,41 @@ namespace workphone::resource
                 return false;
             }
             for( const auto &entry : manifest.resources )
+            {
                 if( !sameRuntimeHeader( entry.second, rebound.resources.at( entry.first ), false ) )
                 {
                     error = "Runtime package generation changed during admission";
                     return false;
                 }
+            }
             manifest = std::move( rebound );
         }
-        if(preview)
+        if( preview )
         {
-            if(manifest.resources.size() > 4096)
-            { error = "Closure preview supports at most 4096 resources"; return false; }
+            if( manifest.resources.size() > 4096 )
+            {
+                error = "Closure preview supports at most 4096 resources";
+                return false;
+            }
             Array<RuntimePackagePreviewEntry> result;
-            for(const auto &item : manifest.resources)
+            for( const auto &item : manifest.resources )
             {
                 RuntimePackagePreviewEntry entry;
                 entry.resourceId = item.second.resourceId;
                 entry.payloadBytes = item.second.payloadSize;
                 entry.installDependencies = item.second.installDependencies;
-                entry.root = std::find(roots.begin(), roots.end(), entry.resourceId) != roots.end();
-                for(const auto &binding : admission.bindings)
-                    if(binding.resourceId == entry.resourceId) { entry.uuid = binding.uuid; break; }
-                result.push_back(std::move(entry));
+                entry.root = std::find( roots.begin(), roots.end(), entry.resourceId ) != roots.end();
+                for( const auto &binding : admission.bindings )
+                {
+                    if( binding.resourceId == entry.resourceId )
+                    {
+                        entry.uuid = binding.uuid;
+                        break;
+                    }
+                }
+                result.push_back( std::move( entry ) );
             }
-            *preview = std::move(result);
+            *preview = std::move( result );
             return true;
         }
         std::set<String> artifactPaths;
@@ -2158,11 +2425,16 @@ namespace workphone::resource
             }
             fs::path input;
             if( !resolveUnderRoot( m_impl->compiledRoot, "data://" + relative, true, input, error ) )
+            {
                 return false;
+            }
             const auto output = staging.path / fs::u8path( relative.c_str() );
             fs::create_directories( fileSystemIOPath( output.parent_path() ), ec );
             if( !ec )
-                fs::copy_file( fileSystemIOPath( input ), fileSystemIOPath( output ), fs::copy_options::none, ec );
+            {
+                fs::copy_file( fileSystemIOPath( input ), fileSystemIOPath( output ),
+                               fs::copy_options::none, ec );
+            }
             if( ec )
             {
                 error = "Cannot copy runtime package artifact: " + entry.first + " (" +
@@ -2170,8 +2442,11 @@ namespace workphone::resource
                 return false;
             }
             CompiledResourceHeader copied;
-            if( !CompiledResourceIO::validate( pathString( fileSystemIOPath( output ) ), copied, error ) )
+            if( !CompiledResourceIO::validate( pathString( fileSystemIOPath( output ) ), copied,
+                                               error ) )
+            {
                 return false;
+            }
             if( !sameRuntimeHeader( copied, entry.second, false ) )
             {
                 error =
@@ -2197,9 +2472,8 @@ namespace workphone::resource
         // Directory rename must not replace even an empty competing destination.
         bool published = false;
 #if defined WP_PLATFORM_WIN32
-        published =
-            MoveFileExW( fileSystemIOPath( staging.path ).c_str(), fileSystemIOPath( destination ).c_str(),
-                         MOVEFILE_WRITE_THROUGH ) != 0;
+        published = MoveFileExW( fileSystemIOPath( staging.path ).c_str(),
+                                 fileSystemIOPath( destination ).c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
 #elif defined( __linux__ ) && defined( SYS_renameat2 )
         published = syscall( SYS_renameat2, AT_FDCWD, staging.path.c_str(), AT_FDCWD,
                              destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;
@@ -2230,17 +2504,23 @@ namespace workphone::resource
     void ResourceSystem::shutdown()
     {
         if( !m_impl )
+        {
             return;
+        }
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
         if( !m_impl->initialized )
+        {
             return;
+        }
         {
             std::unique_lock<std::shared_mutex> cacheLock( m_impl->cacheMutex );
             m_impl->runtimeCache.clear();
         }
         if( !m_impl->runtimeOnly )
+        {
             m_impl->database->disconnect();
+        }
         m_impl->runtimeManifest = RuntimeManifest();
         m_impl->verifiedBuilds.clear();
         m_impl->sourceRoot.clear();
@@ -2261,15 +2541,21 @@ namespace workphone::resource
                                                const CompilationOptions &options )
     {
         if( !resourceId.isValid() )
+        {
             return failureReport( resourceId, "Cannot compile an invalid resource ID" );
+        }
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         {
             std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
             if( !m_impl->initialized )
+            {
                 return failureReport( resourceId, "Resource system is not initialized" );
+            }
             if( m_impl->runtimeOnly )
+            {
                 return failureReport( resourceId,
                                       "Cooking is unavailable in a read-only runtime mount" );
+            }
         }
         std::map<String, CompilationReport> completed;
         Array<String> stack;
@@ -2281,9 +2567,13 @@ namespace workphone::resource
         if( report.succeeded() &&
             ( !inputs.verify( error ) ||
               !m_impl->publishBatch( pendingCommits, completed, options.packagedBuild, error ) ) )
+        {
             report = failureReport( resourceId, error );
+        }
         if( !report.succeeded() )
+        {
             m_impl->abandonBatch( completed );
+        }
         return report;
     }
 
@@ -2331,23 +2621,31 @@ namespace workphone::resource
             for( const auto &id : direct )
             {
                 if( affected.insert( id ).second )
+                {
                     pending.push_back( id );
+                }
             }
         }
 
         ResourceID changedResource( canonicalPath );
         if( changedResource.isValid() && m_impl->registry->hasCompiler( changedResource.type() ) )
+        {
             affected.insert( changedResource.str() );
+        }
 
         std::map<String, CompilationReport> completed;
         Array<String> stack;
         Array<CompilationCommit> pendingCommits;
         BuildInputs inputs( m_impl->sourceRoot, m_impl->compiledRoot );
         for( const auto &id : affected )
+        {
             reports.push_back( m_impl->compileNode( ResourceID( id ), options, completed, stack,
                                                     pendingCommits, inputs ) );
+        }
         if( reports.empty() )
+        {
             return reports;
+        }
         const bool allSucceeded =
             std::all_of( reports.begin(), reports.end(),
                          []( const CompilationReport &report ) { return report.succeeded(); } );
@@ -2356,10 +2654,16 @@ namespace workphone::resource
         {
             m_impl->abandonBatch( completed );
             if( error.empty() )
+            {
                 error = "Affected compilation set not committed because one or more resources failed";
+            }
             for( auto &report : reports )
+            {
                 if( report.succeeded() )
+                {
                     report = failureReport( report.resourceId, error );
+                }
+            }
         }
         return reports;
     }
@@ -2399,7 +2703,9 @@ namespace workphone::resource
         std::shared_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         ResourceID id;
         if( !m_impl->resolveUUID( uuid, id, error ) )
+        {
             return nullptr;
+        }
         return m_impl->loadClosure( id, error );
     }
 

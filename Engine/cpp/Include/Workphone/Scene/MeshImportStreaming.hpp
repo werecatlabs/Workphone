@@ -17,6 +17,6 @@ namespace workphone::scene
                                  const String &projectRoot, const String &outputGenerationDirectory,
                                  SmartPtr<Properties> &prefabData, String &manifestPath, String &error );
     };
-}
+}  // namespace workphone::scene
 
 #endif

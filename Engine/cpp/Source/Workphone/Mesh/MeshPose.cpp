@@ -60,8 +60,9 @@ namespace workphone
             return;
         }
         const auto fitsBuckets = []( const VertexOffsetMap &map, bool inserting ) {
-            return !inserting || static_cast<long double>( map.size() + 1 ) <=
-                static_cast<long double>( map.max_load_factor() ) * map.bucket_count();
+            return !inserting ||
+                   static_cast<long double>( map.size() + 1 ) <=
+                       static_cast<long double>( map.max_load_factor() ) * map.bucket_count();
         };
         if( fitsBuckets( m_vertexOffsets, position == m_vertexOffsets.end() ) &&
             fitsBuckets( m_normalOffsets, normals == m_normalOffsets.end() ) )
@@ -79,11 +80,16 @@ namespace workphone
                     insertedPosition = inserted.second;
                 }
                 if( normals == m_normalOffsets.end() )
+                {
                     normals = m_normalOffsets.emplace( vertexIndex, normal ).first;
+                }
             }
             catch( ... )
             {
-                if( insertedPosition ) m_vertexOffsets.erase( position );
+                if( insertedPosition )
+                {
+                    m_vertexOffsets.erase( position );
+                }
                 throw;
             }
             position->second = offset;

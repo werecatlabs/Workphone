@@ -100,7 +100,8 @@ namespace workphone
         static SmartPtr<ISubMesh> createSubMesh( SmartPtr<IVertexBuffer> vertexBuffer,
                                                  SmartPtr<IIndexBuffer> indexBuffer );
 
-        static SmartPtr<ISubMesh> createSubMesh( const Array<Vertex> &vertices, const Array<u32> &indices );
+        static SmartPtr<ISubMesh> createSubMesh( const Array<Vertex> &vertices,
+                                                 const Array<u32> &indices );
 
         /**
          * @brief Create a mesh from positions, normals, tangents, uvs and indices.

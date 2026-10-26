@@ -14,6 +14,6 @@ namespace workphone
      * to this project's owned job folder. Unmarked legacy records are preserved.
      * Live request locks are skipped. Logs, reports, packages and staging trees
      * are preserved; an interrupted request's publication outcome is unknown. */
-    WPCore_API bool recoverResourcePackageJobs(const String &projectRoot,
-        ResourcePackageRecoveryResult &result, String &error);
-}
+    WPCore_API bool recoverResourcePackageJobs( const String &projectRoot,
+                                                ResourcePackageRecoveryResult &result, String &error );
+}  // namespace workphone

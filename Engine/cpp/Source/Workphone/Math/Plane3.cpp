@@ -79,7 +79,9 @@ namespace workphone
         T t2 = m_normal.dotProduct( lineVect );
 
         if( t2 == 0 )
+        {
             return false;
+        }
 
         T t = -( m_normal.dotProduct( linePoint ) + m_distance ) / t2;
         outIntersection = linePoint + ( lineVect * t );
@@ -151,7 +153,9 @@ namespace workphone
         T det = fn00 * fn11 - fn01 * fn01;
 
         if( fabs( det ) < Math<T>::epsilon() )
+        {
             return false;
+        }
 
         det = 1.0 / det;
         T fc0 = static_cast<T>( ( fn11 * -m_distance + fn01 * other.m_distance ) * det );
@@ -168,7 +172,9 @@ namespace workphone
     {
         Vector3<T> linePoint, lineVect;
         if( getIntersectionWithPlane( o1, linePoint, lineVect ) )
+        {
             return o2.getIntersectionWithLine( linePoint, lineVect, outPoint );
+        }
 
         return false;
     }

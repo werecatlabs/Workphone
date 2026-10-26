@@ -14,7 +14,9 @@ namespace workphone::advanced
     {
         unload();
         if( !manager || !manager->isLoaded() )
+        {
             return false;
+        }
         m_manager = manager;
         for( size_t i = 0; i < m_sounds.size(); ++i )
         {
@@ -47,7 +49,9 @@ namespace workphone::advanced
                 sound->stop();
                 sound->unload( nullptr );
                 if( m_manager )
+                {
                     m_manager->destroyResource( sound );
+                }
                 sound = nullptr;
             }
         }
@@ -59,17 +63,25 @@ namespace workphone::advanced
     {
         smoothVehicleAudio( m_gains, vehicleAudioTargets( input ), dt );
         for( size_t i = 0; i < m_sounds.size(); ++i )
+        {
             if( m_sounds[i] )
+            {
                 m_sounds[i]->setVolume( i < 6    ? m_gains.engine[i]
                                         : i == 6 ? m_gains.rolling
                                                  : m_gains.squeal );
+            }
+        }
     }
 
     bool VehicleAudio::isPlaying() const
     {
         for( const auto &sound : m_sounds )
+        {
             if( !sound || !sound->isPlaying() || !sound->getLoop() )
+            {
                 return false;
+            }
+        }
         return true;
     }
 }  // namespace workphone::advanced

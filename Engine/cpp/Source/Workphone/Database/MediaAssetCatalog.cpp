@@ -17,6 +17,7 @@ namespace workphone
     {
         namespace fs = std::filesystem;
         const String mediaNamespace = "workphone.builtin.media.v1";
+
         SmartPtr<IDatabaseQuery> mediaQuery( SmartPtr<AssetDatabaseManager> catalog, const String &sql,
                                              const Array<String> &values = {} )
         {
@@ -24,6 +25,7 @@ namespace workphone
             auto bound = db ? dynamic_cast<IParameterizedDatabase *>( db.get() ) : nullptr;
             return bound ? bound->queryBound( sql, values ) : nullptr;
         }
+
         bool ownedMediaCatalog( SmartPtr<AssetDatabaseManager> catalog )
         {
             auto marker =
@@ -31,28 +33,46 @@ namespace workphone
             return marker && !marker->eof() && marker->getFieldValue( "namespace" ) == mediaNamespace &&
                    marker->getFieldValue( "version" ) == "1";
         }
+
         String mediaType( const fs::path &path )
         {
             auto ext = path.extension().u8string();
             for( auto &c : ext )
+            {
                 if( c >= 'A' && c <= 'Z' )
+                {
                     c += 'a' - 'A';
+                }
+            }
             if( ext == ".ttf" || ext == ".otf" || ext == ".font" )
+            {
                 return "Font";
+            }
             if( ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga" ||
                 ext == ".gif" || ext == ".dds" || ext == ".ktx" || ext == ".ktx2" )
+            {
                 return "Texture";
+            }
             if( ext == ".mat" || ext == ".material" )
+            {
                 return "Material";
+            }
             if( ext == ".lua" )
+            {
                 return "script";
+            }
             if( ext == ".wav" || ext == ".ogg" || ext == ".mp3" || ext == ".flac" )
+            {
                 return "Sound";
+            }
             if( ext == ".fbmeshbin" )
+            {
                 return "Mesh";
+            }
             return {};
         }
     }  // namespace
+
     bool buildMediaAssetCatalog( const String &mediaRoot, const String &requestedPath, String &error )
     {
         error.clear();
@@ -64,15 +84,19 @@ namespace workphone
             String root;
             if( !canonicalAssetCatalogRoot( mediaRoot, root, error ) ||
                 !fs::is_directory( fs::u8path( root.c_str() ) ) )
+            {
                 throw std::runtime_error( "Bundled media root is not an existing directory." );
+            }
             auto destination =
                 fs::absolute( fs::u8path( requestedPath.empty()
                                               ? ( root + "/.workphone/media-assets.db" ).c_str()
                                               : requestedPath.c_str() ) )
                     .lexically_normal();
             if( !mediaType( destination ).empty() )
+            {
                 throw std::runtime_error(
                     "A media catalog destination cannot use a source-asset extension." );
+            }
             const bool exists = fs::exists( destination );
             // Validate ownership read-only before a builder opens an existing DB for writes.
             if( exists )
@@ -81,14 +105,18 @@ namespace workphone
                 if( !old->setProjectRoot( root ) ||
                     !old->openReadOnly( destination.u8string().c_str(), error ) ||
                     !ownedMediaCatalog( old ) )
+                {
                     throw std::runtime_error(
                         "Destination is not an owned built-in media catalog; it was left unchanged." );
+                }
                 old->unload( nullptr );
             }
+
             struct Row
             {
                 String uuid, path, key, type, usage;
             };
+
             auto entries = makeSourceBudgetSnapshot<Row>();
             SourceBudgetSet<String> keys, ids;
             const auto namespaceId = StringUtil::parseUUID( "8daa280e-45e1-4a75-9b22-84a3cc2e5991" );
@@ -101,7 +129,9 @@ namespace workphone
                  ++it )
             {
                 if( ++visited > 500000 || it.depth() > 64 )
+                {
                     throw std::runtime_error( "Media inventory exceeds its traversal budget." );
+                }
                 auto status = it->symlink_status();
                 if( fs::is_symlink( status ) )
                 {
@@ -113,7 +143,9 @@ namespace workphone
                 // link outside the installation or into a recursive tree.
                 const auto attributes = GetFileAttributesW( it->path().c_str() );
                 if( attributes == INVALID_FILE_ATTRIBUTES )
+                {
                     throw std::runtime_error( "Cannot inspect a media path." );
+                }
                 if( attributes & FILE_ATTRIBUTE_REPARSE_POINT )
                 {
                     it.disable_recursion_pending();
@@ -125,28 +157,44 @@ namespace workphone
                     auto name = it->path().filename().u8string();
 #ifdef _WIN32
                     for( auto &c : name )
+                    {
                         if( c >= 'A' && c <= 'Z' )
+                        {
                             c += 'a' - 'A';
+                        }
+                    }
 #endif
                     if( name == ".workphone" || name == ".git" )
+                    {
                         it.disable_recursion_pending();
+                    }
                     continue;
                 }
                 if( !fs::is_regular_file( status ) )
+                {
                     continue;
+                }
                 auto type = mediaType( it->path() );
                 if( type.empty() )
+                {
                     continue;
+                }
                 if( entries.size() >= 100000 )
+                {
                     throw std::runtime_error( "Media catalog exceeds the 100000-asset budget." );
+                }
                 AssetCatalogPath path;
                 if( !canonicalAssetCatalogPath( root, it->path().u8string().c_str(), path, error ) )
+                {
                     throw std::runtime_error( error.c_str() );
+                }
                 auto id = boost::uuids::to_string(
                     uuid( std::string( ( mediaNamespace + ":" + path.key ).c_str() ) ) );
                 if( !keys.insert( path.key.c_str() ).second || !ids.insert( id.c_str() ).second )
+                {
                     throw std::runtime_error(
                         "Bundled media has colliding canonical paths or identities." );
+                }
                 // Runtime eligibility is opt-in by a dedicated bundled Runtime tree.
                 const bool runtime =
                     path.key.find( "Runtime/" ) == 0 || path.key.find( "runtime/" ) == 0;
@@ -165,17 +213,23 @@ namespace workphone
             }
             catalog = make_ptr<AssetDatabaseManager>();
             if( !catalog->setProjectRoot( root ) )
+            {
                 throw std::runtime_error( "Cannot bind media source root." );
+            }
             catalog->loadFromFile( working.u8string().c_str() );
             auto db = catalog->getDatabase();
             DatabaseConnectionLock guard( db ? dynamic_cast<ISerializedDatabase *>( db.get() )
                                              : nullptr );
             if( !db || !db->isLoaded() || !mediaQuery( catalog, "BEGIN IMMEDIATE" ) )
+            {
                 throw std::runtime_error( "Cannot start media catalog publication." );
+            }
             transaction = true;
             auto run = [&]( const String &sql, const Array<String> &values = Array<String>() ) {
                 if( !mediaQuery( catalog, sql, values ) )
+                {
                     throw std::runtime_error( "Media catalog publication failed." );
+                }
             };
             run( "CREATE TABLE IF NOT EXISTS wp_media_catalog(id INTEGER PRIMARY KEY "
                  "CHECK(id=1),namespace TEXT NOT NULL,version INTEGER NOT NULL)" );
@@ -207,17 +261,33 @@ namespace workphone
         }
         catch( const std::exception &failure )
         {
-            try { error = failure.what(); }
-            catch(const std::bad_alloc &) { error = "Budget exhausted"; }
+            try
+            {
+                error = failure.what();
+            }
+            catch( const std::bad_alloc & )
+            {
+                error = "Budget exhausted";
+            }
             if( catalog )
             {
                 if( transaction )
                 {
                     auto database = catalog->getDatabase();
-                    if(auto cleanup = dynamic_cast<ITransactionCleanupDatabase *>(database.get()))
+                    if( auto cleanup = dynamic_cast<ITransactionCleanupDatabase *>( database.get() ) )
+                    {
                         cleanup->rollbackTransaction();
+                    }
                     else
-                        try { mediaQuery( catalog, "ROLLBACK" ); } catch(...) {}
+                    {
+                        try
+                        {
+                            mediaQuery( catalog, "ROLLBACK" );
+                        }
+                        catch( ... )
+                        {
+                        }
+                    }
                 }
                 catalog->unload( nullptr );
             }
@@ -229,13 +299,16 @@ namespace workphone
             return false;
         }
     }
+
     SmartPtr<AssetDatabaseManager> openMediaAssetCatalog( const String &mediaRoot, String &error,
                                                           const String &catalogPath )
     {
         error.clear();
         String root;
         if( !canonicalAssetCatalogRoot( mediaRoot, root, error ) )
+        {
             return nullptr;
+        }
         const auto path = catalogPath.empty() ? root + "/.workphone/media-assets.db" : catalogPath;
         std::error_code ec;
         const bool exists = fs::exists( fs::u8path( path.c_str() ), ec );
@@ -245,13 +318,17 @@ namespace workphone
             return nullptr;
         }
         if( !exists && !buildMediaAssetCatalog( root, path, error ) )
+        {
             return nullptr;
+        }
         auto result = make_ptr<AssetDatabaseManager>();
         if( !result->setProjectRoot( root ) || !result->openReadOnly( path, error ) ||
             !ownedMediaCatalog( result ) )
         {
             if( error.empty() )
+            {
                 error = "Not a supported built-in media catalog.";
+            }
             return nullptr;
         }
         return result;

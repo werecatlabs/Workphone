@@ -12,6 +12,7 @@
 namespace workphone
 {
     class MaterialPassStateData;
+
     namespace render
     {
         /**
@@ -31,7 +32,8 @@ namespace workphone
             /** Mirror texture-unit edits to the immutable render snapshot at edit time. */
             void updateRenderTexture( IMaterialTexture *unit, SmartPtr<ITexture> texture );
             // Authoring facade lookup by verified membership, including null bindings.
-            bool getRenderTextureBinding( const IMaterialTexture *unit, SmartPtr<ITexture> &texture ) const;
+            bool getRenderTextureBinding( const IMaterialTexture *unit,
+                                          SmartPtr<ITexture> &texture ) const;
             void refreshRenderTextures();
             /** Inspect existing authoring facades without materializing empty slots. */
             Array<SmartPtr<IMaterialTexture>> getMaterializedTextureUnits() const;

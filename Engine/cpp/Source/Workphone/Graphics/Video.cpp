@@ -43,23 +43,30 @@ namespace workphone
         void Video::play()
         {
             if( m_impl )
+            {
                 m_impl->play();
+            }
         }
 
         void Video::stop()
         {
             if( m_impl )
+            {
                 m_impl->stop();
+            }
         }
 
         Vector2I Video::getSize() const
         {
             return m_impl ? m_impl->getSize() : Vector2I();
         }
+
         void Video::setSize( const Vector2I &size )
         {
             if( m_impl )
+            {
                 m_impl->setSize( size );
+            }
         }
 
         void *Video::getCurrentFrameBuffer() const
@@ -70,7 +77,9 @@ namespace workphone
         void Video::setLoop( bool loop )
         {
             if( m_impl )
+            {
                 m_impl->setLoop( loop );
+            }
         }
 
         bool Video::getLoop() const
@@ -81,7 +90,9 @@ namespace workphone
         void Video::setAutoUpdate( bool autoUpdate )
         {
             if( m_impl )
+            {
                 m_impl->setAutoUpdate( autoUpdate );
+            }
         }
 
         bool Video::getAutoUpdate() const
@@ -97,13 +108,17 @@ namespace workphone
         void Video::setVideoTexture( SmartPtr<IVideoTexture> videoTexture )
         {
             if( m_impl )
+            {
                 m_impl->setVideoTexture( videoTexture );
+            }
         }
 
         void Video::_getObject( void **object )
         {
             if( m_impl )
+            {
                 m_impl->_getObject( object );
+            }
         }
 
     }  // namespace render

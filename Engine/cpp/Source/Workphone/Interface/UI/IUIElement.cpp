@@ -34,6 +34,7 @@ namespace workphone::ui
     const String IUIElement::makeDirtyStr = "make dirty";
 
     IUIElement::IUIElement() = default;
+
     IUIElement::IUIElement( u32 poolTypeId ) : core::IPrototype( poolTypeId )
     {
     }

@@ -22,7 +22,7 @@ namespace workphone::render
             std::lock_guard<std::mutex> lock( *mutex );
             return counter++;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::render, GraphicsSceneNode,
                                SharedGraphicsObject<IGraphicsSceneNode> );
@@ -150,11 +150,13 @@ namespace workphone::render
     {
         auto data = m_transformStateData.load();
         if( !data )
+        {
             if( auto context = getStateContext() )
             {
                 auto stateData = context->getStateDataById<TransformStateData>( getId() );
                 data = stateData.get();
             }
+        }
         if( SafeReadPtr<TransformStateData> transformStateData = data )
         {
             return transformStateData->localTransform;
@@ -167,17 +169,22 @@ namespace workphone::render
     {
         auto data = m_transformStateData.load();
         if( !data )
+        {
             if( auto context = getStateContext() )
             {
                 auto stateData = context->getStateDataById<TransformStateData>( getId() );
                 data = stateData.get();
             }
+        }
         if( SafePtr<TransformStateData> transformStateData = data )
         {
             transformStateData->localTransform = t;
 
             auto state = transformStateData->getOwner();
-            if( state ) state->setDirty( true );
+            if( state )
+            {
+                state->setDirty( true );
+            }
         }
     }
 

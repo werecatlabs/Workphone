@@ -313,13 +313,21 @@ namespace workphone
             String lowerName = StringUtil::make_lower( motionTypeName );
 
             if( lowerName == "locked" )
+            {
                 return D6MotionEnum::eLOCKED;
+            }
             else if( lowerName == "limited" )
+            {
                 return D6MotionEnum::eLIMITED;
+            }
             else if( lowerName == "free" )
+            {
                 return D6MotionEnum::eFREE;
+            }
             else
+            {
                 return D6MotionEnum::eLOCKED;  // Default fallback
+            }
         }
 
     }  // namespace physics

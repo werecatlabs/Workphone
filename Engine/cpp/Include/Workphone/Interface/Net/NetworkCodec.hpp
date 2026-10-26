@@ -18,18 +18,26 @@ namespace workphone::network
     inline void requireBytes( size_t position, size_t count, size_t size )
     {
         if( position > size || count > size - position )
+        {
             throw std::out_of_range( "Network codec: truncated value" );
+        }
     }
 
     template <class Buffer>
     void appendBytes( Buffer &buffer, const void *data, size_t count )
     {
         if( count == 0 )
+        {
             return;
+        }
         if( !data )
+        {
             throw std::invalid_argument( "Network codec: null input" );
+        }
         if( buffer.size() > MaxMessageBytes || count > MaxMessageBytes - buffer.size() )
+        {
             throw std::length_error( "Network codec: message capacity exceeded" );
+        }
         const auto *bytes = static_cast<const unsigned char *>( data );
         const auto inputAddress = reinterpret_cast<std::uintptr_t>( data );
         const auto bufferAddress = reinterpret_cast<std::uintptr_t>( buffer.data() );
@@ -64,7 +72,9 @@ namespace workphone::network
         auto bits = static_cast<U>( value );
         unsigned char bytes[sizeof( T )];
         for( size_t i = 0; i < sizeof( T ); ++i )
+        {
             bytes[i] = static_cast<unsigned char>( bits >> ( i * 8 ) );
+        }
         appendBytes( buffer, bytes, sizeof( bytes ) );
     }
 
@@ -86,7 +96,9 @@ namespace workphone::network
         using U = std::make_unsigned_t<T>;
         U bits = 0;
         for( size_t i = 0; i < sizeof( T ); ++i )
+        {
             bits |= static_cast<U>( static_cast<U>( buffer[position + i] ) << ( i * 8 ) );
+        }
         // Signed values use the two's-complement wire representation, with a
         // defined conversion even on implementations where U -> T is not.
         if constexpr( std::is_signed_v<T> )
@@ -96,7 +108,9 @@ namespace workphone::network
                                 : static_cast<T>( -1 - static_cast<T>( static_cast<U>( ~bits ) ) );
         }
         else
+        {
             value = bits;
+        }
         position += sizeof( T );
     }
 
@@ -115,7 +129,9 @@ namespace workphone::network
         std::uint8_t raw;
         read( buffer, cursor, raw );
         if( raw > 1 )
+        {
             throw std::invalid_argument( "Network codec: invalid Boolean" );
+        }
         value = raw != 0;
         position = cursor;
     }
@@ -125,7 +141,9 @@ namespace workphone::network
     {
         if( value.size() > MaxStringBytes || buffer.size() > MaxMessageBytes - 4 ||
             value.size() > MaxMessageBytes - 4 - buffer.size() )
+        {
             throw std::length_error( "Network codec: string capacity exceeded" );
+        }
         write( buffer, static_cast<std::uint32_t>( value.size() ) );
         appendBytes( buffer, value.data(), value.size() );
     }
@@ -137,11 +155,15 @@ namespace workphone::network
         std::uint32_t length;
         read( buffer, cursor, length );
         if( length > MaxStringBytes )
+        {
             throw std::length_error( "Network codec: string capacity exceeded" );
+        }
         requireBytes( cursor, length, buffer.size() );
         String decoded;
         if( length != 0 )
+        {
             decoded.assign( reinterpret_cast<const char *>( buffer.data() + cursor ), length );
+        }
         value = std::move( decoded );
         position = cursor + length;
     }

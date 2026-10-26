@@ -24,7 +24,9 @@ namespace workphone
         MaterialShaderParameterLayout::Ptr MaterialShader::getLayout() const
         {
             if( !m_layout )
+            {
                 m_layout = MaterialShaderParameterLayout::Create( m_parameterInfo );
+            }
             return m_layout;
         }
 

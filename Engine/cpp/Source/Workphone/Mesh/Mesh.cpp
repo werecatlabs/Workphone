@@ -31,13 +31,26 @@ namespace workphone
 
         void meshRetirementError( const char *message ) noexcept
         {
-            try { WP_LOG_ERROR( message ); } catch( ... ) {}
+            try
+            {
+                WP_LOG_ERROR( message );
+            }
+            catch( ... )
+            {
+            }
         }
+
         void meshRetirementError( const std::exception &error ) noexcept
         {
-            try { WP_LOG_EXCEPTION( error ); } catch( ... ) {}
+            try
+            {
+                WP_LOG_EXCEPTION( error );
+            }
+            catch( ... )
+            {
+            }
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, Mesh, IMesh );
 
@@ -55,8 +68,13 @@ namespace workphone
     {
         // Loading notifications are optional new work; their denial must not
         // strand already admitted inventories during physical retirement.
-        try { setLoadingState( LoadingState::Unloading ); }
-        catch( const std::bad_alloc & ) {}
+        try
+        {
+            setLoadingState( LoadingState::Unloading );
+        }
+        catch( const std::bad_alloc & )
+        {
+        }
 
         auto subMeshes = makeSourceBudgetSnapshot<SmartPtr<ISubMesh>>();
         auto animations = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
@@ -90,10 +108,14 @@ namespace workphone
                     // The mesh and this loop hold two references. A retained
                     // submesh keeps its buffers (and their budget leases) alive.
                     if( subMesh->getReferences() == 2 && !subMesh->getWeakReferences() )
+                    {
                         subMesh->unload( nullptr );
+                    }
                 }
                 else
+                {
                     meshRetirementError( "Null subMesh encountered during unload." );
+                }
             }
             catch( const std::exception &e )
             {
@@ -107,7 +129,9 @@ namespace workphone
             {
                 if( sharedVertexBuffer->getReferences() == 1 &&
                     !sharedVertexBuffer->getWeakReferences() )
+                {
                     sharedVertexBuffer->unload( nullptr );
+                }
             }
             catch( const std::exception &e )
             {
@@ -121,7 +145,9 @@ namespace workphone
             {
                 if( animationInterface->getReferences() == 1 &&
                     !animationInterface->getWeakReferences() )
+                {
                     animationInterface->unload( nullptr );
+                }
             }
             catch( const std::exception &e )
             {
@@ -136,10 +162,14 @@ namespace workphone
                 if( animation )
                 {
                     if( animation->getReferences() == 2 && !animation->getWeakReferences() )
+                    {
                         animation->unload( nullptr );
+                    }
                 }
                 else
+                {
                     meshRetirementError( "Null animation encountered during unload." );
+                }
             }
             catch( const std::exception &e )
             {
@@ -155,10 +185,14 @@ namespace workphone
                 if( pose )
                 {
                     if( pose->getReferences() == 2 && !pose->getWeakReferences() )
+                    {
                         pose->unload( nullptr );
+                    }
                 }
                 else
+                {
                     meshRetirementError( "Null pose encountered during unload." );
+                }
             }
             catch( const std::exception &e )
             {
@@ -166,8 +200,13 @@ namespace workphone
             }
         }
 
-        try { setLoadingState( LoadingState::Unloaded ); }
-        catch( const std::bad_alloc & ) {}
+        try
+        {
+            setLoadingState( LoadingState::Unloaded );
+        }
+        catch( const std::bad_alloc & )
+        {
+        }
     }
 
     void Mesh::addSubMesh( SmartPtr<ISubMesh> subMesh )
@@ -968,8 +1007,14 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto meshManager = applicationManager ? applicationManager->getMeshManager() : nullptr;
-        if( meshManager ) meshManager->lock();
-        else detachedMeshMutex().lock();
+        if( meshManager )
+        {
+            meshManager->lock();
+        }
+        else
+        {
+            detachedMeshMutex().lock();
+        }
     }
 
     bool Mesh::try_lock()
@@ -983,8 +1028,14 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto meshManager = applicationManager ? applicationManager->getMeshManager() : nullptr;
-        if( meshManager ) meshManager->unlock();
-        else detachedMeshMutex().unlock();
+        if( meshManager )
+        {
+            meshManager->unlock();
+        }
+        else
+        {
+            detachedMeshMutex().unlock();
+        }
     }
 
     bool Mesh::isValid() const

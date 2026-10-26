@@ -97,14 +97,18 @@ namespace workphone
         ArrayBaseIterator &operator+=( difference_type n )
         {
             if( n != 0 )
+            {
                 it += n;
+            }
             return *this;
         }
 
         ArrayBaseIterator &operator-=( difference_type n )
         {
             if( n != 0 )
+            {
                 it -= n;
+            }
             return *this;
         }
 
@@ -121,7 +125,9 @@ namespace workphone
         difference_type operator-( const ArrayBaseIterator &other ) const
         {
             if( it == nullptr && other.it == nullptr )
+            {
                 return 0;
+            }
             return it - other.it;
         }
 
@@ -258,14 +264,18 @@ namespace workphone
         ArrayBaseConstIterator &operator+=( difference_type n )
         {
             if( n != 0 )
+            {
                 it += n;
+            }
             return *this;
         }
 
         ArrayBaseConstIterator &operator-=( difference_type n )
         {
             if( n != 0 )
+            {
                 it -= n;
+            }
             return *this;
         }
 
@@ -282,7 +292,9 @@ namespace workphone
         difference_type operator-( const ArrayBaseConstIterator &other ) const
         {
             if( it == nullptr && other.it == nullptr )
+            {
                 return 0;
+            }
             return it - other.it;
         }
 
@@ -414,7 +426,9 @@ namespace workphone
         const ArrayBaseIterator<T, A> &lhs, const ArrayBaseConstIterator<T, A> &rhs )
     {
         if( lhs.base() == nullptr && rhs.base() == nullptr )
+        {
             return 0;
+        }
         return lhs.base() - rhs.base();
     }
 
@@ -423,7 +437,9 @@ namespace workphone
         const ArrayBaseConstIterator<T, A> &lhs, const ArrayBaseIterator<T, A> &rhs )
     {
         if( lhs.base() == nullptr && rhs.base() == nullptr )
+        {
             return 0;
+        }
         return lhs.base() - rhs.base();
     }
 
@@ -462,8 +478,15 @@ namespace workphone
 
         /** @brief Default constructor. */
         ArrayBase();
-        explicit ArrayBase( const allocator_type &allocator ) : m_alloc(allocator) {}
-        allocator_type get_allocator() const { return m_alloc; }
+
+        explicit ArrayBase( const allocator_type &allocator ) : m_alloc( allocator )
+        {
+        }
+
+        allocator_type get_allocator() const
+        {
+            return m_alloc;
+        }
 
         /** @brief Configure automatic capacity growth. */
         explicit ArrayBase( GrowthPolicy growthPolicy, size_type growthSize = 1,
@@ -492,7 +515,9 @@ namespace workphone
             try
             {
                 for( ; first != last; ++first )
+                {
                     emplace_back( *first );
+                }
             }
             catch( ... )
             {
@@ -506,14 +531,18 @@ namespace workphone
             if( count > 0 )
             {
                 if( count > max_size() )
+                {
                     throw std::length_error( "ArrayBase count exceeds allocator max_size" );
+                }
 
                 m_capacity = count;
                 m_data = alloc_traits::allocate( m_alloc, m_capacity );
                 try
                 {
                     for( m_size = 0; m_size < count; ++m_size )
+                    {
                         alloc_traits::construct( m_alloc, m_data + m_size );
+                    }
                 }
                 catch( ... )
                 {
@@ -531,14 +560,18 @@ namespace workphone
             if( count > 0 )
             {
                 if( count > max_size() )
+                {
                     throw std::length_error( "ArrayBase count exceeds allocator max_size" );
+                }
 
                 m_capacity = count;
                 m_data = alloc_traits::allocate( m_alloc, m_capacity );
                 try
                 {
                     for( m_size = 0; m_size < count; ++m_size )
+                    {
                         alloc_traits::construct( m_alloc, m_data + m_size, value );
+                    }
                 }
                 catch( ... )
                 {
@@ -856,7 +889,9 @@ namespace workphone
         static void validateGrowthSize( size_type growthSize )
         {
             if( growthSize == 0 )
+            {
                 throw std::invalid_argument( "ArrayBase growth size cannot be zero" );
+            }
         }
 
         void assertValid() const
@@ -868,11 +903,15 @@ namespace workphone
         size_t checkedAdd( size_t lhs, size_t rhs, const char *message ) const
         {
             if( lhs > std::numeric_limits<size_t>::max() - rhs )
+            {
                 throw std::length_error( message );
+            }
 
             size_t result = lhs + rhs;
             if( result > max_size() )
+            {
                 throw std::length_error( message );
+            }
 
             return result;
         }
@@ -880,13 +919,17 @@ namespace workphone
         void checkIndex( size_t index, const char *message ) const
         {
             if( index >= m_size )
+            {
                 throw std::out_of_range( message );
+            }
         }
 
         void checkInsertIndex( size_t index, const char *message ) const
         {
             if( index > m_size )
+            {
                 throw std::out_of_range( message );
+            }
         }
 
         template <class I>
@@ -898,7 +941,9 @@ namespace workphone
         static void validateRangeOrder( const I &first, const I &last, std::random_access_iterator_tag )
         {
             if( last < first )
+            {
                 throw std::invalid_argument( "ArrayBase iterator range is reversed" );
+            }
         }
 
         T *endPtr()
@@ -918,7 +963,9 @@ namespace workphone
             if( m_size == 0 )
             {
                 if( allowEnd && ptr == m_data )
+                {
                     return 0;
+                }
 
                 throw std::out_of_range( message );
             }
@@ -941,7 +988,9 @@ namespace workphone
         {
             destroyRange( m_data, endPtr() );
             if( m_data )
+            {
                 alloc_traits::deallocate( m_alloc, m_data, m_capacity );
+            }
 
             m_data = nullptr;
             m_size = 0;
@@ -952,7 +1001,9 @@ namespace workphone
         {
             const size_t limit = max_size();
             if( minCapacity > limit )
+            {
                 throw std::length_error( "ArrayBase capacity exceeds allocator max_size" );
+            }
 
             validateGrowthSize( m_growthSize );
 
@@ -967,7 +1018,9 @@ namespace workphone
                 const size_t chunks =
                     required / m_growthSize + static_cast<size_t>( required % m_growthSize != 0 );
                 if( chunks > ( limit - m_capacity ) / m_growthSize )
+                {
                     return minCapacity;
+                }
                 return m_capacity + chunks * m_growthSize;
             }
 
@@ -977,7 +1030,9 @@ namespace workphone
                 while( newCapacity < minCapacity )
                 {
                     if( newCapacity > limit / 2 )
+                    {
                         return minCapacity;
+                    }
                     newCapacity *= 2;
                 }
                 return newCapacity;
@@ -992,28 +1047,38 @@ namespace workphone
         void destroyRange( T *first, T *last )
         {
             if( first == nullptr || last == nullptr || first == last )
+            {
                 return;
+            }
 
             for( ; first != last; ++first )
+            {
                 alloc_traits::destroy( m_alloc, first );
+            }
         }
 
         void reallocateStorage( size_t newCapacity )
         {
             assertValid();
             if( newCapacity <= m_capacity )
+            {
                 return;
+            }
 
             if( newCapacity > max_size() )
+            {
                 throw std::length_error( "ArrayBase capacity exceeds allocator max_size" );
+            }
 
             T *newData = alloc_traits::allocate( m_alloc, newCapacity );
             size_t constructed = 0;
             try
             {
                 for( ; constructed < m_size; ++constructed )
+                {
                     alloc_traits::construct( m_alloc, newData + constructed,
                                              std::move_if_noexcept( m_data[constructed] ) );
+                }
             }
             catch( ... )
             {
@@ -1025,7 +1090,9 @@ namespace workphone
             destroyRange( m_data, endPtr() );
 
             if( m_data )
+            {
                 alloc_traits::deallocate( m_alloc, m_data, m_capacity );
+            }
 
             m_data = newData;
             m_capacity = newCapacity;
@@ -1036,7 +1103,9 @@ namespace workphone
         void ensureCapacity( size_t minCapacity )
         {
             if( minCapacity > m_capacity )
+            {
                 reallocateStorage( growthCapacity( minCapacity ) );
+            }
         }
 
         template <class Source>
@@ -1051,15 +1120,21 @@ namespace workphone
                 // Construct inserted values before relocating existing elements. This keeps
                 // references into this array valid while Source consumes them.
                 for( ; insertedConstructed < count; ++insertedConstructed )
+                {
                     source( newData + pos + insertedConstructed, insertedConstructed );
+                }
 
                 for( ; prefixConstructed < pos; ++prefixConstructed )
+                {
                     alloc_traits::construct( m_alloc, newData + prefixConstructed,
                                              std::move_if_noexcept( m_data[prefixConstructed] ) );
+                }
 
                 for( size_t i = pos; i < m_size; ++i, ++suffixConstructed )
+                {
                     alloc_traits::construct( m_alloc, newData + count + i,
                                              std::move_if_noexcept( m_data[i] ) );
+                }
             }
             catch( ... )
             {
@@ -1067,13 +1142,17 @@ namespace workphone
                 destroyRange( newData + pos, newData + pos + insertedConstructed );
                 destroyRange( newData + pos + count, newData + pos + count + suffixConstructed );
                 if( newData )
+                {
                     alloc_traits::deallocate( m_alloc, newData, newCapacity );
+                }
                 throw;
             }
 
             destroyRange( m_data, endPtr() );
             if( m_data )
+            {
                 alloc_traits::deallocate( m_alloc, m_data, m_capacity );
+            }
 
             m_data = newData;
             m_size += count;
@@ -1086,7 +1165,9 @@ namespace workphone
             assert( first <= last );
             assert( last <= m_size );
             if( first >= last )
+            {
                 return;
+            }
 
             if( last == m_size )
             {
@@ -1104,24 +1185,32 @@ namespace workphone
             try
             {
                 for( size_t i = 0; i < first; ++i, ++constructed )
+                {
                     alloc_traits::construct( m_alloc, newData + constructed,
                                              std::move_if_noexcept( m_data[i] ) );
+                }
 
                 for( size_t i = last; i < m_size; ++i, ++constructed )
+                {
                     alloc_traits::construct( m_alloc, newData + constructed,
                                              std::move_if_noexcept( m_data[i] ) );
+                }
             }
             catch( ... )
             {
                 destroyRange( newData, newData + constructed );
                 if( newData )
+                {
                     alloc_traits::deallocate( m_alloc, newData, m_capacity );
+                }
                 throw;
             }
 
             destroyRange( m_data, endPtr() );
             if( m_data )
+            {
                 alloc_traits::deallocate( m_alloc, m_data, m_capacity );
+            }
 
             m_data = newData;
             m_size = newSize;
@@ -1138,12 +1227,16 @@ namespace workphone
     bool operator==( const ArrayBase<T, A> &lhs, const ArrayBase<T, A> &rhs )
     {
         if( lhs.size() != rhs.size() )
+        {
             return false;
+        }
 
         for( size_t i = 0; i < lhs.size(); ++i )
         {
             if( !( lhs[i] == rhs[i] ) )
+            {
                 return false;
+            }
         }
         return true;
     }
@@ -1167,9 +1260,13 @@ namespace workphone
         for( size_t i = 0; i < minSize; ++i )
         {
             if( lhs[i] < rhs[i] )
+            {
                 return true;
+            }
             if( rhs[i] < lhs[i] )
+            {
                 return false;
+            }
         }
         return lhs.size() < rhs.size();
     }
@@ -1221,14 +1318,18 @@ namespace workphone
         if( other.m_capacity > 0 )
         {
             if( other.m_capacity > max_size() )
+            {
                 throw std::length_error( "ArrayBase copy exceeds allocator max_size" );
+            }
 
             m_capacity = other.m_capacity;
             m_data = alloc_traits::allocate( m_alloc, m_capacity );
             try
             {
                 for( m_size = 0; m_size < other.m_size; ++m_size )
+                {
                     alloc_traits::construct( m_alloc, m_data + m_size, other.m_data[m_size] );
+                }
             }
             catch( ... )
             {
@@ -1244,7 +1345,9 @@ namespace workphone
         if( il.size() > 0 )
         {
             if( il.size() > max_size() )
+            {
                 throw std::length_error( "ArrayBase initializer_list exceeds allocator max_size" );
+            }
 
             m_capacity = il.size();
             m_data = alloc_traits::allocate( m_alloc, m_capacity );
@@ -1303,7 +1406,9 @@ namespace workphone
                 ArrayBase replacement( other.m_growthPolicy, other.m_growthSize, m_alloc );
                 replacement.reserve( other.m_size );
                 for( size_t i = 0; i < other.m_size; ++i )
+                {
                     replacement.emplace_back( std::move( other.m_data[i] ) );
+                }
                 swap( replacement );
                 other.clear();
                 return *this;
@@ -1372,7 +1477,9 @@ namespace workphone
     size_t ArrayBase<T, A>::find_if( Pred pred ) const
     {
         if( m_size == 0 )
+        {
             return static_cast<size_t>( -1 );
+        }
 
         auto it = std::find_if( m_data, m_data + m_size, pred );
         return it != m_data + m_size ? static_cast<size_t>( it - m_data ) : static_cast<size_t>( -1 );
@@ -1383,7 +1490,9 @@ namespace workphone
     void ArrayBase<T, A>::sort( Compare comp )
     {
         if( m_size < 2 )
+        {
             return;
+        }
 
         std::sort( m_data, m_data + m_size, comp );
     }
@@ -1406,7 +1515,9 @@ namespace workphone
     typename ArrayBase<T, A>::reference ArrayBase<T, A>::operator[]( const difference_type index )
     {
         if( index < 0 )
+        {
             throw std::out_of_range( "ArrayBase::operator[] negative index" );
+        }
 
         return at( static_cast<size_type>( index ) );
     }
@@ -1416,7 +1527,9 @@ namespace workphone
         const difference_type index ) const
     {
         if( index < 0 )
+        {
             throw std::out_of_range( "ArrayBase::operator[] negative index" );
+        }
 
         return at( static_cast<size_type>( index ) );
     }
@@ -1425,7 +1538,9 @@ namespace workphone
     void ArrayBase<T, A>::resize( size_t newSize )
     {
         if( newSize > max_size() )
+        {
             throw std::length_error( "ArrayBase::resize exceeds allocator max_size" );
+        }
 
         if( newSize > m_size )
         {
@@ -1435,7 +1550,9 @@ namespace workphone
             try
             {
                 for( ; constructed < newSize; ++constructed )
+                {
                     alloc_traits::construct( m_alloc, m_data + constructed );
+                }
             }
             catch( ... )
             {
@@ -1454,7 +1571,9 @@ namespace workphone
     void ArrayBase<T, A>::resize( size_t newSize, const T &value )
     {
         if( newSize > max_size() )
+        {
             throw std::length_error( "ArrayBase::resize exceeds allocator max_size" );
+        }
 
         if( newSize > m_size )
         {
@@ -1465,7 +1584,9 @@ namespace workphone
             try
             {
                 for( ; constructed < newSize; ++constructed )
+                {
                     alloc_traits::construct( m_alloc, m_data + constructed, valueCopy );
+                }
             }
             catch( ... )
             {
@@ -1557,7 +1678,9 @@ namespace workphone
         }
 
         if( eraseCount == 0 )
+        {
             return;
+        }
 
         if( eraseCount == m_size )
         {
@@ -1597,7 +1720,9 @@ namespace workphone
     void ArrayBase<T, A>::erase( size_t index )
     {
         if( index >= m_size )
+        {
             return;
+        }
 
         rebuildErase( index, index + 1 );
     }
@@ -1618,9 +1743,13 @@ namespace workphone
         size_t lastIdx = iteratorIndex( last, true, "ArrayBase::erase last iterator out of range" );
 
         if( firstIdx > lastIdx )
+        {
             throw std::out_of_range( "ArrayBase::erase iterator range is reversed" );
+        }
         if( firstIdx == lastIdx )
+        {
             return iterator( m_data ? m_data + firstIdx : nullptr );
+        }
 
         rebuildErase( firstIdx, lastIdx );
         return iterator( m_data + firstIdx );
@@ -1670,7 +1799,9 @@ namespace workphone
     {
         size_t pos = iteratorIndex( _Where, true, "ArrayBase::insert iterator out of range" );
         if( _Count == 0 )
+        {
             return iterator( m_data ? m_data + pos : nullptr );
+        }
 
         size_t newSize = checkedAdd( m_size, _Count, "ArrayBase::insert capacity overflow" );
         size_t newCapacity = newSize > m_capacity ? growthCapacity( newSize ) : m_capacity;
@@ -1691,7 +1822,9 @@ namespace workphone
         size_t count = values.size();
 
         if( count == 0 )
+        {
             return iterator( m_data ? m_data + pos : nullptr );
+        }
 
         size_t newSize = checkedAdd( m_size, count, "ArrayBase::insert capacity overflow" );
         size_t newCapacity = newSize > m_capacity ? growthCapacity( newSize ) : m_capacity;
@@ -1707,7 +1840,9 @@ namespace workphone
     std::vector<T, A> ArrayBase<T, A>::snapshot() const
     {
         if( m_size == 0 )
+        {
             return std::vector<T, A>( m_alloc );
+        }
 
         return std::vector<T, A>( m_data, m_data + m_size, m_alloc );
     }
@@ -1793,14 +1928,21 @@ namespace workphone
 
     // Public Array type, with allocation policy retained by copies, moves,
     // std::vector exports, and subsequent caller growth (including spare capacity).
-    template<class T> Array<T> makeSourceBudgetSnapshot()
-    { return Array<T>(Allocator<T>(sourceBudget)); }
+    template <class T>
+    Array<T> makeSourceBudgetSnapshot()
+    {
+        return Array<T>( Allocator<T>( sourceBudget ) );
+    }
 
-    template<class T, class A> Array<T> makeSourceBudgetSnapshot(const Array<T, A> &input)
+    template <class T, class A>
+    Array<T> makeSourceBudgetSnapshot( const Array<T, A> &input )
     {
         auto result = makeSourceBudgetSnapshot<T>();
-        result.reserve(input.capacity());
-        for(const auto &value : input) result.push_back(value);
+        result.reserve( input.capacity() );
+        for( const auto &value : input )
+        {
+            result.push_back( value );
+        }
         return result;
     }
 

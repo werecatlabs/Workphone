@@ -38,7 +38,9 @@ namespace workphone
     bool Joystick::isButtonDown( s32 button ) const
     {
         if( button < 0 || button >= MAX_BUTTONS )
+        {
             return false;
+        }
 
         return m_buttonStates[button].load();
     }
@@ -46,7 +48,9 @@ namespace workphone
     bool Joystick::isButtonPressed( s32 button ) const
     {
         if( button < 0 || button >= MAX_BUTTONS )
+        {
             return false;
+        }
 
         return m_buttonStates[button].load() && !m_prevButtonStates[button].load();
     }
@@ -54,7 +58,9 @@ namespace workphone
     bool Joystick::isButtonReleased( s32 button ) const
     {
         if( button < 0 || button >= MAX_BUTTONS )
+        {
             return false;
+        }
 
         return !m_buttonStates[button].load() && m_prevButtonStates[button].load();
     }
@@ -62,7 +68,9 @@ namespace workphone
     f32 Joystick::getAxis( s32 axis ) const
     {
         if( axis < 0 || axis >= MAX_AXES )
+        {
             return 0.0f;
+        }
 
         f32 value = m_axisValues[axis];
 
@@ -122,7 +130,9 @@ namespace workphone
     String Joystick::getButtonName( s32 button ) const
     {
         if( button < 0 || button >= MAX_BUTTONS )
+        {
             return String();
+        }
 
         return StringUtil::toString( "Button " ) + StringUtil::toString( button );
     }
@@ -130,7 +140,9 @@ namespace workphone
     String Joystick::getAxisName( s32 axis ) const
     {
         if( axis < 0 || axis >= MAX_AXES )
+        {
             return String();
+        }
 
         switch( axis )
         {
@@ -174,9 +186,13 @@ namespace workphone
     void Joystick::setInvert( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_ALL;
+        }
         else
+        {
             m_flags &= ~INVERT_ALL;
+        }
     }
 
     bool Joystick::getInvert() const
@@ -187,9 +203,13 @@ namespace workphone
     void Joystick::setInvertX( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_X;
+        }
         else
+        {
             m_flags &= ~INVERT_X;
+        }
     }
 
     bool Joystick::getInvertX() const
@@ -200,9 +220,13 @@ namespace workphone
     void Joystick::setInvertY( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_Y;
+        }
         else
+        {
             m_flags &= ~INVERT_Y;
+        }
     }
 
     bool Joystick::getInvertY() const
@@ -213,9 +237,13 @@ namespace workphone
     void Joystick::setInvertZ( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_Z;
+        }
         else
+        {
             m_flags &= ~INVERT_Z;
+        }
     }
 
     bool Joystick::getInvertZ() const
@@ -226,9 +254,13 @@ namespace workphone
     void Joystick::setInvertRx( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_RX;
+        }
         else
+        {
             m_flags &= ~INVERT_RX;
+        }
     }
 
     bool Joystick::getInvertRx() const
@@ -239,9 +271,13 @@ namespace workphone
     void Joystick::setInvertRy( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_RY;
+        }
         else
+        {
             m_flags &= ~INVERT_RY;
+        }
     }
 
     bool Joystick::getInvertRy() const
@@ -252,9 +288,13 @@ namespace workphone
     void Joystick::setInvertRz( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_RZ;
+        }
         else
+        {
             m_flags &= ~INVERT_RZ;
+        }
     }
 
     bool Joystick::getInvertRz() const
@@ -265,9 +305,13 @@ namespace workphone
     void Joystick::setInvertSlider( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_SLIDER;
+        }
         else
+        {
             m_flags &= ~INVERT_SLIDER;
+        }
     }
 
     bool Joystick::getInvertSlider() const
@@ -278,9 +322,13 @@ namespace workphone
     void Joystick::setInvertDial( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_DIAL;
+        }
         else
+        {
             m_flags &= ~INVERT_DIAL;
+        }
     }
 
     bool Joystick::getInvertDial() const
@@ -291,9 +339,13 @@ namespace workphone
     void Joystick::setInvertWheel( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_WHEEL;
+        }
         else
+        {
             m_flags &= ~INVERT_WHEEL;
+        }
     }
 
     bool Joystick::getInvertWheel() const
@@ -304,9 +356,13 @@ namespace workphone
     void Joystick::setInvertPOV( bool invert )
     {
         if( invert )
+        {
             m_flags |= INVERT_POV;
+        }
         else
+        {
             m_flags &= ~INVERT_POV;
+        }
     }
 
     void Joystick::updateButtonState( s32 button, bool pressed )

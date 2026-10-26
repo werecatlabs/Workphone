@@ -23,12 +23,15 @@ namespace workphone
             if( size > current.capacity() )
             {
                 staged.reserve( size );
-                for( const auto &value : current ) staged.push_back( value );
+                for( const auto &value : current )
+                {
+                    staged.push_back( value );
+                }
                 staged.resize( size );
             }
             return staged;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, VertexBuffer, IVertexBuffer );
 
@@ -44,7 +47,9 @@ namespace workphone
     {
         // CPU buffers also own their data when no manager explicitly unloads them.
         for( auto data : m_vertexData )
+        {
             delete[] data;
+        }
     }
 
     void VertexBuffer::unload( SmartPtr<ISharedObject> data )
@@ -100,13 +105,18 @@ namespace workphone
             if( m_vertexDeclaration && index >= 0 )
             {
                 if( index > std::numeric_limits<u16>::max() )
-                    throw std::out_of_range( "Vertex stream index exceeds the declaration source range." );
+                {
+                    throw std::out_of_range(
+                        "Vertex stream index exceeds the declaration source range." );
+                }
+
                 struct Replacement
                 {
                     StreamBudget lease;
                     std::unique_ptr<u8[]> data;
                     u64 bytes = 0;
                 };
+
                 const auto newSize = std::max( m_vertexData.size(), size_t( index ) + 1 );
                 auto dataGrowth = stageStreamGrowth( m_vertexData, newSize );
                 auto budgetGrowth = stageStreamGrowth( m_vertexBudgets, newSize );
@@ -116,34 +126,59 @@ namespace workphone
                 {
                     const auto previous = source < m_vertexData.size() ? m_vertexData[source] : nullptr;
                     const auto previousBytes = source < m_vertexBytes.size() ? m_vertexBytes[source] : 0;
-                    const auto bytes = u64( m_vertexDeclaration->getSize( static_cast<u16>( source ) ) ) * m_numVertices;
-                    if( source != size_t( index ) && ( !previous || previousBytes == bytes ) ) continue;
+                    const auto bytes =
+                        u64( m_vertexDeclaration->getSize( static_cast<u16>( source ) ) ) *
+                        m_numVertices;
+                    if( source != size_t( index ) && ( !previous || previousBytes == bytes ) )
+                    {
+                        continue;
+                    }
                     if( bytes > std::numeric_limits<size_t>::max() )
+                    {
                         throw std::length_error( "Vertex allocation exceeds the addressable size." );
+                    }
                     auto &replacement = replacements[source];
                     String error;
                     replacement.lease = WorldStreamingScheduler::shared()->reserve(
                         StreamMemoryClass::SourceCpu, bytes, error );
-                    if( !replacement.lease ) throw std::runtime_error( error.c_str() );
+                    if( !replacement.lease )
+                    {
+                        throw std::runtime_error( error.c_str() );
+                    }
                     replacement.data.reset( new u8[size_t( bytes )] );
                     replacement.bytes = bytes;
                     // Count/layout changes resize other streams in the same
                     // transaction, so they cannot advertise shorter old storage.
                     if( previous && source != size_t( index ) )
-                        std::memcpy( replacement.data.get(), previous, size_t( std::min( previousBytes, bytes ) ) );
+                    {
+                        std::memcpy( replacement.data.get(), previous,
+                                     size_t( std::min( previousBytes, bytes ) ) );
+                    }
                 }
                 // Old and staged allocations stay charged until the entire buffer
                 // can commit. A failed admission preserves every stream and lease.
-                if( dataGrowth.capacity() ) m_vertexData.swap( dataGrowth );
-                if( budgetGrowth.capacity() ) m_vertexBudgets.swap( budgetGrowth );
-                if( byteGrowth.capacity() ) m_vertexBytes.swap( byteGrowth );
+                if( dataGrowth.capacity() )
+                {
+                    m_vertexData.swap( dataGrowth );
+                }
+                if( budgetGrowth.capacity() )
+                {
+                    m_vertexBudgets.swap( budgetGrowth );
+                }
+                if( byteGrowth.capacity() )
+                {
+                    m_vertexBytes.swap( byteGrowth );
+                }
                 m_vertexBudgets.resize( newSize );
                 m_vertexBytes.resize( newSize );
                 m_vertexData.resize( newSize );
                 for( size_t source = 0; source < newSize; ++source )
                 {
                     auto &replacement = replacements[source];
-                    if( !replacement.lease ) continue;
+                    if( !replacement.lease )
+                    {
+                        continue;
+                    }
                     delete[] m_vertexData[source];
                     m_vertexData[source] = replacement.data.release();
                     m_vertexBudgets[source] = std::move( replacement.lease );
@@ -153,7 +188,10 @@ namespace workphone
                 m_allocatedNumVertices = m_numVertices;
                 return m_vertexData[index];
             }
-            if( m_allocatedDeclaration ) throw std::invalid_argument( "Invalid vertex declaration or stream index." );
+            if( m_allocatedDeclaration )
+            {
+                throw std::invalid_argument( "Invalid vertex declaration or stream index." );
+            }
             return nullptr;
         }
         catch( ... )
@@ -182,9 +220,13 @@ namespace workphone
         newVertexBuffer->setNumVertices( m_numVertices );
         for( size_t source = 0; source < m_vertexData.size(); ++source )
         {
-            if( !m_vertexData[source] ) continue;
+            if( !m_vertexData[source] )
+            {
+                continue;
+            }
             auto destination = newVertexBuffer->createVertexData( static_cast<s32>( source ) );
-            const auto numBytes = size_t( m_vertexDeclaration->getSize( static_cast<u16>( source ) ) ) * m_numVertices;
+            const auto numBytes =
+                size_t( m_vertexDeclaration->getSize( static_cast<u16>( source ) ) ) * m_numVertices;
             std::memcpy( destination, m_vertexData[source], numBytes );
         }
 

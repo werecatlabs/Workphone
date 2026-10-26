@@ -1,5 +1,6 @@
 #pragma once
 #include <Workphone/WorkphonePrerequisites.hpp>
+
 namespace workphone::procedural
 {
     /// Functional road classification.

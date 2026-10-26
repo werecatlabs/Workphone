@@ -181,10 +181,12 @@ namespace workphone
 
             /// Runtime grip updates; legacy implementations retain the property fallback.
             virtual void setGrip( physics_Num grip );
+
             /// Effective gravity/downforce acceleration for contact solvers that support it.
             virtual void setContactAcceleration( physics_Num acceleration )
             {
             }
+
             /// Normalized suspension compression, or zero for unsupported implementations.
             virtual physics_Num getCompression() const
             {

@@ -51,6 +51,7 @@ namespace workphone::scene
                 bool executing = false, repeat = false;
                 std::thread::id executionThread;
             };
+
             std::mutex mutex;
             std::map<IResourceDatabase *, Request> pending;
             u64 nextTicket = 0;
@@ -68,16 +69,22 @@ namespace workphone::scene
         bool isCurrentResourceDatabase( const SmartPtr<IResourceDatabase> &database )
         {
             auto app = core::IApplicationManager::instancePtr();
-            return database && database->isLoaded() && app &&
-                   app->getResourceDatabase() == database;
+            return database && database->isLoaded() && app && app->getResourceDatabase() == database;
         }
 
         class SceneResourceRefreshJob : public Job
         {
         public:
             explicit SceneResourceRefreshJob( SmartPtr<IResourceDatabase> database ) :
-                m_database( std::move( database ) ) { setPrimary( true ); }
-            ~SceneResourceRefreshJob() override { releaseTicket(); }
+                m_database( std::move( database ) )
+            {
+                setPrimary( true );
+            }
+
+            ~SceneResourceRefreshJob() override
+            {
+                releaseTicket();
+            }
 
             bool claimTicket()
             {
@@ -90,10 +97,15 @@ namespace workphone::scene
                     // after its snapshot and needs one scan on a future update.
                     if( it->second.executing &&
                         it->second.executionThread != std::this_thread::get_id() )
+                    {
                         it->second.repeat = true;
+                    }
                     return false;
                 }
-                if( !++requests.nextTicket ) ++requests.nextTicket;
+                if( !++requests.nextTicket )
+                {
+                    ++requests.nextTicket;
+                }
                 m_ticket = requests.nextTicket;
                 requests.pending.emplace( m_database.get(), SceneRefreshRequests::Request{ m_ticket } );
                 return true;
@@ -116,7 +128,10 @@ namespace workphone::scene
 
             void execute() override
             {
-                if( !refreshOnce() ) return;
+                if( !refreshOnce() )
+                {
+                    return;
+                }
                 auto app = core::IApplicationManager::instancePtr();
                 if( auto queue = app ? app->getJobQueue() : nullptr; queue && queue->isRunning() )
                 {
@@ -124,8 +139,11 @@ namespace workphone::scene
                     // defers the next scan until the next update; subsequent
                     // dirty scans yield so JobQueueMT cannot drain forever.
                     queue->startCoroutine( [request = SmartPtr<SceneResourceRefreshJob>( this )](
-                                              ICoroutineData::PullType &yield ) mutable {
-                        while( request->refreshOnce() ) yield();
+                                               ICoroutineData::PullType &yield ) mutable {
+                        while( request->refreshOnce() )
+                        {
+                            yield();
+                        }
                     } );
                 }
                 else
@@ -151,21 +169,37 @@ namespace workphone::scene
                     auto &requests = sceneRefreshRequests();
                     std::lock_guard<std::mutex> lock( requests.mutex );
                     const auto it = requests.pending.find( m_database.get() );
-                    if( it == requests.pending.end() || it->second.ticket != m_ticket ) return false;
+                    if( it == requests.pending.end() || it->second.ticket != m_ticket )
+                    {
+                        return false;
+                    }
                     it->second.executing = true;
                     it->second.executionThread = std::this_thread::get_id();
                     it->second.repeat = false;
                 }
                 // Catalog and scene callbacks must never run under the ticket lock.
-                try { m_database->refresh(); }
-                catch( ... ) { releaseTicket(); throw; }
+                try
+                {
+                    m_database->refresh();
+                }
+                catch( ... )
+                {
+                    releaseTicket();
+                    throw;
+                }
                 auto &requests = sceneRefreshRequests();
                 std::lock_guard<std::mutex> lock( requests.mutex );
                 const auto it = requests.pending.find( m_database.get() );
-                if( it == requests.pending.end() || it->second.ticket != m_ticket ) return false;
+                if( it == requests.pending.end() || it->second.ticket != m_ticket )
+                {
+                    return false;
+                }
                 it->second.executing = false;
                 it->second.executionThread = {};
-                if( it->second.repeat ) return true;
+                if( it->second.repeat )
+                {
+                    return true;
+                }
                 requests.pending.erase( it );
                 m_ticket = 0;
                 return false;
@@ -177,7 +211,10 @@ namespace workphone::scene
 
         void requestSceneResourceRefresh( SmartPtr<IResourceDatabase> database )
         {
-            if( !isCurrentResourceDatabase( database ) ) return;
+            if( !isCurrentResourceDatabase( database ) )
+            {
+                return;
+            }
             auto app = core::IApplicationManager::instancePtr();
             auto queue = app ? app->getJobQueue() : nullptr;
             if( !queue || !queue->isRunning() )
@@ -186,17 +223,23 @@ namespace workphone::scene
                 return;
             }
             auto job = make_ptr<SceneResourceRefreshJob>( database );
-            if( !job->claimTicket() ) return;
+            if( !job->claimTicket() )
+            {
+                return;
+            }
             queue->addJob( job );
             if( job->getState() == IJob::State::Ready )
             {
                 // Some queues reject work when the application is paused or
                 // quitting. Release the ticket and preserve the immediate path.
                 job->releaseTicket();
-                if( isCurrentResourceDatabase( database ) ) database->refresh();
+                if( isCurrentResourceDatabase( database ) )
+                {
+                    database->refresh();
+                }
             }
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameManager, workphone::scene::IGameManager );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameManager::EventListener, IEventListener );
@@ -566,22 +609,30 @@ namespace workphone::scene
                                 std::unordered_set<IGameActor *> queuedTransforms;
                                 auto queueTransform = [&]( SmartPtr<IGameActor> actor ) {
                                     if( actor && queuedTransforms.insert( actor.get() ).second )
+                                    {
                                         pendingTransforms.push_back( actor );
+                                    }
                                 };
                                 SmartPtr<ITransform> pendingTransform;
-                                for( u32 count = 0; count < 2048 &&
-                                     m_dirtyActorTransforms.try_pop( pendingTransform ); ++count )
+                                for( u32 count = 0;
+                                     count < 2048 && m_dirtyActorTransforms.try_pop( pendingTransform );
+                                     ++count )
                                 {
                                     if( pendingTransform && pendingTransform->isLoaded() &&
-                                        ( pendingTransform->isDirty() || pendingTransform->isLocalDirty() ) )
+                                        ( pendingTransform->isDirty() ||
+                                          pendingTransform->isLocalDirty() ) )
                                     {
                                         auto actor = pendingTransform->getActor();
                                         if( actor && actor->isLoaded() &&
                                             ( actor->getState() == IGameActor::State::Edit ||
                                               actor->getState() == IGameActor::State::Play ) )
+                                        {
                                             queueTransform( actor );
+                                        }
                                         else
+                                        {
                                             pendingTransform->update();
+                                        }
                                     }
                                 }
 
@@ -604,8 +655,8 @@ namespace workphone::scene
                                 }
 
                                 SmartPtr<IGameActor> pendingActor;
-                                for( u32 count = 0; count < 2048 &&
-                                     m_dirtyTransforms.try_pop( pendingActor ); ++count )
+                                for( u32 count = 0;
+                                     count < 2048 && m_dirtyTransforms.try_pop( pendingActor ); ++count )
                                 {
                                     queueTransform( pendingActor );
                                 }
@@ -616,15 +667,20 @@ namespace workphone::scene
                                     for( u32 depth = 0; parent && depth < WP_MAX_ACTORS; ++depth )
                                     {
                                         const auto parentState = parent->getState();
-                                        if( queuedTransforms.count( parent.get() ) && parent->isLoaded() &&
-                                            ( parentState == IGameActor::State::Edit || parentState == IGameActor::State::Play ) )
+                                        if( queuedTransforms.count( parent.get() ) &&
+                                            parent->isLoaded() &&
+                                            ( parentState == IGameActor::State::Edit ||
+                                              parentState == IGameActor::State::Play ) )
                                         {
                                             covered = true;
                                             break;
                                         }
                                         parent = parent->getParent();
                                     }
-                                    if( !covered && actor->isLoaded() ) actor->updateTransform();
+                                    if( !covered && actor->isLoaded() )
+                                    {
+                                        actor->updateTransform();
+                                    }
                                 }
 
                                 if( !m_dirtyComponents.empty() )
@@ -643,10 +699,12 @@ namespace workphone::scene
                                 {
                                     std::unordered_set<IComponent *> updatedComponents;
                                     SmartPtr<IComponent> component;
-                                    for( u32 count = 0; count < 2048 &&
-                                         m_dirtyComponentTransforms.try_pop( component ); ++count )
+                                    for( u32 count = 0;
+                                         count < 2048 && m_dirtyComponentTransforms.try_pop( component );
+                                         ++count )
                                     {
-                                        if( component && updatedComponents.insert( component.get() ).second )
+                                        if( component &&
+                                            updatedComponents.insert( component.get() ).second )
                                         {
                                             if( component->isLoaded() )
                                             {
@@ -867,7 +925,10 @@ namespace workphone::scene
                             transform->update();
 
                             auto actor = transform->getActor();
-                            if( !actor || !actor->isLoaded() ) continue;
+                            if( !actor || !actor->isLoaded() )
+                            {
+                                continue;
+                            }
                             auto handle = actor->getHandle();
                             auto id = handle->getInstanceId();
 
@@ -1613,11 +1674,13 @@ namespace workphone::scene
                 // Slots are referenced by handle IDs. Never shift live entries
                 // when recovering a mismatched/stale registration ID.
                 for( auto &registered : m_transforms )
+                {
                     if( registered == transform )
                     {
                         registered = nullptr;
                         break;
                     }
+                }
             }
         }
     }
@@ -2100,23 +2163,36 @@ namespace workphone::scene
 
     void GameManager::addSmoothTransform( SmartPtr<ITransform> transform )
     {
-        if( !transform ) return;
+        if( !transform )
+        {
+            return;
+        }
         ScopedLock smoothLock( &m_smoothTransforms, true );
         if( std::find( m_smoothTransforms.begin(), m_smoothTransforms.end(), transform ) ==
             m_smoothTransforms.end() )
+        {
             m_smoothTransforms.push_back( transform );
+        }
     }
 
     void GameManager::removeSmoothTransform( SmartPtr<ITransform> transform )
     {
-        if( !transform ) return;
+        if( !transform )
+        {
+            return;
+        }
         Array<SmartPtr<ITransform>> removed;
         {
             ScopedLock smoothLock( &m_smoothTransforms, true );
             // Retain removed entries until the transaction ends so final
             // destruction cannot call back into this inventory under its lock.
             for( const auto &registered : m_smoothTransforms )
-                if( registered == transform ) removed.push_back( registered );
+            {
+                if( registered == transform )
+                {
+                    removed.push_back( registered );
+                }
+            }
             m_smoothTransforms.erase(
                 std::remove( m_smoothTransforms.begin(), m_smoothTransforms.end(), transform ),
                 m_smoothTransforms.end() );

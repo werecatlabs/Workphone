@@ -33,7 +33,8 @@ namespace workphone
             // Keep the legacy field unused for ABI compatibility. Manager
             // storage can relocate when another FSM grows its parallel arrays.
             m_flags = nullptr;
-            setFlags( autoChangeStateFlag | allowStateChangeFlag | isStateChangeCompleteFlag | isReadyFlag );
+            setFlags( autoChangeStateFlag | allowStateChangeFlag | isStateChangeCompleteFlag |
+                      isReadyFlag );
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -82,7 +83,10 @@ namespace workphone
     {
         // A queued SmartPtr may outlive destroyFSM; it must not touch a retired
         // slot or process another transition after unload.
-        if( !isLoaded() ) return;
+        if( !isLoaded() )
+        {
+            return;
+        }
         auto autoChangeState = getAutoChangeState();
         if( autoChangeState )
         {
@@ -92,7 +96,10 @@ namespace workphone
 
     void FSM::updateState()
     {
-        if( !isLoaded() ) return;
+        if( !isLoaded() )
+        {
+            return;
+        }
         if( auto fsmManager = getFsmManager() )
         {
             const auto handle = getHandle();
@@ -107,11 +114,20 @@ namespace workphone
     u32 FSM::getFlags() const
     {
         const auto state = getLoadingState();
-        if( state != LoadingState::Loading && state != LoadingState::Loaded ) return 0;
-        auto manager = getFsmManager(); auto handle = getHandle();
-        if( !manager || !manager->isLoaded() || !handle ) return 0;
+        if( state != LoadingState::Loading && state != LoadingState::Loaded )
+        {
+            return 0;
+        }
+        auto manager = getFsmManager();
+        auto handle = getHandle();
+        if( !manager || !manager->isLoaded() || !handle )
+        {
+            return 0;
+        }
         if( auto concrete = dynamic_cast<FSMManager *>( manager.get() ) )
+        {
             return concrete->getFlags( handle->getInstanceId() );
+        }
         // A foreign IFSMManager exposes only a raw-slot API. Its implementation
         // owns the synchronization/storage-validity contract for this call.
         const auto flags = manager->getFlagsPtr( handle->getInstanceId() );
@@ -121,16 +137,26 @@ namespace workphone
     void FSM::setFlags( u32 flags )
     {
         const auto state = getLoadingState();
-        if( state != LoadingState::Loading && state != LoadingState::Loaded ) return;
-        auto manager = getFsmManager(); auto handle = getHandle();
-        if( !manager || !manager->isLoaded() || !handle ) return;
+        if( state != LoadingState::Loading && state != LoadingState::Loaded )
+        {
+            return;
+        }
+        auto manager = getFsmManager();
+        auto handle = getHandle();
+        if( !manager || !manager->isLoaded() || !handle )
+        {
+            return;
+        }
         if( auto concrete = dynamic_cast<FSMManager *>( manager.get() ) )
         {
             concrete->setFlags( handle->getInstanceId(), flags );
             return;
         }
         // Match the foreign manager's existing raw-slot contract; never retain it.
-        if( auto current = manager->getFlagsPtr( handle->getInstanceId() ) ) *current = flags;
+        if( auto current = manager->getFlagsPtr( handle->getInstanceId() ) )
+        {
+            *current = flags;
+        }
     }
 
     auto FSM::getFsmManager() const -> SmartPtr<IFSMManager>
@@ -250,7 +276,10 @@ namespace workphone
 
     void FSM::triggerStateChangeComplete()
     {
-        if( !isLoaded() ) return;
+        if( !isLoaded() )
+        {
+            return;
+        }
         auto flags = BitUtil::setFlagValue( getFlags(), IFSM::isPendingFlag, false );
         setFlags( BitUtil::setFlagValue( flags, IFSM::isStateChangeCompleteFlag, true ) );
 
@@ -289,7 +318,8 @@ namespace workphone
 
     void FSM::setStateChangeComplete( bool stateChangeComplete )
     {
-        setFlags( BitUtil::setFlagValue( getFlags(), IFSM::isStateChangeCompleteFlag, stateChangeComplete ) );
+        setFlags(
+            BitUtil::setFlagValue( getFlags(), IFSM::isStateChangeCompleteFlag, stateChangeComplete ) );
     }
 
     void FSM::addListener( SmartPtr<IFSMListener> listener )

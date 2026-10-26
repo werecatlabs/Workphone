@@ -11,6 +11,8 @@ namespace workphone::scene
      * All surfaces use Kerb kind and are shared by render/mesh collision.
      */
     WPCore_API bool buildCityRoadFootways( const procedural::CityRoadSplineSource &source,
-        const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
-        const Transform3<real_Num> &placement, CityRoadTerrainMesh &output, String &error );
-}
+                                           const procedural::CityRoadSplineBake &bake,
+                                           render::TerrainSnapshot terrain,
+                                           const Transform3<real_Num> &placement,
+                                           CityRoadTerrainMesh &output, String &error );
+}  // namespace workphone::scene

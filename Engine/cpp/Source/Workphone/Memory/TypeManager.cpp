@@ -1327,7 +1327,9 @@ namespace workphone
         if( newId >= getSize() )
         {
             if( getSize() > std::numeric_limits<u32>::max() - WP_TYPE_MANAGER_NUM_TYPES )
+            {
                 throw std::bad_alloc();
+            }
             auto size = getSize() + WP_TYPE_MANAGER_NUM_TYPES;
             reserve( size );
         }
@@ -1358,8 +1360,10 @@ namespace workphone
         if( id >= getSize() )
         {
             if( getSize() > std::numeric_limits<u32>::max() - WP_TYPE_MANAGER_NUM_TYPES )
+            {
                 throw std::bad_alloc();
-            reserve(getSize() + WP_TYPE_MANAGER_NUM_TYPES);
+            }
+            reserve( getSize() + WP_TYPE_MANAGER_NUM_TYPES );
         }
         m_typeCount = id + 1;
         return id;
@@ -1675,26 +1679,36 @@ namespace workphone
         {
             // Admit complete replacement tables before publishing any storage.
             // Pool copies share their existing state, preserving live objects.
-            auto bases = baseObjectDataPools; bases.resize(size);
-            auto shared = sharedObjectDataPools; shared.resize(size);
-            auto names = m_names; names.resize(size);
-            auto labels = m_labels; labels.resize(size);
-            auto hashes = m_hashes; hashes.resize(size);
-            auto indices = m_typeIndex; indices.resize(size);
-            auto groups = m_typeGroup; groups.resize(size);
-            auto parents = m_baseType; parents.resize(size);
-            auto data = m_dataTypes; data.resize(size);
-            auto instances = m_numInstances; instances.resize(size);
-            baseObjectDataPools = std::move(bases);
-            sharedObjectDataPools = std::move(shared);
-            m_names = std::move(names);
-            m_labels = std::move(labels);
-            m_hashes = std::move(hashes);
-            m_typeIndex = std::move(indices);
-            m_typeGroup = std::move(groups);
-            m_baseType = std::move(parents);
-            m_dataTypes = std::move(data);
-            m_numInstances = std::move(instances);
+            auto bases = baseObjectDataPools;
+            bases.resize( size );
+            auto shared = sharedObjectDataPools;
+            shared.resize( size );
+            auto names = m_names;
+            names.resize( size );
+            auto labels = m_labels;
+            labels.resize( size );
+            auto hashes = m_hashes;
+            hashes.resize( size );
+            auto indices = m_typeIndex;
+            indices.resize( size );
+            auto groups = m_typeGroup;
+            groups.resize( size );
+            auto parents = m_baseType;
+            parents.resize( size );
+            auto data = m_dataTypes;
+            data.resize( size );
+            auto instances = m_numInstances;
+            instances.resize( size );
+            baseObjectDataPools = std::move( bases );
+            sharedObjectDataPools = std::move( shared );
+            m_names = std::move( names );
+            m_labels = std::move( labels );
+            m_hashes = std::move( hashes );
+            m_typeIndex = std::move( indices );
+            m_typeGroup = std::move( groups );
+            m_baseType = std::move( parents );
+            m_dataTypes = std::move( data );
+            m_numInstances = std::move( instances );
             m_size = size;
         }
     }
@@ -1746,13 +1760,20 @@ namespace workphone
     void TypeManager::resizeObjectData( u32 growSize )
     {
         ScopedLock lock( &m_mutex );
-        if( !growSize ) return;
+        if( !growSize )
+        {
+            return;
+        }
 
         if( growSize > std::numeric_limits<u32>::max() - m_objectDataSize.load() )
+        {
             throw std::bad_alloc();
+        }
         const u32 newSize = m_objectDataSize + growSize;
-        auto info = iTypeInfo; info.resize(newSize);
-        auto flags = objectFlags; flags.resize(newSize);
+        auto info = iTypeInfo;
+        info.resize( newSize );
+        auto flags = objectFlags;
+        flags.resize( newSize );
 
         for( size_t i = m_objectDataSize; i < newSize; ++i )
         {
@@ -1760,8 +1781,8 @@ namespace workphone
             flags[i] = OBJECT_FLAG_ALIVE | OBJECT_FLAG_GARBAGE_COLLECTED;
         }
 
-        iTypeInfo = std::move(info);
-        objectFlags = std::move(flags);
+        iTypeInfo = std::move( info );
+        objectFlags = std::move( flags );
         m_objectDataSize = newSize;
     }
 
@@ -1770,9 +1791,16 @@ namespace workphone
         SharedPtr<reflection::Type> retiring;
         {
             ScopedLock lock( &m_mutex );
-            auto it = types.find(id);
-            if( it == types.end() ) types.emplace(id, std::move(type));
-            else { retiring = std::move(it->second); it->second = std::move(type); }
+            auto it = types.find( id );
+            if( it == types.end() )
+            {
+                types.emplace( id, std::move( type ) );
+            }
+            else
+            {
+                retiring = std::move( it->second );
+                it->second = std::move( type );
+            }
         }
     }
 

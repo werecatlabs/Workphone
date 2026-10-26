@@ -148,11 +148,15 @@ namespace workphone
         std::vector<String> argStrings;
         argStrings.push_back( appUTF8 );
         for( const auto &arg : args )
+        {
             argStrings.push_back( StringUtil::toUTF16to8( arg ) );
+        }
 
         std::vector<char *> argv;
         for( auto &s : argStrings )
+        {
             argv.push_back( const_cast<char *>( s.c_str() ) );
+        }
         argv.push_back( nullptr );
 
         pid_t pid = fork();
@@ -265,11 +269,15 @@ namespace workphone
         std::vector<String> argStrings;
         argStrings.push_back( appUTF8 );
         for( const auto &arg : args )
+        {
             argStrings.push_back( StringUtil::toUTF16to8( arg ) );
+        }
 
         std::vector<char *> argv;
         for( auto &s : argStrings )
+        {
             argv.push_back( const_cast<char *>( s.c_str() ) );
+        }
         argv.push_back( nullptr );
 
         pid_t pid = fork();
@@ -319,18 +327,24 @@ namespace workphone
         std::vector<String> argStrings;
         argStrings.push_back( appUTF8 );
         for( const auto &arg : args )
+        {
             argStrings.push_back( StringUtil::toUTF16to8( arg ) );
+        }
 
         std::vector<char *> argv;
         for( auto &s : argStrings )
+        {
             argv.push_back( const_cast<char *>( s.c_str() ) );
+        }
         argv.push_back( nullptr );
 
         pid_t pid = fork();
         if( pid == 0 )
         {
             if( !dirUTF8.empty() )
+            {
                 chdir( dirUTF8.c_str() );
+            }
             execv( appUTF8.c_str(), argv.data() );
             _exit( EXIT_FAILURE );
         }
@@ -373,22 +387,30 @@ namespace workphone
         {
             proc_name( pids[i], nameBuf, sizeof( nameBuf ) );
             if( nameUTF8 == nameBuf )
+            {
                 return true;
+            }
         }
         return false;
 #elif defined WP_PLATFORM_LINUX
         auto nameUTF8 = StringUtil::toUTF16to8( processName );
         DIR *dir = opendir( "/proc" );
         if( !dir )
+        {
             return false;
+        }
         struct dirent *entry;
         while( ( entry = readdir( dir ) ) != nullptr )
         {
             bool isPid = ( entry->d_name[0] != '\0' );
             for( const char *p = entry->d_name; *p && isPid; ++p )
+            {
                 isPid = ( isdigit( static_cast<unsigned char>( *p ) ) != 0 );
+            }
             if( !isPid )
+            {
                 continue;
+            }
             std::ifstream commFile( std::string( "/proc/" ) + entry->d_name + "/comm" );
             std::string comm;
             if( std::getline( commFile, comm ) && comm == nameUTF8 )
@@ -452,16 +474,22 @@ namespace workphone
         auto nameUTF8 = StringUtil::toUTF16to8( processName );
         DIR *dir = opendir( "/proc" );
         if( !dir )
+        {
             return false;
+        }
         struct dirent *entry;
         bool terminated = false;
         while( ( entry = readdir( dir ) ) != nullptr )
         {
             bool isPid = ( entry->d_name[0] != '\0' );
             for( const char *p = entry->d_name; *p && isPid; ++p )
+            {
                 isPid = ( isdigit( static_cast<unsigned char>( *p ) ) != 0 );
+            }
             if( !isPid )
+            {
                 continue;
+            }
             std::ifstream commFile( std::string( "/proc/" ) + entry->d_name + "/comm" );
             std::string comm;
             if( std::getline( commFile, comm ) && comm == nameUTF8 )

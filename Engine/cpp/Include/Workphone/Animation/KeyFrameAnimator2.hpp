@@ -44,10 +44,10 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     private:
-        SmartPtr<KeyFrameTransform2> m_currentKeyFrame;   ///< The currently active keyframe
-        Array<SmartPtr<KeyFrameTransform2>> m_keyFrames{
-            Allocator<SmartPtr<KeyFrameTransform2>>( sourceBudget ) };
-        LinearSpline2<real_Num> m_positionSpline;         ///< Spline used for position interpolation
+        SmartPtr<KeyFrameTransform2> m_currentKeyFrame;  ///< The currently active keyframe
+        Array<SmartPtr<KeyFrameTransform2>> m_keyFrames{ Allocator<SmartPtr<KeyFrameTransform2>>(
+            sourceBudget ) };
+        LinearSpline2<real_Num> m_positionSpline;  ///< Spline used for position interpolation
         // For scale and rotation, we will interpolate manually in update()
     };
 }  // namespace workphone

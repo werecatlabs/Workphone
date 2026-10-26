@@ -137,7 +137,9 @@ namespace workphone::render
 
         // Perform perspective division to convert from homogeneous coordinates to NDC
         if( clipPos.w == 0 )
+        {
             return {};  // Avoid division by zero
+        }
 
         Vector3<real_Num> ndc = Vector3<real_Num>( clipPos.x, clipPos.y, clipPos.z ) / clipPos.w;
 
@@ -510,7 +512,9 @@ namespace workphone::render
 
         // Perform perspective divide to get normalized device coordinates (NDC)
         if( clipPos.w == 0 )
+        {
             return false;
+        }
 
         Vector3<real_Num> ndc = clipPos.xyz() / clipPos.w;
 

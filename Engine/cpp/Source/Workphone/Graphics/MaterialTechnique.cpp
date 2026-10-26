@@ -157,13 +157,19 @@ namespace workphone::render
     void MaterialTechnique::removePass( SmartPtr<IMaterialPass> pass )
     {
         m_children.erase( std::remove( m_children.begin(), m_children.end(), pass ), m_children.end() );
-        if( auto material = getMaterial() ) material->setPass( nullptr );
+        if( auto material = getMaterial() )
+        {
+            material->setPass( nullptr );
+        }
     }
 
     void MaterialTechnique::removePasses()
     {
         m_children.clear();
-        if( auto material = getMaterial() ) material->setPass( nullptr );
+        if( auto material = getMaterial() )
+        {
+            material->setPass( nullptr );
+        }
     }
 
     auto MaterialTechnique::getPasses() const -> Array<SmartPtr<IMaterialPass>>
@@ -185,12 +191,18 @@ namespace workphone::render
     void MaterialTechnique::setPasses( Array<SmartPtr<IMaterialPass>> passes )
     {
         m_children = { passes.begin(), passes.end() };
-        for( auto pass : passes ) if( pass )
+        for( auto pass : passes )
         {
-            pass->setMaterial( getMaterial() );
-            pass->setParent( this );
+            if( pass )
+            {
+                pass->setMaterial( getMaterial() );
+                pass->setParent( this );
+            }
         }
-        if( auto material = getMaterial() ) material->setPass( nullptr );
+        if( auto material = getMaterial() )
+        {
+            material->setPass( nullptr );
+        }
     }
 
     SmartPtr<IMaterialPass> MaterialTechnique::getPass( u32 index ) const

@@ -2,6 +2,7 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <array>
+
 namespace workphone::advanced
 {
     struct VehicleEffectsFrame

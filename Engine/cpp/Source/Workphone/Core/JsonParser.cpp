@@ -32,11 +32,17 @@ namespace workphone
         s32 hexValue( c8 ch )
         {
             if( ch >= '0' && ch <= '9' )
+            {
                 return ch - '0';
+            }
             if( ch >= 'a' && ch <= 'f' )
+            {
                 return 10 + ( ch - 'a' );
+            }
             if( ch >= 'A' && ch <= 'F' )
+            {
                 return 10 + ( ch - 'A' );
+            }
             return -1;
         }
 
@@ -255,7 +261,9 @@ namespace workphone
             child->setName( name );
 
             for( const auto &[key, val] : std::get<JsonObject>( value ) )
+            {
                 jsonValueToProperties( String( key ), val, child.get(), child.get() );
+            }
 
             parent->addChild( child );
         }
@@ -301,10 +309,14 @@ namespace workphone
             {
                 const auto &element = array[i];
                 if( isScalarJsonValue( element ) )
+                {
                     jsonValueToProperties( makeIndexedPropertyName( name, i ), element, child.get(),
                                            child.get() );
+                }
                 else
+                {
                     jsonValueToProperties( name, element, child.get(), child.get() );
+                }
             }
 
             parent->addChild( child );
@@ -390,7 +402,9 @@ namespace workphone
     {
         assertValidState();
         while( !isAtEnd() && isJsonWhitespace( peek() ) )
+        {
             ++m_pos;
+        }
 
         WP_ASSERT( m_pos <= m_size );
     }
@@ -692,7 +706,9 @@ namespace workphone
 
         // Optional leading minus sign. '+' is intentionally rejected; it is not valid JSON.
         if( peek() == '-' )
+        {
             get();
+        }
 
         // Integer part requires at least one digit
         if( !StringUtil::isDigit( peek() ) )
@@ -713,7 +729,9 @@ namespace workphone
         else
         {
             while( StringUtil::isDigit( peek() ) )
+            {
                 get();
+            }
         }
 
         // Optional fractional part
@@ -726,7 +744,9 @@ namespace workphone
                 return {};
             }
             while( StringUtil::isDigit( peek() ) )
+            {
                 get();
+            }
         }
 
         // Optional exponent part
@@ -734,14 +754,18 @@ namespace workphone
         {
             get();
             if( peek() == '+' || peek() == '-' )
+            {
                 get();
+            }
             if( !StringUtil::isDigit( peek() ) )
             {
                 WP_LOG_ERROR( "Invalid number: expected digit in exponent" );
                 return {};
             }
             while( StringUtil::isDigit( peek() ) )
+            {
                 get();
+            }
         }
 
         assert( m_pos > start );

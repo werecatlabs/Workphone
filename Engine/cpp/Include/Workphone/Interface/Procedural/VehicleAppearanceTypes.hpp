@@ -87,12 +87,21 @@ namespace workphone
             VehicleMaterialDescriptor( const VehicleMaterialDescriptor & ) = default;
             VehicleMaterialDescriptor( VehicleMaterialDescriptor && ) noexcept = default;
             VehicleMaterialDescriptor &operator=( VehicleMaterialDescriptor && ) noexcept = default;
+
             VehicleMaterialDescriptor &operator=( const VehicleMaterialDescriptor &other )
             {
-                if( this != &other ) { VehicleMaterialDescriptor candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleMaterialDescriptor candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleMaterialDescriptor &other ) noexcept { std::swap( *this, other ); }
+
+            void swap( VehicleMaterialDescriptor &other ) noexcept
+            {
+                std::swap( *this, other );
+            }
         };
 
         struct WPCore_API VehicleAppearanceQualityProfile
@@ -143,12 +152,21 @@ namespace workphone
             VehicleTextureAssets( const VehicleTextureAssets & ) = default;
             VehicleTextureAssets( VehicleTextureAssets && ) noexcept = default;
             VehicleTextureAssets &operator=( VehicleTextureAssets && ) noexcept = default;
+
             VehicleTextureAssets &operator=( const VehicleTextureAssets &other )
             {
-                if( this != &other ) { VehicleTextureAssets candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleTextureAssets candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleTextureAssets &other ) noexcept { std::swap( *this, other ); }
+
+            void swap( VehicleTextureAssets &other ) noexcept
+            {
+                std::swap( *this, other );
+            }
         };
 
         enum class VehicleAppearanceIssueSeverity : u8
@@ -164,18 +182,34 @@ namespace workphone
             SourceBudgetStdString message;
 
             VehicleAppearanceIssue() = default;
-            VehicleAppearanceIssue( VehicleAppearanceIssueSeverity level, SourceBudgetStdString codeValue,
+
+            VehicleAppearanceIssue( VehicleAppearanceIssueSeverity level,
+                                    SourceBudgetStdString codeValue,
                                     SourceBudgetStdString messageValue ) noexcept :
-                severity( level ), code( std::move( codeValue ) ), message( std::move( messageValue ) ) {}
+                severity( level ),
+                code( std::move( codeValue ) ),
+                message( std::move( messageValue ) )
+            {
+            }
+
             VehicleAppearanceIssue( const VehicleAppearanceIssue & ) = default;
             VehicleAppearanceIssue( VehicleAppearanceIssue && ) noexcept = default;
             VehicleAppearanceIssue &operator=( VehicleAppearanceIssue && ) noexcept = default;
+
             VehicleAppearanceIssue &operator=( const VehicleAppearanceIssue &other )
             {
-                if( this != &other ) { VehicleAppearanceIssue candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleAppearanceIssue candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleAppearanceIssue &other ) noexcept { std::swap( *this, other ); }
+
+            void swap( VehicleAppearanceIssue &other ) noexcept
+            {
+                std::swap( *this, other );
+            }
         };
 
         struct WPCore_API VehicleAppearanceValidation : SourceBudgetObject
@@ -187,12 +221,21 @@ namespace workphone
             VehicleAppearanceValidation( const VehicleAppearanceValidation & ) = default;
             VehicleAppearanceValidation( VehicleAppearanceValidation && ) noexcept = default;
             VehicleAppearanceValidation &operator=( VehicleAppearanceValidation && ) noexcept = default;
+
             VehicleAppearanceValidation &operator=( const VehicleAppearanceValidation &other )
             {
-                if( this != &other ) { VehicleAppearanceValidation candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleAppearanceValidation candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleAppearanceValidation &other ) noexcept { std::swap( *this, other ); }
+
+            void swap( VehicleAppearanceValidation &other ) noexcept
+            {
+                std::swap( *this, other );
+            }
         };
 
         struct WPCore_API VehicleAppearanceBundle : SourceBudgetObject
@@ -208,12 +251,21 @@ namespace workphone
             VehicleAppearanceBundle( const VehicleAppearanceBundle & ) = default;
             VehicleAppearanceBundle( VehicleAppearanceBundle && ) noexcept = default;
             VehicleAppearanceBundle &operator=( VehicleAppearanceBundle && ) noexcept = default;
+
             VehicleAppearanceBundle &operator=( const VehicleAppearanceBundle &other )
             {
-                if( this != &other ) { VehicleAppearanceBundle candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleAppearanceBundle candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleAppearanceBundle &other ) noexcept { std::swap( *this, other ); }
+
+            void swap( VehicleAppearanceBundle &other ) noexcept
+            {
+                std::swap( *this, other );
+            }
 
             const VehicleMaterialDescriptor &material( VehicleMaterialSlot slot ) const;
             VehicleMaterialDescriptor &material( VehicleMaterialSlot slot );

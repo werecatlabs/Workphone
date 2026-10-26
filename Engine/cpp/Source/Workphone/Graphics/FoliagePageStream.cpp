@@ -17,6 +17,7 @@ namespace workphone::render
             StreamBudget budget;
             FoliageSnapshot snapshot;
         };
+
         struct Node
         {
             FoliageCellKey cell;
@@ -24,6 +25,7 @@ namespace workphone::render
             u64 token = 0;
             bool wanted = false;
         };
+
         struct View
         {
             StreamBudget budget;
@@ -31,11 +33,13 @@ namespace workphone::render
             wp_paged_geometry *pager = nullptr;
             Array<Node *> nodes;
             f32 range = 0;
+
             ~View()
             {
                 wp_paged_geometry_destroy( pager );
                 wp_camera_destroy( camera );
             }
+
             static void *create( void *data )
             {
                 auto self = static_cast<View *>( data );
@@ -50,10 +54,12 @@ namespace workphone::render
                     return nullptr;
                 }
             }
+
             static void destroy( void *data )
             {
                 delete static_cast<Node *>( data );
             }
+
             static void load( void *, wp_geometry_page *page, wp_geometry_page_info *info )
             {
                 auto node = static_cast<Node *>( wp_geometry_page_get_data( page ) );
@@ -64,12 +70,16 @@ namespace workphone::render
                 info->user_data = node;
                 wp_geometry_page_defer_load( page );
             }
+
             static void unload( void *, wp_geometry_page_info *info )
             {
                 if( auto node = static_cast<Node *>( info->user_data ) )
+                {
                     node->wanted = false;
+                }
             }
         };
+
         std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
         std::shared_ptr<WorldStreamProducer> producer;
         FoliageStreamSource input;
@@ -78,6 +88,7 @@ namespace workphone::render
         std::map<FoliageCellKey, u32> counts;
         std::map<FoliageCellKey, std::weak_ptr<const FoliagePageData>> delivered;
         Array<std::unique_ptr<View>> views;
+
         Impl()
         {
             WorldStreamProducerLimits limits;
@@ -85,16 +96,22 @@ namespace workphone::render
             String error;
             producer = scheduler->createProducer( limits, error );
             if( !producer )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
         }
+
         ~Impl()
         {
             producer->drain();
         }
+
         void acknowledge( FoliageCellKey cell, bool success )
         {
             for( const auto &view : views )
+            {
                 for( auto node : view->nodes )
+                {
                     if( node->wanted && node->cell == cell )
                     {
                         if( success &&
@@ -106,16 +123,23 @@ namespace workphone::render
                         }
                         wp_geometry_page_complete_load( node->page, node->token, success ? 1 : 0 );
                     }
+                }
+            }
         }
     };
+
     FoliagePageStream::FoliagePageStream() : m_impl( std::make_unique<Impl>() )
     {
     }
+
     FoliagePageStream::~FoliagePageStream() = default;
+
     bool FoliagePageStream::setSource( FoliageSnapshot source, String &error )
     {
         if( !source || !validateFoliageWorld( *source, error ) )
+        {
             return false;
+        }
         try
         {
             struct IndexOwner
@@ -123,13 +147,16 @@ namespace workphone::render
                 StreamBudget budget;
                 std::map<FoliageCellKey, Array<u32>> indices;
             };
+
             auto indexOwner = std::make_shared<IndexOwner>();
             indexOwner->budget = m_impl->producer->reserve(
                 StreamMemoryClass::SourceCpu,
                 source->instances.size() * sizeof( u32 ) * 2 + foliageMaximumPages * 128ull + 4096,
                 error );
             if( !indexOwner->budget )
+            {
                 return false;
+            }
             auto indices = std::shared_ptr<std::map<FoliageCellKey, Array<u32>>>( indexOwner,
                                                                                   &indexOwner->indices );
             FoliageStreamSource input;
@@ -139,7 +166,9 @@ namespace workphone::render
                 FoliageCellKey cell;
                 if( !foliageCellForPosition( source->instances[i].position, source->pageSize, cell,
                                              error ) )
+                {
                     return false;
+                }
                 ( *indices )[cell].push_back( i );
             }
             for( const auto &entry : *indices )
@@ -177,6 +206,7 @@ namespace workphone::render
             return false;
         }
     }
+
     bool FoliagePageStream::setSource( FoliageStreamSource input, String &error )
     {
         error.clear();
@@ -185,7 +215,9 @@ namespace workphone::render
             !validateFoliageWorld( *input.snapshot, error ) )
         {
             if( error.empty() )
+            {
                 error = "Invalid foliage page source";
+            }
             return false;
         }
         if( input.maximumGeometryRadius < 0 || input.maximumBendRadius < 0 )
@@ -197,7 +229,9 @@ namespace workphone::render
             }
             if( !foliageInstanceRadii( *input.snapshot, input.snapshot->instances,
                                        input.maximumGeometryRadius, input.maximumBendRadius, error ) )
+            {
                 return false;
+            }
         }
         if( !std::isfinite( input.maximumGeometryRadius ) || !std::isfinite( input.maximumBendRadius ) ||
             input.maximumGeometryRadius < 0 || input.maximumBendRadius < 0 )
@@ -211,7 +245,9 @@ namespace workphone::render
             const auto bytes = foliageSourceBytes( *input.snapshot ) + input.cells.size() * 512 + 4096;
             owner->budget = m_impl->producer->reserve( StreamMemoryClass::SourceCpu, bytes, error );
             if( !owner->budget )
+            {
                 return false;
+            }
             owner->snapshot = input.snapshot;
             input.snapshot = FoliageSnapshot( owner, owner->snapshot.get() );
             std::set<FoliageCellKey> available( input.cells.begin(), input.cells.end() );
@@ -246,6 +282,7 @@ namespace workphone::render
             return false;
         }
     }
+
     bool FoliagePageStream::setDemand( const Array<FoliageCellKey> &cells, String &error )
     {
         error.clear();
@@ -265,7 +302,9 @@ namespace workphone::render
                           wanted.end() );
             u64 residentBytes = 0;
             for( auto cell : wanted )
+            {
                 residentBytes += 1024 + u64( p.counts.at( cell ) ) * sizeof( FoliageInstance );
+            }
             if( residentBytes > p.scheduler->stats().limits[size_t( StreamMemoryClass::ResultCpu )] )
             {
                 error = "Foliage resident page demand exceeds the shared CPU result budget";
@@ -274,7 +313,9 @@ namespace workphone::render
             const bool changed = wanted != p.requested;
             if( !changed && ( p.producer->stats().pending || p.producer->stats().active ||
                               p.producer->stats().ready ) )
+            {
                 return true;
+            }
             Array<WorldStreamRequest> requests;
             std::set<FoliageCellKey> outstanding;
             u64 newBytes = 0;
@@ -282,7 +323,9 @@ namespace workphone::render
             {
                 const auto found = p.delivered.find( cell );
                 if( found == p.delivered.end() || found->second.expired() )
+                {
                     newBytes += 1024 + u64( p.counts.at( cell ) ) * sizeof( FoliageInstance );
+                }
             }
             const auto budget = p.scheduler->stats();
             const auto category = size_t( StreamMemoryClass::ResultCpu );
@@ -300,7 +343,9 @@ namespace workphone::render
                     continue;
                 }
                 if( requests.size() == 256 )
+                {
                     break;
+                }
                 WorldStreamRequest request;
                 request.key = foliageCellIdentity( cell );
                 request.priority = s32( 256 - requests.size() );
@@ -313,19 +358,25 @@ namespace workphone::render
                                        p.input.maximumBendRadius]( const StreamCancellation &cancel ) {
                     WorldStreamResult result;
                     if( cancel.cancelled() )
+                    {
                         return result;
+                    }
                     auto page = load( cell, cancel, result.error );
                     if( !page )
                     {
                         if( result.error.empty() )
+                        {
                             result.error = "Foliage page loader returned no page";
+                        }
                         return result;
                     }
                     if( page->cell != cell || page->instances.size() != expectedCount ||
                         !validateFoliagePage( *page, *source, result.error ) )
                     {
                         if( result.error.empty() )
+                        {
                             result.error = "Foliage page identity mismatch";
+                        }
                         return result;
                     }
                     f32 geometry = 0, bend = 0;
@@ -350,16 +401,26 @@ namespace workphone::render
                 outstanding.insert( cell );
             }
             if( !changed && requests.empty() )
+            {
                 return true;
+            }
             if( !p.producer->replace( requests, error ) )
+            {
                 return false;
+            }
             p.requested = std::move( wanted );
             p.outstanding = std::move( outstanding );
             for( auto it = p.delivered.begin(); it != p.delivered.end(); )
+            {
                 if( !std::binary_search( p.requested.begin(), p.requested.end(), it->first ) )
+                {
                     it = p.delivered.erase( it );
+                }
                 else
+                {
                     ++it;
+                }
+            }
             return true;
         }
         catch( const std::exception &e )
@@ -368,6 +429,7 @@ namespace workphone::render
             return false;
         }
     }
+
     bool FoliagePageStream::updateViews( const Array<FoliagePageView> &inputs, String &error )
     {
         auto &p = *m_impl;
@@ -379,6 +441,7 @@ namespace workphone::render
         try
         {
             for( const auto &input : inputs )
+            {
                 if( !std::isfinite( input.position.x ) || !std::isfinite( input.position.y ) ||
                     !std::isfinite( input.position.z ) || !std::isfinite( input.range ) ||
                     input.range <= 0 || input.range / p.input.snapshot->pageSize + 1 > 30 )
@@ -386,9 +449,12 @@ namespace workphone::render
                     error = "Foliage view range plus its page fringe must fit thirty page widths";
                     return false;
                 }
+            }
             bool recreate = p.views.size() != inputs.size();
             for( size_t i = 0; !recreate && i < inputs.size(); ++i )
+            {
                 recreate = inputs[i].range != p.views[i]->range;
+            }
             if( recreate )
             {
                 Array<std::unique_ptr<Impl::View>> candidate;
@@ -401,7 +467,9 @@ namespace workphone::render
                     view->budget = p.producer->reserve( StreamMemoryClass::SourceCpu,
                                                         side * side * 512 + 4096, error );
                     if( !view->budget )
+                    {
                         return false;
+                    }
                     view->camera = wp_camera_create();
                     view->pager = wp_paged_geometry_create( view->camera, p.input.snapshot->pageSize );
                     if( !view->camera || !view->pager )
@@ -438,6 +506,7 @@ namespace workphone::render
                                         { input.position.x, input.position.y, input.position.z } );
                 wp_paged_geometry_update( view.pager, 16 );
                 for( auto node : view.nodes )
+                {
                     if( node->wanted && p.available.count( node->cell ) )
                     {
                         const auto centre = wp_geometry_page_get_center( node->page );
@@ -445,11 +514,16 @@ namespace workphone::render
                                    dz = double( centre.z ) - input.position.z;
                         const auto range = double( input.range ) + p.input.snapshot->pageSize;
                         if( dx * dx + dz * dz <= range * range )
+                        {
                             unique.insert( node->cell );
+                        }
                     }
+                }
             }
             for( const auto &key : unique )
+            {
                 wanted.push_back( key );
+            }
             return setDemand( wanted, error );
         }
         catch( const std::exception &e )
@@ -458,38 +532,47 @@ namespace workphone::render
             return false;
         }
     }
+
     const Array<FoliageCellKey> &FoliagePageStream::demand() const
     {
         return m_impl->requested;
     }
+
     FoliageSnapshot FoliagePageStream::source() const
     {
         return m_impl->input.snapshot;
     }
+
     f32 FoliagePageStream::maximumGeometryRadius() const
     {
         return m_impl->input.maximumGeometryRadius;
     }
+
     f32 FoliagePageStream::maximumBendRadius() const
     {
         return m_impl->input.maximumBendRadius;
     }
+
     bool FoliagePageStream::take( FoliagePageResult &result )
     {
         auto &p = *m_impl;
         WorldStreamResult raw;
         if( !p.producer->take( raw ) )
+        {
             return false;
+        }
         result = {};
         result.source = p.input.snapshot;
         result.generation = raw.generation;
         result.error = raw.error;
         for( auto key : p.outstanding )
+        {
             if( foliageCellIdentity( key ) == raw.key )
             {
                 result.cell = key;
                 break;
             }
+        }
         if( raw.payload )
         {
             const auto typed = std::static_pointer_cast<const FoliagePageResult>( raw.payload );
@@ -502,6 +585,7 @@ namespace workphone::render
         p.acknowledge( result.cell, result.page != nullptr );
         return true;
     }
+
     void FoliagePageStream::cancel()
     {
         m_impl->producer->cancel();
@@ -510,6 +594,7 @@ namespace workphone::render
         m_impl->delivered.clear();
         m_impl->views.clear();
     }
+
     void FoliagePageStream::drain()
     {
         cancel();
@@ -518,6 +603,7 @@ namespace workphone::render
         m_impl->available.clear();
         m_impl->counts.clear();
     }
+
     WorldStreamProducerStats FoliagePageStream::stats() const
     {
         return m_impl->producer->stats();

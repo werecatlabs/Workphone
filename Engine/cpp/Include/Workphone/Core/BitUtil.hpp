@@ -136,6 +136,7 @@ namespace workphone
             float f;
             u32 i;
         } v;
+
         v.f = i;
         return floatToHalfI( v.i );
     }
@@ -181,6 +182,7 @@ namespace workphone
             f32 f;
             u32 i;
         } v;
+
         v.i = halfToFloatI( y );
         return v.f;
     }

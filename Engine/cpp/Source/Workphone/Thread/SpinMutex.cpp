@@ -10,6 +10,7 @@ namespace workphone
 {
 
     SpinMutex::SpinMutex() = default;
+
     SpinMutex::~SpinMutex()
     {
 #if !WP_FINAL

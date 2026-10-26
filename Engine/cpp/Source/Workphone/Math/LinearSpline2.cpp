@@ -35,10 +35,12 @@ namespace workphone
 
     template <class T>
     LinearSpline2<T>::LinearSpline2( const LinearSpline2 &other ) :
-        ISharedObject(), m_autoCalc( other.m_autoCalc ),
+        ISharedObject(),
+        m_autoCalc( other.m_autoCalc ),
         m_times( makeSourceBudgetSnapshot( other.m_times ) ),
         m_points( makeSourceBudgetSnapshot( other.m_points ) ),
-        m_tangents( makeSourceBudgetSnapshot( other.m_tangents ) ), m_coeffs( other.m_coeffs )
+        m_tangents( makeSourceBudgetSnapshot( other.m_tangents ) ),
+        m_coeffs( other.m_coeffs )
     {
     }
 
@@ -50,7 +52,9 @@ namespace workphone
             auto times = makeSourceBudgetSnapshot( other.m_times );
             auto points = makeSourceBudgetSnapshot( other.m_points );
             auto tangents = makeSourceBudgetSnapshot( other.m_tangents );
-            m_times.swap( times ); m_points.swap( points ); m_tangents.swap( tangents );
+            m_times.swap( times );
+            m_points.swap( points );
+            m_tangents.swap( tangents );
             m_autoCalc = other.m_autoCalc;
             m_coeffs = other.m_coeffs;
         }
@@ -67,69 +71,107 @@ namespace workphone
 
     namespace
     {
-        template<class T>
+        template <class T>
         Array<Vector3<T>> prepareLinear2Tangents( const Array<Vector3<T>> &tangents, size_t count,
-                                                 bool autoCalculate )
+                                                  bool autoCalculate )
         {
             auto result = makeSourceBudgetSnapshot<Vector3<T>>();
-            if( autoCalculate && count >= 2 && count > tangents.capacity() ) result.resize( count );
+            if( autoCalculate && count >= 2 && count > tangents.capacity() )
+            {
+                result.resize( count );
+            }
             return result;
         }
-        template<class T, class U, class Convert>
+
+        template <class T, class U, class Convert>
         Array<Vector3<T>> appendLinear2Points( const Array<Vector3<T>> &current, const Array<U> &input,
                                                Convert convert )
         {
             auto result = makeSourceBudgetSnapshot<Vector3<T>>();
             if( input.capacity() > result.max_size() - current.size() )
+            {
                 throw std::length_error( "Spline point capacity overflow" );
+            }
             result.reserve( std::max( current.capacity(), current.size() + input.capacity() ) );
-            for( const auto &point : current ) result.push_back( point );
-            for( const auto &value : input ) result.push_back( convert( value ) );
+            for( const auto &point : current )
+            {
+                result.push_back( point );
+            }
+            for( const auto &value : input )
+            {
+                result.push_back( convert( value ) );
+            }
             return result;
         }
-    }
+    }  // namespace
 
     template <class T>
     void LinearSpline2<T>::setPoints( const Array<Pair<T, Vector2<T>>> &points )
     {
         auto times = makeSourceBudgetSnapshot<T>();
         if( points.capacity() > times.max_size() - m_times.size() )
+        {
             throw std::length_error( "Spline time capacity overflow" );
+        }
         times.reserve( std::max( m_times.capacity(), m_times.size() + points.capacity() ) );
-        for( const auto &time : m_times ) times.push_back( time );
-        for( const auto &p : points ) times.push_back( p.first );
+        for( const auto &time : m_times )
+        {
+            times.push_back( time );
+        }
+        for( const auto &p : points )
+        {
+            times.push_back( p.first );
+        }
         auto positions = appendLinear2Points( m_points, points, []( const auto &p ) {
             return Vector3<T>( p.second.x, p.second.y, T( 0 ) );
         } );
         auto tangents = prepareLinear2Tangents( m_tangents, positions.size(), m_autoCalc );
-        m_times.swap( times ); m_points.swap( positions );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
-        if( m_autoCalc ) recalcTangents();
+        m_times.swap( times );
+        m_points.swap( positions );
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
+        if( m_autoCalc )
+        {
+            recalcTangents();
+        }
     }
 
     template <class T>
     void LinearSpline2<T>::setPoints( const Array<T> &keys, const Array<Vector2<T>> &points )
     {
         auto times = makeSourceBudgetSnapshot( keys );
-        auto positions = appendLinear2Points( m_points, points, []( const auto &p ) {
-            return Vector3<T>( p.x, p.y, T( 0 ) );
-        } );
+        auto positions = appendLinear2Points(
+            m_points, points, []( const auto &p ) { return Vector3<T>( p.x, p.y, T( 0 ) ); } );
         auto tangents = prepareLinear2Tangents( m_tangents, positions.size(), m_autoCalc );
-        m_times.swap( times ); m_points.swap( positions );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
-        if( m_autoCalc ) recalcTangents();
+        m_times.swap( times );
+        m_points.swap( positions );
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
+        if( m_autoCalc )
+        {
+            recalcTangents();
+        }
     }
 
     template <class T>
     void LinearSpline2<T>::setPoints( const Array<Vector2<T>> &points )
     {
-        auto positions = appendLinear2Points( m_points, points, []( const auto &p ) {
-            return Vector3<T>( p.x, p.y, T( 0 ) );
-        } );
+        auto positions = appendLinear2Points(
+            m_points, points, []( const auto &p ) { return Vector3<T>( p.x, p.y, T( 0 ) ); } );
         auto tangents = prepareLinear2Tangents( m_tangents, positions.size(), m_autoCalc );
         m_points.swap( positions );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
-        if( m_autoCalc ) recalcTangents();
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
+        if( m_autoCalc )
+        {
+            recalcTangents();
+        }
     }
 
     template <class T>

@@ -482,9 +482,13 @@ namespace workphone
             static u32 s_iNext[3] = { 1, 2, 0 };
             u32 i = 0;
             if( kRot[1][1] > kRot[0][0] )
+            {
                 i = 1;
+            }
             if( kRot[2][2] > kRot[i][i] )
+            {
                 i = 2;
+            }
             u32 j = s_iNext[i];
             u32 k = s_iNext[j];
 

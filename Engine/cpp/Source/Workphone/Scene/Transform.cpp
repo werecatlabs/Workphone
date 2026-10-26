@@ -166,7 +166,12 @@ namespace workphone::scene
             {
                 updateFrameTime();
                 if( auto app = core::IApplicationManager::instancePtr() )
-                    if( auto manager = app->getGameManager() ) manager->addDirtyTransform( this );
+                {
+                    if( auto manager = app->getGameManager() )
+                    {
+                        manager->addDirtyTransform( this );
+                    }
+                }
 
                 if( auto actor = getActor() )
                 {
@@ -217,7 +222,12 @@ namespace workphone::scene
             {
                 updateFrameTime();
                 if( auto app = core::IApplicationManager::instancePtr() )
-                    if( auto manager = app->getGameManager() ) manager->addDirtyTransform( this );
+                {
+                    if( auto manager = app->getGameManager() )
+                    {
+                        manager->addDirtyTransform( this );
+                    }
+                }
 
                 if( auto actor = getActor() )
                 {
@@ -688,8 +698,15 @@ namespace workphone::scene
     {
         TransformSystem::instance().setFlags( m_handle, flags );
         if( flags & ( dirtyFlag | localDirtyFlag ) )
+        {
             if( auto app = core::IApplicationManager::instancePtr() )
-                if( auto manager = app->getGameManager() ) manager->addDirtyTransform( this );
+            {
+                if( auto manager = app->getGameManager() )
+                {
+                    manager->addDirtyTransform( this );
+                }
+            }
+        }
     }
 
     u8 Transform::getFlags() const

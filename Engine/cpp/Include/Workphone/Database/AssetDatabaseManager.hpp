@@ -46,6 +46,7 @@ namespace workphone
         u64 getCatalogGeneration();
         bool tryGetEntry( const String &uuid, EntrySnapshot &output );
         bool isEntryCurrent( const EntrySnapshot &snapshot );
+
         /** Literal, case-sensitive substring search and exact type filtering. No resources
          * are constructed. Pages contain at most 256 detached rows ordered by UUID. */
         struct EntryQuery
@@ -55,6 +56,7 @@ namespace workphone
             bool includeScenes = true;
             u32 pageSize = 100;
         };
+
         struct EntryCursor
         {
             String afterUuid;
@@ -64,6 +66,7 @@ namespace workphone
             u64 generation = 0;
             u64 catalogInstance = 0;
         };
+
         struct EntryPage
         {
             Array<EntrySnapshot> entries = makeSourceBudgetSnapshot<EntrySnapshot>();
@@ -72,6 +75,7 @@ namespace workphone
             bool succeeded = false;
             String error;
         };
+
         /** Continuations are valid only for the original filters and catalog generation.
          * On failure no partial rows are returned; callers should restart at page one. */
         EntryPage queryEntries( const EntryQuery &query, const EntryCursor *cursor = nullptr );
@@ -83,12 +87,14 @@ namespace workphone
             Copy,
             Delete
         };
+
         struct FileOperationResult
         {
             String operationId;
             String error;
             bool succeeded = false;
         };
+
         /** Journaled project-relative operation. Move preserves catalog UUIDs;
          * copy allocates new UUIDs and rejects formats requiring a reference remapper.
          * Delete quarantines exact bytes. Destinations are never overwritten. */
@@ -101,10 +107,12 @@ namespace workphone
         void open() override;
         /** Open an existing v2 catalog without migration or any write access. */
         bool openReadOnly( const String &path, String &error );
+
         bool isReadOnly() const
         {
             return m_readOnly;
         }
+
         void close() override;
 
         /** @brief Default constructor.

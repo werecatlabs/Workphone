@@ -74,11 +74,16 @@ namespace workphone
         {
             const auto numBytes = u64( m_numIndices ) * m_indexSize;
             if( numBytes > std::numeric_limits<size_t>::max() )
+            {
                 throw std::length_error( "Index allocation exceeds the addressable size." );
+            }
             String error;
-            auto lease = WorldStreamingScheduler::shared()->reserve(
-                StreamMemoryClass::SourceCpu, numBytes, error );
-            if( !lease ) throw std::runtime_error( error.c_str() );
+            auto lease = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu,
+                                                                     numBytes, error );
+            if( !lease )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
             std::unique_ptr<u8[]> replacement( new u8[size_t( numBytes )] );
             delete[] static_cast<u8 *>( m_indexData );
             m_indexData = replacement.release();

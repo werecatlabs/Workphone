@@ -12,22 +12,29 @@ namespace workphone
 
     namespace
     {
-        template<class T> SmartPtr<T> makeSkeletonObject()
+        template <class T>
+        SmartPtr<T> makeSkeletonObject()
         {
             auto application = core::IApplicationManager::instance();
             auto factory = application ? application->getFactoryManager() : nullptr;
-            if( !factory ) throw std::runtime_error( "Factory manager not available" );
+            if( !factory )
+            {
+                throw std::runtime_error( "Factory manager not available" );
+            }
             const auto denials = sourceBudgetDenialCount();
             auto result = factory->make_ptr<T>();
             if( !result )
             {
-                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    throw std::bad_alloc();
+                }
                 throw std::runtime_error( "Failed to create skeleton object" );
             }
             return result;
         }
 
-        template<class T, class Map>
+        template <class T, class Map>
         void appendNamed( Array<SmartPtr<T>> &objects, Map &index, const String &name,
                           const SmartPtr<T> &object )
         {
@@ -42,12 +49,18 @@ namespace workphone
             }
             catch( ... )
             {
-                if( entry.second ) index.erase( entry.first );
+                if( entry.second )
+                {
+                    index.erase( entry.first );
+                }
                 throw;
             }
-            if( !entry.second ) entry.first->second = object;
+            if( !entry.second )
+            {
+                entry.first->second = object;
+            }
         }
-    }
+    }  // namespace
 
     MeshSkeleton::MeshSkeleton() :
         m_animations( Allocator<SmartPtr<IAnimation>>( sourceBudget ) ),
@@ -76,7 +89,10 @@ namespace workphone
 
     SmartPtr<IAnimation> MeshSkeleton::createAnimation( const String &name, f32 length )
     {
-        if( auto existing = getAnimation( name ) ) return existing;
+        if( auto existing = getAnimation( name ) )
+        {
+            return existing;
+        }
         auto animation = makeSkeletonObject<Animation>();
         animation->setLength( length );
         animation->setName( name );
@@ -84,10 +100,13 @@ namespace workphone
         return animation;
     }
 
-    SmartPtr<IAnimation> MeshSkeleton::getAnimation(
-        const String &name, const LinkedSkeletonAnimationSource **linker ) const
+    SmartPtr<IAnimation> MeshSkeleton::getAnimation( const String &name,
+                                                     const LinkedSkeletonAnimationSource **linker ) const
     {
-        if( linker ) *linker = m_linker.get();
+        if( linker )
+        {
+            *linker = m_linker.get();
+        }
         return getAnimation( name );
     }
 

@@ -54,11 +54,17 @@ namespace workphone
             VehicleMeshSection( const VehicleMeshSection & ) = default;
             VehicleMeshSection( VehicleMeshSection && ) noexcept = default;
             VehicleMeshSection &operator=( VehicleMeshSection && ) noexcept = default;
+
             VehicleMeshSection &operator=( const VehicleMeshSection &other )
             {
-                if( this != &other ) { VehicleMeshSection candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleMeshSection candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehicleMeshSection &other ) noexcept
             {
                 name.swap( other.name );
@@ -80,11 +86,17 @@ namespace workphone
             VehicleLOD( const VehicleLOD & ) = default;
             VehicleLOD( VehicleLOD && ) noexcept = default;
             VehicleLOD &operator=( VehicleLOD && ) noexcept = default;
+
             VehicleLOD &operator=( const VehicleLOD &other )
             {
-                if( this != &other ) { VehicleLOD candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleLOD candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehicleLOD &other ) noexcept
             {
                 std::swap( level, other.level );
@@ -107,11 +119,17 @@ namespace workphone
             VehicleGeometry( const VehicleGeometry & ) = default;
             VehicleGeometry( VehicleGeometry && ) noexcept = default;
             VehicleGeometry &operator=( VehicleGeometry && ) noexcept = default;
+
             VehicleGeometry &operator=( const VehicleGeometry &other )
             {
-                if( this != &other ) { VehicleGeometry candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleGeometry candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehicleGeometry &other ) noexcept
             {
                 using std::swap;
@@ -127,7 +145,14 @@ namespace workphone
             bool hasGeometry() const;
         };
 
-        enum class VehicleBodyStyle : std::uint8_t { GrandPrix, GT, RoadSport, HelicopterLittleBird, Warbird };
+        enum class VehicleBodyStyle : std::uint8_t
+        {
+            GrandPrix,
+            GT,
+            RoadSport,
+            HelicopterLittleBird,
+            Warbird
+        };
 
         struct WPCore_API VehicleGeometryConfig
         {

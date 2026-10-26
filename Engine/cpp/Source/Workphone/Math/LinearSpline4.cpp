@@ -18,7 +18,9 @@ namespace workphone
     {
         // Perform linear interpolation
         if( m_points.size() < 2 )
+        {
             throw std::out_of_range( "LinearSpline4 requires at least 2 points for interpolation" );
+        }
 
         // Find the segment in which 't' lies
         auto numSegments = m_points.size() - 1;
@@ -27,7 +29,9 @@ namespace workphone
 
         // Ensure 't' does not exceed the last segment
         if( segmentIndex >= numSegments )
+        {
             return m_points.back();
+        }
 
         // Calculate interpolation factor within the segment
         auto tInSegment = ( t - segmentIndex * segmentWidth ) / segmentWidth;

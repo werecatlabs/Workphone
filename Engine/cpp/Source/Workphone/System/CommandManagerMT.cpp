@@ -17,13 +17,18 @@ namespace workphone
     {
     public:
         std::function<void( IJob * )> run;
+
         void execute() override
         {
             if( run )
+            {
                 run( this );
+            }
         }
+
         WP_CLASS_REGISTER_DECL;
     };
+
     WP_CLASS_REGISTER_DERIVED( workphone, HistoryCommandJob, Job );
 
     CommandManagerMT::CommandManagerMT() :
@@ -35,6 +40,7 @@ namespace workphone
         setName( "CommandManagerMT" );
         m_commands.reserve( m_numStoredCommands );
     }
+
     CommandManagerMT::~CommandManagerMT() = default;
 
     void CommandManagerMT::load( SmartPtr<ISharedObject> )
@@ -42,18 +48,25 @@ namespace workphone
         ScopedLock lock( this );
         setLoadingState( LoadingState::Loaded );
     }
+
     void CommandManagerMT::unload( SmartPtr<ISharedObject> )
     {
         ScopedLock lock( this );
         for( auto command : m_commands )
+        {
             if( command )
             {
                 if( std::find( m_executingCommands.begin(), m_executingCommands.end(), command ) !=
                     m_executingCommands.end() )
+                {
                     m_deferredUnloads.push_back( command );
+                }
                 else
+                {
                     command->unload( nullptr );
+                }
             }
+        }
         clearAll();
         setLoadingState( LoadingState::Unloaded );
     }
@@ -62,10 +75,14 @@ namespace workphone
     {
         ScopedLock lock( this );
         if( !command )
+        {
             return;
+        }
         // Cursor is the number of applied commands. A new branch discards all redo work.
         for( size_t i = m_currentCommand; i < m_commands.size(); ++i )
+        {
             invalidatePending( m_commands[i] );
+        }
         m_commands.erase( m_commands.begin() + m_currentCommand, m_commands.end() );
         while( m_commands.size() >= m_numStoredCommands )
         {
@@ -101,14 +118,18 @@ namespace workphone
             job->run = [owner, command]( IJob *identity ) mutable {
                 auto manager = owner.lock();
                 if( !manager )
+                {
                     return;
+                }
                 {
                     ScopedLock guard( manager.get() );
                     const auto present = std::find_if(
                         manager->m_pendingJobs.begin(), manager->m_pendingJobs.end(),
                         [identity]( const auto &entry ) { return entry.second.get() == identity; } );
                     if( present == manager->m_pendingJobs.end() )
+                    {
                         return;
+                    }
                     manager->m_executingCommands.push_back( command );
                     command->setState( ICommand::State::Executing );
                 }
@@ -142,21 +163,31 @@ namespace workphone
                     retired.erase( std::remove( retired.begin(), retired.end(), command ),
                                    retired.end() );
                     if( failure )
+                    {
                         manager->removeCommand( command );
+                    }
                 }
                 if( deferredUnload )
+                {
                     command->unload( nullptr );
+                }
                 if( failure )
+                {
                     std::rethrow_exception( failure );
+                }
             };
             m_pendingJobs.emplace_back( command, job );
             command->setState( ICommand::State::Queued );
             try
             {
                 if( !command->isPrimary() && queue )
+                {
                     queue->addJob( job );
+                }
                 else
+                {
                     primary->addJob( job );
+                }
             }
             catch( ... )
             {
@@ -165,10 +196,13 @@ namespace workphone
             }
         }
         else
+        {
             command->execute();
+        }
         // Event handlers may request undo; pending identity/state must already be installed.
         notifyAdded();
     }
+
     void CommandManagerMT::removeCommand( SmartPtr<ICommand> command )
     {
         ScopedLock lock( this );
@@ -181,30 +215,39 @@ namespace workphone
                 continue;
             }
             if( i < static_cast<size_t>( m_currentCommand ) )
+            {
                 --m_currentCommand;
+            }
             m_commands.erase( m_commands.begin() + i );
         }
     }
+
     bool CommandManagerMT::hasCommand( SmartPtr<ICommand> command )
     {
         ScopedLock lock( this );
         return std::find( m_commands.begin(), m_commands.end(), command ) != m_commands.end();
     }
+
     bool CommandManagerMT::isCommandQueued( SmartPtr<ICommand> command )
     {
         ScopedLock lock( this );
         if( std::any_of( m_pendingJobs.begin(), m_pendingJobs.end(),
                          [&command]( const auto &entry ) { return entry.first == command; } ) )
+        {
             return true;
+        }
         const auto found = std::find( m_commands.begin(), m_commands.end(), command );
         return found != m_commands.end() && found - m_commands.begin() >= m_currentCommand;
     }
+
     SmartPtr<ICommand> CommandManagerMT::getNextCommand()
     {
         ScopedLock lock( this );
         if( !m_pendingJobs.empty() || !m_executingCommands.empty() ||
             m_currentCommand >= static_cast<s32>( m_commands.size() ) )
+        {
             return nullptr;
+        }
         auto command = m_commands[m_currentCommand++];
         m_lastCommand = CommandType::COMMAND_MANAGER_REDO;
         if( auto application = core::IApplicationManager::instancePtr() )
@@ -217,11 +260,14 @@ namespace workphone
         }
         return command;
     }
+
     SmartPtr<ICommand> CommandManagerMT::getPreviousCommand()
     {
         ScopedLock lock( this );
         if( !m_pendingJobs.empty() || !m_executingCommands.empty() || m_currentCommand <= 0 )
+        {
             return nullptr;
+        }
         auto command = m_commands[--m_currentCommand];
         m_lastCommand = CommandType::COMMAND_MANAGER_UNDO;
         if( auto application = core::IApplicationManager::instancePtr() )
@@ -234,6 +280,7 @@ namespace workphone
         }
         return command;
     }
+
     void CommandManagerMT::clearAll()
     {
         ScopedLock lock( this );
@@ -243,6 +290,7 @@ namespace workphone
         m_lastUndoCommand = m_lastRedoCommand = -1;
         m_lastCommand = CommandType::COMMAND_MANAGER_NONE;
     }
+
     void CommandManagerMT::invalidatePending( SmartPtr<ICommand> command )
     {
         m_pendingJobs.erase(
@@ -250,14 +298,17 @@ namespace workphone
                             [&command]( const auto &entry ) { return entry.first == command; } ),
             m_pendingJobs.end() );
     }
+
     void CommandManagerMT::lock()
     {
         m_mutex.lock();
     }
+
     bool CommandManagerMT::try_lock()
     {
         return m_mutex.try_lock();
     }
+
     void CommandManagerMT::unlock()
     {
         m_mutex.unlock();

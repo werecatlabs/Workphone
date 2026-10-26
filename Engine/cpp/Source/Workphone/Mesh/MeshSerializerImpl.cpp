@@ -395,25 +395,35 @@ namespace workphone
             ( MSTREAM_OVERHEAD_SIZE +
               elemList.size() * ( MSTREAM_OVERHEAD_SIZE + sizeof( unsigned short ) * 5 ) );  // elements
         if( size > std::numeric_limits<u32>::max() )
+        {
             throw std::length_error( "Mesh geometry exceeds the serialized chunk size range." );
+        }
 
         auto numVerticies = vertexData->getNumVertices();
 
         // Buffer data
         for( size_t source = 0; source < dataArray.size(); ++source )
         {
-            if( !dataArray[source] ) continue;
+            if( !dataArray[source] )
+            {
+                continue;
+            }
             if( source > std::numeric_limits<u16>::max() )
+            {
                 throw std::length_error( "Mesh vertex stream exceeds the serialized source range." );
+            }
             const auto vertexSize = vertexDeclaration->getSize( static_cast<u16>( source ) );
             if( vertexSize > std::numeric_limits<u16>::max() )
+            {
                 throw std::length_error( "Mesh vertex stride exceeds the serialized size range." );
+            }
             // Each present stream contains its buffer header, binding/stride,
             // data header and exactly this source's vertex payload.
-            size += ( MSTREAM_OVERHEAD_SIZE * 2 ) + sizeof( u16 ) * 2 +
-                    u64( vertexSize ) * numVerticies;
+            size += ( MSTREAM_OVERHEAD_SIZE * 2 ) + sizeof( u16 ) * 2 + u64( vertexSize ) * numVerticies;
             if( size > std::numeric_limits<u32>::max() )
+            {
                 throw std::length_error( "Mesh geometry exceeds the serialized chunk size range." );
+            }
         }
 
         return static_cast<u32>( size );
@@ -471,7 +481,10 @@ namespace workphone
         for( size_t source = 0; source < vertexDataArray.size(); ++source )
         {
             auto data = vertexDataArray[source];
-            if( !data ) continue;
+            if( !data )
+            {
+                continue;
+            }
             const auto bindIndex = static_cast<u16>( source );
             const auto vertexSize = vertexDeclaration->getSize( bindIndex );
             // calcGeometrySize validated both the stride and complete chunk
@@ -2556,7 +2569,6 @@ namespace workphone
         auto message = "Read " + std::to_string( extremePoints.size() ) +
                        " extreme points for submesh " + std::to_string( idx );
         WP_LOG( message.c_str() );
-
     }
 
     MeshSerializerImpl_v1_41::MeshSerializerImpl_v1_41()

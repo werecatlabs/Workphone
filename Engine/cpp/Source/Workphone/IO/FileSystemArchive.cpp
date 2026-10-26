@@ -149,7 +149,9 @@ namespace workphone
                     // Keep the absolute name so refreshing an external media
                     // archive does not replace its file names with empty strings.
                     if( filePath.empty() )
+                    {
                         filePath = cleanFilePath;
+                    }
                     absolutePath = cleanFilePath;
                 }
                 else

@@ -174,11 +174,17 @@ namespace workphone
     s32 uuid::variant() const
     {
         if( ( m_bytes[8] & 0x80 ) == 0x00 )
+        {
             return 0;
+        }
         if( ( m_bytes[8] & 0xC0 ) == 0x80 )
+        {
             return 1;
+        }
         if( ( m_bytes[8] & 0xE0 ) == 0xC0 )
+        {
             return 2;
+        }
         return 3;
     }
 
@@ -282,11 +288,17 @@ namespace workphone
     s32 uuid::hexValue( char ch )
     {
         if( ch >= '0' && ch <= '9' )
+        {
             return ch - '0';
+        }
         if( ch >= 'a' && ch <= 'f' )
+        {
             return 10 + ( ch - 'a' );
+        }
         if( ch >= 'A' && ch <= 'F' )
+        {
             return 10 + ( ch - 'A' );
+        }
         return -1;
     }
 

@@ -41,7 +41,9 @@ namespace workphone
             {
                 auto instance = workphone::dynamic_pointer_cast<ISound>( sound );
                 if( !instance || instance->getOwner().get() == this )
+                {
                     sound->load( nullptr );
+                }
             }
         }
 
@@ -61,7 +63,9 @@ namespace workphone
         {
             const auto registered = m_sounds.snapshot();
             if( std::find( registered.begin(), registered.end(), sound ) == registered.end() )
+            {
                 return;
+            }
             sound->unload( nullptr );
             sound->setOwner( nullptr );
             m_sounds.erase( std::remove( m_sounds.begin(), m_sounds.end(), sound ), m_sounds.end() );
@@ -72,9 +76,13 @@ namespace workphone
     {
         SmartPtr<ISharedObject> pending;
         while( m_loadQueue.try_pop( pending ) )
+        {
             pending->unload( nullptr );
+        }
         while( m_unloadQueue.try_pop( pending ) )
+        {
             pending->unload( nullptr );
+        }
         auto sounds = m_sounds.snapshot();
         for( auto &sound : sounds )
         {
@@ -400,7 +408,9 @@ namespace workphone
     {
         auto source = workphone::dynamic_pointer_cast<ISound>( resource );
         if( !source )
+        {
             return nullptr;
+        }
         // A clone is an independent transport, never createOrRetrieve(path).
         auto copy = workphone::dynamic_pointer_cast<ISound>( create( source->getFilePath() ) );
         if( copy )
@@ -408,7 +418,9 @@ namespace workphone
             copy->setVolume( source->getVolume() );
             copy->setLoop( source->getLoop() );
             if( auto concrete = workphone::dynamic_pointer_cast<Sound>( source ) )
+            {
                 copy->setPan( concrete->getPan() );
+            }
             f32 minimum = 0.0f, maximum = 0.0f;
             source->getMinMaxDistance( minimum, maximum );
             copy->setMinMaxDistance( minimum, maximum );

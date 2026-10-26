@@ -94,7 +94,7 @@ namespace workphone
             {
                 setLoadingState( LoadingState::Unloading );
 
-                auto stateObjects = std::move(m_stateContexts);
+                auto stateObjects = std::move( m_stateContexts );
                 for( auto &stateContext : stateObjects )
                 {
                     if( stateContext )
@@ -172,12 +172,12 @@ namespace workphone
         size_t sizeBefore;
         bool removed;
         {
-            ScopedLock inventoryLock(&m_stateContexts);
+            ScopedLock inventoryLock( &m_stateContexts );
             sizeBefore = m_stateContexts.size();
             // Array::erase(value) rebuilds its entire buffer. Retirement must
             // succeed with no admission headroom, so compact and erase the tail.
-            auto tail = std::remove(m_stateContexts.begin(), m_stateContexts.end(), stateContext);
-            m_stateContexts.erase(tail, m_stateContexts.end());
+            auto tail = std::remove( m_stateContexts.begin(), m_stateContexts.end(), stateContext );
+            m_stateContexts.erase( tail, m_stateContexts.end() );
             removed = m_stateContexts.size() != sizeBefore;
         }
         std::fprintf( stderr, "TRACE StateManager context list size %zu\n", sizeBefore );
@@ -240,7 +240,9 @@ namespace workphone
         try
         {
             if( !isLoaded() )
+            {
                 return;
+            }
 
             auto task = Thread::getCurrentTask();
             auto iTask = static_cast<u32>( task );

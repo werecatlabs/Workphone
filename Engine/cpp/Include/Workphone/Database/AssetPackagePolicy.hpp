@@ -10,12 +10,14 @@ namespace workphone
         EditorOnly,
         Excluded
     };
+
     struct AssetPackagePolicy
     {
         AssetDatabaseManager::EntrySnapshot entry;
         AssetPackageUsage usage = AssetPackageUsage::Runtime;
         bool explicitPolicy = false;
     };
+
     /** Read-only inspection; an absent project policy defaults to runtime.
      * Bundled media uses its existing explicit usage and fails on missing policy.
      * No schema, catalog entries or resources are constructed by inspection.

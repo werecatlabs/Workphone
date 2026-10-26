@@ -463,7 +463,9 @@ namespace workphone::core
         if( Thread::getCurrentTask() == TaskId::Application )
         {
             if( auto network = applicationManager->getNetworkManager() )
+            {
                 network->poll();
+            }
         }
 
         stateManager->preUpdate();
@@ -681,7 +683,9 @@ namespace workphone::core
                 SmartPtr<Properties> gameGraphics;
                 auto settingsPath = applicationManager->getProjectPath();
                 if( !settingsPath.empty() )
+                {
                     settingsPath += "/";
+                }
                 auto settingsText = Path::readAllText( settingsPath + "GameGraphics.settings" );
                 if( !settingsText.empty() )
                 {

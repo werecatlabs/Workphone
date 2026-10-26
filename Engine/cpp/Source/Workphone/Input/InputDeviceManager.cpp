@@ -570,13 +570,21 @@ namespace workphone
 
                         u32 pov = IJoystickState::POV_Centered;
                         if( buttons[10] )
+                        {
                             pov |= IJoystickState::POV_North;
+                        }
                         if( buttons[11] )
+                        {
                             pov |= IJoystickState::POV_South;
+                        }
                         if( buttons[12] )
+                        {
                             pov |= IJoystickState::POV_West;
+                        }
                         if( buttons[13] )
+                        {
                             pov |= IJoystickState::POV_East;
+                        }
 
                         updateJoystick( connectedJoystickCount, buttons,
                                         static_cast<u32>( std::size( buttonMasks ) ), axes, 6, pov,

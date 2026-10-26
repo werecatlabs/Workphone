@@ -43,13 +43,17 @@ namespace workphone::resource
                 auto native = path.native();
                 std::replace( native.begin(), native.end(), L'/', L'\\' );
                 if( native.rfind( L"\\\\?\\", 0 ) == 0 || native.rfind( L"\\\\.\\", 0 ) == 0 )
+                {
                     return std::filesystem::path( native );
+                }
                 // Extended Win32 paths do not process dot segments. Normalize
                 // those before adding the prefix to preserve ordinary path IO.
                 native = path.lexically_normal().native();
                 std::replace( native.begin(), native.end(), L'/', L'\\' );
                 if( native.rfind( L"\\\\", 0 ) == 0 )
+                {
                     return std::filesystem::path( L"\\\\?\\UNC\\" + native.substr( 2 ) );
+                }
                 return std::filesystem::path( L"\\\\?\\" + native );
             }
 #endif
@@ -87,7 +91,9 @@ namespace workphone::resource
                 unsigned char byte = 0;
                 stream.read( reinterpret_cast<char *>( &byte ), 1 );
                 if( !stream )
+                {
                     return false;
+                }
                 value |= static_cast<T>( byte ) << ( i * 8u );
             }
             return true;
@@ -96,7 +102,9 @@ namespace workphone::resource
         bool writeString( std::ostream &stream, const String &value )
         {
             if( value.size() > maxResourceIdBytes )
+            {
                 return false;
+            }
             return writeLittleEndian<u32>( stream, static_cast<u32>( value.size() ) ) &&
                    ( stream.write( value.data(), static_cast<std::streamsize>( value.size() ) ),
                      stream.good() );
@@ -106,14 +114,20 @@ namespace workphone::resource
         {
             u32 size = 0;
             if( !readLittleEndian( stream, size ) || size == 0 || size > maxResourceIdBytes )
+            {
                 return false;
+            }
             std::string buffer( size, '\0' );
             stream.read( &buffer[0], static_cast<std::streamsize>( size ) );
             if( !stream )
+            {
                 return false;
+            }
             value = buffer.c_str();
             if( value.size() != buffer.size() )
+            {
                 return false;  // Embedded NULs are never valid in an identifier.
+            }
             return true;
         }
 
@@ -136,14 +150,22 @@ namespace workphone::resource
             for( const auto &dependency : header.installDependencies )
             {
                 if( !writeString( stream, dependency.str() ) )
+                {
                     return false;
+                }
             }
             if( header.formatVersion >= 2 )
+            {
                 for( const auto &artifact : header.installArtifacts )
+                {
                     if( !writeString( stream, artifact.path ) ||
                         !writeLittleEndian<u64>( stream, artifact.sourceHash ) ||
                         !writeLittleEndian<u64>( stream, artifact.payloadHash ) )
+                    {
                         return false;
+                    }
+                }
+            }
             return stream.good();
         }
 
@@ -194,7 +216,9 @@ namespace workphone::resource
                 return false;
             }
             if( !header.resourceId.set( resourceId, &error ) )
+            {
                 return false;
+            }
             header.resourceType = header.resourceId.type();
             if( encodedType != header.resourceType.value() )
             {
@@ -299,12 +323,18 @@ namespace workphone::resource
         for( const auto &dependency : installDependencies )
         {
             if( !dependency.isValid() || !unique.insert( dependency.str() ).second )
+            {
                 return false;
+            }
         }
         for( const auto &artifact : installArtifacts )
+        {
             if( !validArtifactPath( artifact.path ) || artifact.sourceHash == 0 ||
                 artifact.payloadHash == 0 )
+            {
                 return false;
+            }
+        }
         return true;
     }
 
@@ -312,7 +342,8 @@ namespace workphone::resource
     {
         hash = 14695981039346656037ull;
         size = 0;
-        std::ifstream stream( fileSystemIOPath( std::filesystem::u8path( path.c_str() ) ), std::ios::binary );
+        std::ifstream stream( fileSystemIOPath( std::filesystem::u8path( path.c_str() ) ),
+                              std::ios::binary );
         if( !stream )
         {
             error = String( "Failed to open file for hashing: " ) + path;
@@ -353,7 +384,9 @@ namespace workphone::resource
             payloadHash != header.payloadHash || payloadSize != header.payloadSize )
         {
             if( error.empty() )
+            {
                 error = "Compiled payload changed before it could be packaged";
+            }
             return false;
         }
 
@@ -371,10 +404,13 @@ namespace workphone::resource
         }
 
         const String temporaryPathString = makeTemporaryPath( outputPath );
-        const auto temporaryPath = fileSystemIOPath( std::filesystem::u8path( temporaryPathString.c_str() ) );
+        const auto temporaryPath =
+            fileSystemIOPath( std::filesystem::u8path( temporaryPathString.c_str() ) );
+
         struct TemporaryFileGuard
         {
             std::filesystem::path path;
+
             ~TemporaryFileGuard()
             {
                 std::error_code ignored;
@@ -383,7 +419,8 @@ namespace workphone::resource
         } guard{ temporaryPath };
 
         std::ofstream output( temporaryPath, std::ios::binary | std::ios::trunc );
-        std::ifstream payload( fileSystemIOPath( std::filesystem::u8path( payloadPath.c_str() ) ), std::ios::binary );
+        std::ifstream payload( fileSystemIOPath( std::filesystem::u8path( payloadPath.c_str() ) ),
+                               std::ios::binary );
         if( !output || !payload || !writeHeader( output, header ) )
         {
             error = "Failed to create the compiled resource container";
@@ -401,7 +438,9 @@ namespace workphone::resource
         payload.close();
 
         if( !replaceFile( temporaryPath, destination, error ) )
+        {
             return false;
+        }
         guard.path.clear();
         return true;
     }
@@ -409,7 +448,8 @@ namespace workphone::resource
     bool CompiledResourceIO::readHeader( const String &path, CompiledResourceHeader &header,
                                          String &error )
     {
-        std::ifstream stream( fileSystemIOPath( std::filesystem::u8path( path.c_str() ) ), std::ios::binary );
+        std::ifstream stream( fileSystemIOPath( std::filesystem::u8path( path.c_str() ) ),
+                              std::ios::binary );
         if( !stream )
         {
             error = String( "Failed to open compiled resource: " ) + path;
@@ -432,11 +472,12 @@ namespace workphone::resource
 
         u64 payloadOffset = 0;
         if( !readHeaderFromStream( stream, header, payloadOffset, error ) )
+        {
             return false;
+        }
 
         std::error_code filesystemError;
-        const u64 fileSize =
-            std::filesystem::file_size( inputPath, filesystemError );
+        const u64 fileSize = std::filesystem::file_size( inputPath, filesystemError );
         if( filesystemError || fileSize != payloadOffset + header.payloadSize )
         {
             error = "Compiled resource payload size does not match the file";
@@ -483,7 +524,9 @@ namespace workphone::resource
 
         u64 payloadOffset = 0;
         if( !readHeaderFromStream( stream, resource.header, payloadOffset, error ) )
+        {
             return false;
+        }
         if( resource.header.payloadSize > maxPayloadBytes ||
             resource.header.payloadSize > static_cast<u64>( std::numeric_limits<size_t>::max() ) )
         {
@@ -492,8 +535,7 @@ namespace workphone::resource
         }
 
         std::error_code filesystemError;
-        const u64 fileSize =
-            std::filesystem::file_size( inputPath, filesystemError );
+        const u64 fileSize = std::filesystem::file_size( inputPath, filesystemError );
         if( filesystemError || fileSize != payloadOffset + resource.header.payloadSize )
         {
             error = "Compiled resource payload size does not match the file";

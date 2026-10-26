@@ -365,10 +365,12 @@ namespace workphone
         {
             return m_data;
         }
+
         const_pointer data() const noexcept
         {
             return m_data;
         }
+
         const_pointer c_str() const noexcept
         {
             return m_data;
@@ -388,46 +390,57 @@ namespace workphone
         {
             return m_data;
         }
+
         const_iterator begin() const noexcept
         {
             return m_data;
         }
+
         const_iterator cbegin() const noexcept
         {
             return m_data;
         }
+
         iterator end() noexcept
         {
             return m_data + m_size;
         }
+
         const_iterator end() const noexcept
         {
             return m_data + m_size;
         }
+
         const_iterator cend() const noexcept
         {
             return m_data + m_size;
         }
+
         reverse_iterator rbegin() noexcept
         {
             return reverse_iterator( end() );
         }
+
         const_reverse_iterator rbegin() const noexcept
         {
             return const_reverse_iterator( end() );
         }
+
         const_reverse_iterator crbegin() const noexcept
         {
             return const_reverse_iterator( end() );
         }
+
         reverse_iterator rend() noexcept
         {
             return reverse_iterator( begin() );
         }
+
         const_reverse_iterator rend() const noexcept
         {
             return const_reverse_iterator( begin() );
         }
+
         const_reverse_iterator crend() const noexcept
         {
             return const_reverse_iterator( begin() );
@@ -441,18 +454,22 @@ namespace workphone
         {
             return m_size == 0;
         }
+
         size_type size() const noexcept
         {
             return m_size;
         }
+
         size_type length() const noexcept
         {
             return m_size;
         }
+
         size_type capacity() const noexcept
         {
             return m_capacity;
         }
+
         size_type available() const noexcept
         {
             return m_capacity - m_size;
@@ -671,10 +688,12 @@ namespace workphone
         {
             return append( 1, ch );
         }
+
         StringBase &operator+=( const T *s )
         {
             return append( s );
         }
+
         StringBase &operator+=( const StringBase &str )
         {
             return append( str );
@@ -1232,9 +1251,13 @@ namespace workphone
                 }
             }
             if( m_size < str.m_size )
+            {
                 return -1;
+            }
             if( m_size > str.m_size )
+            {
                 return 1;
+            }
             return 0;
         }
 
@@ -1585,9 +1608,13 @@ namespace workphone
                 }
             }
             if( lhsCount < rhsCount )
+            {
                 return -1;
+            }
             if( lhsCount > rhsCount )
+            {
                 return 1;
+            }
             return 0;
         }
 

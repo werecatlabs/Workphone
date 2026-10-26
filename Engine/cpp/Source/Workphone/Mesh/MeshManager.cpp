@@ -41,10 +41,24 @@ namespace workphone
             {
                 auto app = core::IApplicationManager::instancePtr();
                 graphics = app ? app->getGraphicsSystem() : nullptr;
-                if( graphics ) graphics->lock();
-                else fallback.lock();
+                if( graphics )
+                {
+                    graphics->lock();
+                }
+                else
+                {
+                    fallback.lock();
+                }
             }
-            ~MeshCacheLock() { if( graphics ) graphics->unlock(); }
+
+            ~MeshCacheLock()
+            {
+                if( graphics )
+                {
+                    graphics->unlock();
+                }
+            }
+
             MeshCacheLock( const MeshCacheLock & ) = delete;
             MeshCacheLock &operator=( const MeshCacheLock & ) = delete;
 
@@ -61,7 +75,12 @@ namespace workphone
             MeshCacheLock lifecycleLock;
             ScopedLock cacheLock( &resources, false );
             for( const auto &resource : resources )
-                if( resource && matches( resource ) ) return resource;
+            {
+                if( resource && matches( resource ) )
+                {
+                    return resource;
+                }
+            }
             return nullptr;
         }
 
@@ -69,7 +88,10 @@ namespace workphone
         SmartPtr<IMeshResource> ensureCachedResourceLoaded( SmartPtr<IMeshResource> resource,
                                                             Initialize initialize )
         {
-            if( !resource || resource->isLoaded() ) return resource;
+            if( !resource || resource->isLoaded() )
+            {
+                return resource;
+            }
             // Retain the resource while waiting so unused-resource retirement
             // cannot discard it. Pause render before taking the lifecycle lock:
             // mesh loaders may themselves pause render while constructing data.
@@ -77,8 +99,13 @@ namespace workphone
             auto app = core::IApplicationManager::instancePtr();
             std::unique_ptr<TaskLock> pause;
             if( auto tasks = app ? app->getTaskManager() : nullptr )
-                if( auto renderTask = tasks->getTask( TaskId::Render ); renderTask && renderTask->isLoaded() )
+            {
+                if( auto renderTask = tasks->getTask( TaskId::Render );
+                    renderTask && renderTask->isLoaded() )
+                {
                     pause = std::make_unique<TaskLock>( renderTask );
+                }
+            }
             MeshCacheLock lifecycleLock;
             // Recovery inside MeshResource::load can reenter this manager with
             // the same in-flight identity. Keep that load instead of recursing.
@@ -153,18 +180,30 @@ namespace workphone
 
         String meshSourceKey( const String &path )
         {
-            if( path.empty() || path.rfind( "__procedural/", 0 ) == 0 ) return path;
+            if( path.empty() || path.rfind( "__procedural/", 0 ) == 0 )
+            {
+                return path;
+            }
             auto app = core::IApplicationManager::instancePtr();
             auto project = app ? app->getProjectPath() : String();
-            if( project.empty() ) project = Path::getWorkingDirectory();
+            if( project.empty() )
+            {
+                project = Path::getWorkingDirectory();
+            }
             auto source = std::filesystem::path( path.c_str() );
-            if( !source.is_absolute() ) source = std::filesystem::path( project.c_str() ) / source;
+            if( !source.is_absolute() )
+            {
+                source = std::filesystem::path( project.c_str() ) / source;
+            }
             // Canonicalize absolute and relative spellings alike. On Windows,
             // TEMP may use an 8.3 user directory while canonical relative paths
             // expand it; mixing canonical and lexical keys duplicates assets.
             std::error_code error;
             auto canonical = std::filesystem::weakly_canonical( source, error );
-            if( error ) canonical = std::filesystem::absolute( source ).lexically_normal();
+            if( error )
+            {
+                canonical = std::filesystem::absolute( source ).lexically_normal();
+            }
             auto key = String( canonical.generic_string().c_str() );
 #ifdef _WIN32
             key = StringUtil::make_lower( key );
@@ -277,14 +316,14 @@ namespace workphone
             MeshCacheLock lifecycleLock;
             setLoadingState( LoadingState::Unloading );
 
-            auto meshes = std::move(m_meshes);
+            auto meshes = std::move( m_meshes );
             for( const auto &mesh : meshes )
             {
                 mesh.get()->unload( nullptr );
             }
             m_meshes.releaseStorage();
 
-            auto resources = std::move(m_meshResources);
+            auto resources = std::move( m_meshResources );
             for( const auto &resource : resources )
             {
                 resource.get()->unload( nullptr );
@@ -337,20 +376,41 @@ namespace workphone
 
     bool MeshManager::releaseUnusedResource( const SmartPtr<IMeshResource> &resource )
     {
-        if( !resource ) return true;
+        if( !resource )
+        {
+            return true;
+        }
         // Loading and retirement share the same lock as graphics lifecycle work.
         MeshCacheLock lifecycleLock;
-        if( resource->getLoadingState() == LoadingState::Unloaded ) return true;
+        if( resource->getLoadingState() == LoadingState::Unloaded )
+        {
+            return true;
+        }
         if( !resource->isLoaded() || resource->getFilePath().empty() ||
-            resource->getFilePath().rfind( "__procedural/", 0 ) == 0 ) return false;
+            resource->getFilePath().rfind( "__procedural/", 0 ) == 0 )
+        {
+            return false;
+        }
 
         s32 resourceAliases = 0, meshAliases = 0;
         auto mesh = resource->getMesh();
         {
             ScopedLock resourceLock( &m_meshResources, true );
             ScopedLock meshLock( &m_meshes, true );
-            for( const auto &cached : m_meshResources ) if( cached == resource ) ++resourceAliases;
-            for( const auto &cached : m_meshes ) if( cached == mesh ) ++meshAliases;
+            for( const auto &cached : m_meshResources )
+            {
+                if( cached == resource )
+                {
+                    ++resourceAliases;
+                }
+            }
+            for( const auto &cached : m_meshes )
+            {
+                if( cached == mesh )
+                {
+                    ++meshAliases;
+                }
+            }
         }
         // The argument is borrowed: one reference belongs to the retiring caller.
         // Any component, queued load, database alias or gameplay owner is a pin.
@@ -358,10 +418,16 @@ namespace workphone
         // lookup. Conservatively pin them; internal retirement tickets retain
         // identity only and never add weak references.
         if( !resourceAliases || resource->getReferences() != resourceAliases + 1 ||
-            resource->getWeakReferences() != 0 ) return false;
+            resource->getWeakReferences() != 0 )
+        {
+            return false;
+        }
         // MeshResource::unload tears down geometry. Do not invalidate another
         // resource or a direct IMesh owner, even if this resource is disposable.
-        if( mesh && ( mesh->getReferences() != meshAliases + 2 || mesh->getWeakReferences() != 0 ) ) return false;
+        if( mesh && ( mesh->getReferences() != meshAliases + 2 || mesh->getWeakReferences() != 0 ) )
+        {
+            return false;
+        }
         resource.get()->unload( nullptr );
         if( resource->getLoadingState() == LoadingState::Unloaded && mesh )
         {
@@ -493,13 +559,16 @@ namespace workphone
             const auto matches = [&]( const auto &meshResource ) {
                 // Catalog loads use absolute paths, while imported prefabs retain
                 // project-relative cache paths. Their persistent identity is the same.
-                const auto sameIdentity = hasIdentity &&
-                                          meshResource->getHandle()->getUUID() == resourceId;
+                const auto sameIdentity =
+                    hasIdentity && meshResource->getHandle()->getUUID() == resourceId;
                 return sameIdentity || meshResource->getFileSystemId() == fileId ||
-                       ( !sourceKey.empty() && meshSourceKey( meshResource->getFilePath() ) == sourceKey );
+                       ( !sourceKey.empty() &&
+                         meshSourceKey( meshResource->getFilePath() ) == sourceKey );
             };
             if( auto cached = findCachedResource( m_meshResources, matches ) )
+            {
                 return Pair<SmartPtr<IResource>, bool>( cached, false );
+            }
 
             FileInfo fileInfo;
             fileSystem->findFileInfo( sFilePath, fileInfo );
@@ -539,7 +608,9 @@ namespace workphone
             // identity when publishing so concurrent misses still share one cache entry.
             MeshCacheLock lifecycleLock;
             if( auto cached = findCachedResource( m_meshResources, matches ) )
+            {
                 return Pair<SmartPtr<IResource>, bool>( cached, false );
+            }
             addMeshResource( meshResource );
             return Pair<SmartPtr<IResource>, bool>( meshResource, true );
         }
@@ -570,7 +641,9 @@ namespace workphone
                        ( !sourceKey.empty() && meshSourceKey( cached->getFilePath() ) == sourceKey );
             };
             if( auto cached = findCachedResource( m_meshResources, matches ) )
+            {
                 return Pair<SmartPtr<IResource>, bool>( cached, false );
+            }
 
             FileInfo fileInfo;
             if( !fileSystem->findFileInfo( sFilePath, fileInfo, false ) )
@@ -605,7 +678,9 @@ namespace workphone
 
             MeshCacheLock lifecycleLock;
             if( auto cached = findCachedResource( m_meshResources, matches ) )
+            {
                 return Pair<SmartPtr<IResource>, bool>( cached, false );
+            }
             addMeshResource( meshResource );
             return Pair<SmartPtr<IResource>, bool>( meshResource, true );
         }
@@ -666,14 +741,20 @@ namespace workphone
             if( auto resource = findCachedResource( m_meshResources, [&]( const auto &cached ) {
                     return cached->getFileSystemId() == fileId ||
                            meshSourceKey( cached->getFilePath() ) == sourceKey;
-                } ) ) return ensureCachedResourceLoaded( resource );
+                } ) )
+            {
+                return ensureCachedResourceLoaded( resource );
+            }
 
             FileInfo existingFileInfo;
             if( fileSystem->findFileInfo( sFilePath, existingFileInfo ) )
             {
                 if( auto resource = findCachedResource( m_meshResources, [&]( const auto &cached ) {
                         return cached->getFileSystemId() == existingFileInfo.fileId;
-                    } ) ) return ensureCachedResourceLoaded( resource );
+                    } ) )
+                {
+                    return ensureCachedResourceLoaded( resource );
+                }
             }
 
             auto fileExt = Path::getFileExtension( sFilePath );
@@ -714,12 +795,13 @@ namespace workphone
                         {
                             auto meshResource =
                                 workphone::static_pointer_cast<IMeshResource>( result.first );
-                            return ensureCachedResourceLoaded( meshResource, [&]( IMeshResource *resource ) {
-                                resource->setFileSystemId( fileId );
-                                resource->setSettingsFileSystemId( fileInfo.fileId );
-                                resource->setProperties( meshData );
-                                resource->setFilePath( sFilePath );
-                            } );
+                            return ensureCachedResourceLoaded(
+                                meshResource, [&]( IMeshResource *resource ) {
+                                    resource->setFileSystemId( fileId );
+                                    resource->setSettingsFileSystemId( fileInfo.fileId );
+                                    resource->setProperties( meshData );
+                                    resource->setFilePath( sFilePath );
+                                } );
                         }
                     }
                 }
@@ -785,16 +867,17 @@ namespace workphone
 
     SmartPtr<IResource> MeshManager::getByName( const String &name )
     {
-        return findCachedResource( m_meshResources, [&]( const auto &resource ) {
-            return resource->getName() == name;
-        } );
+        return findCachedResource( m_meshResources,
+                                   [&]( const auto &resource ) { return resource->getName() == name; } );
     }
 
     SmartPtr<IResource> MeshManager::getById( const String &uuid )
     {
         return findCachedResource( m_meshResources, [&]( const auto &resource ) {
             if( auto handle = resource->getHandle() )
+            {
                 return handle->getUUIDAsString() == uuid;
+            }
             return false;
         } );
     }

@@ -45,19 +45,25 @@ namespace workphone
     TimerMT::~TimerMT() = default;
 
 #ifdef _MSC_VER
-#pragma float_control(precise, on, push)
+#    pragma float_control( precise, on, push )
 #endif
     void TimerMT::excludeElapsed( f64 seconds )
     {
         if( !isLoaded() || !std::isfinite( seconds ) || seconds <= 0.0 ||
-            seconds > durationToSeconds( TimerClock::now() - m_startPoint ) ) return;
+            seconds > durationToSeconds( TimerClock::now() - m_startPoint ) )
+        {
+            return;
+        }
         const auto excluded = secondsToDuration( seconds );
         m_startPoint += excluded;
         m_currentPoint += excluded;
-        for( auto &point : m_fixedTimePoints ) point += excluded;
+        for( auto &point : m_fixedTimePoints )
+        {
+            point += excluded;
+        }
     }
 #ifdef _MSC_VER
-#pragma float_control(pop)
+#    pragma float_control( pop )
 #endif
 
     void TimerMT::load( SmartPtr<ISharedObject> data )

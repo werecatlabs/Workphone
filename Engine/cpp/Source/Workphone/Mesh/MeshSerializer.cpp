@@ -13,7 +13,8 @@ namespace workphone
     const unsigned short HEADER_CHUNK_ID = 0x1000;
 
     MeshSerializer::MeshSerializer() :
-        mVersionData( Allocator<MeshVersionData *>( sourceBudget ) ), mListener( nullptr )
+        mVersionData( Allocator<MeshVersionData *>( sourceBudget ) ),
+        mListener( nullptr )
     {
         // Init implementations
         // String identifiers have not always been 100% unified with OGRE version
@@ -24,7 +25,8 @@ namespace workphone
         mVersionData.reserve( staged.size() );
         size_t next = 0;
         auto add = [&]( MeshVersion version, const char *label, auto implementation ) {
-            auto descriptor = std::make_unique<MeshVersionData>( version, String( label ), implementation.get() );
+            auto descriptor =
+                std::make_unique<MeshVersionData>( version, String( label ), implementation.get() );
             implementation.release();
             mVersionData.push_back( descriptor.get() );
             staged[next++] = std::move( descriptor );
@@ -35,9 +37,14 @@ namespace workphone
         add( MESH_VERSION_1_7, "[MeshSerializer_v1.41]", std::make_unique<MeshSerializerImpl_v1_41>() );
         add( MESH_VERSION_1_4, "[MeshSerializer_v1.40]", std::make_unique<MeshSerializerImpl_v1_4>() );
         add( MESH_VERSION_1_0, "[MeshSerializer_v1.30]", std::make_unique<MeshSerializerImpl_v1_3>() );
-        add( MESH_VERSION_LEGACY, "[MeshSerializer_v1.20]", std::make_unique<MeshSerializerImpl_v1_2>() );
-        add( MESH_VERSION_LEGACY, "[MeshSerializer_v1.10]", std::make_unique<MeshSerializerImpl_v1_1>() );
-        for( auto &descriptor : staged ) descriptor.release();
+        add( MESH_VERSION_LEGACY, "[MeshSerializer_v1.20]",
+             std::make_unique<MeshSerializerImpl_v1_2>() );
+        add( MESH_VERSION_LEGACY, "[MeshSerializer_v1.10]",
+             std::make_unique<MeshSerializerImpl_v1_1>() );
+        for( auto &descriptor : staged )
+        {
+            descriptor.release();
+        }
     }
 
     MeshSerializer::~MeshSerializer()

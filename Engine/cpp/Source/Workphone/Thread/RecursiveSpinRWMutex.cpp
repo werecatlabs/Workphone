@@ -308,9 +308,13 @@ namespace workphone
         {
             const auto reads = writer_read_recursion;
             if( reads > 0 )
+            {
                 local_reader_recursion() = reads;
+            }
             else
+            {
                 clear_local_reader_recursion();
+            }
             writer_read_recursion = 0;
             writer_owner.store( std::thread::id{}, std::memory_order_relaxed );
             // Transfer outstanding writer-held reads before another writer

@@ -18,18 +18,19 @@ namespace workphone
         u32 maximumRunMilliseconds = 30 * 60 * 1000;
         u32 cancelGraceMilliseconds = 30 * 1000;
         String status = "queued", diagnostic;
-        std::atomic<bool> cancel{false};
-        std::atomic<bool> finished{false};
+        std::atomic<bool> cancel{ false };
+        std::atomic<bool> finished{ false };
         int exitCode = -1;
     };
 
     class WPCore_API ResourcePackageJob final : public Job
     {
     public:
-        explicit ResourcePackageJob(std::shared_ptr<ResourcePackageJobState> state);
+        explicit ResourcePackageJob( std::shared_ptr<ResourcePackageJobState> state );
         void execute() override;
         void stop() override;
+
     private:
         std::shared_ptr<ResourcePackageJobState> m_request;
     };
-}
+}  // namespace workphone

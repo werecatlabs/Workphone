@@ -192,13 +192,17 @@ namespace workphone::render
             std::sort( m_particles.begin(), m_particles.end(),
                        []( const SmartPtr<IParticle> &a, const SmartPtr<IParticle> &b ) -> bool {
                            if( !a || !b )
+                           {
                                return false;
+                           }
 
                            void *dataA = a->getData();
                            void *dataB = b->getData();
 
                            if( !dataA || !dataB )
+                           {
                                return false;
+                           }
 
                            // Compare distances - actual implementation depends on particle data structure
                            return false;  // Placeholder
@@ -212,13 +216,17 @@ namespace workphone::render
             std::sort( m_particles.begin(), m_particles.end(),
                        []( const SmartPtr<IParticle> &a, const SmartPtr<IParticle> &b ) -> bool {
                            if( !a || !b )
+                           {
                                return false;
+                           }
 
                            void *dataA = a->getData();
                            void *dataB = b->getData();
 
                            if( !dataA || !dataB )
+                           {
                                return false;
+                           }
 
                            // Compare ages - actual implementation depends on particle data structure
                            return false;  // Placeholder
@@ -385,7 +393,9 @@ namespace workphone::render
         for( const auto &emitter : m_emitters )
         {
             if( emitter && StringUtil::getHash( emitter->getName() ) == hash )
+            {
                 return emitter;
+            }
         }
         return nullptr;
     }
@@ -395,7 +405,9 @@ namespace workphone::render
         for( const auto &affector : m_affectors )
         {
             if( affector && StringUtil::getHash( affector->getName() ) == hash )
+            {
                 return affector;
+            }
         }
         return nullptr;
     }
@@ -405,7 +417,9 @@ namespace workphone::render
         for( const auto &renderer : m_renderers )
         {
             if( renderer && StringUtil::getHash( renderer->getName() ) == hash )
+            {
                 return renderer;
+            }
         }
         return nullptr;
     }
@@ -415,7 +429,9 @@ namespace workphone::render
         for( const auto &emitter : m_emitters )
         {
             if( emitter && emitter->getName() == name )
+            {
                 return emitter;
+            }
         }
         return nullptr;
     }
@@ -425,7 +441,9 @@ namespace workphone::render
         for( const auto &affector : m_affectors )
         {
             if( affector && affector->getName() == name )
+            {
                 return affector;
+            }
         }
         return nullptr;
     }
@@ -435,7 +453,9 @@ namespace workphone::render
         for( const auto &renderer : m_renderers )
         {
             if( renderer && renderer->getName() == name )
+            {
                 return renderer;
+            }
         }
         return nullptr;
     }

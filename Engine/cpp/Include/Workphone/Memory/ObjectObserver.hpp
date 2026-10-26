@@ -17,30 +17,36 @@ namespace workphone
     {
     public:
         ObjectObserver() = default;
+
         ObjectObserver( T *object )
         {
             assign( object );
         }
+
         template <class U>
         ObjectObserver( const SmartPtr<U> &object )
         {
             assign( object.get() );
         }
+
         ObjectObserver &operator=( T *object )
         {
             assign( object );
             return *this;
         }
+
         template <class U>
         ObjectObserver &operator=( const SmartPtr<U> &object )
         {
             assign( object.get() );
             return *this;
         }
+
         SmartPtr<T> lock() const
         {
             return m_lifetime.expired() ? nullptr : SmartPtr<T>( m_object );
         }
+
         bool expired() const
         {
             return m_lifetime.expired();
@@ -52,9 +58,10 @@ namespace workphone
             // Admit a new token before replacing either part of the observer.
             // Failure must not pair the old lifetime with a different pointer.
             auto lifetime = object ? observeObjectLifetime( object ) : std::weak_ptr<const void>();
-            m_lifetime = std::move(lifetime);
+            m_lifetime = std::move( lifetime );
             m_object = object;
         }
+
         T *m_object = nullptr;
         std::weak_ptr<const void> m_lifetime;
     };

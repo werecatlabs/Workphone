@@ -59,5 +59,5 @@ namespace workphone::scene
                                               String &error );
         static u64 keyFor( const String &text );
     };
-}
+}  // namespace workphone::scene
 #endif

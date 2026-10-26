@@ -84,11 +84,15 @@ namespace workphone::render
         if( snapshot == previous )
         {
             if( !snapshot )
+            {
                 setFoliageDiagnostics( FoliageDiagnostics{} );
+            }
             return true;
         }
         if( snapshot && !validateFoliageWorld( *snapshot, error ) )
+        {
             return false;
+        }
         std::atomic_store( &m_foliageSnapshot, snapshot );
         if( !snapshot )
         {
@@ -96,7 +100,9 @@ namespace workphone::render
             {
                 // A reentrant gate may have installed a newer request; retain it.
                 if( !std::atomic_load( &m_foliageSnapshot ) )
+                {
                     std::atomic_store( &m_foliageSnapshot, previous );
+                }
                 return false;
             }
             setFoliageDiagnostics( FoliageDiagnostics{} );
@@ -110,11 +116,13 @@ namespace workphone::render
         std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
         m_foliagePublicationGate = std::move( gate );
     }
+
     Terrain::ActiveFoliage Terrain::getActiveFoliage() const
     {
         std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
         return m_activeFoliage;
     }
+
     bool Terrain::publishFoliageSnapshot( FoliageSnapshot snapshot,
                                           const Transform3<real_Num> &placement,
                                           const std::function<void()> &commitRenderer, String &error )
@@ -141,9 +149,13 @@ namespace workphone::render
                 return;
             }
             if( committed )
+            {
                 return;
+            }
             if( commitRenderer )
+            {
                 commitRenderer();
+            }
             std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
             m_activeFoliage = { snapshot, placement };
             committed = true;
@@ -159,21 +171,28 @@ namespace workphone::render
             return false;
         }
         if( stale )
+        {
             error = "Foliage publication was superseded while preparing consumers.";
+        }
         else if( accepted && !committed )
+        {
             error = "Foliage publication gate did not commit the candidate.";
+        }
         return accepted && committed && !stale;
     }
+
     void Terrain::setFoliageDiagnostics( const FoliageDiagnostics &diagnostics )
     {
         std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
         m_foliageDiagnostics = diagnostics;
     }
+
     Terrain::FoliageDiagnostics Terrain::getFoliageDiagnostics() const
     {
         std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
         return m_foliageDiagnostics;
     }
+
     bool Terrain::setFoliageForcedLod( s32 level, String &error )
     {
         if( level < -1 || level > 2 )
@@ -186,11 +205,13 @@ namespace workphone::render
         error.clear();
         return true;
     }
+
     s32 Terrain::getFoliageForcedLod() const
     {
         std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
         return m_foliageForcedLod;
     }
+
     FoliageSnapshot Terrain::getFoliageSnapshot() const
     {
         std::lock_guard<std::recursive_mutex> publication( m_foliagePublicationMutex );
@@ -276,9 +297,13 @@ namespace workphone::render
                 return false;
             }
             if( commitDependents )
+            {
                 commitDependents();
+            }
             if( commitRenderer )
+            {
                 commitRenderer();
+            }
             std::atomic_store( &m_activeTerrainSnapshot, expected );
             m_activeTerrainWorldTransform = m_terrainWorldTransform;
             retiredMesh = m_cpuTerrainMesh;
@@ -293,7 +318,9 @@ namespace workphone::render
     bool Terrain::applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision )
     {
         if( !validateTerrainData( data, error ) )
+        {
             return false;
+        }
         try
         {
             auto candidate = std::make_shared<TerrainData>( data );
@@ -306,7 +333,9 @@ namespace workphone::render
                     return false;
                 }
                 if( !validateTerrainPlacement( *candidate, m_terrainWorldTransform, error ) )
+                {
                     return false;
+                }
                 if( current->dimensions == candidate->dimensions &&
                     current->spacing == candidate->spacing && current->origin == candidate->origin &&
                     current->heightScale == candidate->heightScale &&
@@ -314,7 +343,9 @@ namespace workphone::render
                     current->layerWeights == candidate->layerWeights &&
                     current->holes == candidate->holes && current->appearance == candidate->appearance &&
                     current->surfaceMasks == candidate->surfaceMasks )
+                {
                     return true;
+                }
                 if( current->revision == std::numeric_limits<u64>::max() )
                 {
                     error = "Terrain revision exhausted";
@@ -336,12 +367,14 @@ namespace workphone::render
             try
             {
                 if( auto context = getStateContext() )
+                {
                     if( auto state = context->invalidateStateDataById<TerrainStateData>( getId() ) )
                     {
                         state->heightMapSize = candidate->dimensions;
                         state->heightScale = candidate->heightScale;
                         state->heightData = candidate->heights;
                     }
+                }
             }
             catch( const std::exception &exception )
             {
@@ -370,7 +403,9 @@ namespace workphone::render
         if( !snapshot || !validateTerrainData( *snapshot, error ) )
         {
             if( !snapshot )
+            {
                 error = "Missing terrain snapshot.";
+            }
             return false;
         }
         {
@@ -381,7 +416,9 @@ namespace workphone::render
                 return false;
             }
             if( !validateTerrainPlacement( *snapshot, m_terrainWorldTransform, error ) )
+            {
                 return false;
+            }
             std::atomic_store( &m_terrainSnapshot, snapshot );
             m_heightMapSize = snapshot->dimensions;
             m_heightScale = snapshot->heightScale;
@@ -452,6 +489,7 @@ namespace workphone::render
 
         SharedGraphicsObject<IGraphicsTerrain>::unload( data );
     }
+
     void Terrain::_ensureStateData()
     {
         auto stateContext = getStateContext();
@@ -522,7 +560,9 @@ namespace workphone::render
             [&]() -> SmartPtr<ISharedObject> {
                 auto state = factoryManager->make_ptr<TransformStateData>();
                 if( state )
+                {
                     state->worldTransform = getWorldTransform();
+                }
                 return state;
             } );
 
@@ -533,8 +573,10 @@ namespace workphone::render
             [&]() -> SmartPtr<ISharedObject> {
                 auto state = factoryManager->make_ptr<GraphicsObjectData>();
                 if( state )
+                {
                     state->flags = BitUtil::setFlagValue( state->flags, IGraphicsObject::visibleFlag,
                                                           m_terrainVisible );
+                }
                 return state;
             } );
     }
@@ -556,7 +598,9 @@ namespace workphone::render
         {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             if( m_terrainWorldTransform == worldTransform )
+            {
                 return;
+            }
             if( !validateTerrainPlacement( *getTerrainSnapshot(), worldTransform, error ) )
             {
                 WP_LOG_WARNING( error );
@@ -564,11 +608,17 @@ namespace workphone::render
             }
             m_terrainWorldTransform = worldTransform;
             if( !m_deferredTerrainPublication )
+            {
                 m_activeTerrainWorldTransform = worldTransform;
+            }
         }
         if( auto context = getStateContext() )
+        {
             if( auto state = context->invalidateStateDataById<TransformStateData>( getId() ) )
+            {
                 state->worldTransform = worldTransform;
+            }
+        }
     }
 
     Vector3<real_Num> Terrain::getPosition() const
@@ -599,7 +649,9 @@ namespace workphone::render
         }
         f32 height = 0;
         if( snapshot )
+        {
             sampleTerrainHeight( *snapshot, transform, position, height );
+        }
         return height;
     }
 
@@ -618,13 +670,17 @@ namespace workphone::render
         std::lock_guard<std::mutex> lock( m_terrainDataMutex );
         const auto snapshot = getActiveTerrainSnapshot();
         if( !snapshot )
+        {
             return Vector3<real_Num>::zero();
+        }
         const auto &transform = m_activeTerrainWorldTransform;
         const auto local =
             ( transform.getOrientation().inverse() * ( worldSpace - transform.getPosition() ) ) /
             transform.getScale();
         if( !std::isfinite( local.x ) || !std::isfinite( local.y ) || !std::isfinite( local.z ) )
+        {
             return Vector3<real_Num>::zero();
+        }
         return { std::clamp( ( local.x - snapshot->origin.x ) / snapshot->spacing.x, real_Num( 0 ),
                              real_Num( snapshot->dimensions.x - 1 ) ),
                  local.y,
@@ -644,7 +700,9 @@ namespace workphone::render
         candidate.heights = heightData;
         String error;
         if( !applyTerrainData( candidate, error, snapshot->revision ) )
+        {
             WP_LOG_WARNING( error );
+        }
     }
 
     bool Terrain::isVisible() const
@@ -737,6 +795,7 @@ namespace workphone::render
             }
         }
     }
+
     SmartPtr<ITerrainBlendMap> Terrain::getBlendMap( u32 index )
     {
         // Grow the CPU-side blend map cache lazily. Renderer plugins with a native blend map
@@ -814,7 +873,9 @@ namespace workphone::render
     {
         const auto snapshot = getActiveTerrainSnapshot();
         if( !snapshot )
+        {
             return nullptr;
+        }
         // Mesh's existing synchronization is owned by the engine mesh manager.
         // Renderer-free callers can always use buildTerrainMeshData directly.
         auto application = core::IApplicationManager::instancePtr();
@@ -826,7 +887,9 @@ namespace workphone::render
         {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             if( m_cpuTerrainMesh && m_cpuTerrainMeshRevision == snapshot->revision )
+            {
                 return m_cpuTerrainMesh;
+            }
         }
         TerrainMeshData geometry;
         String error;
@@ -843,14 +906,22 @@ namespace workphone::render
             normals.reserve( geometry.normals.size() );
             uvs.reserve( geometry.uvs.size() );
             for( const auto &p : geometry.positions )
+            {
                 positions.push_back( { p.x, p.y, p.z } );
+            }
             for( const auto &n : geometry.normals )
+            {
                 normals.push_back( { n.x, n.y, n.z } );
+            }
             for( const auto &uv : geometry.uvs )
+            {
                 uvs.push_back( { uv.x, uv.y } );
+            }
             auto mesh = MeshUtil::createMesh( positions, normals, uvs, geometry.indices );
             if( mesh )
+            {
                 mesh->updateAABB();
+            }
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             if( getActiveTerrainSnapshot() == snapshot )
             {
@@ -877,7 +948,9 @@ namespace workphone::render
         }
         const auto previous = getTerrainSnapshot();
         if( previous->dimensions == dimensions )
+        {
             return;
+        }
         auto candidate = *previous;
         candidate.dimensions = dimensions;
         candidate.layerWeights.clear();
@@ -888,12 +961,18 @@ namespace workphone::render
                              -dimensions.y * candidate.spacing.y * 0.5f };
         candidate.heights.assign( size_t( dimensions.x ) * dimensions.y, 0.0f );
         for( s32 z = 0; z < std::min( dimensions.y, previous->dimensions.y ); ++z )
+        {
             for( s32 x = 0; x < std::min( dimensions.x, previous->dimensions.x ); ++x )
+            {
                 candidate.heights[size_t( z ) * dimensions.x + x] =
                     previous->heights[size_t( z ) * previous->dimensions.x + x];
+            }
+        }
         String error;
         if( !applyTerrainData( candidate, error, previous->revision ) )
+        {
             WP_LOG_WARNING( error );
+        }
     }
 
     Vector2I Terrain::getHeightMapSize() const
@@ -913,7 +992,9 @@ namespace workphone::render
         candidate.heightScale = heightScale;
         String error;
         if( !applyTerrainData( candidate, error, previous->revision ) )
+        {
             WP_LOG_WARNING( error );
+        }
     }
 
     SmartPtr<IGraphicsScene> Terrain::getSceneManager() const
@@ -1032,6 +1113,7 @@ namespace workphone::render
 
         return {};
     }
+
     SmartPtr<Properties> Terrain::getProperties() const
     {
         auto properties = SharedGraphicsObject<IGraphicsTerrain>::getProperties();
@@ -1135,11 +1217,15 @@ namespace workphone::render
                 }
             }
             if( candidate.dimensions != previous->dimensions )
+            {
                 candidate.origin = { -candidate.dimensions.x * candidate.spacing.x * 0.5f,
                                      -candidate.dimensions.y * candidate.spacing.y * 0.5f };
+            }
             String error;
             if( !applyTerrainData( candidate, error, previous->revision ) )
+            {
                 WP_LOG_WARNING( error );
+            }
             return true;
         }
 

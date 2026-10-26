@@ -146,11 +146,12 @@ namespace workphone
         private:
             // Standard engine strings charge physical slabs, including spare
             // blocks. Explicit custom upstream allocators retain their policy.
-            using StorageAllocator = std::conditional_t<
-                std::is_same_v<UpstreamAllocator, std::allocator<T>>,
-                SourceBudgetAllocator<T>, UpstreamAllocator>;
+            using StorageAllocator =
+                std::conditional_t<std::is_same_v<UpstreamAllocator, std::allocator<T>>,
+                                   SourceBudgetAllocator<T>, UpstreamAllocator>;
             using Traits = std::allocator_traits<StorageAllocator>;
-            template<class U> using MetadataAllocator = typename Traits::template rebind_alloc<U>;
+            template <class U>
+            using MetadataAllocator = typename Traits::template rebind_alloc<U>;
 
             struct Slab
             {
@@ -179,10 +180,22 @@ namespace workphone
                 // at cleanup; late returns remain safe and can still retire.
                 struct Lifetime
                 {
-                    union { Pool value; };
-                    Lifetime() : value() {}
-                    ~Lifetime() { value.m_retiring = true; value.releaseUnused(); }
+                    union
+                    {
+                        Pool value;
+                    };
+
+                    Lifetime() : value()
+                    {
+                    }
+
+                    ~Lifetime()
+                    {
+                        value.m_retiring = true;
+                        value.releaseUnused();
+                    }
                 };
+
                 static Lifetime lifetime;
                 return lifetime.value;
             }
@@ -312,9 +325,12 @@ namespace workphone
                 --bucket.liveBlocks;
                 if( m_retiring && bucket.liveBlocks == 0 )
                 {
-                    releaseBucket(bucket);
-                    m_buckets.erase(it);
-                    if( m_buckets.empty() ) decltype(m_buckets){}.swap(m_buckets);
+                    releaseBucket( bucket );
+                    m_buckets.erase( it );
+                    if( m_buckets.empty() )
+                    {
+                        decltype( m_buckets ){}.swap( m_buckets );
+                    }
                 }
             }
 
@@ -353,9 +369,15 @@ namespace workphone
                         releaseBucket( bucket );
                         it = m_buckets.erase( it );
                     }
-                    else ++it;
+                    else
+                    {
+                        ++it;
+                    }
                 }
-                if( m_buckets.empty() ) decltype(m_buckets){}.swap(m_buckets);
+                if( m_buckets.empty() )
+                {
+                    decltype( m_buckets ){}.swap( m_buckets );
+                }
             }
 
             void releaseAll() noexcept
@@ -394,21 +416,27 @@ namespace workphone
 
         private:
             using Buckets = std::vector<Bucket, MetadataAllocator<Bucket>>;
+
             typename Buckets::iterator findBucket( size_type count )
             {
-                auto it = std::lower_bound(m_buckets.begin(), m_buckets.end(), count,
-                    [](const Bucket &bucket, size_type value) { return bucket.blockCharacters < value; });
+                auto it = std::lower_bound( m_buckets.begin(), m_buckets.end(), count,
+                                            []( const Bucket &bucket, size_type value ) {
+                                                return bucket.blockCharacters < value;
+                                            } );
                 return it != m_buckets.end() && it->blockCharacters == count ? it : m_buckets.end();
             }
+
             Bucket &findOrCreateBucket( size_type count )
             {
-                auto it = std::lower_bound(m_buckets.begin(), m_buckets.end(), count,
-                    [](const Bucket &bucket, size_type value) { return bucket.blockCharacters < value; });
+                auto it = std::lower_bound( m_buckets.begin(), m_buckets.end(), count,
+                                            []( const Bucket &bucket, size_type value ) {
+                                                return bucket.blockCharacters < value;
+                                            } );
                 if( it == m_buckets.end() || it->blockCharacters != count )
                 {
                     Bucket candidate;
                     candidate.blockCharacters = count;
-                    it = m_buckets.insert(it, std::move(candidate));
+                    it = m_buckets.insert( it, std::move( candidate ) );
                 }
                 return *it;
             }
@@ -448,7 +476,10 @@ namespace workphone
 
                 // Reserve metadata before allocating the character slab. This makes
                 // deallocation non-allocating for all blocks in the slab.
-                if( blocks > maxCount() - bucket.totalBlocks ) throw std::bad_array_new_length();
+                if( blocks > maxCount() - bucket.totalBlocks )
+                {
+                    throw std::bad_array_new_length();
+                }
                 bucket.freeBlocks.reserve( bucket.totalBlocks + blocks );
                 bucket.slabs.reserve( bucket.slabs.size() + 1 );
 
@@ -486,8 +517,8 @@ namespace workphone
                     }
                 }
 
-                decltype(bucket.slabs){}.swap(bucket.slabs);
-                decltype(bucket.freeBlocks){}.swap(bucket.freeBlocks);
+                decltype( bucket.slabs ){}.swap( bucket.slabs );
+                decltype( bucket.freeBlocks ){}.swap( bucket.freeBlocks );
                 bucket.totalBlocks = 0;
                 bucket.liveBlocks = 0;
             }
@@ -508,7 +539,9 @@ namespace workphone
     {
         // C++11+ guarantees thread-safe initialization of local statics.
         if constexpr( std::is_same_v<UpstreamAllocator, std::allocator<T>> )
+        {
             return Pool::persistent();
+        }
         else
         {
             static Pool instance;

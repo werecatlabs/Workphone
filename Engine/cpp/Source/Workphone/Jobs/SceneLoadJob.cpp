@@ -38,14 +38,18 @@ namespace workphone
                 visit = [&]( SmartPtr<Properties> data, const auto &action ) {
                     action( data );
                     for( const auto &child : data->getChildren() )
+                    {
                         visit( child, action );
+                    }
                 };
             // Reserve every serialized identity so generated IDs cannot collide with later roots.
             std::unordered_set<String> reserved;
             visit( sceneData, [&]( const auto &data ) {
                 if( data->hasProperty( scene::GameActorUtil::uuidStr ) )
+                {
                     reserved.insert(
                         data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue() );
+                }
             } );
 
             for( const auto &root : sceneData->getChildrenByName( ApplicationUtil::actorsStr ) )
@@ -54,12 +58,18 @@ namespace workphone
                 std::unordered_set<String> local;
                 visit( root, [&]( const auto &data ) {
                     if( !data->hasProperty( scene::GameActorUtil::uuidStr ) )
+                    {
                         return;
+                    }
                     auto uuid = data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue();
                     if( uuid.empty() )
+                    {
                         return;
+                    }
                     if( !local.insert( uuid ).second )
+                    {
                         throw std::runtime_error( "Duplicate UUID inside scene actor tree: " + uuid );
+                    }
                     if( !seen.insert( uuid ).second )
                     {
                         String replacement;
@@ -71,7 +81,9 @@ namespace workphone
                     }
                 } );
                 if( replacements.empty() )
+                {
                     continue;
+                }
                 visit( root, [&]( auto data ) {
                     for( auto property : data->getPropertiesAsArray() )
                     {
@@ -121,7 +133,9 @@ namespace workphone
     void SceneLoadJob::prepare()
     {
         if( m_prepared )
+        {
             return;
+        }
 
         m_prepared = true;
 
@@ -137,7 +151,9 @@ namespace workphone
                     ? StringUtil::cleanupPath( path )
                     : Path::lexically_normal( projectPath, StringUtil::cleanupPath( path ) );
             if( path.empty() && !inlineData.empty() )
+            {
                 m_preparedPath = String();
+            }
             m_preparedLabel = Path::getFileNameWithoutExtension( path );
             auto extension = Path::getFileExtension( m_preparedPath );
             if( inlineData.empty() && extension.empty() )
@@ -161,9 +177,13 @@ namespace workphone
                 auto files = app->getFileSystemPtr();
                 stream = files->open( m_preparedPath, true, binary, false, false, false );
                 if( !stream )
+                {
                     stream = files->open( m_preparedPath, true, binary, false, true, true );
+                }
                 if( !stream )
+                {
                     throw std::runtime_error( "Failed to open scene: " + m_preparedPath );
+                }
             }
             auto data = factory->make_ptr<Properties>();
             if( binary && inlineData.empty() )
@@ -175,12 +195,16 @@ namespace workphone
                 {
                     auto count = stream->read( bytes.data() + total, size - total );
                     if( count == 0 )
+                    {
                         break;
+                    }
                     total += count;
                 }
                 String error;
                 if( total != size || !PropertiesBinarySerializer::deserialize( bytes, *data, &error ) )
+                {
                     throw std::runtime_error( "Invalid binary scene: " + error );
+                }
             }
             else
             {
@@ -188,7 +212,9 @@ namespace workphone
                 if( format == DataFormat::JSON )
                 {
                     if( !DataUtil::isValidData( text, format ) )
+                    {
                         throw std::runtime_error( "Invalid JSON scene" );
+                    }
                 }
                 else if( format == DataFormat::XML )
                 {
@@ -197,14 +223,20 @@ namespace workphone
                     auto root = document.RootElement();
                     if( document.Error() || !root || String( root->Value() ) != XmlUtil::ROOT_ELEMENT ||
                         !root->FirstChildElement( XmlUtil::PROPERTIES_ELEMENT.c_str() ) )
+                    {
                         throw std::runtime_error( "Invalid XML scene" );
+                    }
                 }
                 else
+                {
                     throw std::runtime_error( "Unsupported scene format" );
+                }
                 DataUtil::parse( text, data.get(), format );
             }
             if( inlineData.empty() )
+            {
                 repairCopiedRootIdentities( data );
+            }
             m_preparedData = data;
         }
         catch( const std::exception &e )
@@ -221,7 +253,9 @@ namespace workphone
     {
         auto target = getScene();
         if( !target )
+        {
             return;
+        }
 
         // Preparation is safe off-thread; direct synchronous execution also uses it.
         prepare();
@@ -229,10 +263,12 @@ namespace workphone
         struct TaskScope
         {
             TaskId previous = Thread::getCurrentTask();
+
             TaskScope()
             {
                 Thread::setCurrentTask( TaskId::None );
             }
+
             ~TaskScope()
             {
                 Thread::setCurrentTask( previous );
@@ -242,7 +278,9 @@ namespace workphone
         auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( target );
         auto current = [&] { return !concrete || concrete->getLoadGeneration() == m_loadGeneration; };
         if( !current() || !target->isLoaded() )
+        {
             return;
+        }
         auto app = core::IApplicationManager::instancePtr();
         auto manager = app->getGameManager();
 
@@ -251,15 +289,21 @@ namespace workphone
             for( const auto &actor : actors )
             {
                 if( actor && actor->getLoadingState() != LoadingState::Unloaded )
+                {
                     manager->destroyActor( actor );
+                }
             }
             if( current() )
+            {
                 target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Failed );
+            }
         };
         try
         {
             if( !m_prepareError.empty() )
+            {
                 throw std::runtime_error( m_prepareError );
+            }
             target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loading );
             auto cameraManager = app->getCameraManager();
             auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
@@ -281,15 +325,19 @@ namespace workphone
                 if( scene::GameActorUtil::isEditorCameraData( editorCamera, data ) )
                 {
                     if( !editorData )
+                    {
                         editorData = data;
+                    }
                 }
                 else
                 {
                     String uuid;
                     if( data )
+                    {
                         data->getPropertyValue( scene::GameActorUtil::uuidStr, uuid );
-                    if( !uuid.empty() && retainedRootIds.count(
-                            StringUtil::toString( StringUtil::parseUUID( uuid ) ) ) != 0 )
+                    }
+                    if( !uuid.empty() && retainedRootIds.count( StringUtil::toString(
+                                             StringUtil::parseUUID( uuid ) ) ) != 0 )
                     {
                         // Runtime perpetual roots win over their serialized copies.
                         // The graph loader indexes them and their descendants so new
@@ -303,26 +351,38 @@ namespace workphone
             for( const auto &actor : actors )
             {
                 if( !current() )
+                {
                     throw std::runtime_error( "Scene load superseded during commit" );
+                }
                 target->addActor( actor );
             }
             if( !current() )
+            {
                 throw std::runtime_error( "Scene load superseded during commit" );
+            }
             auto lighting = getLightingDirector();
             m_preparedData->getPropertyAsType( ApplicationUtil::lightingStr, lighting );
             target->setLightingDirector( lighting );
             if( editorCamera && editorData &&
                 ( editorCamera->getScene() == target || manager->getCurrentScene() == target ) )
+            {
                 scene::GameActorUtil::restoreEditorCameraData( editorCamera, editorData );
+            }
             if( !m_preparedPath.empty() )
+            {
                 target->setFilePath( m_preparedPath );
+            }
             if( !m_preparedLabel.empty() )
+            {
                 target->setLabel( m_preparedLabel );
+            }
             auto timer = app->getTimerPtr();
             timer->setSceneLoadTime( timer->now() );
             target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
             if( !current() )
+            {
                 return;
+            }
 
             app->triggerEvent( EventType::Loading, scene::IGameManager::sceneLoadedHash,
                                Array<Parameter>(), target, target, nullptr, false,

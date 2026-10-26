@@ -13,6 +13,7 @@ namespace workphone::render
     const hash_type IGraphicsSystem::FRAME_EVENT_POST_RENDER = StringUtil::getHash( "post_render" );
 
     IGraphicsSystem::~IGraphicsSystem() = default;
+
     void IGraphicsSystem::setRendererType( RenderApi )
     {
     }

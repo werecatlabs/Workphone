@@ -105,7 +105,9 @@ namespace workphone::animation
     AnimationEventTrack::AnimationEventTrack( const String &trackName,
                                               const Array<AnimationEvent> &trackEvents,
                                               bool trackEnabled ) :
-        name( trackName ), events( makeSourceBudgetSnapshot( trackEvents ) ), enabled( trackEnabled )
+        name( trackName ),
+        events( makeSourceBudgetSnapshot( trackEvents ) ),
+        enabled( trackEnabled )
     {
     }
 
@@ -223,13 +225,17 @@ namespace workphone::animation
         for( const auto &candidate : track->events )
         {
             if( candidate.startTime < event.startTime )
+            {
                 ++resultIndex;
+            }
             else if( candidate.startTime == event.startTime && !matched )
             {
                 matched = candidate.id == event.id && candidate.duration == event.duration &&
                           candidate.payload == event.payload;
                 if( !matched )
+                {
                     ++resultIndex;
+                }
             }
         }
 
@@ -359,20 +365,21 @@ namespace workphone::animation
             }
         }
 
-        std::sort( pending.begin(), pending.end(),
-                          []( const PendingSample &a, const PendingSample &b ) {
-                              if( a.distance != b.distance )
-                              {
-                                  return a.distance < b.distance;
-                              }
-                              if( a.sample.trackIndex != b.sample.trackIndex )
-                              {
-                                  return a.sample.trackIndex < b.sample.trackIndex;
-                              }
-                              if( a.sample.eventIndex != b.sample.eventIndex )
-                                  return a.sample.eventIndex < b.sample.eventIndex;
-                              return a.order < b.order;
-                          } );
+        std::sort( pending.begin(), pending.end(), []( const PendingSample &a, const PendingSample &b ) {
+            if( a.distance != b.distance )
+            {
+                return a.distance < b.distance;
+            }
+            if( a.sample.trackIndex != b.sample.trackIndex )
+            {
+                return a.sample.trackIndex < b.sample.trackIndex;
+            }
+            if( a.sample.eventIndex != b.sample.eventIndex )
+            {
+                return a.sample.eventIndex < b.sample.eventIndex;
+            }
+            return a.order < b.order;
+        } );
 
         auto result = makeSourceBudgetSnapshot<SampledAnimationEvent>();
         result.reserve( pending.size() );
@@ -430,16 +437,22 @@ namespace workphone::animation
         auto order = makeSourceBudgetSnapshot<size_t>();
         order.reserve( markers.size() );
         for( size_t i = 0; i < markers.size(); ++i )
+        {
             order.push_back( i );
+        }
         std::sort( order.begin(), order.end(), [&markers]( size_t a, size_t b ) {
             if( markers[a].startTime != markers[b].startTime )
+            {
                 return markers[a].startTime < markers[b].startTime;
+            }
             return a < b;
         } );
         for( size_t i = 0; i < order.size(); ++i )
         {
             if( order[i] == i )
+            {
                 continue;
+            }
             auto saved = std::move( markers[i] );
             auto position = i;
             while( order[position] != i )

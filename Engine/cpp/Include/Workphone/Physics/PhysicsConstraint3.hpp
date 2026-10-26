@@ -313,9 +313,13 @@ namespace workphone
                 if( auto state = stateContext->template invalidateStateData<ConstraintStateData>() )
                 {
                     if( value )
+                    {
                         state->flags |= (u32)flag;
+                    }
                     else
+                    {
                         state->flags &= ~(u32)flag;
+                    }
                 }
             }
         }

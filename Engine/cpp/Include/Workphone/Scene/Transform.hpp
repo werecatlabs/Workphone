@@ -37,7 +37,11 @@ namespace workphone
         class WPCore_API Transform : public ITransform
         {
         public:
-            TransformSystem::Handle storageHandle() const { return m_handle; }
+            TransformSystem::Handle storageHandle() const
+            {
+                return m_handle;
+            }
+
             /**
              * @brief Hash identifier for the position property name ("TransformationPosition").
              *

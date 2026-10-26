@@ -16,6 +16,7 @@
 namespace workphone
 {
     class MaterialPassStateData;
+
     namespace render
     {
 
@@ -79,8 +80,8 @@ namespace workphone
         class WPCore_API Material : public ResourceGraphics<IMaterial>, public SourceBudgetObject
         {
         public:
-        using SourceBudgetObject::operator new;
-        using SourceBudgetObject::operator delete;
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             static const String materialTypeStr;
             static const String materialTypeDataStr;
             /** Property name used to persist the bound data-driven shader id. */
@@ -1311,7 +1312,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            friend class MaterialPass; // Seed newly loaded passes from typed pre-load values.
+            friend class MaterialPass;  // Seed newly loaded passes from typed pre-load values.
             friend class MaterialShaderParametersInstance;
             // Active material-wide surface edits share the shader-authored owner.
             // Direct pass setters remain explicit local overrides.
@@ -1370,12 +1371,14 @@ namespace workphone
                 f32 roughness = 0.0f;
                 u8 mask = 0;
             };
+
             // Stage replacement handoff before mutating a parameter instance.
             // A null result leaves the existing optional fallback untouched.
             SourceBudgetUnique<LegacySurfaceData> prepareShaderSurfaceHandoff(
                 const MaterialShaderParameterLayout::Ptr &nextLayout ) const;
             SourceBudgetUnique<LegacySurfaceData> prepareShaderSurfaceHandoff(
-                const MaterialShaderParameterLayout::Ptr &nextLayout, bool nextActive, bool nextPbr ) const;
+                const MaterialShaderParameterLayout::Ptr &nextLayout, bool nextActive,
+                bool nextPbr ) const;
             void commitShaderSurfaceHandoff( SourceBudgetUnique<LegacySurfaceData> values ) noexcept;
             SourceBudgetUnique<LegacySurfaceData> m_legacySurface;
 
@@ -1385,7 +1388,13 @@ namespace workphone
             /** Static counter for generating unique material names */
             static u32 m_idExt;
 
-            enum class ShaderWorkflow : u8 { Legacy, Pbr, Unlit, ColorOnly };
+            enum class ShaderWorkflow : u8
+            {
+                Legacy,
+                Pbr,
+                Unlit,
+                ColorOnly
+            };
             ShaderWorkflow m_shaderWorkflow = ShaderWorkflow::Legacy;
 
             /** Self-owned, data-driven parameter storage. See MaterialShaderParameters.hpp. */
@@ -1396,6 +1405,7 @@ namespace workphone
                 u64 graphRevision = 0;
                 SmartPtr<IState> state;
             };
+
             std::atomic<u64> m_graphRevision{ 1 };
             mutable std::shared_ptr<const PrimaryPassSelection> m_primaryPassSelection;
 
@@ -1415,7 +1425,12 @@ namespace workphone
 
             // Sparse schema-order adapter bindings. Names/paths stay in authoring
             // storage; repeated applies visit only resolved numeric references.
-            struct ShaderTextureBinding { u32 layer; u32 reference; };
+            struct ShaderTextureBinding
+            {
+                u32 layer;
+                u32 reference;
+            };
+
             struct ShaderAuthoringData
             {
                 SourceBudgetString shaderID;
@@ -1424,6 +1439,7 @@ namespace workphone
                 SourceBudgetArray<ShaderTextureBinding> textureBindings;
                 u64 bindingLayoutId = 0;
             };
+
             // Legacy materials and parameter-only instances pay only one pointer.
             // Keep this allocation across shader clears: unresolved references
             // must survive a later shader/schema selection.

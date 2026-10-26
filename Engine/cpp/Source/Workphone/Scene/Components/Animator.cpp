@@ -68,15 +68,20 @@ namespace workphone::scene
         Array<String> getPlaybackStateNames()
         {
             auto names = makeSourceBudgetSnapshot<String>();
-            names.reserve(3);
-            names.push_back("Stopped"); names.push_back("Playing"); names.push_back("Paused");
+            names.reserve( 3 );
+            names.push_back( "Stopped" );
+            names.push_back( "Playing" );
+            names.push_back( "Paused" );
             return names;
         }
 
         Array<SmartPtr<IGameActor>> animationActors( SmartPtr<IGameActor> root )
         {
             auto result = makeSourceBudgetSnapshot<SmartPtr<IGameActor>>();
-            if( root ) result.push_back( root );
+            if( root )
+            {
+                result.push_back( root );
+            }
             for( size_t i = 0; i < result.size(); ++i )
             {
                 auto children = result[i]->getChildren();
@@ -88,19 +93,29 @@ namespace workphone::scene
         String legacyAnimationCache( const Array<SmartPtr<IGameActor>> &actors )
         {
             for( const auto &actor : actors )
+            {
                 if( auto mesh = actor->getComponent<Mesh>() )
                 {
                     const auto path = mesh->getMeshPath();
                     auto name = Path::getFileNameWithoutExtension( path );
-                    if( name.size() < 37 ) continue;
+                    if( name.size() < 37 )
+                    {
+                        continue;
+                    }
                     for( const auto *extension : { ".glb.", ".gltf.", ".fbx.", ".dae.", ".blend." } )
                     {
                         const auto separator = StringUtil::make_lower( name ).find( extension );
-                        if( separator == String::npos ) continue;
-                        return Path::lexically_normal( Path::getFilePath(path),
-                            name.substr(0,separator) + "_" + name.substr(name.size()-36) + ".skeleton.xml" );
+                        if( separator == String::npos )
+                        {
+                            continue;
+                        }
+                        return Path::lexically_normal( Path::getFilePath( path ),
+                                                       name.substr( 0, separator ) + "_" +
+                                                           name.substr( name.size() - 36 ) +
+                                                           ".skeleton.xml" );
                     }
                 }
+            }
             return {};
         }
 
@@ -231,8 +246,13 @@ namespace workphone::scene
     {
         // Loading-state changes commit before optional notification admission.
         // A refused notification must not strand this generation's IK owners.
-        try { setLoadingState( LoadingState::Unloading ); }
-        catch( const std::bad_alloc & ) {}
+        try
+        {
+            setLoadingState( LoadingState::Unloading );
+        }
+        catch( const std::bad_alloc & )
+        {
+        }
 
         animation::AnimationIKSystem retiredIK;
         std::swap( retiredIK, m_ikSystem );
@@ -261,8 +281,13 @@ namespace workphone::scene
         }
 
         Component::unload( data );
-        try { setLoadingState( LoadingState::Unloaded ); }
-        catch( const std::bad_alloc & ) {}
+        try
+        {
+            setLoadingState( LoadingState::Unloaded );
+        }
+        catch( const std::bad_alloc & )
+        {
+        }
     }
 
     void Animator::update()
@@ -691,11 +716,21 @@ namespace workphone::scene
     void Animator::setAnimationClips( const Array<SmartPtr<Animation>> &animationClips )
     {
         auto candidate = makeSourceBudgetSnapshot( animationClips );
-        const auto index=m_selectedAnimationIndex, state=m_state;
-        const auto time=m_animationTime;
+        const auto index = m_selectedAnimationIndex, state = m_state;
+        const auto time = m_animationTime;
         m_animationClips.swap( candidate );
-        try { setSelectedAnimationIndex( index ); }
-        catch(...) { m_animationClips.swap(candidate); m_selectedAnimationIndex=index; m_state=state; m_animationTime=time; throw; }
+        try
+        {
+            setSelectedAnimationIndex( index );
+        }
+        catch( ... )
+        {
+            m_animationClips.swap( candidate );
+            m_selectedAnimationIndex = index;
+            m_state = state;
+            m_animationTime = time;
+            throw;
+        }
     }
 
     u32 Animator::getNumAnimationClips() const
@@ -728,44 +763,69 @@ namespace workphone::scene
     void Animator::setAnimations( const Array<SmartPtr<IAnimation>> &animations )
     {
         auto candidate = makeSourceBudgetSnapshot( animations );
-        const auto index=m_selectedAnimationIndex, state=m_state;
-        const auto time=m_animationTime;
+        const auto index = m_selectedAnimationIndex, state = m_state;
+        const auto time = m_animationTime;
         m_animations.swap( candidate );
-        try { setSelectedAnimationIndex( index ); }
-        catch(...) { m_animations.swap(candidate); m_selectedAnimationIndex=index; m_state=state; m_animationTime=time; throw; }
+        try
+        {
+            setSelectedAnimationIndex( index );
+        }
+        catch( ... )
+        {
+            m_animations.swap( candidate );
+            m_selectedAnimationIndex = index;
+            m_state = state;
+            m_animationTime = time;
+            throw;
+        }
     }
 
     void Animator::setAnimationCachePath( const String &path )
     {
-        auto app=core::IApplicationManager::instance();
-        const auto project=app ? app->getProjectPath() : String();
-        auto relative=project.empty() ? path : Path::getRelativePath(project,path);
-        m_animationCachePath=(!relative.empty() && !Path::isPathAbsolute(relative) && relative.rfind("..",0)!=0) ? relative : path;
+        auto app = core::IApplicationManager::instance();
+        const auto project = app ? app->getProjectPath() : String();
+        auto relative = project.empty() ? path : Path::getRelativePath( project, path );
+        m_animationCachePath =
+            ( !relative.empty() && !Path::isPathAbsolute( relative ) && relative.rfind( "..", 0 ) != 0 )
+                ? relative
+                : path;
     }
-    String Animator::getAnimationCachePath() const { return m_animationCachePath; }
-    String Animator::getPlaybackStatus() const { return m_playbackStatus; }
+
+    String Animator::getAnimationCachePath() const
+    {
+        return m_animationCachePath;
+    }
+
+    String Animator::getPlaybackStatus() const
+    {
+        return m_playbackStatus;
+    }
 
     bool Animator::restoreRuntimeAnimations()
     {
         auto actors = animationActors( getActor() );
-        auto cacheKey = m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
+        auto cacheKey =
+            m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
         auto app = core::IApplicationManager::instance();
         const auto project = app ? app->getProjectPath() : String();
-        auto cache = Path::getAbsolutePath( project.empty() ? Path::getWorkingDirectory() : project, cacheKey );
-        if(!Path::isExistingFile(cache) && cache.size()>=13 && cache.substr(cache.size()-13)==".skeleton.xml")
+        auto cache =
+            Path::getAbsolutePath( project.empty() ? Path::getWorkingDirectory() : project, cacheKey );
+        if( !Path::isExistingFile( cache ) && cache.size() >= 13 &&
+            cache.substr( cache.size() - 13 ) == ".skeleton.xml" )
         {
-            cache=cache.substr(0,cache.size()-13)+".sceneanim.xml";
-            cacheKey=cacheKey.substr(0,cacheKey.size()-13)+".sceneanim.xml";
+            cache = cache.substr( 0, cache.size() - 13 ) + ".sceneanim.xml";
+            cacheKey = cacheKey.substr( 0, cacheKey.size() - 13 ) + ".sceneanim.xml";
         }
-        if( cache.empty() || !Path::isExistingFile(cache) )
+        if( cache.empty() || !Path::isExistingFile( cache ) )
         {
-            m_playbackStatus = "No playable runtime clips. Reimport the animated model to create its animation cache.";
+            m_playbackStatus =
+                "No playable runtime clips. Reimport the animated model to create its animation cache.";
             return false;
         }
         const auto epoch = sourceBudgetDenialCount();
         auto clips = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
         SmartPtr<MeshSkeleton> rig;
-        if( cache.find(".skeleton.xml") != String::npos )
+        if( cache.find( ".skeleton.xml" ) != String::npos )
         {
             rig = make_ptr<MeshSkeleton>();
             XMLSkeletonSerializer{}.importSkeleton( cache, rig.get() );
@@ -773,91 +833,162 @@ namespace workphone::scene
             // instance's retained node tree without sharing another instance's rig.
             for( const auto &actor : actors )
             {
-                auto child = dynamic_pointer_cast<Bone>(rig->getBone(actor->getName()));
-                if( !child ) continue;
+                auto child = dynamic_pointer_cast<Bone>( rig->getBone( actor->getName() ) );
+                if( !child )
+                {
+                    continue;
+                }
                 for( auto parent = actor->getParent(); parent; parent = parent->getParent() )
                 {
-                    if( auto bone = dynamic_pointer_cast<Bone>(rig->getBone(parent->getName())) )
-                    { bone->addChild(child); break; }
+                    if( auto bone = dynamic_pointer_cast<Bone>( rig->getBone( parent->getName() ) ) )
+                    {
+                        bone->addChild( child );
+                        break;
+                    }
                 }
             }
             clips = makeSourceBudgetSnapshot( rig->getAnimations() );
         }
         else
         {
-            std::ifstream file(cache.c_str(), std::ios::binary | std::ios::ate);
-            const auto size = file ? static_cast<size_t>(file.tellg()) : 0;
-            if( !size || size > (64u << 20) ) throw std::runtime_error("Invalid scene animation cache size");
-            auto bytes = makeSourceBudgetSnapshot<char>(); bytes.resize(size + 1, 0);
-            file.seekg(0); file.read(bytes.data(), size);
-            if( !file ) throw std::runtime_error("Incomplete scene animation cache");
-            TiXmlDocument document; document.Parse(bytes.data());
-            auto root = document.RootElement();
-            if( document.Error() || !root || String(root->Value()) != "sceneAnimations" )
-                throw std::runtime_error("Invalid scene animation cache");
-            auto number = [](const TiXmlElement *node, const char *name, double fallback)
+            std::ifstream file( cache.c_str(), std::ios::binary | std::ios::ate );
+            const auto size = file ? static_cast<size_t>( file.tellg() ) : 0;
+            if( !size || size > ( 64u << 20 ) )
             {
+                throw std::runtime_error( "Invalid scene animation cache size" );
+            }
+            auto bytes = makeSourceBudgetSnapshot<char>();
+            bytes.resize( size + 1, 0 );
+            file.seekg( 0 );
+            file.read( bytes.data(), size );
+            if( !file )
+            {
+                throw std::runtime_error( "Incomplete scene animation cache" );
+            }
+            TiXmlDocument document;
+            document.Parse( bytes.data() );
+            auto root = document.RootElement();
+            if( document.Error() || !root || String( root->Value() ) != "sceneAnimations" )
+            {
+                throw std::runtime_error( "Invalid scene animation cache" );
+            }
+            auto number = []( const TiXmlElement *node, const char *name, double fallback ) {
                 double value = fallback;
-                if(node && node->Attribute(name) && node->QueryDoubleAttribute(name,&value) != TIXML_SUCCESS)
-                    throw std::runtime_error("Invalid animation cache number");
-                if(!std::isfinite(value)) throw std::runtime_error("Nonfinite animation cache number");
+                if( node && node->Attribute( name ) &&
+                    node->QueryDoubleAttribute( name, &value ) != TIXML_SUCCESS )
+                {
+                    throw std::runtime_error( "Invalid animation cache number" );
+                }
+                if( !std::isfinite( value ) )
+                {
+                    throw std::runtime_error( "Nonfinite animation cache number" );
+                }
                 return value;
             };
-            for( auto item = root->FirstChildElement("animation"); item; item = item->NextSiblingElement("animation") )
+            for( auto item = root->FirstChildElement( "animation" ); item;
+                 item = item->NextSiblingElement( "animation" ) )
             {
                 auto clip = make_ptr<workphone::Animation>();
-                clip->setName(item->Attribute("name") ? item->Attribute("name") : "Animation");
-                clip->setLength(static_cast<f32>(number(item,"length",0)));
-                if(clip->getLength() <= 0) throw std::runtime_error("Invalid animation cache duration");
-                auto tracks = item->FirstChildElement("tracks");
-                u16 handle = 0;
-                for(auto node = tracks ? tracks->FirstChildElement("track") : nullptr; node; node = node->NextSiblingElement("track"))
+                clip->setName( item->Attribute( "name" ) ? item->Attribute( "name" ) : "Animation" );
+                clip->setLength( static_cast<f32>( number( item, "length", 0 ) ) );
+                if( clip->getLength() <= 0 )
                 {
-                    const String name = node->Attribute("actor") ? node->Attribute("actor") : "";
-                    auto found = std::find_if(actors.begin(),actors.end(),[&](const auto &actor){return actor->getName()==name;});
-                    if(found == actors.end()) continue;
-                    auto track = dynamic_pointer_cast<IActorAnimationTrack>(clip->addTrack(StringUtil::getHash("ActorAnimationTrack"), name, handle++));
-                    if(!track) throw std::runtime_error("Cannot create cached actor track");
-                    track->setActor(*found); track->removeAllKeyFrames();
-                    auto keys = node->FirstChildElement("keyframes");
-                    double previous = -1;
-                    for(auto key = keys ? keys->FirstChildElement("keyframe") : nullptr; key; key = key->NextSiblingElement("keyframe"))
+                    throw std::runtime_error( "Invalid animation cache duration" );
+                }
+                auto tracks = item->FirstChildElement( "tracks" );
+                u16 handle = 0;
+                for( auto node = tracks ? tracks->FirstChildElement( "track" ) : nullptr; node;
+                     node = node->NextSiblingElement( "track" ) )
+                {
+                    const String name = node->Attribute( "actor" ) ? node->Attribute( "actor" ) : "";
+                    auto found = std::find_if( actors.begin(), actors.end(), [&]( const auto &actor ) {
+                        return actor->getName() == name;
+                    } );
+                    if( found == actors.end() )
                     {
-                        const auto time = number(key,"time",0);
-                        if(time < 0 || time <= previous) throw std::runtime_error("Unordered animation cache keys");
+                        continue;
+                    }
+                    auto track = dynamic_pointer_cast<IActorAnimationTrack>(
+                        clip->addTrack( StringUtil::getHash( "ActorAnimationTrack" ), name, handle++ ) );
+                    if( !track )
+                    {
+                        throw std::runtime_error( "Cannot create cached actor track" );
+                    }
+                    track->setActor( *found );
+                    track->removeAllKeyFrames();
+                    auto keys = node->FirstChildElement( "keyframes" );
+                    double previous = -1;
+                    for( auto key = keys ? keys->FirstChildElement( "keyframe" ) : nullptr; key;
+                         key = key->NextSiblingElement( "keyframe" ) )
+                    {
+                        const auto time = number( key, "time", 0 );
+                        if( time < 0 || time <= previous )
+                        {
+                            throw std::runtime_error( "Unordered animation cache keys" );
+                        }
                         previous = time;
-                        auto frame = dynamic_pointer_cast<KeyFrameTransform3>(track->createKeyFrame(static_cast<f32>(time)));
-                        if(!frame) throw std::runtime_error("Cannot create cached animation key");
-                        auto p=key->FirstChildElement("translate"), q=key->FirstChildElement("rotation"), s=key->FirstChildElement("scale");
-                        frame->setPosition({real_Num(number(p,"x",0)),real_Num(number(p,"y",0)),real_Num(number(p,"z",0))});
-                        frame->setOrientation({real_Num(number(q,"qw",1)),real_Num(number(q,"qx",0)),real_Num(number(q,"qy",0)),real_Num(number(q,"qz",0))});
-                        frame->setScale({real_Num(number(s,"x",1)),real_Num(number(s,"y",1)),real_Num(number(s,"z",1))});
+                        auto frame = dynamic_pointer_cast<KeyFrameTransform3>(
+                            track->createKeyFrame( static_cast<f32>( time ) ) );
+                        if( !frame )
+                        {
+                            throw std::runtime_error( "Cannot create cached animation key" );
+                        }
+                        auto p = key->FirstChildElement( "translate" ),
+                             q = key->FirstChildElement( "rotation" ),
+                             s = key->FirstChildElement( "scale" );
+                        frame->setPosition( { real_Num( number( p, "x", 0 ) ),
+                                              real_Num( number( p, "y", 0 ) ),
+                                              real_Num( number( p, "z", 0 ) ) } );
+                        frame->setOrientation(
+                            { real_Num( number( q, "qw", 1 ) ), real_Num( number( q, "qx", 0 ) ),
+                              real_Num( number( q, "qy", 0 ) ), real_Num( number( q, "qz", 0 ) ) } );
+                        frame->setScale( { real_Num( number( s, "x", 1 ) ),
+                                           real_Num( number( s, "y", 1 ) ),
+                                           real_Num( number( s, "z", 1 ) ) } );
                     }
                 }
-                clips.push_back(clip);
+                clips.push_back( clip );
             }
         }
-        if(sourceBudgetDenialCount() != epoch) throw std::bad_alloc();
-        if(clips.empty()) { m_playbackStatus="The animation cache contains no playable clips."; return false; }
-        String stagedCache(cacheKey);
-        m_animations.swap(clips);
+        if( sourceBudgetDenialCount() != epoch )
+        {
+            throw std::bad_alloc();
+        }
+        if( clips.empty() )
+        {
+            m_playbackStatus = "The animation cache contains no playable clips.";
+            return false;
+        }
+        String stagedCache( cacheKey );
+        m_animations.swap( clips );
         m_skeleton = rig;
-        m_selectedAnimationIndex = std::min<u32>(m_selectedAnimationIndex, static_cast<u32>(m_animations.size()-1));
-        m_animationCachePath = std::move(stagedCache);
+        m_selectedAnimationIndex =
+            std::min<u32>( m_selectedAnimationIndex, static_cast<u32>( m_animations.size() - 1 ) );
+        m_animationCachePath = std::move( stagedCache );
         return true;
     }
 
     void Animator::publishSkeletonPose()
     {
-        if( !m_skeleton ) return;
+        if( !m_skeleton )
+        {
+            return;
+        }
         m_playbackStatus.clear();
-        for( const auto &actor : animationActors(getActor()) )
+        for( const auto &actor : animationActors( getActor() ) )
+        {
             if( auto renderer = actor->getComponent<MeshRenderer>() )
+            {
                 if( auto mesh = renderer->getGraphicsObjectByType<render::IGraphicsMesh>() )
                 {
                     String error;
-                    if( !mesh->applySkeletonPose(m_skeleton,error) ) m_playbackStatus = error;
+                    if( !mesh->applySkeletonPose( m_skeleton, error ) )
+                    {
+                        m_playbackStatus = error;
+                    }
                 }
+            }
+        }
     }
 
     SmartPtr<Properties> Animator::getProperties() const
@@ -931,34 +1062,59 @@ namespace workphone::scene
         animation::AnimationIKSystem parsedIK;
         bool replaceIK = false;
         if( auto ikConstraintsNode = properties->getChild( ikConstraintsStr ) )
+        {
             replaceIK = parsedIK.setProperties( ikConstraintsNode );
+        }
 
         const auto previousApplyOnPropertyChange = m_applyOnPropertyChange;
+
         struct RestoreApplyOnFailure
         {
             bool &value;
             bool previous;
             bool committed = false;
-            ~RestoreApplyOnFailure() { if( !committed ) value = previous; }
-        } restoreApply{m_applyOnPropertyChange, previousApplyOnPropertyChange};
+
+            ~RestoreApplyOnFailure()
+            {
+                if( !committed )
+                {
+                    value = previous;
+                }
+            }
+        } restoreApply{ m_applyOnPropertyChange, previousApplyOnPropertyChange };
+
         struct RestoreIKOnFailure
         {
             animation::AnimationIKSystem &active;
             animation::AnimationIKSystem &retired;
             bool published = false;
             bool committed = false;
+
             ~RestoreIKOnFailure()
             {
-                if( published && !committed ) std::swap( active, retired );
+                if( published && !committed )
+                {
+                    std::swap( active, retired );
+                }
             }
-        } restoreIK{m_ikSystem, parsedIK};
+        } restoreIK{ m_ikSystem, parsedIK };
+
         auto previousClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+
         struct RestoreClipsOnFailure
         {
             Array<SmartPtr<Animation>> &active, &previous;
-            bool published=false, committed=false;
-            ~RestoreClipsOnFailure(){if(published && !committed) active.swap(previous);}
-        } restoreClips{m_animationClips,previousClips};
+            bool published = false, committed = false;
+
+            ~RestoreClipsOnFailure()
+            {
+                if( published && !committed )
+                {
+                    active.swap( previous );
+                }
+            }
+        } restoreClips{ m_animationClips, previousClips };
+
         m_applyOnPropertyChange = false;
 
         u32 selectedIndex = m_selectedAnimationIndex;
@@ -1002,8 +1158,8 @@ namespace workphone::scene
 
             if( !clips.empty() || clipsNode->hasProperty( editableClipCountStr ) )
             {
-                m_animationClips.swap(previousClips);
-                restoreClips.published=true;
+                m_animationClips.swap( previousClips );
+                restoreClips.published = true;
                 setAnimationClips( clips );
             }
         }

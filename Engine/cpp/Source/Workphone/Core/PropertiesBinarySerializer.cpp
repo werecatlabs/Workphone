@@ -65,10 +65,16 @@ namespace workphone
 
             void writeBytes( const u8 *bytes, size_Num size )
             {
-                if( !size ) return;
+                if( !size )
+                {
+                    return;
+                }
                 const auto offset = m_bytes.size();
                 if( size > m_bytes.max_size() - offset )
-                    throw std::length_error( "Binary scene byte buffer exceeds the allocator size limit." );
+                {
+                    throw std::length_error(
+                        "Binary scene byte buffer exceeds the allocator size limit." );
+                }
                 // Array range insertion rebuilds the old buffer even when it has
                 // spare capacity. Resize retains its admitted allocator and
                 // geometric growth, then copies only this append's new bytes.

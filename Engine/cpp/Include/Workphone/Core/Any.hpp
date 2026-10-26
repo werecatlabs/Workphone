@@ -135,7 +135,9 @@ namespace workphone
     T *any_cast( Any *any ) noexcept
     {
         if( any && any->m_holder && any->type() == typeid( T ) )
+        {
             return &static_cast<Any::Holder<T> *>( any->m_holder )->m_value;
+        }
         return nullptr;
     }
 
@@ -143,7 +145,9 @@ namespace workphone
     const T *any_cast( const Any *any ) noexcept
     {
         if( any && any->m_holder && any->type() == typeid( T ) )
+        {
             return &static_cast<const Any::Holder<T> *>( any->m_holder )->m_value;
+        }
         return nullptr;
     }
 
@@ -153,7 +157,9 @@ namespace workphone
         using U = std::remove_cv_t<std::remove_reference_t<T>>;
         auto *ptr = any_cast<U>( &any );
         if( !ptr )
+        {
             throw bad_any_cast{};
+        }
         return static_cast<T>( *ptr );
     }
 
@@ -163,7 +169,9 @@ namespace workphone
         using U = std::remove_cv_t<std::remove_reference_t<T>>;
         const auto *ptr = any_cast<U>( &any );
         if( !ptr )
+        {
             throw bad_any_cast{};
+        }
         return static_cast<T>( *ptr );
     }
 
@@ -173,7 +181,9 @@ namespace workphone
         using U = std::remove_cv_t<std::remove_reference_t<T>>;
         auto *ptr = any_cast<U>( &any );
         if( !ptr )
+        {
             throw bad_any_cast{};
+        }
         return static_cast<T>( std::move( *ptr ) );
     }
 

@@ -426,11 +426,11 @@ namespace workphone
         factoryManager->setPoolSizeByType<scene::Material>( size );
         factoryManager->setPoolSizeByType<scene::Material::MaterialStateObjectListener>( size );
         factoryManager->setPoolSizeByType<scene::Material::MaterialStateListener>( size );
-        
+
         auto meshRendererPoolSize = 4096;
         factoryManager->setPoolSizeByType<scene::Mesh>( meshRendererPoolSize );
         factoryManager->setPoolSizeByType<scene::MeshRenderer>( meshRendererPoolSize );
-        
+
         factoryManager->setPoolSizeByType<scene::NetworkListener>( size );
         factoryManager->setPoolSizeByType<scene::NetworkPlayer>( size );
         factoryManager->setPoolSizeByType<scene::NetworkStream>( size );

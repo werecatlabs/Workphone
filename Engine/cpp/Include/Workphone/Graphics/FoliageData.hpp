@@ -27,6 +27,7 @@ namespace workphone::render
         Grass,
         GroundCover
     };
+
     enum FoliageInstanceFlags : u32
     {
         FoliageManual = 1,
@@ -34,6 +35,7 @@ namespace workphone::render
         FoliageRemoved = 4,
         FoliagePromoted = 8
     };
+
     struct FoliageMaterial
     {
         String albedo, normal, orm;
@@ -41,10 +43,12 @@ namespace workphone::render
         f32 roughness = 1, metalness = 0, alphaCutoff = .5f;
         bool twoSided = true;
     };
+
     struct FoliageMeshSection
     {
         u32 firstIndex = 0, indexCount = 0, material = 0;
     };
+
     struct FoliageMeshData
     {
         Array<Vector3F> positions, normals;
@@ -53,6 +57,7 @@ namespace workphone::render
         Array<u32> indices;
         Array<FoliageMeshSection> sections;
     };
+
     struct FoliageWind
     {
         f32 amplitude = 0, frequency = 1, flutter = 0;
@@ -60,11 +65,13 @@ namespace workphone::render
         f32 bendStart = 0, bendEnd = 1;
         f32 maximumInteractionBend = 0;
     };
+
     struct FoliageImpostorView
     {
         Vector3F direction = Vector3F( 0, 0, 1 );
         Vector2F uvMinimum = Vector2F( 0, 0 ), uvMaximum = Vector2F( 1, 1 );
     };
+
     struct FoliageImpostor
     {
         String albedo, normal, orm, depth;
@@ -72,6 +79,7 @@ namespace workphone::render
         u32 width = 0, height = 0, gutter = 2;
         bool relightable = false;
     };
+
     struct FoliageSpecies
     {
         String id;
@@ -92,22 +100,27 @@ namespace workphone::render
         // Optional nearby capsule/box proxy policy, independent of visual LOD.
         f32 collisionRadius = 0, collisionHeight = 0, collisionDistance = 32;
     };
+
     struct FoliageCellKey
     {
         s32 x = 0, z = 0;
+
         bool operator==( const FoliageCellKey &o ) const
         {
             return x == o.x && z == o.z;
         }
+
         bool operator!=( const FoliageCellKey &o ) const
         {
             return !( *this == o );
         }
+
         bool operator<( const FoliageCellKey &o ) const
         {
             return x == o.x ? z < o.z : x < o.x;
         }
     };
+
     struct FoliageInstance
     {
         u64 id = 0;
@@ -119,12 +132,14 @@ namespace workphone::render
         ColourF tint = ColourF::White;
         u32 seed = 0, flags = 0;
     };
+
     struct FoliagePageData
     {
         FoliageCellKey cell;
         Array<FoliageInstance> instances;
         u64 revision = 0;
     };
+
     struct FoliageWorldData
     {
         f32 pageSize = 64;
@@ -132,6 +147,7 @@ namespace workphone::render
         Array<FoliageInstance> instances;
         u64 revision = 0;
     };
+
     using FoliageSnapshot = std::shared_ptr<const FoliageWorldData>;
 
     WPCore_API bool validateFoliageSpecies( const FoliageSpecies &, String &error );

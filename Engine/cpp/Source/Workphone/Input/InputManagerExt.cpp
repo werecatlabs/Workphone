@@ -1020,34 +1020,62 @@ namespace workphone
 
                     // Map button on states
                     if( !param.compare( "B1on" ) && m_buttonsON.size() > 0 )
+                    {
                         m_buttonsON[0] = keyCode;
+                    }
                     else if( !param.compare( "B2on" ) && m_buttonsON.size() > 1 )
+                    {
                         m_buttonsON[1] = keyCode;
+                    }
                     else if( !param.compare( "B3on" ) && m_buttonsON.size() > 2 )
+                    {
                         m_buttonsON[2] = keyCode;
+                    }
                     else if( !param.compare( "B4on" ) && m_buttonsON.size() > 3 )
+                    {
                         m_buttonsON[3] = keyCode;
+                    }
                     else if( !param.compare( "B5on" ) && m_buttonsON.size() > 4 )
+                    {
                         m_buttonsON[4] = keyCode;
+                    }
                     else if( !param.compare( "B27on" ) && m_buttonsON.size() > 5 )
+                    {
                         m_buttonsON[5] = keyCode;
+                    }
                     else if( !param.compare( "B29on" ) && m_buttonsON.size() > 6 )
+                    {
                         m_buttonsON[6] = keyCode;
+                    }
                     // Map button off states
                     else if( !param.compare( "B1off" ) && m_buttonsOFF.size() > 0 )
+                    {
                         m_buttonsOFF[0] = keyCode;
+                    }
                     else if( !param.compare( "B2off" ) && m_buttonsOFF.size() > 1 )
+                    {
                         m_buttonsOFF[1] = keyCode;
+                    }
                     else if( !param.compare( "B3off" ) && m_buttonsOFF.size() > 2 )
+                    {
                         m_buttonsOFF[2] = keyCode;
+                    }
                     else if( !param.compare( "B4off" ) && m_buttonsOFF.size() > 3 )
+                    {
                         m_buttonsOFF[3] = keyCode;
+                    }
                     else if( !param.compare( "B5off" ) && m_buttonsOFF.size() > 4 )
+                    {
                         m_buttonsOFF[4] = keyCode;
+                    }
                     else if( !param.compare( "B27off" ) && m_buttonsOFF.size() > 5 )
+                    {
                         m_buttonsOFF[5] = keyCode;
+                    }
                     else if( !param.compare( "B29off" ) && m_buttonsOFF.size() > 6 )
+                    {
                         m_buttonsOFF[6] = keyCode;
+                    }
 
                     result->nextRow();
                 }

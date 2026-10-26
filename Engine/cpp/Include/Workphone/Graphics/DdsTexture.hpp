@@ -11,40 +11,52 @@ namespace workphone::dds
     // First-party deterministic encoder v1. No platform SDK or image decoder is
     // needed to inspect a cooked artifact. Only single 2D DX10 textures are accepted.
     constexpr std::uint64_t byteLimit = 256ull * 1024 * 1024;
+
     struct Mip
     {
         std::uint32_t width, height, rowPitch, size;
         std::size_t offset;
     };
+
     struct Image
     {
         std::uint32_t format = 0, alphaMode = 0;
         std::vector<Mip> mips;
     };
+
     inline void require( bool ok, const char *message )
     {
         if( !ok )
+        {
             throw std::runtime_error( message );
+        }
     }
+
     inline std::uint32_t word( const std::vector<std::uint8_t> &b, std::size_t p )
     {
         require( p <= b.size() && b.size() - p >= 4, "Truncated DDS header" );
         return std::uint32_t( b[p] ) | std::uint32_t( b[p + 1] ) << 8 | std::uint32_t( b[p + 2] ) << 16 |
                std::uint32_t( b[p + 3] ) << 24;
     }
+
     inline void put( std::vector<std::uint8_t> &b, std::size_t p, std::uint32_t v )
     {
         for( unsigned i = 0; i < 4; ++i )
+        {
             b[p + i] = std::uint8_t( v >> ( 8 * i ) );
+        }
     }
+
     inline unsigned blockBytes( std::uint32_t f )
     {
         return f == 71 || f == 72 ? 8 : f == 77 || f == 78 ? 16 : 0;
     }
+
     inline bool supported( std::uint32_t f )
     {
         return blockBytes( f ) || f == 87 || f == 91;
     }
+
     inline Image inspect( const std::vector<std::uint8_t> &b )
     {
         require( b.size() >= 148 && b.size() <= byteLimit + 148, "Invalid DDS byte count" );
@@ -79,7 +91,9 @@ namespace workphone::dds
             const auto size = row * ( block ? ( h + 3 ) / 4 : h );
             require( size <= byteLimit && offset + size <= b.size(), "Truncated or oversized DDS mip" );
             if( i == 0 )
+            {
                 require( word( b, 20 ) == ( block ? size : row ), "DDS declared pitch is inconsistent" );
+            }
             result.mips.push_back(
                 { w, h, std::uint32_t( row ), std::uint32_t( size ), std::size_t( offset ) } );
             offset += size;
@@ -106,12 +120,18 @@ namespace workphone::dds
             }
             std::array<unsigned, 8> a{ hi, lo };
             if( hi > lo )
+            {
                 for( unsigned i = 2; i < 8; ++i )
+                {
                     a[i] = ( ( 8 - i ) * hi + ( i - 1 ) * lo ) / 7;
+                }
+            }
             else
             {
                 for( unsigned i = 2; i < 6; ++i )
+                {
                     a[i] = ( ( 6 - i ) * hi + ( i - 1 ) * lo ) / 5;
+                }
                 a[6] = 0;
                 a[7] = 255;
             }
@@ -134,26 +154,36 @@ namespace workphone::dds
             out.push_back( std::uint8_t( hi ) );
             out.push_back( std::uint8_t( lo ) );
             for( unsigned i = 0; i < 6; ++i )
+            {
                 out.push_back( std::uint8_t( bits >> ( 8 * i ) ) );
+            }
         }
         std::array<unsigned, 3> lo{ 255, 255, 255 }, hi{};
         for( auto &v : p )
+        {
             for( unsigned c = 0; c < 3; ++c )
             {
                 lo[c] = std::min( lo[c], v[c] );
                 hi[c] = std::max( hi[c], v[c] );
             }
+        }
         auto pack = []( auto v ) { return ( v[2] >> 3 ) << 11 | ( v[1] >> 2 ) << 5 | ( v[0] >> 3 ); };
         unsigned c0 = pack( hi ), c1 = pack( lo );
         if( c0 == c1 )
         {
             if( c0 < 65535 )
+            {
                 ++c0;
+            }
             else
+            {
                 --c1;
+            }
         }
         if( c0 < c1 )
+        {
             std::swap( c0, c1 );
+        }
         auto unpack = []( unsigned c ) {
             return std::array<unsigned, 3>{ ( c & 31 ) * 255 / 31, ( ( c >> 5 ) & 63 ) * 255 / 63,
                                             ( ( c >> 11 ) & 31 ) * 255 / 31 };
@@ -189,7 +219,9 @@ namespace workphone::dds
         out.push_back( std::uint8_t( c1 ) );
         out.push_back( std::uint8_t( c1 >> 8 ) );
         for( unsigned i = 0; i < 4; ++i )
+        {
             out.push_back( std::uint8_t( bits >> ( 8 * i ) ) );
+        }
     }
 
     template <class Levels>
@@ -226,25 +258,35 @@ namespace workphone::dds
             require( size <= byteLimit && bytes.size() + size <= byteLimit + 148,
                      "DDS encoder byte limit exceeded" );
             if( !block )
+            {
                 bytes.insert( bytes.end(), level.bgra.begin(), level.bgra.end() );
+            }
             else
+            {
                 for( unsigned y = 0; y < h; y += 4 )
+                {
                     for( unsigned x = 0; x < w; x += 4 )
                     {
                         std::array<std::array<unsigned, 4>, 16> pixels{};
                         for( unsigned j = 0; j < 4; ++j )
+                        {
                             for( unsigned i = 0; i < 4; ++i )
                             {
                                 const auto pos = ( std::size_t( std::min( y + j, h - 1 ) ) * w +
                                                    std::min( x + i, w - 1 ) ) *
                                                  4;
                                 for( unsigned c = 0; c < 4; ++c )
+                                {
                                     pixels[j * 4 + i][c] = level.bgra[pos + c];
+                                }
                                 require( block != 8 || pixels[j * 4 + i][3] == 255,
                                          "BC1 profile requires opaque pixels; choose BC3" );
                             }
+                        }
                         encodeBlock( pixels, block == 16, bytes );
                     }
+                }
+            }
             w = std::max( w / 2, 1u );
             h = std::max( h / 2, 1u );
         }

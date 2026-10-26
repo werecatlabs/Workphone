@@ -581,11 +581,15 @@ auto propertiesFromObject( const JsonObject &obj ) -> SmartPtr<Properties>
                 const auto &name = std::get<String>( entry.at( "name" ) );
                 auto &field = properties->getPropertyObject( name );
                 if( field.getName() != name )
+                {
                     throw std::runtime_error( "Property metadata has no corresponding value" );
+                }
                 field.setTypeName( std::get<String>( entry.at( "type" ) ) );
                 field.setReadOnly( std::get<bool>( entry.at( "readOnly" ) ) );
                 for( const auto &attribute : std::get<JsonObject>( entry.at( "attributes" ) ) )
+                {
                     field.setAttribute( attribute.first, std::get<String>( attribute.second ) );
+                }
             }
         }
         return properties;
@@ -813,14 +817,18 @@ namespace workphone
             auto name = prop.getName();
             auto value = prop.getValue();
             if( name == "__wp_properties_v1" || name == "handle_name" || name == "children" )
+            {
                 throw std::runtime_error( "Property name collides with a reserved serialization field" );
+            }
             j[name] = JsonValue( value );
             JsonObject entry, attributes;
             entry["name"] = JsonValue( name );
             entry["type"] = JsonValue( prop.getTypeName() );
             entry["readOnly"] = JsonValue( prop.isReadOnly() );
             for( const auto &attribute : prop.getAttributes() )
+            {
                 attributes[attribute.first] = JsonValue( attribute.second );
+            }
             entry["attributes"] = JsonValue( attributes );
             metadata.push_back( JsonValue( entry ) );
         }

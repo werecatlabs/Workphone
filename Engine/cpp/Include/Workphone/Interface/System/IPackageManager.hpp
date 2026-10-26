@@ -29,7 +29,7 @@ namespace workphone
          */
         virtual void createPackage() = 0;
 
-        virtual void setResourcePackageProfile(const String &path) = 0;
+        virtual void setResourcePackageProfile( const String &path ) = 0;
         virtual String getResourcePackageProfile() const = 0;
         virtual bool startResourcePackage() = 0;
         virtual void cancelResourcePackage() = 0;

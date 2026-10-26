@@ -403,7 +403,9 @@ namespace workphone
 
 #if WP_GARBAGE_COLLECTION == 1
             if( ptr )
+            {
                 ptr->removeReference();
+            }
 #endif
 
             return p;

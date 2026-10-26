@@ -71,42 +71,58 @@ namespace workphone
         // submeshes
         elem = rootElem->FirstChildElement( "submeshes" );
         if( elem )
+        {
             readSubMeshes( elem );
+        }
 
         // skeleton link
         elem = rootElem->FirstChildElement( "skeletonlink" );
         if( elem )
+        {
             readSkeletonLink( elem );
+        }
 
         // bone assignments
         elem = rootElem->FirstChildElement( "boneassignments" );
         if( elem )
+        {
             readBoneAssignments( elem );
+        }
 
         //Lod
         elem = rootElem->FirstChildElement( "levelofdetail" );
         if( elem )
+        {
             readLodInfo( elem );
+        }
 
         // submesh names
         elem = rootElem->FirstChildElement( "submeshnames" );
         if( elem )
+        {
             readSubMeshNames( elem, mMesh );
+        }
 
         // submesh extremes
         elem = rootElem->FirstChildElement( "extremes" );
         if( elem )
+        {
             readExtremes( elem, mMesh );
+        }
 
         // poses
         elem = rootElem->FirstChildElement( "poses" );
         if( elem )
+        {
             readPoses( elem, mMesh );
+        }
 
         // animations
         elem = rootElem->FirstChildElement( "animations" );
         if( elem )
+        {
             readAnimations( elem, mMesh );
+        }
 
         WP_LOG( "XMLMeshSerializer import successful." );
     }

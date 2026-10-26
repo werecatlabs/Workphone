@@ -117,8 +117,10 @@ namespace workphone::animation
     private:
         Array<AnimationGraphClip> m_clips = makeSourceBudgetSnapshot<AnimationGraphClip>();
         Array<AnimationGraphState> m_states = makeSourceBudgetSnapshot<AnimationGraphState>();
-        Array<AnimationGraphTransition> m_transitions = makeSourceBudgetSnapshot<AnimationGraphTransition>();
-        Array<AnimationGraphPoseNodeDefinition> m_poseNodes = makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
+        Array<AnimationGraphTransition> m_transitions =
+            makeSourceBudgetSnapshot<AnimationGraphTransition>();
+        Array<AnimationGraphPoseNodeDefinition> m_poseNodes =
+            makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
         String m_initialState;
     };
 
@@ -175,11 +177,13 @@ namespace workphone::animation
             Array<AnimationGraphSample> samples = makeSourceBudgetSnapshot<AnimationGraphSample>();
             Array<AnimationGraphEvent> events = makeSourceBudgetSnapshot<AnimationGraphEvent>();
         };
+
         void beginRuntimeMutation();
         void swapRuntime( RuntimeState &state ) noexcept;
         void rollbackRuntimeMutation() noexcept;
         void swap( AnimationGraphInstance &other ) noexcept;
         Array<const String *> &traversalScratch() const;
+
         struct AdvanceResult
         {
             f32 time = 0.0f;

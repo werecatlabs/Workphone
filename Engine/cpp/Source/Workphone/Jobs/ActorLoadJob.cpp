@@ -19,8 +19,12 @@ namespace workphone
     ActorLoadJob::ActorLoadJob()
     {
         if( auto app = core::IApplicationManager::instancePtr() )
+        {
             if( auto manager = app->getGameManager() )
+            {
                 setScene( manager->getCurrentScene() );
+            }
+        }
     }
 
     ActorLoadJob::~ActorLoadJob() = default;
@@ -32,15 +36,21 @@ namespace workphone
         auto parent = getParent();
         auto scene = getScene();
         if( !scene || !getProperties() )
+        {
             return;
+        }
 
         ScopedLock lock( scene.get() );
         auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
         if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
+        {
             return;
+        }
 
         if( parent && parent->getScene() != scene )
+        {
             return;
+        }
 
         // One owner loads the entire hierarchy; no nested worker jobs or timed waits.
         auto actors = scene::GameActorUtil::loadSceneActors( { getProperties() }, scene );
@@ -54,10 +64,14 @@ namespace workphone
         try
         {
             if( parent )
+            {
                 parent->addChild( actor );
+            }
 
             else
+            {
                 scene->addActor( actor );
+            }
         }
         catch( ... )
         {
@@ -106,7 +120,9 @@ namespace workphone
     {
         m_parent = parent;
         if( parent && parent->getScene() )
+        {
             setScene( parent->getScene() );
+        }
     }
 
     Array<SmartPtr<ActorLoadJob>> ActorLoadJob::getChildJobs() const

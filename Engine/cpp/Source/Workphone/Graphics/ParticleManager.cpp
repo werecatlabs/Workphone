@@ -118,7 +118,9 @@ namespace workphone
         {
             auto it = m_particleSystems.find( id );
             if( it != m_particleSystems.end() )
+            {
                 return it->second;
+            }
             return nullptr;
         }
 
@@ -127,7 +129,9 @@ namespace workphone
             for( const auto &sys : m_particleSystemsCache )
             {
                 if( sys && sys->getTemplateName() == name )
+                {
                     return sys;
+                }
             }
             return nullptr;
         }
@@ -160,7 +164,9 @@ namespace workphone
             for( auto &sys : m_particleSystemsCache )
             {
                 if( sys )
+                {
                     sys->setState( ParticleSystemState::Paused );
+                }
             }
         }
 
@@ -169,7 +175,9 @@ namespace workphone
             for( auto &sys : m_particleSystemsCache )
             {
                 if( sys )
+                {
                     sys->setState( ParticleSystemState::Started );
+                }
             }
         }
 
@@ -179,7 +187,9 @@ namespace workphone
             for( auto &sys : m_particleSystemsCache )
             {
                 if( sys )
+                {
                     sys->setState( ParticleSystemState::Started );
+                }
             }
         }
 
@@ -189,7 +199,9 @@ namespace workphone
             for( auto &sys : m_particleSystemsCache )
             {
                 if( sys )
+                {
                     sys->setState( ParticleSystemState::Stopped );
+                }
             }
         }
 
@@ -272,7 +284,9 @@ namespace workphone
                 m_particleSystemsCache.begin(), m_particleSystemsCache.end(),
                 []( const SmartPtr<IParticleSystem> &a, const SmartPtr<IParticleSystem> &b ) -> bool {
                     if( !a || !b )
+                    {
                         return false;
+                    }
 
                     // Sort by template name for now (could be enhanced with priority)
                     return a->getTemplateName() < b->getTemplateName();

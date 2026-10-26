@@ -33,11 +33,15 @@ namespace workphone
         auto current = m_currentKeyFrame;
         if( m_isPlaying && !current &&
             ( m_keyFrames.size() > 1 || ( m_onCompleteCallback && !m_isPaused ) ) )
+        {
             current = make_ptr<KeyFrameTransform2>();
+        }
         Animator::update();
 
         if( !m_isPlaying || m_keyFrames.empty() )
+        {
             return;
+        }
 
         if( m_keyFrames.size() == 1 )
         {
@@ -89,7 +93,10 @@ namespace workphone
 
         // Set current keyframe
         // A derived completion hook may also restart with a new inventory.
-        if( !current ) current = make_ptr<KeyFrameTransform2>();
+        if( !current )
+        {
+            current = make_ptr<KeyFrameTransform2>();
+        }
         current->setPosition( interpPos );
         current->setScale( interpScale );
         current->setRotation( interpRot );
@@ -98,7 +105,10 @@ namespace workphone
 
     void KeyFrameAnimator2::addKeyFrame( const SmartPtr<KeyFrameTransform2> &keyFrame )
     {
-        if( !keyFrame ) return;
+        if( !keyFrame )
+        {
+            return;
+        }
         m_keyFrames.push_back( keyFrame );
         std::sort( m_keyFrames.begin(), m_keyFrames.end(),
                    []( const SmartPtr<KeyFrameTransform2> &a, const SmartPtr<KeyFrameTransform2> &b ) {
@@ -110,11 +120,22 @@ namespace workphone
     {
         auto candidate = makeSourceBudgetSnapshot<SmartPtr<KeyFrameTransform2>>();
         if( keyFrames.capacity() > candidate.max_size() - m_keyFrames.size() )
+        {
             throw std::length_error( "Keyframe animator capacity overflow" );
-        candidate.reserve( std::max( m_keyFrames.capacity(), m_keyFrames.size() + keyFrames.capacity() ) );
-        for( const auto &kf : m_keyFrames ) candidate.push_back( kf );
+        }
+        candidate.reserve(
+            std::max( m_keyFrames.capacity(), m_keyFrames.size() + keyFrames.capacity() ) );
+        for( const auto &kf : m_keyFrames )
+        {
+            candidate.push_back( kf );
+        }
         for( const auto &kf : keyFrames )
-            if( kf ) candidate.push_back( kf );
+        {
+            if( kf )
+            {
+                candidate.push_back( kf );
+            }
+        }
         std::sort( candidate.begin(), candidate.end(),
                    []( const SmartPtr<KeyFrameTransform2> &a, const SmartPtr<KeyFrameTransform2> &b ) {
                        return a->getTime() < b->getTime();

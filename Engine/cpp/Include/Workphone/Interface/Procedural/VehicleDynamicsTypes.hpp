@@ -127,12 +127,21 @@ namespace workphone
             VehicleDynamicsValidation( const VehicleDynamicsValidation & ) = default;
             VehicleDynamicsValidation( VehicleDynamicsValidation && ) noexcept = default;
             VehicleDynamicsValidation &operator=( VehicleDynamicsValidation && ) noexcept = default;
+
             VehicleDynamicsValidation &operator=( const VehicleDynamicsValidation &other )
             {
-                if( this != &other ) { VehicleDynamicsValidation candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleDynamicsValidation candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleDynamicsValidation &other ) noexcept { errors.swap( other.errors ); }
+
+            void swap( VehicleDynamicsValidation &other ) noexcept
+            {
+                errors.swap( other.errors );
+            }
 
             bool isValid() const noexcept
             {

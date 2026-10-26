@@ -31,12 +31,21 @@ namespace workphone::animation
             while( fast )
             {
                 fast = fast->getParent();
-                if( fast ) fast = fast->getParent();
+                if( fast )
+                {
+                    fast = fast->getParent();
+                }
                 slow = slow ? slow->getParent() : SmartPtr<IBone>();
-                if( fast && fast == slow ) return false;
+                if( fast && fast == slow )
+                {
+                    return false;
+                }
             }
             depth = 0;
-            for( auto current = bone; current; current = current->getParent() ) ++depth;
+            for( auto current = bone; current; current = current->getParent() )
+            {
+                ++depth;
+            }
             return true;
         }
     }  // namespace
@@ -78,9 +87,13 @@ namespace workphone::animation
 
     bool AnimationIKSystem::removeConstraint( const String &id )
     {
-        const auto found = std::find_if( m_constraints.begin(), m_constraints.end(),
+        const auto found = std::find_if(
+            m_constraints.begin(), m_constraints.end(),
             [&id]( const TwoBoneIKConstraint &constraint ) { return constraint.id == id; } );
-        if( found == m_constraints.end() ) return false;
+        if( found == m_constraints.end() )
+        {
+            return false;
+        }
         std::move( found + 1, m_constraints.end(), found );
         m_constraints.pop_back();
         return true;
@@ -221,7 +234,9 @@ namespace workphone::animation
     }
 
     const Array<AnimationIKSolveResult> &AnimationIKSystem::PreparedSolve::getResults() const
-    { return m_results; }
+    {
+        return m_results;
+    }
 
     Array<AnimationIKSolveResult> AnimationIKSystem::PreparedSolve::takeResults() noexcept
     {
@@ -234,7 +249,10 @@ namespace workphone::animation
     AnimationIKSystem::PreparedSolve AnimationIKSystem::prepareSolve( ISkeleton *skeleton ) const
     {
         PreparedSolve prepared;
-        if( !skeleton ) return prepared;
+        if( !skeleton )
+        {
+            return prepared;
+        }
         prepared.m_results.reserve( m_constraints.size() );
         prepared.m_commands.reserve( m_constraints.size() );
         size_t maximumDepth = 0;
@@ -248,12 +266,17 @@ namespace workphone::animation
             // IDs can own nonpooled character buffers. Capture every ID and
             // command before the first solver is allowed to publish bone data.
             prepared.m_results.push_back( { constraint.id, {} } );
-            prepared.m_commands.push_back( { effector, constraint.targetTransform, constraint.settings } );
+            prepared.m_commands.push_back(
+                { effector, constraint.targetTransform, constraint.settings } );
             size_t depth = 0;
             if( !hierarchyDepth( effector, depth ) )
+            {
                 prepared.m_results.back().result.status = TwoBoneIKStatus::InvalidChain;
+            }
             else
+            {
                 maximumDepth = std::max( maximumDepth, depth );
+            }
         }
         prepared.m_hierarchy.reserve( maximumDepth );
         return prepared;
@@ -268,7 +291,9 @@ namespace workphone::animation
         {
             size_t depth = 0;
             if( hierarchyDepth( command.effector, depth ) )
+            {
                 maximumDepth = std::max( maximumDepth, depth );
+            }
         }
         prepared.m_hierarchy.reserve( maximumDepth );
         for( size_t i = 0; i < prepared.m_commands.size(); ++i )

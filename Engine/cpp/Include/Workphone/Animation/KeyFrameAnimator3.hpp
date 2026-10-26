@@ -44,9 +44,9 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     private:
-        SmartPtr<KeyFrameTransform3> m_currentKeyFrame;   ///< The currently active keyframe
-        Array<SmartPtr<KeyFrameTransform3>> m_keyFrames{
-            Allocator<SmartPtr<KeyFrameTransform3>>( sourceBudget ) };
+        SmartPtr<KeyFrameTransform3> m_currentKeyFrame;  ///< The currently active keyframe
+        Array<SmartPtr<KeyFrameTransform3>> m_keyFrames{ Allocator<SmartPtr<KeyFrameTransform3>>(
+            sourceBudget ) };
 
         LinearSpline3<real_Num> m_positionSpline;         ///< Spline used for position interpolation
         RotationalSpline3<real_Num> m_orientationSpline;  ///< Spline used for orientation interpolation

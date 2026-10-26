@@ -36,8 +36,8 @@ namespace workphone
             GrandPrix,
             GT,
             RoadSport,
-            HelicopterLittleBird, ///< Static helicopter asset metadata; no car/flight dynamics.
-            Warbird               ///< Static fixed-wing asset metadata; no flight dynamics.
+            HelicopterLittleBird,  ///< Static helicopter asset metadata; no car/flight dynamics.
+            Warbird                ///< Static fixed-wing asset metadata; no flight dynamics.
         };
 
         enum class DrivenAxle
@@ -64,22 +64,37 @@ namespace workphone
             VehiclePhysicsVector3 dimensions;
 
             VehicleMassElement() = default;
-            VehicleMassElement( SourceBudgetStdString name, double massKg,
-                                VehiclePhysicsVector3 centre, VehiclePhysicsVector3 dimensions ) :
-                name( std::move( name ) ), massKg( massKg ), centre( centre ), dimensions( dimensions ) {}
+
+            VehicleMassElement( SourceBudgetStdString name, double massKg, VehiclePhysicsVector3 centre,
+                                VehiclePhysicsVector3 dimensions ) :
+                name( std::move( name ) ),
+                massKg( massKg ),
+                centre( centre ),
+                dimensions( dimensions )
+            {
+            }
+
             VehicleMassElement( const VehicleMassElement & ) = default;
             VehicleMassElement( VehicleMassElement && ) noexcept = default;
             VehicleMassElement &operator=( VehicleMassElement && ) noexcept = default;
+
             VehicleMassElement &operator=( const VehicleMassElement &other )
             {
-                if( this != &other ) { VehicleMassElement candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleMassElement candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehicleMassElement &other ) noexcept
             {
                 using std::swap;
-                name.swap( other.name ); swap( massKg, other.massKg );
-                swap( centre, other.centre ); swap( dimensions, other.dimensions );
+                name.swap( other.name );
+                swap( massKg, other.massKg );
+                swap( centre, other.centre );
+                swap( dimensions, other.dimensions );
             }
         };
 
@@ -162,26 +177,44 @@ namespace workphone
             SourceBudgetVector<double> forwardGearRatios;
 
             VehicleDrivetrainConfig() = default;
+
             VehicleDrivetrainConfig( DrivenAxle axle, double power, double torque, double idle,
                                      double redline, double finalRatio, double efficiency,
                                      SourceBudgetVector<double> ratios ) :
-                drivenAxle( axle ), peakPowerW( power ), peakTorqueNm( torque ), idleRpm( idle ),
-                redlineRpm( redline ), finalDriveRatio( finalRatio ), transmissionEfficiency( efficiency ),
-                forwardGearRatios( std::move( ratios ) ) {}
+                drivenAxle( axle ),
+                peakPowerW( power ),
+                peakTorqueNm( torque ),
+                idleRpm( idle ),
+                redlineRpm( redline ),
+                finalDriveRatio( finalRatio ),
+                transmissionEfficiency( efficiency ),
+                forwardGearRatios( std::move( ratios ) )
+            {
+            }
+
             VehicleDrivetrainConfig( const VehicleDrivetrainConfig & ) = default;
             VehicleDrivetrainConfig( VehicleDrivetrainConfig && ) noexcept = default;
             VehicleDrivetrainConfig &operator=( VehicleDrivetrainConfig && ) noexcept = default;
+
             VehicleDrivetrainConfig &operator=( const VehicleDrivetrainConfig &other )
             {
-                if( this != &other ) { VehicleDrivetrainConfig candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleDrivetrainConfig candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehicleDrivetrainConfig &other ) noexcept
             {
                 using std::swap;
-                swap( drivenAxle, other.drivenAxle ); swap( peakPowerW, other.peakPowerW );
-                swap( peakTorqueNm, other.peakTorqueNm ); swap( idleRpm, other.idleRpm );
-                swap( redlineRpm, other.redlineRpm ); swap( finalDriveRatio, other.finalDriveRatio );
+                swap( drivenAxle, other.drivenAxle );
+                swap( peakPowerW, other.peakPowerW );
+                swap( peakTorqueNm, other.peakTorqueNm );
+                swap( idleRpm, other.idleRpm );
+                swap( redlineRpm, other.redlineRpm );
+                swap( finalDriveRatio, other.finalDriveRatio );
                 swap( transmissionEfficiency, other.transmissionEfficiency );
                 forwardGearRatios.swap( other.forwardGearRatios );
             }
@@ -207,20 +240,33 @@ namespace workphone
             VehiclePhysicsConfig( const VehiclePhysicsConfig & ) = default;
             VehiclePhysicsConfig( VehiclePhysicsConfig && ) noexcept = default;
             VehiclePhysicsConfig &operator=( VehiclePhysicsConfig && ) noexcept = default;
+
             VehiclePhysicsConfig &operator=( const VehiclePhysicsConfig &other )
             {
-                if( this != &other ) { VehiclePhysicsConfig candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehiclePhysicsConfig candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehiclePhysicsConfig &other ) noexcept
             {
                 using std::swap;
-                swap( seed, other.seed ); swap( preset, other.preset );
-                swap( wheelbaseM, other.wheelbaseM ); swap( frontTrackM, other.frontTrackM );
-                swap( rearTrackM, other.rearTrackM ); swap( bodyLengthM, other.bodyLengthM );
-                swap( bodyWidthM, other.bodyWidthM ); swap( gravityMps2, other.gravityMps2 );
-                massElements.swap( other.massElements ); swap( massProperties, other.massProperties );
-                wheels.swap( other.wheels ); swap( aero, other.aero ); drivetrain.swap( other.drivetrain );
+                swap( seed, other.seed );
+                swap( preset, other.preset );
+                swap( wheelbaseM, other.wheelbaseM );
+                swap( frontTrackM, other.frontTrackM );
+                swap( rearTrackM, other.rearTrackM );
+                swap( bodyLengthM, other.bodyLengthM );
+                swap( bodyWidthM, other.bodyWidthM );
+                swap( gravityMps2, other.gravityMps2 );
+                massElements.swap( other.massElements );
+                swap( massProperties, other.massProperties );
+                wheels.swap( other.wheels );
+                swap( aero, other.aero );
+                drivetrain.swap( other.drivetrain );
             }
         };
 
@@ -233,13 +279,22 @@ namespace workphone
             VehiclePhysicsValidation( const VehiclePhysicsValidation & ) = default;
             VehiclePhysicsValidation( VehiclePhysicsValidation && ) noexcept = default;
             VehiclePhysicsValidation &operator=( VehiclePhysicsValidation && ) noexcept = default;
+
             VehiclePhysicsValidation &operator=( const VehiclePhysicsValidation &other )
             {
-                if( this != &other ) { VehiclePhysicsValidation candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehiclePhysicsValidation candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( VehiclePhysicsValidation &other ) noexcept
-            { errors.swap( other.errors ); warnings.swap( other.warnings ); }
+            {
+                errors.swap( other.errors );
+                warnings.swap( other.warnings );
+            }
 
             bool isValid() const noexcept
             {

@@ -220,19 +220,31 @@ namespace workphone::scene
             return;
         }
 
-        const bool localChanged = makeTransform( m_localPositions[handle.index],
-            m_localOrientations[handle.index], m_localScales[handle.index] ) != localTransform;
-        const bool worldChanged = makeTransform( m_worldPositions[handle.index],
-            m_worldOrientations[handle.index], m_worldScales[handle.index] ) != worldTransform;
-        if( !localChanged && !worldChanged ) { ++m_statistics.unchangedWrites; return; }
+        const bool localChanged =
+            makeTransform( m_localPositions[handle.index], m_localOrientations[handle.index],
+                           m_localScales[handle.index] ) != localTransform;
+        const bool worldChanged =
+            makeTransform( m_worldPositions[handle.index], m_worldOrientations[handle.index],
+                           m_worldScales[handle.index] ) != worldTransform;
+        if( !localChanged && !worldChanged )
+        {
+            ++m_statistics.unchangedWrites;
+            return;
+        }
         m_localPositions[handle.index] = localTransform.getPosition();
         m_localOrientations[handle.index] = localTransform.getOrientation();
         m_localScales[handle.index] = localTransform.getScale();
         m_worldPositions[handle.index] = worldTransform.getPosition();
         m_worldOrientations[handle.index] = worldTransform.getOrientation();
         m_worldScales[handle.index] = worldTransform.getScale();
-        if( localChanged ) touch( handle, true );
-        if( worldChanged ) touch( handle, false );
+        if( localChanged )
+        {
+            touch( handle, true );
+        }
+        if( worldChanged )
+        {
+            touch( handle, false );
+        }
     }
 
     Vector3<real_Num> TransformSystem::getLocalPosition( Handle handle ) const
@@ -386,8 +398,8 @@ namespace workphone::scene
         }
 
         const auto index = handle.index;
-        const auto previous = makeTransform( m_worldPositions[index], m_worldOrientations[index],
-                                             m_worldScales[index] );
+        const auto previous =
+            makeTransform( m_worldPositions[index], m_worldOrientations[index], m_worldScales[index] );
         ++m_statistics.worldBuilds;
         if( parentWorldTransform )
         {
@@ -406,8 +418,8 @@ namespace workphone::scene
             m_worldOrientations[index] = m_localOrientations[index];
             m_worldScales[index] = m_localScales[index];
         }
-        if( previous != makeTransform( m_worldPositions[index], m_worldOrientations[index],
-                                       m_worldScales[index] ) )
+        if( previous !=
+            makeTransform( m_worldPositions[index], m_worldOrientations[index], m_worldScales[index] ) )
         {
             m_revisions[index].world = ++m_revision;
         }
@@ -424,8 +436,8 @@ namespace workphone::scene
         }
 
         const auto index = handle.index;
-        const auto previous = makeTransform( m_localPositions[index], m_localOrientations[index],
-                                             m_localScales[index] );
+        const auto previous =
+            makeTransform( m_localPositions[index], m_localOrientations[index], m_localScales[index] );
         ++m_statistics.localBuilds;
         if( parentWorldTransform )
         {
@@ -456,8 +468,8 @@ namespace workphone::scene
             m_localOrientations[index] = m_worldOrientations[index];
             m_localScales[index] = m_worldScales[index];
         }
-        if( previous != makeTransform( m_localPositions[index], m_localOrientations[index],
-                                       m_localScales[index] ) )
+        if( previous !=
+            makeTransform( m_localPositions[index], m_localOrientations[index], m_localScales[index] ) )
         {
             m_revisions[index].local = ++m_revision;
         }
@@ -530,7 +542,10 @@ namespace workphone::scene
         WP_ASSERT( containsUnlocked( handle ) );
         if( containsUnlocked( handle ) )
         {
-            if( flags & ( ITransform::dirtyFlag | ITransform::localDirtyFlag ) ) invalidateSubtree( handle );
+            if( flags & ( ITransform::dirtyFlag | ITransform::localDirtyFlag ) )
+            {
+                invalidateSubtree( handle );
+            }
             m_flags[handle.index] = flags;
         }
     }
@@ -705,15 +720,23 @@ namespace workphone::scene
     void TransformSystem::setParent( Handle handle, Handle parent )
     {
         ScopedLock lock( &m_mutex, true );
-        if( !containsUnlocked( handle ) ) return;
+        if( !containsUnlocked( handle ) )
+        {
+            return;
+        }
         auto cursor = parent;
         for( size_t depth = 0; containsUnlocked( cursor ); ++depth )
         {
             if( cursor == handle || depth >= m_active.size() )
+            {
                 throw std::logic_error( "Transform hierarchy cycle" );
+            }
             cursor = m_parents[cursor.index];
         }
-        if( m_parents[handle.index] == parent ) return;
+        if( m_parents[handle.index] == parent )
+        {
+            return;
+        }
         invalidateSubtree( handle );
         m_parents[handle.index] = containsUnlocked( parent ) ? parent : Handle{};
         invalidateSubtree( handle );
@@ -723,8 +746,10 @@ namespace workphone::scene
     {
         ScopedLock lock( &m_mutex, true );
         if( containsUnlocked( handle ) )
-            m_revisions[handle.index].processed = std::max( m_revisions[handle.index].processed,
-                                                          revision );
+        {
+            m_revisions[handle.index].processed =
+                std::max( m_revisions[handle.index].processed, revision );
+        }
     }
 
     TransformSystem::Statistics TransformSystem::statistics() const

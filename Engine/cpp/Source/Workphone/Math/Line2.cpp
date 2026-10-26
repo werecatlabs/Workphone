@@ -37,10 +37,14 @@ namespace workphone
         T t = v.dotProduct( c );
 
         if( t < static_cast<T>( 0.0 ) )
+        {
             return m_start;
+        }
 
         if( t > d )
+        {
             return m_end;
+        }
 
         v *= t;
 

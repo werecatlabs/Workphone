@@ -256,7 +256,9 @@ namespace workphone::core
                 // Break UI links while the entire control inventory is still alive.
                 // Lua collection can otherwise destroy a parent ahead of its children.
                 if( auto ui = getUI() )
+                {
                     ui->clear();
+                }
 
                 // Lua userdata owns strong references to pooled UI/graphics objects.
                 // Release those references while their factories and managers are alive;
@@ -1076,8 +1078,13 @@ namespace workphone::core
         }
         // Package workers own captured project requests. Revoke pending work on
         // session changes without calling into the manager under the app lock.
-        if(changed)
-            if(auto packages = getPackageManager()) packages->cancelResourcePackage();
+        if( changed )
+        {
+            if( auto packages = getPackageManager() )
+            {
+                packages->cancelResourcePackage();
+            }
+        }
     }
 
     auto ApplicationManager::getProjectLibraryName() const -> String

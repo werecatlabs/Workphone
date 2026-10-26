@@ -19,8 +19,19 @@ namespace workphone::render
     // Existing values retained. Scalar/Vector2/Vector4 explicitly describe floats.
     enum class MaterialShaderParameterType
     {
-        Scalar, Colour, Vector2, Vector4, Matrix, Texture, Buffer, Sampler,
-        Int, UInt, Bool, IntVector2, IntVector4
+        Scalar,
+        Colour,
+        Vector2,
+        Vector4,
+        Matrix,
+        Texture,
+        Buffer,
+        Sampler,
+        Int,
+        UInt,
+        Bool,
+        IntVector2,
+        IntVector4
     };
     WPCore_API u32 GetMaterialShaderParameterStride( MaterialShaderParameterType type );
     // FNV-1a 64 over exact name bytes; IDs are scoped to a shader schema.
@@ -32,9 +43,14 @@ namespace workphone::render
         String m_name;
         u32 m_strideInBytes = 0;
         u32 m_offsetInBytes = 0;
+
         MaterialShaderParameterInfo( MaterialShaderParameterType type, String name ) :
-            m_type( type ), m_name( std::move( name ) ),
-            m_strideInBytes( GetMaterialShaderParameterStride( type ) ) {}
+            m_type( type ),
+            m_name( std::move( name ) ),
+            m_strideInBytes( GetMaterialShaderParameterStride( type ) )
+        {
+        }
+
         MaterialShaderParameterInfo() = default;
     };
 
@@ -45,10 +61,23 @@ namespace workphone::render
         u32 m_offsetInBytes = 0;
         u64 m_layoutId = 0;
         u32 m_parameterIndex = 0;
-        bool IsValid() const { return m_layoutId != 0 && m_strideInBytes != 0; }
+
+        bool IsValid() const
+        {
+            return m_layoutId != 0 && m_strideInBytes != 0;
+        }
     };
     enum class MaterialBuiltinParameter : u32
-    { Albedo, Metalness, Roughness, Emissive, Opacity, AlphaClip, Color, Count };
+    {
+        Albedo,
+        Metalness,
+        Roughness,
+        Emissive,
+        Opacity,
+        AlphaClip,
+        Color,
+        Count
+    };
 
     /** Shared immutable CPU schema. GPU packing is a separate backend contract. */
     class WPCore_API MaterialShaderParameterLayout
@@ -56,15 +85,34 @@ namespace workphone::render
     public:
         using Ptr = std::shared_ptr<const MaterialShaderParameterLayout>;
         static Ptr Create( const Array<MaterialShaderParameterInfo> &info );
-        const Array<MaterialShaderParameterInfo> &GetParameterInfo() const { return m_info; }
-        const Array<u8> &GetDefaults() const { return m_defaults; }
-        u64 GetId() const { return m_id; }
+
+        const Array<MaterialShaderParameterInfo> &GetParameterInfo() const
+        {
+            return m_info;
+        }
+
+        const Array<u8> &GetDefaults() const
+        {
+            return m_defaults;
+        }
+
+        u64 GetId() const
+        {
+            return m_id;
+        }
+
         MaterialShaderParameterHandle FindParameter( const String &name ) const;
         MaterialShaderParameterHandle GetParameter( u32 index ) const;
         MaterialShaderParameterHandle GetBuiltin( MaterialBuiltinParameter semantic ) const;
         size_t GetStorageBytes() const;
+
     private:
-        struct Lookup { u64 id; u32 index; };
+        struct Lookup
+        {
+            u64 id;
+            u32 index;
+        };
+
         StreamBudget m_storageBudget;
         Array<MaterialShaderParameterInfo> m_info;
         Array<Lookup> m_lookup;
@@ -73,9 +121,14 @@ namespace workphone::render
         u64 m_id = 0;
     };
 
-    template <class T> struct MaterialParameterType;
-#define WP_MATERIAL_TYPE(T, Kind) template <> struct MaterialParameterType<T> \
-    { static constexpr auto value = MaterialShaderParameterType::Kind; };
+    template <class T>
+    struct MaterialParameterType;
+#define WP_MATERIAL_TYPE( T, Kind )                                      \
+    template <>                                                          \
+    struct MaterialParameterType<T>                                      \
+    {                                                                    \
+        static constexpr auto value = MaterialShaderParameterType::Kind; \
+    };
     WP_MATERIAL_TYPE( f32, Scalar )
     WP_MATERIAL_TYPE( s32, Int )
     WP_MATERIAL_TYPE( u32, UInt )
@@ -87,10 +140,16 @@ namespace workphone::render
     WP_MATERIAL_TYPE( Vector4<s32>, IntVector4 )
     WP_MATERIAL_TYPE( Matrix4<f32>, Matrix )
 #undef WP_MATERIAL_TYPE
-    template <class T> struct MaterialParameterHandle
+
+    template <class T>
+    struct MaterialParameterHandle
     {
         MaterialShaderParameterHandle handle;
-        bool IsValid() const { return handle.IsValid(); }
+
+        bool IsValid() const
+        {
+            return handle.IsValid();
+        }
     };
 
     /** Owning-thread use or external synchronization required. Copies share schemas
@@ -126,19 +185,21 @@ namespace workphone::render
             bool IsCurrent() const noexcept;
             // Reject distinct cohort tokens that would mutate one physical
             // instance/owner/pass target twice. The same token is deduplicated.
-            bool ConflictsWith(const Migration &other) const noexcept;
+            bool ConflictsWith( const Migration &other ) const noexcept;
             bool Commit() noexcept;
-            Migration(const Migration &) = delete;
-            Migration &operator=(const Migration &) = delete;
+            Migration( const Migration & ) = delete;
+            Migration &operator=( const Migration & ) = delete;
+
         private:
             friend class MaterialShaderParametersInstance;
             struct Data;
             std::unique_ptr<Data> m_data;
             Migration();
         };
+
         using MigrationPtr = std::shared_ptr<Migration>;
         bool IsMigrationReady() const noexcept;
-        MigrationPtr PrepareMigration(MaterialShaderParameterLayout::Ptr layout);
+        MigrationPtr PrepareMigration( MaterialShaderParameterLayout::Ptr layout );
 
         /** Coalesce supported material-semantic writes until the outer scope closes.
          * The instance must outlive the scope. Values/revisions update immediately;
@@ -148,59 +209,119 @@ namespace workphone::render
         {
         public:
             explicit EditScope( MaterialShaderParametersInstance &instance ) : m_instance( instance )
-            { m_instance.BeginEdit(); }
-            ~EditScope() { m_instance.EndEdit(); }
+            {
+                m_instance.BeginEdit();
+            }
+
+            ~EditScope()
+            {
+                m_instance.EndEdit();
+            }
+
             EditScope( const EditScope & ) = delete;
             EditScope &operator=( const EditScope & ) = delete;
+
         private:
             MaterialShaderParametersInstance &m_instance;
         };
-        EditScope Edit() { return EditScope( *this ); }
+
+        EditScope Edit()
+        {
+            return EditScope( *this );
+        }
 
         // Invalid descriptor schemas preserve the previous instance. A null
         // layout or Clear explicitly retires it; valid resets use new defaults.
         void Reset( const Array<MaterialShaderParameterInfo> &info );
         void Reset( MaterialShaderParameterLayout::Ptr layout );
         void Clear();
-        bool IsValid() const { return m_layout && !GetParameterInfo().empty(); }
+
+        bool IsValid() const
+        {
+            return m_layout && !GetParameterInfo().empty();
+        }
+
         const Array<MaterialShaderParameterInfo> &GetParameterInfo() const;
         // Borrowed bytes: reacquire after an effective write/reset/assignment.
         const Array<u8> &GetParameterMemory() const;
-        u32 GetParameterBufferSize() const { return static_cast<u32>( GetParameterMemory().size() ); }
-        const MaterialShaderParameterLayout::Ptr &GetLayout() const { return m_layout; }
-        u64 GetRevision() const { return m_revision; }
-        u64 GetNameLookupCount() const { return m_nameLookups; }
+
+        u32 GetParameterBufferSize() const
+        {
+            return static_cast<u32>( GetParameterMemory().size() );
+        }
+
+        const MaterialShaderParameterLayout::Ptr &GetLayout() const
+        {
+            return m_layout;
+        }
+
+        u64 GetRevision() const
+        {
+            return m_revision;
+        }
+
+        u64 GetNameLookupCount() const
+        {
+            return m_nameLookups;
+        }
+
         // Conservative per-instance charge; deduplicate non-null value identities
         // when accounting a population. Defaults belong to the shared layout;
         // shared-pointer control blocks and allocator overhead are excluded.
         size_t GetInstanceStorageBytes() const;
+
         // Live accounting identities only, not persistent material handles.
-        const void *GetValueStorageIdentity() const { return m_parametersMemory.get(); }
+        const void *GetValueStorageIdentity() const
+        {
+            return m_parametersMemory.get();
+        }
+
         size_t GetValueStorageBytes() const;
         MaterialShaderParameterHandle FindParameter( const String &name ) const;
         MaterialShaderParameterHandle GetParameter( u32 index ) const;
         MaterialShaderParameterHandle GetBuiltin( MaterialBuiltinParameter semantic ) const;
-        bool IsHandleValid( MaterialShaderParameterHandle h, MaterialShaderParameterType type, u32 size ) const;
-        template <class T> MaterialParameterHandle<T> Resolve( const String &name ) const
+        bool IsHandleValid( MaterialShaderParameterHandle h, MaterialShaderParameterType type,
+                            u32 size ) const;
+
+        template <class T>
+        MaterialParameterHandle<T> Resolve( const String &name ) const
         {
             auto h = FindParameter( name );
             constexpr u32 size = std::is_same_v<T, bool> ? sizeof( u32 ) : sizeof( T );
-            return { IsHandleValid( h, MaterialParameterType<T>::value, size ) ?
-                     h : MaterialShaderParameterHandle{} };
+            return { IsHandleValid( h, MaterialParameterType<T>::value, size )
+                         ? h
+                         : MaterialShaderParameterHandle{} };
         }
-        template <class T> bool Set( MaterialParameterHandle<T> h, const T &value )
-        {
-            if constexpr( std::is_same_v<T, bool> ) return SetBool( h.handle, value );
-            else return WriteBytes( h.handle, &value, sizeof( T ), MaterialParameterType<T>::value );
-        }
-        template <class T> bool Get( MaterialParameterHandle<T> h, T &value ) const
+
+        template <class T>
+        bool Set( MaterialParameterHandle<T> h, const T &value )
         {
             if constexpr( std::is_same_v<T, bool> )
             {
-                if( !IsHandleValid( h.handle, MaterialShaderParameterType::Bool, sizeof( u32 ) ) ) return false;
-                value = GetBool( h.handle ); return true;
+                return SetBool( h.handle, value );
             }
-            else return ReadBytes( h.handle, &value, sizeof( T ), MaterialParameterType<T>::value );
+            else
+            {
+                return WriteBytes( h.handle, &value, sizeof( T ), MaterialParameterType<T>::value );
+            }
+        }
+
+        template <class T>
+        bool Get( MaterialParameterHandle<T> h, T &value ) const
+        {
+            if constexpr( std::is_same_v<T, bool> )
+            {
+                if( !IsHandleValid( h.handle, MaterialShaderParameterType::Bool, sizeof( u32 ) ) )
+                {
+                    return false;
+                }
+                value = GetBool( h.handle );
+                return true;
+            }
+            else
+            {
+                return ReadBytes( h.handle, &value, sizeof( T ), MaterialParameterType<T>::value );
+            }
         }
 
         // Invalid writes fail without mutation in Debug and Release.
@@ -228,13 +349,16 @@ namespace workphone::render
         MaterialResourceHandle GetResource( MaterialShaderParameterHandle h ) const;
         void InitializeDefaultResourceHandles();
         bool ValidateResourceHandles() const;
+
     private:
         friend class Material;
         void NotifyOwner( u8 mask ) noexcept;
         void BeginEdit() noexcept;
         void EndEdit() noexcept;
-        bool WriteBytes( MaterialShaderParameterHandle h, const void *value, u32 size, MaterialShaderParameterType type );
-        bool ReadBytes( MaterialShaderParameterHandle h, void *value, u32 size, MaterialShaderParameterType type ) const;
+        bool WriteBytes( MaterialShaderParameterHandle h, const void *value, u32 size,
+                         MaterialShaderParameterType type );
+        bool ReadBytes( MaterialShaderParameterHandle h, void *value, u32 size,
+                        MaterialShaderParameterType type ) const;
         MaterialShaderParameterLayout::Ptr m_layout;
         // Null borrows layout defaults. Only effective writes allocate/detach.
         std::shared_ptr<Array<u8>> m_parametersMemory;
@@ -243,5 +367,5 @@ namespace workphone::render
         // Binding belongs to this physical instance, never to copies/moved values.
         Material *m_owner = nullptr;
     };
-}
+}  // namespace workphone::render
 #endif

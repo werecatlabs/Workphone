@@ -108,7 +108,9 @@ namespace workphone
 
         auto it = m_shared_locks_per_thread.find( current_thread );
         if( it != m_shared_locks_per_thread.end() && it->second > 0 )
+        {
             throw std::logic_error( "Use try_lock_upgrade() when already holding shared locks" );
+        }
 
         // Wait until no thread has exclusive access and no other upgrade is in progress
         m_condition.wait( lock, [this] { return m_count == 0 && !m_upgrade_mode; } );
@@ -293,7 +295,9 @@ namespace workphone
             // Preserve outstanding shared ownership when downgrading.
             const auto shared = m_shared_locks_per_thread.find( current_thread );
             if( shared != m_shared_locks_per_thread.end() )
+            {
                 m_shared_count += shared->second;
+            }
 
             // Notify all waiting threads (both exclusive and shared)
             m_condition.notify_all();

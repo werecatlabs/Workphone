@@ -31,10 +31,12 @@ namespace workphone
 
     template <class T>
     LinearSpline3<T>::LinearSpline3( const LinearSpline3 &other ) :
-        ISharedObject(), m_autoCalc( other.m_autoCalc ),
+        ISharedObject(),
+        m_autoCalc( other.m_autoCalc ),
         m_times( makeSourceBudgetSnapshot( other.m_times ) ),
         m_points( makeSourceBudgetSnapshot( other.m_points ) ),
-        m_tangents( makeSourceBudgetSnapshot( other.m_tangents ) ), m_coeffs( other.m_coeffs )
+        m_tangents( makeSourceBudgetSnapshot( other.m_tangents ) ),
+        m_coeffs( other.m_coeffs )
     {
     }
 
@@ -46,7 +48,9 @@ namespace workphone
             auto times = makeSourceBudgetSnapshot( other.m_times );
             auto points = makeSourceBudgetSnapshot( other.m_points );
             auto tangents = makeSourceBudgetSnapshot( other.m_tangents );
-            m_times.swap( times ); m_points.swap( points ); m_tangents.swap( tangents );
+            m_times.swap( times );
+            m_points.swap( points );
+            m_tangents.swap( tangents );
             m_autoCalc = other.m_autoCalc;
             m_coeffs = other.m_coeffs;
         }
@@ -63,22 +67,31 @@ namespace workphone
 
     namespace
     {
-        template<class V>
+        template <class V>
         Array<V> prepareLinearTangents( const Array<V> &tangents, size_t count, bool autoCalculate )
         {
             auto result = makeSourceBudgetSnapshot<V>();
-            if( autoCalculate && count >= 2 && count > tangents.capacity() ) result.resize( count );
+            if( autoCalculate && count >= 2 && count > tangents.capacity() )
+            {
+                result.resize( count );
+            }
             return result;
         }
-    }
+    }  // namespace
 
     template <class T>
     void LinearSpline3<T>::addPoint( const Vector3<T> &point )
     {
-        if( m_points.size() == m_points.max_size() ) throw std::length_error( "Spline point capacity overflow" );
+        if( m_points.size() == m_points.max_size() )
+        {
+            throw std::length_error( "Spline point capacity overflow" );
+        }
         auto tangents = prepareLinearTangents( m_tangents, m_points.size() + 1, m_autoCalc );
         m_points.push_back( point );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
 
         if( m_autoCalc )
         {
@@ -92,7 +105,10 @@ namespace workphone
         WP_ASSERT( index < m_points.size() && "index out of bounds" );
         auto tangents = prepareLinearTangents( m_tangents, m_points.size(), m_autoCalc );
         m_points[index] = point;
-        if( !tangents.empty() ) m_tangents.swap( tangents );
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
 
         if( m_autoCalc )
         {
@@ -107,20 +123,35 @@ namespace workphone
         auto positions = makeSourceBudgetSnapshot<Vector3<T>>();
         if( points.capacity() > times.max_size() - m_times.size() ||
             points.capacity() > positions.max_size() - m_points.size() )
+        {
             throw std::length_error( "Spline point capacity overflow" );
+        }
         times.reserve( std::max( m_times.capacity(), m_times.size() + points.capacity() ) );
         positions.reserve( std::max( m_points.capacity(), m_points.size() + points.capacity() ) );
-        for( const auto &time : m_times ) times.push_back( time );
-        for( const auto &position : m_points ) positions.push_back( position );
+        for( const auto &time : m_times )
+        {
+            times.push_back( time );
+        }
+        for( const auto &position : m_points )
+        {
+            positions.push_back( position );
+        }
         for( const auto &p : points )
         {
             times.push_back( p.first );
             positions.push_back( p.second );
         }
         auto tangents = prepareLinearTangents( m_tangents, positions.size(), m_autoCalc );
-        m_times.swap( times ); m_points.swap( positions );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
-        if( m_autoCalc ) recalcTangents();
+        m_times.swap( times );
+        m_points.swap( positions );
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
+        if( m_autoCalc )
+        {
+            recalcTangents();
+        }
     }
 
     template <class T>
@@ -129,9 +160,16 @@ namespace workphone
         auto times = makeSourceBudgetSnapshot( keys );
         auto positions = makeSourceBudgetSnapshot( points );
         auto tangents = prepareLinearTangents( m_tangents, positions.size(), m_autoCalc );
-        m_times.swap( times ); m_points.swap( positions );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
-        if( m_autoCalc ) recalcTangents();
+        m_times.swap( times );
+        m_points.swap( positions );
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
+        if( m_autoCalc )
+        {
+            recalcTangents();
+        }
     }
 
     template <class T>
@@ -140,8 +178,14 @@ namespace workphone
         auto positions = makeSourceBudgetSnapshot( points );
         auto tangents = prepareLinearTangents( m_tangents, positions.size(), m_autoCalc );
         m_points.swap( positions );
-        if( !tangents.empty() ) m_tangents.swap( tangents );
-        if( m_autoCalc ) recalcTangents();
+        if( !tangents.empty() )
+        {
+            m_tangents.swap( tangents );
+        }
+        if( m_autoCalc )
+        {
+            recalcTangents();
+        }
     }
 
     template <class T>

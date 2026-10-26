@@ -15,21 +15,24 @@ namespace workphone::render
 {
     namespace
     {
-        template <class T> bool exactTextureValue( const T &a, const T &b )
+        template <class T>
+        bool exactTextureValue( const T &a, const T &b )
         {
             return std::memcmp( &a, &b, sizeof( T ) ) == 0;
         }
+
         bool exactTextureValue( const Vector3<real_Num> &a, const Vector3<real_Num> &b )
         {
             return exactTextureValue( a.x, b.x ) && exactTextureValue( a.y, b.y ) &&
                    exactTextureValue( a.z, b.z );
         }
+
         bool exactTextureValue( const ColourF &a, const ColourF &b )
         {
             return exactTextureValue( a.r, b.r ) && exactTextureValue( a.g, b.g ) &&
                    exactTextureValue( a.b, b.b ) && exactTextureValue( a.a, b.a );
         }
-    }
+    }  // namespace
 
     const String MaterialTexture::textureStr = String( "texture" );
     const String MaterialTexture::generateStr = String( "Generate" );
@@ -53,7 +56,9 @@ namespace workphone::render
             // Empty slots are created during authoring before graphics startup.
             // Only an actual texture upload needs a graphics service.
             if( !getTexture() )
+            {
                 return;
+            }
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
@@ -104,7 +109,8 @@ namespace workphone::render
                 // Capture the live owner before clearing/detaching the slot.
                 // Unload retains its authoring path after releasing the resource.
                 auto name = getTextureName();
-                auto unresolved = name.empty() ? nullptr : makeSourceBudgetUnique<SourceBudgetString>( name );
+                auto unresolved =
+                    name.empty() ? nullptr : makeSourceBudgetUnique<SourceBudgetString>( name );
                 setTexture( nullptr );
                 setParent( nullptr );
                 m_unresolvedTextureName = std::move( unresolved );
@@ -126,7 +132,7 @@ namespace workphone::render
             return path.empty() ? texture->getName() : path;
         }
 
-        return m_unresolvedTextureName ? String(*m_unresolvedTextureName) : String();
+        return m_unresolvedTextureName ? String( *m_unresolvedTextureName ) : String();
     }
 
     void MaterialTexture::setTextureName( const String &texturePath )
@@ -148,19 +154,23 @@ namespace workphone::render
         }
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
-        auto texture = resourceDatabase ? resourceDatabase->loadResourceByType<ITexture>( texturePath )
-                                        : nullptr;
+        auto texture =
+            resourceDatabase ? resourceDatabase->loadResourceByType<ITexture>( texturePath ) : nullptr;
         if( texture )
         {
             if( loadResource && !texture->isLoaded() )
+            {
                 texture->load( nullptr );
+            }
             // Do not publish an intermediate null binding when resolution succeeds.
             setTexture( texture );
             return;
         }
         // Retry resource resolution above even for unchanged unresolved names.
         if( m_unresolvedTextureName && *m_unresolvedTextureName == texturePath )
+        {
             return;
+        }
         auto unresolved = makeSourceBudgetUnique<SourceBudgetString>( texturePath );
         setTexture( nullptr );
         m_unresolvedTextureName = std::move( unresolved );
@@ -170,7 +180,12 @@ namespace workphone::render
     {
         SmartPtr<ITexture> texture;
         if( auto parent = dynamic_pointer_cast<MaterialPass>( getParent() ) )
-            if( parent->getRenderTextureBinding( this, texture ) ) return texture;
+        {
+            if( parent->getRenderTextureBinding( this, texture ) )
+            {
+                return texture;
+            }
+        }
         return m_texture;
     }
 
@@ -201,7 +216,12 @@ namespace workphone::render
         MaterialNode<IMaterialTexture>::setParent( parent );
         SmartPtr<ITexture> current;
         if( auto pass = dynamic_pointer_cast<MaterialPass>( parent ) )
-            if( pass->getRenderTextureBinding( this, current ) ) m_texture = nullptr;
+        {
+            if( pass->getRenderTextureBinding( this, current ) )
+            {
+                m_texture = nullptr;
+            }
+        }
     }
 
     void MaterialTexture::onCanonicalBindingChanged()
@@ -212,8 +232,14 @@ namespace workphone::render
 
     void MaterialTexture::setScale( const Vector3<real_Num> &scale )
     {
-        if( exactTextureValue( getScale(), scale ) ) return;
-        if( !m_textureAuthoring ) m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
+        if( exactTextureValue( getScale(), scale ) )
+        {
+            return;
+        }
+        if( !m_textureAuthoring )
+        {
+            m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
+        }
         m_textureAuthoring->scale = scale;
         releaseDefaultAuthoringData();
     }
@@ -230,9 +256,13 @@ namespace workphone::render
 
     void MaterialTexture::releaseDefaultAuthoringData()
     {
-        if( m_textureAuthoring && exactTextureValue( m_textureAuthoring->scale, Vector3<real_Num>::unit() ) &&
-            exactTextureValue( m_textureAuthoring->tint, ColourF::White ) && !m_textureAuthoring->animator )
+        if( m_textureAuthoring &&
+            exactTextureValue( m_textureAuthoring->scale, Vector3<real_Num>::unit() ) &&
+            exactTextureValue( m_textureAuthoring->tint, ColourF::White ) &&
+            !m_textureAuthoring->animator )
+        {
             m_textureAuthoring.reset();
+        }
     }
 
     auto MaterialTexture::getAnimator() const -> SmartPtr<IAnimator>
@@ -242,8 +272,14 @@ namespace workphone::render
 
     void MaterialTexture::setAnimator( SmartPtr<IAnimator> animator )
     {
-        if( getAnimator() == animator ) return;
-        if( !m_textureAuthoring ) m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
+        if( getAnimator() == animator )
+        {
+            return;
+        }
+        if( !m_textureAuthoring )
+        {
+            m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
+        }
         m_textureAuthoring->animator = animator;
         releaseDefaultAuthoringData();
     }
@@ -255,8 +291,14 @@ namespace workphone::render
 
     void MaterialTexture::setTint( const ColourF &tint )
     {
-        if( exactTextureValue( getTint(), tint ) ) return;
-        if( !m_textureAuthoring ) m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
+        if( exactTextureValue( getTint(), tint ) )
+        {
+            return;
+        }
+        if( !m_textureAuthoring )
+        {
+            m_textureAuthoring = makeSourceBudgetUnique<TextureAuthoringData>();
+        }
         m_textureAuthoring->tint = tint;
         releaseDefaultAuthoringData();
     }
@@ -270,11 +312,13 @@ namespace workphone::render
     {
         auto properties = textureToData( getTexture() );
         if( properties )
+        {
             properties->setProperty( "texturePath", getTextureName() );
+        }
         return properties;
     }
 
-    SmartPtr<Properties> MaterialTexture::textureToData(SmartPtr<ITexture> texture)
+    SmartPtr<Properties> MaterialTexture::textureToData( SmartPtr<ITexture> texture )
     {
         try
         {
@@ -308,11 +352,14 @@ namespace workphone::render
         {
             auto properties = workphone::dynamic_pointer_cast<Properties>( data );
             if( !properties )
+            {
                 return;
+            }
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystem() : nullptr;
             ScopedLock lock( graphicsSystem );
-            auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
+            auto resourceDatabase =
+                applicationManager ? applicationManager->getResourceDatabase() : nullptr;
             auto sTextureUUID = properties->getProperty( MaterialTexture::textureStr );
             // Older material files stored a texture path in the texture field.
             // Only parse identifiers here; retain legacy paths as a fallback.
@@ -338,9 +385,13 @@ namespace workphone::render
             {
                 auto path = properties->getProperty( "texturePath" );
                 if( path.empty() && !isUUID )
+                {
                     path = sTextureUUID;
+                }
                 if( !path.empty() )
+                {
                     setTextureNameImpl( path, true );
+                }
             }
         }
         catch( std::exception &e )
@@ -418,11 +469,20 @@ namespace workphone::render
     {
         try
         {
-            if( !properties ) return;
+            if( !properties )
+            {
+                return;
+            }
             Vector3<real_Num> scale;
-            if( properties->getPropertyValue( scaleStr, scale ) ) setScale( scale );
+            if( properties->getPropertyValue( scaleStr, scale ) )
+            {
+                setScale( scale );
+            }
             ColourF tint;
-            if( properties->getPropertyValue( tintStr, tint ) ) setTint( tint );
+            if( properties->getPropertyValue( tintStr, tint ) )
+            {
+                setTint( tint );
+            }
 
             auto texture = SmartPtr<ITexture>();
             if( properties->hasProperty( texturePathStr ) )
@@ -437,9 +497,13 @@ namespace workphone::render
                 if( generateButton.getAttribute( "click" ) == "true" )
                 {
                     auto applicationManager = core::IApplicationManager::instance();
-                    auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystem() : nullptr;
+                    auto graphicsSystem =
+                        applicationManager ? applicationManager->getGraphicsSystem() : nullptr;
                     auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
-                    if( !textureManager ) return;
+                    if( !textureManager )
+                    {
+                        return;
+                    }
                     Array<SmartPtr<ITexture>> skyboxTextures;
 
                     auto parent = getParent();

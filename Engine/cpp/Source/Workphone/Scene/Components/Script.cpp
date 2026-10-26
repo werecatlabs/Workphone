@@ -166,13 +166,10 @@ namespace workphone::scene
     }
 
     Parameter Script::handleEvent( EventType eventType, hash_type eventValue,
-                                   const Array<Parameter> &arguments,
-                                   SmartPtr<ISharedObject> sender,
-                                   SmartPtr<ISharedObject> object,
-                                   SmartPtr<IEvent> event )
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        auto result = Component::handleEvent( eventType, eventValue, arguments,
-                                             sender, object, event );
+        auto result = Component::handleEvent( eventType, eventValue, arguments, sender, object, event );
         if( eventValue == IComponent::sceneWasLoaded && getScriptData() )
         {
             if( auto invoker = getInvoker() )

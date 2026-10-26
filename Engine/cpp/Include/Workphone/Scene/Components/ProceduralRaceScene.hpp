@@ -15,7 +15,12 @@
 #include <vector>
 #include <Workphone/System/SourceBudgetVector.hpp>
 
-namespace workphone::scene { class CityRoadAuthoring; class TerrainSystem; }
+namespace workphone::scene
+{
+    class CityRoadAuthoring;
+    class TerrainSystem;
+}  // namespace workphone::scene
+
 namespace workphone::scene::race
 {
 
@@ -44,13 +49,26 @@ namespace workphone::scene::race
     {
         SourceBudgetVector<CircuitSample> samples;
         float length = 0;
-        Circuit()=default;
-        Circuit(const Circuit&)=default;
-        Circuit(Circuit&&) noexcept=default;
-        Circuit &operator=(Circuit&&) noexcept=default;
-        Circuit &operator=(const Circuit &other)
-        { if(this!=&other){Circuit candidate(other);swap(candidate);} return *this; }
-        void swap(Circuit &other) noexcept { samples.swap(other.samples);std::swap(length,other.length); }
+        Circuit() = default;
+        Circuit( const Circuit & ) = default;
+        Circuit( Circuit && ) noexcept = default;
+        Circuit &operator=( Circuit && ) noexcept = default;
+
+        Circuit &operator=( const Circuit &other )
+        {
+            if( this != &other )
+            {
+                Circuit candidate( other );
+                swap( candidate );
+            }
+            return *this;
+        }
+
+        void swap( Circuit &other ) noexcept
+        {
+            samples.swap( other.samples );
+            std::swap( length, other.length );
+        }
 
         /**
          * Find the index of the nearest circuit sample to the provided position.
@@ -72,7 +90,8 @@ namespace workphone::scene::race
      */
     struct WPCore_API SceneAssets : SourceBudgetObject
     {
-        bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false, cityRoadShowcase = false, cityTerrainRoads = false;
+        bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false,
+             cityRoadShowcase = false, cityTerrainRoads = false;
         SmartPtr<CityRoadAuthoring> roadAuthoring;
         SmartPtr<TerrainSystem> roadTerrain;
         procedural::OpenCityLayout cityLayout;
@@ -92,19 +111,19 @@ namespace workphone::scene::race
         SourceBudgetVector<SmartPtr<render::ITexture>> textures;
         SourceBudgetVector<SmartPtr<IMeshResource>> meshes;
         SourceBudgetVector<SmartPtr<IGameActor>> actors;
-        Array<SmartPtr<LODGroup>> treeLODs{Allocator<SmartPtr<LODGroup>>(sourceBudget)};
+        Array<SmartPtr<LODGroup>> treeLODs{ Allocator<SmartPtr<LODGroup>>( sourceBudget ) };
         SmartPtr<LODGroup> vehicleLOD;
         SmartPtr<render::ISky> sky;
         SmartPtr<render::IGraphicsLight> sun;
         String resourcePrefix;
         String exportSourceDirectory;
         u64 triangles = 0, textureBytes = 0;
-        SceneAssets()=default;
-        SceneAssets(const SceneAssets &other);
-        SceneAssets &operator=(const SceneAssets &other);
-        SceneAssets(SceneAssets&&) noexcept=default;
-        SceneAssets &operator=(SceneAssets&&) noexcept=default;
-        void swap(SceneAssets &other) noexcept;
+        SceneAssets() = default;
+        SceneAssets( const SceneAssets &other );
+        SceneAssets &operator=( const SceneAssets &other );
+        SceneAssets( SceneAssets && ) noexcept = default;
+        SceneAssets &operator=( SceneAssets && ) noexcept = default;
+        void swap( SceneAssets &other ) noexcept;
     };
 
     /**

@@ -123,10 +123,11 @@ namespace workphone
         WP_CLASS_REGISTER_TEMPLATE_DECL( AnimationTrack, T );
 
     private:
-        Array<SmartPtr<IAnimationKeyFrame>> m_keyFrames{ Allocator<SmartPtr<IAnimationKeyFrame>>( sourceBudget ) };
-        IEventListener *m_listener = nullptr;             ///< Listener for animation events.
-        IAnimation *m_parent = nullptr;                   ///< Parent animation.
-        u16 m_animationHandle = 0;                        ///< Unique animation handle.
+        Array<SmartPtr<IAnimationKeyFrame>> m_keyFrames{ Allocator<SmartPtr<IAnimationKeyFrame>>(
+            sourceBudget ) };
+        IEventListener *m_listener = nullptr;  ///< Listener for animation events.
+        IAnimation *m_parent = nullptr;        ///< Parent animation.
+        u16 m_animationHandle = 0;             ///< Unique animation handle.
     };
 
     WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, AnimationTrack, T, T );
@@ -175,7 +176,9 @@ namespace workphone
     SmartPtr<IAnimationKeyFrame> AnimationTrack<T>::getKeyFrame( u16 index ) const
     {
         if( index < m_keyFrames.size() )
+        {
             return m_keyFrames[index];
+        }
         return nullptr;
     }
 
@@ -191,7 +194,9 @@ namespace workphone
             keyFrame1 = nullptr;
             keyFrame2 = nullptr;
             if( firstKeyIndex )
+            {
                 *firstKeyIndex = 0;
+            }
             return 0.0f;
         }
         u16 idx1 = 0;
@@ -431,9 +436,12 @@ namespace workphone
                        return a->getTime() < b->getTime();
                    } );
         candidate.erase( std::unique( candidate.begin(), candidate.end(),
-            []( const SmartPtr<IAnimationKeyFrame> &a, const SmartPtr<IAnimationKeyFrame> &b ) {
-                return std::abs( a->getTime() - b->getTime() ) <= std::numeric_limits<f32>::epsilon();
-            } ), candidate.end() );
+                                      []( const SmartPtr<IAnimationKeyFrame> &a,
+                                          const SmartPtr<IAnimationKeyFrame> &b ) {
+                                          return std::abs( a->getTime() - b->getTime() ) <=
+                                                 std::numeric_limits<f32>::epsilon();
+                                      } ),
+                         candidate.end() );
         m_keyFrames.swap( candidate );
         _keyFrameDataChanged();
     }

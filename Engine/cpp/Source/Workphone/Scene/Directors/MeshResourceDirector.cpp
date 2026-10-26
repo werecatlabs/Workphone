@@ -365,14 +365,18 @@ namespace workphone::scene
         auto normalized = options;
         constexpr f32 maximumDistance = 1000000.0f;
         normalized.cellSize = std::isfinite( normalized.cellSize ) && normalized.cellSize > 0.0f
-                                  ? ( std::min )( normalized.cellSize, maximumDistance ) : 256.0f;
-        normalized.maxActorsPerCell = std::clamp( normalized.maxActorsPerCell, 1u,
-                                                static_cast<u32>( WP_MAX_ACTORS - 1 ) );
+                                  ? (std::min)( normalized.cellSize, maximumDistance )
+                                  : 256.0f;
+        normalized.maxActorsPerCell =
+            std::clamp( normalized.maxActorsPerCell, 1u, static_cast<u32>( WP_MAX_ACTORS - 1 ) );
         normalized.loadRadius = std::isfinite( normalized.loadRadius ) && normalized.loadRadius >= 0.0f
-                                    ? ( std::min )( normalized.loadRadius, maximumDistance ) : 512.0f;
-        normalized.retainRadius = std::isfinite( normalized.retainRadius ) && normalized.retainRadius >= 0.0f
-                                      ? ( std::min )( normalized.retainRadius, maximumDistance ) : 768.0f;
-        normalized.retainRadius = ( std::max )( normalized.retainRadius, normalized.loadRadius );
+                                    ? (std::min)( normalized.loadRadius, maximumDistance )
+                                    : 512.0f;
+        normalized.retainRadius =
+            std::isfinite( normalized.retainRadius ) && normalized.retainRadius >= 0.0f
+                ? (std::min)( normalized.retainRadius, maximumDistance )
+                : 768.0f;
+        normalized.retainRadius = (std::max)( normalized.retainRadius, normalized.loadRadius );
         m_streamingOptions = normalized;
     }
 

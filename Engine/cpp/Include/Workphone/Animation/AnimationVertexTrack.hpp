@@ -107,10 +107,12 @@ namespace workphone
         TargetMode m_targetMode = TargetMode::TM_SOFTWARE;  ///< Hardware/Software target mode.
         SmartPtr<IVertexBuffer> m_vertexData;               ///< Associated vertex buffer.
         // Use morph or pose keyframes depending on m_animationType
-        Array<SmartPtr<IAnimationMorphKeyFrame>>
-            m_morphKeyFrames{Allocator<SmartPtr<IAnimationMorphKeyFrame>>(sourceBudget)};
-        Array<SmartPtr<IAnimationPoseKeyFrame>>
-            m_poseKeyFrames{Allocator<SmartPtr<IAnimationPoseKeyFrame>>(sourceBudget)};
+        Array<SmartPtr<IAnimationMorphKeyFrame>> m_morphKeyFrames{
+            Allocator<SmartPtr<IAnimationMorphKeyFrame>>( sourceBudget )
+        };
+        Array<SmartPtr<IAnimationPoseKeyFrame>> m_poseKeyFrames{
+            Allocator<SmartPtr<IAnimationPoseKeyFrame>>( sourceBudget )
+        };
     };
 }  // namespace workphone
 

@@ -117,13 +117,19 @@ namespace workphone
     workphone::Euler<T> &Euler<T>::normalise( bool normYaw, bool normPitch, bool normRoll )
     {
         if( normYaw )
+        {
             wrapAngle( mYaw );
+        }
 
         if( normPitch )
+        {
             wrapAngle( mPitch );
+        }
 
         if( normRoll )
+        {
             wrapAngle( mRoll );
+        }
 
         return *this;
     }
@@ -318,9 +324,13 @@ namespace workphone
     {
         Vector3<T> d( v.normaliseCopy() );
         if( setPitch )
+        {
             mPitch = Math<T>::ASin( d.y );
+        }
         if( setYaw )
+        {
             mYaw = Math<T>::ATan2( -d.X(), -d.Z() );
+        }
         mChanged = setYaw || setPitch;
         return *this;
     }

@@ -106,7 +106,9 @@ namespace workphone
             WP_ASSERT( count < N );
 
             if( count > N )
+            {
                 throw_length_error();
+            }
 
             m_size = count;
             Traits::assign( m_data, count, ch );
@@ -124,7 +126,9 @@ namespace workphone
             WP_ASSERT( count < N );
 
             if( count > N )
+            {
                 throw_length_error();
+            }
 
             m_size = count;
             Traits::copy( m_data, s, count );
@@ -154,7 +158,9 @@ namespace workphone
         constexpr reference at( size_type pos )
         {
             if( pos >= m_size )
+            {
                 throw_out_of_range();
+            }
 
             return m_data[pos];
         }
@@ -162,7 +168,9 @@ namespace workphone
         constexpr const_reference at( size_type pos ) const
         {
             if( pos >= m_size )
+            {
                 throw_out_of_range();
+            }
             return m_data[pos];
         }
 
@@ -310,7 +318,9 @@ namespace workphone
             WP_ASSERT( count < N );
 
             if( m_size + count > N )
+            {
                 throw_length_error();
+            }
 
             Traits::assign( m_data + m_size, count, ch );
             m_size += count;
@@ -328,7 +338,9 @@ namespace workphone
             WP_ASSERT( count < N );
 
             if( m_size + count > N )
+            {
                 throw_length_error();
+            }
 
             Traits::copy( m_data + m_size, s, count );
             m_size += count;
@@ -372,7 +384,9 @@ namespace workphone
             WP_ASSERT( m_size < N );
 
             if( m_size >= N )
+            {
                 throw_length_error();
+            }
 
             m_data[m_size] = ch;
             ++m_size;
@@ -398,7 +412,9 @@ namespace workphone
             WP_ASSERT( count < N );
 
             if( count > N )
+            {
                 throw_length_error();
+            }
 
             if( count > m_size )
             {
@@ -417,9 +433,13 @@ namespace workphone
             if( result == 0 )
             {
                 if( m_size < str.m_size )
+                {
                     return -1;
+                }
                 if( m_size > str.m_size )
+                {
                     return 1;
+                }
             }
 
             return result;
@@ -455,15 +475,21 @@ namespace workphone
         constexpr size_type find( const T *s, size_type pos, size_type count ) const noexcept
         {
             if( pos > m_size || count == 0 )
+            {
                 return npos;
+            }
 
             if( count > m_size - pos )
+            {
                 return npos;
+            }
 
             for( size_type i = pos; i <= m_size - count; ++i )
             {
                 if( Traits::compare( m_data + i, s, count ) == 0 )
+                {
                     return i;
+                }
             }
 
             return npos;
@@ -477,7 +503,9 @@ namespace workphone
         constexpr size_type find( T ch, size_type pos = 0 ) const noexcept
         {
             if( pos >= m_size )
+            {
                 return npos;
+            }
 
             const T *p = Traits::find( m_data + pos, m_size - pos, ch );
             return p ? static_cast<size_type>( p - m_data ) : npos;
@@ -498,16 +526,22 @@ namespace workphone
         constexpr size_type rfind( const T *s, size_type pos, size_type count ) const noexcept
         {
             if( count == 0 )
+            {
                 return pos > m_size ? m_size : pos;
+            }
 
             if( count > m_size )
+            {
                 return npos;
+            }
 
             size_type start_pos = std::min( pos, m_size - count );
             for( size_type i = start_pos + 1; i > 0; --i )
             {
                 if( Traits::compare( m_data + i - 1, s, count ) == 0 )
+                {
                     return i - 1;
+                }
             }
             return npos;
         }
@@ -520,13 +554,17 @@ namespace workphone
         constexpr size_type rfind( T ch, size_type pos = npos ) const noexcept
         {
             if( m_size == 0 )
+            {
                 return npos;
+            }
 
             size_type start_pos = std::min( pos, m_size - 1 );
             for( size_type i = start_pos + 1; i > 0; --i )
             {
                 if( Traits::eq( m_data[i - 1], ch ) )
+                {
                     return i - 1;
+                }
             }
             return npos;
         }
@@ -550,7 +588,9 @@ namespace workphone
                 for( size_type j = 0; j < count; ++j )
                 {
                     if( Traits::eq( m_data[i], s[j] ) )
+                    {
                         return i;
+                    }
                 }
             }
             return npos;
@@ -594,7 +634,9 @@ namespace workphone
                     }
                 }
                 if( !found )
+                {
                     return i;
+                }
             }
             return npos;
         }
@@ -609,7 +651,9 @@ namespace workphone
             for( size_type i = pos; i < m_size; ++i )
             {
                 if( !Traits::eq( m_data[i], ch ) )
+                {
                     return i;
+                }
             }
             return npos;
         }
@@ -630,7 +674,9 @@ namespace workphone
         constexpr size_type find_last_of( const T *s, size_type pos, size_type count ) const noexcept
         {
             if( m_size == 0 || count == 0 )
+            {
                 return npos;
+            }
 
             size_type start_pos = std::min( pos, m_size - 1 );
             for( size_type i = start_pos + 1; i > 0; --i )
@@ -638,7 +684,9 @@ namespace workphone
                 for( size_type j = 0; j < count; ++j )
                 {
                     if( Traits::eq( m_data[i - 1], s[j] ) )
+                    {
                         return i - 1;
+                    }
                 }
             }
             return npos;
@@ -670,7 +718,9 @@ namespace workphone
         constexpr size_type find_last_not_of( const T *s, size_type pos, size_type count ) const noexcept
         {
             if( m_size == 0 )
+            {
                 return npos;
+            }
 
             size_type start_pos = std::min( pos, m_size - 1 );
             for( size_type i = start_pos + 1; i > 0; --i )
@@ -685,7 +735,9 @@ namespace workphone
                     }
                 }
                 if( !found )
+                {
                     return i - 1;
+                }
             }
             return npos;
         }
@@ -698,13 +750,17 @@ namespace workphone
         constexpr size_type find_last_not_of( T ch, size_type pos = npos ) const noexcept
         {
             if( m_size == 0 )
+            {
                 return npos;
+            }
 
             size_type start_pos = std::min( pos, m_size - 1 );
             for( size_type i = start_pos + 1; i > 0; --i )
             {
                 if( !Traits::eq( m_data[i - 1], ch ) )
+                {
                     return i - 1;
+                }
             }
             return npos;
         }
@@ -718,7 +774,9 @@ namespace workphone
         constexpr FixedStringBase substr( size_type pos = 0, size_type count = npos ) const
         {
             if( pos > m_size )
+            {
                 throw_out_of_range();
+            }
 
             size_type actual_count = std::min( count, m_size - pos );
             return FixedStringBase( m_data + pos, actual_count );

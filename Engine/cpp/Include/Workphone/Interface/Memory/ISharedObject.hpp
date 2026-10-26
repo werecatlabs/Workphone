@@ -816,13 +816,17 @@ namespace workphone
         m_object( object )
     {
         if( m_object )
+        {
             m_object->lockLoad();
+        }
     }
 
     WPForceInline ISharedObject::ScopedLoadLock::~ScopedLoadLock()
     {
         if( m_object )
+        {
             m_object->unlockLoad();
+        }
     }
 
     WPForceInline void ISharedObject::lockLoad()

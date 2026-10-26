@@ -129,6 +129,7 @@ namespace workphone::physics
         }
         return 0.0f;
     }
+
     void PhysicsMaterial3::setRollingFriction( f32 friction )
     {
         if( auto stateContext = getStateContext() )
@@ -140,6 +141,7 @@ namespace workphone::physics
             }
         }
     }
+
     FrictionCombineMode PhysicsMaterial3::getFrictionCombineMode() const
     {
         if( auto stateContext = getStateContext() )
@@ -152,6 +154,7 @@ namespace workphone::physics
         }
         return FrictionCombineMode::Average;
     }
+
     void PhysicsMaterial3::setFrictionCombineMode( FrictionCombineMode mode )
     {
         if( auto stateContext = getStateContext() )
@@ -163,6 +166,7 @@ namespace workphone::physics
             }
         }
     }
+
     RestitutionCombineMode PhysicsMaterial3::getRestitutionCombineMode() const
     {
         if( auto stateContext = getStateContext() )
@@ -175,6 +179,7 @@ namespace workphone::physics
         }
         return RestitutionCombineMode::Average;
     }
+
     void PhysicsMaterial3::setRestitutionCombineMode( RestitutionCombineMode mode )
     {
         if( auto stateContext = getStateContext() )
@@ -186,6 +191,7 @@ namespace workphone::physics
             }
         }
     }
+
     String PhysicsMaterial3::getMaterialName() const
     {
         if( auto stateContext = getStateContext() )
@@ -198,6 +204,7 @@ namespace workphone::physics
         }
         return String();
     }
+
     void PhysicsMaterial3::setMaterialName( const String &name )
     {
         if( auto stateContext = getStateContext() )

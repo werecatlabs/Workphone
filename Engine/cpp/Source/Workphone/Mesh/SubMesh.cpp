@@ -15,8 +15,7 @@ namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, SubMesh, ISubMesh );
 
-    SubMesh::SubMesh() :
-        m_boneAssignments( Allocator<SmartPtr<IVertexBoneAssignment>>( sourceBudget ) )
+    SubMesh::SubMesh() : m_boneAssignments( Allocator<SmartPtr<IVertexBoneAssignment>>( sourceBudget ) )
     {
     }
 
@@ -47,13 +46,17 @@ namespace workphone
         if( vertices )
         {
             if( vertices->getReferences() == 1 && !vertices->getWeakReferences() )
+            {
                 vertices->unload( nullptr );
+            }
         }
 
         if( indices )
         {
             if( indices->getReferences() == 1 && !indices->getWeakReferences() )
+            {
                 indices->unload( nullptr );
+            }
         }
     }
 
@@ -130,8 +133,14 @@ namespace workphone
 
         subMesh->m_boneAssignments = makeSourceBudgetSnapshot( m_boneAssignments );
         subMesh->setMaterialName( m_materialName );
-        if( m_vertexBuffer ) subMesh->setVertexBuffer( m_vertexBuffer->clone() );
-        if( m_indexBuffer ) subMesh->setIndexBuffer( m_indexBuffer->clone() );
+        if( m_vertexBuffer )
+        {
+            subMesh->setVertexBuffer( m_vertexBuffer->clone() );
+        }
+        if( m_indexBuffer )
+        {
+            subMesh->setIndexBuffer( m_indexBuffer->clone() );
+        }
         subMesh->setUseSharedVertices( m_useSharedVertices );
         subMesh->setRenderOperationType( m_renderOperationType );
         subMesh->setAABB( m_aabb );

@@ -9,6 +9,7 @@ namespace workphone::render
 {
     using FoliagePageLoader = std::function<std::shared_ptr<const FoliagePageData>(
         FoliageCellKey, const StreamCancellation &, String & )>;
+
     struct FoliageStreamSource
     {
         FoliageSnapshot snapshot;  // Shared species; cooked sources need no eager instance population.
@@ -19,11 +20,13 @@ namespace workphone::render
         // derive bounds from a complete authored snapshot; lazy sources supply them.
         f32 maximumGeometryRadius = -1, maximumBendRadius = -1;
     };
+
     struct FoliagePageView
     {
         Vector3F position;
         f32 range = 500;
     };
+
     struct FoliagePageResult
     {
         FoliageSnapshot source;
@@ -32,6 +35,7 @@ namespace workphone::render
         std::shared_ptr<const FoliagePageData> page;
         String error;
     };
+
     /** Owner-thread pager/consumer with immutable worker inputs. Native pager slots
      * identify demand only; their generations never authorize stale publication.
      * Results retain source/result leases after take, cancellation and destruction.

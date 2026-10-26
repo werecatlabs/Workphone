@@ -191,14 +191,14 @@ namespace workphone::scene
         u32 m_lod = 0;
 
         // Materials produced by the generator and applied to the runtime renderer.
-        Array<SmartPtr<Material>> m_generatedMaterials{ Allocator<SmartPtr<Material>>(sourceBudget) };
+        Array<SmartPtr<Material>> m_generatedMaterials{ Allocator<SmartPtr<Material>>( sourceBudget ) };
 
         // Accumulated effect events produced by the last simulation step(s).
-        Array<procedural::VehicleEffectEvent> m_events{
-            Allocator<procedural::VehicleEffectEvent>(sourceBudget) };
+        Array<procedural::VehicleEffectEvent> m_events{ Allocator<procedural::VehicleEffectEvent>(
+            sourceBudget ) };
         // Second admitted generation for transactional fixed-step output. Warm
         // updates reuse both buffers without admitting replacement storage.
-        Array<procedural::VehicleEffectEvent> m_eventScratch{
-            Allocator<procedural::VehicleEffectEvent>(sourceBudget) };
+        Array<procedural::VehicleEffectEvent> m_eventScratch{ Allocator<procedural::VehicleEffectEvent>(
+            sourceBudget ) };
     };
 }  // namespace workphone::scene

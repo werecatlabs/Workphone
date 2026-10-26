@@ -25,22 +25,39 @@ namespace workphone
     struct WPCore_API MeshImposterAtlas : public SourceBudgetObject
     {
         MeshImposterAtlas() = default;
+
         MeshImposterAtlas( const MeshImposterAtlas &other ) :
-            width( other.width ), height( other.height ), tileWidth( other.tileWidth ),
-            rgba( makeSourceBudgetSnapshot( other.rgba ) ), views( other.views ) {}
+            width( other.width ),
+            height( other.height ),
+            tileWidth( other.tileWidth ),
+            rgba( makeSourceBudgetSnapshot( other.rgba ) ),
+            views( other.views )
+        {
+        }
+
         MeshImposterAtlas &operator=( const MeshImposterAtlas &other )
         {
-            if( this != &other ) { MeshImposterAtlas candidate( other ); swap( candidate ); }
+            if( this != &other )
+            {
+                MeshImposterAtlas candidate( other );
+                swap( candidate );
+            }
             return *this;
         }
+
         MeshImposterAtlas( MeshImposterAtlas && ) noexcept = default;
         MeshImposterAtlas &operator=( MeshImposterAtlas && ) noexcept = default;
+
         void swap( MeshImposterAtlas &other ) noexcept
         {
             using std::swap;
-            swap( width, other.width ); swap( height, other.height ); swap( tileWidth, other.tileWidth );
-            rgba.swap( other.rgba ); views.swap( other.views );
+            swap( width, other.width );
+            swap( height, other.height );
+            swap( tileWidth, other.tileWidth );
+            rgba.swap( other.rgba );
+            views.swap( other.views );
         }
+
         u32 width = 0, height = 0, tileWidth = 0;
         Array<u8> rgba{ Allocator<u8>( sourceBudget ) };
         std::array<MeshImposterView, 3> views;

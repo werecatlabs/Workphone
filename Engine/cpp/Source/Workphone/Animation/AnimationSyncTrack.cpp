@@ -10,6 +10,7 @@ namespace workphone::animation
 {
     static_assert( std::is_nothrow_move_constructible_v<AnimationSyncTrack> &&
                    std::is_nothrow_move_assignable_v<AnimationSyncTrack> );
+
     bool AnimationSyncTrackTime::isValid() const
     {
         return eventIndex >= 0 && std::isfinite( percentageThrough ) && percentageThrough >= 0.0f &&
@@ -80,9 +81,9 @@ namespace workphone::animation
 
         auto sortedMarkers = makeSourceBudgetSnapshot( markers );
         std::sort( sortedMarkers.begin(), sortedMarkers.end(),
-                          []( const AnimationSyncMarker &a, const AnimationSyncMarker &b ) {
-                              return a.startTime < b.startTime;
-                          } );
+                   []( const AnimationSyncMarker &a, const AnimationSyncMarker &b ) {
+                       return a.startTime < b.startTime;
+                   } );
 
         const auto duplicate = std::adjacent_find(
             sortedMarkers.begin(), sortedMarkers.end(),

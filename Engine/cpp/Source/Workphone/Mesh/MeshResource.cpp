@@ -149,7 +149,10 @@ namespace workphone
                     if( StringUtil::make_lower( Path::getFileExtension( meshPath ) ) == ".fbmeshbin" )
                     {
                         auto stream = fileSystem->open( meshPath, true, true, false, false, false );
-                        if( !stream ) stream = fileSystem->open( meshPath, true, true, false, true, true );
+                        if( !stream )
+                        {
+                            stream = fileSystem->open( meshPath, true, true, false, true, true );
+                        }
                         if( stream )
                         {
                             MeshSerializer serializer;
@@ -169,7 +172,10 @@ namespace workphone
                         // has been admitted. Old direct owners keep their data.
                         setMesh( mesh );
                     }
-                    else WP_LOG_ERROR( "Could not load mesh: " + meshPath );
+                    else
+                    {
+                        WP_LOG_ERROR( "Could not load mesh: " + meshPath );
+                    }
                 }
                 else
                 {
@@ -229,8 +235,13 @@ namespace workphone
         {
             // Loading notifications are optional new allocations. Their
             // denial must not strand an already admitted resource generation.
-            try { setLoadingState( LoadingState::Unloading ); }
-            catch( const std::bad_alloc & ) {}
+            try
+            {
+                setLoadingState( LoadingState::Unloading );
+            }
+            catch( const std::bad_alloc & )
+            {
+            }
 
             auto mesh = getMesh();
             setMesh( nullptr );
@@ -239,12 +250,23 @@ namespace workphone
                 mesh->unload( nullptr );
             }
 
-            try { setLoadingState( LoadingState::Unloaded ); }
-            catch( const std::bad_alloc & ) {}
+            try
+            {
+                setLoadingState( LoadingState::Unloaded );
+            }
+            catch( const std::bad_alloc & )
+            {
+            }
         }
         catch( std::exception &e )
         {
-            try { WP_LOG_EXCEPTION( e ); } catch( ... ) {}
+            try
+            {
+                WP_LOG_EXCEPTION( e );
+            }
+            catch( ... )
+            {
+            }
         }
     }
 

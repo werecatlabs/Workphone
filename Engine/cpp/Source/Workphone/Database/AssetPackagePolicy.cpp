@@ -20,15 +20,19 @@ namespace workphone
             return "CREATE TRIGGER " + table + "_" + event + " AFTER " + event + " ON " + table +
                    " BEGIN UPDATE wp_asset_catalog_changes SET revision=revision+1 WHERE id=1; END";
         }
+
         bool exists( SmartPtr<AssetDatabaseManager> catalog, const String &name, bool &present )
         {
             auto row =
                 query( catalog, "SELECT name FROM sqlite_master WHERE name=? COLLATE NOCASE", { name } );
             if( !row )
+            {
                 return false;
+            }
             present = !row->eof();
             return true;
         }
+
         bool schema( SmartPtr<AssetDatabaseManager> catalog, bool create, bool &present, String &error )
         {
             bool marker = false, usage = false;
@@ -40,7 +44,9 @@ namespace workphone
             }
             present = marker || usage;
             if( !present && !create )
+            {
                 return true;
+            }
             if( !present )
             {
                 if( !query( catalog, schemaSQL ) || !query( catalog, usageSQL ) )
@@ -50,13 +56,17 @@ namespace workphone
                 }
                 for( const String table :
                      { String( "wp_asset_package_schema" ), String( "wp_asset_package_usage" ) } )
+                {
                     for( const String event :
                          { String( "INSERT" ), String( "UPDATE" ), String( "DELETE" ) } )
+                    {
                         if( !query( catalog, triggerSQL( table, event ) ) )
                         {
                             error = "Cannot install package policy revision tracking";
                             return false;
                         }
+                    }
+                }
                 if( !query( catalog, "INSERT INTO wp_asset_package_schema(id,version) VALUES(1,1)" ) )
                 {
                     error = "Cannot initialize asset package policy version";
@@ -74,7 +84,9 @@ namespace workphone
                 auto row = query( catalog, "SELECT sql FROM sqlite_master WHERE name=? AND type=?",
                                   { name, type } );
                 if( !row || row->eof() || row->getFieldValue( "sql" ) != sql )
+                {
                     return false;
+                }
                 row->nextRow();
                 return row->eof();
             };
@@ -99,25 +111,38 @@ namespace workphone
             }
             for( const String table :
                  { String( "wp_asset_package_schema" ), String( "wp_asset_package_usage" ) } )
+            {
                 for( const String event :
                      { String( "INSERT" ), String( "UPDATE" ), String( "DELETE" ) } )
+                {
                     if( !exact( table + "_" + event, "trigger", triggerSQL( table, event ) ) )
                     {
                         error = "Missing or unsupported package policy revision tracking";
                         return false;
                     }
+                }
+            }
             return true;
         }
+
         bool decode( const String &value, AssetPackageUsage &usage )
         {
             if( value == "runtime" )
+            {
                 usage = AssetPackageUsage::Runtime;
+            }
             else if( value == "editor-only" )
+            {
                 usage = AssetPackageUsage::EditorOnly;
+            }
             else if( value == "excluded" )
+            {
                 usage = AssetPackageUsage::Excluded;
+            }
             else
+            {
                 return false;
+            }
             return true;
         }
     }  // namespace
@@ -171,7 +196,9 @@ namespace workphone
             present = true;
         }
         else if( !schema( catalog, false, present, error ) )
+        {
             return false;
+        }
         if( present )
         {
             auto row =
@@ -229,7 +256,9 @@ namespace workphone
         }
         Admission admission( catalog, error );
         if( !admission.active )
+        {
             return false;
+        }
         if( !catalog->isEntryCurrent( entry ) || entry.kind != AssetDatabaseManager::EntryKind::File )
         {
             error = "Asset identity or project session changed; refresh before changing shipping policy";
@@ -243,7 +272,9 @@ namespace workphone
             return false;
         }
         if( !schema( catalog, true, present, error ) )
+        {
             return false;
+        }
         if( !query( catalog, "INSERT OR REPLACE INTO wp_asset_package_usage(uuid,usage) VALUES(?,?)",
                     { entry.uuid, encoded } ) )
         {
@@ -258,9 +289,13 @@ namespace workphone
     {
         AssetPackagePolicy policy;
         if( !getAssetPackagePolicy( catalog, source, policy, error ) )
+        {
             return false;
+        }
         if( !policy.explicitPolicy )
+        {
             return true;
+        }
         if( !query( catalog,
                     "INSERT INTO wp_asset_package_usage(uuid,usage) SELECT ?,usage FROM "
                     "wp_asset_package_usage WHERE uuid=?",

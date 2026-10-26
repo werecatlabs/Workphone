@@ -316,7 +316,7 @@ namespace workphone::animation
     }
 
     bool TwoBoneIKSolver::getModelSpaceTransform( SmartPtr<IBone> bone, Transform3<real_Num> &transform,
-                                                Array<SmartPtr<IBone>> &hierarchy )
+                                                  Array<SmartPtr<IBone>> &hierarchy )
     {
         if( !bone )
         {
@@ -334,9 +334,15 @@ namespace workphone::animation
         while( fast )
         {
             fast = fast->getParent();
-            if( fast ) fast = fast->getParent();
+            if( fast )
+            {
+                fast = fast->getParent();
+            }
             slow = slow ? slow->getParent() : SmartPtr<IBone>();
-            if( fast && fast == slow ) return false;
+            if( fast && fast == slow )
+            {
+                return false;
+            }
         }
         for( auto current = bone; current; )
         {

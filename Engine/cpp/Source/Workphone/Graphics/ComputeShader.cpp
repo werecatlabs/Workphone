@@ -58,7 +58,9 @@ namespace workphone
             if( size.x == 0 || size.y == 0 || size.z == 0 )
             {
                 if( errorMessage )
+                {
                     *errorMessage = "Dispatch dimensions must be greater than zero.";
+                }
                 return false;
             }
 
@@ -67,7 +69,9 @@ namespace workphone
             if( size.x > 65535 || size.y > 65535 || size.z > 65535 )
             {
                 if( errorMessage )
+                {
                     *errorMessage = "Dispatch dimensions exceed the portable 65535 limit.";
+                }
                 return false;
             }
 
@@ -75,14 +79,18 @@ namespace workphone
                 localCount > 1024 )
             {
                 if( errorMessage )
+                {
                     *errorMessage = "The workgroup size is invalid or exceeds 1024 invocations.";
+                }
                 return false;
             }
 
             if( workgroupCount > std::numeric_limits<u32>::max() )
             {
                 if( errorMessage )
+                {
                     *errorMessage = "Dispatch contains too many workgroups.";
+                }
                 return false;
             }
 
@@ -100,7 +108,9 @@ namespace workphone
                 m_computeBindings.begin(), m_computeBindings.end(),
                 [&name]( const ComputeBinding &candidate ) { return candidate.name == name; } );
             if( it == m_computeBindings.end() )
+            {
                 return false;
+            }
             binding = *it;
             return true;
         }
@@ -114,7 +124,9 @@ namespace workphone
         bool ComputeShader::setBindingOverride( const String &name, u32 set, u32 binding )
         {
             if( name.empty() )
+            {
                 return false;
+            }
 
             auto it =
                 std::find_if( m_bindingOverrides.begin(), m_bindingOverrides.end(),
@@ -159,12 +171,16 @@ namespace workphone
             for( const auto &binding : m_computeBindings )
             {
                 if( binding.name.empty() )
+                {
                     addDiagnostic( localDiagnostics, DiagnosticSeverity::Error,
                                    "A compute binding has no name." );
+                }
                 if( binding.arraySize == 0 )
+                {
                     addDiagnostic(
                         localDiagnostics, DiagnosticSeverity::Error,
                         String( "Compute binding '" ) + binding.name + "' has an empty array." );
+                }
             }
 
             for( size_Num i = 0; i < m_computeBindings.size(); ++i )
@@ -174,21 +190,27 @@ namespace workphone
                     const auto &a = m_computeBindings[i];
                     const auto &b = m_computeBindings[j];
                     if( a.set == b.set && a.binding == b.binding )
+                    {
                         addDiagnostic( localDiagnostics, DiagnosticSeverity::Error,
                                        String( "Compute bindings '" ) + a.name + "' and '" + b.name +
                                            "' use the same set and binding." );
+                    }
                 }
             }
 
             if( diagnostics )
+            {
                 *diagnostics = localDiagnostics;
+            }
             return localDiagnostics.empty();
         }
 
         bool ComputeShader::createPipeline()
         {
             if( !isCompiled() || !validateBindings() )
+            {
                 return false;
+            }
             m_pipelineCreated = true;
             return true;
         }
@@ -207,13 +229,17 @@ namespace workphone
         void ComputeShader::getPipelineHandle( void **handle ) const
         {
             if( handle )
+            {
                 *handle = m_pipelineHandle;
+            }
         }
 
         bool ComputeShader::setIndirectDispatchSource( void *buffer, u32 offset )
         {
             if( !buffer )
+            {
                 return false;
+            }
             m_indirectDispatchBuffer = buffer;
             m_indirectDispatchOffset = offset;
             return true;
@@ -239,8 +265,10 @@ namespace workphone
         {
             m_stage = Stage::Compute;
             if( stage != Stage::Compute )
+            {
                 addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                                "A compute shader must use the Compute stage." );
+            }
         }
 
         IShader::Language ComputeShader::getLanguage() const
@@ -253,7 +281,9 @@ namespace workphone
             m_language = language;
             m_pipelineCreated = false;
             if( m_status == Status::Compiled )
+            {
                 m_status = Status::SourceReady;
+            }
         }
 
         String ComputeShader::getSource() const
@@ -305,7 +335,9 @@ namespace workphone
         void ComputeShader::setDefine( const String &name, const String &value )
         {
             if( name.empty() )
+            {
                 return;
+            }
             auto it = std::find_if( m_defines.begin(), m_defines.end(),
                                     [&name]( const Define &define ) { return define.name == name; } );
             if( it == m_defines.end() )
@@ -316,7 +348,9 @@ namespace workphone
                 m_defines.push_back( define );
             }
             else
+            {
                 it->value = value;
+            }
             m_pipelineCreated = false;
         }
 
@@ -340,20 +374,30 @@ namespace workphone
             m_diagnostics.clear();
             m_pipelineCreated = false;
             if( m_stage != Stage::Compute )
+            {
                 addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                                "A compute shader must use the Compute stage." );
+            }
             if( m_entryPoint.empty() )
+            {
                 addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                                "Compute shader entry point cannot be empty." );
+            }
             if( !isKnownLanguage( m_language ) )
+            {
                 addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                                "A source or binary language must be specified." );
+            }
             if( m_source.empty() && m_binary.empty() )
+            {
                 addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                                "Compute shader has neither source nor binary data." );
+            }
             if( !validateDispatch( m_dispatchSize ) )
+            {
                 addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                                "Compute shader dispatch configuration is invalid." );
+            }
             if( !validateBindings( &m_diagnostics ) )
             {
                 m_status = Status::Failed;
@@ -423,7 +467,9 @@ namespace workphone
         bool ComputeShader::setBinary( const Array<u8> &binary, Language language )
         {
             if( binary.empty() || !isKnownLanguage( language ) )
+            {
                 return false;
+            }
             m_binary = binary;
             m_source.clear();
             m_language = language;
@@ -436,7 +482,9 @@ namespace workphone
         bool ComputeShader::setSpecializationConstant( const String &name, u32 value )
         {
             if( name.empty() )
+            {
                 return false;
+            }
             auto it = std::find_if(
                 m_specializationValues.begin(), m_specializationValues.end(),
                 [&name]( const SpecializationValue &entry ) { return entry.name == name; } );
@@ -448,7 +496,9 @@ namespace workphone
                 m_specializationValues.push_back( entry );
             }
             else
+            {
                 it->value = value;
+            }
             m_pipelineCreated = false;
             return true;
         }
@@ -459,7 +509,9 @@ namespace workphone
                 m_specializationValues.begin(), m_specializationValues.end(),
                 [&name]( const SpecializationValue &entry ) { return entry.name == name; } );
             if( it == m_specializationValues.end() )
+            {
                 return false;
+            }
             value = it->value;
             return true;
         }
@@ -467,7 +519,9 @@ namespace workphone
         void ComputeShader::getNativeHandle( void **handle ) const
         {
             if( handle )
+            {
                 *handle = nullptr;
+            }
         }
 
     }  // namespace render

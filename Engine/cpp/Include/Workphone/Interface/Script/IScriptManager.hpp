@@ -263,14 +263,41 @@ namespace workphone
             return false;
         }
 
-        virtual bool startDebugger( u16 port, const String &token, const String &sourceRoot ) { return false; }
-        virtual void stopDebugger() {}
-        virtual u16 getDebuggerPort() const { return 0; }
-        virtual bool isDebuggerPaused() const { return false; }
-        virtual void setDebuggerPausePump( std::function<bool()> pump ) {}
-        virtual void setDebuggerPauseObserver( std::function<void(bool)> observer ) {}
-        virtual void debuggerCommand( const String &command ) {}
-        virtual String getDebuggerStatus() const { return "{}"; }
+        virtual bool startDebugger( u16 port, const String &token, const String &sourceRoot )
+        {
+            return false;
+        }
+
+        virtual void stopDebugger()
+        {
+        }
+
+        virtual u16 getDebuggerPort() const
+        {
+            return 0;
+        }
+
+        virtual bool isDebuggerPaused() const
+        {
+            return false;
+        }
+
+        virtual void setDebuggerPausePump( std::function<bool()> pump )
+        {
+        }
+
+        virtual void setDebuggerPauseObserver( std::function<void( bool )> observer )
+        {
+        }
+
+        virtual void debuggerCommand( const String &command )
+        {
+        }
+
+        virtual String getDebuggerStatus() const
+        {
+            return "{}";
+        }
 
         WP_CLASS_REGISTER_DECL;
     };

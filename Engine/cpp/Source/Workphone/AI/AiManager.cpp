@@ -105,77 +105,96 @@ namespace workphone
                 keys.emplace_back();
                 return true;
             }
+
             bool on_object_end( size_t, boost::system::error_code & )
             {
                 keys.pop_back();
                 return true;
             }
+
             bool on_key_part( json::string_view part, size_t, boost::system::error_code & )
             {
                 keyParts.append( part.data(), part.size() );
                 return true;
             }
+
             bool on_key( json::string_view part, size_t, boost::system::error_code &error )
             {
                 keyParts.append( part.data(), part.size() );
                 const auto unique = keys.back().insert( keyParts ).second;
                 keyParts.clear();
                 if( !unique )
+                {
                     error = json::error::syntax;
+                }
                 return unique;
             }
+
             bool on_document_begin( boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_document_end( boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_array_begin( boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_array_end( size_t, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_string_part( json::string_view, size_t, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_string( json::string_view, size_t, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_number_part( json::string_view, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_int64( int64_t, json::string_view, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_uint64( uint64_t, json::string_view, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_double( double, json::string_view, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_bool( bool, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_null( boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_comment_part( json::string_view, boost::system::error_code & )
             {
                 return true;
             }
+
             bool on_comment( json::string_view, boost::system::error_code & )
             {
                 return true;
@@ -190,7 +209,9 @@ namespace workphone
             json::basic_parser<UniqueKeyHandler> validator( options );
             const auto consumed = validator.write_some( false, text.data(), text.size(), error );
             if( error || !validator.done() || consumed != text.size() )
+            {
                 return false;
+            }
             value = json::parse( text, error );
             return !error;
         }
@@ -200,7 +221,9 @@ namespace workphone
             // JSON whitespace is ASCII. Preserve UTF-8 without passing signed bytes to isspace.
             const auto begin = text.find_first_not_of( " \t\r\n" );
             if( begin == String::npos )
+            {
                 return {};
+            }
             return text.substr( begin, text.find_last_not_of( " \t\r\n" ) - begin + 1 );
         }
 
@@ -214,7 +237,9 @@ namespace workphone
             auto begin = response.find_first_not_of( " \t\r\n" );
             auto end = response.find_last_not_of( " \t\r\n" );
             if( begin == String::npos )
+            {
                 return false;
+            }
 
             // Accept a complete JSON object or one explicitly fenced JSON block.
             // Never search arbitrary prose for braces and execute what happens to be inside.
@@ -223,11 +248,15 @@ namespace workphone
             {
                 const auto lineEnd = response.find( '\n', fence + 3 );
                 if( lineEnd == String::npos )
+                {
                     return false;
+                }
                 auto language = response.substr( fence + 3, lineEnd - fence - 3 );
                 language = trimResponseWhitespace( language );
                 if( !language.empty() && language != "json" )
+                {
                     return false;
+                }
                 auto close = String::npos;
                 for( auto lineBegin = lineEnd + 1; lineBegin < response.size(); )
                 {
@@ -240,21 +269,29 @@ namespace workphone
                         break;
                     }
                     if( nextLine == String::npos )
+                    {
                         break;
+                    }
                     lineBegin = nextLine + 1;
                 }
                 if( close == String::npos || response.find( "```", close + 3 ) != String::npos )
+                {
                     return false;
+                }
                 const auto prefix = response.substr( 0, fence );
                 const auto suffix = response.substr( close + 3 );
                 if( prefix.find_first_of( "{}[]" ) != String::npos ||
                     suffix.find_first_of( "{}[]" ) != String::npos )
+                {
                     return false;
+                }
                 begin = lineEnd + 1;
                 end = close - 1;
             }
             if( end < begin )
+            {
                 return false;
+            }
             const auto jsonText = json::string_view( response.data() + begin, end - begin + 1 );
             json::value value;
             if( !parseUniqueJSON( jsonText, value ) || !value.is_object() )
@@ -275,7 +312,9 @@ namespace workphone
                 {
                     if( !value->is_string() || value->as_string().empty() ||
                         ( !name.empty() && name != value->as_string() ) )
+                    {
                         return false;
+                    }
                     name = value->as_string();
                 }
             }
@@ -2234,17 +2273,23 @@ launchFlightSimulator()
             String feedback() const
             {
                 if( !error.empty() )
+                {
                     return error + " No engine actions were applied.";
+                }
                 if( !failures.empty() )
                 {
                     String text = "Applied " + StringUtil::toString( applied ) + " of " +
                                   StringUtil::toString( applied + failures.size() ) + " engine actions.";
                     for( const auto &failure : failures )
+                    {
                         text += "\n" + failure;
+                    }
                     return text;
                 }
                 if( message.find_first_not_of( " \t\r\n" ) != String::npos )
+                {
                     return message;
+                }
                 return applied ? "Applied " + StringUtil::toString( applied ) +
                                      ( applied == 1 ? " engine action." : " engine actions." )
                                : String( "No engine actions requested." );
@@ -2291,14 +2336,20 @@ launchFlightSimulator()
                                         "set_actor_transform" } )
             {
                 if( name == allowed )
+                {
                     supported = true;
+                }
             }
             if( !supported )
+            {
                 return "Unsupported engine action.";
+            }
             for( const auto key : { "confirm", "cascade" } )
             {
                 if( const auto field = action.if_contains( key ); field && !field->is_bool() )
+                {
                     return String( key ) + " must be a JSON boolean.";
+                }
             }
             bool value = false;
             for( const auto booleanAction :
@@ -2307,12 +2358,16 @@ launchFlightSimulator()
                    "set_actor_visible", "set_actor_static", "set_actor_smooth_motion" } )
             {
                 if( name == booleanAction && !getActionBool( action, value ) )
+                {
                     return "value must be a JSON boolean.";
+                }
             }
             if( ( name == "request_quit" || name == "clear_scene" || name == "destroy_actor" ||
                   ( name == "set_running" && !value ) ) &&
                 !isConfirmed( action ) )
+            {
                 return "Requires confirm=true.";
+            }
 
             const auto actorAction = name.find( "actor" ) != json::string_view::npos;
             const auto sceneAction = name == "set_scene_label" || name == "set_scene_state" ||
@@ -2322,17 +2377,25 @@ launchFlightSimulator()
                 auto gameManager = applicationManager->getGameManager();
                 auto scene = gameManager ? gameManager->getCurrentScene() : nullptr;
                 if( !scene )
+                {
                     return "No current scene is available.";
+                }
                 if( actorAction )
                 {
                     String actor;
                     if( !getString( action, "actor", actor ) )
+                    {
                         return "actor must be a non-empty name of at most 256 characters.";
+                    }
                     const auto exists = scene->findActorByName( actor ) != nullptr;
                     if( name == "create_actor" && exists )
+                    {
                         return "An actor named '" + actor + "' already exists.";
+                    }
                     if( name != "create_actor" && !exists )
+                    {
                         return "Actor '" + actor + "' was not found.";
+                    }
                 }
             }
             return {};
@@ -2379,7 +2442,9 @@ launchFlightSimulator()
                 return result;
             }
             if( actions.empty() )
+            {
                 return result;
+            }
             auto application = core::IApplicationManager::instancePtr();
             if( !application )
             {
@@ -2393,9 +2458,13 @@ launchFlightSimulator()
                 json::string_view name;
                 String failure;
                 if( !entry.is_object() )
+                {
                     failure = "Action must be a JSON object.";
+                }
                 else if( !getActionName( entry.as_object(), name ) )
+                {
                     failure = "Action name is missing, empty, or its name/action/type aliases disagree.";
+                }
                 else
                 {
                     try

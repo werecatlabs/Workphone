@@ -1640,7 +1640,9 @@ namespace workphone
                 char_array_4[3] = char_array_3[2] & 0x3f;
 
                 for( i = 0; ( i < 4 ); i++ )
+                {
                     ret += base64_chars[char_array_4[i]];
+                }
                 i = 0;
             }
         }
@@ -1648,7 +1650,9 @@ namespace workphone
         if( i )
         {
             for( j = i; j < 3; j++ )
+            {
                 char_array_3[j] = '\0';
+            }
 
             char_array_4[0] = ( char_array_3[0] & 0xfc ) >> 2;
             char_array_4[1] = ( ( char_array_3[0] & 0x03 ) << 4 ) + ( ( char_array_3[1] & 0xf0 ) >> 4 );
@@ -1656,10 +1660,14 @@ namespace workphone
             char_array_4[3] = char_array_3[2] & 0x3f;
 
             for( j = 0; ( j < i + 1 ); j++ )
+            {
                 ret += base64_chars[char_array_4[j]];
+            }
 
             while( ( i++ < 3 ) )
+            {
                 ret += '=';
+            }
         }
 
         return ret;
@@ -1815,7 +1823,9 @@ namespace workphone
         {
             oss << std::setw( 2 ) << static_cast<int>( bytes[i] );
             if( i == 3 || i == 5 || i == 7 || i == 9 )
+            {
                 oss << '-';
+            }
         }
 
         return oss.str().c_str();
@@ -1850,7 +1860,9 @@ namespace workphone
         {
             oss << std::setw( 2 ) << static_cast<int>( bytes[i] );
             if( i == 3 || i == 5 || i == 7 || i == 9 )
+            {
                 oss << L'-';
+            }
         }
 
         return oss.str().c_str();
@@ -1972,15 +1984,21 @@ namespace workphone
     bool StringUtility<c8>::isNumber( const BaseString<c8> &value )
     {
         if( value.empty() )
+        {
             return false;
+        }
 
         const c8 *p = value.c_str();
 
         while( isSpace( *p ) )
+        {
             ++p;
+        }
 
         if( *p == '+' || *p == '-' )
+        {
             ++p;
+        }
 
         bool hasDigits = false;
 
@@ -2001,21 +2019,31 @@ namespace workphone
         }
 
         if( !hasDigits )
+        {
             return false;
+        }
 
         if( *p == 'e' || *p == 'E' )
         {
             ++p;
             if( *p == '+' || *p == '-' )
+            {
                 ++p;
+            }
             if( !( *p >= '0' && *p <= '9' ) )
+            {
                 return false;
+            }
             while( *p >= '0' && *p <= '9' )
+            {
                 ++p;
+            }
         }
 
         while( isSpace( *p ) )
+        {
             ++p;
+        }
 
         return *p == '\0';
     }
@@ -2024,17 +2052,23 @@ namespace workphone
     bool StringUtility<c16>::isNumber( const BaseString<c16> &value )
     {
         if( value.empty() )
+        {
             return false;
+        }
 
         const c16 *p = value.c_str();
 
         while( *p == static_cast<c16>( ' ' ) || *p == static_cast<c16>( '\t' ) ||
                *p == static_cast<c16>( '\n' ) || *p == static_cast<c16>( '\r' ) ||
                *p == static_cast<c16>( '\v' ) || *p == static_cast<c16>( '\f' ) )
+        {
             ++p;
+        }
 
         if( *p == static_cast<c16>( '+' ) || *p == static_cast<c16>( '-' ) )
+        {
             ++p;
+        }
 
         bool hasDigits = false;
 
@@ -2055,23 +2089,33 @@ namespace workphone
         }
 
         if( !hasDigits )
+        {
             return false;
+        }
 
         if( *p == static_cast<c16>( 'e' ) || *p == static_cast<c16>( 'E' ) )
         {
             ++p;
             if( *p == static_cast<c16>( '+' ) || *p == static_cast<c16>( '-' ) )
+            {
                 ++p;
+            }
             if( !( *p >= static_cast<c16>( '0' ) && *p <= static_cast<c16>( '9' ) ) )
+            {
                 return false;
+            }
             while( *p >= static_cast<c16>( '0' ) && *p <= static_cast<c16>( '9' ) )
+            {
                 ++p;
+            }
         }
 
         while( *p == static_cast<c16>( ' ' ) || *p == static_cast<c16>( '\t' ) ||
                *p == static_cast<c16>( '\n' ) || *p == static_cast<c16>( '\r' ) ||
                *p == static_cast<c16>( '\v' ) || *p == static_cast<c16>( '\f' ) )
+        {
             ++p;
+        }
 
         return *p == static_cast<c16>( '\0' );
     }
@@ -2106,7 +2150,9 @@ namespace workphone
         for( auto &c : path )
         {
             if( c == '\\' )
+            {
                 c = '/';
+            }
         }
 
         // split based on final /
@@ -2134,7 +2180,9 @@ namespace workphone
         for( auto &c : path )
         {
             if( c == L'\\' )
+            {
                 c = L'/';
+            }
         }
 
         // split based on final /
@@ -2784,19 +2832,27 @@ namespace workphone
         Array<Array<s32>> dp( m + 1, Array<s32>( n + 1, 0 ) );
 
         for( s32 i = 0; i <= m; ++i )
+        {
             dp[i][0] = i;
+        }
 
         for( s32 j = 0; j <= n; ++j )
+        {
             dp[0][j] = j;
+        }
 
         for( s32 i = 1; i <= m; ++i )
         {
             for( s32 j = 1; j <= n; ++j )
             {
                 if( s1[i - 1] == s2[j - 1] )
+                {
                     dp[i][j] = dp[i - 1][j - 1];
+                }
                 else
+                {
                     dp[i][j] = 1 + std::min( { dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1] } );
+                }
             }
         }
 

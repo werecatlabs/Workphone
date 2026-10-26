@@ -27,7 +27,8 @@ namespace workphone
             // has a callback-free enqueue implementation.
             return queue && typeid( *queue ) == typeid( StateQueue );
         }
-    }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone, StateContext, IStateContext );
     WP_CLASS_REGISTER_DERIVED( workphone, StateContext::SharedObjectListener, IEventListener );
 
@@ -77,7 +78,7 @@ namespace workphone
     {
         // Keep removed states alive until after the inventory lock is released;
         // their destruction can reenter a context or another subsystem.
-        auto removed = std::move(m_states);
+        auto removed = std::move( m_states );
     }
 
     Array<SmartPtr<IStateListener>> StateContext::snapshotStateListeners() const
@@ -88,14 +89,14 @@ namespace workphone
     void StateContext::clearStateListeners()
     {
         // Release references outside the lock: destructors may re-enter the context.
-        auto removed = std::move(m_stateListeners);
+        auto removed = std::move( m_stateListeners );
     }
 
     Array<SmartPtr<IStateQueue>> StateContext::snapshotStateQueues() const
     {
         auto values = m_stateQueues.readLocked();
         return Array<SmartPtr<IStateQueue>>( values.begin(), values.end(),
-                                            Allocator<SmartPtr<IStateQueue>>(sourceBudget) );
+                                             Allocator<SmartPtr<IStateQueue>>( sourceBudget ) );
     }
 
     void StateContext::clearStateQueues()
@@ -116,7 +117,7 @@ namespace workphone
     void StateContext::clearEventListeners()
     {
         // Retain references until outside the lock, as listener teardown may re-enter.
-        auto removed = std::move(m_eventListeners);
+        auto removed = std::move( m_eventListeners );
     }
 
     void StateContext::appendStateQueue( SmartPtr<IStateQueue> stateQueue )
@@ -175,7 +176,10 @@ namespace workphone
 
             {
                 auto queues = m_stateQueues.writeLocked();
-                if( m_queueGeneration != loadGeneration || getLoadingState() != LoadingState::Loading ) return;
+                if( m_queueGeneration != loadGeneration || getLoadingState() != LoadingState::Loading )
+                {
+                    return;
+                }
                 // isLoaded() still rejects producers until the transition.
                 // Arm first so synchronous Loaded-event handlers can enqueue;
                 // an unload in that callback closes the gate without reopening.
@@ -285,7 +289,7 @@ namespace workphone
             std::fprintf( stderr, "TRACE StateContext all queues drained\n" );
 
             // Detach and unload all managed states.
-            auto states = std::move(m_states);
+            auto states = std::move( m_states );
             std::fprintf( stderr, "TRACE StateContext states snapshotted %zu\n", states.size() );
             for( auto &state : states )
             {
@@ -347,10 +351,14 @@ namespace workphone
         {
             auto owner = getOwner();
             if( !owner )
+            {
                 return;
+            }
 
             if( !owner->isLoaded() )
+            {
                 return;
+            }
 
             auto task = Thread::getCurrentTask();
 
@@ -368,7 +376,9 @@ namespace workphone
                 }
 
                 if( !state->isDirty() )
+                {
                     continue;
+                }
 
                 auto listeners = getStateListeners();
                 // Admit context-owned dispatch lists before a handler can mark
@@ -422,8 +432,9 @@ namespace workphone
                 auto notifyListeners = [&]( const auto &eventListeners, bool ownerRoute ) {
                     for( auto eventListener : eventListeners )
                     {
-                        if( !eventListener || (ownerRoute &&
-                            std::find(contextEvents.begin(), contextEvents.end(), eventListener) != contextEvents.end()) )
+                        if( !eventListener ||
+                            ( ownerRoute && std::find( contextEvents.begin(), contextEvents.end(),
+                                                       eventListener ) != contextEvents.end() ) )
                         {
                             continue;
                         }
@@ -447,18 +458,26 @@ namespace workphone
                 };
 
                 notifyListeners( contextEvents, false );
-                if(auto stateOwner = state->getOwner())
-                    if(auto ownerEvents = stateOwner->getObjectListenerSnapshot())
-                        notifyListeners(*ownerEvents, true);
+                if( auto stateOwner = state->getOwner() )
+                {
+                    if( auto ownerEvents = stateOwner->getObjectListenerSnapshot() )
+                    {
+                        notifyListeners( *ownerEvents, true );
+                    }
+                }
             }
 
             // --- Process queued messages for this task ---
             auto stateQueue = getStateQueue( static_cast<u32>( task ) );
             if( !stateQueue )
+            {
                 return;
+            }
 
             if( stateQueue->isEmpty() )
+            {
                 return;
+            }
 
             auto listeners = getStateListeners();
             auto messages = stateQueue->getMessagesAndClear();
@@ -517,7 +536,10 @@ namespace workphone
         u32 entryGeneration;
         {
             auto queues = m_stateQueues.readLocked();
-            if( !isLoaded() || !m_acceptQueuedMessages ) return;
+            if( !isLoaded() || !m_acceptQueuedMessages )
+            {
+                return;
+            }
             entryGeneration = m_queueGeneration;
         }
 
@@ -541,7 +563,8 @@ namespace workphone
             auto stateManager = applicationManager ? applicationManager->getStateManager() : nullptr;
             if( !factoryManager || !stateManager )
             {
-                WP_LOG_ERROR( "StateContext::addMessage: missing factory/state manager; message dropped." );
+                WP_LOG_ERROR(
+                    "StateContext::addMessage: missing factory/state manager; message dropped." );
                 return;
             }
 
@@ -549,28 +572,49 @@ namespace workphone
             // queue lock: their destructors may re-enter this context.
             auto previousContext = message->getStateContext();
             bool retainedByQueue = false;
+
             struct RestoreMessageContext
             {
                 SmartPtr<IStateMessage> message;
                 SmartPtr<IStateContext> previous;
                 bool &retained;
+
                 ~RestoreMessageContext()
                 {
                     if( !retained )
-                        try { message->setStateContext(previous); }
-                        catch( ... ) {} // Extension callbacks cannot escape rollback.
+                    {
+                        try
+                        {
+                            message->setStateContext( previous );
+                        }
+                        catch( ... )
+                        {
+                        }  // Extension callbacks cannot escape rollback.
+                    }
                 }
-            } restoreMessageContext{message, previousContext, retainedByQueue};
+            } restoreMessageContext{ message, previousContext, retainedByQueue };
+
             message->setStateContext( this );
             const auto enqueueExtension = [&]( SmartPtr<IStateQueue> queue ) {
                 bool accepted = false;
                 {
                     auto queues = m_stateQueues.readLocked();
                     if( isLoaded() && m_acceptQueuedMessages && m_queueGeneration == entryGeneration )
+                    {
                         for( const auto &registered : *queues )
-                            if( registered == queue ) { accepted = true; break; }
+                        {
+                            if( registered == queue )
+                            {
+                                accepted = true;
+                                break;
+                            }
+                        }
+                    }
                 }
-                if( !accepted ) return false;
+                if( !accepted )
+                {
+                    return false;
+                }
                 queue->queueMessage( message );
                 retainedByQueue = true;
                 setDirtyFlag( 1u << iTask, true );
@@ -604,32 +648,64 @@ namespace workphone
                     const auto observed = snapshotStateQueues();
                     SmartPtr<IStateQueue> selected;
                     for( const auto &queue : observed )
-                        if( queue && queue->getTaskId() == iTask ) { selected = queue; break; }
+                    {
+                        if( queue && queue->getTaskId() == iTask )
+                        {
+                            selected = queue;
+                            break;
+                        }
+                    }
                     {
                         auto queues = m_stateQueues.writeLocked();
-                        if( !isLoaded() || !m_acceptQueuedMessages || m_queueGeneration != entryGeneration ) break;
+                        if( !isLoaded() || !m_acceptQueuedMessages ||
+                            m_queueGeneration != entryGeneration )
+                        {
+                            break;
+                        }
                         bool unchanged = queues->size() == observed.size();
                         for( size_t i = 0; unchanged && i < observed.size(); ++i )
+                        {
                             unchanged = ( *queues )[i].get() == observed[i].get();
-                        if( !unchanged ) continue;
-                        if( selected ) stateQueue = selected;
-                        else { queues->push_back( candidate ); stateQueue = candidate; }
+                        }
+                        if( !unchanged )
+                        {
+                            continue;
+                        }
+                        if( selected )
+                        {
+                            stateQueue = selected;
+                        }
+                        else
+                        {
+                            queues->push_back( candidate );
+                            stateQueue = candidate;
+                        }
                         if( isCoreStateQueue( stateQueue.get() ) )
                         {
-                            static_cast<StateQueue *>( stateQueue.get() )->StateQueue::queueMessage( message );
+                            static_cast<StateQueue *>( stateQueue.get() )
+                                ->StateQueue::queueMessage( message );
                             retainedByQueue = true;
-                            setDirtyFlag( 1u << iTask, true ); queued = true;
+                            setDirtyFlag( 1u << iTask, true );
+                            queued = true;
                         }
                     }
                     break;
                 }
                 {
                     auto queues = m_stateQueues.writeLocked();
-                    if( !isLoaded() || !m_acceptQueuedMessages || m_queueGeneration != entryGeneration ) break;
+                    if( !isLoaded() || !m_acceptQueuedMessages || m_queueGeneration != entryGeneration )
+                    {
+                        break;
+                    }
                     for( const auto &queue : *queues )
+                    {
                         if( isCoreStateQueue( queue.get() ) &&
                             static_cast<StateQueue *>( queue.get() )->StateQueue::getTaskId() == iTask )
-                        { stateQueue = queue; break; }
+                        {
+                            stateQueue = queue;
+                            break;
+                        }
+                    }
                     if( !stateQueue && candidate )
                     {
                         queues->push_back( candidate );
@@ -639,7 +715,10 @@ namespace workphone
                     {
                         // Context-created queues are concrete StateQueues. The
                         // qualified call has no user callbacks under this lock.
-                        if( !isCoreStateQueue( stateQueue.get() ) ) break;
+                        if( !isCoreStateQueue( stateQueue.get() ) )
+                        {
+                            break;
+                        }
                         auto concrete = static_cast<StateQueue *>( stateQueue.get() );
                         concrete->StateQueue::queueMessage( message );
                         retainedByQueue = true;
@@ -651,7 +730,10 @@ namespace workphone
                 // Loading can trigger events, so construct and load before
                 // taking the queue lock again to publish the first queue.
                 candidate = factoryManager->make_ptr<StateQueue>();
-                if( !candidate ) break;
+                if( !candidate )
+                {
+                    break;
+                }
                 // The queue is an unpublished implementation detail. Suppress
                 // initialization events even if a factory enables them: a
                 // callback enqueueing this task must not recursively create
@@ -669,10 +751,15 @@ namespace workphone
                     candidate->load( nullptr );
                 }
                 candidate->setObjectFlag( OBJECT_FLAG_LOADING_EVENTS, loadingEvents );
-                if( !candidate->isLoaded() ) break;
+                if( !candidate->isLoaded() )
+                {
+                    break;
+                }
             }
             if( !queued && stateQueue && !isCoreStateQueue( stateQueue.get() ) )
+            {
                 queued = enqueueExtension( stateQueue );
+            }
             if( !queued )
             {
                 return;
@@ -743,7 +830,7 @@ namespace workphone
             auto it = std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener );
             if( it != m_stateListeners.end() )
             {
-                std::move(std::next(it), m_stateListeners.end(), it);
+                std::move( std::next( it ), m_stateListeners.end(), it );
                 m_stateListeners.pop_back();
                 removed = true;
             }
@@ -795,7 +882,7 @@ namespace workphone
             auto it = std::find( m_eventListeners.begin(), m_eventListeners.end(), eventListener );
             if( it != m_eventListeners.end() )
             {
-                std::move(std::next(it), m_eventListeners.end(), it);
+                std::move( std::next( it ), m_eventListeners.end(), it );
                 m_eventListeners.pop_back();
                 removed = true;
             }
@@ -850,9 +937,15 @@ namespace workphone
                 if( isCoreStateQueue( stateQueue.get() ) )
                 {
                     auto concrete = static_cast<StateQueue *>( stateQueue.get() );
-                    if( concrete->StateQueue::getTaskId() == taskId ) return stateQueue;
+                    if( concrete->StateQueue::getTaskId() == taskId )
+                    {
+                        return stateQueue;
+                    }
                 }
-                else if( stateQueue ) hasExtensions = true;
+                else if( stateQueue )
+                {
+                    hasExtensions = true;
+                }
             }
         }
         if( hasExtensions )
@@ -861,8 +954,13 @@ namespace workphone
             // task getter may perform another context lookup or remove queues.
             const auto queues = snapshotStateQueues();
             for( const auto &stateQueue : queues )
-                if( stateQueue && !isCoreStateQueue( stateQueue.get() ) && stateQueue->getTaskId() == taskId )
+            {
+                if( stateQueue && !isCoreStateQueue( stateQueue.get() ) &&
+                    stateQueue->getTaskId() == taskId )
+                {
                     return stateQueue;
+                }
+            }
         }
         return nullptr;
     }
@@ -944,7 +1042,10 @@ namespace workphone
             // allows concurrent publishers to insert the same state twice.
             ScopedLock lock( &m_states );
             duplicate = std::find( m_states.begin(), m_states.end(), state ) != m_states.end();
-            if( !duplicate ) m_states.push_back( state );
+            if( !duplicate )
+            {
+                m_states.push_back( state );
+            }
         }
         if( duplicate )
         {
@@ -972,7 +1073,7 @@ namespace workphone
             auto it = std::find( m_states.begin(), m_states.end(), state );
             if( it != m_states.end() )
             {
-                std::move(std::next(it), m_states.end(), it);
+                std::move( std::next( it ), m_states.end(), it );
                 m_states.pop_back();
                 removed = true;
             }
@@ -1019,10 +1120,10 @@ namespace workphone
 
     void StateContext::clear()
     {
-        decltype(m_stateQueues)::storage_type stateQueues;
+        decltype( m_stateQueues )::storage_type stateQueues;
         {
             auto queues = m_stateQueues.writeLocked();
-            stateQueues = std::move(*queues);
+            stateQueues = std::move( *queues );
         }
         for( auto &stateQueue : stateQueues )
         {
@@ -1038,7 +1139,7 @@ namespace workphone
 
         clearStateQueues();
 
-        auto states = std::move(m_states);
+        auto states = std::move( m_states );
         for( auto &state : states )
         {
             if( state )
@@ -1147,8 +1248,13 @@ namespace workphone
         // Inline queue inventory copies do not allocate and callbacks run after
         // its lock is released. Accepted messages must survive denied dispatch.
         auto queues = m_stateQueues.snapshot();
-        for(const auto &queue : queues)
-            if(queue && !queue->isEmpty()) return true;
+        for( const auto &queue : queues )
+        {
+            if( queue && !queue->isEmpty() )
+            {
+                return true;
+            }
+        }
         try
         {
             auto states = snapshotStates();
@@ -1165,7 +1271,10 @@ namespace workphone
 
             return false;
         }
-        catch(const std::bad_alloc &) { return true; }
+        catch( const std::bad_alloc & )
+        {
+            return true;
+        }
     }
 
     void StateContext::setDirty( bool dirty, bool cascade )

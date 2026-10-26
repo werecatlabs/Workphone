@@ -27,7 +27,10 @@ namespace workphone
     {
         (void)data;
         setLoadingState( LoadingState::Loading );
-        { ScopedLock lock(&m_messageMutex); m_acceptMessages = true; }
+        {
+            ScopedLock lock( &m_messageMutex );
+            m_acceptMessages = true;
+        }
         setLoadingState( LoadingState::Loaded );
     }
 
@@ -35,12 +38,20 @@ namespace workphone
     {
         try
         {
-            { ScopedLock lock(&m_messageMutex); m_acceptMessages = false; }
+            {
+                ScopedLock lock( &m_messageMutex );
+                m_acceptMessages = false;
+            }
             auto messageQueue = getMessagesAndClear();
             // setLoadingState commits the state before publishing a new event.
             // Denying that optional publication must not strand accepted work.
-            try { setLoadingState( LoadingState::Unloading ); }
-            catch(const std::bad_alloc &) {}
+            try
+            {
+                setLoadingState( LoadingState::Unloading );
+            }
+            catch( const std::bad_alloc & )
+            {
+            }
             for( auto &message : messageQueue )
             {
                 if( message )
@@ -53,8 +64,13 @@ namespace workphone
                 }
             }
 
-            try { setLoadingState( LoadingState::Unloaded ); }
-            catch(const std::bad_alloc &) {}
+            try
+            {
+                setLoadingState( LoadingState::Unloaded );
+            }
+            catch( const std::bad_alloc & )
+            {
+            }
         }
         catch( std::exception &e )
         {
@@ -111,15 +127,23 @@ namespace workphone
             return;
         }
 
-        ScopedLock lock(&m_messageMutex);
-        if(m_acceptMessages) m_messageQueue.push_back( message );
+        ScopedLock lock( &m_messageMutex );
+        if( m_acceptMessages )
+        {
+            m_messageQueue.push_back( message );
+        }
     }
 
     void StateQueue::clear()
     {
         auto messages = getMessagesAndClear();
-        for(auto &message : messages)
-            if(message) message->unload(nullptr);
+        for( auto &message : messages )
+        {
+            if( message )
+            {
+                message->unload( nullptr );
+            }
+        }
     }
 
     auto StateQueue::getTaskId() const -> u32
@@ -134,7 +158,7 @@ namespace workphone
 
     auto StateQueue::isEmpty() const -> bool
     {
-        ScopedLock lock(&m_messageMutex);
+        ScopedLock lock( &m_messageMutex );
         return m_messageQueue.empty();
     }
 
@@ -150,14 +174,17 @@ namespace workphone
 
     auto StateQueue::getMessages() const -> Array<SmartPtr<IStateMessage>>
     {
-        ScopedLock lock(&m_messageMutex);
+        ScopedLock lock( &m_messageMutex );
         return m_messageQueue;
     }
 
     auto StateQueue::getMessagesAndClear() -> Array<SmartPtr<IStateMessage>>
     {
         auto messages = makeSourceBudgetSnapshot<SmartPtr<IStateMessage>>();
-        { ScopedLock lock(&m_messageMutex); messages.swap(m_messageQueue); }
+        {
+            ScopedLock lock( &m_messageMutex );
+            messages.swap( m_messageQueue );
+        }
         return messages;
     }
 

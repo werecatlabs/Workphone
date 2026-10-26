@@ -48,6 +48,7 @@ namespace workphone
                 f32 opacity = 1.0f;
                 bool enabled = true;
             };
+
             /** Camera flag to indicate rendering of UI elements. */
             static const u32 CameraFlagRenderUI;
 

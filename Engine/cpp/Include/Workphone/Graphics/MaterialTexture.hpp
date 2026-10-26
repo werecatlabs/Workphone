@@ -70,7 +70,7 @@ namespace workphone
             /** @brief Default constructor. Initializes members to default values. */
             MaterialTexture();
             /** Shared resource descriptor writer for implicit and authored slots. */
-            static SmartPtr<Properties> textureToData(SmartPtr<ITexture> texture);
+            static SmartPtr<Properties> textureToData( SmartPtr<ITexture> texture );
 
             /** @brief Virtual destructor. Cleans up resources. */
             ~MaterialTexture() override;
@@ -270,6 +270,7 @@ namespace workphone
                 ColourF tint = ColourF::White;
                 SmartPtr<IAnimator> animator;
             };
+
             void releaseDefaultAuthoringData();
             SourceBudgetUnique<TextureAuthoringData> m_textureAuthoring;
 
@@ -282,7 +283,6 @@ namespace workphone
             // Pass creation assigns this ordinal for ordinary texture slots.
             // Keep it inline so a bound/default slot needs no metadata block.
             u32 m_textureType = 0;
-
         };
 
     }  // end namespace render

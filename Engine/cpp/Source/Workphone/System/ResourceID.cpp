@@ -26,7 +26,9 @@ namespace workphone::resource
             if( path.empty() )
             {
                 if( error )
+                {
                     *error = "Resource path is empty";
+                }
                 return false;
             }
             if( path.front() == '/' || path.back() == '/' ||
@@ -34,13 +36,17 @@ namespace workphone::resource
                   path[1] == ':' ) )
             {
                 if( error )
+                {
                     *error = "Resource paths must be relative";
+                }
                 return false;
             }
             if( !allowDirectories && path.find( '/' ) != String::npos )
             {
                 if( error )
+                {
                     *error = "Sub-resource names cannot contain directories";
+                }
                 return false;
             }
 
@@ -54,7 +60,9 @@ namespace workphone::resource
                 if( segment.empty() || segment == "." || segment == ".." )
                 {
                     if( error )
+                    {
                         *error = "Resource paths cannot contain empty, '.' or '..' segments";
+                    }
                     return false;
                 }
                 for( unsigned char c : segment )
@@ -63,12 +71,16 @@ namespace workphone::resource
                         c == '|' )
                     {
                         if( error )
+                        {
                             *error = "Resource path contains an invalid character";
+                        }
                         return false;
                     }
                 }
                 if( separator == String::npos )
+                {
                     break;
+                }
                 segmentStart = separator + 1;
             }
             return true;
@@ -101,7 +113,9 @@ namespace workphone::resource
             else if( value.find( "://" ) != String::npos )
             {
                 if( error )
+                {
                     *error = "Only the data:// resource scheme is supported";
+                }
                 return false;
             }
 
@@ -109,7 +123,9 @@ namespace workphone::resource
             if( subSeparator != String::npos && value.find( ':', subSeparator + 1 ) != String::npos )
             {
                 if( error )
+                {
                     *error = "A resource ID can contain only one sub-resource separator";
+                }
                 return false;
             }
 
@@ -125,8 +141,10 @@ namespace workphone::resource
             if( !ResourceTypeID::isValidString( parentExtension ) )
             {
                 if( error )
+                {
                     *error =
                         "Parent resource extension must be one to eight lowercase letters or digits";
+                }
                 return false;
             }
 
@@ -141,8 +159,10 @@ namespace workphone::resource
                 if( !ResourceTypeID::isValidString( subExtension ) )
                 {
                     if( error )
+                    {
                         *error =
                             "Sub-resource extension must be one to eight lowercase letters or digits";
+                    }
                     return false;
                 }
                 subPath.replace( subPath.size() - subExtension.size(), subExtension.size(),
@@ -172,11 +192,15 @@ namespace workphone::resource
     bool ResourceTypeID::isValidString( const String &value )
     {
         if( value.empty() || value.size() > 8 )
+        {
             return false;
+        }
         for( unsigned char c : value )
         {
             if( !( c >= 'a' && c <= 'z' ) && !( c >= '0' && c <= '9' ) )
+            {
                 return false;
+            }
         }
         return true;
     }
@@ -289,14 +313,18 @@ namespace workphone::resource
     ResourceID ResourceID::parent() const
     {
         if( !isSubResource() )
+        {
             return *this;
+        }
         return ResourceID( m_value.substr( 0, m_value.find( ':', 7 ) ) );
     }
 
     String ResourceID::sourceRelativePath() const
     {
         if( !isValid() )
+        {
             return {};
+        }
         const size_t separator = m_value.find( ':', 7 );
         return m_value.substr( 7, separator == String::npos ? String::npos : separator - 7 );
     }
@@ -305,7 +333,9 @@ namespace workphone::resource
     {
         String parentPath = sourceRelativePath();
         if( !isSubResource() )
+        {
             return parentPath;
+        }
 
         const size_t slash = parentPath.find_last_of( '/' );
         const size_t dot = parentPath.find_last_of( '.' );

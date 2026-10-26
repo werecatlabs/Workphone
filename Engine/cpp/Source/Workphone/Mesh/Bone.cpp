@@ -35,21 +35,32 @@ namespace workphone
         for( const auto &child : children )
         {
             if( auto native = dynamic_cast<Bone *>( child.get() ) )
-                if( native->m_parent.get() == this ) native->m_parent = nullptr;
+            {
+                if( native->m_parent.get() == this )
+                {
+                    native->m_parent = nullptr;
+                }
+            }
         }
     }
 
     SmartPtr<IBone> Bone::createChild( u16 handle, const Vector3<real_Num> &translate,
-                                     const Quaternion<real_Num> &rotate )
+                                       const Quaternion<real_Num> &rotate )
     {
         auto application = core::IApplicationManager::instance();
         auto factory = application ? application->getFactoryManager() : nullptr;
-        if( !factory ) throw std::runtime_error( "Factory manager not available" );
+        if( !factory )
+        {
+            throw std::runtime_error( "Factory manager not available" );
+        }
         const auto denials = sourceBudgetDenialCount();
         auto child = factory->make_ptr<Bone>();
         if( !child )
         {
-            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            if( sourceBudgetDenialCount() != denials )
+            {
+                throw std::bad_alloc();
+            }
             throw std::runtime_error( "Failed to create child bone" );
         }
         child->m_iHandle = handle;
@@ -66,21 +77,48 @@ namespace workphone
     {
         m_bindingPosition = m_position;
         m_bindingOrientation = m_orientation;
-        for( auto &child : m_children ) if( child ) child->setBindingPose();
+        for( auto &child : m_children )
+        {
+            if( child )
+            {
+                child->setBindingPose();
+            }
+        }
     }
 
-    Vector3<real_Num> Bone::getBindingPosition() const { return m_bindingPosition; }
-    Quaternion<real_Num> Bone::getBindingOrientation() const { return m_bindingOrientation; }
+    Vector3<real_Num> Bone::getBindingPosition() const
+    {
+        return m_bindingPosition;
+    }
+
+    Quaternion<real_Num> Bone::getBindingOrientation() const
+    {
+        return m_bindingOrientation;
+    }
 
     void Bone::addChild( SmartPtr<Bone> child )
     {
-        if( !child || child.get() == this ) throw std::invalid_argument( "Invalid bone child" );
+        if( !child || child.get() == this )
+        {
+            throw std::invalid_argument( "Invalid bone child" );
+        }
         for( auto p = SmartPtr<Bone>( this ); p; p = p->m_parent.get() )
-            if( p == child ) throw std::invalid_argument( "Cyclic bone hierarchy" );
-        if( child->m_parent.get() == this ) return;
-        m_children.push_back( child ); // Complete admission before either parent changes.
+        {
+            if( p == child )
+            {
+                throw std::invalid_argument( "Cyclic bone hierarchy" );
+            }
+        }
+        if( child->m_parent.get() == this )
+        {
+            return;
+        }
+        m_children.push_back( child );  // Complete admission before either parent changes.
         if( auto old = child->m_parent.get() )
-            old->m_children.erase( std::remove( old->m_children.begin(), old->m_children.end(), child ), old->m_children.end() );
+        {
+            old->m_children.erase( std::remove( old->m_children.begin(), old->m_children.end(), child ),
+                                   old->m_children.end() );
+        }
         child->m_parent = this;
     }
 
@@ -88,18 +126,60 @@ namespace workphone
     {
         m_position = m_bindingPosition;
         m_orientation = m_bindingOrientation;
-        for( auto &child : m_children ) if( child ) child->reset();
+        for( auto &child : m_children )
+        {
+            if( child )
+            {
+                child->reset();
+            }
+        }
     }
 
-    void Bone::setManuallyControlled( bool value ) { m_manuallyControlled = value; }
-    bool Bone::isManuallyControlled() const { return m_manuallyControlled; }
-    Vector3<real_Num> Bone::getPosition() const { return m_position; }
-    void Bone::setPosition( const Vector3<real_Num> &position ) { m_position = position; }
-    Quaternion<real_Num> Bone::getOrientation() const { return m_orientation; }
-    void Bone::setOrientation( const Quaternion<real_Num> &orientation ) { m_orientation = orientation; }
-    u16 Bone::getBoneHandle() const { return m_iHandle; }
-    void Bone::setBoneHandle( u16 handle ) { m_iHandle = handle; }
-    SmartPtr<IBone> Bone::getParent() const { return m_parent.lock(); }
+    void Bone::setManuallyControlled( bool value )
+    {
+        m_manuallyControlled = value;
+    }
+
+    bool Bone::isManuallyControlled() const
+    {
+        return m_manuallyControlled;
+    }
+
+    Vector3<real_Num> Bone::getPosition() const
+    {
+        return m_position;
+    }
+
+    void Bone::setPosition( const Vector3<real_Num> &position )
+    {
+        m_position = position;
+    }
+
+    Quaternion<real_Num> Bone::getOrientation() const
+    {
+        return m_orientation;
+    }
+
+    void Bone::setOrientation( const Quaternion<real_Num> &orientation )
+    {
+        m_orientation = orientation;
+    }
+
+    u16 Bone::getBoneHandle() const
+    {
+        return m_iHandle;
+    }
+
+    void Bone::setBoneHandle( u16 handle )
+    {
+        m_iHandle = handle;
+    }
+
+    SmartPtr<IBone> Bone::getParent() const
+    {
+        return m_parent.lock();
+    }
+
     Array<SmartPtr<IBone>> Bone::getChildren() const
     {
         return makeSourceBudgetSnapshot( m_children );

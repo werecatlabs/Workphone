@@ -23,7 +23,9 @@ namespace workphone::advanced
     {
         VehicleAudioGains gains;
         if( !input.playing )
+        {
             return gains;
+        }
         auto finite = []( float value ) { return std::isfinite( value ) ? value : 0.f; };
         const auto range = std::max( finite( input.redlineRpm - input.idleRpm ), 1.f );
         const auto level = std::clamp( finite( input.rpm - input.idleRpm ) / range, 0.f, 1.f ) * 5.f;
@@ -33,7 +35,9 @@ namespace workphone::advanced
         // Equal-power crossfade between adjacent authored pitch loops.
         gains.engine[lower] = volume * std::sqrt( 1.f - fraction );
         if( lower < 5 )
+        {
             gains.engine[lower + 1] = volume * std::sqrt( fraction );
+        }
         if( input.grounded )
         {
             gains.rolling = .08f * std::clamp( finite( input.speed ) / 55.f, 0.f, 1.f );
@@ -47,10 +51,14 @@ namespace workphone::advanced
                                     float dt )
     {
         if( !std::isfinite( dt ) || dt <= 0 )
+        {
             return;
+        }
         const auto blend = 1.f - std::exp( -std::min( dt, .1f ) / .08f );
         for( size_t i = 0; i < current.engine.size(); ++i )
+        {
             current.engine[i] += ( target.engine[i] - current.engine[i] ) * blend;
+        }
         current.rolling += ( target.rolling - current.rolling ) * blend;
         current.squeal += ( target.squeal - current.squeal ) * blend;
     }

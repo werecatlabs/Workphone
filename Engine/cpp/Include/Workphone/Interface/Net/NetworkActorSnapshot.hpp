@@ -35,25 +35,37 @@ namespace workphone::network
         packet.read( state.sequence );
         packet.read( state.channels );
         if( ( state.channels & ~7u ) != 0 )
+        {
             throw std::invalid_argument( "Network snapshot: unknown channel" );
+        }
         const auto count = ( ( state.channels & 1u ) != 0 ) + ( ( state.channels & 2u ) != 0 ) +
                            ( ( state.channels & 4u ) != 0 );
         if( packet.getDataLength() != 15u + 12u * count )
+        {
             throw std::invalid_argument( "Network snapshot: invalid message size" );
+        }
         auto readVector = [&]( std::array<float, 3> &values ) {
             for( auto &value : values )
             {
                 packet.read( value );
                 if( !isFiniteFloat( value ) )
+                {
                     throw std::invalid_argument( "Network snapshot: non-finite transform" );
+                }
             }
         };
         if( state.channels & 1u )
+        {
             readVector( state.position );
+        }
         if( state.channels & 2u )
+        {
             readVector( state.rotation );
+        }
         if( state.channels & 4u )
+        {
             readVector( state.scale );
+        }
         return state;
     }
 

@@ -16,6 +16,7 @@ namespace workphone::scene
         double installMilliseconds = 2, minimumResidencySeconds = 2;
         u64 maximumDecodedCellBytes = 32ull << 20;
     };
+
     struct SceneWorldStreamStatistics
     {
         u32 residentCells = 0, residentActors = 0, pendingCells = 0, retiringObjects = 0;
@@ -37,7 +38,8 @@ namespace workphone::scene
     class WPCore_API SceneWorldStreamer final
     {
     public:
-        explicit SceneWorldStreamer( std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared() );
+        explicit SceneWorldStreamer(
+            std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared() );
         ~SceneWorldStreamer();
         bool open( const String &manifest, SmartPtr<IGameScene> scene,
                    const SceneWorldStreamOptions &options, String &error );
@@ -59,5 +61,5 @@ namespace workphone::scene
         struct Impl;
         std::unique_ptr<Impl> m_impl;
     };
-}
+}  // namespace workphone::scene
 #endif

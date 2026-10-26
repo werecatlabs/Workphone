@@ -202,10 +202,8 @@ namespace workphone
             // construction, onStop before release, onSceneLoaded when the owning
             // actor receives sceneWasLoaded. Defer graph mutations to update().
             Parameter handleEvent( EventType eventType, hash_type eventValue,
-                                   const Array<Parameter> &arguments,
-                                   SmartPtr<ISharedObject> sender,
-                                   SmartPtr<ISharedObject> object,
-                                   SmartPtr<IEvent> event ) override;
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
 
             /**
              * @brief Gets the script invoker for this component.

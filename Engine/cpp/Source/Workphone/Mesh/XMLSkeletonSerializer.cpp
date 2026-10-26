@@ -142,9 +142,13 @@ namespace workphone
         if( blendModeStr )
         {
             if( String( blendModeStr ) == "cumulative" )
+            {
                 pSkeleton->setBlendMode( SkeletonAnimationBlendMode::ANIMBLEND_CUMULATIVE );
+            }
             else
+            {
                 pSkeleton->setBlendMode( SkeletonAnimationBlendMode::ANIMBLEND_AVERAGE );
+            }
         }
 
         // Cast to MeshSkeleton for helper methods
@@ -286,7 +290,10 @@ namespace workphone
             {
                 auto concreteParent = dynamic_pointer_cast<Bone>( parent );
                 auto concreteChild = dynamic_pointer_cast<Bone>( bone );
-                if( concreteParent && concreteChild ) concreteParent->addChild( concreteChild );
+                if( concreteParent && concreteChild )
+                {
+                    concreteParent->addChild( concreteChild );
+                }
                 WP_LOG( "XMLSkeletonSerializer: Setting up bone hierarchy: " + parentName + " -> " +
                         boneName );
             }

@@ -85,12 +85,22 @@ namespace workphone
             VehicleDamageValidation( const VehicleDamageValidation & ) = default;
             VehicleDamageValidation( VehicleDamageValidation && ) noexcept = default;
             VehicleDamageValidation &operator=( VehicleDamageValidation && ) noexcept = default;
+
             VehicleDamageValidation &operator=( const VehicleDamageValidation &other )
             {
-                if( this != &other ) { VehicleDamageValidation candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    VehicleDamageValidation candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
-            void swap( VehicleDamageValidation &other ) noexcept { errors.swap( other.errors ); }
+
+            void swap( VehicleDamageValidation &other ) noexcept
+            {
+                errors.swap( other.errors );
+            }
+
             bool isValid() const noexcept
             {
                 return errors.empty();

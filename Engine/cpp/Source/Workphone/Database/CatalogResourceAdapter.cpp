@@ -159,7 +159,9 @@ namespace workphone
         binding = resource::RuntimeResourceBinding();
         error.clear();
         if( !validateRequest( request, error ) )
+        {
             return false;
+        }
         binding.uuid = request.entry.uuid;
         binding.resourceId = request.resourceId;
         return true;
@@ -168,18 +170,20 @@ namespace workphone
     bool CatalogResourceAdapter::writeRuntimePackage( const String &directory,
                                                       const Array<Request> &roots, String &error ) const
     {
-        return packageOperation(directory, roots, nullptr, error);
+        return packageOperation( directory, roots, nullptr, error );
     }
 
-    bool CatalogResourceAdapter::previewRuntimePackage(const Array<Request> &roots,
-        Array<resource::RuntimePackagePreviewEntry> &entries, String &error) const
+    bool CatalogResourceAdapter::previewRuntimePackage(
+        const Array<Request> &roots, Array<resource::RuntimePackagePreviewEntry> &entries,
+        String &error ) const
     {
         entries.clear();
-        return packageOperation({}, roots, &entries, error);
+        return packageOperation( {}, roots, &entries, error );
     }
 
-    bool CatalogResourceAdapter::packageOperation(const String &directory, const Array<Request> &roots,
-        Array<resource::RuntimePackagePreviewEntry> *preview, String &error) const
+    bool CatalogResourceAdapter::packageOperation( const String &directory, const Array<Request> &roots,
+                                                   Array<resource::RuntimePackagePreviewEntry> *preview,
+                                                   String &error ) const
     {
         error.clear();
         const auto resources = std::dynamic_pointer_cast<resource::ResourceSystem>( m_resources );
@@ -199,12 +203,15 @@ namespace workphone
             }
             ids.push_back( root.resourceId );
         }
-        const resource::RuntimePackageResolver resolver = [&]( const resource::RuntimePackageContext &context,
+        const resource::RuntimePackageResolver resolver =
+            [&]( const resource::RuntimePackageContext &context,
                  resource::RuntimePackageAdmission &result, String &diagnostic ) {
                 auto admission =
                     std::make_shared<asset_package_detail::Admission>( m_catalog, diagnostic );
                 if( !admission->active )
+                {
                     return false;
+                }
                 // Source binding is checked against the actual resource service,
                 // rather than relying on the adapter caller's sourceRoot promise.
                 std::error_code ec;
@@ -218,8 +225,12 @@ namespace workphone
                     return false;
                 }
                 for( const auto &root : roots )
+                {
                     if( !validateRequest( root, diagnostic ) )
+                    {
                         return false;
+                    }
+                }
                 for( const auto &id : context.resources )
                 {
                     if( id.isSubResource() )
@@ -230,7 +241,9 @@ namespace workphone
                     AssetCatalogPath path;
                     if( !canonicalAssetCatalogPath( m_sourceRoot, id.sourceRelativePath(), path,
                                                     diagnostic ) )
+                    {
                         return false;
+                    }
                     auto row = asset_package_detail::query(
                         m_catalog, "SELECT uuid FROM resources WHERE kind='file' AND path_key=? LIMIT 2",
                         { path.key } );
@@ -255,7 +268,9 @@ namespace workphone
                     }
                     AssetPackagePolicy policy;
                     if( !getAssetPackagePolicy( m_catalog, uuid, policy, diagnostic ) )
+                    {
                         return false;
+                    }
                     if( policy.usage != AssetPackageUsage::Runtime )
                     {
                         diagnostic =
@@ -270,8 +285,8 @@ namespace workphone
                 result.lifetime = std::move( admission );
                 return true;
             };
-        return preview ? resources->previewRuntimePackageChecked(ids, resolver, *preview, error) :
-            resources->writeRuntimePackageChecked(directory, ids, resolver, error);
+        return preview ? resources->previewRuntimePackageChecked( ids, resolver, *preview, error )
+                       : resources->writeRuntimePackageChecked( directory, ids, resolver, error );
     }
 
     resource::CompilationReport CatalogResourceAdapter::compile(

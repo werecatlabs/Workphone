@@ -42,12 +42,16 @@ namespace workphone::render
         bool visible( const TerrainTileInfo &tile, const TerrainTileView &view )
         {
             if( !view.cull )
+            {
                 return true;
+            }
             // Homogeneous six-plane AABB test. Test the full [-w,w] depth range:
             // conservative for both existing GL-style and DX-style projections.
             u32 common = 63;
             for( auto x : { tile.minimum.x, tile.maximum.x } )
+            {
                 for( auto y : { tile.minimum.y, tile.maximum.y } )
+                {
                     for( auto z : { tile.minimum.z, tile.maximum.z } )
                     {
                         const auto &m = view.localToClip;
@@ -60,12 +64,16 @@ namespace workphone::render
                         const f64 cw =
                             f64( m[3][0] ) * x + f64( m[3][1] ) * y + f64( m[3][2] ) * z + m[3][3];
                         if( !std::isfinite( cx + cy + cz + cw ) )
+                        {
                             return true;
+                        }
                         const auto extent = cw * ( 1.0 + std::clamp( view.prefetchMargin, 0.0f, 0.5f ) );
                         common &= ( cx < -extent ? 1u : 0u ) | ( cx > extent ? 2u : 0u ) |
                                   ( cy < -extent ? 4u : 0u ) | ( cy > extent ? 8u : 0u ) |
                                   ( cz < -cw ? 16u : 0u ) | ( cz > cw ? 32u : 0u );
                     }
+                }
+            }
             return common == 0;
         }
 
@@ -86,9 +94,12 @@ namespace workphone::render
     bool describeTerrainTiles( const TerrainData &data, Array<TerrainTileInfo> &output, String &error )
     {
         if( !validateTerrainData( data, error ) )
+        {
             return false;
+        }
         Array<TerrainTileInfo> result;
         for( s32 z = 0; z < data.dimensions.y - 1; z += terrainTileCells )
+        {
             for( s32 x = 0; x < data.dimensions.x - 1; x += terrainTileCells )
             {
                 TerrainTileInfo tile;
@@ -98,6 +109,7 @@ namespace workphone::render
                               std::min( z + s32( terrainTileCells ), data.dimensions.y - 1 ) };
                 f64 low = std::numeric_limits<f64>::infinity(), high = -low;
                 for( s32 iz = z; iz <= tile.last.y; ++iz )
+                {
                     for( s32 ix = x; ix <= tile.last.x; ++ix )
                     {
                         const auto h = height( data, ix, iz );
@@ -105,8 +117,11 @@ namespace workphone::render
                         high = std::max( high, h );
                         if( !data.holes.empty() && ix < tile.last.x && iz < tile.last.y &&
                             data.holes[size_t( iz ) * ( data.dimensions.x - 1 ) + ix] )
+                        {
                             tile.hasHoles = true;
+                        }
                     }
+                }
                 tile.minimum = { f32( f64( data.origin.x ) + x * f64( data.spacing.x ) ), f32( low ),
                                  f32( f64( data.origin.y ) + z * f64( data.spacing.y ) ) };
                 tile.maximum = { f32( f64( data.origin.x ) + tile.last.x * f64( data.spacing.x ) ),
@@ -119,22 +134,27 @@ namespace workphone::render
                     const s32 step = 1 << lod;
                     f64 bound = 0;
                     for( s32 cz = z; cz < tile.last.y; cz += step )
+                    {
                         for( s32 cx = x; cx < tile.last.x; cx += step )
                         {
                             f64 lo = std::numeric_limits<f64>::infinity(), hi = -lo;
                             for( s32 iz = cz; iz <= std::min( cz + step, tile.last.y ); ++iz )
+                            {
                                 for( s32 ix = cx; ix <= std::min( cx + step, tile.last.x ); ++ix )
                                 {
                                     const auto h = height( data, ix, iz );
                                     lo = std::min( lo, h );
                                     hi = std::max( hi, h );
                                 }
+                            }
                             bound = std::max( bound, hi - lo );
                         }
+                    }
                     tile.errors[lod] = f32( std::min( bound, f64( std::numeric_limits<f32>::max() ) ) );
                 }
                 result.push_back( tile );
             }
+        }
         output = std::move( result );
         return true;
     }
@@ -178,21 +198,29 @@ namespace workphone::render
             }
             for( s32 x = std::max( 0, tile.first.x - 1 );
                  x <= std::min( data.dimensions.x - 1, tile.last.x + 1 ); ++x )
+            {
                 if( !std::isfinite( data.heights[size_t( z ) * data.dimensions.x + x] *
                                     data.heightScale ) )
                 {
                     error = "Terrain tile samples must be finite";
                     return false;
                 }
+            }
         }
         if( lod && !data.holes.empty() )
+        {
             for( s32 z = tile.first.y; z < tile.last.y; ++z )
+            {
                 for( s32 x = tile.first.x; x < tile.last.x; ++x )
+                {
                     if( data.holes[size_t( z ) * ( data.dimensions.x - 1 ) + x] )
                     {
                         error = "Terrain tiles containing holes require exact LOD0";
                         return false;
                     }
+                }
+            }
+        }
         try
         {
             TerrainMeshData mesh;
@@ -201,7 +229,9 @@ namespace workphone::render
                 const u64 key = ( u64( u32( doubledZ ) ) << 32 ) | u32( doubledX );
                 auto found = vertices.find( key );
                 if( found != vertices.end() )
+                {
                     return found->second;
+                }
                 const f64 x = doubledX * 0.5, z = doubledZ * 0.5;
                 const u32 index = u32( mesh.positions.size() );
                 vertices.emplace( key, index );
@@ -229,28 +259,44 @@ namespace workphone::render
                     {
                         if( !data.holes.empty() &&
                             data.holes[size_t( z ) * ( data.dimensions.x - 1 ) + x] )
+                        {
                             continue;
+                        }
                         const auto a = vertex( 2 * x, 2 * z ), b = vertex( 2 * ex, 2 * z );
                         const auto c = vertex( 2 * x, 2 * ez ), d = vertex( 2 * ex, 2 * ez );
                         for( auto i : { a, c, b, b, c, d } )
+                        {
                             mesh.indices.push_back( i );
+                        }
                     }
                     else
                     {
                         Array<u32> ring;
                         // Clockwise viewed from above, giving +Y winding.
                         for( s32 rz = z; rz < ez; rz += ( x == tile.first.x ? 1 : step ) )
+                        {
                             ring.push_back( vertex( 2 * x, 2 * rz ) );
+                        }
                         for( s32 rx = x; rx < ex; rx += ( ez == tile.last.y ? 1 : step ) )
+                        {
                             ring.push_back( vertex( 2 * rx, 2 * ez ) );
+                        }
                         for( s32 rz = ez; rz > z; rz -= ( ex == tile.last.x ? 1 : step ) )
+                        {
                             ring.push_back( vertex( 2 * ex, 2 * rz ) );
+                        }
                         for( s32 rx = ex; rx > x; rx -= ( z == tile.first.y ? 1 : step ) )
+                        {
                             ring.push_back( vertex( 2 * rx, 2 * z ) );
+                        }
                         const auto centre = vertex( x + ex, z + ez );
                         for( size_t i = 0; i < ring.size(); ++i )
+                        {
                             for( auto index : { centre, ring[i], ring[( i + 1 ) % ring.size()] } )
+                            {
                                 mesh.indices.push_back( index );
+                            }
+                        }
                     }
                 }
             }
@@ -273,6 +319,7 @@ namespace workphone::render
             TerrainTileKey key;
             f64 distance;
         };
+
         Array<Choice> choices;
         for( const auto &tile : tiles )
         {
@@ -284,7 +331,9 @@ namespace workphone::render
             for( const auto &view : views )
             {
                 if( !visible( tile, view ) )
+                {
                     continue;
+                }
                 wanted = true;
                 const auto d = distanceTo( tile, view );
                 distance = std::min( distance, d );
@@ -293,6 +342,7 @@ namespace workphone::render
                 const auto threshold = std::max( 0.01f, view.maximumPixelError );
                 u32 level = 0;
                 if( !tile.hasHoles )
+                {
                     for( u32 candidate = 1; candidate < terrainTileLods; ++candidate )
                     {
                         // Refinement at 100%; coarsening only below 75% avoids
@@ -300,18 +350,25 @@ namespace workphone::render
                         const auto hysteresis =
                             old != previous.end() && candidate <= old->lod ? 1.0 : 0.75;
                         if( tile.errors[candidate] * factor <= threshold * hysteresis )
+                        {
                             level = candidate;
+                        }
                     }
+                }
                 selected = std::min( selected, level );
             }
             if( wanted )
+            {
                 choices.push_back( { { tile.id, selected }, distance } );
+            }
         }
         std::stable_sort( choices.begin(), choices.end(),
                           []( const auto &a, const auto &b ) { return a.distance < b.distance; } );
         Array<TerrainTileKey> result;
         for( size_t i = 0; i < std::min( size_t( maximumTiles ), choices.size() ); ++i )
+        {
             result.push_back( choices[i].key );
+        }
         return result;
     }
 
@@ -328,7 +385,9 @@ namespace workphone::render
                     data.surfaceMasks.capacity() * sizeof( Vector2F ) +
                     data.holes.capacity() * sizeof( u8 ) + data.appearance.detailNormal.capacity();
         for( const auto &layer : data.layers )
+        {
             bytes += layer.albedo.capacity() + layer.normal.capacity() + layer.orm.capacity();
+        }
         return bytes;
     }
 
@@ -339,17 +398,22 @@ namespace workphone::render
             StreamBudget lease;
             TerrainSnapshot source;
         };
+
         std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
         std::shared_ptr<WorldStreamProducer> producer;
         TerrainSnapshot source;
         Array<TerrainTileKey> demand;
+
         Impl()
         {
             String error;
             producer = scheduler->createProducer( {}, error );
             if( !producer )
+            {
                 throw std::runtime_error( error );
+            }
         }
+
         ~Impl()
         {
             producer->drain();
@@ -359,7 +423,9 @@ namespace workphone::render
     TerrainTileStream::TerrainTileStream() : m_impl( std::make_unique<Impl>() )
     {
     }
+
     TerrainTileStream::~TerrainTileStream() = default;
+
     bool TerrainTileStream::request( TerrainSnapshot data, const Array<TerrainTileInfo> &tiles,
                                      const Array<TerrainTileKey> &keys, String &error )
     {
@@ -369,18 +435,22 @@ namespace workphone::render
             return false;
         }
         for( auto key : keys )
+        {
             if( key.tile >= tiles.size() || key.lod >= terrainTileLods ||
                 tiles[key.tile].id != key.tile )
             {
                 error = "Invalid terrain stream tile request";
                 return false;
             }
+        }
         for( size_t i = 0; i < keys.size(); ++i )
+        {
             if( std::find( keys.begin(), keys.begin() + i, keys[i] ) != keys.begin() + i )
             {
                 error = "Duplicate terrain stream tile request";
                 return false;
             }
+        }
         auto &p = *m_impl;
         if( data == p.source && keys == p.demand )
         {
@@ -396,7 +466,9 @@ namespace workphone::render
                 owner->lease = p.scheduler->reserve( StreamMemoryClass::SourceCpu,
                                                      terrainSourceBytes( *data ), error );
                 if( !owner->lease )
+                {
                     return false;
+                }
                 owner->source = data;
                 retained = TerrainSnapshot( owner, data.get() );
             }
@@ -420,21 +492,27 @@ namespace workphone::render
                     auto mesh = std::make_shared<TerrainMeshData>();
                     if( buildTerrainTile( *retained, tile, key.lod, *mesh, result->error,
                                           [&] { return cancel.cancelled(); } ) )
+                    {
                         result->mesh = std::move( mesh );
+                    }
                     WorldStreamResult output;
                     output.payload = result;
                     if( result->mesh )
+                    {
                         output.bytes = sizeof( TerrainTileResult ) + sizeof( TerrainMeshData ) +
                                        result->mesh->positions.capacity() * sizeof( Vector3F ) +
                                        result->mesh->normals.capacity() * sizeof( Vector3F ) +
                                        result->mesh->uvs.capacity() * sizeof( Vector2F ) +
                                        result->mesh->indices.capacity() * sizeof( u32 );
+                    }
                     return output;
                 };
                 requests.push_back( std::move( request ) );
             }
             if( !p.producer->replace( requests, error ) )
+            {
                 return false;
+            }
             p.source = std::move( retained );
             p.demand = std::move( demand );
             error.clear();
@@ -446,11 +524,14 @@ namespace workphone::render
             return false;
         }
     }
+
     bool TerrainTileStream::take( TerrainTileResult &result )
     {
         WorldStreamResult ready;
         if( !m_impl->producer->take( ready ) )
+        {
             return false;
+        }
         if( !ready.payload )
         {
             result = {};
@@ -464,21 +545,26 @@ namespace workphone::render
         // Alias the complete scheduled payload, not just its mesh control block:
         // callers retaining a mesh also retain its shared ResultCpu reservation.
         if( tile->mesh )
+        {
             result.mesh = std::shared_ptr<const TerrainMeshData>( ready.payload, tile->mesh.get() );
+        }
         return true;
     }
+
     void TerrainTileStream::cancel()
     {
         m_impl->producer->cancel();
         m_impl->source.reset();
         m_impl->demand.clear();
     }
+
     void TerrainTileStream::drain()
     {
         m_impl->producer->drain();
         m_impl->source.reset();
         m_impl->demand.clear();
     }
+
     TerrainStreamStats TerrainTileStream::stats() const
     {
         const auto value = m_impl->producer->stats();

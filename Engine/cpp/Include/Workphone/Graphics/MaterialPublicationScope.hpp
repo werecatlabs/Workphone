@@ -20,17 +20,18 @@ namespace workphone
     public:
         MaterialPublicationScope();
         ~MaterialPublicationScope() noexcept;
-        MaterialPublicationScope(const MaterialPublicationScope &) = delete;
-        MaterialPublicationScope &operator=(const MaterialPublicationScope &) = delete;
+        MaterialPublicationScope( const MaterialPublicationScope & ) = delete;
+        MaterialPublicationScope &operator=( const MaterialPublicationScope & ) = delete;
         void commit();
         static bool isActive() noexcept;
         static size_t pendingEntryCount() noexcept;
         static size_t retainedStorageBytes() noexcept;
+
     private:
         friend class MaterialPassStateData;
-        static bool defer(MaterialPassStateData &state) noexcept;
-        static void forget(MaterialPassStateData &state) noexcept;
+        static bool defer( MaterialPassStateData &state ) noexcept;
+        static void forget( MaterialPassStateData &state ) noexcept;
         bool m_active = true;
     };
-}
+}  // namespace workphone
 #endif

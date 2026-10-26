@@ -253,26 +253,32 @@ namespace workphone
             {
                 return m_owner->cbeginUnlocked();
             }
+
             const_iterator end() const noexcept
             {
                 return m_owner->cendUnlocked();
             }
+
             const_iterator find( const Key &key ) const
             {
                 return m_owner->findUnlocked( key );
             }
+
             bool contains( const Key &key ) const
             {
                 return m_owner->findIndexUnlocked( key ) != npos;
             }
+
             bool empty() const noexcept
             {
                 return m_owner->m_size == 0;
             }
+
             size_type size() const noexcept
             {
                 return m_owner->m_size;
             }
+
             size_type capacity() const noexcept
             {
                 return m_owner->m_capacity;
@@ -321,26 +327,32 @@ namespace workphone
             {
                 return m_owner->beginUnlocked();
             }
+
             iterator end() noexcept
             {
                 return m_owner->endUnlocked();
             }
+
             iterator find( const Key &key )
             {
                 return m_owner->findUnlocked( key );
             }
+
             bool contains( const Key &key ) const
             {
                 return m_owner->findIndexUnlocked( key ) != npos;
             }
+
             bool empty() const noexcept
             {
                 return m_owner->m_size == 0;
             }
+
             size_type size() const noexcept
             {
                 return m_owner->m_size;
             }
+
             size_type capacity() const noexcept
             {
                 return m_owner->m_capacity;
@@ -356,14 +368,17 @@ namespace workphone
             {
                 return m_owner->eraseUnlocked( key );
             }
+
             iterator erase( const_iterator pos )
             {
                 return m_owner->eraseUnlocked( pos );
             }
+
             void clear() noexcept
             {
                 m_owner->clearUnlocked();
             }
+
             void reserve( size_type n )
             {
                 m_owner->reserveUnlocked( n );
@@ -652,22 +667,27 @@ namespace workphone
         {
             return beginUnlocked();
         }
+
         iterator end() noexcept
         {
             return endUnlocked();
         }
+
         const_iterator begin() const noexcept
         {
             return cbeginUnlocked();
         }
+
         const_iterator end() const noexcept
         {
             return cendUnlocked();
         }
+
         const_iterator cbegin() const noexcept
         {
             return cbeginUnlocked();
         }
+
         const_iterator cend() const noexcept
         {
             return cendUnlocked();
@@ -677,6 +697,7 @@ namespace workphone
         {
             return ReadLockedView( *this );
         }
+
         WriteLockedView writeLocked()
         {
             return WriteLockedView( *this );
@@ -686,22 +707,27 @@ namespace workphone
         {
             m_mutex.lock();
         }
+
         void lock_shared() const
         {
             m_mutex.lock_shared();
         }
+
         bool try_lock() const
         {
             return m_mutex.try_lock();
         }
+
         bool try_lock_shared() const
         {
             return m_mutex.try_lock_shared();
         }
+
         void unlock() const
         {
             m_mutex.unlock();
         }
+
         void unlock_shared() const
         {
             m_mutex.unlock_shared();
@@ -997,7 +1023,9 @@ namespace workphone
         void reserveUnlocked( size_type requestedCapacity )
         {
             if( requestedCapacity > max_size() )
+            {
                 throw std::length_error( "ConcurrentHashmapBase capacity overflow" );
+            }
             if( requestedCapacity <= m_capacity )
             {
                 return;
@@ -1137,14 +1165,17 @@ namespace workphone
         {
             return iterator( this, nextOccupiedIndexUnlocked( 0 ) );
         }
+
         iterator endUnlocked() noexcept
         {
             return iterator( this, m_bucketCount );
         }
+
         const_iterator cbeginUnlocked() const noexcept
         {
             return const_iterator( this, nextOccupiedIndexUnlocked( 0 ) );
         }
+
         const_iterator cendUnlocked() const noexcept
         {
             return const_iterator( this, m_bucketCount );

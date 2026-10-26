@@ -210,7 +210,9 @@ namespace workphone
     void TaskManager::calculateTaskAffinity()
     {
         if( !isLoaded() )
+        {
             return;
+        }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
@@ -327,10 +329,14 @@ namespace workphone
                             for( size_t i = 0; i < numTasks; ++i )
                             {
                                 if( !getFlags( static_cast<u32>( i ), Task::enabled_flag ) )
+                                {
                                     continue;
+                                }
 
                                 if( i >= tasks.size() )
+                                {
                                     continue;
+                                }
 
                                 auto &pTask = tasks[i];
                                 if( !pTask )
@@ -353,13 +359,19 @@ namespace workphone
                             for( size_t i = 0; i < numTasks; ++i )
                             {
                                 if( !getFlags( static_cast<u32>( i ), Task::primary_flag ) )
+                                {
                                     continue;
+                                }
 
                                 if( !getFlags( static_cast<u32>( i ), Task::enabled_flag ) )
+                                {
                                     continue;
+                                }
 
                                 if( i >= tasks.size() )
+                                {
                                     continue;
+                                }
 
                                 auto &pTask = tasks[i];
                                 if( !pTask )
@@ -386,19 +398,29 @@ namespace workphone
                             for( size_t i = 0; i < numTasks; ++i )
                             {
                                 if( i >= m_threadHint.size() )
+                                {
                                     break;
+                                }
 
                                 if( m_threadHint[i] != static_cast<u32>( threadId ) )
+                                {
                                     continue;
+                                }
 
                                 if( !getFlags( static_cast<u32>( i ), Task::enabled_flag ) )
+                                {
                                     continue;
+                                }
 
                                 if( getFlags( static_cast<u32>( i ), Task::primary_flag ) )
+                                {
                                     continue;
+                                }
 
                                 if( i >= tasks.size() )
+                                {
                                     continue;
+                                }
 
                                 auto &pTask = tasks[i];
                                 if( !pTask )
@@ -426,16 +448,24 @@ namespace workphone
                         for( size_t i = 0; i < numTasks; ++i )
                         {
                             if( i >= m_threadHint.size() )
+                            {
                                 break;
+                            }
 
                             if( m_threadHint[i] != static_cast<u32>( threadId ) )
+                            {
                                 continue;
+                            }
 
                             if( !getFlags( static_cast<u32>( i ), Task::enabled_flag ) )
+                            {
                                 continue;
+                            }
 
                             if( i >= tasks.size() )
+                            {
                                 continue;
+                            }
 
                             auto &pTask = tasks[i];
                             if( !pTask )
@@ -911,7 +941,9 @@ namespace workphone
             for( auto &t : m_tasks )
             {
                 if( t )
+                {
                     t->stop();
+                }
             }
             return;
         }

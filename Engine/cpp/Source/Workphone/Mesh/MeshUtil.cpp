@@ -33,24 +33,35 @@ namespace workphone
                 if( declaration &&
                     ( declaration->findElementBySemantic( VertexElementSemantic::VES_BLEND_WEIGHTS ) ||
                       declaration->findElementBySemantic( VertexElementSemantic::VES_BLEND_INDICES ) ) )
-                    throw std::invalid_argument( "Mesh vertex transformation does not remap skinning attributes." );
+                {
+                    throw std::invalid_argument(
+                        "Mesh vertex transformation does not remap skinning attributes." );
+                }
             }
         }
+
         void requireStaticSubMesh( const SmartPtr<ISubMesh> &submesh )
         {
             if( !submesh->getBoneAssignments().empty() )
-                throw std::invalid_argument( "Mesh vertex transformation does not remap bone assignments." );
+            {
+                throw std::invalid_argument(
+                    "Mesh vertex transformation does not remap bone assignments." );
+            }
             requireStaticVertexBuffer( submesh->getVertexBuffer() );
         }
+
         void requireStaticMesh( const SmartPtr<IMesh> &mesh )
         {
             if( mesh->hasSkeleton() || mesh->getSkeleton() || !mesh->getSkeletonName().empty() ||
                 mesh->getAnimationInterface() || mesh->hasVertexAnimation() ||
                 mesh->getNumAnimations() || mesh->getNumPoses() || !mesh->getBoneAssignments().empty() )
-                throw std::invalid_argument( "Mesh vertex transformation does not remap skeletal or vertex animation metadata." );
+            {
+                throw std::invalid_argument(
+                    "Mesh vertex transformation does not remap skeletal or vertex animation metadata." );
+            }
             requireStaticVertexBuffer( mesh->getSharedVertexBuffer() );
         }
-    }
+    }  // namespace
 
     Sphere3<real_Num> MeshUtil::calculateBoundingSphere( const Array<Vector3<real_Num>> &points )
     {
@@ -67,17 +78,29 @@ namespace workphone
         for( const auto &point : points )
         {
             if( point.X() < xmin.X() )
+            {
                 xmin = point;
+            }
             if( point.X() > xmax.X() )
+            {
                 xmax = point;
+            }
             if( point.Y() < ymin.Y() )
+            {
                 ymin = point;
+            }
             if( point.Y() > ymax.Y() )
+            {
                 ymax = point;
+            }
             if( point.Z() < zmin.Z() )
+            {
                 zmin = point;
+            }
             if( point.Z() > zmax.Z() )
+            {
                 zmax = point;
+            }
         }
 
         // Calculate squared distances for each axis span
@@ -158,18 +181,30 @@ namespace workphone
         for( const auto &point : points )
         {
             if( point.X() < minPoint.X() )
+            {
                 minPoint.X() = point.X();
+            }
             if( point.Y() < minPoint.Y() )
+            {
                 minPoint.Y() = point.Y();
+            }
             if( point.Z() < minPoint.Z() )
+            {
                 minPoint.Z() = point.Z();
+            }
 
             if( point.X() > maxPoint.X() )
+            {
                 maxPoint.X() = point.X();
+            }
             if( point.Y() > maxPoint.Y() )
+            {
                 maxPoint.Y() = point.Y();
+            }
             if( point.Z() > maxPoint.Z() )
+            {
                 maxPoint.Z() = point.Z();
+            }
         }
 
         // Create and return the bounding box
@@ -263,7 +298,9 @@ namespace workphone
         auto vertexBuffer = workphone::make_ptr<VertexBuffer>();
         vertexBuffer->setVertexDeclaration( vertexDeclaration );
         if( vertices.size() > std::numeric_limits<u32>::max() )
+        {
             throw std::length_error( "Vertex count exceeds the supported range." );
+        }
         vertexBuffer->setNumVertices( static_cast<u32>( vertices.size() ) );
 
         auto vertexData = static_cast<f32 *>( vertexBuffer->createVertexData() );
@@ -332,7 +369,8 @@ namespace workphone
         return subMesh;
     }
 
-    SmartPtr<ISubMesh> MeshUtil::createSubMesh( const Array<Vertex> &vertices, const Array<u32> &indices )
+    SmartPtr<ISubMesh> MeshUtil::createSubMesh( const Array<Vertex> &vertices,
+                                                const Array<u32> &indices )
     {
         auto subMesh = workphone::make_ptr<SubMesh>();
 
@@ -1180,13 +1218,17 @@ namespace workphone
     auto MeshUtil::clean( SmartPtr<ISubMesh> submesh, real_Num weldTolerance ) -> SmartPtr<ISubMesh>
     {
         if( !submesh || !submesh->getVertexBuffer() || !submesh->getIndexBuffer() )
+        {
             throw std::invalid_argument( "Welding requires complete submesh buffers." );
+        }
         requireStaticSubMesh( submesh );
 
         auto vertexBuffer = submesh->getVertexBuffer();
         auto points = getPoints( submesh );
         if( points.size() != vertexBuffer->getNumVertices() )
+        {
             throw std::invalid_argument( "Welding requires vertex positions." );
+        }
         auto representatives = makeSourceBudgetSnapshot<u32>();
         auto remap = makeSourceBudgetSnapshot<u32>();
         representatives.reserve( points.size() );
@@ -1203,14 +1245,18 @@ namespace workphone
                 }
             }
             if( replacement == representatives.size() )
+            {
                 representatives.push_back( static_cast<u32>( original ) );
+            }
             remap.push_back( static_cast<u32>( replacement ) );
         }
         auto indices = getIndices( submesh );
         for( auto &index : indices )
         {
             if( index >= remap.size() )
+            {
                 throw std::invalid_argument( "Welding index exceeds the source vertex count." );
+            }
             index = remap[index];
         }
 
@@ -1223,12 +1269,18 @@ namespace workphone
         auto declaration = vertexBuffer->getVertexDeclaration();
         for( size_t stream = 0; stream < streams.size(); ++stream )
         {
-            if( !streams[stream] ) continue;
-            auto destination = static_cast<u8 *>( replacement->createVertexData( static_cast<s32>( stream ) ) );
+            if( !streams[stream] )
+            {
+                continue;
+            }
+            auto destination =
+                static_cast<u8 *>( replacement->createVertexData( static_cast<s32>( stream ) ) );
             const auto stride = declaration->getSize( static_cast<u16>( stream ) );
             for( size_t vertex = 0; vertex < representatives.size(); ++vertex )
+            {
                 std::memcpy( destination + vertex * stride,
                              streams[stream] + size_t( representatives[vertex] ) * stride, stride );
+            }
         }
         result->setIndexBuffer( createIndexBuffer( indices ) );
         return result;
@@ -1260,7 +1312,10 @@ namespace workphone
 
             const auto source = positionElement->getSource();
             auto vertexData = static_cast<u8 *>( vertexBuffer->getVertexData( source ) );
-            if( !vertexData ) return points;
+            if( !vertexData )
+            {
+                return points;
+            }
             const auto vertexSize = vertexDeclaration->getSize( source );
             points.reserve( vertexCount );
             for( u32 vertex = 0; vertex < vertexCount; ++vertex, vertexData += vertexSize )
@@ -1439,7 +1494,9 @@ namespace workphone
     {
         auto heightMap = makeSourceBudgetSnapshot<Array<f32>>();
         if( textureSize.x <= 0 || textureSize.y <= 0 )
+        {
             return heightMap;
+        }
 
         // Create a 2D array for the height map
         heightMap.resize( textureSize.x );
@@ -1818,7 +1875,10 @@ namespace workphone
         auto subMeshes = mesh->getSubMeshes();
         for( const auto &submesh : subMeshes )
         {
-            if( !submesh ) continue;
+            if( !submesh )
+            {
+                continue;
+            }
             requireStaticSubMesh( submesh );
             // Reject malformed inputs before cloning factory-owned geometry.
             // A failed candidate could otherwise grow shared factory metadata
@@ -1826,16 +1886,26 @@ namespace workphone
             auto vertices = submesh->getVertexBuffer();
             auto declaration = vertices ? vertices->getVertexDeclaration() : nullptr;
             if( !declaration )
+            {
                 throw std::invalid_argument( "Material merge requires complete vertex buffers." );
+            }
             if( vertices->getNumVertices() )
+            {
                 for( const auto &element : declaration->getElements() )
+                {
                     if( declaration->getSize( element->getSource() ) &&
                         !vertices->getVertexData( element->getSource() ) )
+                    {
                         throw std::invalid_argument( "Material merge vertex stream is missing." );
-            const GroupKey key{submesh->getMaterialName(), submesh->getRenderOperationType()};
+                    }
+                }
+            }
+            const GroupKey key{ submesh->getMaterialName(), submesh->getRenderOperationType() };
             auto group = groups.find( key );
             if( group == groups.end() )
+            {
                 group = groups.emplace( key, makeSourceBudgetSnapshot<SmartPtr<ISubMesh>>() ).first;
+            }
             group->second.push_back( submesh );
         }
 
@@ -1843,11 +1913,13 @@ namespace workphone
         for( const auto &group : groups )
         {
             const auto operation = group.first.second;
-            const auto primitiveSize = operation == RenderOperationType::OT_POINT_LIST ? 1u :
-                                       operation == RenderOperationType::OT_LINE_LIST ? 2u :
-                                       operation == RenderOperationType::OT_TRIANGLE_LIST ? 3u : 0u;
+            const auto primitiveSize = operation == RenderOperationType::OT_POINT_LIST      ? 1u
+                                       : operation == RenderOperationType::OT_LINE_LIST     ? 2u
+                                       : operation == RenderOperationType::OT_TRIANGLE_LIST ? 3u
+                                                                                            : 0u;
             auto concatenate = primitiveSize != 0;
             if( concatenate )
+            {
                 for( const auto &source : group.second )
                 {
                     auto indices = source->getIndexBuffer();
@@ -1857,28 +1929,42 @@ namespace workphone
                         break;
                     }
                 }
+            }
             if( !concatenate )
             {
                 // Strips/fans and incomplete primitive lists must keep source
                 // boundaries, including trailing indices ignored by rendering.
-                for( const auto &source : group.second ) result->addSubMesh( source->clone() );
+                for( const auto &source : group.second )
+                {
+                    result->addSubMesh( source->clone() );
+                }
                 continue;
             }
             auto first = group.second.front()->getVertexBuffer();
-            if( !first ) throw std::invalid_argument( "Material merge requires owned vertex buffers." );
+            if( !first )
+            {
+                throw std::invalid_argument( "Material merge requires owned vertex buffers." );
+            }
             auto declaration = first->getVertexDeclaration();
-            if( !declaration ) throw std::invalid_argument( "Material merge requires a vertex declaration." );
+            if( !declaration )
+            {
+                throw std::invalid_argument( "Material merge requires a vertex declaration." );
+            }
             u64 vertexCount = 0;
             auto indices = makeSourceBudgetSnapshot<u32>();
             for( const auto &submesh : group.second )
             {
                 auto vertices = submesh->getVertexBuffer();
                 if( !vertices || !vertices->getVertexDeclaration() )
+                {
                     throw std::invalid_argument( "Material merge requires complete vertex buffers." );
+                }
                 const auto &expected = declaration->getElements();
                 const auto &actual = vertices->getVertexDeclaration()->getElements();
                 if( expected.size() != actual.size() )
+                {
                     throw std::invalid_argument( "Material merge vertex declarations differ." );
+                }
                 for( size_t element = 0; element < expected.size(); ++element )
                 {
                     const auto &a = expected[element];
@@ -1886,30 +1972,42 @@ namespace workphone
                     if( a->getSource() != b->getSource() || a->getOffset() != b->getOffset() ||
                         a->getSize() != b->getSize() || a->getType() != b->getType() ||
                         a->getSemantic() != b->getSemantic() || a->getIndex() != b->getIndex() )
+                    {
                         throw std::invalid_argument( "Material merge vertex declarations differ." );
+                    }
                 }
                 auto sourceIndices = getIndices( submesh );
                 for( const auto index : sourceIndices )
                 {
                     if( index >= vertices->getNumVertices() ||
                         vertexCount + index > std::numeric_limits<u32>::max() )
+                    {
                         throw std::invalid_argument( "Material merge index exceeds its vertex buffer." );
+                    }
                     indices.push_back( static_cast<u32>( vertexCount + index ) );
                 }
                 vertexCount += vertices->getNumVertices();
                 if( vertexCount > std::numeric_limits<u32>::max() )
-                    throw std::length_error( "Material merge vertex count exceeds the supported range." );
+                {
+                    throw std::length_error(
+                        "Material merge vertex count exceeds the supported range." );
+                }
             }
             auto vertices = workphone::make_ptr<VertexBuffer>();
             vertices->setVertexDeclaration( declaration->clone() );
             vertices->setNumVertices( static_cast<u32>( vertexCount ) );
             auto sources = makeSourceBudgetSnapshot<u16>();
             for( const auto &element : declaration->getElements() )
+            {
                 if( std::find( sources.begin(), sources.end(), element->getSource() ) == sources.end() )
+                {
                     sources.push_back( element->getSource() );
+                }
+            }
             for( const auto stream : sources )
             {
-                auto destination = static_cast<u8 *>( vertices->createVertexData( static_cast<s32>( stream ) ) );
+                auto destination =
+                    static_cast<u8 *>( vertices->createVertexData( static_cast<s32>( stream ) ) );
                 const auto stride = declaration->getSize( stream );
                 for( const auto &submesh : group.second )
                 {
@@ -1917,8 +2015,13 @@ namespace workphone
                     const auto bytes = size_t( source->getNumVertices() ) * stride;
                     auto sourceData = source->getVertexData( static_cast<s32>( stream ) );
                     if( bytes && !sourceData )
+                    {
                         throw std::invalid_argument( "Material merge vertex stream is missing." );
-                    if( bytes ) std::memcpy( destination, sourceData, bytes );
+                    }
+                    if( bytes )
+                    {
+                        std::memcpy( destination, sourceData, bytes );
+                    }
                     destination += bytes;
                 }
             }
@@ -2144,11 +2247,16 @@ namespace workphone
 
     void MeshUtil::unshareVertices( SmartPtr<IMesh> mesh )
     {
-        if( !mesh || !mesh->getHasSharedVertexData() ) return;
+        if( !mesh || !mesh->getHasSharedVertexData() )
+        {
+            return;
+        }
         requireStaticMesh( mesh );
         auto sharedVertexBuffer = mesh->getSharedVertexBuffer();
         if( !sharedVertexBuffer )
+        {
             throw std::invalid_argument( "Shared mesh has no shared vertex buffer." );
+        }
 
         struct Replacement
         {
@@ -2156,6 +2264,7 @@ namespace workphone
             SmartPtr<IVertexBuffer> vertices;
             SmartPtr<IIndexBuffer> indices;
         };
+
         auto replacements = makeSourceBudgetSnapshot<Replacement>();
         auto subMeshes = mesh->getSubMeshes();
         replacements.reserve( subMeshes.size() );
@@ -2163,17 +2272,24 @@ namespace workphone
         auto declaration = sharedVertexBuffer->getVertexDeclaration();
         for( const auto &subMesh : subMeshes )
         {
-            if( !subMesh || !subMesh->getUseSharedVertices() ) continue;
+            if( !subMesh || !subMesh->getUseSharedVertices() )
+            {
+                continue;
+            }
             requireStaticSubMesh( subMesh );
             if( !subMesh->getIndexBuffer() )
+            {
                 throw std::invalid_argument( "Shared submesh has no index buffer." );
+            }
             auto indices = getIndices( subMesh );
             SourceBudgetMap<u32, u32> vertexIndexMap;
             auto usedVertices = makeSourceBudgetSnapshot<u32>();
             for( auto &index : indices )
             {
                 if( index >= sharedVertexBuffer->getNumVertices() )
+                {
                     throw std::invalid_argument( "Shared index exceeds the source vertex count." );
+                }
                 auto entry = vertexIndexMap.find( index );
                 if( entry == vertexIndexMap.end() )
                 {
@@ -2188,17 +2304,24 @@ namespace workphone
             vertices->setNumVertices( static_cast<u32>( usedVertices.size() ) );
             for( size_t stream = 0; stream < sourceStreams.size(); ++stream )
             {
-                if( !sourceStreams[stream] ) continue;
-                auto destination = static_cast<u8 *>( vertices->createVertexData( static_cast<s32>( stream ) ) );
+                if( !sourceStreams[stream] )
+                {
+                    continue;
+                }
+                auto destination =
+                    static_cast<u8 *>( vertices->createVertexData( static_cast<s32>( stream ) ) );
                 const auto stride = declaration->getSize( static_cast<u16>( stream ) );
                 for( size_t vertex = 0; vertex < usedVertices.size(); ++vertex )
+                {
                     std::memcpy( destination + vertex * stride,
-                                 sourceStreams[stream] + size_t( usedVertices[vertex] ) * stride, stride );
+                                 sourceStreams[stream] + size_t( usedVertices[vertex] ) * stride,
+                                 stride );
+                }
             }
             // Clone index ownership too: other mesh/resource aliases continue
             // to address the original shared vertex buffer until commit.
             auto indexBuffer = createIndexBuffer( indices );
-            replacements.push_back( {subMesh, vertices, indexBuffer} );
+            replacements.push_back( { subMesh, vertices, indexBuffer } );
         }
 
         // Standard mesh/submesh setters only transfer admitted owners. Commit

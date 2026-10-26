@@ -38,7 +38,9 @@ namespace workphone
         {
             auto readCount = read( tmpBuf, bufferSize - 1 );
             if( readCount == 0 )
+            {
                 break;
+            }
 
             // Search for newline character
             auto p = static_cast<char *>( memchr( tmpBuf, '\n', readCount ) );
@@ -59,11 +61,15 @@ namespace workphone
 
         // Trim trailing '\r' if exists
         if( !retString.empty() && retString.back() == '\r' )
+        {
             retString.pop_back();
+        }
 
         // Trim whitespace if requested
         if( trimAfter )
+        {
             StringUtil::trim( retString.c_str() );
+        }
 
         return retString.c_str();
     }

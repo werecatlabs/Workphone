@@ -162,7 +162,9 @@ namespace workphone
             using BlockPtr = std::shared_ptr<Block>;
             using BlockAllocator = typename std::allocator_traits<A>::template rebind_alloc<BlockPtr>;
             std::vector<BlockPtr, BlockAllocator> elements;
-            ConcurrentQueue<RawPtr<T>, typename std::allocator_traits<A>::template rebind_alloc<RawPtr<T>>> freeElements;
+            ConcurrentQueue<RawPtr<T>,
+                            typename std::allocator_traits<A>::template rebind_alloc<RawPtr<T>>>
+                freeElements;
             atomic_u32 nextSize;
             mutable RecursiveSpinMutex mutex;
         };
@@ -175,12 +177,16 @@ namespace workphone
     // -------------------------------------------------------------------------
 
     template <class T, class A>
-    GenericPool<T, A>::GenericPool() : m_state( std::allocate_shared<PoolState>(typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}) )
+    GenericPool<T, A>::GenericPool() :
+        m_state( std::allocate_shared<PoolState>(
+            typename std::allocator_traits<A>::template rebind_alloc<PoolState>{} ) )
     {
     }
 
     template <class T, class A>
-    GenericPool<T, A>::GenericPool( u32 nextSize ) : m_state( std::allocate_shared<PoolState>(typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}, nextSize) )
+    GenericPool<T, A>::GenericPool( u32 nextSize ) :
+        m_state( std::allocate_shared<PoolState>(
+            typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}, nextSize ) )
     {
     }
 
@@ -196,7 +202,9 @@ namespace workphone
     template <class T, class A>
     template <class U, class B>
     GenericPool<T, A>::GenericPool( const GenericPool<U, B> &other ) :
-        m_state( std::allocate_shared<PoolState>(typename std::allocator_traits<A>::template rebind_alloc<PoolState>{}, other.getNextSize()) )
+        m_state( std::allocate_shared<PoolState>(
+            typename std::allocator_traits<A>::template rebind_alloc<PoolState>{},
+            other.getNextSize() ) )
     {
     }
 
@@ -214,7 +222,7 @@ namespace workphone
         }
 
         auto element = std::allocate_shared<GenericPoolData<T, A>>(
-            typename std::allocator_traits<A>::template rebind_alloc<GenericPoolData<T, A>>{});
+            typename std::allocator_traits<A>::template rebind_alloc<GenericPoolData<T, A>>{} );
 
         element->setNumElements( nextSize );
 
@@ -227,8 +235,11 @@ namespace workphone
         element->load( nullptr );
 
         size_t totalSlots = element->getNumAllocated();
-        for( const auto &block : state->elements ) totalSlots += block->getNumAllocated();
-        state->freeElements.reserve(totalSlots);
+        for( const auto &block : state->elements )
+        {
+            totalSlots += block->getNumAllocated();
+        }
+        state->freeElements.reserve( totalSlots );
         state->elements.push_back( element );
 
         const auto numAllocated = element->getNumAllocated();
@@ -245,11 +256,17 @@ namespace workphone
     RawPtr<T> GenericPool<T, A>::allocate_object()
     {
         auto state = m_state;
-        ScopedLock lock(&state->mutex);
+        ScopedLock lock( &state->mutex );
         RawPtr<T> ptr = nullptr;
-        if( state->freeElements.try_pop(ptr) ) return ptr;
+        if( state->freeElements.try_pop( ptr ) )
+        {
+            return ptr;
+        }
         allocateData();
-        if( state->freeElements.try_pop(ptr) ) return ptr;
+        if( state->freeElements.try_pop( ptr ) )
+        {
+            return ptr;
+        }
         return nullptr;
     }
 
@@ -280,7 +297,7 @@ namespace workphone
             // Intentionally empty.
         }
 
-        state->freeElements = decltype(state->freeElements){};
+        state->freeElements = decltype( state->freeElements ){};
 
         /*
          * GenericPoolData owns its allocation and its destructor calls
@@ -297,7 +314,7 @@ namespace workphone
             element = nullptr;
         }
 
-        decltype(state->elements){}.swap(state->elements);
+        decltype( state->elements ){}.swap( state->elements );
     }
 
     template <class T, class A>

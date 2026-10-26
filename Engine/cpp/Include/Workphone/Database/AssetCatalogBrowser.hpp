@@ -15,26 +15,40 @@ namespace workphone
         {
             clear();
             if( !catalog )
+            {
                 return false;
+            }
             AssetDatabaseManager::EntryQuery query;
             query.pageSize = 1;
             auto page = catalog->queryEntries( query );
             if( !page.succeeded )
+            {
                 return false;
-            try { m_catalog = catalog; }
-            catch(const std::bad_alloc &) { return false; }
+            }
+            try
+            {
+                m_catalog = catalog;
+            }
+            catch( const std::bad_alloc & )
+            {
+                return false;
+            }
             m_instance = page.next.catalogInstance;
             return true;
         }
+
         bool isCurrent( SmartPtr<AssetDatabaseManager> catalog ) const
         {
             if( !catalog || catalog != m_catalog.lock() || m_instance == 0 )
+            {
                 return false;
+            }
             AssetDatabaseManager::EntryQuery query;
             query.pageSize = 1;
             auto page = catalog->queryEntries( query );
             return page.succeeded && page.next.catalogInstance == m_instance;
         }
+
         void clear()
         {
             m_catalog = nullptr;
@@ -45,6 +59,7 @@ namespace workphone
         ObjectObserver<AssetDatabaseManager> m_catalog;
         u64 m_instance = 0;
     };
+
     /** UI-independent catalog navigation. Call only from its owning UI thread.
      * Does not construct assets or retain an old project/catalog owner. */
     class AssetCatalogBrowser
@@ -60,6 +75,7 @@ namespace workphone
             m_page = {};
             m_cursors = makeSourceBudgetSnapshot<AssetDatabaseManager::EntryCursor>();
         }
+
         bool refresh( SmartPtr<AssetDatabaseManager> catalog, const Query &query )
         {
             clear();
@@ -69,19 +85,24 @@ namespace workphone
                 m_query = query;
                 return read( catalog );
             }
-            catch(const std::bad_alloc &)
+            catch( const std::bad_alloc & )
             {
                 clear();
                 m_page.error = "Budget exhausted";
                 return false;
             }
         }
+
         bool next( SmartPtr<AssetDatabaseManager> activeCatalog )
         {
             if( !sameCatalog( activeCatalog ) )
+            {
                 return changed();
+            }
             if( !m_page.succeeded || !m_page.hasMore )
+            {
                 return false;
+            }
             const auto denials = sourceBudgetDenialCount();
             try
             {
@@ -92,22 +113,29 @@ namespace workphone
                 cursors.push_back( m_page.next );
                 auto page = activeCatalog->queryEntries( m_query, &cursors.back() );
                 if( !page.succeeded )
+                {
                     return failedNavigation( std::move( page ), denials );
+                }
                 m_cursors.swap( cursors );
                 m_page = std::move( page );
                 return true;
             }
-            catch(const std::bad_alloc &)
+            catch( const std::bad_alloc & )
             {
                 return budgetExhausted();
             }
         }
+
         bool previous( SmartPtr<AssetDatabaseManager> activeCatalog )
         {
             if( !sameCatalog( activeCatalog ) )
+            {
                 return changed();
+            }
             if( m_cursors.empty() )
+            {
                 return false;
+            }
             try
             {
                 // Validate the displayed generation even when returning to
@@ -115,42 +143,58 @@ namespace workphone
                 // that the catalog's generation actually changed.
                 const auto denials = sourceBudgetDenialCount();
                 if( m_page.entries.empty() )
+                {
                     return changed();
+                }
                 if( !activeCatalog->isEntryCurrent( m_page.entries.front() ) )
+                {
                     return sourceBudgetDenialCount() != denials ? budgetExhausted() : changed();
+                }
                 const auto cursor = m_cursors.size() > 1 ? &m_cursors[m_cursors.size() - 2] : nullptr;
                 auto page = activeCatalog->queryEntries( m_query, cursor );
                 if( !page.succeeded )
+                {
                     return failedNavigation( std::move( page ), denials );
+                }
                 m_cursors.pop_back();
                 m_page = std::move( page );
                 return true;
             }
-            catch(const std::bad_alloc &)
+            catch( const std::bad_alloc & )
             {
                 return budgetExhausted();
             }
         }
+
         bool select( size_t index, SmartPtr<AssetDatabaseManager> activeCatalog, Entry &entry )
         {
             entry = {};
             if( !sameCatalog( activeCatalog ) )
+            {
                 return changed();
+            }
             if( !m_page.succeeded || index >= m_page.entries.size() )
+            {
                 return false;
+            }
             if( !activeCatalog->isEntryCurrent( m_page.entries[index] ) )
+            {
                 return changed();
+            }
             entry = m_page.entries[index];
             return true;
         }
+
         const Page &page() const
         {
             return m_page;
         }
+
         size_t pageNumber() const
         {
             return m_cursors.size() + 1;
         }
+
         bool hasPrevious() const
         {
             return m_page.succeeded && !m_cursors.empty();
@@ -162,12 +206,14 @@ namespace workphone
             auto bound = m_catalog.lock();
             return catalog && catalog == bound;
         }
+
         bool changed()
         {
             clear();
             m_page.error = "Catalog changed; refresh the first page.";
             return false;
         }
+
         bool budgetExhausted()
         {
             // Keep the successful page usable and its cursor position intact.
@@ -175,14 +221,18 @@ namespace workphone
             m_page.error = "Budget exhausted";
             return false;
         }
+
         bool failedNavigation( Page &&page, u64 denials )
         {
             if( sourceBudgetDenialCount() != denials || page.error == "Budget exhausted" )
+            {
                 return budgetExhausted();
+            }
             clear();
             m_page = std::move( page );
             return false;
         }
+
         bool read( SmartPtr<AssetDatabaseManager> catalog )
         {
             if( !catalog )
@@ -193,9 +243,12 @@ namespace workphone
             }
             m_page = catalog->queryEntries( m_query, m_cursors.empty() ? nullptr : &m_cursors.back() );
             if( !m_page.succeeded )
+            {
                 m_cursors = makeSourceBudgetSnapshot<AssetDatabaseManager::EntryCursor>();
+            }
             return m_page.succeeded;
         }
+
         ObjectObserver<AssetDatabaseManager> m_catalog;
         Query m_query;
         Page m_page;

@@ -71,10 +71,12 @@ namespace workphone::scene
         {
             u64 local = 0, world = 0, subtree = 0, processed = 0;
         };
+
         struct Statistics
         {
             u64 localBuilds = 0, worldBuilds = 0, unchangedWrites = 0;
         };
+
         Revisions revisions( Handle handle ) const;
         void setParent( Handle handle, Handle parent );
         void acknowledgeSubtree( Handle handle, u64 revision );
@@ -215,8 +217,12 @@ namespace workphone::scene
         // invalidate publication before lending raw storage, including on throw.
         const auto revision = ++m_revision;
         for( size_t i = 0; i < m_active.size(); ++i )
+        {
             if( m_active[i] )
+            {
                 m_revisions[i].local = m_revisions[i].world = m_revisions[i].subtree = revision;
+            }
+        }
         visitor( DataView{ m_localPositions.data(), m_localOrientations.data(), m_localScales.data(),
                            m_worldPositions.data(), m_worldOrientations.data(), m_worldScales.data(),
                            m_active.data(), m_generations.data(), m_active.size() } );

@@ -15,6 +15,7 @@ namespace workphone
         virtual ~IReadOnlyDatabase() = default;
         virtual bool openReadOnly( const String &path, String &error ) = 0;
     };
+
     /** Optional connection-wide transaction guard. Recursive on the owning thread.
      * Every query/open/close path of an implementing backend uses the same guard. */
     class ISerializedDatabase
@@ -40,13 +41,19 @@ namespace workphone
         explicit DatabaseConnectionLock( ISerializedDatabase *database ) : m_database( database )
         {
             if( m_database )
+            {
                 m_database->lockConnection();
+            }
         }
+
         ~DatabaseConnectionLock()
         {
             if( m_database )
+            {
                 m_database->unlockConnection();
+            }
         }
+
         DatabaseConnectionLock( const DatabaseConnectionLock & ) = delete;
         DatabaseConnectionLock &operator=( const DatabaseConnectionLock & ) = delete;
 

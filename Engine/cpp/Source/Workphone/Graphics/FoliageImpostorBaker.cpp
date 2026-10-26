@@ -17,20 +17,27 @@ namespace workphone::render
     {
         std::mutex resolverMutex;
         FoliageBakeTextureResolver installedResolver;
+
         void require( bool value, const char *message )
         {
             if( !value )
+            {
                 throw std::runtime_error( message );
+            }
         }
+
         u8 byte( double value )
         {
             return u8( std::lround( std::clamp( value, 0.0, 1.0 ) * 255 ) );
         }
+
         ColourF sample( const TextureMipLevel *image, Vector2F uv, ColourF fallback,
                         bool colour = false )
         {
             if( !image )
+            {
                 return fallback;
+            }
             const double u = double( uv.x ) - std::floor( double( uv.x ) ),
                          v = double( uv.y ) - std::floor( double( uv.y ) );
             const auto x = u * image->width - .5, y = v * image->height - .5;
@@ -38,6 +45,7 @@ namespace workphone::render
             const auto fx = x - ix, fy = y - iy;
             double result[4]{};
             for( int z = 0; z < 2; ++z )
+            {
                 for( int a = 0; a < 2; ++a )
                 {
                     const auto px = ( ix + a + s32( image->width ) ) % s32( image->width ),
@@ -45,16 +53,21 @@ namespace workphone::render
                     const auto *p = image->bgra.data() + ( size_t( py ) * image->width + px ) * 4;
                     const auto w = ( a ? fx : 1 - fx ) * ( z ? fy : 1 - fy );
                     for( int c = 0; c < 4; ++c )
+                    {
                         result[c] +=
                             w * ( colour && c != 3 ? std::pow( p[c] / 255.0, 2.2 ) : p[c] / 255.0 );
+                    }
                 }
+            }
             return { f32( result[2] ), f32( result[1] ), f32( result[0] ), f32( result[3] ) };
         }
+
         double edge( Vector2F a, Vector2F b, Vector2F p )
         {
             return ( double( p.x ) - a.x ) * ( double( b.y ) - a.y ) -
                    ( double( p.y ) - a.y ) * ( double( b.x ) - a.x );
         }
+
         void write( TextureMipLevel &level, size_t pixel, ColourF colour )
         {
             auto p = level.bgra.data() + pixel * 4;
@@ -63,57 +76,83 @@ namespace workphone::render
             p[2] = byte( colour.r );
             p[3] = byte( colour.a );
         }
+
         void dilate( std::array<TextureMipLevel *, 4> levels, u32 tile, u32 tileSize, u32 distance )
         {
             const auto width = levels[0]->width;
             std::vector<u8> known( size_t( tileSize ) * tileSize );
             for( u32 y = 0; y < tileSize; ++y )
+            {
                 for( u32 x = 0; x < tileSize; ++x )
+                {
                     known[size_t( y ) * tileSize + x] =
                         levels[0]->bgra[( size_t( y ) * width + tile * tileSize + x ) * 4 + 3] != 0;
+                }
+            }
             for( u32 pass = 0; pass < distance; ++pass )
             {
                 auto next = known;
                 for( u32 y = 0; y < tileSize; ++y )
+                {
                     for( u32 x = 0; x < tileSize; ++x )
                     {
                         const auto local = size_t( y ) * tileSize + x;
                         if( known[local] )
+                        {
                             continue;
+                        }
                         s32 neighbour = -1;
                         if( x && known[local - 1] )
+                        {
                             neighbour = s32( local - 1 );
+                        }
                         else if( x + 1 < tileSize && known[local + 1] )
+                        {
                             neighbour = s32( local + 1 );
+                        }
                         else if( y && known[local - tileSize] )
+                        {
                             neighbour = s32( local - tileSize );
+                        }
                         else if( y + 1 < tileSize && known[local + tileSize] )
+                        {
                             neighbour = s32( local + tileSize );
+                        }
                         if( neighbour < 0 )
+                        {
                             continue;
+                        }
                         const auto src = ( size_t( neighbour / s32( tileSize ) ) * width +
                                            tile * tileSize + neighbour % tileSize ) *
                                          4;
                         const auto dst = ( size_t( y ) * width + tile * tileSize + x ) * 4;
                         for( auto level : levels )
+                        {
                             for( u32 c = 0; c < 3; ++c )
+                            {
                                 level->bgra[dst + c] = level->bgra[src + c];
+                            }
+                        }
                         next[local] = 1;
                     }
+                }
                 known.swap( next );
             }
         }
     }  // namespace
+
     void setFoliageImpostorTextureResolver( FoliageBakeTextureResolver resolver )
     {
         std::lock_guard<std::mutex> guard( resolverMutex );
         installedResolver = std::move( resolver );
     }
+
     FoliageBakeTextureResolver getFoliageImpostorTextureResolver()
     {
         std::lock_guard<std::mutex> guard( resolverMutex );
         return installedResolver;
     }
+
     bool bakeFoliageImpostor( const FoliageSpecies &species, const FoliageBakeTextureResolver &resolve,
                               const FoliageImpostorBakeOptions &options, FoliageImpostorBake &output,
                               String &error, const std::atomic<bool> *cancel )
@@ -121,7 +160,9 @@ namespace workphone::render
         try
         {
             if( !validateFoliageSpecies( species, error ) )
+            {
                 return false;
+            }
             require( options.tileSize >= 16 && options.tileSize <= 512 &&
                          !( options.tileSize & ( options.tileSize - 1 ) ) && options.gutter >= 2 &&
                          options.gutter <= 16 && options.gutter * 2 + 4 <= options.tileSize,
@@ -145,10 +186,14 @@ namespace workphone::render
             u64 textureBytes = 0;
             const auto texture = [&]( const String &id ) -> const TextureMipLevel * {
                 if( id.empty() )
+                {
                     return nullptr;
+                }
                 auto found = textures.find( id );
                 if( found != textures.end() )
+                {
                     return found->second.get();
+                }
                 require( bool( resolve ), "Textured impostor baking requires a texture resolver." );
                 auto image = resolve( id, error );
                 require( image && image->width > 0 && image->height > 0 && image->width <= 16384 &&
@@ -161,10 +206,12 @@ namespace workphone::render
                 textures.emplace( id, image );
                 return image.get();
             };
+
             struct Material
             {
                 const TextureMipLevel *albedo, *normal, *orm;
             };
+
             Array<Material> materials;
             for( const auto &m : species.materials )
             {
@@ -198,7 +245,9 @@ namespace workphone::render
             const auto &mesh = species.lods[0];
             auto sections = mesh.sections;
             if( sections.empty() )
+            {
                 sections.push_back( { 0, u32( mesh.indices.size() ), 0 } );
+            }
             for( u32 view = 0; view < options.directions.size(); ++view )
             {
                 check();
@@ -221,6 +270,7 @@ namespace workphone::render
                                           -std::numeric_limits<f32>::infinity() );
                 const float span = f32( options.tileSize - 2 * options.gutter - 1 );
                 for( const auto &section : sections )
+                {
                     for( u32 index = section.firstIndex; index < section.firstIndex + section.indexCount;
                          index += 3 )
                     {
@@ -250,10 +300,14 @@ namespace workphone::render
                         }
                         const auto area = edge( screen[0], screen[1], screen[2] );
                         if( std::abs( area ) < 1e-10 )
+                        {
                             continue;
+                        }
                         auto geometric = ( p[1] - p[0] ).crossProduct( p[2] - p[0] );
                         if( !m.twoSided && geometric.dotProduct( toward ) <= 0 )
+                        {
                             continue;
+                        }
                         const auto du1 = uv[1] - uv[0], du2 = uv[2] - uv[0];
                         const auto determinant = du1.x * du2.y - du2.x * du1.y;
                         Vector3F tangent = right, bitangent = -up;
@@ -290,11 +344,15 @@ namespace workphone::render
                                 const auto a = edge( screen[1], screen[2], point ) / area,
                                            b = edge( screen[2], screen[0], point ) / area, c = 1 - a - b;
                                 if( a < -1e-8 || b < -1e-8 || c < -1e-8 )
+                                {
                                     continue;
+                                }
                                 const auto distance = f32( a * z[0] + b * z[1] + c * z[2] );
                                 const auto local = size_t( y ) * height + x;
                                 if( distance <= zbuffer[local] )
+                                {
                                     continue;
+                                }
                                 const auto texcoord =
                                     uv[0] * f32( a ) + uv[1] * f32( b ) + uv[2] * f32( c );
                                 auto base = sample( maps.albedo, texcoord, ColourF::White );
@@ -305,7 +363,9 @@ namespace workphone::render
                                     f32( a * colour[0].a + b * colour[1].a + c * colour[2].a ) );
                                 const auto alpha = base.a * m.tint.a * vertex.a;
                                 if( alpha < m.alphaCutoff )
+                                {
                                     continue;
+                                }
                                 // Match the native foliage material convention: multiply texture/tint/vertex
                                 // colour in sRGB, then the runtime shader performs its existing decode.
                                 base = { base.r * m.tint.r * vertex.r, base.g * m.tint.g * vertex.g,
@@ -319,14 +379,18 @@ namespace workphone::render
                                     t.normalise();
                                     auto bt = worldNormal.crossProduct( t );
                                     if( bt.dotProduct( bitangent ) < 0 )
+                                    {
                                         bt = -bt;
+                                    }
                                     worldNormal = t * ( 2 * normalMap.r - 1 ) +
                                                   bt * ( 2 * normalMap.g - 1 ) +
                                                   worldNormal * ( 2 * normalMap.b - 1 );
                                     worldNormal.normalise();
                                 }
                                 if( m.twoSided && worldNormal.dotProduct( toward ) < 0 )
+                                {
                                     worldNormal = -worldNormal;
+                                }
                                 auto packed = sample( maps.orm, texcoord, { 1, 1, 1, 1 } );
                                 packed.g *= m.roughness;
                                 packed.b *= m.metalness;
@@ -345,6 +409,7 @@ namespace workphone::render
                             }
                         }
                     }
+                }
                 dilate( { &albedo, &normal, &orm, &depth }, view, options.tileSize, options.gutter );
             }
             check();
@@ -358,8 +423,12 @@ namespace workphone::render
             auto roughness = generateTextureMips( orm.bgra.data(), width, height,
                                                   { TextureMipFilter::Roughness, columns, .5f } );
             for( size_t mip = 1; mip < result.orm.size(); ++mip )
+            {
                 for( size_t pixel = 0; pixel < result.orm[mip].bgra.size(); pixel += 4 )
+                {
                     result.orm[mip].bgra[pixel + 1] = roughness[mip].bgra[pixel + 1];
+                }
+            }
             result.depth = generateTextureMips( depth.bgra.data(), width, height,
                                                 { TextureMipFilter::Data, columns, .5f } );
             check();
@@ -373,6 +442,7 @@ namespace workphone::render
             return false;
         }
     }
+
     bool saveFoliageImpostorSource( const FoliageSpecies &source, const FoliageImpostorBake &bake,
                                     const String &directory, String &speciesPath, String &error )
     {
@@ -389,10 +459,14 @@ namespace workphone::render
             species.impostor = bake.metadata;
             species.farBillboard = true;
             if( !validateFoliageSpecies( species, error ) )
+            {
                 return false;
+            }
             String json;
             if( !serializeFoliageSpecies( species, json, error ) )
+            {
                 return false;
+            }
             folder = std::filesystem::absolute( std::filesystem::u8path( directory.c_str() ) );
             require( !std::filesystem::exists( folder ),
                      "Impostor export destination must be a fresh asset directory." );
@@ -466,7 +540,9 @@ namespace workphone::render
             {
                 std::error_code ignored;
                 for( const auto &path : created )
+                {
                     std::filesystem::remove( path, ignored );
+                }
                 std::filesystem::remove( folder, ignored );
             }
             return false;

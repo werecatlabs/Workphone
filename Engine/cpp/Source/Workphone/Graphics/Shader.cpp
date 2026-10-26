@@ -41,11 +41,17 @@ namespace workphone::render
     void Shader::setStage( Stage stage )
     {
         if( isValidStage( stage ) )
+        {
             m_stage = stage;
+        }
         else
+        {
             addDiagnostic( m_diagnostics, DiagnosticSeverity::Error, "Invalid shader stage." );
+        }
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     IShader::Language Shader::getLanguage() const
@@ -57,7 +63,9 @@ namespace workphone::render
     {
         m_language = language;
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     String Shader::getSource() const
@@ -80,7 +88,9 @@ namespace workphone::render
     {
         m_entryPoint = entryPoint;
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     String Shader::getProfile() const
@@ -92,7 +102,9 @@ namespace workphone::render
     {
         m_profile = profile;
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     Array<IShader::Define> Shader::getDefines() const
@@ -104,13 +116,17 @@ namespace workphone::render
     {
         m_defines = defines;
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     void Shader::setDefine( const String &name, const String &value )
     {
         if( name.empty() )
+        {
             return;
+        }
         auto it = std::find_if( m_defines.begin(), m_defines.end(),
                                 [&name]( const Define &define ) { return define.name == name; } );
         if( it == m_defines.end() )
@@ -121,9 +137,13 @@ namespace workphone::render
             m_defines.push_back( define );
         }
         else
+        {
             it->value = value;
+        }
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     void Shader::removeDefine( const String &name )
@@ -133,14 +153,18 @@ namespace workphone::render
                             [&name]( const Define &define ) { return define.name == name; } ),
             m_defines.end() );
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     void Shader::clearDefines()
     {
         m_defines.clear();
         if( m_status == Status::Compiled )
+        {
             m_status = m_source.empty() && m_binary.empty() ? Status::Empty : Status::SourceReady;
+        }
     }
 
     bool Shader::compile()
@@ -149,16 +173,24 @@ namespace workphone::render
         m_diagnostics.clear();
 
         if( !isValidStage( m_stage ) )
+        {
             addDiagnostic( m_diagnostics, DiagnosticSeverity::Error, "Invalid shader stage." );
+        }
         if( !isKnownLanguage( m_language ) )
+        {
             addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                            "A source or binary language must be specified." );
+        }
         if( m_entryPoint.empty() )
+        {
             addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                            "Shader entry point cannot be empty." );
+        }
         if( m_source.empty() && m_binary.empty() )
+        {
             addDiagnostic( m_diagnostics, DiagnosticSeverity::Error,
                            "Shader has neither source nor binary data." );
+        }
 
         if( !m_diagnostics.empty() )
         {
@@ -226,7 +258,9 @@ namespace workphone::render
     bool Shader::setBinary( const Array<u8> &binary, Language language )
     {
         if( binary.empty() || !isKnownLanguage( language ) )
+        {
             return false;
+        }
         m_binary = binary;
         m_source.clear();
         m_language = language;
@@ -238,7 +272,9 @@ namespace workphone::render
     bool Shader::setSpecializationConstant( const String &name, u32 value )
     {
         if( name.empty() )
+        {
             return false;
+        }
         auto it =
             std::find_if( m_specializationValues.begin(), m_specializationValues.end(),
                           [&name]( const SpecializationValue &entry ) { return entry.name == name; } );
@@ -250,9 +286,13 @@ namespace workphone::render
             m_specializationValues.push_back( entry );
         }
         else
+        {
             it->value = value;
+        }
         if( m_status == Status::Compiled )
+        {
             m_status = Status::SourceReady;
+        }
         return true;
     }
 
@@ -262,7 +302,9 @@ namespace workphone::render
             std::find_if( m_specializationValues.begin(), m_specializationValues.end(),
                           [&name]( const SpecializationValue &entry ) { return entry.name == name; } );
         if( it == m_specializationValues.end() )
+        {
             return false;
+        }
         value = it->value;
         return true;
     }
@@ -270,7 +312,9 @@ namespace workphone::render
     void Shader::getNativeHandle( void **handle ) const
     {
         if( handle )
+        {
             *handle = nullptr;
+        }
     }
 
 }  // namespace workphone::render

@@ -13,6 +13,7 @@ namespace workphone
         String name;
         u32 occurrence = 0;
     };
+
     using PropertyGroupPath = SourceBudgetArray<PropertyGroupStep>;
 
     namespace property_path_detail
@@ -20,19 +21,36 @@ namespace workphone
         inline bool find( SmartPtr<Properties> root, SmartPtr<Properties> group,
                           PropertyGroupPath &path )
         {
-            if( root == group ) return true;
-            if( path.size() >= 256 ) return false;
+            if( root == group )
+            {
+                return true;
+            }
+            if( path.size() >= 256 )
+            {
+                return false;
+            }
             const auto children = root->getChildren();
             for( size_t i = 0; i < children.size(); ++i )
             {
                 auto child = children[i];
-                if( !child ) continue;
+                if( !child )
+                {
+                    continue;
+                }
                 u32 occurrence = 0;
                 const auto name = child->getName();
                 for( size_t j = 0; j < i; ++j )
-                    if( children[j] && children[j]->getName() == name ) ++occurrence;
+                {
+                    if( children[j] && children[j]->getName() == name )
+                    {
+                        ++occurrence;
+                    }
+                }
                 path.push_back( { name, occurrence } );
-                if( find( child, group, path ) ) return true;
+                if( find( child, group, path ) )
+                {
+                    return true;
+                }
                 path.pop_back();
             }
             return false;
@@ -40,16 +58,27 @@ namespace workphone
 
         inline SmartPtr<Properties> clone( SmartPtr<Properties> source, u32 depth )
         {
-            if( !source ) return nullptr;
-            if( depth > 256 ) throw std::length_error( "Property hierarchy exceeds its depth limit" );
+            if( !source )
+            {
+                return nullptr;
+            }
+            if( depth > 256 )
+            {
+                throw std::length_error( "Property hierarchy exceeds its depth limit" );
+            }
             auto copy = make_ptr<Properties>();
             copy->setName( source->getName() );
             copy->setPropertiesAsArray( source->getPropertiesAsArray() );
             for( auto child : source->getChildren() )
-                if( child ) copy->addChild( clone( child, depth + 1 ) );
+            {
+                if( child )
+                {
+                    copy->addChild( clone( child, depth + 1 ) );
+                }
+            }
             return copy;
         }
-    }
+    }  // namespace property_path_detail
 
     /** Identify the group by its position in the displayed hierarchy. Repeated
      * names are distinguished by their occurrence among same-named siblings. */
@@ -66,15 +95,20 @@ namespace workphone
     {
         for( const auto &step : path )
         {
-            if( !root ) return nullptr;
+            if( !root )
+            {
+                return nullptr;
+            }
             SmartPtr<Properties> found;
             u32 occurrence = 0;
             for( auto child : root->getChildren() )
+            {
                 if( child && child->getName() == step.name && occurrence++ == step.occurrence )
                 {
                     found = child;
                     break;
                 }
+            }
             root = found;
         }
         return root;
@@ -86,6 +120,6 @@ namespace workphone
     {
         return property_path_detail::clone( source, 0 );
     }
-}
+}  // namespace workphone
 
 #endif

@@ -10,27 +10,34 @@ namespace workphone::advanced
     {
         float x = 0, y = 0, z = 0;
     };
+
     struct SkidDecal
     {
         DecalPoint start, end, normal;
         float width = 0, intensity = 0, age = 0;
     };
+
     class SkidDecalPool
     {
     public:
         explicit SkidDecalPool( size_t capacity ) : m_capacity( capacity )
         {
         }
+
         void clear()
         {
             m_marks.clear();
             m_connected.fill( false );
         }
+
         void breakTrail( size_t wheel )
         {
             if( wheel < 4 )
+            {
                 m_connected[wheel] = false;
+            }
         }
+
         bool sample( size_t wheel, DecalPoint point, DecalPoint normal, float width, float intensity )
         {
             if( wheel >= 4 || !m_capacity || !finite( point ) || !finite( normal ) ||
@@ -56,26 +63,39 @@ namespace workphone::advanced
             }
             // Teleports, resets and contact discontinuities must not bridge the scene.
             if( distance > 3.f || std::abs( dy ) > .3f )
+            {
                 return false;
+            }
             if( m_marks.size() == m_capacity )
+            {
                 m_marks.pop_front();
+            }
             m_marks.push_back(
                 { previous, point, normal, width, std::clamp( intensity, 0.f, 1.f ), 0 } );
             return true;
         }
+
         void advance( float dt )
         {
             if( !std::isfinite( dt ) || dt <= 0 )
+            {
                 return;
+            }
             for( auto &mark : m_marks )
+            {
                 mark.age += dt;
+            }
             while( !m_marks.empty() && m_marks.front().age >= 20.f )
+            {
                 m_marks.pop_front();
+            }
         }
+
         static float opacity( const SkidDecal &mark )
         {
             return mark.intensity * std::clamp( ( 20.f - mark.age ) / 4.f, 0.f, 1.f );
         }
+
         const std::deque<SkidDecal> &marks() const
         {
             return m_marks;
@@ -86,6 +106,7 @@ namespace workphone::advanced
         {
             return std::isfinite( p.x ) && std::isfinite( p.y ) && std::isfinite( p.z );
         }
+
         size_t m_capacity;
         std::deque<SkidDecal> m_marks;
         std::array<DecalPoint, 4> m_previous{};

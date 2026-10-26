@@ -62,7 +62,8 @@ namespace workphone::scene
         else
         {
             resourceDatabase->importFile( resourcePath, true );
-            setImportStatus( request, "Import requested; this resource database does not report completion." );
+            setImportStatus( request,
+                             "Import requested; this resource database does not report completion." );
         }
     }
 
@@ -84,17 +85,26 @@ namespace workphone::scene
     {
         {
             SpinRWMutex::ScopedLock lock( m_importStatusMutex, false );
-            if( request != m_importRequest ) return;
+            if( request != m_importRequest )
+            {
+                return;
+            }
         }
         SourceBudgetString replacement{ status };
         SpinRWMutex::ScopedLock lock( m_importStatusMutex );
-        if( request == m_importRequest ) m_importStatus.swap( replacement );
+        if( request == m_importRequest )
+        {
+            m_importStatus.swap( replacement );
+        }
     }
 
     SmartPtr<ISharedObject> ResourceDirector::toData() const
     {
         auto properties = getProperties();
-        if( properties ) properties->removeProperty( importStatusStr );
+        if( properties )
+        {
+            properties->removeProperty( importStatusStr );
+        }
         return properties;
     }
 

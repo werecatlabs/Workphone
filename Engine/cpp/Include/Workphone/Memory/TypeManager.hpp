@@ -53,8 +53,10 @@ namespace workphone
     class WPCore_API TypeManager
     {
     public:
-        template<class T> using MetadataArray = Array<T, SourceBudgetAllocator<T>>;
-        template<class T> using MetadataConcurrentArray = ConcurrentArray<T, SourceBudgetAllocator<T>>;
+        template <class T>
+        using MetadataArray = Array<T, SourceBudgetAllocator<T>>;
+        template <class T>
+        using MetadataConcurrentArray = ConcurrentArray<T, SourceBudgetAllocator<T>>;
         /**
          * @brief Construct a TypeManager.
          *
@@ -467,18 +469,21 @@ namespace workphone
          */
         atomic_u32 m_objectDataSize = 0;   ///< Current reserved size of object data (number of slots).
         atomic_u32 m_objectDataIndex = 0;  ///< Next object data index to allocate from (atomic).
-        MetadataArray<u32> iTypeInfo;  ///< Maps runtime type id to internal type info / slot (iTypeInfo[id] =>
-                               ///< typeInfo).
+        MetadataArray<u32>
+            iTypeInfo;  ///< Maps runtime type id to internal type info / slot (iTypeInfo[id] =>
+                        ///< typeInfo).
         MetadataArray<atomic_u8>
             objectFlags;  ///< Per-object flags stored as atomic bytes (one per object slot).
-        GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>> baseObjectDataPool;      ///< Pool of base object data instances.
-        GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>> sharedObjectDataPool;  ///< Pool of shared object data instances.
+        GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>>
+            baseObjectDataPool;  ///< Pool of base object data instances.
+        GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>>
+            sharedObjectDataPool;  ///< Pool of shared object data instances.
         MetadataArray<GenericPool<BaseObjectData, SourceBudgetAllocator<BaseObjectData>>>
             baseObjectDataPools;  ///< Array of base object data pools for different groups.
         MetadataArray<GenericPool<SharedObjectData, SourceBudgetAllocator<SharedObjectData>>>
             sharedObjectDataPools;  ///< Array of shared object data pools for different groups.
         std::unordered_map<u32, SharedPtr<reflection::Type>, std::hash<u32>, std::equal_to<u32>,
-            SourceBudgetAllocator<std::pair<const u32, SharedPtr<reflection::Type>>>>
+                           SourceBudgetAllocator<std::pair<const u32, SharedPtr<reflection::Type>>>>
             types;  ///< Map of runtime id -> reflection metadata. Use registerType / getType to modify.
 
     private:

@@ -87,9 +87,15 @@ namespace workphone
 
     void KeyFrameAnimator3::addKeyFrame( const SmartPtr<KeyFrameTransform3> &keyFrame )
     {
-        if( !keyFrame ) return;
+        if( !keyFrame )
+        {
+            return;
+        }
         auto current = m_currentKeyFrame;
-        if( !current ) current = make_ptr<KeyFrameTransform3>();
+        if( !current )
+        {
+            current = make_ptr<KeyFrameTransform3>();
+        }
         m_keyFrames.push_back( keyFrame );
         std::sort( m_keyFrames.begin(), m_keyFrames.end(),
                    []( const SmartPtr<KeyFrameTransform3> &a, const SmartPtr<KeyFrameTransform3> &b ) {
@@ -127,7 +133,10 @@ namespace workphone
                        return a->getTime() < b->getTime();
                    } );
         auto current = m_currentKeyFrame;
-        if( !current && !candidate.empty() ) current = make_ptr<KeyFrameTransform3>();
+        if( !current && !candidate.empty() )
+        {
+            current = make_ptr<KeyFrameTransform3>();
+        }
         m_keyFrames.swap( candidate );
         m_currentKeyFrame = std::move( current );
     }

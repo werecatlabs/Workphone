@@ -173,18 +173,21 @@ namespace workphone
 
     auto Property::operator=( const Property &other ) -> Property &
     {
-        if(this == &other) return *this;
+        if( this == &other )
+        {
+            return *this;
+        }
         auto value = other.m_value;
-        auto attributes = makeSourceBudgetSnapshot(other.m_attributes);
+        auto attributes = makeSourceBudgetSnapshot( other.m_attributes );
         m_name = other.m_name;
-        m_value.swap(value);
+        m_value.swap( value );
 
         m_data = other.m_data;
 
         m_type = other.m_type;
         m_readOnly = other.m_readOnly;
 
-        m_attributes.swap(attributes);
+        m_attributes.swap( attributes );
 
         return *this;
     }

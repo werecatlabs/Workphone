@@ -375,7 +375,8 @@ namespace workphone
              * be advanced when playback is active.
              */
             Array<SmartPtr<IAnimation>> m_animations = makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();
-            Array<SmartPtr<Animation>> m_animationClips = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+            Array<SmartPtr<Animation>> m_animationClips =
+                makeSourceBudgetSnapshot<SmartPtr<Animation>>();
             String m_animationCachePath;
             String m_playbackStatus;
 

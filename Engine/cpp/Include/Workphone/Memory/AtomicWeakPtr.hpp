@@ -205,7 +205,9 @@ namespace workphone
     {
         T *ptr = m_pointer.exchange( nullptr );
         if( isObjectAlive( ptr ) )
+        {
             ptr->ISharedObject::removeWeakReference();
+        }
     }
 
     template <class T>
@@ -219,7 +221,9 @@ namespace workphone
     {
         T *newPtr = ptr.get();
         if( !isObjectAlive( newPtr ) )
+        {
             newPtr = nullptr;
+        }
 
         if( newPtr )
         {
@@ -230,7 +234,9 @@ namespace workphone
         T *oldPtr = m_pointer.exchange( newPtr );
 
         if( isObjectAlive( oldPtr ) && oldPtr->getWeakReferences() > 0 )
+        {
             oldPtr->ISharedObject::removeWeakReference();
+        }
     }
 
     template <class T>
@@ -238,7 +244,9 @@ namespace workphone
     {
         T *ptr = m_pointer.load();
         if( !isObjectAlive( ptr ) )
+        {
             return WeakPtr<T>();
+        }
         // Safety: wrap WeakPtr construction in case object is being destroyed
         try
         {
@@ -277,7 +285,9 @@ namespace workphone
     {
         T *newPtr = ptr.get();
         if( !isObjectAlive( newPtr ) )
+        {
             newPtr = nullptr;
+        }
 
         if( newPtr )
         {
@@ -287,7 +297,9 @@ namespace workphone
 
         T *oldPtr = m_pointer.exchange( newPtr );
         if( !isObjectAlive( oldPtr ) )
+        {
             return WeakPtr<T>();
+        }
         WP_ASSERT( oldPtr->getWeakReferences() > 0 );
 
         WeakPtr<T> result( oldPtr );

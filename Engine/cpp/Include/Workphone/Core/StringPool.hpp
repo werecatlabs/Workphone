@@ -30,13 +30,13 @@ namespace workphone
         {
             validateMaxStringSize( maxStringSize );
             m_maxStringSize = maxStringSize;
-            resize(capacity);
+            resize( capacity );
         }
 
         // Destructor
         ~StringPool() = default;
-        StringPool(const StringPool &) = delete;
-        StringPool &operator=(const StringPool &) = delete;
+        StringPool( const StringPool & ) = delete;
+        StringPool &operator=( const StringPool & ) = delete;
 
         void resize( size_type n )
         {
@@ -44,13 +44,15 @@ namespace workphone
             {
                 // Keep the old pool and free list intact if either admission
                 // fails. Successful resize retains the existing reset semantics.
-                decltype(m_storage) storage(n);
-                decltype(m_freeList) freeList;
-                freeList.reserve(n / m_maxStringSize);
-                for(size_type i = 0; i < n / m_maxStringSize; ++i)
-                    freeList.push_back(storage.data() + i * m_maxStringSize);
-                m_storage.swap(storage);
-                m_freeList.swap(freeList);
+                decltype( m_storage ) storage( n );
+                decltype( m_freeList ) freeList;
+                freeList.reserve( n / m_maxStringSize );
+                for( size_type i = 0; i < n / m_maxStringSize; ++i )
+                {
+                    freeList.push_back( storage.data() + i * m_maxStringSize );
+                }
+                m_storage.swap( storage );
+                m_freeList.swap( freeList );
                 m_data = m_storage.data();
                 m_poolSize = n;
             }
@@ -61,7 +63,9 @@ namespace workphone
             // Allocate a block from the pool
             T *ptr = allocateStr();
             if( ptr == nullptr )
+            {
                 return nullptr;
+            }
 
             // Calculate how much we can safely copy
             // Reserve one element for the null-terminator
@@ -125,7 +129,7 @@ namespace workphone
         {
             validateMaxStringSize( maxStringSize );
             // Reserve before changing the block size or resetting live entries.
-            m_freeList.reserve(m_poolSize / maxStringSize);
+            m_freeList.reserve( m_poolSize / maxStringSize );
             m_maxStringSize = maxStringSize;
             rebuildFreeList();
         }
@@ -134,18 +138,24 @@ namespace workphone
         static void validateMaxStringSize( u32 maxStringSize )
         {
             if( maxStringSize == 0 )
+            {
                 throw std::invalid_argument( "StringPool maximum string size cannot be zero" );
+            }
         }
 
         void rebuildFreeList()
         {
-            m_freeList.reserve(m_poolSize / m_maxStringSize);
+            m_freeList.reserve( m_poolSize / m_maxStringSize );
             m_freeList.clear();
             if( m_data == nullptr || m_poolSize < m_maxStringSize )
+            {
                 return;
+            }
 
             for( size_type i = 0; i <= m_poolSize - m_maxStringSize; i += m_maxStringSize )
+            {
                 m_freeList.push_back( &m_data[i] );
+            }
         }
 
         T *allocateStr()

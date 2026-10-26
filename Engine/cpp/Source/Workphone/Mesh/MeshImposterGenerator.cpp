@@ -15,13 +15,21 @@ namespace workphone
         if( triangles.empty() || tileWidth < 8 || tileHeight < 8 || tileWidth > 1024 ||
             tileHeight > 1024 || !MathUtil<f32>::isFinite( lo ) || !MathUtil<f32>::isFinite( hi ) ||
             hi.x <= lo.x || hi.y <= lo.y || hi.z <= lo.z )
+        {
             throw std::invalid_argument( "Invalid mesh imposter bake dimensions or bounds." );
+        }
 
         // Validate the borrowed input before admitting output or raster scratch.
         for( const auto &triangle : triangles )
+        {
             for( const auto &position : triangle.positions )
+            {
                 if( !MathUtil<f32>::isFinite( position ) )
+                {
                     throw std::invalid_argument( "Non-finite imposter vertex." );
+                }
+            }
+        }
 
         MeshImposterAtlas result;
         result.width = tileWidth * 3;
@@ -76,7 +84,9 @@ namespace workphone
                 const auto &a = projected[0], &b = projected[1], &c = projected[2];
                 const float det = ( b.y - c.y ) * ( a.x - c.x ) + ( c.x - b.x ) * ( a.y - c.y );
                 if( std::abs( det ) < 1e-8f )
+                {
                     continue;
+                }
                 auto normal = ( triangle.positions[1] - triangle.positions[0] )
                                   .crossProduct( triangle.positions[2] - triangle.positions[0] );
                 normal.normalise();
@@ -103,11 +113,15 @@ namespace workphone
                             det;
                         const float w = 1 - u - v;
                         if( u < 0 || v < 0 || w < 0 )
+                        {
                             continue;
+                        }
                         const float z = a.z * u + b.z * v + c.z * w;
                         const auto index = size_t( y ) * tileWidth + x;
                         if( z <= depth[index] )
+                        {
                             continue;
+                        }
                         depth[index] = z;
                         auto pixel = result.rgba.data() +
                                      ( size_t( y ) * result.width + viewIndex * tileWidth + x ) * 4;

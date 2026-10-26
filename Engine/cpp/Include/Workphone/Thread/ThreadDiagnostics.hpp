@@ -66,7 +66,9 @@ namespace workphone::thread_diagnostics
     {
         auto thread = sharedLocksByThread().find( std::this_thread::get_id() );
         if( thread == sharedLocksByThread().end() )
+        {
             return 0;
+        }
         auto &locks = thread->second;
         auto it = locks.find( lock );
         return it != locks.end() ? it->second : 0;
@@ -188,7 +190,9 @@ namespace workphone::thread_diagnostics
             sharedTotals().erase( totalIt );
         }
         if( threadLocks.empty() )
+        {
             sharedLocksByThread().erase( std::this_thread::get_id() );
+        }
     }
 }  // namespace workphone::thread_diagnostics
 

@@ -203,16 +203,22 @@ namespace workphone
     void GenericPoolData<T, A>::setNumElements( size_t numElements )
     {
         // Stage both allocations before changing the current block/free list.
-        decltype(m_freeElements) nextFree;
-        nextFree.resize(numElements);
-        T *next = numElements ? m_alloc.allocate(numElements) : nullptr;
-        for( size_t i = 0; i < numElements; ++i ) nextFree[i] = next + i;
+        decltype( m_freeElements ) nextFree;
+        nextFree.resize( numElements );
+        T *next = numElements ? m_alloc.allocate( numElements ) : nullptr;
+        for( size_t i = 0; i < numElements; ++i )
+        {
+            nextFree[i] = next + i;
+        }
         auto old = m_data;
         const auto oldCount = m_numAllocated;
         m_data = next;
         m_numAllocated = numElements;
-        m_freeElements = std::move(nextFree);
-        if( old ) m_alloc.deallocate(old, oldCount);
+        m_freeElements = std::move( nextFree );
+        if( old )
+        {
+            m_alloc.deallocate( old, oldCount );
+        }
     }
 
     template <class T, class A>

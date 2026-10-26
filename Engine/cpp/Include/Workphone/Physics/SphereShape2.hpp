@@ -50,7 +50,9 @@ namespace workphone::physics
         void computeMass( SmartPtr<IMassData2> massData, real_Num density ) const override
         {
             if( !massData )
+            {
                 return;
+            }
             const auto radius = getRadius();
             const auto pi = static_cast<real_Num>( 3.14159265358979323846 );
             const auto mass = pi * radius * radius * std::max( density, static_cast<real_Num>( 0 ) );

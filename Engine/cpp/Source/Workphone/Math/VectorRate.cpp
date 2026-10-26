@@ -17,7 +17,9 @@ namespace workphone
         m_eventTimes.push_back( t );
 
         if( m_eventTimes.size() == 1 )
+        {
             return Vector3<T>::zero();
+        }
 
         // Find the oldest time to keep
         auto it = m_eventTimes.begin();
@@ -25,9 +27,13 @@ namespace workphone
         while( it != end )
         {
             if( m_eventTimes.front().first - ( *it ).first > m_interval )
+            {
                 ++it;
+            }
             else
+            {
                 break;
+            }
         }
 
         // Remove old times

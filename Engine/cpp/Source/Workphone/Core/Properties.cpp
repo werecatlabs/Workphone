@@ -36,6 +36,7 @@ namespace workphone
     {
         thread_local Properties::ObjectResolver loadObjectResolver;
     }
+
     Properties::ObjectResolver Properties::exchangeObjectResolver( ObjectResolver resolver )
     {
         auto previous = std::move( loadObjectResolver );
@@ -69,7 +70,9 @@ namespace workphone
                     ? loadObjectResolver( StringUtil::toString( StringUtil::parseUUID( uuid ) ) )
                     : nullptr;
             if( !resource )
+            {
                 resource = resourceDatabase->getObject( StringUtil::parseUUID( uuid ) );
+            }
             if( resource )
             {
                 value.push_back( resource );
@@ -116,7 +119,9 @@ namespace workphone
         auto resource =
             loadObjectResolver ? loadObjectResolver( StringUtil::toString( uuid ) ) : nullptr;
         if( !resource )
+        {
             resource = resourceDatabase->getObject( uuid );
+        }
         if( resource )
         {
             auto typeManager = TypeManager::instance();
@@ -385,10 +390,10 @@ namespace workphone
     {
         if( this != &other )
         {
-            auto properties = makeSourceBudgetSnapshot(other.m_properties);
-            auto children = makeSourceBudgetSnapshot(other.m_children);
-            m_properties.swap(properties);
-            m_children.swap(children);
+            auto properties = makeSourceBudgetSnapshot( other.m_properties );
+            auto children = makeSourceBudgetSnapshot( other.m_children );
+            m_properties.swap( properties );
+            m_children.swap( children );
         }
 
         return *this;
@@ -536,8 +541,8 @@ namespace workphone
 
     void Properties::setPropertiesAsArray( const Array<Property> &array )
     {
-        auto candidate = makeSourceBudgetSnapshot(array);
-        m_properties.swap(candidate);
+        auto candidate = makeSourceBudgetSnapshot( array );
+        m_properties.swap( candidate );
     }
 
     auto Properties::getPropertiesAsArray() const -> Array<Property>

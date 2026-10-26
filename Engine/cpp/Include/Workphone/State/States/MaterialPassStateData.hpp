@@ -15,7 +15,11 @@
 
 namespace workphone
 {
-    namespace render { class MaterialPass; class MaterialShaderParametersInstance; }
+    namespace render
+    {
+        class MaterialPass;
+        class MaterialShaderParametersInstance;
+    }  // namespace render
     enum class MaterialFloatSetting : u32
     {
         alphaClip = 0,
@@ -142,23 +146,37 @@ namespace workphone
         // getRenderState() instead when values must outlive that scope.
         const MaterialRenderState &getSurfaceState() const;
         bool setSurfaceState( const MaterialRenderState &value );
+
         template <class T>
         bool setSurfaceValue( T MaterialRenderState::*member, const T &value )
         {
             static_assert( std::is_arithmetic_v<T> || std::is_enum_v<T> || std::is_same_v<T, ColourF>,
                            "Use tracked texture binding or whole-surface setters for resources" );
             if constexpr( std::is_same_v<T, u64> )
-                if( member == &MaterialRenderState::revision ) return false;
+            {
+                if( member == &MaterialRenderState::revision )
+                {
+                    return false;
+                }
+            }
             const auto &current = getSurfaceState().*member;
             bool unchanged;
             if constexpr( std::is_floating_point_v<T> || std::is_same_v<T, ColourF> )
+            {
                 unchanged = std::memcmp( &current, &value, sizeof( T ) ) == 0;
+            }
             else
+            {
                 unchanged = current == value;
-            if( unchanged ) return false;
+            }
+            if( unchanged )
+            {
+                return false;
+            }
             writableSurfaceState().*member = value;
             return true;
         }
+
         SmartPtr<render::ITexture> getTextureBinding( u32 slot ) const;
         bool setTextureBinding( u32 slot, SmartPtr<render::ITexture> texture );
         size_t getPendingSurfaceStorageBytes() const;
@@ -175,7 +193,6 @@ namespace workphone
         void setFragmentShaderName( const String &name );
         void setGeometryShaderName( const String &name );
 
-
         static MaterialFloatSetting resolveFloatSetting( const String &name );
         bool setFloatSetting( MaterialFloatSetting id, f32 value );
         bool getFloatSetting( MaterialFloatSetting id, f32 &value ) const;
@@ -189,7 +206,7 @@ namespace workphone
         bool getBoolSetting( MaterialBoolSetting id, bool &value ) const;
 
         static MaterialStringSetting resolveStringSetting( const String &name );
-        bool setStringSetting( MaterialStringSetting id, const String & value );
+        bool setStringSetting( MaterialStringSetting id, const String &value );
         bool getStringSetting( MaterialStringSetting id, String &value ) const;
 
         bool setEditorFloat( const String &name, f32 value );
@@ -220,8 +237,9 @@ namespace workphone
         friend class MaterialPublicationScope;
         friend class render::MaterialPass;
         friend class render::MaterialShaderParametersInstance;
-        SourceBudgetUniqueArray<u32> prepareShaderRenderMode(u32 value) const;
-        void setTextureBindingObserver( render::IMaterialPass *owner, void ( *observer )( void *, u32 ) );
+        SourceBudgetUniqueArray<u32> prepareShaderRenderMode( u32 value ) const;
+        void setTextureBindingObserver( render::IMaterialPass *owner,
+                                        void ( *observer )( void *, u32 ) );
         void notifyTextureBindingChanged( u32 slot );
         MaterialRenderState &writableSurfaceState();
         const char *getAuthoringText( u32 slot ) const;
@@ -236,11 +254,13 @@ namespace workphone
         MaterialRenderState::Ptr m_renderState;
         // Temporary next version only while an effective edit awaits publication.
         std::shared_ptr<MaterialRenderState> m_pendingSurface;
+
         struct SurfaceAuthoringData
         {
             ColourF tintColour = ColourF::White;
             hash_type renderTechnique = 0;
         };
+
         SourceBudgetUnique<SurfaceAuthoringData> m_surfaceAuthoring;
         WeakPtr<render::IMaterialPass> m_textureBindingOwner;
         void ( *m_textureBindingObserver )( void *, u32 ) = nullptr;

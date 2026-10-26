@@ -27,7 +27,9 @@ namespace workphone::resource
         if( !compiler )
         {
             if( error )
+            {
                 *error = "Cannot register a null resource compiler";
+            }
             return false;
         }
 
@@ -36,7 +38,9 @@ namespace workphone::resource
         if( compilerName.empty() || compilerOutputs.empty() )
         {
             if( error )
+            {
                 *error = "A resource compiler must have a name and at least one output";
+            }
             return false;
         }
 
@@ -47,7 +51,9 @@ namespace workphone::resource
                 !outputTypes.insert( output.type.str() ).second )
             {
                 if( error )
+                {
                     *error = "Compiler outputs must contain unique valid types and non-zero versions";
+                }
                 return false;
             }
         }
@@ -56,8 +62,10 @@ namespace workphone::resource
         if( m_impl->compilersByName.find( compilerName ) != m_impl->compilersByName.end() )
         {
             if( error )
+            {
                 *error =
                     String( "A resource compiler named '" ) + compilerName + "' is already registered";
+            }
             return false;
         }
         for( const auto &output : compilerOutputs )
@@ -65,8 +73,10 @@ namespace workphone::resource
             if( m_impl->compilersByType.find( output.type.str() ) != m_impl->compilersByType.end() )
             {
                 if( error )
+                {
                     *error = String( "A compiler is already registered for resource type '" ) +
                              output.type.str() + "'";
+                }
                 return false;
             }
         }
@@ -84,16 +94,22 @@ namespace workphone::resource
         std::unique_lock<std::shared_mutex> lock( m_impl->mutex );
         const auto iterator = m_impl->compilersByName.find( compilerName );
         if( iterator == m_impl->compilersByName.end() )
+        {
             return false;
+        }
 
         const auto compiler = iterator->second;
         for( auto typeIterator = m_impl->compilersByType.begin();
              typeIterator != m_impl->compilersByType.end(); )
         {
             if( typeIterator->second == compiler )
+            {
                 typeIterator = m_impl->compilersByType.erase( typeIterator );
+            }
             else
+            {
                 ++typeIterator;
+            }
         }
         m_impl->compilersByName.erase( iterator );
         return true;
@@ -120,7 +136,9 @@ namespace workphone::resource
         Array<std::shared_ptr<const IResourceCompiler>> result;
         result.reserve( m_impl->compilersByName.size() );
         for( const auto &entry : m_impl->compilersByName )
+        {
             result.push_back( entry.second );
+        }
         return result;
     }
 

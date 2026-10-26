@@ -23,16 +23,30 @@ namespace workphone
     {
         void detachTrack( IAnimationTrack *track, IAnimation *owner )
         {
-            if( !track || track->getParent() != owner ) return;
-            if( auto actor = dynamic_cast<ActorAnimationTrack *>( track ) ) actor->setParent( nullptr );
-            else if( auto vertex = dynamic_cast<AnimationVertexTrack *>( track ) ) vertex->setParent( nullptr );
+            if( !track || track->getParent() != owner )
+            {
+                return;
+            }
+            if( auto actor = dynamic_cast<ActorAnimationTrack *>( track ) )
+            {
+                actor->setParent( nullptr );
+            }
+            else if( auto vertex = dynamic_cast<AnimationVertexTrack *>( track ) )
+            {
+                vertex->setParent( nullptr );
+            }
         }
+
         template <class T>
         void eraseOwnedTrack( Array<SmartPtr<T>> &tracks, T *track )
         {
-            auto found = std::find_if( tracks.begin(), tracks.end(),
+            auto found = std::find_if(
+                tracks.begin(), tracks.end(),
                 [track]( const SmartPtr<T> &ownedTrack ) { return ownedTrack.get() == track; } );
-            if( found == tracks.end() ) return;
+            if( found == tracks.end() )
+            {
+                return;
+            }
             std::move( found + 1, tracks.end(), found );
             tracks.pop_back();
         }
@@ -41,12 +55,15 @@ namespace workphone
         void eraseOwnedTrackByShared( Array<SmartPtr<T>> &tracks,
                                       const SmartPtr<IAnimationTrack> &track )
         {
-            auto found = std::find_if( tracks.begin(), tracks.end(),
-                [&track]( const SmartPtr<T> &ownedTrack ) {
+            auto found =
+                std::find_if( tracks.begin(), tracks.end(), [&track]( const SmartPtr<T> &ownedTrack ) {
                     return ownedTrack && track &&
                            static_cast<IAnimationTrack *>( ownedTrack.get() ) == track.get();
                 } );
-            if( found == tracks.end() ) return;
+            if( found == tracks.end() )
+            {
+                return;
+            }
             std::move( found + 1, tracks.end(), found );
             tracks.pop_back();
         }
@@ -55,7 +72,7 @@ namespace workphone
         bool stillIndexed( const Map &index, T *track )
         {
             return std::any_of( index.begin(), index.end(),
-                [track]( const auto &entry ) { return entry.second == track; } );
+                                [track]( const auto &entry ) { return entry.second == track; } );
         }
 
         template <class T>
@@ -63,21 +80,31 @@ namespace workphone
                                   IAnimation *owner )
         {
             if constexpr( std::is_base_of_v<IAnimationTrack, T> )
+            {
                 for( auto &track : retired )
+                {
                     if( track && track->getParent() == owner &&
                         std::none_of( current.begin(), current.end(), [&]( const SmartPtr<T> &active ) {
                             return active.get() == track.get();
-                        } ) ) detachTrack( track.get(), owner );
+                        } ) )
+                    {
+                        detachTrack( track.get(), owner );
+                    }
+                }
+            }
         }
 
         template <class Map, class T, class U>
-        void publishTrack( Map &index, Array<SmartPtr<T>> &owners, const SmartPtr<U> &track,
-                           u16 handle, IAnimation *animation )
+        void publishTrack( Map &index, Array<SmartPtr<T>> &owners, const SmartPtr<U> &track, u16 handle,
+                           IAnimation *animation )
         {
             auto candidateIndex = index;
             auto candidateOwners = makeSourceBudgetSnapshot( owners );
             auto existing = candidateIndex.find( handle );
-            if( existing != candidateIndex.end() ) eraseOwnedTrack( candidateOwners, existing->second );
+            if( existing != candidateIndex.end() )
+            {
+                eraseOwnedTrack( candidateOwners, existing->second );
+            }
             candidateIndex[handle] = track.get();
             candidateOwners.push_back( track );
             index.swap( candidateIndex );
@@ -93,12 +120,18 @@ namespace workphone
             auto candidateOwners = makeSourceBudgetSnapshot<SmartPtr<T>>();
             candidateOwners.reserve( input.capacity() );
             size_t handle = 0;
-            for( const auto &track : input ) if( track )
+            for( const auto &track : input )
             {
-                if( handle >= std::numeric_limits<u16>::max() )
-                    throw std::length_error( "Animation track count exceeds the public handle range." );
-                candidateIndex.emplace( static_cast<u16>( handle++ ), track.get() );
-                candidateOwners.push_back( track );
+                if( track )
+                {
+                    if( handle >= std::numeric_limits<u16>::max() )
+                    {
+                        throw std::length_error(
+                            "Animation track count exceeds the public handle range." );
+                    }
+                    candidateIndex.emplace( static_cast<u16>( handle++ ), track.get() );
+                    candidateOwners.push_back( track );
+                }
             }
             index.swap( candidateIndex );
             owners.swap( candidateOwners );
@@ -173,7 +206,9 @@ namespace workphone
     void Animation::removeTrack( SmartPtr<IAnimationTrack> track )
     {
         if( !track )
+        {
             return;
+        }
 
         // Try to find and remove from node tracks
         for( auto it = m_nodeTracks.begin(); it != m_nodeTracks.end(); ++it )
@@ -181,7 +216,10 @@ namespace workphone
             if( it->second == track.get() )
             {
                 m_nodeTracks.erase( it );
-                if( !stillIndexed( m_nodeTracks, track.get() ) ) detachTrack( track.get(), this );
+                if( !stillIndexed( m_nodeTracks, track.get() ) )
+                {
+                    detachTrack( track.get(), this );
+                }
                 eraseOwnedTrackByShared( m_ownedNodeTracks, track );
                 return;
             }
@@ -193,7 +231,10 @@ namespace workphone
             if( it->second == track.get() )
             {
                 m_vertexTracks.erase( it );
-                if( !stillIndexed( m_vertexTracks, track.get() ) ) detachTrack( track.get(), this );
+                if( !stillIndexed( m_vertexTracks, track.get() ) )
+                {
+                    detachTrack( track.get(), this );
+                }
                 eraseOwnedTrackByShared( m_ownedVertexTracks, track );
                 return;
             }
@@ -319,7 +360,10 @@ namespace workphone
         {
             const auto track = it->second;
             m_nodeTracks.erase( it );
-            if( !stillIndexed( m_nodeTracks, track ) ) detachTrack( track, this );
+            if( !stillIndexed( m_nodeTracks, track ) )
+            {
+                detachTrack( track, this );
+            }
             eraseOwnedTrack( m_ownedNodeTracks, track );
         }
     }
@@ -342,7 +386,10 @@ namespace workphone
         {
             const auto track = it->second;
             m_vertexTracks.erase( it );
-            if( !stillIndexed( m_vertexTracks, track ) ) detachTrack( track, this );
+            if( !stillIndexed( m_vertexTracks, track ) )
+            {
+                detachTrack( track, this );
+            }
             eraseOwnedTrack( m_ownedVertexTracks, track );
         }
     }
@@ -598,8 +645,12 @@ namespace workphone
                         }
                         auto boneName = actorTrack->getPropertyName();
                         if( StringUtil::isNullOrEmpty( boneName ) )
+                        {
                             if( const auto importedBone = actorTrack->getBone() )
+                            {
                                 boneName = importedBone->getName();
+                            }
+                        }
                         if( !StringUtil::isNullOrEmpty( boneName ) )
                         {
                             actorTrack->applyToBone( skeleton->getBone( boneName ), timeIndex, weight,
@@ -629,10 +680,16 @@ namespace workphone
                     pair.second->setActor( SmartPtr<scene::IGameActor>( node ) );
                 }
 
-                try { pair.second->apply( timeIndex, weight, scale ); }
+                try
+                {
+                    pair.second->apply( timeIndex, weight, scale );
+                }
                 catch( ... )
                 {
-                    if( node ) pair.second->setActor( previousActor );
+                    if( node )
+                    {
+                        pair.second->setActor( previousActor );
+                    }
                     throw;
                 }
 

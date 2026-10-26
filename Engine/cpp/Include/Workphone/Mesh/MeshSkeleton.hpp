@@ -237,10 +237,12 @@ namespace workphone
         Array<SmartPtr<IBone>> m_bones;
 
         std::map<String, SmartPtr<IAnimation>, std::less<String>,
-                 SourceBudgetAllocator<std::pair<const String, SmartPtr<IAnimation>>>> m_animationsByName;
+                 SourceBudgetAllocator<std::pair<const String, SmartPtr<IAnimation>>>>
+            m_animationsByName;
 
         std::map<String, SmartPtr<IBone>, std::less<String>,
-                 SourceBudgetAllocator<std::pair<const String, SmartPtr<IBone>>>> m_bonesByName;
+                 SourceBudgetAllocator<std::pair<const String, SmartPtr<IBone>>>>
+            m_bonesByName;
 
         /**
          * @brief Linked skeleton animation source for animation sharing.

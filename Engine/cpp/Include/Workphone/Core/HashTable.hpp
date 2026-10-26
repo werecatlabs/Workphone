@@ -100,7 +100,9 @@ namespace workphone
     u32 HashTableBase<Key, Value, TAlloc>::hash( const Key &key ) const
     {
         if( m_size == 0 )
+        {
             throw std::out_of_range( "Cannot access a zero-sized HashTable" );
+        }
 
         static double s_dHashMultiplier = 0.5 * ( MathD::Sqrt( 5.0 ) - 1.0 );
         unsigned int uiKey = 0;

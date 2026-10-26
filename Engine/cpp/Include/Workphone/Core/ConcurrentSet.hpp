@@ -121,18 +121,22 @@ namespace workphone
             {
                 return m_owner->m_values.cbegin();
             }
+
             const_iterator end() const noexcept
             {
                 return m_owner->m_values.cend();
             }
+
             bool empty() const noexcept
             {
                 return m_owner->m_values.empty();
             }
+
             size_type size() const noexcept
             {
                 return m_owner->m_values.size();
             }
+
             size_type capacity() const noexcept
             {
                 return m_owner->m_values.capacity();
@@ -177,18 +181,22 @@ namespace workphone
             {
                 return m_owner->m_values.cbegin();
             }
+
             iterator end() noexcept
             {
                 return m_owner->m_values.cend();
             }
+
             bool empty() const noexcept
             {
                 return m_owner->m_values.empty();
             }
+
             size_type size() const noexcept
             {
                 return m_owner->m_values.size();
             }
+
             size_type capacity() const noexcept
             {
                 return m_owner->m_values.capacity();
@@ -198,18 +206,22 @@ namespace workphone
             {
                 return m_owner->insertUnlocked( value );
             }
+
             bool insert( T &&value )
             {
                 return m_owner->insertUnlocked( std::move( value ) );
             }
+
             bool erase( const T &value )
             {
                 return m_owner->eraseUnlocked( value );
             }
+
             void clear()
             {
                 m_owner->m_values.clear();
             }
+
             void reserve( size_type n )
             {
                 m_owner->reserveUnlocked( n );
@@ -411,6 +423,7 @@ namespace workphone
         {
             return ReadLockedView( *this );
         }
+
         WriteLockedView writeLocked()
         {
             return WriteLockedView( *this );
@@ -421,22 +434,27 @@ namespace workphone
         {
             return m_values.begin();
         }
+
         const_iterator begin() const noexcept
         {
             return m_values.begin();
         }
+
         const_iterator cbegin() const noexcept
         {
             return m_values.begin();
         }
+
         iterator end() noexcept
         {
             return m_values.end();
         }
+
         const_iterator end() const noexcept
         {
             return m_values.end();
         }
+
         const_iterator cend() const noexcept
         {
             return m_values.end();
@@ -446,22 +464,27 @@ namespace workphone
         {
             m_mutex.lock();
         }
+
         void lock_shared() const
         {
             m_mutex.lock_shared();
         }
+
         bool try_lock() const
         {
             return m_mutex.try_lock();
         }
+
         bool try_lock_shared() const
         {
             return m_mutex.try_lock_shared();
         }
+
         void unlock() const
         {
             m_mutex.unlock();
         }
+
         void unlock_shared() const
         {
             m_mutex.unlock_shared();
@@ -576,7 +599,9 @@ namespace workphone
                 {
                     m_values.emplace_back( std::move_if_noexcept( m_values.back() ) );
                     for( auto i = oldSize - 1; i > index; --i )
+                    {
                         m_values[i] = std::move_if_noexcept( m_values[i - 1] );
+                    }
                     m_values[index] = std::move( stableValue );
                 }
                 catch( ... )

@@ -22,16 +22,21 @@ namespace workphone
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
             return bound ? bound->queryBound( sql, values ) : nullptr;
         }
+
         String readValue( DatabaseManager &manager, const String &table, const String &name,
                           const String &fallback )
         {
             ScopedLock lock( &manager );
             if( name.size() > 1024 || name.find( '\0' ) != String::npos )
+            {
                 return fallback;
+            }
             auto query =
                 boundQuery( manager, "SELECT value FROM " + table + " WHERE param=? LIMIT 2", { name } );
             if( !query || query->eof() )
+            {
                 return fallback;
+            }
             const auto value = query->getFieldValue( "value" );
             query->nextRow();
             if( !query->eof() )
@@ -41,6 +46,7 @@ namespace workphone
             }
             return value;
         }
+
         void writeValue( DatabaseManager &manager, const String &table, const String &name,
                          const String &value )
         {
@@ -57,11 +63,14 @@ namespace workphone
             // Savepoints compose with the caller's transaction. BEGIN IMMEDIATE
             // here would either reject nesting or commit somebody else's work.
             if( !boundQuery( manager, "SAVEPOINT wp_key_value" ) )
+            {
                 return;
+            }
             auto matches =
                 boundQuery( manager, "SELECT count(*) AS n FROM " + table + " WHERE param=?", { name } );
             bool okay = matches && !matches->eof() && matches->getFieldValueAsInt( "n" ) <= 1;
             if( okay )
+            {
                 okay = boundQuery( manager, "UPDATE " + table + " SET value=? WHERE param=?",
                                    { value, name } ) != nullptr &&
                        boundQuery( manager,
@@ -69,13 +78,17 @@ namespace workphone
                                        "(param,value) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM " +
                                        table + " WHERE param=?)",
                                    { name, value, name } ) != nullptr;
+            }
             if( okay && boundQuery( manager, "RELEASE wp_key_value" ) )
+            {
                 return;
+            }
             boundQuery( manager, "ROLLBACK TO wp_key_value" );
             boundQuery( manager, "RELEASE wp_key_value" );
             WP_LOG_ERROR( "Database setting update failed; previous values retained." );
         }
     }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager, IDatabaseManager );
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager::QueryJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager::DMLQueryJob, Job );
@@ -317,7 +330,9 @@ namespace workphone
             }
 
             if( !boundQuery( *this, "ATTACH DATABASE ? AS refdb", { filePath } ) )
+            {
                 WP_LOG_ERROR( "Could not attach reference database." );
+            }
         }
         catch( Exception &e )
         {
@@ -527,10 +542,14 @@ namespace workphone
     {
         ScopedLock lock( this );
         if( name.size() > 1024 || name.find( '\0' ) != String::npos )
+        {
             return false;
+        }
         auto query = boundQuery( *this, "SELECT param FROM sim_states WHERE param=? LIMIT 2", { name } );
         if( !query || query->eof() )
+        {
             return false;
+        }
         query->nextRow();
         return query->eof();
     }
@@ -590,7 +609,9 @@ namespace workphone
         auto journal = executeQuery( "PRAGMA journal_mode;" );
         if( journal && ( journal->getFieldValue( "journal_mode" ) == "memory" ||
                          journal->getFieldValue( "journal_mode" ) == "off" ) )
+        {
             executeQuery( "PRAGMA journal_mode=DELETE;" );
+        }
         // executeQuery("PRAGMA locking_mode=EXCLUSIVE;");
         executeQuery( "PRAGMA temp_store=MEMORY;" );
         // executeQuery("PRAGMA threads = 4;");
@@ -726,7 +747,9 @@ namespace workphone
     {
         ScopedLock lock( this );
         if( name.size() > 1024 || name.find( '\0' ) != String::npos )
+        {
             return name;
+        }
 #if WP_BUILD_EDITOR_PLUGIN
         auto modelSql = String( "SELECT name FROM resourcemap WHERE name=? LIMIT 2" );
 #else

@@ -64,11 +64,13 @@ namespace workphone
              * snapshots across page preparation and both colour/shadow passes. */
             bool setFoliageSnapshot( FoliageSnapshot snapshot, String &error );
             FoliageSnapshot getFoliageSnapshot() const;
+
             struct ActiveFoliage
             {
                 FoliageSnapshot snapshot;
                 Transform3<real_Num> placement;
             };
+
             using FoliagePublicationGate =
                 std::function<bool( FoliageSnapshot, const Transform3<real_Num> &,
                                     const std::function<void()> &, String & )>;
@@ -76,6 +78,7 @@ namespace workphone
             bool publishFoliageSnapshot( FoliageSnapshot, const Transform3<real_Num> &,
                                          const std::function<void()> &commitRenderer, String &error );
             ActiveFoliage getActiveFoliage() const;
+
             struct FoliageDiagnostics
             {
                 bool currentGenerationReady = false;
@@ -87,6 +90,7 @@ namespace workphone
                 u64 geometryBytes = 0, uploadBytes = 0;
                 String error;
             };
+
             void setFoliageDiagnostics( const FoliageDiagnostics &diagnostics );
             FoliageDiagnostics getFoliageDiagnostics() const;
             bool setFoliageForcedLod( s32 level, String &error );

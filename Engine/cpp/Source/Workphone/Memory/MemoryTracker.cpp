@@ -81,7 +81,9 @@ namespace workphone
 
             m_allocations[ptr] = Alloc( sz, pool, file, ln, func );
             if( pool >= m_allocationsByPool.size() )
+            {
                 m_allocationsByPool.resize( pool + 1, 0 );
+            }
             m_allocationsByPool[pool] += sz;
             m_totalAllocations += sz;
         }
@@ -188,9 +190,13 @@ namespace workphone
 
                     const Alloc &alloc = i->second;
                     if( !alloc.filename.empty() )
+                    {
                         os << alloc.filename;
+                    }
                     else
+                    {
                         os << "(unknown source):";
+                    }
 
                     os << "(" << alloc.line << ") : {" << alloc.bytes << " bytes}"
                        << " function: " << alloc.function << std::endl;

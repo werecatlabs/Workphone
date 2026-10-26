@@ -128,10 +128,14 @@ namespace workphone
     auto Animator::isFinished() const -> bool
     {
         if( m_loop )
+        {
             return false;
+        }
 
         if( m_reverse )
+        {
             return m_animationTime <= 0.0f;
+        }
 
         return m_animationTime >= m_animationLength;
     }
@@ -179,7 +183,9 @@ namespace workphone
         auto deltaTime = timer->getDeltaTime();
 
         if( !m_isPlaying || m_isPaused )
+        {
             return;
+        }
 
         // Update animation time based on speed and direction
         if( m_reverse )

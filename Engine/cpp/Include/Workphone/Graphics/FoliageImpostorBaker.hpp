@@ -4,12 +4,14 @@
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <functional>
 #include <atomic>
+
 namespace workphone::render
 {
     using FoliageBakeTextureResolver =
         std::function<std::shared_ptr<const TextureMipLevel>( const String &, String & )>;
     WPCore_API void setFoliageImpostorTextureResolver( FoliageBakeTextureResolver resolver );
     WPCore_API FoliageBakeTextureResolver getFoliageImpostorTextureResolver();
+
     struct FoliageImpostorBakeOptions
     {
         u32 tileSize = 128, gutter = 4;
@@ -17,6 +19,7 @@ namespace workphone::render
         String resourcePrefix = "data://foliage/impostor";
         u64 maximumRasterSamples = 128ull * 1024 * 1024;
     };
+
     struct FoliageImpostorBake
     {
         FoliageImpostor metadata;
@@ -27,6 +30,7 @@ namespace workphone::render
         f32 radius = 0;
         u64 rasterSamples = 0;
     };
+
     WPCore_API bool bakeFoliageImpostor( const FoliageSpecies &, const FoliageBakeTextureResolver &,
                                          const FoliageImpostorBakeOptions &, FoliageImpostorBake &output,
                                          String &error, const std::atomic<bool> *cancel = nullptr );

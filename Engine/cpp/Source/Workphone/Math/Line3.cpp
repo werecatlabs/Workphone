@@ -127,10 +127,14 @@ namespace workphone
         T t = v.dotProduct( c );
 
         if( t < static_cast<T>( 0.0 ) )
+        {
             return m_start;
+        }
 
         if( t > d )
+        {
             return m_end;
+        }
 
         v *= t;
         return m_start + v;
@@ -145,7 +149,9 @@ namespace workphone
         f64 d = sradius * sradius - ( c * c - v * v );
 
         if( d < 0.0 )
+        {
             return false;
+        }
 
         outdistance = static_cast<T>( v - Math<T>::Sqrt( d ) );
         return true;

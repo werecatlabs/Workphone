@@ -94,13 +94,19 @@ namespace workphone
             m_animationTime += dt * ( 1.0f / m_animationLength );
             m_animationTime = MathF::clamp( m_animationTime, 0.0f, 1.0f );
             if( m_loop && m_animationTime == 1.0f )
+            {
                 m_animationTime = 0.0f;
+            }
 
             Vector2<real_Num> position;
             if( !m_reverse )
+            {
                 position = m_start + ( m_end - m_start ) * m_animationTime;
+            }
             else
+            {
                 position = m_end + ( m_start - m_end ) * m_animationTime;
+            }
 
             m_object->setPosition( position );
         }

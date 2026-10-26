@@ -28,7 +28,9 @@ namespace workphone
         for( auto &dep : m_installDependencies )
         {
             if( dep == resourceID )
+            {
                 return;
+            }
         }
 
         m_installDependencies.push_back( resourceID );

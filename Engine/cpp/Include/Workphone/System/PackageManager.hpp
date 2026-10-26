@@ -57,7 +57,7 @@ namespace workphone
          * assemble the package according to the configured options.
          */
         void createPackage() override;
-        void setResourcePackageProfile(const String &path) override;
+        void setResourcePackageProfile( const String &path ) override;
         String getResourcePackageProfile() const override;
         bool startResourcePackage() override;
         bool startResourcePackagePreview();
@@ -121,7 +121,7 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        bool startResourcePackageRequest(bool preview);
+        bool startResourcePackageRequest( bool preview );
         mutable std::mutex m_resourcePackageMutex;
         String m_resourcePackageProfile, m_resourcePackageError;
         std::shared_ptr<ResourcePackageJobState> m_resourcePackageRequest;

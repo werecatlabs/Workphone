@@ -12,7 +12,10 @@
 
 namespace workphone
 {
-    namespace scene { class ResourceDirector; }
+    namespace scene
+    {
+        class ResourceDirector;
+    }
 
     /**
      * @class ResourceDatabase
@@ -315,7 +318,8 @@ namespace workphone
     protected:
         // Publish a completely admitted identity registry; returned owners may
         // reenter the database when the caller releases them after publication.
-        Array<SmartPtr<ISharedObject>> replaceObjectInventory( const Array<SmartPtr<ISharedObject>> &objects );
+        Array<SmartPtr<ISharedObject>> replaceObjectInventory(
+            const Array<SmartPtr<ISharedObject>> &objects );
 
         /**
          * @brief Load asset properties for a node from the database.

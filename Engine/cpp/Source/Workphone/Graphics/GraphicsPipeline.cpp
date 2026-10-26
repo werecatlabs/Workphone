@@ -53,10 +53,14 @@ namespace workphone::render
         {
             T candidate = value;
             if( !properties.getPropertyValue( name, candidate ) || !std::isfinite( candidate ) )
+            {
                 return false;
+            }
             candidate = std::clamp( candidate, minimum, maximum );
             if( candidate == value )
+            {
                 return false;
+            }
             value = candidate;
             return true;
         }
@@ -71,7 +75,9 @@ namespace workphone::render
         properties->setPropertyAsEnum( "Quality", static_cast<s32>( getQualityLevel() ),
                                        { "Low", "Medium", "High", "Ultra", "Cinematic" } );
         for( const auto &toggle : pipelineToggles )
+        {
             properties->setProperty( toggle.name, ( this->*toggle.get )() );
+        }
         properties->setProperty( "TAA feedback", getTaaSettings().m_feedback );
         properties->setProperty( "AO radius", getTaoaSettings().m_radius );
         properties->setProperty( "AO intensity", getTaoaSettings().m_intensity );
@@ -84,7 +90,9 @@ namespace workphone::render
     void GraphicsPipeline::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
+        {
             return;
+        }
         s32 quality = static_cast<s32>( getQualityLevel() );
         if( readPipelineValue( *properties, "Quality", quality, 0, 4 ) )
         {
@@ -98,28 +106,38 @@ namespace workphone::render
             bool enabled = ( this->*toggle.get )();
             if( properties->getPropertyValue( toggle.name, enabled ) &&
                 enabled != ( this->*toggle.get )() )
+            {
                 ( this->*toggle.set )( enabled );
+            }
         }
         auto taa = getTaaSettings();
         if( readPipelineValue( *properties, "TAA feedback", taa.m_feedback, 0.0f, 0.99f ) )
+        {
             setTaaSettings( taa );
+        }
         auto ao = getTaoaSettings();
         const bool radiusChanged =
             readPipelineValue( *properties, "AO radius", ao.m_radius, 0.01f, 100.0f );
         const bool intensityChanged =
             readPipelineValue( *properties, "AO intensity", ao.m_intensity, 0.0f, 10.0f );
         if( radiusChanged || intensityChanged )
+        {
             setTaoaSettings( ao );
+        }
         auto hdr = getHdrSettings();
         const bool thresholdChanged =
             readPipelineValue( *properties, "Bloom threshold", hdr.m_bloomThreshold, 0.0f, 100.0f );
         const bool bloomChanged =
             readPipelineValue( *properties, "Bloom intensity", hdr.m_bloomIntensity, 0.0f, 10.0f );
         if( thresholdChanged || bloomChanged )
+        {
             setHdrSettings( hdr );
+        }
         auto csm = getCsmSettings();
         if( readPipelineValue( *properties, "Shadow map size", csm.m_shadowMapSize, 128, 4096 ) )
+        {
             setCsmSettings( csm );
+        }
     }
 
     GraphicsPipeline::GraphicsPipeline()

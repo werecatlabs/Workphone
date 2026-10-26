@@ -420,7 +420,9 @@ namespace workphone
         static void sort( const _RanIt _First, const _RanIt _Last )
         {
             if( _Last - _First < 2 )
+            {
                 return;
+            }
             int depth_limit = 0;
             auto n = _Last - _First;
             while( n > 1 )
@@ -446,7 +448,9 @@ namespace workphone
         static void _wp_insertion_sort( _RanIt first, _RanIt last )
         {
             if( last - first < 2 )
+            {
                 return;
+            }
             for( _RanIt i = first + 1; i != last; ++i )
             {
                 auto value = *i;
@@ -475,11 +479,17 @@ namespace workphone
             {
                 _RanIt child = first + ( root - first ) * 2 + 1;
                 if( child >= last )
+                {
                     break;
+                }
                 if( child + 1 < last && *child < *( child + 1 ) )
+                {
                     ++child;
+                }
                 if( !( *root < *child ) )
+                {
                     break;
+                }
                 auto tmp = *root;
                 *root = *child;
                 *child = tmp;
@@ -500,7 +510,9 @@ namespace workphone
         {
             auto n = last - first;
             for( auto i = n / 2 - 1; i >= 0; --i )
+            {
                 _wp_sift_down( first, last, first + i );
+            }
             while( last - first > 1 )
             {
                 --last;
@@ -700,7 +712,9 @@ namespace workphone
             for( unsigned int i = 0; i < array.size(); ++i )
             {
                 if( element != array[i] )
+                {
                     newArray.push_back( array[i] );
+                }
             }
 
             array = newArray;

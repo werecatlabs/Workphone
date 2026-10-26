@@ -66,6 +66,8 @@ namespace workphone::render
     void Billboard::_getObject( void **ppObject ) const
     {
         if( ppObject )
+        {
             *ppObject = m_renderData;
+        }
     }
 }  // namespace workphone::render

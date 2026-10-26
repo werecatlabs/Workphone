@@ -44,7 +44,9 @@ namespace workphone
         if( index >= m_poseReferences.size() )
         {
             if( index == std::numeric_limits<size_t>::max() )
+            {
                 throw std::length_error( "Pose reference index exceeds the addressable range." );
+            }
             m_poseReferences.resize( index + 1 );
         }
         m_poseReferences[index].poseIndex = poseIndex;

@@ -42,18 +42,22 @@ namespace workphone::animation
         public:
             const Array<AnimationIKSolveResult> &getResults() const;
             Array<AnimationIKSolveResult> takeResults() noexcept;
+
         private:
             friend class AnimationIKSystem;
+
             struct Command
             {
                 SmartPtr<IBone> effector;
                 Transform3<real_Num> target;
                 TwoBoneIKSettings settings;
             };
+
             Array<Command> m_commands = makeSourceBudgetSnapshot<Command>();
             Array<AnimationIKSolveResult> m_results = makeSourceBudgetSnapshot<AnimationIKSolveResult>();
             Array<SmartPtr<IBone>> m_hierarchy = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
         };
+
         bool addConstraint( const TwoBoneIKConstraint &constraint );
         bool updateConstraint( const TwoBoneIKConstraint &constraint );
         bool removeConstraint( const String &id );

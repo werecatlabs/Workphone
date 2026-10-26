@@ -43,17 +43,29 @@ namespace workphone
         String stickDirectionLabel;
 
         if( input == "Throttle" )
+        {
             stickDirectionLabel = "vertical";
+        }
         else if( input == "Aileron" )
+        {
             stickDirectionLabel = "horizontal";
+        }
         else if( input == "Elevator" )
+        {
             stickDirectionLabel = "vertical";
+        }
         else if( input == "Rudder" )
+        {
             stickDirectionLabel = "horizontal";
+        }
         else if( input == "Collective Pitch" )
+        {
             stickDirectionLabel = "vertical";
+        }
         else
+        {
             stickDirectionLabel = "none";
+        }
 
         return stickDirectionLabel;
     }

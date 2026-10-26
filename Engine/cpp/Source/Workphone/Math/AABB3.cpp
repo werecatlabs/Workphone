@@ -177,22 +177,30 @@ namespace workphone
         if( ( Math<T>::Abs( t.X() ) > e.X() + halflength * Math<T>::Abs( linevect.X() ) ) ||
             ( Math<T>::Abs( t.Y() ) > e.Y() + halflength * Math<T>::Abs( linevect.Y() ) ) ||
             ( Math<T>::Abs( t.Z() ) > e.Z() + halflength * Math<T>::Abs( linevect.Z() ) ) )
+        {
             return false;
+        }
 
         r = e.Y() * static_cast<T>( Math<T>::Abs( linevect.Z() ) ) +
             e.Z() * static_cast<T>( Math<T>::Abs( linevect.Y() ) );
         if( Math<T>::Abs( t.Y() * linevect.Z() - t.Z() * linevect.Y() ) > r )
+        {
             return false;
+        }
 
         r = e.X() * static_cast<T>( Math<T>::Abs( linevect.Z() ) ) +
             e.Z() * static_cast<T>( Math<T>::Abs( linevect.X() ) );
         if( Math<T>::Abs( t.Z() * linevect.X() - t.X() * linevect.Z() ) > r )
+        {
             return false;
+        }
 
         r = e.X() * static_cast<T>( Math<T>::Abs( linevect.Y() ) ) +
             e.Y() * static_cast<T>( Math<T>::Abs( linevect.X() ) );
         if( Math<T>::Abs( t.X() * linevect.Y() - t.Y() * linevect.X() ) > r )
+        {
             return false;
+        }
 
         return true;
     }

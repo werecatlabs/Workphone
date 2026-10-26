@@ -18,63 +18,94 @@ namespace workphone
     {
         const ContainerAllocationPolicy &sourceContainerPolicy() noexcept
         {
-            static const ContainerAllocationPolicy policy{
-                &allocateSourceBudgetStorage, &freeSourceBudgetStorage};
+            static const ContainerAllocationPolicy policy{ &allocateSourceBudgetStorage,
+                                                           &freeSourceBudgetStorage };
             return policy;
         }
-    }
+    }  // namespace detail
+
     namespace
     {
         thread_local u64 sourceDenials = 0;
+
         struct SourceStorageHeader
         {
             StreamBudget budget;
             size_t allocationAlignment;
         };
+
         size_t sourceStorageOffset( size_t alignment )
         {
             if( !alignment || ( alignment & ( alignment - 1 ) ) ||
                 alignment - 1 > std::numeric_limits<size_t>::max() - sizeof( SourceStorageHeader ) )
+            {
                 throw std::bad_alloc();
+            }
             return ( sizeof( SourceStorageHeader ) + alignment - 1 ) & ~( alignment - 1 );
         }
+    }  // namespace
+
+    u64 sourceBudgetDenialCount() noexcept
+    {
+        return sourceDenials;
     }
-    u64 sourceBudgetDenialCount() noexcept { return sourceDenials; }
+
     size_t sourceBudgetStorageBytes( size_t bytes, size_t alignment )
     {
         const auto offset = sourceStorageOffset( alignment );
-        if( bytes > std::numeric_limits<size_t>::max() - offset ) throw std::bad_alloc();
+        if( bytes > std::numeric_limits<size_t>::max() - offset )
+        {
+            throw std::bad_alloc();
+        }
         return offset + bytes;
     }
+
     void *allocateSourceBudgetStorage( size_t bytes, size_t alignment )
     {
         const auto total = sourceBudgetStorageBytes( bytes, alignment );
         auto budget = WorldStreamingScheduler::reserveSharedSource( total );
-        if( !budget ) { ++sourceDenials; throw std::bad_alloc(); }
+        if( !budget )
+        {
+            ++sourceDenials;
+            throw std::bad_alloc();
+        }
         const auto allocationAlignment = std::max( alignment, alignof( SourceStorageHeader ) );
         auto pointer = ::operator new( total, std::align_val_t( allocationAlignment ) );
         ::new( pointer ) SourceStorageHeader{ std::move( budget ), allocationAlignment };
         return static_cast<char *>( pointer ) + sourceStorageOffset( alignment );
     }
+
     void freeSourceBudgetStorage( void *pointer, size_t alignment ) noexcept
     {
-        if( !pointer ) return;
-        auto header = reinterpret_cast<SourceStorageHeader *>(
-            static_cast<char *>( pointer ) - sourceStorageOffset( alignment ) );
+        if( !pointer )
+        {
+            return;
+        }
+        auto header = reinterpret_cast<SourceStorageHeader *>( static_cast<char *>( pointer ) -
+                                                               sourceStorageOffset( alignment ) );
         auto budget = std::move( header->budget );
         const auto allocationAlignment = header->allocationAlignment;
         header->~SourceStorageHeader();
         ::operator delete( header, std::align_val_t( allocationAlignment ) );
         // Physical storage is gone before the reservation becomes available.
     }
+
     namespace
     {
-        void streamError(String &error, const char *message) noexcept
+        void streamError( String &error, const char *message ) noexcept
         {
-            try { error = message; }
-            catch( const std::bad_alloc & ) { error = "Budget exhausted"; }
+            try
+            {
+                error = message;
+            }
+            catch( const std::bad_alloc & )
+            {
+                error = "Budget exhausted";
+            }
         }
+
         thread_local const void *streamWorker = nullptr;
+
         const char *memoryName( StreamMemoryClass category )
         {
             switch( category )
@@ -96,6 +127,7 @@ namespace workphone
             }
         }
     }  // namespace
+
     struct StreamBudgetState
     {
         mutable std::mutex mutex;
@@ -106,6 +138,7 @@ namespace workphone
         std::array<u64, size_t( StreamMemoryClass::Count )> used{}, limits{};
         std::array<u64, size_t( StreamMemoryClass::Count )> peakUsed{}, rejectedReservations{};
     };
+
     namespace
     {
         std::shared_ptr<StreamBudgetState> sharedAllocationLedger()
@@ -115,32 +148,46 @@ namespace workphone
             // service and static cleanup order; physical leases still retire.
             struct Ledger
             {
-                union { std::shared_ptr<StreamBudgetState> state; };
-                Ledger() : state(std::make_shared<StreamBudgetState>())
-                { state->limits = WorldStreamLimits{}.bytes; }
-                ~Ledger() {}
+                union
+                {
+                    std::shared_ptr<StreamBudgetState> state;
+                };
+
+                Ledger() : state( std::make_shared<StreamBudgetState>() )
+                {
+                    state->limits = WorldStreamLimits{}.bytes;
+                }
+
+                ~Ledger()
+                {
+                }
             };
+
             static Ledger ledger;
             return ledger.state;
         }
-    }
+    }  // namespace
+
     StreamBudget WorldStreamingScheduler::reserveSharedSource( u64 bytes )
     {
         auto state = sharedAllocationLedger();
-        auto lease = StreamBudget( new StreamBudgetLease(state, StreamMemoryClass::SourceCpu, 0) );
-        const auto index = size_t(StreamMemoryClass::SourceCpu);
-        std::lock_guard<std::mutex> lock(state->mutex);
+        auto lease = StreamBudget( new StreamBudgetLease( state, StreamMemoryClass::SourceCpu, 0 ) );
+        const auto index = size_t( StreamMemoryClass::SourceCpu );
+        std::lock_guard<std::mutex> lock( state->mutex );
         if( bytes > state->limits[index] || state->used[index] > state->limits[index] - bytes )
         {
             if( state->rejectedReservations[index] != std::numeric_limits<u64>::max() )
+            {
                 ++state->rejectedReservations[index];
+            }
             return {};
         }
         state->used[index] += bytes;
-        state->peakUsed[index] = std::max(state->peakUsed[index], state->used[index]);
+        state->peakUsed[index] = std::max( state->peakUsed[index], state->used[index] );
         lease->m_bytes = bytes;
         return lease;
     }
+
     StreamBudgetLease::StreamBudgetLease( std::shared_ptr<StreamBudgetState> state,
                                           StreamMemoryClass category, u64 bytes ) :
         m_state( std::move( state ) ),
@@ -148,6 +195,7 @@ namespace workphone
         m_bytes( bytes )
     {
     }
+
     StreamBudgetLease::~StreamBudgetLease()
     {
         if( m_bytes )
@@ -159,10 +207,12 @@ namespace workphone
             m_state->wake.notify_all();
         }
     }
+
     u64 StreamBudgetLease::bytes() const
     {
         return m_bytes;
     }
+
     StreamMemoryClass StreamBudgetLease::memoryClass() const
     {
         return m_class;
@@ -177,11 +227,13 @@ namespace workphone
             std::shared_ptr<std::atomic<bool>> token;
             u64 generation = 0;
         };
+
         struct Ready
         {
             WorldStreamResult result;
             u64 reserved = 0;
         };
+
         struct Producer
         {
             WorldStreamProducerLimits limits;
@@ -192,11 +244,13 @@ namespace workphone
             u64 id = 0, activeBytes = 0, lastDispatch = 0;
             bool closed = false;
         };
+
         struct BudgetedPayload
         {
             StreamBudget lease;
             std::shared_ptr<const void> payload;
         };
+
         WorldStreamLimits limits;
         std::shared_ptr<StreamBudgetState> budget = std::make_shared<StreamBudgetState>();
         mutable std::mutex mutex;
@@ -205,15 +259,25 @@ namespace workphone
         bool stopping = false;
         u64 nextId = 1, dispatch = 0, completed = 0, cancelled = 0;
         u32 pendingCount = 0, activeCount = 0, readyCount = 0, burst = 0;
+
         explicit Impl( const WorldStreamLimits &settings, bool sharedLedger ) : limits( settings )
         {
             if( !limits.workers || limits.workers > 16 || !limits.maximumProducers ||
                 limits.maximumProducers > 4096 || !limits.maximumPending ||
                 limits.maximumPending > 65536 || !limits.maximumReady || limits.maximumReady > 256 )
+            {
                 throw std::invalid_argument( "Invalid world streaming worker/queue limits." );
-            if( sharedLedger ) budget = sharedAllocationLedger();
-            else budget->limits = limits.bytes;
+            }
+            if( sharedLedger )
+            {
+                budget = sharedAllocationLedger();
+            }
+            else
+            {
+                budget->limits = limits.bytes;
+            }
         }
+
         bool reserveJob( u64 workBytes, u64 resultBytes, StreamBudget &work, StreamBudget &result )
         {
             try
@@ -231,7 +295,9 @@ namespace workphone
                     constexpr auto r = size_t( StreamMemoryClass::ResultCpu );
                     if( workBytes > budget->limits[w] - budget->used[w] ||
                         resultBytes > budget->limits[r] - budget->used[r] )
+                    {
                         return false;
+                    }
                     budget->used[w] += workBytes;
                     budget->used[r] += resultBytes;
                     budget->peakUsed[w] = std::max( budget->peakUsed[w], budget->used[w] );
@@ -248,6 +314,7 @@ namespace workphone
                 return false;
             }
         }
+
         void run()
         {
             streamWorker = this;
@@ -262,7 +329,9 @@ namespace workphone
                     for( ;; )
                     {
                         if( stopping )
+                        {
                             return;
+                        }
                         if( readyCount + activeCount < limits.maximumReady )
                         {
                             size_t eligibleCount = 0;
@@ -277,7 +346,9 @@ namespace workphone
                                     if( bytes <= p->limits.maximumReadyBytes &&
                                         p->stats.readyBytes + p->activeBytes <=
                                             p->limits.maximumReadyBytes - bytes )
+                                    {
                                         eligible[eligibleCount++] = p.get();
+                                    }
                                 }
                             }
                             const bool fairTurn = burst >= 4;
@@ -287,7 +358,9 @@ namespace workphone
                                                                   ? a->id < b->id
                                                                   : a->lastDispatch < b->lastDispatch;
                                            if( fairTurn )
+                                           {
                                                return older;
+                                           }
                                            const auto ap = a->pending.front().request.priority,
                                                       bp = b->pending.front().request.priority;
                                            return ap == bp ? older : ap > bp;
@@ -299,7 +372,9 @@ namespace workphone
                                 if( !reserveJob( p->pending.front().request.workingBytes,
                                                  p->pending.front().request.maximumResultBytes, work,
                                                  result ) )
+                                {
                                     continue;
+                                }
                                 selected = producers.at( p->id );
                                 workReservation = std::move( work );
                                 resultReservation = std::move( result );
@@ -315,7 +390,9 @@ namespace workphone
                             }
                         }
                         if( selected )
+                        {
                             break;
+                        }
                         // Budget leases can be released independently of queue mutex.
                         // Timed recheck also covers a release immediately before waiting.
                         budget->wake.wait_for( lock, std::chrono::milliseconds( 20 ) );
@@ -329,8 +406,10 @@ namespace workphone
                     result.generation = job.generation;
                     if( result.bytes > job.request.maximumResultBytes ||
                         ( result.bytes && !result.payload ) )
+                    {
                         throw std::runtime_error(
                             "Streaming producer exceeded its reserved result size." );
+                    }
                     if( result.payload )
                     {
                         auto held = std::make_shared<BudgetedPayload>();
@@ -343,13 +422,13 @@ namespace workphone
                 {
                     result.payload.reset();
                     result.bytes = 0;
-                    streamError(result.error, e.what());
+                    streamError( result.error, e.what() );
                 }
                 catch( ... )
                 {
                     result.payload.reset();
                     result.bytes = 0;
-                    streamError(result.error, "Streaming producer threw an unknown exception.");
+                    streamError( result.error, "Streaming producer threw an unknown exception." );
                 }
                 result.key = job.request.key;
                 result.generation = job.generation;
@@ -401,14 +480,20 @@ namespace workphone
     };
 
     WorldStreamingScheduler::WorldStreamingScheduler( const WorldStreamLimits &limits ) :
-        WorldStreamingScheduler( limits, false ) {}
-    WorldStreamingScheduler::WorldStreamingScheduler( const WorldStreamLimits &limits, bool sharedLedger ) :
+        WorldStreamingScheduler( limits, false )
+    {
+    }
+
+    WorldStreamingScheduler::WorldStreamingScheduler( const WorldStreamLimits &limits,
+                                                      bool sharedLedger ) :
         m_impl( std::make_shared<Impl>( limits, sharedLedger ) )
     {
         try
         {
             for( u32 i = 0; i < limits.workers; ++i )
+            {
                 m_impl->workers.emplace_back( [impl = m_impl] { impl->run(); } );
+            }
         }
         catch( ... )
         {
@@ -418,25 +503,37 @@ namespace workphone
             }
             m_impl->budget->wake.notify_all();
             for( auto &worker : m_impl->workers )
+            {
                 worker.join();
+            }
             throw;
         }
     }
+
     WorldStreamingScheduler::~WorldStreamingScheduler()
     {
         {
             std::lock_guard<std::mutex> lock( m_impl->mutex );
             m_impl->stopping = true;
             for( auto &entry : m_impl->producers )
+            {
                 entry.second->token->store( true );
+            }
         }
         m_impl->budget->wake.notify_all();
         for( auto &worker : m_impl->workers )
+        {
             if( worker.get_id() == std::this_thread::get_id() )
+            {
                 worker.detach();
+            }
             else
+            {
                 worker.join();
+            }
+        }
     }
+
     namespace
     {
         struct SharedScheduler
@@ -444,20 +541,26 @@ namespace workphone
             std::mutex mutex;
             std::shared_ptr<WorldStreamingScheduler> instance;
         };
+
         SharedScheduler &sharedScheduler()
         {
             static SharedScheduler service;
             return service;
         }
     }  // namespace
+
     std::shared_ptr<WorldStreamingScheduler> WorldStreamingScheduler::shared()
     {
         auto &service = sharedScheduler();
         std::lock_guard<std::mutex> lock( service.mutex );
         if( !service.instance )
-            service.instance = std::shared_ptr<WorldStreamingScheduler>( new WorldStreamingScheduler({}, true) );
+        {
+            service.instance =
+                std::shared_ptr<WorldStreamingScheduler>( new WorldStreamingScheduler( {}, true ) );
+        }
         return service.instance;
     }
+
     void WorldStreamingScheduler::shutdownShared()
     {
         std::shared_ptr<WorldStreamingScheduler> retiring;
@@ -470,12 +573,13 @@ namespace workphone
         // release other service consumers.
         retiring.reset();
     }
+
     StreamBudget WorldStreamingScheduler::reserve( StreamMemoryClass category, u64 bytes, String &error )
     {
         const auto index = size_t( category );
         if( index >= size_t( StreamMemoryClass::Count ) )
         {
-            streamError(error, "Invalid streaming memory class.");
+            streamError( error, "Invalid streaming memory class." );
             return {};
         }
         try
@@ -491,12 +595,14 @@ namespace workphone
                 if( denied )
                 {
                     if( state->rejectedReservations[index] != std::numeric_limits<u64>::max() )
+                    {
                         ++state->rejectedReservations[index];
+                    }
                 }
                 else
                 {
                     state->used[index] += bytes;
-                    state->peakUsed[index] = std::max(state->peakUsed[index], state->used[index]);
+                    state->peakUsed[index] = std::max( state->peakUsed[index], state->used[index] );
                     lease->m_bytes = bytes;
                 }
             }
@@ -504,12 +610,16 @@ namespace workphone
             // release their storage while holding its mutex.
             if( denied )
             {
-                try {
-                    error = String("Shared streaming budget for ") + memoryName(category) +
-                        " is exhausted: requested " + std::to_string(bytes) + " bytes, available " +
-                        std::to_string(available) + " bytes.";
+                try
+                {
+                    error = String( "Shared streaming budget for " ) + memoryName( category ) +
+                            " is exhausted: requested " + std::to_string( bytes ) +
+                            " bytes, available " + std::to_string( available ) + " bytes.";
                 }
-                catch( const std::bad_alloc & ) { streamError(error, "Budget exhausted"); }
+                catch( const std::bad_alloc & )
+                {
+                    streamError( error, "Budget exhausted" );
+                }
                 return {};
             }
             error.clear();
@@ -517,43 +627,52 @@ namespace workphone
         }
         catch( const std::exception &e )
         {
-            streamError(error, e.what());
+            streamError( error, e.what() );
             return {};
         }
     }
+
     bool WorldStreamingScheduler::setBudget( StreamMemoryClass category, u64 bytes, String &error )
     {
         const auto index = size_t( category );
         if( index >= size_t( StreamMemoryClass::Count ) )
         {
-            streamError(error, "Invalid streaming memory class.");
+            streamError( error, "Invalid streaming memory class." );
             return false;
         }
         std::lock_guard<std::mutex> queue( m_impl->mutex );
         for( const auto &entry : m_impl->producers )
+        {
             for( const auto &job : entry.second->pending )
+            {
                 if( ( category == StreamMemoryClass::WorkingCpu && job.request.workingBytes > bytes ) ||
                     ( category == StreamMemoryClass::ResultCpu &&
                       job.request.maximumResultBytes > bytes ) )
                 {
-                    streamError(error, "Streaming budget cannot make pending work impossible.");
+                    streamError( error, "Streaming budget cannot make pending work impossible." );
                     return false;
                 }
+            }
+        }
         bool belowLive = false;
         {
             std::lock_guard<std::mutex> lock( m_impl->budget->mutex );
             belowLive = bytes < m_impl->budget->used[index];
-            if( !belowLive ) m_impl->budget->limits[index] = bytes;
+            if( !belowLive )
+            {
+                m_impl->budget->limits[index] = bytes;
+            }
         }
         if( belowLive )
         {
-            streamError(error, "Streaming budget cannot shrink below live reservations.");
+            streamError( error, "Streaming budget cannot shrink below live reservations." );
             return false;
         }
         m_impl->budget->wake.notify_all();
         error.clear();
         return true;
     }
+
     std::shared_ptr<WorldStreamProducer> WorldStreamingScheduler::createProducer(
         const WorldStreamProducerLimits &limits, String &error )
     {
@@ -562,7 +681,7 @@ namespace workphone
             limits.maximumActive > m_impl->limits.workers ||
             limits.maximumReady > m_impl->limits.maximumReady )
         {
-            streamError(error, "Invalid streaming producer limits.");
+            streamError( error, "Invalid streaming producer limits." );
             return {};
         }
         try
@@ -575,7 +694,7 @@ namespace workphone
             std::lock_guard<std::mutex> lock( m_impl->mutex );
             if( m_impl->stopping || m_impl->producers.size() >= m_impl->limits.maximumProducers )
             {
-                streamError(error, "Shared streaming producer limit is exhausted.");
+                streamError( error, "Shared streaming producer limit is exhausted." );
                 return {};
             }
             const auto id = m_impl->nextId++;
@@ -587,10 +706,11 @@ namespace workphone
         }
         catch( const std::exception &e )
         {
-            streamError(error, e.what());
+            streamError( error, e.what() );
             return {};
         }
     }
+
     WorldStreamStats WorldStreamingScheduler::stats() const
     {
         WorldStreamStats result;
@@ -618,14 +738,18 @@ namespace workphone
         m_id( id )
     {
     }
+
     WorldStreamProducer::~WorldStreamProducer()
     {
         if( !m_id )
+        {
             return;
+        }
         drain();
         std::lock_guard<std::mutex> lock( m_scheduler->m_impl->mutex );
         m_scheduler->m_impl->producers.erase( m_id );
     }
+
     bool WorldStreamProducer::replace( const Array<WorldStreamRequest> &requests, String &error )
     {
         auto &p = *m_scheduler->m_impl;
@@ -641,7 +765,7 @@ namespace workphone
                 const auto &state = *p.producers.at( m_id );
                 if( requests.size() > state.limits.maximumPending )
                 {
-                    streamError(error, "Streaming demand exceeds producer request limit.");
+                    streamError( error, "Streaming demand exceeds producer request limit." );
                     return false;
                 }
                 resultLimit = state.limits.maximumReadyBytes;
@@ -654,13 +778,15 @@ namespace workphone
                     request.maximumResultBytes > budgets[size_t( StreamMemoryClass::ResultCpu )] ||
                     request.workingBytes > budgets[size_t( StreamMemoryClass::WorkingCpu )] )
                 {
-                    streamError(error, "Invalid, duplicate or over-budget streaming request.");
+                    streamError( error, "Invalid, duplicate or over-budget streaming request." );
                     return false;
                 }
                 auto reservation = m_scheduler->reserve(
                     StreamMemoryClass::PendingCpu, std::max<u64>( 256, request.pendingBytes ), error );
                 if( !reservation )
+                {
                     return false;
+                }
                 candidate.push_back( { std::move( reservation ), request, token, 0 } );
             }
             std::stable_sort( candidate.begin(), candidate.end(), []( const auto &a, const auto &b ) {
@@ -673,7 +799,7 @@ namespace workphone
                     candidate.size() >
                         p.limits.maximumPending - ( p.pendingCount - state.pending.size() ) )
                 {
-                    streamError(error, "Shared streaming pending request limit is exhausted.");
+                    streamError( error, "Shared streaming pending request limit is exhausted." );
                     return false;
                 }
                 // Budget updates take the same queue->budget lock order. Recheck
@@ -683,6 +809,7 @@ namespace workphone
                 {
                     std::lock_guard<std::mutex> budget( p.budget->mutex );
                     for( const auto &job : candidate )
+                    {
                         if( job.request.workingBytes >
                                 p.budget->limits[size_t( StreamMemoryClass::WorkingCpu )] ||
                             job.request.maximumResultBytes >
@@ -691,20 +818,24 @@ namespace workphone
                             impossible = true;
                             break;
                         }
+                    }
                 }
                 if( impossible )
                 {
-                    streamError(error, "Streaming request exceeds the current CPU working or result budget.");
+                    streamError( error,
+                                 "Streaming request exceeds the current CPU working or result budget." );
                     return false;
                 }
                 if( state.stats.generation == std::numeric_limits<u64>::max() )
                 {
-                    streamError(error, "Streaming generation exhausted.");
+                    streamError( error, "Streaming generation exhausted." );
                     return false;
                 }
                 ++state.stats.generation;
                 for( auto &job : candidate )
+                {
                     job.generation = state.stats.generation;
+                }
                 state.token->store( true );
                 state.token = token;
                 p.cancelled += state.pending.size();
@@ -713,7 +844,9 @@ namespace workphone
                 p.readyCount -= u32( state.ready.size() );
                 retired.swap( state.pending );
                 for( size_t i = 0; i < state.ready.size(); ++i )
+                {
                     retiredResults[i] = std::move( state.ready[i] );
+                }
                 state.ready.clear();  // Preserve preallocated completion slots.
                 state.pending.swap( candidate );
                 p.pendingCount += u32( state.pending.size() );
@@ -725,10 +858,11 @@ namespace workphone
         }
         catch( const std::exception &e )
         {
-            streamError(error, e.what());
+            streamError( error, e.what() );
             return false;
         }
     }
+
     bool WorldStreamProducer::take( WorldStreamResult &result )
     {
         auto &p = *m_scheduler->m_impl;
@@ -737,7 +871,9 @@ namespace workphone
             std::lock_guard<std::mutex> lock( p.mutex );
             auto &state = *p.producers.at( m_id );
             if( state.ready.empty() )
+            {
                 return false;
+            }
             ready = std::move( state.ready.front() );
             state.ready.erase( state.ready.begin() );
             --p.readyCount;
@@ -747,6 +883,7 @@ namespace workphone
         p.budget->wake.notify_all();
         return true;
     }
+
     std::function<StreamBudget( StreamMemoryClass, u64, String & )>
     WorldStreamProducer::budgetAllocator() const
     {
@@ -754,10 +891,12 @@ namespace workphone
             return scheduler->reserve( category, bytes, error );
         };
     }
+
     StreamBudget WorldStreamProducer::reserve( StreamMemoryClass category, u64 bytes, String &error )
     {
         return m_scheduler->reserve( category, bytes, error );
     }
+
     void WorldStreamProducer::cancel()
     {
         auto &p = *m_scheduler->m_impl;
@@ -768,19 +907,24 @@ namespace workphone
             auto &state = *p.producers.at( m_id );
             state.token->store( true );
             if( state.stats.generation != std::numeric_limits<u64>::max() )
+            {
                 ++state.stats.generation;
+            }
             p.cancelled += state.pending.size();
             state.stats.cancelled += state.pending.size();
             p.pendingCount -= u32( state.pending.size() );
             p.readyCount -= u32( state.ready.size() );
             retired.swap( state.pending );
             for( size_t i = 0; i < state.ready.size(); ++i )
+            {
                 results[i] = std::move( state.ready[i] );
+            }
             state.ready.clear();
             state.stats.readyBytes = 0;
         }
         p.budget->wake.notify_all();
     }
+
     void WorldStreamProducer::drain()
     {
         cancel();
@@ -788,9 +932,12 @@ namespace workphone
         std::unique_lock<std::mutex> lock( p.mutex );
         auto state = p.producers.at( m_id );
         if( streamWorker == &p )
+        {
             return;  // Already executing callbacks own their state until return.
+        }
         p.budget->wake.wait( lock, [&] { return state->stats.active == 0; } );
     }
+
     WorldStreamProducerStats WorldStreamProducer::stats() const
     {
         auto &p = *m_scheduler->m_impl;

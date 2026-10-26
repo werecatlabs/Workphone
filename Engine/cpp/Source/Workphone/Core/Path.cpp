@@ -758,6 +758,7 @@ namespace workphone
 
         return files;
     }
+
     template <>
     auto BasePath<c8>::getFiles( const String &path, const String &extension ) -> Array<String>
     {
@@ -1020,7 +1021,9 @@ namespace workphone
             auto fileName = path.filename();
             auto folder = fileName.string();
             if( !folder.empty() )
+            {
                 folders.push_back( folder );
+            }
             path = path.parent_path();
         }
         std::reverse( folders.begin(), folders.end() );
@@ -1038,7 +1041,9 @@ namespace workphone
             auto fileName = path.filename();
             auto folder = fileName.wstring();
             if( !folder.empty() )
+            {
                 folders.push_back( folder );
+            }
             path = path.parent_path();
         }
         std::reverse( folders.begin(), folders.end() );
@@ -1371,7 +1376,9 @@ namespace workphone
 
         MD5_Init( &mdContext );
         while( ( bytes = fread( data, 1, bufferSize, inFile ) ) != 0 )
+        {
             MD5_Update( &mdContext, data, bytes );
+        }
 
         MD5_Final( c, &mdContext );
 
@@ -1508,7 +1515,9 @@ namespace workphone
         else
         {
             for( char c : hex )
+            {
                 result.push_back( static_cast<T>( c ) );
+            }
         }
 
         return result;

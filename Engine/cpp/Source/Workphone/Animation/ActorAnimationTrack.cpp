@@ -28,7 +28,9 @@ namespace workphone
             cosine = std::clamp( cosine, real_Num( 0 ), real_Num( 1 ) );
             Quaternion<real_Num> result;
             if( cosine > real_Num( 0.9995 ) )
+            {
                 result = a * ( real_Num( 1 ) - weight ) + b * weight;
+            }
             else
             {
                 const auto angle = std::acos( cosine );
@@ -194,12 +196,16 @@ namespace workphone
                                            f32 scale ) const
     {
         if( !bone || !timeIndex || weight <= 0 || m_trackType != TrackType::Transform )
+        {
             return;
+        }
         SmartPtr<IAnimationKeyFrame> sampled;
         getInterpolatedKeyFrame( timeIndex, sampled );
         const auto key = workphone::dynamic_pointer_cast<KeyFrameTransform3>( sampled );
         if( !key )
+        {
             return;
+        }
         const auto blend = std::clamp( weight, 0.0f, 1.0f );
         auto target = bone;  // SmartPtr intentionally propagates constness to its pointee.
         const auto current = target->getPosition();
@@ -219,7 +225,9 @@ namespace workphone
                 std::abs( existing->getTime() - timePos ) <= std::numeric_limits<f32>::epsilon() )
             {
                 if( workphone::dynamic_pointer_cast<KeyFrameTransform3>( existing ) )
+                {
                     return existing;
+                }
                 // Repair an untyped legacy key without returning an object that
                 // optimise() would remove as a duplicate of the old key.
                 auto replacement = workphone::make_ptr<KeyFrameTransform3>();

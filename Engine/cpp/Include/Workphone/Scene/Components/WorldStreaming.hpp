@@ -28,5 +28,5 @@ namespace workphone::scene
         bool m_reopen = false, m_updating = false, m_unloading = false;
         std::shared_ptr<SceneWorldStreamer> m_streamer;
     };
-}
+}  // namespace workphone::scene
 #endif

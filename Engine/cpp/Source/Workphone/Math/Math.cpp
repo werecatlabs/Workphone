@@ -905,9 +905,13 @@ namespace workphone
         // Wrap the angle difference to the range [-180, 180]
         T delta = target - current;
         while( delta > static_cast<T>( 180 ) )
+        {
             delta -= static_cast<T>( 360 );
+        }
         while( delta < static_cast<T>( -180 ) )
+        {
             delta += static_cast<T>( 360 );
+        }
 
         // Use exponential smoothing
         T omega = static_cast<T>( 2.0 ) / smoothTime;

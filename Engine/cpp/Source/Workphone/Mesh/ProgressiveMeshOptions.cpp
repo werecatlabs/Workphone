@@ -355,7 +355,6 @@ namespace workphone
 
     void ProgressiveMeshOptions::importProperties( SmartPtr<Properties> properties )
     {
-
         auto generationModeValue = static_cast<u32>( generationMode );
         auto presetValue = static_cast<u32>( preset );
         auto transitionModeValue = static_cast<u32>( transitionMode );

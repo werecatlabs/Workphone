@@ -18,20 +18,24 @@ static_assert( std::is_nothrow_default_constructible<std::ptrdiff_t>::value,
 
 namespace workphone
 {
-    struct SourceBudgetTag {};
+    struct SourceBudgetTag
+    {
+    };
+
     inline constexpr SourceBudgetTag sourceBudget{};
 
     namespace detail
     {
         struct ContainerAllocationPolicy
         {
-            void *(*allocate)(size_t, size_t);
-            void (*deallocate)(void *, size_t) noexcept;
+            void *( *allocate )( size_t, size_t );
+            void ( *deallocate )( void *, size_t ) noexcept;
         };
+
         // The policy lives in WPCore, so retained snapshots never point into
         // a producing plugin's static data after that plugin is unloaded.
         WPCore_API const ContainerAllocationPolicy &sourceContainerPolicy() noexcept;
-    }
+    }  // namespace detail
 
     /**
      * @brief Standard-compatible allocator base template.
@@ -102,9 +106,16 @@ namespace workphone
          * Constructs a raw allocator. Tagged snapshots opt into SourceCpu.
          */
         AllocatorBase() noexcept = default;
-        explicit AllocatorBase( SourceBudgetTag ) noexcept :
-            m_policy( &detail::sourceContainerPolicy() ) {}
-        bool isSourceBudgeted() const noexcept { return m_policy != nullptr; }
+
+        explicit AllocatorBase( SourceBudgetTag ) noexcept : m_policy( &detail::sourceContainerPolicy() )
+        {
+        }
+
+        bool isSourceBudgeted() const noexcept
+        {
+            return m_policy != nullptr;
+        }
+
         AllocatorBase &operator=( const AllocatorBase &other ) noexcept
         {
             m_policy = other.m_policy;
@@ -130,7 +141,7 @@ namespace workphone
          * @param other The allocator to copy.
          */
         template <typename U>
-        AllocatorBase( const AllocatorBase<U> &other ) noexcept : m_policy(other.m_policy)
+        AllocatorBase( const AllocatorBase<U> &other ) noexcept : m_policy( other.m_policy )
         {
         }
 
@@ -195,10 +206,14 @@ namespace workphone
             // As with SourceBudgetAllocator, MSVC's noexcept iterator-proxy
             // constructors cannot propagate budget denial. Exclude only proxies.
             if constexpr( std::is_same_v<T, std::_Container_proxy> )
-                return std::allocator<T>{}.allocate(n);
+            {
+                return std::allocator<T>{}.allocate( n );
+            }
 #endif
             if( m_policy )
-                return static_cast<pointer>( m_policy->allocate(bytes, alignof(T)) );
+            {
+                return static_cast<pointer>( m_policy->allocate( bytes, alignof( T ) ) );
+            }
 
             // Final validation before allocation
             if( bytes == 0 )
@@ -253,12 +268,19 @@ namespace workphone
         {
 #if defined( _MSC_VER ) && _ITERATOR_DEBUG_LEVEL != 0
             if constexpr( std::is_same_v<T, std::_Container_proxy> )
-            { std::allocator<T>{}.deallocate(p, n); return; }
+            {
+                std::allocator<T>{}.deallocate( p, n );
+                return;
+            }
 #endif
             (void)n;
             if( p != nullptr )
             {
-                if( m_policy ) { m_policy->deallocate(p, alignof(T)); return; }
+                if( m_policy )
+                {
+                    m_policy->deallocate( p, alignof( T ) );
+                    return;
+                }
                 ::operator delete( static_cast<void *>( p ) );
             }
         }
@@ -382,7 +404,8 @@ namespace workphone
         /** @} */
 
     private:
-        template<class> friend class AllocatorBase;
+        template <class>
+        friend class AllocatorBase;
         // Raw by default. Snapshot producers explicitly select SourceCpu;
         // copying/rebinding/moving the allocator preserves physical ownership.
         const detail::ContainerAllocationPolicy *m_policy = nullptr;
@@ -420,7 +443,7 @@ namespace workphone
     template <typename T, typename U>
     bool operator!=( const AllocatorBase<T> &a, const AllocatorBase<U> &b ) noexcept
     {
-        return !(a == b);
+        return !( a == b );
     }
 
     /** @} */

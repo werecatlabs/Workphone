@@ -23,9 +23,13 @@ namespace workphone
         while( it != end )
         {
             if( value.first - ( *it ).first > m_smoothInterval )
+            {
                 ++it;
+            }
             else
+            {
                 break;
+            }
         }
 
         m_values.erase( m_values.begin(), it );

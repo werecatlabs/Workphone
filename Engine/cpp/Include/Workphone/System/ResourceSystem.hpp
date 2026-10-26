@@ -39,6 +39,7 @@ namespace workphone::resource
         Array<RuntimeResourceBinding> bindings;
         std::shared_ptr<void> lifetime;
     };
+
     using RuntimePackageResolver =
         std::function<bool( const RuntimePackageContext &, RuntimePackageAdmission &, String & )>;
 
@@ -109,8 +110,8 @@ namespace workphone::resource
          * closure as export without publishing or touching a package destination.
          * A temporary manifest is owned under cooked storage and removed on return. */
         bool previewRuntimePackageChecked( const Array<ResourceID> &roots,
-            const RuntimePackageResolver &resolver, Array<RuntimePackagePreviewEntry> &entries,
-            String &error );
+                                           const RuntimePackageResolver &resolver,
+                                           Array<RuntimePackagePreviewEntry> &entries, String &error );
         /** Runtime-only UUID lookup. Failure clears output; no path fallback. */
         bool resolveRuntimeUUID( const String &uuid, ResourceID &output, String &error ) const;
         /** Resolves and loads under one mount lifetime fence, sharing load() cache/limits. */

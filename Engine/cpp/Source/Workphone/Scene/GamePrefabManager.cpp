@@ -26,22 +26,38 @@ namespace workphone::scene
     {
         bool isStreamingWorldComponent( const Properties &data )
         {
-            String type; bool instanceWorld = false;
+            String type;
+            bool instanceWorld = false;
             data.getPropertyValue( GameActorUtil::componentTypeStr, type );
             data.getPropertyValue( "Instance World", instanceWorld );
-            if( instanceWorld && ( type == "WorldStreaming" || type == "workphone::scene::WorldStreaming" ) )
+            if( instanceWorld &&
+                ( type == "WorldStreaming" || type == "workphone::scene::WorldStreaming" ) )
+            {
                 return true;
+            }
             for( const auto &child : data.getChildrenByName( GameActorUtil::componentStr ) )
-                if( isStreamingWorldComponent( *child ) ) return true;
+            {
+                if( isStreamingWorldComponent( *child ) )
+                {
+                    return true;
+                }
+            }
             return false;
         }
 
         bool isStreamingWorldRoot( const Properties &actor )
         {
             for( const auto &child : actor.getChildren() )
+            {
                 if( child->getName() == GameActorUtil::componentStr ||
                     child->getName() == GameActorUtil::componentsStr )
-                    if( isStreamingWorldComponent( *child ) ) return true;
+                {
+                    if( isStreamingWorldComponent( *child ) )
+                    {
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -49,7 +65,9 @@ namespace workphone::scene
         {
             bool instanceWorld = false;
             if( auto streaming = actor->getComponent<WorldStreaming>() )
+            {
                 streaming->getProperties()->getPropertyValue( "Instance World", instanceWorld );
+            }
             return instanceWorld;
         }
 
@@ -59,8 +77,14 @@ namespace workphone::scene
             actor->setFlag( IGameActor::ActorFlagPrefab, true, false );
             // A streaming owner can appear at any depth in an authored prefab.
             // Its resident graph belongs to the referenced world generation.
-            if( isStreamingWorldOwner( actor ) ) return;
-            for( const auto &child : actor->getChildren() ) preparePrefabSave( child );
+            if( isStreamingWorldOwner( actor ) )
+            {
+                return;
+            }
+            for( const auto &child : actor->getChildren() )
+            {
+                preparePrefabSave( child );
+            }
         }
 
         SmartPtr<Properties> parsePrefabData( const String &dataStr, DataFormat preferredFormat )
@@ -497,17 +521,22 @@ namespace workphone::scene
     void GamePrefabManager::savePrefab( const String &filePath, SmartPtr<IGameActor> prefab )
     {
         String error;
-        if( !savePrefabChecked( filePath, prefab, error ) ) WP_LOG_ERROR( error );
+        if( !savePrefabChecked( filePath, prefab, error ) )
+        {
+            WP_LOG_ERROR( error );
+        }
     }
 
     bool GamePrefabManager::savePrefabChecked( const String &filePath, SmartPtr<IGameActor> prefab,
-                                              String &error )
+                                               String &error )
     {
         error.clear();
         try
         {
             if( StringUtil::isNullOrEmpty( filePath ) || !prefab )
+            {
                 throw std::runtime_error( "Prefab save requires a path and actor" );
+            }
 
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
@@ -525,8 +554,12 @@ namespace workphone::scene
 
             auto data = prefab->toData();
             if( streamingWrapper )
+            {
                 if( auto properties = dynamic_pointer_cast<Properties>( data ) )
+                {
                     properties->setProperty( "meshImportStreaming", true );
+                }
+            }
             auto dataStr = DataUtil::toString( data.get(), true, fmt );
 
             if( !saveAssetDocumentText( filePath, dynamic_pointer_cast<Properties>( data ), dataStr,

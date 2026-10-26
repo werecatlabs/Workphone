@@ -61,19 +61,27 @@ namespace workphone
     {
         // Handle empty or single point cases
         if( m_points.size() == 0 )
+        {
             return T( 0 );
+        }
 
         if( m_points.size() == 1 )
+        {
             return static_cast<T>( m_points[0].second );
+        }
 
         const auto tReal = static_cast<real_Num>( t );
 
         // Handle boundary cases
         if( tReal <= m_points[0].first )
+        {
             return static_cast<T>( m_points[0].second );
+        }
 
         if( tReal >= m_points[m_points.size() - 1].first )
+        {
             return static_cast<T>( m_points[m_points.size() - 1].second );
+        }
 
         // Find the segment containing t
         size_t p1 = 0;

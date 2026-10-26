@@ -28,7 +28,9 @@ namespace workphone
         // Ordinary resets have no owner and keep their existing behavior.
         if( auto owner = dynamic_cast<scene::ICameraManager *>( getOwner() );
             owner && owner != cameraManager.get() )
+        {
             return;
+        }
         if( cameraManager )
         {
             cameraManager->reset();

@@ -28,6 +28,7 @@ namespace workphone
     {
         return m_className;
     }
+
     void ScriptEvent::setClassName( const String &className )
     {
         m_className = className;

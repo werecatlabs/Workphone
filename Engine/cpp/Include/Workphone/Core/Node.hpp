@@ -219,7 +219,9 @@ namespace workphone
             children.reserve( m_children.size() );
 
             for( u32 i = 0; i < m_children.size(); ++i )
+            {
                 children.push_back( m_children[i] );
+            }
 
             return children;
         }

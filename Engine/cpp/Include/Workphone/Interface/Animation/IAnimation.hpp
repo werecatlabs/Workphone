@@ -32,20 +32,23 @@ namespace workphone
         /**
          * @brief Map of node track handles to their corresponding animation tracks.
          */
-        using NodeTrackList = std::map<u16, IActorAnimationTrack *, std::less<u16>,
-            SourceBudgetAllocator<std::pair<const u16, IActorAnimationTrack *>>>;
+        using NodeTrackList =
+            std::map<u16, IActorAnimationTrack *, std::less<u16>,
+                     SourceBudgetAllocator<std::pair<const u16, IActorAnimationTrack *>>>;
 
         /**
          * @brief Map of numeric track handles to their corresponding animation tracks.
          */
-        using NumericTrackList = std::map<u16, IAnimationNumericTrack *, std::less<u16>,
-            SourceBudgetAllocator<std::pair<const u16, IAnimationNumericTrack *>>>;
+        using NumericTrackList =
+            std::map<u16, IAnimationNumericTrack *, std::less<u16>,
+                     SourceBudgetAllocator<std::pair<const u16, IAnimationNumericTrack *>>>;
 
         /**
          * @brief Map of vertex track handles to their corresponding animation tracks.
          */
-        using VertexTrackList = std::map<u16, IAnimationVertexTrack *, std::less<u16>,
-            SourceBudgetAllocator<std::pair<const u16, IAnimationVertexTrack *>>>;
+        using VertexTrackList =
+            std::map<u16, IAnimationVertexTrack *, std::less<u16>,
+                     SourceBudgetAllocator<std::pair<const u16, IAnimationVertexTrack *>>>;
 
         /**
          * @brief Set of track handles.

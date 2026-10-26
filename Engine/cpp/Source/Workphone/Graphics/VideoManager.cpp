@@ -27,7 +27,9 @@ namespace workphone
         {
             auto it = m_videos.find( id );
             if( it != m_videos.end() )
+            {
                 return it->second;
+            }
             return nullptr;
         }
 

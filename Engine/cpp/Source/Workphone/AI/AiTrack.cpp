@@ -49,7 +49,9 @@ namespace workphone
     {
         std::ifstream file( filename );
         if( !file.is_open() )
+        {
             return false;
+        }
         m_elements.clear();
         std::string line;
         while( std::getline( file, line ) )
@@ -66,7 +68,9 @@ namespace workphone
     {
         std::ofstream file( filename );
         if( !file.is_open() )
+        {
             return false;
+        }
         for( const auto &element : m_elements )
         {
             // TODO: Serialize element to string

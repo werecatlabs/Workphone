@@ -18,6 +18,7 @@ namespace workphone::advanced
         void unload();
         void update( const VehicleAudioInput &input, float dt );
         bool isPlaying() const;
+
         const VehicleAudioGains &gains() const
         {
             return m_gains;

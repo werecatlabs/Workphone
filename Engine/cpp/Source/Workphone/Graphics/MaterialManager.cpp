@@ -20,7 +20,7 @@ namespace workphone::render
             auto app = core::IApplicationManager::instancePtr();
             return app ? app->getGraphicsSystem() : nullptr;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::render, MaterialManager, IMaterialManager );
     WP_CLASS_REGISTER_DERIVED( workphone::render, MaterialManager::StateListener, IMaterialManager );
@@ -39,7 +39,7 @@ namespace workphone::render
         ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
-            auto materials = std::move(m_materials);
+            auto materials = std::move( m_materials );
             for( auto &material : materials )
             {
                 if( material )
@@ -242,7 +242,9 @@ namespace workphone::render
             auto materialStr = DataUtil::toString( pData.get(), true );
             String error;
             if( !saveAssetDocumentText( filePath, pData, materialStr, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
         }
         catch( std::exception &e )
         {

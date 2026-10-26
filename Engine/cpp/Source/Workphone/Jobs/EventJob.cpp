@@ -19,7 +19,7 @@ namespace workphone
         m_object = nullptr;
         m_sender = nullptr;
         m_owner = nullptr;
-        std::atomic_store(&m_arguments, std::shared_ptr<const Array<Parameter>>{});
+        std::atomic_store( &m_arguments, std::shared_ptr<const Array<Parameter>>{} );
     }
 
     void EventJob::load( SmartPtr<ISharedObject> data )
@@ -37,7 +37,7 @@ namespace workphone
         m_object = nullptr;
         m_sender = nullptr;
         m_owner = nullptr;
-        std::atomic_store(&m_arguments, std::shared_ptr<const Array<Parameter>>{});
+        std::atomic_store( &m_arguments, std::shared_ptr<const Array<Parameter>>{} );
 
         Job::unload( data );
 
@@ -58,7 +58,7 @@ namespace workphone
 
         auto eventType = getEventType();
         auto eventValue = getEventValue();
-        auto retainedArguments = std::atomic_load(&m_arguments);
+        auto retainedArguments = std::atomic_load( &m_arguments );
         const Array<Parameter> emptyArguments;
         const auto &arguments = retainedArguments ? *retainedArguments : emptyArguments;
         auto event = getEvent();
@@ -70,14 +70,22 @@ namespace workphone
         size_t routeCount = 0;
         auto dispatch = [&]( ISharedObject::ObjectListenerSnapshot listeners ) {
             const auto route = routeCount++;
-            routes[route] = std::move(listeners);
-            if(!routes[route]) return;
+            routes[route] = std::move( listeners );
+            if( !routes[route] )
+            {
+                return;
+            }
             for( auto listener : *routes[route] )
             {
                 bool delivered = false;
-                for(size_t previous = 0; previous < route && !delivered; ++previous)
-                    if(routes[previous]) delivered = std::find(routes[previous]->begin(),
-                        routes[previous]->end(), listener) != routes[previous]->end();
+                for( size_t previous = 0; previous < route && !delivered; ++previous )
+                {
+                    if( routes[previous] )
+                    {
+                        delivered = std::find( routes[previous]->begin(), routes[previous]->end(),
+                                               listener ) != routes[previous]->end();
+                    }
+                }
                 if( !listener || delivered )
                 {
                     continue;
@@ -173,17 +181,19 @@ namespace workphone
 
     auto EventJob::getArguments() const -> Array<Parameter>
     {
-        auto arguments = std::atomic_load(&m_arguments);
+        auto arguments = std::atomic_load( &m_arguments );
         return arguments ? *arguments : makeSourceBudgetSnapshot<Parameter>();
     }
 
     void EventJob::setArguments( const Array<Parameter> &arguments )
     {
         std::shared_ptr<const Array<Parameter>> next;
-        if(!arguments.empty())
-            next = std::allocate_shared<Array<Parameter>>(SourceBudgetAllocator<Array<Parameter>>{},
-                                                          makeSourceBudgetSnapshot(arguments));
-        std::atomic_store(&m_arguments, std::move(next));
+        if( !arguments.empty() )
+        {
+            next = std::allocate_shared<Array<Parameter>>( SourceBudgetAllocator<Array<Parameter>>{},
+                                                           makeSourceBudgetSnapshot( arguments ) );
+        }
+        std::atomic_store( &m_arguments, std::move( next ) );
     }
 
     auto EventJob::getEvent() const -> SmartPtr<IEvent>

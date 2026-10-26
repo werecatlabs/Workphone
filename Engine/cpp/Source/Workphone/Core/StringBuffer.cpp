@@ -78,7 +78,9 @@ namespace workphone
     StringBuffer &StringBuffer::operator=( StringBuffer &&other ) noexcept
     {
         if( this == &other )
+        {
             return *this;
+        }
 
         destroy();
         m_buffer = m_smallBuffer;
@@ -110,7 +112,9 @@ namespace workphone
     StringBuffer &StringBuffer::append( const char *str )
     {
         if( str == nullptr )
+        {
             return *this;
+        }
         return append( str, 0, std::strlen( str ) );
     }
 
@@ -132,7 +136,9 @@ namespace workphone
     StringBuffer &StringBuffer::append( char ch )
     {
         if( m_length == static_cast<size_t>( -1 ) )
+        {
             throw std::length_error( "StringBuffer capacity overflow" );
+        }
         ensureCapacity( m_length + 1 );
         m_buffer[m_length++] = ch;
         m_buffer[m_length] = '\0';
@@ -142,15 +148,21 @@ namespace workphone
     StringBuffer &StringBuffer::append( const char *str, size_t pos, size_t len )
     {
         if( str == nullptr )
+        {
             return *this;
+        }
 
         const size_t sourceLength = std::strlen( str );
         if( pos > sourceLength )
+        {
             throw std::out_of_range( "StringBuffer append position is out of range" );
+        }
 
         const size_t count = len == npos ? sourceLength - pos : std::min( len, sourceLength - pos );
         if( count == 0 )
+        {
             return *this;
+        }
 
         // Preserve aliased input if growth would invalidate it.
         const auto sourceAddress = reinterpret_cast<std::uintptr_t>( str );
@@ -163,7 +175,9 @@ namespace workphone
         }
 
         if( count > static_cast<size_t>( -1 ) - m_length )
+        {
             throw std::length_error( "StringBuffer capacity overflow" );
+        }
 
         ensureCapacity( m_length + count );
         std::memcpy( m_buffer + m_length, str + pos, count );
@@ -187,26 +201,32 @@ namespace workphone
     {
         return m_length;
     }
+
     size_t StringBuffer::size() const
     {
         return m_length;
     }
+
     size_t StringBuffer::capacity() const
     {
         return m_capacity;
     }
+
     bool StringBuffer::empty() const
     {
         return m_length == 0;
     }
+
     const char *StringBuffer::c_str() const
     {
         return m_buffer;
     }
+
     const char *StringBuffer::data() const
     {
         return m_buffer;
     }
+
     std::string StringBuffer::toString() const
     {
         return std::string( m_buffer, m_length );
@@ -216,10 +236,12 @@ namespace workphone
     {
         return append( str );
     }
+
     StringBuffer &StringBuffer::operator+=( const std::string &str )
     {
         return append( str );
     }
+
     StringBuffer &StringBuffer::operator+=( char ch )
     {
         return append( ch );
@@ -228,7 +250,9 @@ namespace workphone
     char StringBuffer::operator[]( size_t index ) const
     {
         if( index >= m_length )
+        {
             throw std::out_of_range( "StringBuffer index is out of range" );
+        }
         return m_buffer[index];
     }
 
@@ -245,7 +269,9 @@ namespace workphone
     void StringBuffer::ensureCapacity( size_t requiredCapacity )
     {
         if( requiredCapacity <= m_capacity )
+        {
             return;
+        }
 
         size_t newCapacity = m_capacity;
         while( newCapacity < requiredCapacity )
@@ -261,7 +287,9 @@ namespace workphone
         char *newBuffer = new char[newCapacity + 1];
         std::memcpy( newBuffer, m_buffer, m_length + 1 );
         if( !m_usingSmallBuffer )
+        {
             delete[] m_buffer;
+        }
 
         m_buffer = newBuffer;
         m_capacity = newCapacity;
@@ -271,6 +299,8 @@ namespace workphone
     void StringBuffer::destroy()
     {
         if( !m_usingSmallBuffer )
+        {
             delete[] m_buffer;
+        }
     }
 }  // namespace workphone

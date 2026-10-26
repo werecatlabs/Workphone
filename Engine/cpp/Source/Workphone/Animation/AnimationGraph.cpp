@@ -27,13 +27,20 @@ namespace workphone::animation
 
         bool visitedContains( const Array<const String *> &visited, const String &id )
         {
-            return std::any_of( visited.begin(), visited.end(), [&id](const String *value) { return *value == id; } );
+            return std::any_of( visited.begin(), visited.end(),
+                                [&id]( const String *value ) { return *value == id; } );
         }
+
         struct PopVisit
         {
             Array<const String *> &visited;
-            ~PopVisit() { visited.pop_back(); }
+
+            ~PopVisit()
+            {
+                visited.pop_back();
+            }
         };
+
         AnimationGraphTransition admittedTransition( const AnimationGraphTransition &input )
         {
             AnimationGraphTransition output;
@@ -46,6 +53,7 @@ namespace workphone::animation
             output.synchronize = input.synchronize;
             return output;
         }
+
         AnimationGraphPoseNodeDefinition admittedNode( const AnimationGraphPoseNodeDefinition &input )
         {
             AnimationGraphPoseNodeDefinition output;
@@ -92,11 +100,18 @@ namespace workphone::animation
     {
         m_transitions.reserve( other.m_transitions.capacity() );
         for( const auto &transition : other.m_transitions )
+        {
             m_transitions.push_back( admittedTransition( transition ) );
+        }
         m_poseNodes.reserve( other.m_poseNodes.capacity() );
-        for( const auto &node : other.m_poseNodes ) m_poseNodes.push_back( admittedNode( node ) );
+        for( const auto &node : other.m_poseNodes )
+        {
+            m_poseNodes.push_back( admittedNode( node ) );
+        }
     }
-    AnimationGraphDefinition &AnimationGraphDefinition::operator=( const AnimationGraphDefinition &other )
+
+    AnimationGraphDefinition &AnimationGraphDefinition::operator=(
+        const AnimationGraphDefinition &other )
     {
         if( this != &other )
         {
@@ -105,6 +120,7 @@ namespace workphone::animation
         }
         return *this;
     }
+
     void AnimationGraphDefinition::swap( AnimationGraphDefinition &other ) noexcept
     {
         m_clips.swap( other.m_clips );
@@ -157,7 +173,10 @@ namespace workphone::animation
         }
         auto candidate = admittedTransition( transition );
         size_t index = 0;
-        while( index < m_transitions.size() && m_transitions[index].priority >= candidate.priority ) ++index;
+        while( index < m_transitions.size() && m_transitions[index].priority >= candidate.priority )
+        {
+            ++index;
+        }
         m_transitions.push_back( std::move( candidate ) );
         std::rotate( m_transitions.begin() + index, m_transitions.end() - 1, m_transitions.end() );
         return true;
@@ -178,25 +197,39 @@ namespace workphone::animation
             return false;
         }
 
-        const auto found = std::find_if( m_clips.begin(), m_clips.end(),
-            [&id]( const AnimationGraphClip &clip ) { return clip.id == id; } );
-        if( found == m_clips.end() ) return false;
+        const auto found =
+            std::find_if( m_clips.begin(), m_clips.end(),
+                          [&id]( const AnimationGraphClip &clip ) { return clip.id == id; } );
+        if( found == m_clips.end() )
+        {
+            return false;
+        }
         std::move( found + 1, m_clips.end(), found );
         m_clips.pop_back();
         return true;
     }
+
     bool AnimationGraphDefinition::removeState( const String &id )
     {
         const String stableId( id );
         String initialState;
         if( m_initialState == stableId )
-            for( const auto &state : m_states ) if( state.id != stableId )
-            { initialState = state.id; break; }
+        {
+            for( const auto &state : m_states )
+            {
+                if( state.id != stableId )
+                {
+                    initialState = state.id;
+                    break;
+                }
+            }
+        }
         const auto previousSize = m_states.size();
-        m_states.erase(
-            std::remove_if( m_states.begin(), m_states.end(),
-                            [&stableId]( const AnimationGraphState &state ) { return state.id == stableId; } ),
-            m_states.end() );
+        m_states.erase( std::remove_if( m_states.begin(), m_states.end(),
+                                        [&stableId]( const AnimationGraphState &state ) {
+                                            return state.id == stableId;
+                                        } ),
+                        m_states.end() );
         if( previousSize == m_states.size() )
         {
             return false;
@@ -317,9 +350,13 @@ namespace workphone::animation
         {
             return false;
         }
-        const auto found = std::find_if( m_poseNodes.begin(), m_poseNodes.end(),
+        const auto found = std::find_if(
+            m_poseNodes.begin(), m_poseNodes.end(),
             [&id]( const AnimationGraphPoseNodeDefinition &node ) { return node.id == id; } );
-        if( found == m_poseNodes.end() ) return false;
+        if( found == m_poseNodes.end() )
+        {
+            return false;
+        }
         std::move( found + 1, m_poseNodes.end(), found );
         m_poseNodes.pop_back();
         return true;
@@ -338,16 +375,21 @@ namespace workphone::animation
     {
         return m_poseNodes;
     }
+
     AnimationGraphInstance::AnimationGraphInstance( const AnimationGraphDefinition &definition )
     {
         setDefinition( definition );
     }
 
     AnimationGraphInstance::AnimationGraphInstance( const AnimationGraphInstance &other ) :
-        m_definition( other.m_definition ), m_boolParameters( other.m_boolParameters ),
-        m_floatParameters( other.m_floatParameters ), m_currentState( other.m_currentState ),
-        m_destinationState( other.m_destinationState ), m_currentTime( other.m_currentTime ),
-        m_destinationTime( other.m_destinationTime ), m_transitionTime( other.m_transitionTime ),
+        m_definition( other.m_definition ),
+        m_boolParameters( other.m_boolParameters ),
+        m_floatParameters( other.m_floatParameters ),
+        m_currentState( other.m_currentState ),
+        m_destinationState( other.m_destinationState ),
+        m_currentTime( other.m_currentTime ),
+        m_destinationTime( other.m_destinationTime ),
+        m_transitionTime( other.m_transitionTime ),
         m_transitionDuration( other.m_transitionDuration ),
         m_samples( makeSourceBudgetSnapshot( other.m_samples ) ),
         m_sampledEvents( makeSourceBudgetSnapshot( other.m_sampledEvents ) )
@@ -358,6 +400,7 @@ namespace workphone::animation
         m_staging.destinationState.reserve( other.m_staging.destinationState.capacity() );
         m_traversalScratch.reserve( other.m_traversalScratch.capacity() );
     }
+
     AnimationGraphInstance &AnimationGraphInstance::operator=( const AnimationGraphInstance &other )
     {
         if( this != &other )
@@ -367,6 +410,7 @@ namespace workphone::animation
         }
         return *this;
     }
+
     void AnimationGraphInstance::swapRuntime( RuntimeState &state ) noexcept
     {
         using std::swap;
@@ -379,6 +423,7 @@ namespace workphone::animation
         m_samples.swap( state.samples );
         m_sampledEvents.swap( state.events );
     }
+
     void AnimationGraphInstance::swap( AnimationGraphInstance &other ) noexcept
     {
         m_definition.swap( other.m_definition );
@@ -391,6 +436,7 @@ namespace workphone::animation
         std::swap( m_staging, other.m_staging );
         m_traversalScratch.swap( other.m_traversalScratch );
     }
+
     void AnimationGraphInstance::beginRuntimeMutation()
     {
         // Copy only the scalar state, reusing its admitted strings. The graph
@@ -405,12 +451,14 @@ namespace workphone::animation
         m_staging.events.clear();
         swapRuntime( m_staging );
     }
+
     void AnimationGraphInstance::rollbackRuntimeMutation() noexcept
     {
         swapRuntime( m_staging );
         m_staging.samples.clear();
         m_staging.events.clear();
     }
+
     Array<const String *> &AnimationGraphInstance::traversalScratch() const
     {
         m_traversalScratch.clear();
@@ -425,10 +473,16 @@ namespace workphone::animation
         }
         AnimationGraphDefinition candidate( definition );
         auto traversal = makeSourceBudgetSnapshot<const String *>();
-        if( !candidate.getPoseNodes().empty() ) traversal.reserve( candidate.getPoseNodes().size() + 1 );
+        if( !candidate.getPoseNodes().empty() )
+        {
+            traversal.reserve( candidate.getPoseNodes().size() + 1 );
+        }
         m_definition.swap( candidate );
         m_traversalScratch.swap( traversal );
-        try { reset(); }
+        try
+        {
+            reset();
+        }
         catch( ... )
         {
             m_definition.swap( candidate );
@@ -459,7 +513,11 @@ namespace workphone::animation
             m_sampledEvents.clear();
             rebuildSamples();
         }
-        catch( ... ) { rollbackRuntimeMutation(); throw; }
+        catch( ... )
+        {
+            rollbackRuntimeMutation();
+            throw;
+        }
     }
 
     bool AnimationGraphInstance::forceState( const String &stateId, f32 targetNormalizedTime )
@@ -489,7 +547,11 @@ namespace workphone::animation
             rebuildSamples();
             return true;
         }
-        catch( ... ) { rollbackRuntimeMutation(); throw; }
+        catch( ... )
+        {
+            rollbackRuntimeMutation();
+            throw;
+        }
     }
 
     void AnimationGraphInstance::update( f32 deltaTime )
@@ -535,7 +597,11 @@ namespace workphone::animation
 
             rebuildSamples();
         }
-        catch( ... ) { rollbackRuntimeMutation(); throw; }
+        catch( ... )
+        {
+            rollbackRuntimeMutation();
+            throw;
+        }
     }
 
     void AnimationGraphInstance::apply( ISkeleton *skeleton, f32 scale, f32 globalWeight ) const
@@ -620,6 +686,7 @@ namespace workphone::animation
     {
         return m_definition.isValid() && m_definition.findState( m_currentState ) != nullptr;
     }
+
     bool AnimationGraphInstance::conditionsMet( const AnimationGraphTransition &transition ) const
     {
         for( const auto &condition : transition.conditions )
@@ -806,6 +873,7 @@ namespace workphone::animation
             m_transitionDuration = 0.0f;
         }
     }
+
     void AnimationGraphInstance::rebuildSamples()
     {
         m_samples.clear();
@@ -856,14 +924,15 @@ namespace workphone::animation
         return clip ? clip->loop : false;
     }
 
-    f32 AnimationGraphInstance::getPoseTreeDuration( const String &nodeId, Array<const String *> &visited ) const
+    f32 AnimationGraphInstance::getPoseTreeDuration( const String &nodeId,
+                                                     Array<const String *> &visited ) const
     {
         if( visitedContains( visited, nodeId ) )
         {
             return 0.0f;
         }
         visited.push_back( &nodeId );
-        PopVisit pop{visited};
+        PopVisit pop{ visited };
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -883,7 +952,6 @@ namespace workphone::animation
             f32 maxDuration = 0.0f;
             for( const auto &childId : node->childNodeIds )
             {
-
                 maxDuration = std::max( maxDuration, getPoseTreeDuration( childId, visited ) );
             }
             return maxDuration;
@@ -893,14 +961,15 @@ namespace workphone::animation
         }
     }
 
-    bool AnimationGraphInstance::getPoseTreeLoops( const String &nodeId, Array<const String *> &visited ) const
+    bool AnimationGraphInstance::getPoseTreeLoops( const String &nodeId,
+                                                   Array<const String *> &visited ) const
     {
         if( visitedContains( visited, nodeId ) )
         {
             return false;
         }
         visited.push_back( &nodeId );
-        PopVisit pop{visited};
+        PopVisit pop{ visited };
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -921,7 +990,6 @@ namespace workphone::animation
             bool bestLoop = false;
             for( const auto &childId : node->childNodeIds )
             {
-
                 const auto childDuration = getPoseTreeDuration( childId, visited );
 
                 const auto childLoop = getPoseTreeLoops( childId, visited );
@@ -976,7 +1044,7 @@ namespace workphone::animation
             return;
         }
         visited.push_back( &nodeId );
-        PopVisit pop{visited};
+        PopVisit pop{ visited };
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -1091,7 +1159,7 @@ namespace workphone::animation
             return;
         }
         visited.push_back( &nodeId );
-        PopVisit pop{visited};
+        PopVisit pop{ visited };
         const auto node = m_definition.findPoseNode( nodeId );
         if( !node )
         {
@@ -1118,7 +1186,6 @@ namespace workphone::animation
         {
             for( const auto &childId : node->childNodeIds )
             {
-
                 samplePoseTreeEvents( stateId, childId, previousNormalized, currentNormalized, looped,
                                       visited );
             }

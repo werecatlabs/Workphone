@@ -23,7 +23,8 @@ namespace workphone
      * @tparam T The type of objects to be stored in the pool
      * @tparam A The allocator type to use for memory allocation (defaults to std::allocator<T>)
      */
-    template <class T, class A = std::conditional_t<std::is_base_of_v<SourceBudgetObject, T>, SourceBudgetAllocator<T>, Allocator<T>>>
+    template <class T, class A = std::conditional_t<std::is_base_of_v<SourceBudgetObject, T>,
+                                                    SourceBudgetAllocator<T>, Allocator<T>>>
     class Pool : public ISharedObject
     {
     public:
@@ -104,10 +105,14 @@ namespace workphone
 
     private:
         /// Array of PoolData objects that manage the actual memory blocks
-        ConcurrentArray<SmartPtr<PoolData<T, A>>, typename std::allocator_traits<A>::template rebind_alloc<SmartPtr<PoolData<T, A>>>> m_elements;
+        ConcurrentArray<
+            SmartPtr<PoolData<T, A>>,
+            typename std::allocator_traits<A>::template rebind_alloc<SmartPtr<PoolData<T, A>>>>
+            m_elements;
 
         /// Queue of available (free) objects that can be allocated
-        ConcurrentQueue<RawPtr<T>, typename std::allocator_traits<A>::template rebind_alloc<RawPtr<T>>> m_freeElements;
+        ConcurrentQueue<RawPtr<T>, typename std::allocator_traits<A>::template rebind_alloc<RawPtr<T>>>
+            m_freeElements;
 
         /// Number of elements to allocate in the next allocation block
         size_Num m_nextSize = 32;
@@ -147,13 +152,18 @@ namespace workphone
         ScopedLock allocationLock( &m_elements, true );
         auto nextSize = getNextSize();
         if( nextSize == 0 )
+        {
             return;
+        }
 
         auto element = workphone::make_ptr<PoolData<T, A>>();
         element->setNumElements( nextSize );
         element->load( nullptr );
         size_t totalSlots = element->getNumAllocated();
-        for( const auto &block : m_elements ) totalSlots += block->getNumAllocated();
+        for( const auto &block : m_elements )
+        {
+            totalSlots += block->getNumAllocated();
+        }
         // Stage a growing block inventory before changing the free-slot queue.
         // Once its reserve commits, every remaining publication is nonallocating.
         decltype( m_elements ) replacements;
@@ -164,11 +174,19 @@ namespace workphone
             replacements.push_back( element );
         }
         m_freeElements.reserve( totalSlots );
-        if( replaceInventory ) m_elements = std::move( replacements );
-        else m_elements.push_back( element );
+        if( replaceInventory )
+        {
+            m_elements = std::move( replacements );
+        }
+        else
+        {
+            m_elements.push_back( element );
+        }
 
         for( size_t i = 0; i < element->getNumAllocated(); ++i )
+        {
             m_freeElements.push( &( ( *element )[i] ) );
+        }
     }
 
     template <class T, class A>
@@ -176,14 +194,20 @@ namespace workphone
     {
         ScopedLock allocationLock( &m_elements, true );
         RawPtr<T> ptr;
-        if( m_freeElements.try_pop( ptr ) ) return ptr;
+        if( m_freeElements.try_pop( ptr ) )
+        {
+            return ptr;
+        }
 
         // An empty() check does not reserve a slot. Competing allocators could
         // previously drain the queue before this caller popped, making it return
         // null after growth or spin forever waiting for a slot nobody would free.
         // Claim a newly published slot before another allocator can consume it.
         allocateData();
-        if( m_freeElements.try_pop( ptr ) ) return ptr;
+        if( m_freeElements.try_pop( ptr ) )
+        {
+            return ptr;
+        }
         return nullptr;
     }
 

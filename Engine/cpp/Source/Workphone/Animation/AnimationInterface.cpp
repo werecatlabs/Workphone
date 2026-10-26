@@ -14,13 +14,21 @@ namespace workphone
     void AnimationInterface::unload( SmartPtr<ISharedObject> data )
     {
         if( m_unloading )
+        {
             return;
+        }
         m_unloading = true;
+
         struct ResetFlag
         {
             bool &value;
-            ~ResetFlag() { value = false; }
+
+            ~ResetFlag()
+            {
+                value = false;
+            }
         } reset{ m_unloading };
+
         // Releasing an inventory must work at the cap. In particular, do not
         // construct a second Source map: MSVC allocates its empty sentinel.
         m_animationNames = makeSourceBudgetSnapshot<String>();
@@ -31,8 +39,13 @@ namespace workphone
             node.mapped() = nullptr;
             if( animation && animation->getReferences() == 1 && !animation->getWeakReferences() )
             {
-                try { animation->unload( data ); }
-                catch( const std::bad_alloc & ) { /* optional unload notification */ }
+                try
+                {
+                    animation->unload( data );
+                }
+                catch( const std::bad_alloc & )
+                { /* optional unload notification */
+                }
             }
         }
     }
@@ -40,7 +53,9 @@ namespace workphone
     SmartPtr<IAnimation> AnimationInterface::createAnimation( const String &name, f32 length )
     {
         if( m_unloading )
+        {
             throw std::bad_alloc();
+        }
         auto anim = workphone::make_ptr<Animation>();
         anim->setName( name );
         anim->setLength( length );
@@ -74,7 +89,9 @@ namespace workphone
     {
         auto it = m_animations.find( name );
         if( it != m_animations.end() )
+        {
             return it->second;
+        }
         return nullptr;
     }
 

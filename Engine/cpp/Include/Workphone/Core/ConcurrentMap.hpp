@@ -625,10 +625,20 @@ namespace workphone
          * @warning The returned iterator is not protected once this function
          * returns. Prefer readLocked()/writeLocked() during concurrent mutation.
          */
-        template<class K> iterator findAs( const K &key )
-        { std::shared_lock<mutex_type> lock(m_mutex); return m_map.findAs(key); }
-        template<class K> const_iterator findAs( const K &key ) const
-        { std::shared_lock<mutex_type> lock(m_mutex); return m_map.findAs(key); }
+        template <class K>
+        iterator findAs( const K &key )
+        {
+            std::shared_lock<mutex_type> lock( m_mutex );
+            return m_map.findAs( key );
+        }
+
+        template <class K>
+        const_iterator findAs( const K &key ) const
+        {
+            std::shared_lock<mutex_type> lock( m_mutex );
+            return m_map.findAs( key );
+        }
+
         iterator find( const key_type &key )
         {
             std::shared_lock<mutex_type> lock( m_mutex );

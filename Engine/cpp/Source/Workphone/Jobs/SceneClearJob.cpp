@@ -19,7 +19,9 @@ namespace workphone
         if( auto scene = getScene() )
         {
             if( !scene->isLoaded() )
+            {
                 return;
+            }
 
             auto state = scene->getState();
             switch( state )
@@ -73,7 +75,9 @@ namespace workphone
                 const auto label = String( "Untitled" );
                 auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
                 if( !concrete || concrete->getLoadGeneration() == m_sceneGeneration )
+                {
                     scene->setLabel( label );
+                }
 
                 applicationManager->triggerEvent(
                     EventType::Loading, scene::IGameManager::sceneClearHash, Array<Parameter>(), scene,

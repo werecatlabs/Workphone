@@ -11,6 +11,7 @@
 namespace workphone
 {
     SharedMutex::SharedMutex() = default;
+
     SharedMutex::~SharedMutex()
     {
 #if !WP_FINAL
@@ -105,9 +106,13 @@ namespace workphone
     SharedMutex::ScopedLock::~ScopedLock()
     {
         if( m_write )
+        {
             m_mutex.unlock();
+        }
         else
+        {
             m_mutex.unlock_shared();
+        }
     }
 
 }  // namespace workphone

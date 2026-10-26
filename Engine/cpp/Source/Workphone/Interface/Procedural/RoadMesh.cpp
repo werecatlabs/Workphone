@@ -25,15 +25,21 @@ namespace workphone
                 vertices.push_back( nv );
             }
             for( u32 idx : other.indices )
+            {
                 indices.push_back( base + idx );
+            }
         }
 
         void RoadMesh::computeNormals()
         {
             if( vertices.empty() )
+            {
                 return;
+            }
             for( auto &v : vertices )
+            {
                 v.normal = Vector3<real_Num>( 0, 0, 0 );
+            }
 
             for( size_t i = 0; i + 2 < indices.size(); i += 3 )
             {
@@ -54,9 +60,13 @@ namespace workphone
             {
                 real_Num l = v.normal.length();
                 if( l > 1e-6f )
+                {
                     v.normal = v.normal / l;
+                }
                 else
+                {
                     v.normal = Vector3<real_Num>( 0, 1, 0 );
+                }
             }
         }
 

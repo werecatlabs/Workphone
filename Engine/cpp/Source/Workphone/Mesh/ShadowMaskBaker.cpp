@@ -15,9 +15,13 @@ namespace workphone
         float getAxis( const Vector3F &v, int axis )
         {
             if( axis == 0 )
+            {
                 return v.x;
+            }
             if( axis == 1 )
+            {
                 return v.y;
+            }
             return v.z;
         }
 
@@ -39,7 +43,9 @@ namespace workphone
         std::iota( m_indices.begin(), m_indices.end(), 0 );
 
         if( !m_triangles.empty() )
+        {
             buildRecursive( 0, static_cast<int>( m_indices.size() ) );
+        }
     }
 
     ShadowMaskBaker::Aabb ShadowMaskBaker::TriangleBvh::makeTriangleBounds( const BakeTriangle &tri )
@@ -70,7 +76,9 @@ namespace workphone
 
         Aabb bounds = makeTriangleBounds( m_triangles[m_indices[first]] );
         for( int i = 1; i < count; ++i )
+        {
             bounds = merge( bounds, makeTriangleBounds( m_triangles[m_indices[first + i]] ) );
+        }
 
         node.bounds = bounds;
 
@@ -90,9 +98,13 @@ namespace workphone
 
         int axis = 0;
         if( extent.y > extent.x && extent.y > extent.z )
+        {
             axis = 1;
+        }
         else if( extent.z > extent.x && extent.z > extent.y )
+        {
             axis = 2;
+        }
 
         const int mid = first + count / 2;
 
@@ -111,7 +123,9 @@ namespace workphone
     bool ShadowMaskBaker::TriangleBvh::occluded( const Ray &ray ) const
     {
         if( m_nodes.empty() )
+        {
             return false;
+        }
 
         return occludedRecursive( 0, ray );
     }
@@ -121,7 +135,9 @@ namespace workphone
         const BvhNode &node = m_nodes[nodeIndex];
 
         if( !intersectRayAabb( ray, node.bounds ) )
+        {
             return false;
+        }
 
         if( node.isLeaf() )
         {
@@ -132,7 +148,9 @@ namespace workphone
                 const BakeTriangle &tri = m_triangles[m_indices[node.firstTri + i]];
 
                 if( intersectRayTriangle( ray, tri.v0.position, tri.v1.position, tri.v2.position, t ) )
+                {
                     return true;
+                }
             }
 
             return false;
@@ -150,25 +168,33 @@ namespace workphone
         const float det = ab.dotProduct( p );
 
         if( std::fabs( det ) < kRayEpsilon )
+        {
             return false;
+        }
 
         const float invDet = 1.0f / det;
         const Vector3F tvec = ray.origin - a;
         const float u = tvec.dotProduct( p ) * invDet;
 
         if( u < 0.0f || u > 1.0f )
+        {
             return false;
+        }
 
         const Vector3F q = tvec.crossProduct( ab );
         const float v = ray.dir.dotProduct( q ) * invDet;
 
         if( v < 0.0f || u + v > 1.0f )
+        {
             return false;
+        }
 
         const float t = ac.dotProduct( q ) * invDet;
 
         if( t <= kRayEpsilon || t >= ray.maxT )
+        {
             return false;
+        }
 
         outT = t;
         return true;
@@ -189,7 +215,9 @@ namespace workphone
             if( std::fabs( dir ) < kRayEpsilon )
             {
                 if( origin < minB || origin > maxB )
+                {
                     return false;
+                }
                 continue;
             }
 
@@ -198,13 +226,17 @@ namespace workphone
             float t1 = ( maxB - origin ) * invD;
 
             if( t0 > t1 )
+            {
                 std::swap( t0, t1 );
+            }
 
             tMin = std::max( tMin, t0 );
             tMax = std::min( tMax, t1 );
 
             if( tMin > tMax )
+            {
                 return false;
+            }
         }
 
         return true;
@@ -223,7 +255,9 @@ namespace workphone
         const float den = v0x * v1y - v1x * v0y;
 
         if( std::fabs( den ) < 1e-8f )
+        {
             return false;
+        }
 
         w1 = ( v2x * v1y - v1x * v2y ) / den;
         w2 = ( v0x * v2y - v2x * v0y ) / den;
@@ -270,14 +304,18 @@ namespace workphone
             const float dist = toLight.length();
 
             if( dist <= settings.normalBias || dist > light.range )
+            {
                 return 0.0f;
+            }
 
             ray.dir = toLight.normaliseCopy();
             ray.maxT = dist - settings.normalBias;
         }
 
         if( settings.rejectBackfaces && normal.dotProduct( ray.dir ) <= 0.0f )
+        {
             return 0.0f;
+        }
 
         return bvh.occluded( ray ) ? 0.0f : 1.0f;
     }
@@ -297,7 +335,9 @@ namespace workphone
                     const size_t index = static_cast<size_t>( y * width + x );
 
                     if( coverage[index] )
+                    {
                         continue;
+                    }
 
                     int found = 0;
                     std::array<int, 4> accum = { 0, 0, 0, 0 };
@@ -307,21 +347,29 @@ namespace workphone
                         for( int ox = -1; ox <= 1; ++ox )
                         {
                             if( ox == 0 && oy == 0 )
+                            {
                                 continue;
+                            }
 
                             const int nx = x + ox;
                             const int ny = y + oy;
 
                             if( nx < 0 || ny < 0 || nx >= width || ny >= height )
+                            {
                                 continue;
+                            }
 
                             const size_t nIndex = static_cast<size_t>( ny * width + nx );
 
                             if( !coverage[nIndex] )
+                            {
                                 continue;
+                            }
 
                             for( int c = 0; c < 4; ++c )
+                            {
                                 accum[c] += pixels[nIndex][c];
+                            }
 
                             ++found;
                         }
@@ -330,7 +378,9 @@ namespace workphone
                     if( found > 0 )
                     {
                         for( int c = 0; c < 4; ++c )
+                        {
                             nextPixels[index][c] = static_cast<uint8_t>( accum[c] / found );
+                        }
 
                         nextCoverage[index] = 1;
                     }
@@ -348,7 +398,9 @@ namespace workphone
         std::ofstream file( path, std::ios::binary );
 
         if( !file )
+        {
             return false;
+        }
 
         uint8_t header[18] = {};
         header[2] = 2;
@@ -376,10 +428,14 @@ namespace workphone
                                 const std::vector<BakeLight> &lights )
     {
         if( settings.width <= 0 || settings.height <= 0 )
+        {
             return false;
+        }
 
         if( meshTriangles.empty() || sceneTriangles.empty() )
+        {
             return false;
+        }
 
         const int samplesPerAxis = std::max( 1, settings.samplesPerAxis );
         const int sampleCount = samplesPerAxis * samplesPerAxis;
@@ -438,7 +494,9 @@ namespace workphone
                             float w2 = 0.0f;
 
                             if( !pointInUvTriangle( uv, uv0, uv1, uv2, w0, w1, w2 ) )
+                            {
                                 continue;
+                            }
 
                             ++coveredSamples;
 
@@ -448,7 +506,9 @@ namespace workphone
                             for( const BakeLight &light : lights )
                             {
                                 if( light.channel < 0 || light.channel > 3 )
+                                {
                                     continue;
+                                }
 
                                 const float visibility =
                                     bakeLightVisibility( pos, nrm, light, bvh, settings );
@@ -460,7 +520,9 @@ namespace workphone
                     }
 
                     if( coveredSamples == 0 )
+                    {
                         continue;
+                    }
 
                     const size_t pixelIndex = static_cast<size_t>( y * settings.width + x );
                     auto &out = pixels[pixelIndex];
@@ -468,7 +530,9 @@ namespace workphone
                     for( int channel = 0; channel < 4; ++channel )
                     {
                         if( visibilitySamples[channel] <= 0 )
+                        {
                             continue;
+                        }
 
                         const float value =
                             visibilityAccum[channel] / static_cast<float>( visibilitySamples[channel] );

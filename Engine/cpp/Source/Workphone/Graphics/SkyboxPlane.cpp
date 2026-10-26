@@ -21,7 +21,9 @@ namespace workphone::render
     {
         // Handle custom state messages specific to planar skybox
         if( !message )
+        {
             return false;
+        }
 
         // Currently using default handling through state system
         // Can be extended to support custom messages for:
@@ -38,30 +40,42 @@ namespace workphone::render
     {
         // Validate state ownership and loading status
         if( !state || state->getOwnerPtr() != this )
+        {
             return false;
+        }
 
         if( !isLoaded() )
+        {
             return false;
+        }
 
         // Extract sky state data
         auto stateData = state->getData();
         if( !stateData || !stateData->isDerived<SkyStateData>() )
+        {
             return false;
+        }
 
         auto skyStateData = workphone::static_pointer_cast<SkyStateData>( stateData );
 
         // Acquire required system managers
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
+        {
             return false;
+        }
 
         auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
         if( !graphicsSystem )
+        {
             return false;
+        }
 
         auto scene = skyStateData->scene;
         if( !scene )
+        {
             return false;
+        }
 
         // Extract state parameters
         const f32 distance = skyStateData->distance;

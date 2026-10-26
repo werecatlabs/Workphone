@@ -25,8 +25,8 @@ namespace workphone
         class WPCore_API Texture : public ResourceGraphics<ITexture>, public SourceBudgetObject
         {
         public:
-        using SourceBudgetObject::operator new;
-        using SourceBudgetObject::operator delete;
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             static const String sizeStr;
 
             class WPCore_API StateListener : public IStateListener

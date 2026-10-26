@@ -59,7 +59,8 @@ namespace workphone
     protected:
         // Publication admits the actual drain buffer. Draining transfers this
         // allocation, including spare capacity, without allocating after dequeue.
-        Array<SmartPtr<IStateMessage>> m_messageQueue{Allocator<SmartPtr<IStateMessage>>(sourceBudget)};
+        Array<SmartPtr<IStateMessage>> m_messageQueue{ Allocator<SmartPtr<IStateMessage>>(
+            sourceBudget ) };
         mutable RecursiveSpinMutex m_messageMutex;
         bool m_acceptMessages = false;
 

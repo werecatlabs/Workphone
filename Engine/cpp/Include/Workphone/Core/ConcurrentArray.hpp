@@ -61,12 +61,16 @@ namespace workphone
             mutex( nullptr )
         {
             if( mutex )
+            {
                 mutex->lock_shared();
+            }
 
             it = atEnd ? data->end() : data->begin();
 
             if( mutex )
+            {
                 mutex->unlock_shared();
+            }
         }
 
         /**
@@ -258,12 +262,16 @@ namespace workphone
             mutex( nullptr )
         {
             if( mutex )
+            {
                 mutex->lock_shared();
+            }
 
             it = atEnd ? data->cend() : data->cbegin();
 
             if( mutex )
+            {
                 mutex->unlock_shared();
+            }
         }
 
         /**
@@ -868,7 +876,9 @@ namespace workphone
     {
         ScopedLock lock( this, true );  // Write lock for mutation
         if( index <= m_data.size() )
+        {
             m_data.emplace( m_data.begin() + index, std::forward<Args>( args )... );
+        }
     }
 
     template <class T, class A>
@@ -1026,7 +1036,9 @@ namespace workphone
     {
         ScopedLock lock( this, true );  // Write lock for mutation
         if( !m_data.empty() )
+        {
             m_data.pop_back();
+        }
     }
 
     template <class T, class A>
@@ -1048,7 +1060,9 @@ namespace workphone
     {
         ScopedLock lock( this, true );  // Write lock for mutation
         if( index < m_data.size() )
+        {
             m_data.erase( m_data.begin() + index );
+        }
     }
 
     template <class T, class A>
@@ -1057,7 +1071,9 @@ namespace workphone
         ScopedLock lock( this, true );  // Write lock for mutation
         auto baseIt = it.base();
         if( baseIt != m_data.end() )
+        {
             m_data.erase( baseIt );
+        }
     }
 
     template <class T, class A>
@@ -1073,7 +1089,9 @@ namespace workphone
     {
         ScopedLock lock( this, true );  // Write lock for mutation
         if( index <= m_data.size() )
+        {
             m_data.insert( m_data.begin() + index, value );
+        }
     }
 
     template <class T, class A>
@@ -1083,7 +1101,9 @@ namespace workphone
     {
         ScopedLock lock( this, true );  // Write lock for mutation
         if( index <= m_data.size() )
+        {
             m_data.insert( m_data.begin() + index, static_cast<T>( value ) );
+        }
     }
 
     template <class T, class A>

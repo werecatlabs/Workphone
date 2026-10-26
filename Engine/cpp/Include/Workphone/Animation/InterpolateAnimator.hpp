@@ -58,9 +58,13 @@ namespace workphone
                 m_animationTime = MathF::clamp( m_animationTime, 0.0f, 1.0f );
 
                 if( !m_reverse )
+                {
                     m_value = m_start + ( m_end - m_start ) * m_animationTime;
+                }
                 else
+                {
                     m_value = m_end + ( m_start - m_end ) * m_animationTime;
+                }
             }
         }
 
