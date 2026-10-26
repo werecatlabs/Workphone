@@ -123,11 +123,14 @@ namespace workphone
             ResourceDatabase *database;
             SmartPtr<scene::ResourceDirector> receiver;
             u64 request;
+            const String &filePath;
+            bool overwrite;
             bool claimed = false;
             ImportStatusContext *previous = currentImportStatus;
 
             ImportStatusContext( ResourceDatabase *owner, SmartPtr<scene::ResourceDirector> target,
-                                 u64 token ) : database( owner ), receiver( target ), request( token )
+                                 u64 token, const String &path, bool replace ) :
+                database( owner ), receiver( target ), request( token ), filePath( path ), overwrite( replace )
             { currentImportStatus = this; }
             ~ImportStatusContext() { currentImportStatus = previous; }
         };
@@ -1319,7 +1322,8 @@ namespace workphone
     {
         SmartPtr<scene::ResourceDirector> receiver;
         u64 request = 0;
-        if( currentImportStatus && currentImportStatus->database == this && !currentImportStatus->claimed )
+        if( currentImportStatus && currentImportStatus->database == this && !currentImportStatus->claimed &&
+            currentImportStatus->filePath == filePath && currentImportStatus->overwrite == overwrite )
         {
             currentImportStatus->claimed = true;
             receiver = currentImportStatus->receiver;
@@ -1370,7 +1374,7 @@ namespace workphone
     {
         // Preserve virtual two-argument overrides while supplying a receiver to
         // the default job implementation. Nested imports cannot steal it.
-        ImportStatusContext status( this, receiver, request );
+        ImportStatusContext status( this, receiver, request, filePath, overwrite );
         try
         {
             importFile( filePath, overwrite );

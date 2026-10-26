@@ -371,6 +371,39 @@ BOOST_AUTO_TEST_CASE( cancelled_and_unloaded_imports_do_not_leave_the_director_i
                          director->getImportStatus() );
 }
 
+BOOST_AUTO_TEST_CASE( custom_import_dependencies_cannot_claim_the_requested_resource_status )
+{
+    using namespace mesh_import_streaming_integration_tests;
+    class DependencyFirstDatabase : public ResourceDatabase
+    {
+    public:
+        SmartPtr<MeshResourceDirector> receiver;
+        String afterDifferentFlags, afterDependency;
+        void importFile( const String &path, bool overwrite ) override
+        {
+            // This unloaded database rejects each default import immediately.
+            // Only the exact requested operation may report its cancellation.
+            ResourceDatabase::importFile( path, !overwrite );
+            afterDifferentFlags = receiver->getImportStatus();
+            ResourceDatabase::importFile( "dependency.obj", overwrite );
+            afterDependency = receiver->getImportStatus();
+            ResourceDatabase::importFile( path, overwrite );
+        }
+    };
+    TestGuard guard;
+    auto original = guard.applicationManager->getResourceDatabase();
+    guard.addCleanup( [app = guard.applicationManager, original]() mutable { app->setResourceDatabase( original ); } );
+    auto database = make_ptr<DependencyFirstDatabase>();
+    auto director = make_ptr<MeshResourceDirector>();
+    director->setResourcePath( "requested.obj" ); database->receiver = director;
+    guard.applicationManager->setResourceDatabase( database );
+    director->import();
+    BOOST_CHECK_EQUAL( database->afterDifferentFlags, "Import queued." );
+    BOOST_CHECK_EQUAL( database->afterDependency, "Import queued." );
+    BOOST_CHECK_MESSAGE( director->getImportStatus().find( "cancelled" ) != String::npos,
+                         director->getImportStatus() );
+}
+
 BOOST_AUTO_TEST_CASE( nonstreaming_publication_failure_reports_error_and_retains_previous_prefab )
 {
     using namespace mesh_import_streaming_integration_tests;
