@@ -30,6 +30,7 @@
 #    include <WPGraphics/ClawSceneNode.hpp>
 #    include <WPGraphics/ClawScene.hpp>
 #    include <workphone_graphics_object.h>
+#    include "MaterialSceneCpuWorkload.h"
 #endif
 
 #ifdef _WP_STATIC_LIB_
@@ -2204,6 +2205,10 @@ namespace workphone
         }
         if( m_sceneProfile )
         {
+#if defined(_WIN32) && WP_GRAPHICS_SYSTEM_CLAW
+            if(auto renderer=dynamic_pointer_cast<render::ClawRendererDX11>(applicationManager->getGraphicsSystem()->getRenderer()))
+                advanced::installMaterialCpuPrograms(m_assets,*renderer);
+#endif
             m_sceneProfile->setWorkload( describeProfileScene( m_assets ) );
             m_sceneProfile->checkpoint( "scene_generated" );
         }

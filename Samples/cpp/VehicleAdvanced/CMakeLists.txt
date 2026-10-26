@@ -243,6 +243,9 @@ if(WP_GRAPHICS_SYSTEM_CLAW)
         ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
         ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
     target_link_libraries(SampleVehicleAdvanced WPGraphics WorkphoneGraphics)
+    if(WIN32)
+        target_link_libraries(SampleVehicleAdvanced d3dcompiler)
+    endif()
 endif()
 
 add_dependencies(SampleVehicleAdvanced WPProcedural)

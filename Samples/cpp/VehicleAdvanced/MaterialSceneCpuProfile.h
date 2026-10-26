@@ -1,4 +1,5 @@
 #pragma once
+#if defined(_WIN32)
 #include "MaterialSceneCpuAttributionProbe.hpp"
 #include <cstdlib>
 #include <ostream>
@@ -42,8 +43,11 @@ namespace workphone::advanced
                 << ",\"bindingSampleCycles\":" << m.stageCycles[material_scene_cpu::Binding]
                 << ",\"bindingSampleSegments\":" << m.stageSegments[material_scene_cpu::Binding]
                 << ",\"publicationCommitCycles\":" << m.stageCycles[material_scene_cpu::Publication]
+                << ",\"publicationCommitSegments\":" << m.stageSegments[material_scene_cpu::Publication]
                 << ",\"captureSealCycles\":" << m.stageCycles[material_scene_cpu::Capture]
+                << ",\"captureSealSegments\":" << m.stageSegments[material_scene_cpu::Capture]
                 << ",\"recordClearCycles\":" << m.stageCycles[material_scene_cpu::Retirement]
+                << ",\"recordClearSegments\":" << m.stageSegments[material_scene_cpu::Retirement]
                 << ",\"visitedSections\":" << m.visitedSections << ",\"sampledSections\":" << m.sampledSections
                 << ",\"texturePaths\":" << m.texturePaths << ",\"bindCalls\":" << m.bindCalls
                 << ",\"successfulBinds\":" << m.successfulBinds << ",\"unbindCalls\":" << m.unbindCalls
@@ -56,3 +60,15 @@ namespace workphone::advanced
     };
 }
 
+#else
+#include <cstdlib>
+#include <ostream>
+#include <stdexcept>
+namespace workphone::advanced {
+class MaterialSceneCpuProfile {
+public:
+ void begin() { if(std::getenv("WP_MATERIAL_SCENE_CPU")) throw std::runtime_error("Material scene CPU profiling requires Windows"); }
+ void end() {}
+ void write(std::ostream &out) const { out << ",\n\"materialCpu\":null"; }
+}; }
+#endif
