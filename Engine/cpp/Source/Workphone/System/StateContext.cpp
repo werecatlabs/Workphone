@@ -1157,6 +1157,25 @@ namespace workphone
 
     SmartPtr<IState> StateContext::getStateById( hash_type id ) const
     {
+        SmartPtr<IState> single;
+        bool singleEntry = false;
+        {
+            ScopedLock lock( &m_states, false );
+            if( m_states.empty() ) return nullptr;
+            singleEntry = m_states.size() == 1;
+            if( singleEntry ) single = *m_states.cbegin();
+        }
+        if( singleEntry )
+        {
+            // Match the snapshot's ownership without copying its array. Resolve
+            // the identity after releasing the container lock.
+            if( !single )
+            {
+                WP_LOG_WARNING( "StateContext::getStateById: null state encountered; skipping." );
+                return nullptr;
+            }
+            return single->getId() == id ? single : nullptr;
+        }
         auto states = snapshotStates();
         for( auto &state : states )
         {

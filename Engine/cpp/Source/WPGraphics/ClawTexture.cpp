@@ -7,6 +7,8 @@
 #include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Interface/Database/IResourceDatabase.hpp>
+#include <Workphone/Scene/Directors/TextureResourceDirector.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
@@ -333,18 +335,86 @@ namespace
         FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
         BitmapOwner header( FreeImage_LoadFromMemory( format, memory.get(), FIF_LOAD_NOPIXELS ),
                             &FreeImage_Unload );
-        const auto width = header ? FreeImage_GetWidth( header.get() ) : 0u;
-        const auto height = header ? FreeImage_GetHeight( header.get() ) : 0u;
-        const auto pitch = header ? FreeImage_GetPitch( header.get() ) : 0u;
+        auto width = header ? FreeImage_GetWidth( header.get() ) : 0u;
+        auto height = header ? FreeImage_GetHeight( header.get() ) : 0u;
+        auto pitch = header ? FreeImage_GetPitch( header.get() ) : 0u;
+        const auto originalWidth = width;
+        const auto originalHeight = height;
+        u32 maximumDimension = 0;
+        s32 recipeMipFilter = -1;
+        try
+        {
+            // Resolve the same typed owner as the Inspector, without adopting a
+            // borrowed texture pointer. Only a saved recipe changes raw decoding;
+            // uncataloged/unsaved sources retain their original resolution.
+            auto database = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
+            if( database )
+            {
+                auto director = database->loadDirectorFromResourcePath(
+                    filePath, scene::TextureResourceDirector::typeInfo() );
+                if( director && fileSystem && fileSystem->isExistingFile( director->getFilePath() ) )
+                {
+                    auto settings = director->getProperties();
+                    s32 size = 0;
+                    if( settings && settings->getPropertyValue( "size", size ) )
+                    {
+                        if( size < 32 || size > 8192 || ( size & ( size - 1 ) ) )
+                            throw std::runtime_error( "Saved texture size must be a power of two from 32 to 8192" );
+                        maximumDimension = static_cast<u32>( size );
+                    }
+                    if( settings && settings->getPropertyValue( "mipmapFilter", recipeMipFilter ) &&
+                        ( recipeMipFilter < 0 || recipeMipFilter > 5 ) )
+                    {
+                        throw std::runtime_error( "Saved texture mip filter must be in the range 0 to 5" );
+                    }
+                }
+            }
+        }
+        catch( const std::exception &exception )
+        {
+            std::scoped_lock lock( g_textureMutex );
+            g_textureData[texture].decodeAttempted = false;
+            WP_LOG_WARNING( String( "Texture decode settings unavailable: " ) + exception.what() );
+            return false;
+        }
+        u32 outputWidth = width, outputHeight = height;
+        int decodeFlags = 0;
+        if( maximumDimension && std::max( width, height ) > maximumDimension )
+        {
+            if( format != FIF_JPEG )
+            {
+                WP_LOG_WARNING( "Bounded raw texture resizing requires JPEG scaled decoding; cook or resize '" +
+                                filePath + "' before loading this format." );
+                return false;
+            }
+            const auto longest = std::max( width, height );
+            outputWidth = std::max( 1u, static_cast<u32>( u64( width ) * maximumDimension / longest ) );
+            outputHeight = std::max( 1u, static_cast<u32>( u64( height ) * maximumDimension / longest ) );
+            // FreeImage's JPEG codec reads the requested size from the upper
+            // sixteen flag bits and decompresses at 1/2, 1/4 or 1/8 resolution.
+            // Ask the header for those exact dimensions before reserving payloads.
+            decodeFlags = static_cast<int>( maximumDimension << 16 );
+            header.reset();
+            FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
+            header.reset( FreeImage_LoadFromMemory( format, memory.get(),
+                                                   decodeFlags | FIF_LOAD_NOPIXELS ) );
+            width = header ? FreeImage_GetWidth( header.get() ) : 0u;
+            height = header ? FreeImage_GetHeight( header.get() ) : 0u;
+            pitch = header ? FreeImage_GetPitch( header.get() ) : 0u;
+        }
         const auto bgraBytes = u64( width ) * height * 4u;
-        if( !width || !height || width > 16384 || height > 16384 || !pitch ||
+        const auto outputBytes = u64( outputWidth ) * outputHeight * 4u;
+        if( !width || !height || !outputWidth || !outputHeight ||
+            originalWidth > 16384 || originalHeight > 16384 ||
+            width > originalWidth || height > originalHeight || !pitch ||
             bgraBytes > render::graphicsTextureByteLimit ||
+            outputBytes > render::graphicsTextureByteLimit ||
             u64( pitch ) * height > render::graphicsTextureByteLimit * 4u )
         {
             WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image header in '" + filePath + "'." );
             return false;
         }
-        auto sourceBudget = reserveTextureCpu( bgraBytes, budgetError );
+        auto sourceBudget = reserveTextureCpu( outputBytes, budgetError );
         auto decoderBudget = sourceBudget ? WorldStreamingScheduler::shared()->reserve(
             StreamMemoryClass::WorkingCpu, u64( pitch ) * height + bgraBytes + 64u * 1024u,
             budgetError ) : StreamBudget{};
@@ -357,7 +427,7 @@ namespace
         }
         header.reset();
         FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
-        BitmapOwner bitmap( FreeImage_LoadFromMemory( format, memory.get(), 0 ), &FreeImage_Unload );
+        BitmapOwner bitmap( FreeImage_LoadFromMemory( format, memory.get(), decodeFlags ), &FreeImage_Unload );
         if( !bitmap || FreeImage_GetWidth( bitmap.get() ) != width ||
             FreeImage_GetHeight( bitmap.get() ) != height || FreeImage_GetPitch( bitmap.get() ) > pitch )
         {
@@ -374,24 +444,59 @@ namespace
             WP_LOG_ERROR( "WPGraphics/Texture: failed bounded BGRA conversion for '" + filePath + "'." );
             return false;
         }
-        Array<u8> pixels( static_cast<size_t>( width ) * static_cast<size_t>( height ) * 4u );
-        const auto rowBytes = static_cast<size_t>( width ) * 4u;
-        for( u32 y = 0; y < height; ++y )
+        Array<u8> pixels( static_cast<size_t>( outputBytes ) );
+        const auto rowBytes = static_cast<size_t>( outputWidth ) * 4u;
+        for( u32 y = 0; y < outputHeight; ++y )
         {
-            // FreeImage scan lines are bottom-up; GPU uploads are top-down.
-            const auto source = FreeImage_GetScanLine( converted.get(), height - 1u - y );
-            std::memcpy( pixels.data() + static_cast<size_t>( y ) * rowBytes, source, rowBytes );
+            if( width == outputWidth && height == outputHeight )
+            {
+                // FreeImage scan lines are bottom-up; GPU uploads are top-down.
+                const auto source = FreeImage_GetScanLine( converted.get(), height - 1u - y );
+                std::memcpy( pixels.data() + static_cast<size_t>( y ) * rowBytes, source, rowBytes );
+                continue;
+            }
+            // JPEG scaling is limited to powers of two and a denominator of eight.
+            // Finish an NPOT/large reduction directly into the admitted retained
+            // buffer with an area filter; no full-size RGBA copy or rescale bitmap.
+            const double top = double( y ) * height / outputHeight;
+            const double bottom = double( y + 1u ) * height / outputHeight;
+            for( u32 x = 0; x < outputWidth; ++x )
+            {
+                const double left = double( x ) * width / outputWidth;
+                const double right = double( x + 1u ) * width / outputWidth;
+                double sum[4]{};
+                for( u32 sy = static_cast<u32>( top ); sy < height && sy < std::ceil( bottom ); ++sy )
+                {
+                    const double wy = std::min( bottom, double( sy + 1u ) ) - std::max( top, double( sy ) );
+                    const auto row = FreeImage_GetScanLine( converted.get(), height - 1u - sy );
+                    for( u32 sx = static_cast<u32>( left ); sx < width && sx < std::ceil( right ); ++sx )
+                    {
+                        const double weight = wy * ( std::min( right, double( sx + 1u ) ) -
+                                                     std::max( left, double( sx ) ) );
+                        for( u32 channel = 0; channel < 4; ++channel )
+                            sum[channel] += row[size_t( sx ) * 4u + channel] * weight;
+                    }
+                }
+                const auto area = ( right - left ) * ( bottom - top );
+                for( u32 channel = 0; channel < 4; ++channel )
+                    pixels[size_t( y ) * rowBytes + size_t( x ) * 4u + channel] =
+                        static_cast<u8>( std::min( 255.0, std::floor( sum[channel] / area + 0.5 ) ) );
+            }
         }
         converted.reset();
 
-        texture->setSize( Vector2I( static_cast<s32>( width ), static_cast<s32>( height ) ) );
+        texture->setSize( Vector2I( static_cast<s32>( outputWidth ), static_cast<s32>( outputHeight ) ) );
         std::scoped_lock lock( g_textureMutex );
         auto &data = g_textureData[texture];
         auto retiredBudget = std::move( data.sourceBudget );
         data.sourceBudget = std::move( sourceBudget );
         data.pixels = std::move( pixels );
         std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );
-        data.pixelSize = { static_cast<s32>( width ), static_cast<s32>( height ) };
+        data.pixelSize = { static_cast<s32>( outputWidth ), static_cast<s32>( outputHeight ) };
+        // Publish the shared texture's saved recipe only with its complete pixels.
+        // Per-material sampling edits do not replace another user's physical mip chain.
+        if( recipeMipFilter >= 0 )
+            data.mipSettings.filter = static_cast<render::TextureMipFilter>( recipeMipFilter );
         data.uploadPending = true;
         return true;
     }

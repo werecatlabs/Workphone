@@ -14,6 +14,8 @@ import subprocess
 import ProfileMaterialCpu as profile
 
 ALLOWED_CHANGES = {'Engine/cpp/Source/Workphone/Graphics/Material.cpp',
+                   'Engine/cpp/Source/Workphone/Graphics/MaterialPass.cpp',
+                   'Engine/cpp/Source/Workphone/System/StateContext.cpp',
                    'Tests/cpp/MaterialLoadSequenceTests.cpp'}
 
 def compare(runs):
@@ -57,8 +59,10 @@ def main():
         or not 1<=a.repetitions<=31): ap.error('invalid workload dimensions')
     a.root=a.root.resolve(); receipt=json.loads(a.control_receipt.read_text())
     current=profile.sources(a.root)
-    extra_inputs={p:profile.digest(a.root/p) for p in
-        ('Tests/cpp/MaterialSinglePassEditContracts.hpp','Tools/ProfileMaterialCpu.py')}
+    extra_paths=['Tests/cpp/MaterialSinglePassEditContracts.hpp','Tools/ProfileMaterialCpu.py']
+    if (a.root/'Tests/cpp/MaterialStateLookupContracts.hpp').is_file():
+        extra_paths.append('Tests/cpp/MaterialStateLookupContracts.hpp')
+    extra_inputs={p:profile.digest(a.root/p) for p in extra_paths}
     changes={p:{'control':h,'candidate':current.get(p)} for p,h in receipt['sources'].items() if current.get(p)!=h}
     if not changes or set(changes)-ALLOWED_CHANGES: ap.error('control differs outside permitted implementation/test files: '+str(list(changes)))
     profile.matching_builds(receipt['build'],profile.build_provenance(a.root,a.root/'project_x64'))

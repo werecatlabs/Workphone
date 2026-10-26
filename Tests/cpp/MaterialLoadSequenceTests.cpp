@@ -52,6 +52,7 @@
 #include "MaterialRenderCacheBenchmark.hpp"
 #include "MaterialCpuProfile.hpp"
 #include "MaterialSinglePassEditContracts.hpp"
+#include "MaterialStateLookupContracts.hpp"
 #include "MaterialPassStorageReference.hpp"
 #include "MaterialTextureColdStorageContracts.hpp"
 #include "ClawMaterialResidencyContracts.hpp"
@@ -3826,6 +3827,7 @@ int main( int argc, char **argv )
         generic_engine_catalog_budget_contracts::bootstrap();
         Fixture fixture;
         material_single_pass_edits::run(fixture);
+        material_state_lookup_contracts::run(fixture);
         reflection_string_budget_contracts::run(fixture);
         reflection_payload_budget_contracts::run();
         snapshot_container_budget_contracts::run();

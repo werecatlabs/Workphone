@@ -1192,6 +1192,55 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
         BOOST_CHECK( restored->getTexture( 1 ) == normal );
     }
     BOOST_CHECK( !std::filesystem::exists( directory / "Materials" ) );
+
+    // Old documents have root texture slots rather than serialized pass units.
+    // An explicit, cataloged repair path recovers a dangling UUID without
+    // importing assets or changing either asset identity.
+    const auto localPath = String( "Assets/Model/Textures/Local.bmp" );
+    auto local = database->loadResourceByType<render::ITexture>( localPath );
+    auto normal = database->loadResourceByType<render::ITexture>(
+        "Assets/Model/Textures/Normal.bmp" );
+    auto localMaterial = database->loadResourceByType<render::IMaterial>(
+        "Assets/Model/Materials/Local.mat" );
+    BOOST_REQUIRE( local );
+    BOOST_REQUIRE( normal );
+    BOOST_REQUIRE( localMaterial );
+    const auto legacy = [&]( const String &uuid, const String &path ) {
+        auto root = workphone::make_ptr<Properties>();
+        root->setProperty( "materialType", 0 );
+        auto slots = workphone::make_ptr<Properties>();
+        slots->setName( "textures" );
+        auto slot = workphone::make_ptr<Properties>();
+        slot->setName( "texture" );
+        slot->setProperty( "uuid", uuid );
+        slot->setProperty( "texturePath", path );
+        slots->addChild( slot );
+        root->addChild( slots );
+        auto manager = app->getGraphicsSystem()->getMaterialManager();
+        auto result = dynamic_pointer_cast<render::IMaterial>( manager->create(
+            String( "LegacyTextureRepair_" ) + StringUtil::getUUID() ) );
+        BOOST_REQUIRE( result );
+        guard.addCleanup( [manager, result]() mutable {
+            result->unload( nullptr );
+            manager->destroyResource( result );
+        } );
+        result->fromData( root );
+        return result;
+    };
+    const auto missingUUID = StringUtil::getUUID();
+    auto repaired = legacy( missingUUID, localPath );
+    BOOST_CHECK( repaired->getTexture( 0 ) == local );
+    const auto repairedDocument = DataUtil::toString(
+        dynamic_pointer_cast<Properties>( repaired->toData() ).get(), true );
+    BOOST_CHECK( repairedDocument.find( localPath ) != String::npos );
+    BOOST_CHECK( repairedDocument.find( local->getHandle()->getUUIDAsString() ) != String::npos );
+    BOOST_CHECK( legacy( "", localPath )->getTexture( 0 ) == local );
+    BOOST_CHECK( legacy( normal->getHandle()->getUUIDAsString(), localPath )->getTexture( 0 ) == normal );
+    BOOST_CHECK( !legacy( localMaterial->getHandle()->getUUIDAsString(), localPath )->getTexture( 0 ) );
+    BOOST_CHECK( !legacy( missingUUID, "../Assets/Model/Textures/Local.bmp" )->getTexture( 0 ) );
+    BOOST_CHECK( !legacy( missingUUID, ( directory / localPath.c_str() ).generic_string() )->getTexture( 0 ) );
+    BOOST_CHECK( !legacy( missingUUID, "Local.bmp" )->getTexture( 0 ) );
+    BOOST_CHECK( !database->loadResourceById( StringUtil::parseUUID( missingUUID ) ) );
 }
 
 #if WP_USE_ASSET_IMPORT && !WP_USE_FBXSDK

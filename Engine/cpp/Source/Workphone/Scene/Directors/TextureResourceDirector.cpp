@@ -37,6 +37,9 @@ namespace workphone::scene
 
         properties->setPropertyAsEnum( "type", m_textureType, textureTypes );
         properties->setPropertyAsEnum( "size", m_textureSize, textureSizes );
+        properties->setPropertyAsEnum( "mipmapFilter", m_mipmapFilter,
+                                      Array<String>{ "None", "Colour", "Data", "Normal", "Cutout",
+                                                     "Roughness" } );
         properties->setProperty( "useTiling", m_useTiling );
 
         properties->setProperty( "borderLeft", m_borderLeft );
@@ -52,10 +55,19 @@ namespace workphone::scene
 
     void TextureResourceDirector::setProperties( SmartPtr<Properties> properties )
     {
-        ResourceDirector::setProperties( properties );
+        if( !properties )
+        {
+            return;
+        }
 
         properties->getPropertyValue( "type", m_textureType );
         properties->getPropertyValue( "size", m_textureSize );
+        s32 mipmapFilter = m_mipmapFilter;
+        if( properties->getPropertyValue( "mipmapFilter", mipmapFilter ) && mipmapFilter >= 0 &&
+            mipmapFilter <= 5 )
+        {
+            m_mipmapFilter = mipmapFilter;
+        }
         properties->getPropertyValue( "useTiling", m_useTiling );
 
         properties->getPropertyValue( "borderLeft", m_borderLeft );
@@ -63,15 +75,8 @@ namespace workphone::scene
         properties->getPropertyValue( "borderTop", m_borderTop );
         properties->getPropertyValue( "borderBottom", m_borderBottom );
 
-        if( properties->isButtonPressed( "Save" ) )
-        {
-            save();
-        }
-
-        if( properties->isButtonPressed( "Import" ) )
-        {
-            import();
-        }
+        // The base dispatches Save/Import once, after the complete recipe is current.
+        ResourceDirector::setProperties( properties );
     }
 
     void TextureResourceDirector::setUseTiling( bool useTiling )

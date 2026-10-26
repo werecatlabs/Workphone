@@ -17,6 +17,9 @@
 #include <Workphone/IO/MemoryFile.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/Scene/Directors/TextureResourceDirector.hpp>
+#include <FreeImage.h>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
@@ -737,10 +740,185 @@ namespace claw_texture_mip_contracts
         texture.unload( nullptr );
     }
 
+    inline void boundedRawTextureContracts( Fixture &fixture )
+    {
+        class Commands final : public scene::TextureResourceDirector
+        {
+        public:
+            unsigned saves = 0, imports = 0;
+            bool saveSawRecipe = false, importSawRecipe = false;
+            bool currentRecipe() const
+            {
+                return m_textureSize == 512 && m_mipmapFilter == 1 &&
+                       getResourcePath() == "data://road.jpg" &&
+                       getResourceUUID() == "3db6b002-e7a3-43da-b991-ccfe8b5624a1";
+            }
+            void save() override { ++saves; saveSawRecipe = currentRecipe(); }
+            void import() override { ++imports; importSawRecipe = currentRecipe(); }
+        };
+        {
+            auto commands = make_ptr<Commands>();
+            auto edit = make_ptr<Properties>();
+            edit->setProperty( "size", 512 );
+            edit->setProperty( "mipmapFilter", 1 );
+            edit->setProperty( "resourcePath", "data://road.jpg" );
+            edit->setProperty( "resourceUUID", "3db6b002-e7a3-43da-b991-ccfe8b5624a1" );
+            edit->setButtonPressed( "Save", true );
+            edit->setButtonPressed( "Import", true );
+            commands->setProperties( edit );
+            require( commands->saves == 1 && commands->imports == 1 &&
+                         commands->saveSawRecipe && commands->importSawRecipe,
+                     "Texture Save and Import each dispatch once with the new size, mip filter and resource identity" );
+            commands->setProperties( nullptr );
+            require( commands->saves == 1 && commands->imports == 1,
+                     "Null texture property updates do not dispatch commands" );
+        }
+        class Settings final : public ResourceDatabase
+        {
+        public:
+            SmartPtr<scene::TextureResourceDirector> director = make_ptr<scene::TextureResourceDirector>();
+            Settings()
+            {
+                director->setFilePath( "saved-texture.resourcedata" );
+                auto properties = make_ptr<Properties>();
+                properties->setProperty( "size", 1024 );
+                properties->setProperty( "mipmapFilter", static_cast<s32>( TextureMipFilter::Colour ) );
+                director->setProperties( properties );
+            }
+            SmartPtr<IBuildDirector> loadDirectorFromResourcePath( const String &, u32 type ) override
+            {
+                require( type == scene::TextureResourceDirector::typeInfo(), "Decode uses the Inspector texture recipe type" );
+                return director;
+            }
+        };
+        class Images final : public FileSystem
+        {
+        public:
+            std::vector<u8> encoded;
+            bool saved = true;
+            bool isExistingFile( const String &name, bool, bool ) const override
+            { return saved && name == "saved-texture.resourcedata"; }
+            SmartPtr<IStream> open( const String &name, bool, bool, bool, bool, bool ) override
+            { return make_ptr<MemoryFile>( encoded.data(), long( encoded.size() ), name, false ); }
+        };
+        const auto jpeg = []( u32 width, u32 height ) {
+            FreeImage_Initialise( FALSE );
+            auto bitmap = FreeImage_Allocate( width, height, 24 );
+            require( bitmap != nullptr, "JPEG fixture bitmap" );
+            for( u32 y = 0; y < height; ++y )
+            {
+                auto row = FreeImage_GetScanLine( bitmap, y );
+                for( u32 x = 0; x < width; ++x )
+                { row[x * 3] = 16; row[x * 3 + 1] = 128; row[x * 3 + 2] = 32; }
+            }
+            auto memory = FreeImage_OpenMemory();
+            require( memory && FreeImage_SaveToMemory( FIF_JPEG, bitmap, memory, JPEG_QUALITYGOOD ), "JPEG fixture encoding" );
+            BYTE *bytes = nullptr; DWORD count = 0;
+            require( FreeImage_AcquireMemory( memory, &bytes, &count ) && count, "JPEG fixture payload" );
+            std::vector<u8> result( bytes, bytes + count );
+            FreeImage_CloseMemory( memory ); FreeImage_Unload( bitmap ); FreeImage_DeInitialise();
+            return result;
+        };
+        auto files = make_ptr<Images>();
+        auto settings = make_ptr<Settings>();
+        s32 filter = -1;
+        auto defaults = make_ptr<scene::TextureResourceDirector>();
+        require( defaults->getProperties()->getPropertyValue( "mipmapFilter", filter ) && filter == 0,
+                 "New texture recipes preserve the legacy mip default until explicitly configured" );
+        auto roundtrip = make_ptr<scene::TextureResourceDirector>();
+        roundtrip->setProperties( dynamic_pointer_cast<Properties>( settings->director->toData() ) );
+        require( roundtrip->getProperties()->getPropertyValue( "mipmapFilter", filter ) && filter == 1,
+                 "Saved texture recipes retain their explicit colour mip filter" );
+        auto invalid = make_ptr<Properties>(); invalid->setProperty( "mipmapFilter", 6 );
+        roundtrip->setProperties( invalid );
+        require( roundtrip->getProperties()->getPropertyValue( "mipmapFilter", filter ) && filter == 1,
+                 "Invalid recipe mip filters retain the preceding valid choice" );
+        files->encoded = jpeg( 8192, 4096 );
+        auto previousFiles = fixture.application->getFileSystem();
+        auto previousDatabase = fixture.application->getResourceDatabase();
+        fixture.application->setFileSystem( files );
+        fixture.application->setResourceDatabase( settings );
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto baseline = scheduler->stats();
+        const auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto working = size_t( StreamMemoryClass::WorkingCpu );
+        struct Restore
+        {
+            Fixture &fixture; SmartPtr<IFileSystem> files; SmartPtr<IResourceDatabase> database;
+            std::shared_ptr<WorldStreamingScheduler> scheduler; WorldStreamStats stats;
+            ~Restore()
+            {
+                String error;
+                for( auto type : { StreamMemoryClass::SourceCpu, StreamMemoryClass::WorkingCpu } )
+                    scheduler->setBudget( type, stats.limits[size_t( type )], error );
+                fixture.application->setFileSystem( files );
+                fixture.application->setResourceDatabase( database );
+            }
+        } restore{ fixture, previousFiles, previousDatabase, scheduler, baseline };
+        String error;
+        require( scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline.used[source] + ( 12ull << 20 ), error ) &&
+                 scheduler->setBudget( StreamMemoryClass::WorkingCpu, baseline.used[working] + ( 8ull << 20 ), error ),
+                 "Bounded JPEG fixture admits 1K residency, not an 8K bitmap" );
+        {
+            ClawTexture texture;
+            texture.setFilePath( "bounded-8k.jpg" );
+            texture.getHandle()->setUUID( "58600742-cfac-4823-8349-d9a2723b39fd" );
+            auto mip = texture.getCpuBaseMip( error );
+            require( mip && mip->width == 1024 && mip->height == 512 &&
+                     std::abs( int( mip->bgra[1] ) - 128 ) <= 3,
+                     "8K JPEG must decode directly to its saved 1K maximum under small CPU budgets" );
+            require( scheduler->stats().used[working] == baseline.used[working], "JPEG decoder buffers retire before returning" );
+            auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+            auto desc = description( static_cast<ID3D11ShaderResourceView *>( texture.getNativeTextureView( native ) ) );
+            require( desc.Width == 1024 && desc.Height == 512 && desc.MipLevels == 11,
+                     "GPU residency and complete mip chain use the bounded base dimensions" );
+            const auto resident = scheduler->stats().used[source];
+            texture.unload( nullptr );
+            require( scheduler->stats().used[source] < resident && mip->width == 1024,
+                     "Unload retires bounded source while an independent snapshot remains valid" );
+            auto reloaded = texture.getCpuBaseMip( error );
+            require( reloaded && reloaded->width == 1024 &&
+                     texture.getHandle()->getUUIDAsString() == "58600742-cfac-4823-8349-d9a2723b39fd",
+                     "Cold reload retains the same texture identity and saved maximum" );
+        }
+        {
+            ClawTexture texture;
+            texture.setFilePath( "bounded-retry.jpg" );
+            const auto pressure = scheduler->stats();
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                         pressure.used[working] + files->encoded.size() + ( 64u << 10 ), error ), "Exhaust bounded JPEG bitmap capacity" );
+            require( !texture.getCpuBaseMip( error ) && scheduler->stats().used[working] == pressure.used[working],
+                     "Bounded decode denial must not retain decoder buffers or publish a partial image" );
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu, baseline.used[working] + ( 8ull << 20 ), error ), "Restore bounded decode capacity" );
+            require( texture.getCpuBaseMip( error ) != nullptr, "Bounded decode retries after denial without changing source or recipe" );
+        }
+        files->encoded = jpeg( 8193, 1025 );
+        {
+            ClawTexture texture;
+            texture.setFilePath( "bounded-npot.jpg" );
+            auto mip = texture.getCpuBaseMip( error );
+            require( mip && mip->width == 1024 && mip->height == 128 &&
+                     std::abs( int( mip->bgra.back() ) - 255 ) == 0 &&
+                     std::abs( int( mip->bgra[1] ) - 128 ) <= 3,
+                     "NPOT JPEG scaling finishes in the retained buffer with bounded dimensions, aspect and color" );
+        }
+        require( scheduler->setBudget( StreamMemoryClass::SourceCpu, baseline.limits[source], error ) &&
+                 scheduler->setBudget( StreamMemoryClass::WorkingCpu, baseline.limits[working], error ), "Restore full decode limits" );
+        files->saved = false;
+        {
+            ClawTexture texture;
+            texture.setFilePath( "unconfigured-npot.jpg" );
+            auto mip = texture.getCpuBaseMip( error );
+            require( mip && mip->width == 8193 && mip->height == 1025,
+                     "Absent saved texture recipe preserves the original full-resolution source" );
+        }
+    }
+
     inline void run()
     {
         Fixture fixture;
         fixture.initialize();
+        boundedRawTextureContracts( fixture );
         checkedByteStagingContracts();
         claw_texture_retirement_budget_contracts::run( fixture );
         ClawTexture texture;

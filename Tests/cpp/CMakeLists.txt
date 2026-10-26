@@ -131,8 +131,9 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
         endif()
     endforeach()
     add_executable(ClawCubemapTests ClawCubemapTests.cpp)
-    target_compile_definitions(ClawCubemapTests PRIVATE BOOST_ALL_NO_LIB)
+    target_compile_definitions(ClawCubemapTests PRIVATE BOOST_ALL_NO_LIB FREEIMAGE_LIB)
     target_include_directories(ClawCubemapTests PRIVATE
+        ${WP_ROOT}/Dependencies/FreeImage/Source
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
         ${WP_ROOT}/Engine/c/Include/WorkphoneCore
         ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics

@@ -27,6 +27,7 @@
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Graphics/GraphicsUtil.hpp>
 #include <functional>
+#include <filesystem>
 #include <array>
 #include <vector>
 #include <cmath>
@@ -1680,15 +1681,30 @@ namespace workphone::render
                     auto textureChildren = texturesChild->getChildrenByName( textureStr );
                     for( auto textureChild : textureChildren )
                     {
-                        auto sUUID = textureChild->getProperty( uuidStr );
-                        if( !StringUtil::isNullOrEmpty( sUUID ) )
+                        const auto sUUID = textureChild->getProperty( uuidStr );
+                        SmartPtr<IResource> resource;
+                        if( resourceDatabase && !sUUID.empty() )
                         {
-                            auto uuid = StringUtil::parseUUID( sUUID );
-                            auto tex = resourceDatabase->loadResourceById( uuid );
-                            if( textureCount < textures.size() )
-                            {
-                                textures[textureCount] = tex;
-                            }
+                            resource = resourceDatabase->loadResourceById(
+                                StringUtil::parseUUID( sUUID ) );
+                        }
+                        auto texture = dynamic_pointer_cast<ITexture>( resource );
+                        if( resourceDatabase && !resource )
+                        {
+                            // Legacy root slots can carry an explicit repair path. Resolve
+                            // only that registered project path; never invent an identity
+                            // from a filename, and never override a live UUID of any type.
+                            const auto path = textureChild->getProperty( "texturePath" );
+                            const auto relative = std::filesystem::u8path( path.c_str() );
+                            bool projectRelative = !path.empty() && !relative.has_root_path();
+                            for( const auto &part : relative )
+                                if( part == ".." ) projectRelative = false;
+                            if( projectRelative )
+                                texture = resourceDatabase->loadResourceByType<ITexture>( path );
+                        }
+                        if( textureCount < textures.size() )
+                        {
+                            textures[textureCount] = texture;
                         }
 
                         textureCount++;

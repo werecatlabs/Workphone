@@ -24,6 +24,23 @@ namespace workphone::render
         const String MaterialTypeDataStr = String( "materialType" );
         constexpr u32 LightingEnabledFlag = 1u << 19u;
 
+        SafePtr<MaterialPassStateData> editSurfaceState( IStateContext &context, hash_type id )
+        {
+            // The ordinary pass context has one state. Use its pinned ID lookup
+            // instead of copying the complete registration array for every edit.
+            if( auto state = context.getStateById( id ) )
+            {
+                if( auto data = state->getData(); data && data->isDerived<MaterialPassStateData>() )
+                {
+                    state->setDirty( true );
+                    return SafePtr<MaterialPassStateData>( data );
+                }
+            }
+            // Shared contexts can contain duplicate IDs with different types.
+            // Retain the original derived-type search in that case.
+            return context.invalidateStateDataById<MaterialPassStateData>( id );
+        }
+
         void restoreSpecularAmount( const Properties &properties, MaterialPass &pass )
         {
             // The editor slider updates both the scalar setting and the legacy
@@ -1267,8 +1284,7 @@ namespace workphone::render
         {
             if( auto stateContext = getStateContextPtr() )
             {
-                if( auto state =
-                        stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                if( auto state = editSurfaceState( *stateContext, getId() ) )
                 {
                     state->setSurfaceValue( &MaterialRenderState::diffuseColour, diffuse );
                 }
@@ -1427,8 +1443,7 @@ namespace workphone::render
         {
             if( auto stateContext = getStateContextPtr() )
             {
-                if( auto state =
-                        stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                if( auto state = editSurfaceState( *stateContext, getId() ) )
                 {
                     state->setSurfaceValue( &MaterialRenderState::roughness, roughness );
                 }

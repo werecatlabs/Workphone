@@ -63,6 +63,10 @@ namespace workphone
             // The size of the texture.
             s32 m_textureSize = 8192;
 
+            // Physical mip generation belongs to the shared texture recipe.
+            // Keep existing unsaved and legacy recipes at their original base level.
+            s32 m_mipmapFilter = 0;
+
             // The left border.
             s32 m_borderLeft = 0;
 
