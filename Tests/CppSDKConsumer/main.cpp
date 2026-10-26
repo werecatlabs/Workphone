@@ -5,6 +5,7 @@
 #include <iostream>
 #include <windows.h>
 #include <tlhelp32.h>
+#include "material_contracts.hpp"
 
 namespace
 {
@@ -41,6 +42,15 @@ int main()
     camera.setNearClipDistance(0.25f);
     if(camera.getNearClipDistance() != 0.25f)
         return 3;
+    try
+    {
+        installed_material_contracts::run();
+    }
+    catch(const std::exception &error)
+    {
+        std::cerr << "Installed material contract failed: " << error.what() << '\n';
+        return 7;
+    }
     const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
     if(snapshot == INVALID_HANDLE_VALUE)
         return 4;
@@ -62,6 +72,7 @@ int main()
         std::cout << "module=" << path << '\n';
     } while(Module32NextW(snapshot, &entry));
     CloseHandle(snapshot);
-    std::cout << "Installed C++ SDK: properties, material defaults and Claw camera passed\n";
+    std::cout << "Installed C++ SDK: properties, material layouts/typed handles/schema migration, "
+                 "immutable publication, backend record generations and Claw camera passed\n";
     return 0;
 }

@@ -14,6 +14,7 @@
 #include <Workphone/Scene/Directors/LightingDirector.hpp>
 #include <Workphone/Scene/Directors/SoundResourceDirector.hpp>
 #include <Workphone/Scene/GameManager.hpp>
+#include <Workphone/Scene/GamePrefabManager.hpp>
 #include <Workphone/Scene/MeshImportStreaming.hpp>
 #include <Workphone/Scene/SceneWorld.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
@@ -115,6 +116,21 @@ namespace workphone
         thread_local ResourceDatabase *activeImport = nullptr;
         thread_local String importProjectPath, importCachePath, importSettingsPath;
         thread_local std::function<bool()> currentImportSession;
+        struct ImportStatusContext;
+        thread_local ImportStatusContext *currentImportStatus = nullptr;
+        struct ImportStatusContext
+        {
+            ResourceDatabase *database;
+            SmartPtr<scene::ResourceDirector> receiver;
+            u64 request;
+            bool claimed = false;
+            ImportStatusContext *previous = currentImportStatus;
+
+            ImportStatusContext( ResourceDatabase *owner, SmartPtr<scene::ResourceDirector> target,
+                                 u64 token ) : database( owner ), receiver( target ), request( token )
+            { currentImportStatus = this; }
+            ~ImportStatusContext() { currentImportStatus = previous; }
+        };
         auto importQueue = std::make_shared<AssetImportQueue>();
 
         class ImportPump : public Job
@@ -249,9 +265,10 @@ namespace workphone
             return snapshot;
         }
 
+        template<class PreparePublication>
         Array<SmartPtr<ISharedObject>> replaceObjectRegistry(
             SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
-            const Array<SmartPtr<ISharedObject>> &replacement )
+            const Array<SmartPtr<ISharedObject>> &replacement, PreparePublication &&preparePublication )
         {
             // Scene traversal and object metadata access must not run under the
             // registry lock. Readers acquire their strong references under it.
@@ -268,6 +285,7 @@ namespace workphone
             auto retired = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
             {
                 auto registry = objects.writeLocked();
+                preparePublication( registry, candidate );
                 retired.reserve( registry.size() );
                 for( const auto &[id, object] : registry ) retired.push_back( object );
                 // Allocation/copy completes before publication; destruction of
@@ -277,6 +295,13 @@ namespace workphone
             // Destruction of replaced owners can re-enter the database. Keep
             // them alive until the complete publication transaction has ended.
             return retired;
+        }
+
+        Array<SmartPtr<ISharedObject>> replaceObjectRegistry(
+            SourceBudgetConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
+            const Array<SmartPtr<ISharedObject>> &replacement )
+        {
+            return replaceObjectRegistry( objects, replacement, []( auto &, auto & ) {} );
         }
 
         // Count all database aliases before inspecting ownership. One temporary
@@ -884,6 +909,8 @@ namespace workphone
     void ResourceDatabase::refresh()
     {
         auto applicationManager = core::IApplicationManager::instance();
+        const auto projectPath = applicationManager->getProjectPath();
+        const auto settingsPath = applicationManager->getSettingsPath();
 
         auto databaseManager = getDatabaseManager();
         WP_ASSERT( databaseManager );
@@ -900,6 +927,8 @@ namespace workphone
         databasePath = StringUtil::cleanupPath( databasePath );
 
         assetDatabaseManager->loadFromFile( databasePath );
+        const auto catalogDatabase = assetDatabaseManager->getDatabase();
+        const auto catalogRoot = assetDatabaseManager->getProjectRoot();
 
         auto objects = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
         auto sceneManager = applicationManager->getGameManager();
@@ -910,7 +939,22 @@ namespace workphone
 
             objects = getSceneObjects();
         }
-        auto retired = replaceObjectInventory( objects );
+        auto retired = replaceObjectRegistry( m_objects, objects, [&]( auto &registry, auto &candidate ) {
+            if( core::IApplicationManager::instance() != applicationManager ||
+                getDatabaseManager() != databaseManager ||
+                applicationManager->getProjectPath() != projectPath ||
+                applicationManager->getCachePath() != cachePath ||
+                applicationManager->getSettingsPath() != settingsPath ||
+                assetDatabaseManager->getDatabase() != catalogDatabase ||
+                assetDatabaseManager->getProjectRoot() != catalogRoot )
+                throw std::runtime_error( "Resource inventory refresh project changed before publication" );
+            // Merge the live cache at the commit boundary: an import director
+            // created during scene traversal must survive this refresh too.
+            // Candidate allocation can fail here; the old registry is still
+            // untouched and all retired owners leave after releasing its lock.
+            for( const auto &[id, object] : registry )
+                if( object && dynamic_cast<IBuildDirector *>( object.get() ) ) candidate[id] = object;
+        } );
     }
 
     void ResourceDatabase::optimise()
@@ -1273,9 +1317,31 @@ namespace workphone
 
     void ResourceDatabase::importFile( const String &filePath, bool overwrite )
     {
+        SmartPtr<scene::ResourceDirector> receiver;
+        u64 request = 0;
+        if( currentImportStatus && currentImportStatus->database == this && !currentImportStatus->claimed )
+        {
+            currentImportStatus->claimed = true;
+            receiver = currentImportStatus->receiver;
+            request = currentImportStatus->request;
+        }
+        // The queued operation owns its receiver even if the selection changes.
+        // Destruction before execution reports cancellation rather than leaving
+        // a director permanently showing an import in progress.
+        auto application = core::IApplicationManager::instance();
+        auto factory = application ? application->getFactoryManager() : nullptr;
+        if( !factory )
+        {
+            if( receiver ) receiver->setImportStatus( request, "Import unavailable: no resource factory." );
+            return;
+        }
+        auto job = factory->make_ptr<ImportFileJob>();
+        job->setFilePath( filePath );
+        job->setOverwrite( overwrite );
+        job->setStatusReceiver( receiver, request );
         dispatchImport(
             this,
-            [this, filePath, overwrite]() {
+            [this, job]() mutable {
                 if( !isLoaded() )
                 {
                     return;
@@ -1294,13 +1360,28 @@ namespace workphone
                     return;
                 }
 
-                auto factoryManager = applicationManager->getFactoryManagerPtr();
-                auto job = factoryManager->make_ptr<ImportFileJob>();
-                job->setFilePath( filePath );
-                job->setOverwrite( overwrite );
                 job->execute();
             },
             true );
+    }
+
+    void ResourceDatabase::importFile( const String &filePath, bool overwrite,
+                                     SmartPtr<scene::ResourceDirector> receiver, u64 request )
+    {
+        // Preserve virtual two-argument overrides while supplying a receiver to
+        // the default job implementation. Nested imports cannot steal it.
+        ImportStatusContext status( this, receiver, request );
+        try
+        {
+            importFile( filePath, overwrite );
+            if( receiver && !status.claimed )
+                receiver->setImportStatus( request, "Import requested; completion is unavailable from this resource database." );
+        }
+        catch( ... )
+        {
+            if( receiver ) receiver->setImportStatus( request, "Import failed" );
+            throw;
+        }
     }
 
     void ResourceDatabase::importCache()
@@ -1973,17 +2054,14 @@ namespace workphone
         auto fileDataPath = settingsCachePath + StringUtil::toString( filePathHash ) + resourcedataExt;
         auto relativeFileDataPath = Path::getRelativePath( projectPath, fileDataPath );
 
-        auto objects = snapshotObjects( m_objects );
-        for( const auto &object : objects )
+        // The property grid repeatedly resolves this same director. Retain its
+        // unsaved options and transient asynchronous import status in the
+        // existing budgeted object inventory, scoped by settings path and type.
+        const auto directorId = StringUtil::getUUID( fileDataPath + ":" + StringUtil::toString( type ) );
+        SmartPtr<ISharedObject> cached;
+        if( m_objects.tryGet( directorId, cached ) )
         {
-            auto resource = workphone::dynamic_pointer_cast<IResource>( object );
-            if( resource )
-            {
-                if( resource->getFilePath() == fileDataPath )
-                {
-                    return resource;
-                }
-            }
+            return dynamic_pointer_cast<IBuildDirector>( cached );
         }
 
         auto data = workphone::make_ptr<Properties>();
@@ -2005,38 +2083,34 @@ namespace workphone
             }
         }
 
+        SmartPtr<IBuildDirector> director;
         if( scene::MeshResourceDirector::typeInfo() == type )
         {
-            auto director = workphone::make_ptr<scene::MeshResourceDirector>();
-            director->setResourcePath( filePath );
-            director->setFilePath( fileDataPath );
-            director->setProperties( data );
-            //m_objects.push_back( director );
-            return director;
+            director = workphone::make_ptr<scene::MeshResourceDirector>();
         }
         else if( scene::SoundResourceDirector::typeInfo() == type )
         {
-            auto director = workphone::make_ptr<scene::SoundResourceDirector>();
-            director->setResourcePath( filePath );
-            director->setFilePath( fileDataPath );
-            director->setProperties( data );
-            //m_objects.push_back( director );
-            return director;
+            director = workphone::make_ptr<scene::SoundResourceDirector>();
         }
         else if( scene::TextureResourceDirector::typeInfo() == type )
         {
-            auto director = workphone::make_ptr<scene::TextureResourceDirector>();
-            director->setResourcePath( filePath );
-            director->setFilePath( fileDataPath );
-            director->setProperties( data );
-            //m_objects.push_back( director );
-            return director;
+            director = workphone::make_ptr<scene::TextureResourceDirector>();
+        }
+        else
+        {
+            director = workphone::make_ptr<Director>();
         }
 
-        auto director = workphone::make_ptr<Director>();
+        if( auto resourceDirector = dynamic_pointer_cast<scene::ResourceDirector>( director ) )
+            resourceDirector->setResourcePath( filePath );
+        director->getHandle()->setUUID( directorId );
         director->setFilePath( fileDataPath );
         director->setProperties( data );
-
+        {
+            auto registry = m_objects.writeLocked();
+            const auto [entry, inserted] = registry.emplace( directorId, director );
+            if( !inserted ) return dynamic_pointer_cast<IBuildDirector>( entry->second );
+        }
         return director;
     }
 
@@ -2945,17 +3019,22 @@ namespace workphone
 
     ResourceDatabase::ImportFileJob::~ImportFileJob()
     {
+        if( m_statusReceiver && !m_statusComplete )
+        {
+            try { completeStatus( "Import cancelled before completion.", "Import canceled" ); }
+            catch( ... ) { /* Teardown must remain safe under allocation denial. */ }
+        }
         ResourceDatabase::m_numJobs--;
     }
 
     void ResourceDatabase::ImportFileJob::execute()
     {
+        const auto filePath = getFilePath();
+        String previousPrefab;
+        bool prefabPublished = false;
+        String successStatus = "Import completed for '" + filePath + "'.";
         try
         {
-            auto filePath = getFilePath();
-
-            // WP_LOG("Importing File: " + filePath);
-
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
@@ -2964,13 +3043,19 @@ namespace workphone
 
             if( activeImport != resourceDatabase )
             {
-                resourceDatabase->importFile( filePath, getOverwrite() );
+                if( auto database = dynamic_cast<ResourceDatabase *>( resourceDatabase ) )
+                    database->importFile( filePath, getOverwrite(), m_statusReceiver, m_statusRequest );
+                else
+                    resourceDatabase->importFile( filePath, getOverwrite() );
+                m_statusComplete = true;
                 return;
             }
             if( !currentImportSession || !currentImportSession() )
             {
                 return;
             }
+            if( m_statusReceiver )
+                m_statusReceiver->setImportStatus( m_statusRequest, "Importing '" + filePath + "'." );
             auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
 
             auto fileSystem = applicationManager->getFileSystemPtr();
@@ -3067,7 +3152,12 @@ namespace workphone
             }
             else if( ApplicationUtil::isSupportedMesh( filePath ) )
             {
+                const auto prefabFilePath = cachePath + Path::getFileName( filePath ) + "." +
+                    StringUtil::toString( filePathHash ) + ".prefab";
+                if( fileSystem->isExistingFile( prefabFilePath ) ) previousPrefab = prefabFilePath;
                 auto meshLoader = applicationManager->getMeshLoader();
+                if( !meshLoader )
+                    throw std::runtime_error( "Mesh import requires an available mesh loader" );
                 if( meshLoader )
                 {
                     auto overwrite = getOverwrite();
@@ -3076,6 +3166,8 @@ namespace workphone
                     auto actor = meshLoader->loadActor( filePath );
                     try
                     {
+                        if( !actor )
+                            throw std::runtime_error( "The mesh loader did not produce an actor; check the source file and importer diagnostics" );
                         if( !currentImportSession || !currentImportSession() )
                             throw std::runtime_error( "Mesh import project changed while loading the source" );
                         if( actor )
@@ -3106,8 +3198,6 @@ namespace workphone
                                 WP_LOG_ERROR( "Mesh converter is not available." );
                             }
 
-                            const auto prefabFilePath = cachePath + Path::getFileName( filePath ) + "." +
-                                StringUtil::toString( filePathHash ) + ".prefab";
                             if( overwrite || !fileSystem->isExistingFile( prefabFilePath ) )
                             {
                                 if( streaming.enabled )
@@ -3226,10 +3316,21 @@ namespace workphone
                                     if( !saveAssetDocumentText( prefabFilePath, prefabData,
                                             DataUtil::toString( prefabData.get(), true, DataFormat::XML ), error ) )
                                         throw std::runtime_error( ( "Streaming prefab publication failed: " + error ).c_str() );
+                                    prefabPublished = true;
+                                    successStatus = "Streaming import completed for '" + filePath +
+                                        "'. The new generation is available to future prefab instances. "
+                                        "Existing placed WorldStreaming instances keep their saved manifest and options; "
+                                        "replace them from this prefab or update their World Manifest and streaming settings.";
                                 }
                                 else
                                 {
-                                    prefabManager->savePrefab( prefabFilePath, actor );
+                                    auto checked = dynamic_pointer_cast<scene::GamePrefabManager>( prefabManager );
+                                    String error;
+                                    if( !checked )
+                                        throw std::runtime_error( "Mesh import requires a prefab manager with checked publication" );
+                                    if( !checked->savePrefabChecked( prefabFilePath, actor, error ) )
+                                        throw std::runtime_error( ( "Prefab publication failed: " + error ).c_str() );
+                                    prefabPublished = true;
                                 }
                             }
                         }
@@ -3262,7 +3363,7 @@ namespace workphone
                         resourceDirector->setResourcePath( filePath );
                         resourceDirector->setFilePath( relativeFileDataPath );
 
-                        auto properties = resourceDirector->getProperties();
+                        auto properties = dynamic_pointer_cast<Properties>( resourceDirector->toData() );
                         auto dataStr = DataUtil::toString( properties.get(), true );
                         fileSystem->writeAllText( relativeFileDataPath, dataStr );
                     }
@@ -3334,7 +3435,7 @@ namespace workphone
                         resourceDirector->setResourcePath( filePath );
                         resourceDirector->setFilePath( relativeFileDataPath );
 
-                        auto properties = resourceDirector->getProperties();
+                        auto properties = dynamic_pointer_cast<Properties>( resourceDirector->toData() );
                         auto dataStr = DataUtil::toString( properties.get(), true );
                         fileSystem->writeAllText( relativeFileDataPath, dataStr );
                     }
@@ -3392,11 +3493,48 @@ namespace workphone
             }
 
             // Runtime eviction is an explicit primary-thread maintenance operation.
+            completeStatus( successStatus, "Import complete" );
         }
         catch( std::exception &e )
         {
-            WP_LOG_EXCEPTION( e );
+            auto status = "Import failed for '" + filePath + "': " + e.what();
+            if( !previousPrefab.empty() && !prefabPublished )
+                status += ". The previously published prefab is retained: " + previousPrefab +
+                          ". Existing placed instances keep their previous generation.";
+            completeStatus( status );
+            WP_LOG_ERROR( status );
         }
+        catch( ... )
+        {
+            auto status = "Import failed for '" + filePath + "' with an unknown exception.";
+            if( !previousPrefab.empty() && !prefabPublished )
+                status += " The previously published prefab and existing placed instances are retained.";
+            completeStatus( status );
+            WP_LOG_ERROR( status );
+        }
+    }
+
+    void ResourceDatabase::ImportFileJob::setStatusReceiver(
+        SmartPtr<scene::ResourceDirector> receiver, u64 request )
+    {
+        m_statusReceiver = receiver;
+        m_statusRequest = request;
+        m_statusComplete = false;
+    }
+
+    void ResourceDatabase::ImportFileJob::completeStatus( const String &status, const String &fallback )
+    {
+        if( m_statusReceiver )
+        {
+            try { m_statusReceiver->setImportStatus( m_statusRequest, status ); }
+            catch( const std::bad_alloc & )
+            {
+                // Short terminal states fit inline when the full diagnostic's
+                // retained capacity cannot be admitted. Do not leave the UI busy.
+                m_statusReceiver->setImportStatus( m_statusRequest, fallback );
+            }
+        }
+        m_statusComplete = true;
     }
 
     void ResourceDatabase::ImportFileJob::setFilePath( const String &filePath )

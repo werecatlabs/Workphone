@@ -10,14 +10,18 @@
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Mesh/Mesh.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Mesh/MeshSerializer.hpp>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <map>
+#include <thread>
 
 namespace mesh_import_streaming_tests
 {
@@ -193,6 +197,151 @@ BOOST_AUTO_TEST_CASE( enabled_import_cooks_cells_and_round_trips_a_thin_portable
             BOOST_CHECK( PropertiesBinarySerializer::serialize( *before[i] ) == PropertiesBinarySerializer::serialize( *after[i] ) );
     }
     BOOST_CHECK_EQUAL( details, 2u ); BOOST_CHECK_EQUAL( proxies, 2u );
+}
+
+BOOST_AUTO_TEST_CASE( import_status_is_read_only_transient_and_ignores_older_completions )
+{
+    using namespace mesh_import_streaming_tests;
+    TestGuard guard;
+    auto director = make_ptr<MeshResourceDirector>();
+    const auto first = director->beginImport();
+    BOOST_CHECK_EQUAL( director->getImportStatus(), "Import queued." );
+    const auto current = director->beginImport();
+    director->setImportStatus( first, "Old request failed" );
+    BOOST_CHECK_EQUAL( director->getImportStatus(), "Import queued." );
+    std::thread completion( [director, current]() mutable {
+        director->setImportStatus( current, "Import completed on worker" );
+    } );
+    completion.join();
+    auto properties = director->getProperties();
+    BOOST_CHECK_EQUAL( properties->getProperty( ResourceDirector::importStatusStr ), "Import completed on worker" );
+    BOOST_CHECK( properties->getPropertyObject( ResourceDirector::importStatusStr ).isReadOnly() );
+    BOOST_CHECK_EQUAL( properties->getPropertyObject( ResourceDirector::importStatusStr ).getAttribute( "description" ),
+                       "Hover to read the complete import status." );
+    properties->setProperty( ResourceDirector::importStatusStr, "Forged completion" );
+    director->setProperties( properties );
+    BOOST_CHECK_EQUAL( director->getImportStatus(), "Import completed on worker" );
+    auto saved = dynamic_pointer_cast<Properties>( director->toData() );
+    BOOST_REQUIRE( saved );
+    BOOST_CHECK( !saved->hasProperty( ResourceDirector::importStatusStr ) );
+    const auto directory = project( guard );
+    const auto savedPath = directory / "import.resourcedata";
+    director->setFilePath( savedPath.generic_string().c_str() );
+    director->save();
+    std::ifstream input( savedPath, std::ios::binary );
+    BOOST_REQUIRE( input );
+    const std::string savedText( ( std::istreambuf_iterator<char>( input ) ), std::istreambuf_iterator<char>() );
+    BOOST_CHECK( savedText.find( ResourceDirector::importStatusStr.c_str() ) == std::string::npos );
+    BOOST_CHECK_EQUAL( director->getImportStatus(), "Import completed on worker" );
+    MeshResourceDirector restored;
+    restored.setProperties( properties );
+    BOOST_CHECK( restored.getImportStatus().empty() );
+    director->setResourcePath( "another-source.obj" );
+    director->setImportStatus( current, "Late completion for previous source" );
+    BOOST_CHECK( director->getImportStatus().empty() );
+    const auto afterPathChange = director->beginImport();
+    director->unload( nullptr );
+    director->setImportStatus( afterPathChange, "Late completion after unload" );
+    BOOST_CHECK( director->getImportStatus().empty() );
+}
+
+BOOST_AUTO_TEST_CASE( retained_import_status_admits_capacity_and_rolls_back_denied_replacement )
+{
+    using namespace mesh_import_streaming_tests;
+    TestGuard guard;
+    auto director = make_ptr<MeshResourceDirector>();
+    const auto request = director->beginImport();
+    const String oldStatus( 4096, 'a' ), nextStatus( 8192, 'b' );
+    auto scheduler = WorldStreamingScheduler::shared();
+    const auto index = size_t( StreamMemoryClass::SourceCpu );
+    const auto before = scheduler->stats();
+    director->setImportStatus( request, oldStatus );
+    const auto oldCharge = scheduler->stats().used[index] - before.used[index];
+    BOOST_REQUIRE_GT( oldCharge, 0u );
+    u64 nextCharge = 0;
+    {
+        const auto used = scheduler->stats().used[index];
+        SourceBudgetString probe( nextStatus );
+        nextCharge = scheduler->stats().used[index] - used;
+    }
+    BOOST_REQUIRE_GT( nextCharge, 0u );
+    struct RestoreStatusBudget
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler; u64 limit;
+        ~RestoreStatusBudget() { String error; scheduler->setBudget( StreamMemoryClass::SourceCpu, limit, error ); }
+    } restore{ scheduler, before.limits[index] };
+    String error;
+    BOOST_REQUIRE( scheduler->setBudget( StreamMemoryClass::SourceCpu,
+        before.used[index] + ( std::max )( oldCharge, nextCharge ), error ) );
+    bool denied = false;
+    try { director->setImportStatus( request, nextStatus ); }
+    catch( const std::bad_alloc & ) { denied = true; }
+    BOOST_CHECK( denied );
+    BOOST_CHECK_EQUAL( director->getImportStatus(), oldStatus );
+    BOOST_CHECK_EQUAL( scheduler->stats().used[index], before.used[index] + oldCharge );
+    BOOST_REQUIRE( scheduler->setBudget( StreamMemoryClass::SourceCpu, before.limits[index], error ) );
+    director->setImportStatus( request, nextStatus );
+    BOOST_CHECK_EQUAL( scheduler->stats().used[index], before.used[index] + nextCharge );
+    BOOST_CHECK_EQUAL( director->getImportStatus(), nextStatus );
+    BOOST_REQUIRE( scheduler->setBudget( StreamMemoryClass::SourceCpu, scheduler->stats().used[index], error ) );
+    director->unload( nullptr );
+    BOOST_CHECK_EQUAL( scheduler->stats().used[index], before.used[index] );
+}
+
+BOOST_AUTO_TEST_CASE( long_import_status_keeps_full_value_without_overflowing_property_metadata )
+{
+    using namespace mesh_import_streaming_tests;
+    TestGuard guard;
+    auto director = make_ptr<MeshResourceDirector>();
+    const auto request = director->beginImport();
+    const String status( 1024, 'x' );
+    director->setImportStatus( request, status );
+    const auto properties = director->getProperties();
+    BOOST_REQUIRE( properties );
+    BOOST_CHECK_EQUAL( properties->getProperty( ResourceDirector::importStatusStr ), status );
+    const auto description = properties->getPropertyObject( ResourceDirector::importStatusStr ).getAttribute( "description" );
+    BOOST_CHECK_LE( description.size(), 255u );
+    BOOST_CHECK_EQUAL( description, "Hover to read the complete import status." );
+    BOOST_CHECK_EQUAL( properties->getPropertyObject( ResourceDirector::importStatusStr ).getAttribute( "valueTooltip" ), "true" );
+}
+
+BOOST_AUTO_TEST_CASE( persistent_actor_limit_reports_actual_count_and_keeps_previous_generation )
+{
+    using namespace mesh_import_streaming_tests;
+    TestGuard guard; const auto root = project( guard ); building( root );
+    auto data = source();
+    while( data->hasChild( "child" ) ) data->removeChild( "child" );
+    for( unsigned i = 0; i < 31; ++i )
+        data->addChild( leaf( "Persistent building " + StringUtil::toString( i ), float( i * 1000 ) ) );
+    // A non-render component keeps this 32-actor hierarchy indivisible.
+    auto script = make_ptr<Properties>(); script->setName( "component" );
+    script->setProperty( "uuid", StringUtil::getUUID() );
+    script->setProperty( "componentType", "workphone::scene::Script" );
+    data->addChild( script );
+    MeshResourceDirector::StreamingOptions options; options.enabled = true;
+    options.enableHlod = false; options.maxActorsPerCell = 64;
+    SmartPtr<Properties> prefab; String manifest, error;
+    BOOST_REQUIRE_MESSAGE( build( *data, options, root, generation( root ), prefab, manifest, error ), error );
+    const auto previous = prefab;
+    const auto previousManifest = manifest;
+    const auto previousPrefabBytes = PropertiesBinarySerializer::serialize( *prefab );
+    WorldManifest before; BOOST_REQUIRE( SceneWorld::readManifest( manifest, before, error ) );
+    BOOST_REQUIRE_EQUAL( before.cells.size(), 1u );
+    BOOST_CHECK_EQUAL( before.cells.front().actors, 32u );
+    options.maxActorsPerCell = 20;
+    BOOST_CHECK( !build( *data, options, root, generation( root ), prefab, manifest, error ) );
+    for( const auto &part : { "persistent", "32 actors", "limit of 20", "at least 32" } )
+        BOOST_CHECK_MESSAGE( error.find( part ) != String::npos, error );
+    BOOST_CHECK( prefab == previous );
+    BOOST_CHECK_EQUAL( manifest, previousManifest );
+    BOOST_CHECK( PropertiesBinarySerializer::serialize( *prefab ) == previousPrefabBytes );
+    WorldManifest retained; BOOST_REQUIRE( SceneWorld::readManifest( manifest, retained, error ) );
+    BOOST_CHECK_EQUAL( retained.generation, before.generation );
+    for( const auto &cell : retained.cells )
+        BOOST_CHECK_MESSAGE( SceneWorld::readCell( manifest, cell, error ), error );
+    options.maxActorsPerCell = 32;
+    BOOST_REQUIRE_MESSAGE( build( *data, options, root, generation( root ), prefab, manifest, error ), error );
+    BOOST_CHECK( manifest != previousManifest );
 }
 
 BOOST_AUTO_TEST_CASE( transformed_root_is_kept_only_on_the_streaming_prefab_owner )

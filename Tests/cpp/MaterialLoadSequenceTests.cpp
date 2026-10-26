@@ -50,6 +50,7 @@
 #include "workphone_graphics_camera.h"
 #include "workphone_graphics_scenenode.h"
 #include "MaterialRenderCacheBenchmark.hpp"
+#include "MaterialCpuProfile.hpp"
 #include "MaterialPassStorageReference.hpp"
 #include "MaterialTextureColdStorageContracts.hpp"
 #include "ClawMaterialResidencyContracts.hpp"
@@ -3753,6 +3754,23 @@ int main( int argc, char **argv )
 {
     try
     {
+        if( argc > 1 && std::strcmp( argv[1], "--profile-material-cpu" ) == 0 )
+        {
+            require( argc == 6, "Usage: --profile-material-cpu materials parameters frames samples" );
+            std::array<unsigned long long,4> dimensions{};
+            for( size_t i = 0; i < dimensions.size(); ++i )
+            {
+                size_t parsed = 0;
+                dimensions[i] = std::stoull( argv[i+2], &parsed );
+                require( parsed == std::strlen( argv[i+2] ) &&
+                         dimensions[i] <= std::numeric_limits<u32>::max(),
+                         "CPU profile dimensions fit unsigned 32-bit integers" );
+            }
+            Fixture fixture;
+            material_cpu_profile::run( fixture, dimensions[0], static_cast<u32>( dimensions[1] ),
+                                       static_cast<u32>( dimensions[2] ), static_cast<u32>( dimensions[3] ) );
+            return 0;
+        }
         if( argc == 2 && std::strcmp( argv[1], "--heap-profile-self-test" ) == 0 )
         {
             material_heap_profile::runSelfTest();

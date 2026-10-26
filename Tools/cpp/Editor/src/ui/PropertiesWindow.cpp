@@ -198,6 +198,27 @@ namespace workphone::editor
         }
         updateCubemapPreview( object );
 
+        // Import jobs publish status on their retained director, not on this UI
+        // snapshot. Refresh only that field so completion is visible without
+        // reselection or replacing edits in the other property groups.
+        if( m_propertyGrid && !isDirty() )
+        {
+            auto displayed = m_propertyGrid->getProperties();
+            if( displayed && displayed->hasProperty( scene::ResourceDirector::importStatusStr ) )
+            {
+                auto director = dynamic_pointer_cast<scene::ResourceDirector>( propertyTarget( object ) );
+                if( director && displayed->getProperty( scene::ResourceDirector::resourcePathStr ) ==
+                                    director->getResourcePath() )
+                {
+                    const auto status = director->getImportStatus();
+                    if( displayed->getProperty( scene::ResourceDirector::importStatusStr ) != status )
+                    {
+                        displayed->setProperty( scene::ResourceDirector::importStatusStr, status, true );
+                    }
+                }
+            }
+        }
+
         if( isDirty() )
         {
             updateSelection();

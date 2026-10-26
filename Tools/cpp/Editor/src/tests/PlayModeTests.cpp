@@ -12,6 +12,7 @@
 #    include <atomic>
 #    include <filesystem>
 #    include <fstream>
+#    include <functional>
 #    include <memory>
 #    include <thread>
 
@@ -42,6 +43,18 @@ namespace
 
         void execute() override
         {
+            completed->store( true );
+        }
+    };
+
+    class PlayModeCameraActionJob : public Job
+    {
+    public:
+        std::function<void()> action;
+        std::shared_ptr<std::atomic_bool> completed;
+        void execute() override
+        {
+            action();
             completed->store( true );
         }
     };
@@ -324,7 +337,89 @@ namespace
         {
         }
     };
+
+    void checkUnchangedOrbitCameraRestore( PlayModeFixture &fixture )
+    {
+        auto controller = fixture.editorActor->getComponent<scene::SphericalCameraController>();
+        if( !controller ) controller = fixture.editorActor->addComponent<scene::SphericalCameraController>();
+        fixture.settle();
+        auto task = fixture.applicationManager->getTaskManager()->getTask( TaskId::Application );
+        BOOST_REQUIRE( task );
+        const auto onApplication = [&]( std::function<void()> action ) {
+            auto completed = std::make_shared<std::atomic_bool>( false );
+            auto job = make_ptr<PlayModeCameraActionJob>(); job->action = std::move( action );
+            job->completed = completed; task->addJob( job );
+            fixture.waitFor( [completed] { return completed->load(); }, "Camera setup task did not finish" );
+            fixture.settle();
+        };
+        const auto setPose = [&]( const Vector3<real_Num> &target, const Quaternion<real_Num> &orientation ) {
+            fixture.editorActor->setSmoothMotion( false );
+            controller->setTargetPosition( target );
+            // Polar zero gives exact integer coordinates after serialization,
+            // so restored actor/controller positions compare equal without input.
+            controller->setSphericalCoords( Vector3<real_Num>( 64, 0, 0 ) );
+            fixture.editorActor->setPosition( controller->getPosition() );
+            fixture.editorActor->setOrientation( orientation );
+        };
+        onApplication( [&] { setPose( Vector3<real_Num>( 41, 100, 73 ),
+            Quaternion<real_Num>::eulerDegrees( 15, 40, 5 ) ); } );
+        auto saved = dynamic_pointer_cast<Properties>( fixture.editorActor->toData() );
+        BOOST_REQUIRE( saved );
+        const auto savedPosition = fixture.editorActor->getPosition();
+        onApplication( [&] { setPose( Vector3<real_Num>( -23, 150, -91 ),
+            Quaternion<real_Num>::eulerDegrees( -10, -35, 0 ) ); } );
+        {
+            Matrix4<real_Num> movedView;
+            movedView.makeViewMatrix( fixture.editorActor->getPosition(), fixture.editorActor->getOrientation(), nullptr );
+            ScopedLock graphicsRead( fixture.applicationManager->getGraphicsSystem().get() );
+            auto camera = fixture.editorCamera->getCamera(); BOOST_REQUIRE( camera );
+            const auto nativeMovedView = camera->getViewMatrix();
+            for( size_t i = 0; i < 16; ++i )
+                BOOST_REQUIRE_SMALL( nativeMovedView.ptr()[i] - movedView.ptr()[i], real_Num( 0.001 ) );
+        }
+        {
+            // Serialize the restore against the worker's Application tick, but
+            // retain the same None task identity as a source/scene load job.
+            ScopedLock applicationTick( task.get() );
+            struct RestoreTask
+            {
+                TaskId previous = Thread::getCurrentTask();
+                ~RestoreTask() { Thread::setCurrentTask( previous ); }
+            } restoreTask;
+            Thread::setCurrentTask( TaskId::None );
+            scene::GameActorUtil::restoreEditorCameraData( fixture.editorActor, saved );
+            BOOST_CHECK( fixture.editorActor->getPosition() == savedPosition );
+            BOOST_CHECK( fixture.editorActor->getPosition() == controller->getPosition() );
+        }
+        fixture.settle();
+        // A barrier completes inside Task::update's job drain, before its owner
+        // update. Wait for that whole tick before reading the native camera.
+        ScopedLock completedTick( task.get() );
+        BOOST_CHECK( fixture.editorActor->getPosition() == savedPosition );
+        auto camera = fixture.editorCamera->getCamera();
+        auto viewport = fixture.editorCamera->getViewport();
+        BOOST_REQUIRE( camera ); BOOST_REQUIRE( viewport );
+        BOOST_CHECK( viewport->getCamera() == camera );
+        Matrix4<real_Num> expected;
+        expected.makeViewMatrix( fixture.editorActor->getPosition(), fixture.editorActor->getOrientation(), nullptr );
+        // ClawCamera reads wp_camera_get_view_matrix here, independently of the
+        // actor and C++ scene-node transform caches that can already look correct.
+        ScopedLock graphicsRead( fixture.applicationManager->getGraphicsSystem().get() );
+        const auto actual = camera->getViewMatrix();
+        for( size_t i = 0; i < 16; ++i )
+            BOOST_CHECK_SMALL( actual.ptr()[i] - expected.ptr()[i], real_Num( 0.001 ) );
+    }
 }  // namespace
+
+BOOST_FIXTURE_TEST_CASE( play_mode_restored_unchanged_orbit_publishes_native_camera, PlayModeFixture )
+{
+    checkUnchangedOrbitCameraRestore( *this );
+}
+
+BOOST_FIXTURE_TEST_CASE( play_mode_worker_restored_unchanged_orbit_publishes_native_camera, WorkerPlayModeFixture )
+{
+    checkUnchangedOrbitCameraRestore( *this );
+}
 
 BOOST_FIXTURE_TEST_CASE( play_mode, PlayModeFixture )
 {

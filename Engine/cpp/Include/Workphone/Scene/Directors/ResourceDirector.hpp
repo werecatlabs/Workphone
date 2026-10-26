@@ -2,6 +2,8 @@
 #define ResourceDirector_h__
 
 #include <Workphone/System/Director.hpp>
+#include <Workphone/Thread/SpinRWMutex.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -16,6 +18,7 @@ namespace workphone
             static const String resourceUUIDStr;
             static const String saveStr;
             static const String importStr;
+            static const String importStatusStr;
 
             /** Constructor. */
             ResourceDirector();
@@ -38,6 +41,16 @@ namespace workphone
             /** @copydoc IBuildDirector::import */
             void import() override;
 
+            /** Runtime-only import progress shown by the existing property grid. */
+            String getImportStatus() const;
+
+            /** Start a request and prevent an older queued import from replacing its status. */
+            u64 beginImport();
+            void setImportStatus( u64 request, const String &status );
+
+            /** Import progress is not part of the saved import options. */
+            SmartPtr<ISharedObject> toData() const override;
+
             /** Get the resource path. */
             String getResourcePath() const;
 
@@ -58,6 +71,10 @@ namespace workphone
 
             // The resource UUID.
             String m_resourceUUID;
+
+            mutable SpinRWMutex m_importStatusMutex;
+            SourceBudgetString m_importStatus;
+            u64 m_importRequest = 0;
         };
 
     }  // namespace scene

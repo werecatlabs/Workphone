@@ -20,6 +20,14 @@ before/after read-only execution, restricts the consumer process environment,
 records loaded modules, and checks rejection of Debug installs/consumers and
 static CRT consumers. Logs, JUnit and a JSON report stay beside each candidate.
 
+The Core/Claw consumer also exercises shared material layouts and default storage,
+typed handle validation, copy-on-write values, exact-kind schema migration,
+nested immutable publication, and generation-checked backend records retained
+across cache teardown. It checks warm record reuse and final material retirement
+without creating a graphics device. The validator hashes the Core/Claw and native
+implementation sources before building, rejects source drift before installation,
+and checks the same hashes again after the relocated consumers finish.
+
 The validator builds the installed authoring example with `CPP_SDK_BUILD_COOKER=ON`.
 It generates an original 4x4 TGA and material/texture descriptors in private scratch,
 assigns durable catalog UUIDs and Runtime shipping policies, and uses the existing

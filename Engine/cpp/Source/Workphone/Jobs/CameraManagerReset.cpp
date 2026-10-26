@@ -24,6 +24,11 @@ namespace workphone
         WP_ASSERT( applicationManager );
 
         auto cameraManager = applicationManager->getCameraManager();
+        // A restore request belongs to the manager that accepted the scene.
+        // Ordinary resets have no owner and keep their existing behavior.
+        if( auto owner = dynamic_cast<scene::ICameraManager *>( getOwner() );
+            owner && owner != cameraManager.get() )
+            return;
         if( cameraManager )
         {
             cameraManager->reset();

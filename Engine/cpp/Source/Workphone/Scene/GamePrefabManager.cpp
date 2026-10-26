@@ -496,10 +496,18 @@ namespace workphone::scene
 
     void GamePrefabManager::savePrefab( const String &filePath, SmartPtr<IGameActor> prefab )
     {
+        String error;
+        if( !savePrefabChecked( filePath, prefab, error ) ) WP_LOG_ERROR( error );
+    }
+
+    bool GamePrefabManager::savePrefabChecked( const String &filePath, SmartPtr<IGameActor> prefab,
+                                              String &error )
+    {
+        error.clear();
         try
         {
-            WP_ASSERT( !StringUtil::isNullOrEmpty( filePath ) );
-            WP_ASSERT( prefab );
+            if( StringUtil::isNullOrEmpty( filePath ) || !prefab )
+                throw std::runtime_error( "Prefab save requires a path and actor" );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
@@ -521,16 +529,17 @@ namespace workphone::scene
                     properties->setProperty( "meshImportStreaming", true );
             auto dataStr = DataUtil::toString( data.get(), true, fmt );
 
-            String error;
             if( !saveAssetDocumentText( filePath, dynamic_pointer_cast<Properties>( data ), dataStr,
                                         error ) )
             {
-                throw std::runtime_error( error.c_str() );
+                return false;
             }
+            return true;
         }
-        catch( std::exception &e )
+        catch( const std::exception &e )
         {
-            WP_LOG_EXCEPTION( e );
+            error = e.what();
+            return false;
         }
     }
 

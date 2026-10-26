@@ -1065,6 +1065,8 @@ if (WP_EDITOR_TESTS)
         play_mode_failed_load_does_not_enter
         play_mode_without_scene
         play_mode_scene_data_preserves_editor_camera
+        play_mode_restored_unchanged_orbit_publishes_native_camera
+        play_mode_worker_restored_unchanged_orbit_publishes_native_camera
         play_mode_legacy_editor_camera_migration
         play_mode_file_camera_migration
         play_mode_worker_transitions
@@ -1109,6 +1111,7 @@ if (WP_EDITOR_TESTS)
         editor_ui_control_unload_test
         editor_cubemap_face_preview_test
         editor_property_nested_mesh_import_settings_test
+        editor_property_import_status_refresh_test
         editor_property_deep_groups_and_multiselection_test
         editor_property_invalid_and_readonly_context_test
         editor_property_nested_buttons_and_resource_metadata_test

@@ -36,7 +36,7 @@ namespace workphone
             auto fileSystem = applicationManager->getFileSystem();
             WP_ASSERT( fileSystem );
 
-            auto data = workphone::static_pointer_cast<Properties>( getProperties() );
+            auto data = workphone::dynamic_pointer_cast<Properties>( toData() );
             WP_ASSERT( data );
 
             auto dataStr = DataUtil::toString( data.get(), true );
@@ -87,7 +87,7 @@ namespace workphone
             auto fileSystem = applicationManager->getFileSystem();
             WP_ASSERT( fileSystem );
 
-            auto data = workphone::static_pointer_cast<Properties>( getProperties() );
+            auto data = workphone::dynamic_pointer_cast<Properties>( toData() );
             if( data )
             {
                 auto dataStr = DataUtil::toString( data.get(), true );

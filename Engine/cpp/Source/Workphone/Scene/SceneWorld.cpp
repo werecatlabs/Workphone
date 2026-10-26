@@ -426,13 +426,22 @@ namespace workphone::scene
                 }
                 if( !count ) return;
                 if( count > options.maximumActorsPerCell )
-                    throw std::runtime_error( "An indivisible actor group exceeds the cell actor limit" );
+                    throw std::runtime_error( ( "World cell '" + id + "' contains " +
+                        StringUtil::toString( count ) + " actors, exceeding the cell actor limit of " +
+                        StringUtil::toString( options.maximumActorsPerCell ) + ". " +
+                        ( id == "persistent" ? "The persistent actor group cannot be split. " :
+                                               "An indivisible actor group cannot be split. " ) +
+                        "Increase the maximum actors per cell to at least " +
+                        StringUtil::toString( count ) + "." ).c_str() );
                 Array<String> actorIds, objectIds;
                 for( const auto &actor : actors )
                     collectIdentities( *actor, actorIds, objectIds, definitions );
                 auto bytes = PropertiesBinarySerializer::serialize( *payload );
                 if( bytes.size() > options.maximumCellBytes )
-                    throw std::runtime_error( "An indivisible actor group exceeds the cell byte limit" );
+                    throw std::runtime_error( ( "World cell '" + id + "' contains " +
+                        StringUtil::toString( u64( bytes.size() ) ) + " bytes, exceeding the cell byte limit of " +
+                        StringUtil::toString( options.maximumCellBytes ) +
+                        ". An indivisible actor group cannot be split; increase the maximum cell bytes." ).c_str() );
                 const auto file = id + "_" + StringUtil::getUUID() + ".wpcell";
                 write( output / file.c_str(), bytes );
                 auto entry = make_ptr<Properties>();

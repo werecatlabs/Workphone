@@ -123,6 +123,10 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
                     COMMAND ${graphics_target} --lifecycle-soak 32)
                 set_tests_properties(WPGraphics.claw_lifecycle_soak PROPERTIES
                     LABELS "graphics;headless;lifecycle" TIMEOUT 120)
+                add_test(NAME WPGraphics.material_retirement_soak
+                    COMMAND ${graphics_target} --material-retirement-soak 128)
+                set_tests_properties(WPGraphics.material_retirement_soak PROPERTIES
+                    LABELS "graphics;material;headless;lifecycle" TIMEOUT 120)
             endif()
         endif()
     endforeach()
@@ -305,7 +309,8 @@ if (WP_BUILD_TESTS)
                     ${WP_ROOT}/Engine/c/Include/WorkphoneCore
                     ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
                     ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
-                target_link_libraries(WPMaterialLoadSequenceTests PRIVATE WPGraphics Workphone WPSQLite)
+                target_link_libraries(WPMaterialLoadSequenceTests PRIVATE WPGraphics Workphone WPSQLite
+                    WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
                 target_link_directories(WPMaterialLoadSequenceTests PRIVATE
                     ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
                 set_target_properties(WPMaterialLoadSequenceTests PROPERTIES FOLDER Tests/Cpp)
@@ -319,6 +324,10 @@ if (WP_BUILD_TESTS)
                     COMMAND WPMaterialLoadSequenceTests --profile-full-memory 64 128)
                 set_tests_properties(WPGraphics.material_memory_profile_contract PROPERTIES
                     LABELS "graphics;material;memory;headless" TIMEOUT 60)
+                add_test(NAME WPGraphics.material_cpu_profile_contract
+                    COMMAND WPMaterialLoadSequenceTests --profile-material-cpu 16 8 1 1)
+                set_tests_properties(WPGraphics.material_cpu_profile_contract PROPERTIES
+                    LABELS "graphics;material;cpu;dx11" TIMEOUT 60)
                 add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
                 target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB)
                 target_include_directories(WPGraphicsCookedResourceTests PRIVATE

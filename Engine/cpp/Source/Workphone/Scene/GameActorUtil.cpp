@@ -4,6 +4,7 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/WorkphoneHeaders.hpp>
 #include <Workphone/System/TaskLock.hpp>
+#include <Workphone/Jobs/CameraManagerReset.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -769,6 +770,26 @@ namespace workphone::scene
                     }
                     break;
                 }
+            }
+        }
+
+        // A scene-load job can restore exactly the controller's current orbit
+        // while running outside the Application task. No later controller
+        // movement then republishes the render camera. Use the existing
+        // Application reset path once, after all restored properties are ready.
+        auto application = core::IApplicationManager::instancePtr();
+        auto cameraManager = application ? application->getCameraManager() : nullptr;
+        if( cameraManager && cameraManager->getEditorCamera() == editorCamera &&
+            editorCamera->getComponent<Camera>() )
+        {
+            auto tasks = application->getTaskManager();
+            auto task = tasks ? tasks->getTask( TaskId::Application ) : nullptr;
+            auto factory = application->getFactoryManager();
+            if( task && factory )
+            {
+                auto reset = factory->make_ptr<CameraManagerReset>();
+                reset->setOwner( cameraManager.get() );
+                task->addJob( reset );
             }
         }
     }

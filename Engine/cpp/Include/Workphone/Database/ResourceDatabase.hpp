@@ -12,6 +12,7 @@
 
 namespace workphone
 {
+    namespace scene { class ResourceDirector; }
 
     /**
      * @class ResourceDatabase
@@ -80,6 +81,8 @@ namespace workphone
              */
             void setOverwrite( bool overwrite );
 
+            void setStatusReceiver( SmartPtr<scene::ResourceDirector> receiver, u64 request );
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
@@ -89,6 +92,12 @@ namespace workphone
             /** If true, the import will overwrite any existing resources at the
              * same path/identifier. */
             bool m_overwrite = false;
+
+            SmartPtr<scene::ResourceDirector> m_statusReceiver;
+            u64 m_statusRequest = 0;
+            bool m_statusComplete = false;
+
+            void completeStatus( const String &status, const String &fallback = "Import failed" );
         };
 
         static const String defaultDatabaseFileName;
@@ -185,6 +194,10 @@ namespace workphone
          * true an existing resource at the same path will be replaced.
          */
         void importFile( const String &filePath, bool overwrite = false ) override;
+
+        /** Retain the requesting director until asynchronous import completion. */
+        void importFile( const String &filePath, bool overwrite,
+                         SmartPtr<scene::ResourceDirector> receiver, u64 request );
 
         /** @copydoc IResourceDatabase::importCache */
         void importCache() override;

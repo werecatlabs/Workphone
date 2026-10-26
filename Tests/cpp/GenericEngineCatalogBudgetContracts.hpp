@@ -171,16 +171,20 @@ namespace generic_engine_catalog_budget_contracts
         void publish(const Array<SmartPtr<ISharedObject>> &objects) { replaceObjectInventory(objects); }
         SmartPtr<ISharedObject> lookup(const workphone::UUID &id) const
         { SmartPtr<ISharedObject> value; m_objects.tryGet(id, value); return value; }
-        void cache(const String &path, SmartPtr<IResource> resource)
-        { m_resourceMap[1][SourceBudgetString(path)] = resource; }
-        SmartPtr<IResource> cached(const String &path)
+        void cache(const String &path, const String &uuid)
         {
-            auto outer = m_resourceMap.find(1);
-            if (outer == m_resourceMap.end()) return nullptr;
-            auto inner = outer->second.findAs(path);
-            return inner == outer->second.end() ? nullptr : inner->second.lock();
+            ResourceIdentity identity;
+            identity.type = 1;
+            identity.uuid = uuid;
+            m_resourceIdentities.insert(SourceBudgetString(path), std::move(identity));
         }
-        void clearCache() { m_resourceMap = decltype(m_resourceMap){}; }
+        bool cached(const String &path, const String &uuid) const
+        {
+            auto identities = m_resourceIdentities.readLocked();
+            const auto entry = identities.get().findAs(path);
+            return entry != identities.end() && entry->second.type == 1 && entry->second.uuid == uuid;
+        }
+        void clearCache() { m_resourceIdentities = decltype(m_resourceIdentities){}; }
     };
 
     inline void registries()
@@ -192,6 +196,8 @@ namespace generic_engine_catalog_budget_contracts
         second->getHandle()->setUUID(StringUtil::getUUID());
         const auto firstId = first->getHandle()->getUUID();
         const auto secondId = second->getHandle()->getUUID();
+        const auto firstUuid = first->getHandle()->getUUIDAsString();
+        const auto secondUuid = second->getHandle()->getUUIDAsString();
         const String path("city/catalog/long/path/that/owns/its/retained/metadata/first.texture");
         const String otherPath("city/catalog/long/path/that/owns/its/retained/metadata/second.texture");
         const Array<SmartPtr<ISharedObject>> oldObjects{first};
@@ -211,20 +217,23 @@ namespace generic_engine_catalog_budget_contracts
                 "registry retry atomically replaces object identities");
         registry.publish({});
         require(budget.used() == baseline, "empty registry publication releases retained map blocks");
-        registry.cache(path, first);
+        const auto firstReferences = first->getReferences(), secondReferences = second->getReferences();
+        registry.cache(path, firstUuid);
         const auto cached = budget.used();
         const auto rejected = budget.scheduler->stats().rejectedReservations;
         budget.set(cached);
-        require(registry.cached(path) == first && budget.used() == cached &&
+        require(registry.cached(path, firstUuid) && budget.used() == cached &&
                     budget.scheduler->stats().rejectedReservations == rejected,
                 "cached path lookup requires no new key allocation at capacity");
         denied = false;
-        try { registry.cache(otherPath, second); } catch (const std::bad_alloc &) { denied = true; }
-        require(denied && registry.cached(path) == first && !registry.cached(otherPath) &&
-                    budget.used() == cached, "denied path growth preserves old weak resource cache");
+        try { registry.cache(otherPath, secondUuid); } catch (const std::bad_alloc &) { denied = true; }
+        require(denied && registry.cached(path, firstUuid) && !registry.cached(otherPath, secondUuid) &&
+                    budget.used() == cached, "denied path growth preserves old routing identity cache");
         budget.restore();
-        registry.cache(otherPath, second);
-        require(registry.cached(otherPath) == second, "resource cache retries after capacity restoration");
+        registry.cache(otherPath, secondUuid);
+        require(registry.cached(otherPath, secondUuid) && first->getReferences() == firstReferences &&
+                    second->getReferences() == secondReferences,
+                "resource routing cache retries after capacity restoration without retaining resource bodies");
         registry.clearCache();
         require(budget.used() == baseline, "cache teardown releases keys, nodes and map inventories");
         const Array<SmartPtr<IResource>> instances{first, second};

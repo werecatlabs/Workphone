@@ -6,6 +6,7 @@
 #include "ClawAnimationContracts.hpp"
 #include "ClawMeshBudgetContracts.hpp"
 #include "ClawMaterialReloadContracts.hpp"
+#include "ClawMaterialRetirementContracts.hpp"
 #include "ClawShaderFileWatchContracts.hpp"
 #include "ClawShaderSchemaContracts.hpp"
 #include "ClawShaderDeviceContracts.hpp"
@@ -1363,13 +1364,21 @@ int main( int argc, char **argv )
     {
         char *end = nullptr;
         const auto iterations = argc == 3 ? std::strtol( argv[2], &end, 10 ) : 0;
-        if( argc != 3 || std::strcmp( argv[1], "--lifecycle-soak" ) ||
+        const bool materialRetirement = argc == 3 && !std::strcmp(argv[1], "--material-retirement-soak");
+        if( argc != 3 || (!materialRetirement && std::strcmp( argv[1], "--lifecycle-soak" )) ||
             !end || *end || iterations < 1 || iterations > 10000 )
         {
-            std::fprintf( stderr, "Usage: --lifecycle-soak iterations[1..10000]\n" );
+            std::fprintf( stderr, "Usage: --lifecycle-soak iterations[1..10000] | --material-retirement-soak iterations[1..10000]\n" );
             core::IApplicationManager::setInstance(nullptr); application=nullptr;
             TypeManager::setInstance(nullptr); types.unload();
             return 2;
+        }
+        if(materialRetirement)
+        {
+            const bool ok = claw_material_retirement_contracts::run(static_cast<u32>(iterations));
+            core::IApplicationManager::setInstance(nullptr); application=nullptr;
+            TypeManager::setInstance(nullptr); types.unload();
+            return ok ? 0 : 1;
         }
         bool ok = true;
         for( long iteration = 0; iteration < iterations && ok; ++iteration )

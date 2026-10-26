@@ -7,6 +7,7 @@
 #include <WPAssimp/LogStream.hpp>
 #include <WPAssimp/IOSystem.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 #if WP_USE_FBXSDK
 #    include <FBMesh/FBX/FBXConverter.h>
@@ -2644,6 +2645,8 @@ namespace workphone
     void AssimpLoader::createMaterial( SmartPtr<scene::Material> omat, s32 index, const aiMaterial *mat,
                                        const String &folderPath )
     {
+        bool preservingMaterial = false;
+        u64 preservedDenials = 0;
         try
         {
             if( !mat )
@@ -2700,6 +2703,18 @@ namespace workphone
             }
 
             auto materialPath = getMaterialPath( mat, index, folderPath );
+            String absoluteMaterialPath;
+            bool shouldWriteMaterial = false;
+            if( m_materialImportOptions.createMaterialFiles )
+            {
+                absoluteMaterialPath = Path::isPathAbsolute( materialPath )
+                                           ? materialPath
+                                           : Path::getAbsolutePath( projectFolder, materialPath );
+                shouldWriteMaterial = m_materialImportOptions.overwriteMaterialFiles ||
+                                      !fileSystem->isExistingFile( absoluteMaterialPath );
+                preservingMaterial = !shouldWriteMaterial;
+                preservedDenials = sourceBudgetDenialCount();
+            }
 
             if( omat )
             {
@@ -2709,6 +2724,11 @@ namespace workphone
             auto material = createOrRetrieveMaterial( mat, index, folderPath );
             if( !material )
             {
+                if( preservingMaterial )
+                {
+                    if( sourceBudgetDenialCount() != preservedDenials ) throw std::bad_alloc();
+                    throw std::runtime_error( ( "Failed to load preserved material from " + materialPath ).c_str() );
+                }
                 WP_LOG( "Failed to create material from " + materialPath );
                 return;
             }
@@ -2720,24 +2740,48 @@ namespace workphone
             }
             if( m_materialImportOptions.createMaterialFiles )
             {
-                auto absoluteMaterialPath = Path::isPathAbsolute( materialPath )
-                                                ? materialPath
-                                                : Path::getAbsolutePath( projectFolder, materialPath );
-                auto shouldWriteMaterial = m_materialImportOptions.overwriteMaterialFiles ||
-                                           !fileSystem->isExistingFile( absoluteMaterialPath );
                 if( shouldWriteMaterial )
                 {
                     applyAssimpMaterialProperties( material, pass, mat, index, folderPath );
                     materialManager->saveToFile( materialPath, material );
-                    if( fileSystem->isExistingFile( absoluteMaterialPath ) )
+                }
+                else if( !material->isLoaded() )
+                {
+                    // Reuse the authored document on the catalog-aware resource body.
+                    // Loading through the material manager would invent a new UUID.
+                    const auto denials = sourceBudgetDenialCount();
+                    try
                     {
-                        material->setFilePath( absoluteMaterialPath );
-                        applicationManager->getResourceDatabase()->addResource( material );
+                        material->loadFromFile( absoluteMaterialPath );
+                        // Legacy void deserializers may swallow allocation denial.
+                        // A partial authored graph must never become an import result.
+                        if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
                     }
+                    catch( ... )
+                    {
+                        // The cold body can already own passes while marked unloaded.
+                        // Retire them through the normal lifecycle and retain its UUID
+                        // so a later import can retry the same authored document.
+                        material->setLoadingState( LoadingState::Loading );
+                        material->unload( nullptr );
+                        throw;
+                    }
+                }
+
+                // An existing document still needs catalog admission when importing
+                // into a fresh project cache. Admission must not depend on rewriting it.
+                if( fileSystem->isExistingFile( absoluteMaterialPath ) )
+                {
+                    material->setFilePath( absoluteMaterialPath );
+                    applicationManager->getResourceDatabase()->addResource( material );
+                    if( preservingMaterial && sourceBudgetDenialCount() != preservedDenials )
+                        throw std::bad_alloc();
                 }
             }
 
             m_importedMaterialsByPath[materialPath] = material;
+            if( preservingMaterial && sourceBudgetDenialCount() != preservedDenials )
+                throw std::bad_alloc();
 
             if( omat )
             {
@@ -2747,6 +2791,7 @@ namespace workphone
         }
         catch( std::exception &e )
         {
+            if( preservingMaterial ) throw;
             WP_LOG_EXCEPTION( e );
         }
     }

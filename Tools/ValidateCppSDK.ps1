@@ -7,9 +7,9 @@ $build = if ([IO.Path]::IsPathRooted($BuildDirectory)) { [IO.Path]::GetFullPath(
 $run = Join-Path $repo ('project_graphics_sdk/cpp-sdk-validation-' + [guid]::NewGuid().ToString('N'))
 $external = Join-Path ([IO.Path]::GetTempPath()) ('Workphone Cpp SDK é ' + [guid]::NewGuid().ToString('N'))
 $stage = Join-Path $run 'WorkphoneCppSDK'
-$report = [ordered]@{schemaVersion=2;validationPassed=$false;releaseCertified=$false
-    scope='Windows x64 C++17 installed Core/Claw consumer and catalog-cooked material/texture runtime closure; release DLL CRT'
-    buildSkipped=[bool]$SkipBuild;incrementalBuild=$true;externalDirectory=$external}
+$report = [ordered]@{schemaVersion=3;validationPassed=$false;releaseCertified=$false
+    scope='Windows x64 C++17 installed Core/Claw typed material/schema/publication/record consumer and catalog-cooked material/texture runtime closure; release DLL CRT'
+    buildSkipped=[bool]$SkipBuild;incrementalBuild=(-not [bool]$SkipBuild);externalDirectory=$external}
 $report['windowsLongPathsEnabled']=Get-ItemPropertyValue 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $run,$external | Out-Null
 function Invoke-Checked([string]$Label, [string[]]$Arguments) {
@@ -24,6 +24,13 @@ function Get-Payload([string]$Root) {
         [ordered]@{path=[IO.Path]::GetRelativePath($Root,$_.FullName).Replace('\','/');
             bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
     })
+}
+function Assert-InputHashes([object[]]$Inputs) {
+    foreach ($inputEntry in $Inputs) {
+        if ((Get-FileHash -LiteralPath $inputEntry.path).Hash -ne $inputEntry.sha256) {
+            throw "Input changed: $($inputEntry.path)"
+        }
+    }
 }
 function Invoke-IsolatedTool([string]$Label, [string]$Executable, [string[]]$Arguments, [string]$BinDirectory) {
     $start = [Diagnostics.ProcessStartInfo]::new($Executable)
@@ -52,7 +59,9 @@ function Invoke-IsolatedTool([string]$Label, [string]$Executable, [string[]]$Arg
 try {
     $inputFiles = @(Get-ChildItem (Join-Path $repo 'Engine/cpp/Include/Workphone'),
         (Join-Path $repo 'Engine/cpp/Include/WPGraphics'), (Join-Path $repo 'Engine/cpp/Include/WPSQLite'),
-        (Join-Path $repo 'Engine/cpp/Source/WPGraphics/Resources'),
+        (Join-Path $repo 'Engine/cpp/Source/Workphone'),
+        (Join-Path $repo 'Engine/cpp/Source/WPGraphics'),
+        (Join-Path $repo 'Engine/c/Include'), (Join-Path $repo 'Engine/c/Source'),
         (Join-Path $repo 'Engine/cpp/Source/WPSQLite'), (Join-Path $repo 'Tests/CppSDKConsumer') -Recurse -File)
     $inputFiles += @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWorkphoneCppSDK.cmake','CMake/WorkphoneCppSDKConfig.cmake.in',
         'CMake/InstallWorkphoneEditor.cmake','CMake/InstallWorkphoneEditorNotices.cmake','Tools/ValidateCppSDK.ps1','Tools/ValidateCookedCppContent.ps1',
@@ -72,6 +81,9 @@ try {
         Invoke-Checked 'configure' @('-S',$repo,'-B',$build,'-DWP_INSTALL_EDITOR_PACKAGE=ON')
         Invoke-Checked 'build' @('--build',$build,'--config','RelWithDebInfo','--target','WorkphoneEditorPackageBinaries','--parallel','8')
     }
+    # Reject a concurrent source edit before spending time packaging a binary
+    # whose inputs no longer match this run. Check again after all consumers.
+    Assert-InputHashes $report.inputs
     Invoke-Checked 'install-runtime' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneEditor','--prefix',$stage)
     Invoke-Checked 'install-sdk' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneCppSDK','--prefix',$stage)
     $report['dependencyNotices']=@($noticeEntries | ForEach-Object {
@@ -160,6 +172,9 @@ try {
         $out | Set-Content (Join-Path $run "consumer-$config.stdout.log")
         $err | Set-Content (Join-Path $run "consumer-$config.stderr.log")
         if ($process.ExitCode -ne 0 -or $out -notlike '*Installed C++ SDK:*passed*') { throw "Consumer failed: $config ($($process.ExitCode))" }
+        if ($out -notlike '*material layouts/typed handles/schema migration, immutable publication, backend record generations*') {
+            throw "Installed material API contract evidence missing: $config"
+        }
         $modules = @($out -split '\r?\n' | Where-Object { $_.StartsWith('module=') } | ForEach-Object { $_.Substring(7).Trim() })
         foreach ($module in $modules) {
             if ($module -ieq $exe) { continue }
@@ -171,7 +186,8 @@ try {
         foreach ($required in @('Workphone.dll','WPGraphics.dll')) {
             if (-not ($modules | Where-Object { [IO.Path]::GetFileName($_) -ieq $required })) { throw "Required DLL not observed: $required" }
         }
-        $results.Add([ordered]@{configuration=$config;exitCode=$process.ExitCode;executableSha256=(Get-FileHash $exe).Hash;loadedModules=$modules})
+        $results.Add([ordered]@{configuration=$config;exitCode=$process.ExitCode;executableSha256=(Get-FileHash $exe).Hash;
+            materialContractsPassed=$true;loadedModules=$modules})
         & ctest --test-dir $consumerBuild -C $config --output-on-failure --output-junit (Join-Path $run "consumer-$config.xml") *> (Join-Path $run "consumer-$config.log")
         if ($LASTEXITCODE -ne 0) { throw "Consumer CTest failed: $config" }
         $cookedResult = & (Join-Path $PSScriptRoot 'ValidateCookedCppContent.ps1') -Executable (Join-Path $consumerBuild "$config/cpp-sdk-cooked-consumer.exe") `
@@ -180,9 +196,7 @@ try {
     }
     $report['consumerResults']=$results.ToArray()
     $report['cookedConsumerResults']=$cookedResults.ToArray()
-    foreach ($inputEntry in $report.inputs) {
-        if ((Get-FileHash -LiteralPath $inputEntry.path).Hash -ne $inputEntry.sha256) { throw "Input changed: $($inputEntry.path)" }
-    }
+    Assert-InputHashes $report.inputs
     $after = Get-Payload $extracted
     if (($payload | ConvertTo-Json -Depth 4 -Compress) -ne ($after | ConvertTo-Json -Depth 4 -Compress)) { throw 'SDK payload changed during validation' }
     $report['readOnlyPayloadUnchanged']=$true

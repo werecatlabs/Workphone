@@ -785,6 +785,14 @@ if(WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
     target_link_libraries(UnitTests WPGraphics WorkphoneGraphics WorkphonePlatformWin32 WorkphoneCore)
 endif()
 
+# MeshTest directly exercises AssimpLoader's material admission boundary. Use
+# the configured importer dependency paths for both targets sharing that source.
+if(WP_USE_ASSET_IMPORT AND TARGET WPAssimp)
+    target_include_directories(UnitTests PRIVATE "$<TARGET_PROPERTY:WPAssimp,INCLUDE_DIRECTORIES>")
+    # WPAssimp contains both the loader and its bundled native aiMaterial API.
+    target_link_libraries(UnitTests WPAssimp)
+endif()
+
 # Rebuild all fixture objects against the current core interfaces; reusing old
 # UnitTests objects can silently mismatch subclass layouts across DLL changes.
 add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
@@ -813,3 +821,8 @@ add_test(NAME Workphone.mesh_import_streaming COMMAND WPActorSceneTests
     --run_test=MeshImportStreamingTests,MeshImportStreamingIntegrationTests,SceneWorldIdentityTests,SceneWorldStreamingPrefabTests,ResourceDatabaseLifetimeTests)
 set_tests_properties(Workphone.mesh_import_streaming PROPERTIES TIMEOUT 120
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;streaming;import;headless")
+
+add_test(NAME Workphone.mesh_material_import COMMAND WPActorSceneTests
+    --run_test=mesh_material_import_*)
+set_tests_properties(Workphone.mesh_material_import PROPERTIES TIMEOUT 120
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "asset;material;import;headless")

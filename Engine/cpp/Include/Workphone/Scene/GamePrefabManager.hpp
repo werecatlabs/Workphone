@@ -82,6 +82,9 @@ namespace workphone
              */
             void savePrefab( const String &filePath, SmartPtr<IGameActor> prefab ) override;
 
+            /** Report checked publication while preserving ordinary prefab preparation. */
+            bool savePrefabChecked( const String &filePath, SmartPtr<IGameActor> prefab, String &error );
+
             /**
              * @copydoc IResourceManager::create
              * @brief Creates a new resource with the specified UUID.

@@ -188,6 +188,14 @@ namespace workphone::ui
             ImGui::TableSetupColumn( "Property", ImGuiTableColumnFlags_WidthStretch, 0.45f );
             ImGui::TableSetupColumn( "Value", ImGuiTableColumnFlags_WidthStretch, 0.55f );
 
+            const auto showTooltip = []( const String &text ) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos( ImGui::GetFontSize() * 32.0f );
+                ImGui::TextUnformatted( text.c_str() );
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            };
+
             for( auto &property : properties->getPropertiesAsArray() )
             {
                 if( !matchesFilter( property ) )
@@ -217,18 +225,21 @@ namespace workphone::ui
                 ImGui::TextUnformatted( label.c_str() );
 
                 auto description = property.getAttribute( "description" );
-                if( !StringUtil::isNullOrEmpty( description ) && ImGui::IsItemHovered() )
+                const auto valueTooltip = property.getAttribute( "valueTooltip" ) == "true";
+                const auto &tooltip = valueTooltip ? value : description;
+                if( !StringUtil::isNullOrEmpty( tooltip ) && ImGui::IsItemHovered() )
                 {
-                    ImGui::BeginTooltip();
-                    ImGui::PushTextWrapPos( ImGui::GetFontSize() * 32.0f );
-                    ImGui::TextUnformatted( description.c_str() );
-                    ImGui::PopTextWrapPos();
-                    ImGui::EndTooltip();
+                    showTooltip( tooltip );
                 }
 
                 ImGui::TableSetColumnIndex( 1 );
                 ImGui::SetNextItemWidth( -FLT_MIN );
                 createProperty( properties, property, this );
+                if( valueTooltip && !StringUtil::isNullOrEmpty( value ) &&
+                    ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+                {
+                    showTooltip( value );
+                }
 
                 if( auto dropTarget = getDropTarget() )
                 {

@@ -20,6 +20,7 @@
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Scene/GamePrefabManager.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Scene/Components/WorldStreaming.hpp>
 #include <Workphone/Scene/Directors/MeshResourceDirector.hpp>
 #include <Workphone/Scene/SceneWorld.hpp>
@@ -29,6 +30,9 @@
 #include <iterator>
 #include <array>
 #include <set>
+#if defined( _WIN32 )
+#include <windows.h>
+#endif
 
 namespace mesh_import_streaming_integration_tests
 {
@@ -76,6 +80,39 @@ namespace mesh_import_streaming_integration_tests
         BOOST_CHECK_EQUAL( meshes, 0u );
         return component;
     }
+
+    // Preserve the real source parser/converter and only add an indivisible
+    // persistent hierarchy, matching a city's non-render authoring content.
+    class PersistentGroupLoader : public IMeshLoader
+    {
+    public:
+        SmartPtr<IMeshLoader> source;
+        SmartPtr<IGameManager> manager;
+        std::function<void()> duringLoad;
+        SmartPtr<IGameActor> loadActor( const String &path ) override
+        {
+            if( duringLoad ) duringLoad();
+            auto actor = source->loadActor( path );
+            if( !actor ) return nullptr;
+            actor->addComponent<Component>();
+            const auto count = [&]( const auto &self, const SmartPtr<IGameActor> &node ) -> u32 {
+                u32 result = 1;
+                for( const auto &child : node->getChildren() ) result += self( self, child );
+                return result;
+            };
+            for( auto actors = count( count, actor ); actors < 32; ++actors )
+                actor->addChild( manager->createActor() );
+            return actor;
+        }
+        SmartPtr<IGameActor> loadActor( SmartPtr<IMeshResource> resource ) override { return source->loadActor( resource ); }
+        SmartPtr<IMesh> loadMesh( const String &path ) override { return source->loadMesh( path ); }
+        SmartPtr<IMesh> loadMesh( SmartPtr<IMeshResource> resource ) override { return source->loadMesh( resource ); }
+        Array<render::IMaterial> createMaterials( const String &path ) override { return source->createMaterials( path ); }
+        bool getUseSingleMesh() const override { return source->getUseSingleMesh(); }
+        void setUseSingleMesh( bool value ) override { source->setUseSingleMesh( value ); }
+        bool getOverwrite() const override { return source->getOverwrite(); }
+        void setOverwrite( bool value ) override { source->setOverwrite( value ); }
+    };
 
     struct Fixture
     {
@@ -191,7 +228,10 @@ namespace mesh_import_streaming_integration_tests
             FileInfo sourceInfo;
             BOOST_REQUIRE_MESSAGE( guard.fileSystem->findFileInfo( source, sourceInfo ),
                                    "Source OBJ must be indexed before ResourceDatabase import" );
-            database->importFile( source, true );
+            director = dynamic_pointer_cast<MeshResourceDirector>( database->loadDirectorFromResourcePath(
+                source, MeshResourceDirector::typeInfo() ) );
+            BOOST_REQUIRE( director );
+            director->import();
             BOOST_REQUIRE_MESSAGE( std::filesystem::is_regular_file( ApplicationUtil::getPrefabPath( source ).c_str() ),
                                    "Actual ResourceDatabase import did not publish its generated prefab" );
             guard.fileSystem->refreshPath( root, false );
@@ -220,6 +260,7 @@ namespace mesh_import_streaming_integration_tests
         SmartPtr<IMeshLoader> loader;
         SmartPtr<MeshManager> meshes;
         SmartPtr<GamePrefabManager> prefabs;
+        SmartPtr<MeshResourceDirector> director;
     };
 }
 
@@ -245,6 +286,16 @@ BOOST_AUTO_TEST_CASE( saved_opt_in_import_cooks_geometry_and_both_load_paths_use
 {
     using namespace mesh_import_streaming_integration_tests;
     Fixture fixture; fixture.saveDirector( true ); fixture.import();
+    const auto status = fixture.director->getImportStatus();
+    BOOST_CHECK_MESSAGE( status.find( "future prefab instances" ) != String::npos, status );
+    BOOST_CHECK_MESSAGE( status.find( "Existing placed WorldStreaming instances" ) != String::npos, status );
+    BOOST_CHECK( fixture.database->loadDirectorFromResourcePath(
+        fixture.source, MeshResourceDirector::typeInfo() ) == fixture.director );
+    fixture.database->refresh();
+    auto reselectedAfterRefresh = dynamic_pointer_cast<MeshResourceDirector>( fixture.database->loadDirectorFromResourcePath(
+        fixture.source, MeshResourceDirector::typeInfo() ) );
+    BOOST_CHECK( reselectedAfterRefresh == fixture.director );
+    BOOST_CHECK_EQUAL( reselectedAfterRefresh->getImportStatus(), status );
     auto cached = fixture.cached(); const auto component = requireWrapper( cached );
     float load = 0, retain = 0; component->getPropertyValue( "Load Radius", load );
     component->getPropertyValue( "Retain Radius", retain ); BOOST_CHECK_EQUAL( load, 96 ); BOOST_CHECK_EQUAL( retain, 128 );
@@ -284,6 +335,14 @@ BOOST_AUTO_TEST_CASE( failed_source_reimport_preserves_the_published_streaming_g
     const auto prefabBefore = readBytes( prefabPath ), manifestBefore = readBytes( manifestPath );
     WorldManifest before; String error; BOOST_REQUIRE( SceneWorld::readManifest( manifestPath, before, error ) );
     writeText( fixture.source, "this is not a mesh\n" ); fixture.import();
+    const auto status = fixture.director->getImportStatus();
+    BOOST_CHECK_MESSAGE( status.find( "Import failed" ) != String::npos, status );
+    BOOST_CHECK_MESSAGE( status.find( fixture.source ) != String::npos, status );
+    BOOST_CHECK_MESSAGE( status.find( "previously published prefab is retained" ) != String::npos, status );
+    auto reselected = dynamic_pointer_cast<MeshResourceDirector>( fixture.database->loadDirectorFromResourcePath(
+        fixture.source, MeshResourceDirector::typeInfo() ) );
+    BOOST_REQUIRE( reselected ); BOOST_CHECK( reselected == fixture.director );
+    BOOST_CHECK_EQUAL( reselected->getImportStatus(), status );
     BOOST_CHECK_EQUAL( readBytes( prefabPath ), prefabBefore );
     BOOST_CHECK_EQUAL( readBytes( manifestPath ), manifestBefore );
     const auto retained = requireWrapper( fixture.prefabs->loadPrefab( fixture.source ) );
@@ -291,6 +350,98 @@ BOOST_AUTO_TEST_CASE( failed_source_reimport_preserves_the_published_streaming_g
     WorldManifest after; BOOST_REQUIRE_MESSAGE( SceneWorld::readManifest( manifestPath, after, error ), error );
     BOOST_CHECK_EQUAL( after.generation, before.generation );
     for( const auto &cell : after.cells ) BOOST_CHECK_MESSAGE( SceneWorld::readCell( manifestPath, cell, error ), error );
+}
+
+BOOST_AUTO_TEST_CASE( cancelled_and_unloaded_imports_do_not_leave_the_director_in_progress )
+{
+    using namespace mesh_import_streaming_integration_tests;
+    TestGuard guard;
+    auto director = make_ptr<MeshResourceDirector>();
+    auto request = director->beginImport();
+    {
+        auto job = make_ptr<ResourceDatabase::ImportFileJob>();
+        job->setStatusReceiver( director, request );
+    }
+    BOOST_CHECK_MESSAGE( director->getImportStatus().find( "cancelled" ) != String::npos,
+                         director->getImportStatus() );
+    request = director->beginImport();
+    auto database = make_ptr<ResourceDatabase>();
+    database->importFile( "not-started.obj", true, director, request );
+    BOOST_CHECK_MESSAGE( director->getImportStatus().find( "cancelled" ) != String::npos,
+                         director->getImportStatus() );
+}
+
+BOOST_AUTO_TEST_CASE( nonstreaming_publication_failure_reports_error_and_retains_previous_prefab )
+{
+    using namespace mesh_import_streaming_integration_tests;
+    Fixture fixture; fixture.saveDirector( false ); fixture.import();
+    const auto path = ApplicationUtil::getPrefabPath( fixture.source );
+    const auto before = readBytes( path );
+    String error = "stale diagnostic";
+    BOOST_CHECK( !fixture.prefabs->savePrefabChecked( path, nullptr, error ) );
+    BOOST_CHECK_MESSAGE( error.find( "requires a path and actor" ) != String::npos, error );
+    BOOST_CHECK_EQUAL( readBytes( path ), before );
+#if defined( _WIN32 )
+    // Deny atomic replacement without changing the previously published file.
+    const auto locked = CreateFileW( std::filesystem::u8path( path.c_str() ).c_str(), GENERIC_READ,
+        FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr );
+    BOOST_REQUIRE( locked != INVALID_HANDLE_VALUE );
+    struct CloseLockedPrefab { HANDLE value; ~CloseLockedPrefab() { CloseHandle( value ); } } close{ locked };
+    fixture.director->import();
+    const auto status = fixture.director->getImportStatus();
+    BOOST_CHECK_MESSAGE( status.find( "Import failed" ) != String::npos, status );
+    BOOST_CHECK_MESSAGE( status.find( "Prefab publication failed" ) != String::npos, status );
+    BOOST_CHECK_MESSAGE( status.find( "previously published prefab is retained" ) != String::npos, status );
+    BOOST_CHECK_EQUAL( readBytes( path ), before );
+#endif
+}
+
+BOOST_AUTO_TEST_CASE( failed_persistent_group_reimport_reports_the_limit_and_retains_the_previous_prefab )
+{
+    using namespace mesh_import_streaming_integration_tests;
+    Fixture fixture; fixture.saveDirector( true ); fixture.import();
+    const auto heldPrefab = fixture.cached();
+    const auto oldComponent = requireWrapper( heldPrefab );
+    const auto oldManifestPath = fixture.manifestPath( oldComponent );
+    const auto prefabPath = ApplicationUtil::getPrefabPath( fixture.source );
+    const auto prefabBefore = readBytes( prefabPath ), manifestBefore = readBytes( oldManifestPath );
+    auto persistent = make_ptr<PersistentGroupLoader>();
+    persistent->source = fixture.loader; persistent->manager = fixture.guard.sceneManager;
+    unsigned refreshedDuringImport = 0;
+    persistent->duringLoad = [&] {
+        const auto progress = fixture.director->getImportStatus();
+        BOOST_CHECK_MESSAGE( progress.find( "Importing '" ) != String::npos, progress );
+        fixture.database->refresh();
+        const auto current = fixture.database->loadDirectorFromResourcePath(
+            fixture.source, MeshResourceDirector::typeInfo() );
+        BOOST_CHECK( current == fixture.director );
+        ++refreshedDuringImport;
+    };
+    fixture.guard.applicationManager->setMeshLoader( persistent );
+    auto options = fixture.director->getStreamingOptions(); options.maxActorsPerCell = 20;
+    fixture.director->setStreamingOptions( options ); fixture.director->save();
+    fixture.director->import();
+    auto status = fixture.director->getImportStatus();
+    for( const auto &part : { "persistent", "32 actors", "limit of 20", "at least 32", "prefab is retained" } )
+        BOOST_CHECK_MESSAGE( status.find( part ) != String::npos, status );
+    BOOST_CHECK_EQUAL( readBytes( prefabPath ), prefabBefore );
+    BOOST_CHECK_EQUAL( readBytes( oldManifestPath ), manifestBefore );
+    options.maxActorsPerCell = 32;
+    fixture.director->setStreamingOptions( options ); fixture.director->save();
+    fixture.director->import();
+    status = fixture.director->getImportStatus();
+    BOOST_CHECK_MESSAGE( status.find( "Streaming import completed" ) != String::npos, status );
+    const auto newComponent = requireWrapper( fixture.cached() );
+    const auto newManifestPath = fixture.manifestPath( newComponent );
+    BOOST_CHECK( newManifestPath != oldManifestPath );
+    WorldManifest world; String error;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::readManifest( newManifestPath, world, error ), error );
+    BOOST_REQUIRE_EQUAL( world.cells.size(), 1u );
+    BOOST_CHECK_EQUAL( world.cells.front().id, "persistent" );
+    BOOST_CHECK_EQUAL( world.cells.front().actors, 32u );
+    BOOST_CHECK_EQUAL( readBytes( oldManifestPath ), manifestBefore );
+    BOOST_CHECK_EQUAL( fixture.manifestPath( requireWrapper( heldPrefab ) ), oldManifestPath );
+    BOOST_CHECK_EQUAL( refreshedDuringImport, 2u );
 }
 
 BOOST_AUTO_TEST_CASE( automatic_hlod_import_catalogs_generated_proxy_meshes_before_prefab_publication )

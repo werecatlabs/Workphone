@@ -20,6 +20,12 @@
 #include <Workphone/Mesh/VertexDeclaration.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/System/Resource.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
+#if WP_USE_ASSET_IMPORT && !WP_USE_FBXSDK
+#include <WPAssimp/AssimpLoader.hpp>
+#include <assimp/material.h>
+#endif
 #if defined( _MSC_VER ) && defined( _DEBUG )
 #include <crtdbg.h>
 #endif
@@ -1187,3 +1193,202 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
     }
     BOOST_CHECK( !std::filesystem::exists( directory / "Materials" ) );
 }
+
+#if WP_USE_ASSET_IMPORT && !WP_USE_FBXSDK
+namespace
+{
+    class MaterialAdmissionProbe : public AssimpLoader
+    {
+    public:
+        using AssimpLoader::createMaterial;
+    };
+}
+
+BOOST_AUTO_TEST_CASE( mesh_material_import_preserves_authored_documents_and_cold_catalog_identity )
+{
+    TestGuard guard;
+    auto app = guard.applicationManager;
+    auto graphics = app->getGraphicsSystem();
+    BOOST_REQUIRE( graphics );
+    auto materialManager = graphics->getMaterialManager();
+    BOOST_REQUIRE( materialManager );
+    const auto oldProject = app->getProjectPath();
+    const auto oldCache = app->getCachePath();
+    const auto oldSettings = app->getSettingsPath();
+    auto oldDatabase = app->getResourceDatabase();
+    const auto directory = std::filesystem::temp_directory_path() / StringUtil::getUUID().c_str();
+    std::filesystem::create_directories( directory / "Assets/Model/Materials" );
+    std::filesystem::create_directories( directory / "Cache" );
+    std::filesystem::create_directories( directory / "SettingsCache" );
+    guard.trackFilesystemPath( directory.generic_string() );
+    auto database = workphone::make_ptr<ResourceDatabase>();
+    auto coldDatabase = workphone::make_ptr<ResourceDatabase>();
+    guard.addCleanup( [app, database, coldDatabase, oldDatabase, oldProject, oldCache,
+                       oldSettings]() mutable {
+        coldDatabase->unload( nullptr );
+        database->unload( nullptr );
+        app->setResourceDatabase( oldDatabase );
+        app->setProjectPath( oldProject );
+        app->setCachePath( oldCache );
+        app->setSettingsPath( oldSettings );
+    } );
+    app->setProjectPath( directory.generic_string() );
+    app->setCachePath( ( directory / "Cache" ).generic_string() + "/" );
+    app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
+    app->setResourceDatabase( database );
+    database->load( nullptr );
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+    BOOST_REQUIRE( catalog->setProjectRoot( directory.generic_string() ) );
+    const auto catalogPath = ( directory / "Cache/asset.db" ).generic_string();
+    database->setFilePath( catalogPath );
+    catalog->loadFromFile( catalogPath );
+
+    const auto folder = String( directory.generic_string() );
+    app->getFileSystem()->addFolder( folder, true );
+    guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
+    const auto relativePath = String( "Assets/Model/Materials/Authored.mat" );
+    const auto absolutePath = String( ( directory / relativePath.c_str() ).generic_string() );
+    const auto trackMaterial = [&guard, materialManager]( SmartPtr<render::IMaterial> material ) {
+        guard.addCleanup( [materialManager, material]() mutable {
+            if( material->isLoaded() ) material->unload( nullptr );
+            materialManager->destroyResource( material );
+        } );
+    };
+
+    // The document predates the project catalog, as in an existing city import.
+    auto authored = dynamic_pointer_cast<render::IMaterial>( materialManager->create( absolutePath ) );
+    BOOST_REQUIRE( authored );
+    trackMaterial( authored );
+    graphics->loadObject( authored );
+    authored->setDiffuse( ColourF( 0.125f, 0.25f, 0.5f, 1.0f ) );
+    authored->setRoughness( 0.375f );
+    auto authoredData = dynamic_pointer_cast<Properties>( authored->toData() );
+    BOOST_REQUIRE( authoredData );
+    authoredData->setProperty( "authoringNote", String( "Keep this source document exactly" ) );
+    // Enough authored metadata to exercise a refused nested parse allocation,
+    // after the Claw descriptor preparation reservation has already succeeded.
+    for( u32 i = 0; i < 256; ++i )
+        authoredData->setProperty( "annotation" + StringUtil::toString( i ), i );
+    const auto authoredBytes = DataUtil::toString( authoredData.get(), true ) + "\n\n";
+    {
+        std::ofstream output( absolutePath.c_str(), std::ios::binary );
+        output.write( authoredBytes.data(), static_cast<std::streamsize>( authoredBytes.size() ) );
+        BOOST_REQUIRE( output.good() );
+    }
+    authored->unload( nullptr );
+    materialManager->destroyResource( authored );
+    app->getFileSystem()->refreshPath( folder, false );
+    BOOST_REQUIRE( !catalog->getResourceEntryFromPath( relativePath ) );
+
+    aiMaterial source;
+    aiString sourceName( "Authored" );
+    source.AddProperty( &sourceName, AI_MATKEY_NAME );
+    const auto importExisting = [&]() {
+        auto importer = workphone::make_ptr<MaterialAdmissionProbe>();
+        importer->setOverwriteMaterialFiles( false );
+        importer->createMaterial( nullptr, 0, &source, "Assets/Model" );
+        importer->unload( nullptr );
+    };
+    const auto checkDocumentBytes = [&]() {
+        std::ifstream input( absolutePath.c_str(), std::ios::binary );
+        const std::string bytes( ( std::istreambuf_iterator<char>( input ) ),
+                                 std::istreambuf_iterator<char>() );
+        BOOST_CHECK_EQUAL( bytes, authoredBytes );
+    };
+    const auto checkAuthoredValues = []( SmartPtr<render::IMaterial> material ) {
+        const auto diffuse = material->getDiffuse();
+        BOOST_CHECK_SMALL( diffuse.r - 0.125f, 0.00001f );
+        BOOST_CHECK_SMALL( diffuse.g - 0.25f, 0.00001f );
+        BOOST_CHECK_SMALL( diffuse.b - 0.5f, 0.00001f );
+        BOOST_CHECK_SMALL( material->getRoughness() - 0.375f, 0.00001f );
+    };
+#if WP_GRAPHICS_SYSTEM_CLAW
+    // Keep a cold manager body and its identity ready before constraining memory.
+    // Descriptor preparation may succeed while a legacy parser swallows a denied
+    // allocation; that must fail the import rather than publish partial settings.
+    auto candidate = database->createOrRetrieveByType<render::IMaterial>( relativePath ).first;
+    BOOST_REQUIRE( candidate );
+    trackMaterial( candidate );
+    candidate->fromData( authoredData );
+    BOOST_REQUIRE( !candidate->isLoaded() );
+    const auto candidateIdentity = candidate->getHandle()->getUUID();
+    auto deniedImporter = workphone::make_ptr<MaterialAdmissionProbe>();
+    deniedImporter->setOverwriteMaterialFiles( false );
+    auto scheduler = WorldStreamingScheduler::shared();
+    const auto budgetStats = scheduler->stats();
+    const auto sourceCpu = size_t( StreamMemoryClass::SourceCpu );
+    struct RestoreMaterialBudget
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler; u64 limit;
+        ~RestoreMaterialBudget()
+        { String error; scheduler->setBudget( StreamMemoryClass::SourceCpu, limit, error ); }
+    } restoreBudget{ scheduler, budgetStats.limits[sourceCpu] };
+    // Permit the descriptor's bounded preparation and small parse scratch; its
+    // complete authored property array needs more than the remaining 16 KiB.
+    const auto descriptorPreparation = u64( authoredBytes.size() ) * 32 + ( 64ull << 10 );
+    String budgetError;
+    BOOST_REQUIRE_MESSAGE( scheduler->setBudget( StreamMemoryClass::SourceCpu,
+        budgetStats.used[sourceCpu] + descriptorPreparation + ( 16ull << 10 ), budgetError ), budgetError );
+    const auto denialsBefore = sourceBudgetDenialCount();
+    bool refused = false;
+    try
+    {
+        deniedImporter->createMaterial( nullptr, 0, &source, "Assets/Model" );
+    }
+    catch( const std::exception & ) { refused = true; }
+    const auto denialsAfter = sourceBudgetDenialCount();
+    BOOST_REQUIRE_MESSAGE( scheduler->setBudget( StreamMemoryClass::SourceCpu,
+        budgetStats.limits[sourceCpu], budgetError ), budgetError );
+    BOOST_CHECK_GT( denialsAfter, denialsBefore );
+    BOOST_CHECK_MESSAGE( refused, "Nested descriptor allocation denial must reject material import" );
+    BOOST_CHECK( !catalog->getResourceEntryFromPath( relativePath ) );
+    BOOST_CHECK( candidate->getHandle()->getUUID() == candidateIdentity );
+    BOOST_CHECK( !candidate->isLoaded() );
+    BOOST_CHECK_EQUAL( candidate->getNumTechniques(), 0u );
+    checkDocumentBytes();
+    deniedImporter->unload( nullptr );
+#endif
+    importExisting();
+    checkDocumentBytes();
+    auto imported = database->loadResourceByType<render::IMaterial>( relativePath );
+#if WP_GRAPHICS_SYSTEM_CLAW
+    BOOST_CHECK( imported == candidate );
+    BOOST_CHECK( imported && imported->getHandle()->getUUID() == candidateIdentity );
+#endif
+    BOOST_REQUIRE( imported );
+    trackMaterial( imported );
+    checkAuthoredValues( imported );
+    const auto identity = imported->getHandle()->getUUID();
+    BOOST_CHECK( database->loadResourceById( identity ) == imported );
+    imported->unload( nullptr );
+    materialManager->destroyResource( imported );
+    BOOST_REQUIRE( !materialManager->getById( imported->getHandle()->getUUIDAsString() ) );
+
+    // Reopen the durable catalog with no resident body or importer cache alias.
+    database->unload( nullptr );
+    app->setResourceDatabase( coldDatabase );
+    coldDatabase->load( nullptr );
+    auto coldCatalog = dynamic_pointer_cast<AssetDatabaseManager>( coldDatabase->getDatabaseManager() );
+    BOOST_REQUIRE( coldCatalog );
+    BOOST_REQUIRE( coldCatalog != catalog );
+    BOOST_REQUIRE( coldCatalog->setProjectRoot( directory.generic_string() ) );
+    coldDatabase->setFilePath( catalogPath );
+    coldCatalog->loadFromFile( catalogPath );
+    auto cold = coldDatabase->loadResourceByType<render::IMaterial>( relativePath );
+    BOOST_REQUIRE( cold );
+    trackMaterial( cold );
+    BOOST_CHECK( cold != imported );
+    BOOST_CHECK( cold->getHandle()->getUUID() == identity );
+    BOOST_CHECK( coldDatabase->loadResourceById( identity ) == cold );
+    checkAuthoredValues( cold );
+    checkDocumentBytes();
+
+    // A later import must retain the catalog UUID and the existing resource body.
+    importExisting();
+    BOOST_CHECK( coldDatabase->loadResourceByType<render::IMaterial>( relativePath ) == cold );
+    BOOST_CHECK( cold->getHandle()->getUUID() == identity );
+    checkAuthoredValues( cold );
+    checkDocumentBytes();
+}
+#endif

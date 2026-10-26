@@ -266,6 +266,56 @@ BOOST_AUTO_TEST_CASE( editor_property_nested_mesh_import_settings_test )
     BOOST_CHECK( director->getProgressiveMeshOptions() == progressive );
 }
 
+BOOST_AUTO_TEST_CASE( editor_property_import_status_refresh_test )
+{
+    InspectorFixture fixture;
+    auto resources = make_ptr<InspectorResources>();
+    auto director = make_ptr<InspectorMeshDirector>();
+    director->setResourcePath( "isolated-city.glb" );
+    resources->director = director;
+    fixture.application->setResourceDatabase( resources );
+    auto file = make_ptr<FileSelection>();
+    file->setFilePath( "isolated-city.glb" );
+    fixture.window->setSelected( file );
+    fixture.window->setDirty( false );
+    auto displayed = director->getProperties();
+    fixture.grid->setProperties( displayed );
+    auto streaming = displayed->getChild( "streamingOptions" );
+    BOOST_REQUIRE( streaming );
+    streaming->setProperty( "loadRadius", 12345.0f );
+
+    const auto request = director->beginImport();
+    fixture.window->update();
+    BOOST_CHECK_EQUAL( displayed->getProperty( scene::ResourceDirector::importStatusStr ),
+                       director->getImportStatus() );
+    BOOST_CHECK( displayed->getPropertyObject( scene::ResourceDirector::importStatusStr ).isReadOnly() );
+
+    const auto longFailure = String( "Import failed: persistent group has 32 actors; limit is 20. " ) +
+                             String( 512, 'x' );
+    director->setImportStatus( request, longFailure );
+    fixture.window->update();
+    BOOST_CHECK_EQUAL( displayed->getProperty( scene::ResourceDirector::importStatusStr ),
+                       director->getImportStatus() );
+    BOOST_CHECK_EQUAL( displayed->getPropertyObject( scene::ResourceDirector::importStatusStr )
+                           .getAttribute( "valueTooltip" ), "true" );
+    BOOST_CHECK_LT( displayed->getPropertyObject( scene::ResourceDirector::importStatusStr )
+                        .getAttribute( "description" ).size(), 256u );
+    BOOST_CHECK( fixture.grid->getProperties() == displayed );
+    BOOST_CHECK( displayed->getChild( "streamingOptions" ) == streaming );
+    BOOST_CHECK_CLOSE( streaming->getPropertyAsFloat( "loadRadius" ), 12345.0f, 0.001f );
+    BOOST_CHECK_EQUAL( director->sets, 0u );
+    BOOST_CHECK_EQUAL( director->saves, 0u );
+    BOOST_CHECK_EQUAL( director->imports, 0u );
+
+    // A pending selection refresh must not copy a different resource's status
+    // into the still-displayed snapshot.
+    displayed->setProperty( scene::ResourceDirector::resourcePathStr, "another-city.glb", true );
+    director->setImportStatus( request, "Import complete." );
+    fixture.window->update();
+    BOOST_CHECK_NE( displayed->getProperty( scene::ResourceDirector::importStatusStr ),
+                    director->getImportStatus() );
+}
+
 BOOST_AUTO_TEST_CASE( editor_property_deep_groups_and_multiselection_test )
 {
     InspectorFixture fixture;
