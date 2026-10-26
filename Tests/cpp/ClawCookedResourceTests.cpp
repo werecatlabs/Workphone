@@ -24,6 +24,7 @@
 #include "GraphicsResourceCompilerContracts.hpp"
 #include <array>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -1048,13 +1049,26 @@ namespace
 #include "CookedTerrainContracts.hpp"
 #include "CookedFoliageContracts.hpp"
 #include "CookedMaterialShaderContracts.hpp"
+#include "ClawCookedMaterialRetirementContracts.hpp"
 
-int main()
+int main( int argc, char **argv )
 {
     try
     {
+        u32 retirementCycles = 0;
+        if( argc > 1 )
+        {
+            char *end = nullptr;
+            const auto count = argc == 3 ? std::strtol( argv[2], &end, 10 ) : 0;
+            require( argc == 3 && std::strcmp( argv[1], "--material-resource-retirement-soak" ) == 0 &&
+                     end && !*end && count > 0 && count <= 10000,
+                     "Usage: --material-resource-retirement-soak cycles[1..10000]" );
+            retirementCycles = static_cast<u32>( count );
+        }
         Fixture fixture;
         fixture.initialize();
+        claw_cooked_material_retirement_contracts::run( fixture, retirementCycles ? retirementCycles : 32 );
+        if( retirementCycles ) return 0;
         cooked_material_shader_contracts::run( fixture );
         generatedAsphaltContracts( fixture );
         contracts( fixture );

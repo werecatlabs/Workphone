@@ -1752,6 +1752,16 @@ namespace workphone::render
                         }
                     }
                 }
+                if( schemes.empty() &&
+                    ( !editorFloatProperties || !editorFloatProperties->hasProperty( specularStr ) ) )
+                {
+                    // Root-only legacy documents have no authored pass colour. Their
+                    // numeric specular default is 0.05, while the old bootstrap pass
+                    // starts white. White is F0=1 in the PBR shader and suppresses
+                    // diffuse textures entirely. Publish the effective numeric value
+                    // to the physical colour without replacing authored scheme data.
+                    setSpecularAmount( getSpecularAmount() );
+                }
                 if( editorUIntProperties )
                 {
                     for( const auto &property : editorUIntProperties->getPropertiesAsArray() )

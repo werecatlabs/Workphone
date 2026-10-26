@@ -19,6 +19,7 @@
 #include <Workphone/Mesh/IndexBuffer.hpp>
 #include <Workphone/Mesh/VertexDeclaration.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Graphics/Material.hpp>
 #include <Workphone/System/Resource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
@@ -1241,6 +1242,49 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
     BOOST_CHECK( !legacy( missingUUID, ( directory / localPath.c_str() ).generic_string() )->getTexture( 0 ) );
     BOOST_CHECK( !legacy( missingUUID, "Local.bmp" )->getTexture( 0 ) );
     BOOST_CHECK( !database->loadResourceById( StringUtil::parseUUID( missingUUID ) ) );
+
+    // A repaired texture must reach a dielectric surface. Legacy root-only
+    // documents previously reported specular=0.05 but published white F0=1,
+    // which removed all diffuse texture contribution in the native PBR shader.
+    const auto concrete = dynamic_pointer_cast<render::Material>( repaired );
+    BOOST_REQUIRE( concrete );
+    auto published = concrete->getRenderState();
+    BOOST_REQUIRE( published );
+    BOOST_CHECK( published->textures[0] == local );
+    BOOST_CHECK_SMALL( published->specularColour.r - repaired->getSpecularAmount(), 0.00001f );
+    BOOST_CHECK_SMALL( published->specularColour.r - 0.05f, 0.00001f );
+    BOOST_CHECK_SMALL( published->specularColour.g - 0.05f, 0.00001f );
+    BOOST_CHECK_SMALL( published->specularColour.b - 0.05f, 0.00001f );
+
+    // Explicit legacy scalar values retain their authored reflectance.
+    auto explicitRoot = workphone::make_ptr<Properties>();
+    explicitRoot->setProperty( "materialType", 0 );
+    auto editorSettings = workphone::make_ptr<Properties>();
+    editorSettings->setName( "editorSettings" );
+    auto floats = workphone::make_ptr<Properties>();
+    floats->setName( "floats" );
+    floats->setProperty( "specular", 0.8f );
+    editorSettings->addChild( floats );
+    explicitRoot->addChild( editorSettings );
+    repaired->fromData( explicitRoot );
+    published = concrete->getRenderState();
+    BOOST_REQUIRE( published );
+    BOOST_CHECK_SMALL( published->specularColour.r - 0.8f, 0.00001f );
+
+    // A modern pass can deliberately author a fully reflective surface.
+    // Its serialized scheme must survive reload without the legacy fallback.
+    repaired->setSpecularAmount( 1.0f );
+    auto authoredScheme = dynamic_pointer_cast<Properties>( repaired->toData() );
+    BOOST_REQUIRE( authoredScheme );
+    auto restoredScheme = legacy( missingUUID, localPath );
+    restoredScheme->fromData( authoredScheme );
+    auto restoredConcrete = dynamic_pointer_cast<render::Material>( restoredScheme );
+    BOOST_REQUIRE( restoredConcrete );
+    const auto authoredState = restoredConcrete->getRenderState();
+    BOOST_REQUIRE( authoredState );
+    BOOST_CHECK_SMALL( authoredState->specularColour.r - 1.0f, 0.00001f );
+    BOOST_CHECK_SMALL( authoredState->specularColour.g - 1.0f, 0.00001f );
+    BOOST_CHECK_SMALL( authoredState->specularColour.b - 1.0f, 0.00001f );
 }
 
 #if WP_USE_ASSET_IMPORT && !WP_USE_FBXSDK

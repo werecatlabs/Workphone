@@ -395,12 +395,18 @@ namespace
     {
     public:
         SmartPtr<TeardownObject> *releaseOther = nullptr;
+        SmartPtr<TeardownObject> *releaseSelf = nullptr;
         unsigned *destructions = nullptr, *unloads = nullptr;
         ~TeardownObject() override { if(destructions) ++*destructions; }
         void unload(SmartPtr<ISharedObject>) override
         {
             if(unloads) ++*unloads;
             if(releaseOther) *releaseOther = nullptr;
+            auto self = releaseSelf;
+            auto destroyed = destructions;
+            if(self) *self = nullptr;
+            if(self && destroyed)
+                require(*destroyed == 0, "The admitted teardown batch pins both objects through ownership-release callbacks");
         }
     };
     class TeardownFactory : public FactoryTemplate<TeardownObject>
@@ -668,8 +674,13 @@ namespace
             auto first = createTeardown(*factory), second = createTeardown(*factory);
             first->destructions = second->destructions = &destructions;
             first->unloads = second->unloads = &unloads; first->releaseOther = &second;
+            // The manager's admitted batch pins both objects during callbacks.
+            // Release external ownership before FactoryTemplate::unload's final
+            // pool teardown; a surviving SmartPtr would then refer to freed data.
+            first->releaseSelf = &first;
             budget.set(budget.used()); manager.unload(nullptr);
-            require(!manager.isLoaded() && !factory->isLoaded() && destructions == 2 && unloads == 2,
+            require(!manager.isLoaded() && !factory->isLoaded() && !first && !second &&
+                        destructions == 2 && unloads == 2,
                     "FactoryManager performs both teardown phases at the shared limit without a snapshot allocation");
             first = nullptr; second = nullptr; budget.restore();
         }
