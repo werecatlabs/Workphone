@@ -18,6 +18,7 @@
 #    include <d3dcompiler.h>
 #    include <dxgi.h>
 #    include <dxgi1_5.h>
+#    include <dxgi1_6.h>
 #    include <limits.h>
 #    include <stdlib.h>
 #    include <string.h>
@@ -1866,23 +1867,35 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
     for( attempt = 0; attempt < 4; ++attempt )
     {
         UINT project_flags=wp_project_validation ? D3D11_CREATE_DEVICE_DEBUG : 0;
+        IDXGIAdapter1 *project_adapter=NULL;
         D3D_DRIVER_TYPE project_driver=wp_project_renderer_mode==3 ?
             (attempt<2 ? D3D_DRIVER_TYPE_WARP : D3D_DRIVER_TYPE_HARDWARE) :
             (attempt<2 ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP);
         if(attempt>=2 && (wp_project_no_fallback || wp_project_renderer_mode==1)) break;
+        if(wp_project_renderer_mode==2 && project_driver==D3D_DRIVER_TYPE_HARDWARE)
+        {
+            IDXGIFactory6 *preference_factory=NULL;
+            if(SUCCEEDED(CreateDXGIFactory1(&IID_IDXGIFactory6,(void**)&preference_factory)))
+            {
+                IDXGIFactory6_EnumAdapterByGpuPreference(preference_factory,0,DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                                        &IID_IDXGIAdapter1,(void**)&project_adapter);
+                IDXGIFactory6_Release(preference_factory);
+            }
+        }
         r->flip_model = prefer_flip && attempt % 2 == 0;
         sc_desc.BufferCount = r->flip_model ? 2 : 1;
         sc_desc.SwapEffect = r->flip_model ? DXGI_SWAP_EFFECT_FLIP_DISCARD : DXGI_SWAP_EFFECT_DISCARD;
         sc_desc.Flags = r->flip_model ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
         if( !prefer_flip && attempt % 2 != 0 ) continue;
-        hr = D3D11CreateDeviceAndSwapChain( NULL,
-                                            project_driver,
+        hr = D3D11CreateDeviceAndSwapChain( (IDXGIAdapter*)project_adapter,
+                                            project_adapter ? D3D_DRIVER_TYPE_UNKNOWN : project_driver,
                                             NULL, project_flags, NULL, 0,
                                             D3D11_SDK_VERSION, &sc_desc, &r->swap_chain, &r->device,
                                             &feature_level, &r->context );
         if(hr==DXGI_ERROR_SDK_COMPONENT_MISSING && project_flags && !wp_project_no_fallback)
-            hr=D3D11CreateDeviceAndSwapChain(NULL,project_driver,NULL,0,NULL,0,D3D11_SDK_VERSION,
+            hr=D3D11CreateDeviceAndSwapChain((IDXGIAdapter*)project_adapter,project_adapter ? D3D_DRIVER_TYPE_UNKNOWN : project_driver,NULL,0,NULL,0,D3D11_SDK_VERSION,
                                             &sc_desc,&r->swap_chain,&r->device,&feature_level,&r->context);
+        if(project_adapter) IDXGIAdapter1_Release(project_adapter);
         if( SUCCEEDED( hr ) )
             break;
         if( r->swap_chain )

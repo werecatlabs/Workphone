@@ -18,7 +18,7 @@ namespace workphone::scene
     {
         auto properties = m_pipeline->getProperties();
         properties->setProperty( "Applies to", "Standalone game runtime", true );
-        properties->setPropertyAsEnum( "Render API", m_renderApi, { "Software", "DirectX 11" } );
+        properties->setPropertyAsEnum( "Render API", m_renderApi, { "Software", "DirectX 11", "DirectX 12" } );
         return properties;
     }
 
@@ -29,7 +29,7 @@ namespace workphone::scene
             return;
         }
         s32 api = m_renderApi;
-        if( properties->getPropertyValue( "Render API", api ) && api >= 0 && api <= 1 )
+        if( properties->getPropertyValue( "Render API", api ) && api >= 0 && api <= 2 )
         {
             m_renderApi = api;
         }
@@ -39,6 +39,6 @@ namespace workphone::scene
     render::IGraphicsSystem::RenderApi GraphicsSettingsDirector::getRenderApi() const
     {
         using Api = render::IGraphicsSystem::RenderApi;
-        return m_renderApi == 0 ? Api::Software : Api::DX11;
+        return m_renderApi == 0 ? Api::Software : m_renderApi == 2 ? Api::DX12 : Api::DX11;
     }
 }  // namespace workphone::scene

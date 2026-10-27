@@ -44,6 +44,11 @@ else()
 endif()
 
 add_library(WorkphonePlatformWin32 STATIC ${HEADER_FILES} ${SOURCE_FILES})
+if(WIN32)
+    target_sources(WorkphonePlatformWin32 PRIVATE
+        "../../Source/WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.c"
+        "../../Include/WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.h")
+endif()
 
 # Native DX12 uses the Windows SDK C COM helpers, just as DX11 does.
 if(WIN32)

@@ -67,8 +67,8 @@ namespace workphone::editor
         if( settings )
         {
             s32 renderer = 0;
-            if( settings->getPropertyValue( "graphics.renderer.pc", renderer ) && renderer >= 2 && renderer <= 4 )
-                error = "The requested PC API is not compiled into this Editor. Install/build its renderer plugin or choose Auto, DirectX 11 or Software.";
+            if( settings->getPropertyValue( "graphics.renderer.pc", renderer ) && renderer >= 3 && renderer <= 4 )
+                error = "The requested PC API is not compiled into this Editor. Install/build its renderer plugin or choose Auto, DirectX 11, DirectX 12 or Software.";
             const auto app=core::IApplicationManager::instancePtr();
             const auto graphics=app ? app->getGraphicsSystem() : nullptr;
             const s32 aa=settings->getPropertyAsInt("graphics.antiAliasing");
@@ -112,8 +112,8 @@ namespace workphone::editor
         for( auto key : keys ) if( settings->hasProperty(key) ) result->addProperty(settings->getPropertyObject(key));
         s32 value;
         if( settings->getPropertyValue("quality.preset", value) && value < 4 ) result->setProperty("Quality",value);
-        if( settings->getPropertyValue("graphics.renderer.pc",value) && (value == 1 || value == 5) )
-            result->setProperty("Render API", value == 5 ? 0 : 1);
+        if( settings->getPropertyValue("graphics.renderer.pc",value) && (value == 1 || value == 2 || value == 5) )
+            result->setProperty("Render API", value == 5 ? 0 : value);
         if( settings->getPropertyValue("graphics.antiAliasing",value) ) result->setProperty("Temporal anti-aliasing",value == 2);
         if( settings->getPropertyValue("graphics.shadowQuality",value) ) result->setProperty("Cascaded shadows",value > 0);
         if( settings->getPropertyValue("graphics.shadowResolution",value) && value >= 0 && value <= 3 )

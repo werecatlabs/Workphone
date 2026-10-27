@@ -764,3 +764,20 @@ if(WP_BUILD_TESTS AND TARGET WPProcedural)
     set_tests_properties(WPProcedural.block_generator PROPERTIES
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPBlockGeneratorTests>" TIMEOUT 60)
 endif()
+if(WIN32)
+    add_executable(WPGraphicsParticleComputeDX11Tests
+        GraphicsProduction/ParticleComputeDX11Tests.c
+        "${WP_ROOT}/Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.c"
+        "${WP_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_particle_simulation.c")
+    target_include_directories(WPGraphicsParticleComputeDX11Tests PRIVATE
+        "${WP_ROOT}/Engine/c/Include/WorkphoneCore"
+        "${WP_ROOT}/Engine/c/Include/WorkphoneGraphics"
+        "${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32")
+    target_link_libraries(WPGraphicsParticleComputeDX11Tests PRIVATE d3d11 d3dcompiler dxguid)
+    set_target_properties(WPGraphicsParticleComputeDX11Tests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.project_gpu_particles COMMAND WPGraphicsParticleComputeDX11Tests)
+    set_tests_properties(WPGraphics.project_gpu_particles PROPERTIES SKIP_RETURN_CODE 77)
+    add_test(NAME WPGraphics.project_gpu_particles_warp COMMAND WPGraphicsParticleComputeDX11Tests)
+    set_tests_properties(WPGraphics.project_gpu_particles_warp PROPERTIES
+        SKIP_RETURN_CODE 77 ENVIRONMENT "WP_PARTICLE_TEST_WARP=1")
+endif()

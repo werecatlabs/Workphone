@@ -110,7 +110,7 @@ assert(editor.companyControl:getText()=="" and editor.startupSceneControl:getTex
 assert(editor.gravityControl:getValue()==-12.25)
 assert(not editor.cloudSaveControl.enabled and editor.cloudSaveControl.label:find("(Unavailable)", 1, true))
 assert(editor.settings.cloudSave==true)
-assert(#editor.controlBindings==130, "All 130 project settings must be bound")
+assert(#editor.controlBindings==132, "All project settings must be bound")
 
 local function event(kind, sender)
     return {at=function(_, i) if i==1 then return kind elseif i==3 then return sender end end}

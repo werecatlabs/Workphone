@@ -1593,7 +1593,7 @@ namespace workphone
                     // Create the selected renderer
                     switch( selectedApi )
                     {
-#if defined WP_PLATFORM_WIN32 && WP_BUILD_RENDERER_DX12
+#if defined WP_PLATFORM_WIN32
                     case RenderApi::DX12:
                     {
                         renderer = workphone::make_ptr<ClawRendererDX12>();
@@ -1713,6 +1713,12 @@ namespace workphone
 
                 // Provide a debug helper so application createScene() implementations can
                 // queue debug primitives/text without dereferencing a null interface.
+                if(auto app=core::IApplicationManager::instancePtr())
+                    if(auto settings=app->getPlayerSettings())
+                    {
+                        setProperties(settings);
+                        m_graphicsPipeline->setProperties(settings);
+                    }
                 if( !getDebug() )
                 {
                     auto debug = workphone::make_ptr<ClawDebug>();

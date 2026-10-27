@@ -1090,6 +1090,9 @@ if (WP_EDITOR_TESTS)
         project_file_lifecycle_test
         project_all_settings_file_roundtrip_test
         project_settings_actions_test
+        project_services_local_providers_test
+        project_settings_build_profile_test
+        project_settings_editor_policy_recovery_test
         project_settings_runtime_subsystem_contract_test
         project_settings_runtime_graphics_director_test
         project_settings_runtime_validation_and_capabilities_test
