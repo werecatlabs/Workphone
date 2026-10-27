@@ -38,6 +38,7 @@ namespace workphone
 
             u32 depth = 0;
             bool flushing = false;
+            bool needsDeduplication = false;
             std::array<MaterialPassStateData *, 256> recent{};
             std::vector<SmartPtr<MaterialPassStateData>> pending;
         };
@@ -637,6 +638,9 @@ namespace workphone
         try
         {
             publicationQueue.pending.push_back( state.getSharedFromThis<MaterialPassStateData>() );
+            // With no hash collision every queued identity is already unique.
+            // Keep the full sort/unique fallback for colliding large updates.
+            if( publicationQueue.recent[slot] ) publicationQueue.needsDeduplication = true;
             publicationQueue.recent[slot] = &state;
             return true;
         }
@@ -683,6 +687,8 @@ namespace workphone
             return;
         }
         auto pending = std::move( publicationQueue.pending );
+        const bool needsDeduplication = publicationQueue.needsDeduplication;
+        publicationQueue.needsDeduplication = false;
         publicationQueue.recent.fill( nullptr );
         publicationQueue.flushing = true;
 
@@ -703,12 +709,15 @@ namespace workphone
             }
         } release{ pending };
 
-        std::sort( pending.begin(), pending.end(), []( const auto &a, const auto &b ) {
-            return std::less<MaterialPassStateData *>{}( a.get(), b.get() );
-        } );
-        pending.erase( std::unique( pending.begin(), pending.end(),
-                                    []( const auto &a, const auto &b ) { return a.get() == b.get(); } ),
-                       pending.end() );
+        if( needsDeduplication )
+        {
+            std::sort( pending.begin(), pending.end(), []( const auto &a, const auto &b ) {
+                return std::less<MaterialPassStateData *>{}( a.get(), b.get() );
+            } );
+            pending.erase( std::unique( pending.begin(), pending.end(),
+                                        []( const auto &a, const auto &b ) { return a.get() == b.get(); } ),
+                           pending.end() );
+        }
         for( auto &state : pending )
         {
             // Bypass the write-depth override: publication itself must not enqueue

@@ -55,7 +55,7 @@ namespace workphone
 
         Array<Vector3<real_Num>> CCityBlock::getPoints() const
         {
-            Array<Vector3<real_Num>> points;
+            Array<Vector3<real_Num>> points{ typename Array<Vector3<real_Num>>::allocator_type( sourceBudget ) };
             points.reserve( m_nodes.size() );
             for( const auto &node : m_nodes )
             {
@@ -100,8 +100,10 @@ namespace workphone
 
         void CCityBlock::updateBounds()
         {
-            m_polygon = getPolygon();
-            m_bounds = getBounds();
+            auto polygon = getPolygon();
+            const auto bounds = getBounds();
+            m_polygon.swap( polygon );
+            m_bounds = bounds;
             if( m_nodes.empty() )
             {
                 m_boundingSphere = Sphere3<real_Num>( Vector3<real_Num>::zero(), 0 );
@@ -186,16 +188,18 @@ namespace workphone
 
         void CCityBlock::setLots( Array<SmartPtr<ILot>> lots )
         {
-            m_lots = std::move( lots );
+            auto candidate = makeSourceBudgetSnapshot( std::move( lots ) );
+            m_lots.swap( candidate );
         }
 
         void CCityBlock::unload( SmartPtr<ISharedObject> data )
         {
             // Release references without unloading nodes/lots still owned by another object.
-            m_nodes.clear();
-            m_lots.clear();
+            auto nodes = std::move( m_nodes );
+            auto lots = std::move( m_lots );
             CProceduralObject<ICityBlock>::unload( data );
-            updateBounds();
+            m_bounds.setNull();
+            m_boundingSphere = Sphere3<real_Num>( Vector3<real_Num>::zero(), 0 );
         }
     }  // namespace procedural
 }  // namespace workphone

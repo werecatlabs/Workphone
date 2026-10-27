@@ -63,7 +63,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            Array<SmartPtr<IRoad>> m_roads;        ///< Roads that pass through this node.
+            Array<SmartPtr<IRoad>> m_roads{ Allocator<SmartPtr<IRoad>>( sourceBudget ) };        ///< Roads that pass through this node.
             SmartPtr<IRoadElement> m_roadElement;  ///< Road element that owns this node (may be null).
             s32 m_roadId = -1;  ///< ID of the primary road this node belongs to (-1 = unset).
         };

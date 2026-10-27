@@ -340,12 +340,22 @@ namespace claw_material_metadata_budget_contracts
                      "record store retries and retains charged metadata" );
             const auto resident = scheduler->stats();
             limit( resident.used[source] ); denied = false;
-            try { cache.resolve( states[1] ); } catch( const std::bad_alloc & ) { denied = true; }
-            require( denied && cache.lookup( first ) && cache.getResidentCount() == 1 &&
+            u32 insertion = 1;
+            // A charged slab may already contain spare nodes. Consume those
+            // at the full budget, then deny the first actual growth request.
+            for(; insertion < 64; ++insertion)
+            {
+                try { cache.resolve( states[insertion] ); }
+                catch( const std::bad_alloc & ) { denied = true; break; }
+                require( cache.lookup( first ) && cache.getResidentCount() == insertion + 1 &&
+                         scheduler->stats().used[source] == resident.used[source],
+                         "identity insertion may reuse only already-admitted node capacity at a full budget" );
+            }
+            require( denied && cache.lookup( first ) && cache.getResidentCount() == insertion &&
                          scheduler->stats().used[source] == resident.used[source],
                      "denied identity-node insertion preserves old records and releases candidate allocations" );
             limit( baseline.limits[source] );
-            for( u32 i = 1; i < 64; ++i ) cache.resolve( states[i] );
+            for( u32 i = insertion; i < 64; ++i ) cache.resolve( states[i] );
             const auto fullPage = scheduler->stats();
             limit( fullPage.used[source] ); denied = false;
             try { cache.resolve( states[64] ); } catch( const std::bad_alloc & ) { denied = true; }

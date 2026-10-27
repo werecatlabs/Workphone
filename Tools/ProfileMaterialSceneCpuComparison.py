@@ -16,6 +16,12 @@ ALLOWED_CHANGES={
     'Engine/cpp/Source/WPGraphics/ClawMaterialRenderCache.cpp'}
 
 
+def canonical_native_overlay(raw,bridge):
+    include=('#include "'+bridge.as_posix()+'"\n').encode()
+    if raw.count(include)!=1:raise ValueError('Native bridge include is missing or ambiguous')
+    return raw.replace(include,b'#include "<MATCHED_NATIVE_BRIDGE>"\n',1)
+
+
 def source_changes(control,candidate):
     if set(control)!=set(candidate):raise ValueError('Source membership differs')
     changes={key:{'control':value,'candidate':candidate[key]} for key,value in control.items() if value!=candidate[key]}
@@ -82,9 +88,19 @@ def main():
     if current_inputs(a.root)!=candidate['engine_and_sample_after']:raise ValueError('Candidate source drift')
     changes=source_changes(control['source_inputs'],candidate['engine_and_sample_after'])
     if set(control['allowed_changes'])!=ALLOWED_CHANGES:raise ValueError('Control allowed-change provenance differs')
-    for key in ('probe_sha256','native_bridge_sha256','native_source_sha256','native_overlay_sha256'):
+    for key in ('probe_sha256','native_bridge_sha256','native_source_sha256'):
         if old[key]!=candidate[key]:raise ValueError('Probe/native scope changed: '+key)
+    native=[]
+    for path,receipt in ((origin,old),(a.candidate_receipt,candidate)):
+        source=Path(receipt['native_source']);generated=path.parent/source.name
+        if cpu.digest(generated)!=receipt['native_overlay_sha256']:raise ValueError('Native overlay artifact drift')
+        bridge=source.parents[4]/'Samples/cpp/VehicleAdvanced/MaterialSceneCpuNativeBridge.h'
+        native.append(canonical_native_overlay(generated.read_bytes(),bridge))
+    if native[0]!=native[1]:raise ValueError('Native probe scope differs beyond its absolute include path')
     cpu.matching_builds(old['build_provenance'],candidate['build_provenance'])
+    for name,fields in old['build_provenance']['targets'].items():
+        if fields.get('PreprocessorDefinitions')!=candidate['build_provenance']['targets'][name].get('PreprocessorDefinitions'):
+            raise ValueError('Matched preprocessor definitions differ: '+name)
     a.output.mkdir(parents=True);executables={};plugins={};frozen={}
     for cohort,path,receipt in (('control',origin,old),('candidate',a.candidate_receipt,candidate)):
         for mode,field in (('normal','normal_runtime'),('profiled','profiled_runtime')):

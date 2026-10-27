@@ -85,6 +85,8 @@ namespace workphone
              * @return An `Array` of `SmartPtr<ICityBlock>` containing the blocks.
              */
             virtual Array<SmartPtr<ICityBlock>> getBlocks() const = 0;
+            /// Atomically replace blocks after admission. Unsupported owners throw before mutation.
+            virtual void setBlocks( const Array<SmartPtr<ICityBlock>> &blocks );
 
             /**
              * @brief Get the world or local size of the city area.

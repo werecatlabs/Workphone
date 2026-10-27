@@ -47,10 +47,10 @@ namespace workphone
             struct CityBlocks
             {
                 SmartPtr<IProceduralCity> city;
-                Array<SmartPtr<ICityBlock>> blocks;
+                Array<SmartPtr<ICityBlock>> blocks{ Allocator<SmartPtr<ICityBlock>>( sourceBudget ) };
             };
 
-            Array<CityBlocks> m_generatedBlocks;
+            Array<CityBlocks> m_generatedBlocks{ Allocator<CityBlocks>( sourceBudget ) };
 
             SmartPtr<IProceduralCity> m_city;
         };

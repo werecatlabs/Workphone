@@ -9,6 +9,11 @@ namespace workphone
         CProceduralScene::CProceduralScene() = default;
 
         CProceduralScene::~CProceduralScene() = default;
+        void CProceduralScene::unload( SmartPtr<ISharedObject> )
+        {
+            auto cities = std::move( m_cities );
+            auto terrains = std::move( m_terrains );
+        }
 
         void CProceduralScene::addCity( SmartPtr<IProceduralCity> city )
         {
@@ -31,7 +36,8 @@ namespace workphone
 
         void CProceduralScene::setCities( Array<SmartPtr<IProceduralCity>> cities )
         {
-            m_cities = cities;
+            auto candidate = makeSourceBudgetSnapshot( cities );
+            m_cities.swap( candidate );
         }
 
         void CProceduralScene::addTerrain( SmartPtr<IProceduralTerrain> terrain )
@@ -55,7 +61,8 @@ namespace workphone
 
         void CProceduralScene::setTerrains( Array<SmartPtr<IProceduralTerrain>> terrains )
         {
-            m_terrains = terrains;
+            auto candidate = makeSourceBudgetSnapshot( terrains );
+            m_terrains.swap( candidate );
         }
     }  // namespace procedural
 }  // namespace workphone

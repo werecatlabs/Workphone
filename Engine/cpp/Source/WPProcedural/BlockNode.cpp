@@ -58,9 +58,7 @@ namespace workphone
 
         void BlockNode::unload( SmartPtr<ISharedObject> data )
         {
-            m_connectedObjects.clear();
             CProceduralNode<IProceduralNode>::unload( data );
-            CProceduralObject<IProceduralNode>::unload( data );
         }
     }  // namespace procedural
 }  // namespace workphone

@@ -97,9 +97,9 @@ namespace workphone
 
         protected:
             String m_roadType;                       ///< Type tag for this road (e.g. "residential").
-            Array<SmartPtr<IRoadNode>> m_roadNodes;  ///< Ordered list of nodes defining the road spine.
-            Array<SmartPtr<IRoadElement>> m_roadSegments;  ///< Road segment elements.
-            Array<SmartPtr<IRoadSection>> m_roadSections;  ///< Road sections built from the nodes.
+            Array<SmartPtr<IRoadNode>> m_roadNodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };  ///< Ordered list of nodes defining the road spine.
+            Array<SmartPtr<IRoadElement>> m_roadSegments{ Allocator<SmartPtr<IRoadElement>>( sourceBudget ) };  ///< Road segment elements.
+            Array<SmartPtr<IRoadSection>> m_roadSections{ Allocator<SmartPtr<IRoadSection>>( sourceBudget ) };  ///< Road sections built from the nodes.
         };
     }  // end namespace procedural
 }  // namespace workphone

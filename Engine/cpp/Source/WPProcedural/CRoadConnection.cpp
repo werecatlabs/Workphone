@@ -108,24 +108,26 @@ namespace workphone
         {
             try
             {
+                auto retired_connectionData = std::move( m_connectionData );
+                auto retired_roadNodes = std::move( m_roadNodes );
+                auto owner = std::exchange( m_node, nullptr );
+
                 const auto resultId = StringUtil::getHash( "WPIntersectionResult" );
                 if( getUserData( resultId ) )
                 {
                     setUserData( resultId, nullptr );
                 }
-                for( auto &connData : m_connectionData )
+                CProceduralObject<IRoadConnection>::unload( data );
+                for( auto &connData : retired_connectionData )
                 {
                     if( connData )
                     {
-                        connData->unload( nullptr );
+                        try { connData->unload( nullptr ); }
+                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
                     }
                 }
 
-                m_connectionData.clear();
-                m_roadNodes.clear();
-                m_node = nullptr;
 
-                CProceduralObject<IRoadConnection>::unload( data );
             }
             catch( std::exception &e )
             {
@@ -211,8 +213,8 @@ namespace workphone
         void CRoadConnection::setConnectionData( Array<SmartPtr<IRoadConnectionData>> connectionData )
         {
             // Filter out any null entries defensively.
-            m_connectionData.clear();
-            m_connectionData.reserve( connectionData.size() );
+            Array<SmartPtr<IRoadConnectionData>> candidate{ Allocator<SmartPtr<IRoadConnectionData>>( sourceBudget ) };
+            candidate.reserve( connectionData.capacity() );
 
             for( auto &entry : connectionData )
             {
@@ -222,8 +224,9 @@ namespace workphone
                     continue;
                 }
 
-                m_connectionData.push_back( entry );
+                candidate.push_back( entry );
             }
+            m_connectionData.swap( candidate );
         }
 
         // ---------------------------------------------------------------
@@ -243,8 +246,8 @@ namespace workphone
         void CRoadConnection::setRoadNodes( const Array<SmartPtr<IRoadNode>> &roadNodes )
         {
             // Filter out null entries defensively.
-            m_roadNodes.clear();
-            m_roadNodes.reserve( roadNodes.size() );
+            Array<SmartPtr<IRoadNode>> candidate{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
+            candidate.reserve( roadNodes.capacity() );
 
             for( auto &node : roadNodes )
             {
@@ -254,8 +257,9 @@ namespace workphone
                     continue;
                 }
 
-                m_roadNodes.push_back( node );
+                candidate.push_back( node );
             }
+            m_roadNodes.swap( candidate );
         }
 
         // ---------------------------------------------------------------

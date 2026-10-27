@@ -47,8 +47,9 @@ namespace workphone
         {
             try
             {
-                m_roads.clear();
-                m_roadElement = nullptr;
+                auto retired_roads = std::move( m_roads );
+
+                auto element = std::exchange( m_roadElement, nullptr );
 
                 // Delegate connected-node and merged-node teardown to the base
                 // class so it can maintain its own invariants.

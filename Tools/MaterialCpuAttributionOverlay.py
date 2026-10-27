@@ -39,9 +39,15 @@ def instrument(raw, header, baseline):
                 (body.index(draw),'            wpMaterialCpuScope.stop();\n'),
                 (body.rfind('\n',0,loop_end)+1,'            wpMaterialCpuScope.resume();\n')]
     for offset,text in sorted(insertions,reverse=True):body=body[:offset]+text+body[offset:]
-    # A generated untextured fixture must never enter an adapter/COM path.
-    body=re.sub(r'(?m)^(\s*)(texture|reflection)->getTextureFinal\(',
-                r'\1::material_cpu_attribution::texturePath();\n\1\2->getTextureFinal(',body)
+    # Count one logical texture resolution on both adapter and explicit-renderer
+    # paths. A generated untextured fixture must never enter either path.
+    resolver='const auto resolveTexture = [&]( ITexture *texture ) -> void * {'
+    if resolver in body:
+        if body.count(resolver)!=1:raise ValueError('Ambiguous texture resolver')
+        body=body.replace(resolver,resolver+'\n                ::material_cpu_attribution::texturePath();')
+    else:
+        body=re.sub(r'(?m)^(\s*)(texture|reflection)->getTextureFinal\(',
+                    r'\1::material_cpu_attribution::texturePath();\n\1\2->getTextureFinal(',body)
     source=source[:begin]+body+source[end+1:]
     line=source.index('\n')+1
     include='#define WORKPHONE_MATERIAL_CPU_PROBE_IMPLEMENTATION\n#include "'+header.as_posix()+'"\n'

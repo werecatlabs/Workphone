@@ -31,12 +31,13 @@ namespace workphone
 
             void unload( SmartPtr<ISharedObject> data ) override
             {
-                m_connectedNodes.clear();
-                m_mergedNodes.clear();
-
-                m_parentNode = nullptr;
-                m_mergedNode = nullptr;
-                m_networkNode = nullptr;
+                auto connected = std::move( m_connectedNodes );
+                auto merged = std::move( m_mergedNodes );
+                auto objects = std::move( m_connectedObjects );
+                auto parent = std::exchange( m_parentNode, nullptr );
+                auto mergedOwner = std::exchange( m_mergedNode, nullptr );
+                auto network = std::exchange( m_networkNode, nullptr );
+                CProceduralObject<T>::unload( data );
             }
 
             SmartPtr<IProceduralNode> getParentNode() const
@@ -79,10 +80,11 @@ namespace workphone
                 WP_ASSERT( node );
                 // WP_ASSERT(node != getSharedFromThis<IProceduralNode>());
 
-                Set<SmartPtr<IProceduralNode>> set( m_connectedNodes.begin(), m_connectedNodes.end() );
-                set.insert( node );
-
-                m_connectedNodes = Array<SmartPtr<IProceduralNode>>( set.begin(), set.end() );
+                if( !node || isConnected( node ) ) return;
+                auto candidate = makeSourceBudgetSnapshot( m_connectedNodes );
+                candidate.push_back( node );
+                std::sort( candidate.begin(), candidate.end() );
+                m_connectedNodes.swap( candidate );
             }
 
             void disconnect( SmartPtr<IProceduralNode> node )
@@ -164,7 +166,8 @@ namespace workphone
 
             void setMergedNodes( Array<SmartPtr<IProceduralNode>> value )
             {
-                m_mergedNodes = value;
+                auto candidate = makeSourceBudgetSnapshot( value );
+                m_mergedNodes.swap( candidate );
             }
 
             SmartPtr<IProceduralNode> getMergedNode() const override
@@ -248,13 +251,13 @@ namespace workphone
             SmartPtr<IProceduralNode> m_networkNode;
 
             /// The objects connected to this node.
-            Array<SmartPtr<IProceduralObject>> m_connectedObjects;
+            Array<SmartPtr<IProceduralObject>> m_connectedObjects{ Allocator<SmartPtr<IProceduralObject>>( sourceBudget ) };
 
             /// The nodes connected to this node.
-            Array<SmartPtr<IProceduralNode>> m_connectedNodes;
+            Array<SmartPtr<IProceduralNode>> m_connectedNodes{ Allocator<SmartPtr<IProceduralNode>>( sourceBudget ) };
 
             /// The merged node.
-            Array<SmartPtr<IProceduralNode>> m_mergedNodes;
+            Array<SmartPtr<IProceduralNode>> m_mergedNodes{ Allocator<SmartPtr<IProceduralNode>>( sourceBudget ) };
 
             /// An id to make this node unique.
             String m_uniqueId = "";

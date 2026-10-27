@@ -22,7 +22,7 @@ namespace workphone
          * duplicated, saved, and edited by tools without touching the
          * generation algorithms.
          */
-        struct WPProcedural_API SRoadGeneratorOptions
+        struct WPProcedural_API SRoadGeneratorOptions : SourceBudgetObject
         {
             String patternName;
             int seed = 0;
@@ -62,7 +62,7 @@ namespace workphone
             void generate() override;
 
             void validate();
-            void clear();
+            virtual void clear();
 
             bool isFinished() const override;
 

@@ -71,10 +71,8 @@ namespace workphone
             String m_resourceName;       ///< Asset resource name for this connection mesh.
             String m_connectionType;     ///< Free-form type tag (e.g. "intersection", "merge").
             SmartPtr<IRoadNode> m_node;  ///< Primary road node at this connection.
-            Array<SmartPtr<IRoadNode>>
-                m_roadNodes;  ///< All road nodes that participate in this connection.
-            Array<SmartPtr<IRoadConnectionData>>
-                m_connectionData;  ///< Per-road connection descriptor records.
+            Array<SmartPtr<IRoadNode>> m_roadNodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };  ///< All road nodes that participate in this connection.
+            Array<SmartPtr<IRoadConnectionData>> m_connectionData{ Allocator<SmartPtr<IRoadConnectionData>>( sourceBudget ) };  ///< Per-road connection descriptor records.
         };
     }  // end namespace procedural
 }  // namespace workphone

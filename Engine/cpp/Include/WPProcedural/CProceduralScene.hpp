@@ -14,6 +14,7 @@ namespace workphone
         public:
             CProceduralScene();
             ~CProceduralScene() override;
+            void unload( SmartPtr<ISharedObject> data ) override;
 
             void addCity( SmartPtr<IProceduralCity> city ) override;
             void removeCity( SmartPtr<IProceduralCity> city ) override;
@@ -26,8 +27,8 @@ namespace workphone
             void setTerrains( Array<SmartPtr<IProceduralTerrain>> terrains ) override;
 
         private:
-            Array<SmartPtr<IProceduralCity>> m_cities;
-            Array<SmartPtr<IProceduralTerrain>> m_terrains;
+            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralTerrain>> m_terrains{ Allocator<SmartPtr<IProceduralTerrain>>( sourceBudget ) };
         };
     }  // end namespace procedural
 }  // namespace workphone

@@ -544,14 +544,20 @@ namespace
         using namespace workphone;
         using namespace render;
 
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
-        auto renderer = graphicsSystem
-                            ? dynamic_pointer_cast<ClawRendererDX11>( graphicsSystem->getRenderer() )
-                            : nullptr;
-        auto dx11 = explicitRenderer
-                        ? explicitRenderer
-                        : ( renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr );
+        // A caller that already owns the renderer need not acquire the
+        // application, graphics system and renderer again on every lookup.
+        // Keep the fallback owner alive until texture resolution completes.
+        SmartPtr<ClawRendererDX11> renderer;
+        auto dx11 = explicitRenderer;
+        if( !dx11 )
+        {
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            renderer = graphicsSystem
+                           ? dynamic_pointer_cast<ClawRendererDX11>( graphicsSystem->getRenderer() )
+                           : nullptr;
+            dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
+        }
         auto device = dx11 ? wp_renderer_dx11_get_device( dx11 ) : nullptr;
 
         std::scoped_lock lock( g_textureMutex );

@@ -45,5 +45,13 @@ class MatchedSceneGuards(unittest.TestCase):
         for wrong in (before,{path:'new','unrelated':'changed'},{path:'new'}):
             with self.assertRaises(ValueError):comparison.source_changes(before,wrong)
 
+    def test_native_scope_normalizes_only_one_exact_bridge_include(self):
+        old=Path('G:/old/bridge.h');new=Path('C:/new/bridge.h')
+        raw=lambda path:('#include "'+path.as_posix()+'"\nreal_native_code();\n').encode()
+        self.assertEqual(comparison.canonical_native_overlay(raw(old),old),comparison.canonical_native_overlay(raw(new),new))
+        self.assertNotEqual(comparison.canonical_native_overlay(raw(old),old),comparison.canonical_native_overlay(raw(new)+b'extra_probe();',new))
+        for invalid in (b'no include',raw(new)+raw(new)):
+            with self.assertRaises(ValueError):comparison.canonical_native_overlay(invalid,new)
+
 
 if __name__=='__main__':unittest.main()

@@ -55,40 +55,44 @@ namespace workphone
         {
             try
             {
+                auto retired_roadNodes = std::move( m_roadNodes );
+                auto retired_roadSegments = std::move( m_roadSegments );
+                auto retired_roadSections = std::move( m_roadSections );
+
                 const auto resultId = StringUtil::getHash( "WPRoadSegmentResult" );
                 if( getUserData( resultId ) )
                 {
                     setUserData( resultId, nullptr );
                 }
-                for( auto &roadNode : m_roadNodes )
+                CProceduralObject<IRoad>::unload( data );
+                for( auto &roadNode : retired_roadNodes )
                 {
                     if( roadNode )
                     {
-                        roadNode->unload( nullptr );
+                        try { roadNode->unload( nullptr ); }
+                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
                     }
                 }
 
-                for( auto &roadSegment : m_roadSegments )
+                for( auto &roadSegment : retired_roadSegments )
                 {
                     if( roadSegment )
                     {
-                        roadSegment->unload( nullptr );
+                        try { roadSegment->unload( nullptr ); }
+                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
                     }
                 }
 
-                for( auto &roadSection : m_roadSections )
+                for( auto &roadSection : retired_roadSections )
                 {
                     if( roadSection )
                     {
-                        roadSection->unload( nullptr );
+                        try { roadSection->unload( nullptr ); }
+                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
                     }
                 }
 
-                m_roadNodes.clear();
-                m_roadSegments.clear();
-                m_roadSections.clear();
 
-                CProceduralObject<IRoad>::unload( data );
             }
             catch( std::exception &e )
             {
@@ -165,7 +169,8 @@ namespace workphone
 
         void CRoad::setRoadSegments( Array<SmartPtr<IRoadElement>> value )
         {
-            m_roadSegments = value;
+            auto candidate = makeSourceBudgetSnapshot( value );
+            m_roadSegments.swap( candidate );
         }
 
         const Array<SmartPtr<IRoadElement>> &CRoad::getRoadSegments() const
@@ -349,7 +354,7 @@ namespace workphone
                 return false;
             }
 
-            Array<SmartPtr<IRoadNode>> nodes;
+            Array<SmartPtr<IRoadNode>> nodes{ typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) };
             return intersects( road, intersectionPoint, nodes, checkStart );
         }
 
@@ -495,7 +500,7 @@ namespace workphone
 
         Array<SmartPtr<IRoadHitPoint>> CRoad::intersects( SmartPtr<IRoad> road )
         {
-            Array<SmartPtr<IRoadHitPoint>> hitPoints;
+            Array<SmartPtr<IRoadHitPoint>> hitPoints{ typename Array<SmartPtr<IRoadHitPoint>>::allocator_type( sourceBudget ) };
 
             if( !road )
             {
@@ -658,7 +663,7 @@ namespace workphone
         {
             auto nodes = getNodes();
 
-            auto roadNodes = Array<SmartPtr<IRoadNode>>();
+            auto roadNodes = Array<SmartPtr<IRoadNode>>( typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
             roadNodes.reserve( nodes.size() );
 
             for( auto &node : nodes )
@@ -772,7 +777,7 @@ namespace workphone
 
         Vector3<real_Num> CRoad::getPointOnRoad( real_Num distance )
         {
-            Array<SmartPtr<IRoadNode>> unused;
+            Array<SmartPtr<IRoadNode>> unused{ typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) };
             return getPointOnRoad( distance, unused );
         }
 
@@ -857,12 +862,13 @@ namespace workphone
 
         void CRoad::setRoadSections( Array<SmartPtr<IRoadSection>> value )
         {
-            m_roadSections = value;
+            auto candidate = makeSourceBudgetSnapshot( value );
+            m_roadSections.swap( candidate );
         }
 
         Array<SmartPtr<IProceduralNode>> CRoad::getNodes() const
         {
-            auto roadNodes = Array<SmartPtr<IProceduralNode>>();
+            auto roadNodes = Array<SmartPtr<IProceduralNode>>( typename Array<SmartPtr<IProceduralNode>>::allocator_type( sourceBudget ) );
 
             try
             {
@@ -879,6 +885,7 @@ namespace workphone
                     roadNodes.insert( roadNodes.end(), nodes.begin(), nodes.end() );
                 }
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );

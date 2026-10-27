@@ -40,6 +40,18 @@ namespace workphone
 
         /** Destructor. */
         ~Polygon2();
+        Polygon2( Polygon2 && ) noexcept = default;
+        Polygon2 &operator=( Polygon2 && ) noexcept = default;
+        Polygon2 &operator=( const Polygon2 &other )
+        {
+            if( this != &other )
+            {
+                auto candidate = makeSourceBudgetSnapshot( other.m_points );
+                m_points.swap( candidate );
+            }
+            return *this;
+        }
+        void swap( Polygon2 &other ) noexcept { m_points.swap( other.m_points ); }
 
         /**
          * @brief Determines whether this `Polygon2` is equal to another `Polygon2`.
@@ -280,7 +292,7 @@ namespace workphone
          */
         T polygonEdgeLength2D( s32 i );
 
-        Array<Vector2<T>> m_points; /**< The 2D points that make up the polygon. */
+        Array<Vector2<T>> m_points{ Allocator<Vector2<T>>( sourceBudget ) }; /**< The 2D points that make up the polygon. */
     };
 
     /**

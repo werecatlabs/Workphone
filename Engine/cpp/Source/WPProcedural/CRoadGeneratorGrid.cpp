@@ -47,6 +47,19 @@ namespace workphone
         // ===================================================================
         // MAIN GENERATE ENTRY POINT
         // ===================================================================
+        void CRoadGeneratorGrid::clear()
+        {
+            auto cities = std::move( m_cities );
+            auto city = std::exchange( m_city, nullptr );
+            auto network = std::exchange( m_roadNetwork, nullptr );
+            auto generator = std::exchange( m_cityGenerator, nullptr );
+            auto layer = std::exchange( m_selectedLayer, nullptr );
+            auto input = std::exchange( m_input, nullptr );
+            auto output = std::exchange( m_output, nullptr );
+            auto parent = std::exchange( m_parent, nullptr );
+            CRoadGenerator::clear();
+        }
+
         void CRoadGeneratorGrid::generate()
         {
             try
@@ -88,8 +101,8 @@ namespace workphone
             // Create the AAA road system
             WPRoadSystem roadSystem( seed );
 
-            Array<SmartPtr<IRoad>> roads;
-            Array<SmartPtr<IRoadConnection>> connections;
+            Array<SmartPtr<IRoad>> roads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
+            Array<SmartPtr<IRoadConnection>> connections{ typename Array<SmartPtr<IRoadConnection>>::allocator_type( sourceBudget ) };
 
             // --- Build horizontal roads (along X axis) ---
             for( s32 row = 0; row < gridY; ++row )

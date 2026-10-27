@@ -61,6 +61,7 @@ namespace workphone
             void addBlock( SmartPtr<ICityBlock> block ) override;
             void removeBlock( SmartPtr<ICityBlock> block ) override;
             Array<SmartPtr<ICityBlock>> getBlocks() const override;
+            void setBlocks( const Array<SmartPtr<ICityBlock>> &blocks ) override;
 
             Vector2<real_Num> getSize() const override;
             void setSize( const Vector2<real_Num> &value ) override;

@@ -97,7 +97,7 @@ namespace workphone
 
         protected:
             SmartPtr<IRoadSection> m_parentSection;  ///< Owning road section.
-            Array<SmartPtr<IRoadNode>> m_sidewalks;  ///< Sidewalk nodes attached to this element.
+            Array<SmartPtr<IRoadNode>> m_sidewalks{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };  ///< Sidewalk nodes attached to this element.
 
             IRoad::RoadType m_roadType = IRoad::RoadType::None;     ///< Functional road classification.
             IRoad::LaneType m_laneType = IRoad::LaneType::TwoLane;  ///< Number of lanes.

@@ -8,6 +8,8 @@
 #include <Workphone/Interface/Procedural/IProceduralScene.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Core/LogManager.hpp>
+#include <utility>
 
 namespace workphone
 {
@@ -29,16 +31,18 @@ namespace workphone
 
             void unload( SmartPtr<ISharedObject> data ) override
             {
-                for( auto node : m_nodes )
+                auto nodes = std::move( m_nodes );
+                auto polygon = std::move( m_polygon );
+                auto properties = std::exchange( m_properties, nullptr );
+                auto scene = std::exchange( m_scene, nullptr );
+                for( auto &node : nodes )
                 {
-                    node->unload( nullptr );
+                    if( node )
+                    {
+                        try { node->unload( nullptr ); }
+                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                    }
                 }
-
-                m_nodes.clear();
-
-                // m_worldTransform = nullptr;
-                m_properties = nullptr;
-                m_scene = nullptr;
             }
 
             virtual void build()
@@ -185,7 +189,7 @@ namespace workphone
             SmartPtr<IProceduralScene> m_scene;
 
             /// nodes
-            Array<SmartPtr<IProceduralNode>> m_nodes;
+            Array<SmartPtr<IProceduralNode>> m_nodes{ Allocator<SmartPtr<IProceduralNode>>( sourceBudget ) };
 
             /// polygon
             Polygon2<real_Num> m_polygon;

@@ -69,7 +69,7 @@ namespace workphone::render
         using Identity = const MaterialRenderState *;
         std::unordered_map<Identity, u32, std::hash<Identity>, std::equal_to<Identity>,
             detail::MaterialStorageAllocator<std::pair<const Identity, u32>>> identities{&nodePool};
-        u32 size = 0, resident = 0, freeHead = noSlot, sweep = 0;
+        u32 size = 0, resident = 0, freeHead = noSlot, sweep = 0, deferredSweep = 0;
 
         ~Store()
         {
@@ -117,11 +117,15 @@ namespace workphone::render
         }
         Slot &allocate()
         {
-            // Reclamation supplies reusable slots. Once available, consume
-            // them before another sweep; a bulk edit must not scan 32 weak
-            // owners for every record it prepares. maintain() still performs
-            // bounded background reclamation, including frames without edits.
-            if(freeHead == noSlot) collect(32);
+            // Consume reclaimed slots together, carrying their scan budget
+            // forward. Before growing, pay that debt (at most one full sweep).
+            // Dropping it would starve reclamation behind large live sets.
+            if(freeHead == noSlot)
+            {
+                collect(static_cast<u32>(std::min<u64>(size, u64(deferredSweep) + 32)));
+                deferredSweep = 0;
+            }
+            else deferredSweep = static_cast<u32>(std::min<u64>(size, u64(deferredSweep) + 32));
             if(freeHead != noSlot)
             {
                 auto &slot = at(freeHead); freeHead = slot.nextFree;

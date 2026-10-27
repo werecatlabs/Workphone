@@ -381,8 +381,8 @@ namespace workphone
             // Create the AAA road system
             WPRoadSystem roadSystem( static_cast<u32>( m_options.seed ) );
 
-            Array<SmartPtr<IRoad>> majorRoads;
-            Array<SmartPtr<IRoad>> minorRoads;
+            Array<SmartPtr<IRoad>> majorRoads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
+            Array<SmartPtr<IRoad>> minorRoads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
 
             // Generate major roads (radial highways)
             for( s32 majorIdx = 0; majorIdx < m_options.numMajorRoads; ++majorIdx )
@@ -462,7 +462,7 @@ namespace workphone
 
                 for( s32 minorIdx = 0; minorIdx < clampedMinor; ++minorIdx )
                 {
-                    Array<SmartPtr<IRoadNode>> pointNodes;
+                    Array<SmartPtr<IRoadNode>> pointNodes{ typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) };
                     const auto distance =
                         m_options.roadOffset + m_options.roadDistance * static_cast<f32>( minorIdx );
                     const auto startPos = static_cast<CRoad *>( majorRoadCr.get() )

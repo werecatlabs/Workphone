@@ -88,6 +88,23 @@ class OverlayGuards(unittest.TestCase):
             self.assertLess(output.index('realNativeDraw()'),output.index('wpMaterialCpuScope.resume()'))
             self.assertEqual(output.count('realNativeDraw()'),1)
 
+    def test_explicit_texture_resolution_counts_once_before_both_paths(self):
+        original=self.source(False).decode()
+        helper=('            const auto resolveTexture = [&]( ITexture *texture ) -> void * {\n'
+                '                if(auto view=texture->getNativeTextureView(dx11)) return view;\n'
+                '                void *view=nullptr;\n'
+                '                texture->getTextureFinal( &view );\n'
+                '                return view;\n            };\n')
+        draw='            if( instances )'
+        source=original.replace(draw,helper+draw,1).encode()
+        output=instrument(source,Path('probe.hpp'),False).decode()
+        self.assertEqual(output.count('::material_cpu_attribution::texturePath();'),1)
+        self.assertLess(output.index('texturePath();'),output.index('getNativeTextureView'))
+        self.assertLess(output.index('texturePath();'),output.index('getTextureFinal'))
+        self.assertLess(output.index('texturePath();'),output.index('wpMaterialCpuScope.stop()'))
+        with self.assertRaises(ValueError):
+            instrument(original.replace(draw,helper+helper+draw,1).encode(),Path('probe.hpp'),False)
+
     def test_unknown_or_already_instrumented_algorithm_rejects(self):
         with self.assertRaises(ValueError):instrument(b'unknown renderer',Path('probe.hpp'),True)
         value=instrument(self.source(True),Path('probe.hpp'),True)
