@@ -1186,6 +1186,68 @@ namespace
         ok &= checkMaterialBuffer(native, 1, {vectors[0],vectors[1],vectors[2],vectors[6],vectors[7],vectors[8],vectors[11],vectors[12]});
         ok &= checkMaterialBuffer(native, 6, {vectors[3],vectors[4],vectors[5],vectors[13],vectors[14],vectors[15],vectors[16]});
         ok &= checkMaterialBuffer(native, 7, {vectors[9],vectors[10]});
+        // GPU readback covers unchanged views across material edits, independent
+        // colour/emission changes and explicit cache invalidation, in both policies.
+        {
+            using Microsoft::WRL::ComPtr;
+            auto device = static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(native));
+            ComPtr<ID3D11Texture2D> texture;
+            ComPtr<ID3D11ShaderResourceView> views[2];
+            D3D11_TEXTURE2D_DESC desc{};
+            desc.Width = desc.Height = desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+            desc.Format = DXGI_FORMAT_R8G8B8A8_TYPELESS;
+            desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            ok &= check(SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &texture)), "transfer fixture texture allocates");
+            for(unsigned index = 0; index < 2 && texture; ++index) {
+                D3D11_SHADER_RESOURCE_VIEW_DESC srv{};
+                srv.Format = index ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
+                srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D; srv.Texture2D.MipLevels = 1;
+                ok &= check(SUCCEEDED(device->CreateShaderResourceView(texture.Get(), &srv, &views[index])), "transfer fixture views allocate");
+            }
+            ComPtr<ID3D11ShaderResourceView> white;
+            static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(native))->PSGetShaderResources(0, 1, &white);
+            ok &= check(white != nullptr, "transfer fixture retains the actual untextured fallback view");
+            const int colour[] = {-1,0,0,1,1,1,0,-1}, emission[] = {1,1,0,0,0,-1,-1,-1};
+            for(int policy = 0; policy < 2 && views[0] && views[1]; ++policy) {
+                ok &= check(renderer.setSplitMaterialUploads(policy != 0), "transfer fixture selects upload policy");
+                for(unsigned step = 0; step < 8; ++step) {
+                    void *maps[6]{};
+                    const int leading[] = {0,0,0,-1,-1,-1,1,-1}, trailing[] = {-1,0,0,0,0,-1,-1,-1};
+                    maps[0] = leading[step] < 0 ? nullptr : views[leading[step]].Get();
+                    maps[3] = emission[step] < 0 ? nullptr : views[emission[step]].Get();
+                    maps[5] = trailing[step] < 0 ? nullptr : views[trailing[step]].Get();
+                    wp_renderer_dx11_set_texture_native(native, colour[step] < 0 ? nullptr : views[colour[step]].Get());
+                    wp_renderer_dx11_set_material_textures(native, maps);
+                    wp_material_dx11 value{}; value.base_color = {float(step)/8,0,0,1}; value.controls.z = -1;
+                    // Caller values cannot override transfer ownership derived from SRVs.
+                    value.extra_map_flags.z = value.extra_map_flags.w = 9;
+                    wp_renderer_dx11_set_material(native, &value);
+                    if(step == 4) wp_renderer_dx11_invalidate_state(native);
+                    wp_renderer_dx11_draw_geometry_pntc(native, geometry, 0, 3, 0);
+                    auto context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(native));
+                    ID3D11ShaderResourceView *bound[8]{};
+                    context->PSGetShaderResources(0, 8, bound);
+                    for(unsigned slot = 0; slot < 8; ++slot) {
+                        const auto expected = slot == 0 ? (colour[step] < 0 ? white.Get() : views[colour[step]].Get()) :
+                            slot == 7 ? nullptr : static_cast<ID3D11ShaderResourceView *>(maps[slot - 1]);
+                        ok &= check(bound[slot] == expected && (slot != 0 || bound[0]), "SRV bindings preserve every unchanged or cleared slot");
+                        if(bound[slot]) bound[slot]->Release();
+                    }
+                    value.extra_map_flags.z = colour[step] == 1 ? 1.f : 0.f;
+                    value.extra_map_flags.w = emission[step] == 1 ? 1.f : 0.f;
+                    if(policy) ok &= checkMaterialBuffer(native, 7, {value.map_flags,value.extra_map_flags});
+                    else {
+                        std::vector<wp_vec4f> expected(17);
+                        static_assert(sizeof(value) == sizeof(wp_vec4f)*17);
+                        std::memcpy(expected.data(), &value, sizeof(value));
+                        ok &= checkMaterialBuffer(native, 1, expected);
+                    }
+                }
+            }
+            wp_renderer_dx11_set_texture_native(native, nullptr);
+            wp_renderer_dx11_set_material_textures(native, nullptr);
+            ok &= check(renderer.setSplitMaterialUploads(true), "transfer fixture restores split policy");
+        }
         if(wp_renderer_dx11_begin_shadow_map(native, &identity, 64)) {
             ok &= check(!renderer.setSplitMaterialUploads(false) && renderer.setSplitMaterialUploads(true),
                 "shadow passes reject upload policy changes but allow equal assignments");
