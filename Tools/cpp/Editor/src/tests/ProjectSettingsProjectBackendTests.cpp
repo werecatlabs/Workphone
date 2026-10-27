@@ -6,6 +6,7 @@
 #include <editor/Project.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ProjectServices.hpp>
+#include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -23,6 +24,7 @@ namespace
         ~ProjectBackendTemporary()
         {
             String error; configureProjectServices( {}, false, false, false, error );
+            setProjectServiceProviders( {} );
             std::error_code ignored; std::filesystem::remove_all( root, ignored );
         }
     };
@@ -71,6 +73,17 @@ BOOST_AUTO_TEST_CASE( project_services_local_providers_test )
     char signature[4]{}; dump.read( signature, sizeof( signature ) );
     BOOST_CHECK_EQUAL( std::string( signature, 4 ), "MDMP" );
 #endif
+    // Applying settings must retain plugin-injected providers instead of silently
+    // replacing them with the local defaults.
+    const auto injectedRoot = temporary.root / "injected";
+    setProjectServiceProviders( makeLocalProjectServiceProviders( injectedRoot.u8string().c_str() ) );
+    auto settings = make_ptr<Properties>();
+    settings->setProperty( "services.cloudSave", true );
+    settings->setProperty( "services.analytics", false );
+    settings->setProperty( "services.crashReporting", false );
+    BOOST_REQUIRE_MESSAGE( applyProjectServiceSettings( settings, temporary.root.u8string().c_str(), error ), error );
+    BOOST_REQUIRE( putProjectCloudSave( "injected-slot", original, error ) );
+    BOOST_CHECK( std::filesystem::is_regular_file( injectedRoot / "cloud-saves/slot-injected-slot.save" ) );
 }
 
 BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
@@ -93,6 +106,23 @@ BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
     DataUtil::parse( text.str().c_str(), manifest.get() );
     BOOST_CHECK_EQUAL( manifest->getProperty( "project" ), "Fixture Product" );
     BOOST_CHECK_EQUAL( manifest->getPropertyAsInt( "defaultLanguage" ), 3 );
+    // Only the selected platform requires its encoder. Saving mobile defaults
+    // on a desktop project remains possible without mobile encoder plugins.
+    settings->setProperty("assets.textureCompression.pc",s32(1));
+    settings->setProperty("assets.textureCompression.ios",s32(2));
+    settings->setProperty("assets.textureCompression.android",s32(3));
+    BOOST_CHECK(validateProjectSettingsProjectBackend(settings)->getPropertyAsBool("success"));
+    registerTextureCompressionEncoder("bc7",{});
+    settings->setProperty("assets.textureCompression.pc",s32(2));
+    auto missingEncoder=validateProjectSettingsProjectBackend(settings);
+    BOOST_CHECK(!missingEncoder->getPropertyAsBool("success"));
+    BOOST_CHECK(missingEncoder->getProperty("status").find("bc7")!=String::npos);
+    settings->setProperty("assets.textureCompression.pc",s32(1));
+    auto metadata=make_ptr<Properties>();metadata->setProperty("project.productName","Only metadata");
+    auto noDomain=applyProjectSettingsProjectBackend(metadata);
+    BOOST_CHECK(noDomain->getPropertyAsBool("success"));
+    BOOST_CHECK(noDomain->getProperty("appliedKeys").empty());
+    BOOST_CHECK(noDomain->getProperty("pendingKeys").empty());
     settings->setProperty( "network.multiplayer", true );
     settings->setProperty( "network.backend", s32( 0 ) );
     BOOST_CHECK( !validateProjectSettingsProjectBackend( settings )->getPropertyAsBool( "success" ) );

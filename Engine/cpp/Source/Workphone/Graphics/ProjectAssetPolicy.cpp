@@ -32,6 +32,11 @@ namespace workphone
         std::lock_guard<std::mutex> lock( encoderMutex );
         if( encoder ) encoders[format]=std::move(encoder); else encoders.erase(format);
     }
+    bool hasTextureCompressionEncoder( const String &format )
+    {
+        if( format=="none" || format=="bc1" || format=="bc3" ) return true;
+        std::lock_guard<std::mutex> lock( encoderMutex ); return encoders.find(format)!=encoders.end();
+    }
     bool encodeTextureCompression( const TextureCompressionRequest &request, TextureCompressionOutput &output, String &error )
     {
         TextureCompressionEncoder encoder;

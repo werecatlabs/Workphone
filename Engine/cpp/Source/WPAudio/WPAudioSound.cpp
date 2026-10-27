@@ -112,20 +112,23 @@ namespace workphone
 
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         bool streaming = false;
-        size_t streamCursor = 0, streamBlockBytes = 0;
+        std::atomic_size_t streamCursor{ 0 };
+        size_t streamBlockBytes = 0;
         bool submitStreamBlock()
         {
-            if( streamCursor >= wav->samples.size() )
+            size_t begin = streamCursor.load();
+            size_t end;
+            for( ;; )
             {
-                if( !loop ) return false;
-                streamCursor = 0;
+                const auto offset = begin >= wav->samples.size() ? size_t( 0 ) : begin;
+                if( begin >= wav->samples.size() && !loop ) return false;
+                end = offset + std::min( streamBlockBytes, wav->samples.size() - offset );
+                if( streamCursor.compare_exchange_weak( begin, end ) ) { begin = offset; break; }
             }
             XAUDIO2_BUFFER next = {};
-            next.AudioBytes = static_cast<UINT32>( std::min( streamBlockBytes,
-                                                           wav->samples.size() - streamCursor ) );
-            next.pAudioData = wav->samples.data() + streamCursor;
-            streamCursor += next.AudioBytes;
-            if( streamCursor == wav->samples.size() && !loop ) next.Flags = XAUDIO2_END_OF_STREAM;
+            next.AudioBytes = static_cast<UINT32>( end - begin );
+            next.pAudioData = wav->samples.data() + begin;
+            if( end == wav->samples.size() && !loop ) next.Flags = XAUDIO2_END_OF_STREAM;
             return SUCCEEDED( sourceVoice->SubmitSourceBuffer( &next ) );
         }
         struct VoiceCallback final : IXAudio2VoiceCallback

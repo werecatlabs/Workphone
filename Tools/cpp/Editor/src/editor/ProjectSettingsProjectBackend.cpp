@@ -156,7 +156,8 @@ namespace workphone::editor
             {
                 auto app = core::IApplicationManager::instancePtr();
                 auto factory = app ? app->getFactoryManager() : nullptr;
-                if( !factory || !factory->getFactoryByName( "ExternalProjectScriptManager" ) )
+                const auto provider = factory ? factory->getFactoryByName( "ExternalProjectScriptManager" ) : nullptr;
+                if( !provider || !provider->isObjectDerivedFromByInfo( IScriptManager::typeInfo() ) )
                     throw std::invalid_argument( "Install an IScriptManager provider named ExternalProjectScriptManager for External VM" );
             }
             const auto reflection = s.getPropertyAsInt( "scripting.reflection", 1 );
@@ -170,7 +171,8 @@ namespace workphone::editor
                 auto app = core::IApplicationManager::instancePtr();
                 auto factory = app ? app->getFactoryManager() : nullptr;
                 const String provider = network == 1 ? "WPNetworkManager" : network == 2 ? "BoostAsioNetworkManager" : "PlatformNetworkManager";
-                if( !factory || !factory->getFactoryByName( provider ) )
+                const auto implementation = factory ? factory->getFactoryByName( provider ) : nullptr;
+                if( !implementation || !implementation->isObjectDerivedFromByInfo( INetworkManager::typeInfo() ) )
                     throw std::invalid_argument( ( "Install the network provider plugin: " + provider ).c_str() );
             }
             if( s.getPropertyAsInt( "build.android.minSdk", 26 ) > s.getPropertyAsInt( "build.android.targetSdk", 35 ) )
@@ -182,6 +184,14 @@ namespace workphone::editor
                 const auto maximum = String( key ) == "assets.textureCompression.android" ? 4 : 3;
                 const auto value = s.getPropertyAsInt( key );
                 if( value < 0 || value > maximum ) throw std::invalid_argument( ( String( "Invalid asset policy: " ) + key ).c_str() );
+            }
+            const char *textureKeys[]={"assets.textureCompression.pc","assets.textureCompression.mac","assets.textureCompression.ios","assets.textureCompression.android"};
+            const auto active=s.getPropertyAsInt("platform.active",0);
+            if(s.hasProperty(textureKeys[active]))
+            {
+                ProjectAssetPolicy policy;policy.platform=active;policy.textureCompression=s.getPropertyAsInt(textureKeys[active]);
+                const auto format=projectTextureCompressionName(policy,true);
+                if(!hasTextureCompressionEncoder(format)) throw std::invalid_argument(("Install a texture encoder provider for "+format+" before cooking the active platform").c_str());
             }
         }
     }
@@ -220,24 +230,37 @@ namespace workphone::editor
         {
             if( !settings ) throw std::invalid_argument( "Project profile is unavailable" );
             bool domain = false;
+            String requested, runtimeKeys, buildKeys;
+            const auto appendKey=[](String &list,const String &key){if(!list.empty())list+="; ";list+=key;};
+            const char *textureKeys[]={"assets.textureCompression.pc","assets.textureCompression.mac","assets.textureCompression.ios","assets.textureCompression.android"};
+            const auto activePlatform=settings->getPropertyAsInt("platform.active",0);
+            const String activeTextureKey=textureKeys[std::clamp(activePlatform,0,3)];
             for( const auto &property : settings->getPropertiesAsArray() )
             {
                 const auto key = property.getName();
                 if( key.find( "services." ) == 0 || key.find( "scripting." ) == 0 || key.find( "network." ) == 0 ||
-                    key.find( "build." ) == 0 || key.find( "project." ) == 0 || key.find( "assets." ) == 0 ) { domain = true; break; }
+                    key.find( "build." ) == 0 || key.find( "assets." ) == 0 || key=="platform.active" )
+                {
+                    domain=true;appendKey(requested,key);
+                    if(key.find("build.")==0 || key=="platform.active" ||
+                       (key.find("assets.textureCompression.")==0 && key!=activeTextureKey))appendKey(buildKeys,key);
+                    else appendKey(runtimeKeys,key);
+                }
             }
             if( !domain ) return resultFor( true, "No project backend settings in this request." );
             validate( *settings );
             auto app = core::IApplicationManager::instancePtr();
-            if( !app ) return resultFor( true, "Project backends will initialize at application startup." );
+            const auto pendingReply=[&](const String &message){auto reply=resultFor(true,message);reply->setProperty("pendingKeys",requested);return reply;};
+            if( !app ) return pendingReply("Project backends will initialize at application startup.");
             auto editor = EditorManager::getSingletonPtr();
             const auto root = editor && editor->getProject() ? editor->getProject()->getPath() : app->getProjectPath();
-            if( root.empty() ) return resultFor( true, "Project backends will initialize when a project directory is available." );
+            if( root.empty() ) return pendingReply("Project backends will initialize when a project directory is available.");
             String error;
             if( !writeProjectAssetPolicy( root, settings, error ) ) throw std::runtime_error( error.c_str() );
             if( !applyProjectServiceSettings( settings, root, error ) )
                 throw std::runtime_error( error.c_str() );
-            return resultFor( true, "Project script policy, local service providers and network lifecycle applied." );
+            auto reply=resultFor( true, "Project script policy, local service providers and network lifecycle applied." );
+            reply->setProperty("appliedKeys",runtimeKeys);reply->setProperty("pendingKeys",buildKeys);return reply;
         }
         catch( const std::exception &e ) { return resultFor( false, e.what() ); }
     }

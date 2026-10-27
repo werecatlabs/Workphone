@@ -31,6 +31,7 @@ namespace workphone
                                                            TextureCompressionOutput &, String & )>;
     /** Provider registration is explicit; absent encoders fail without format substitution. */
     WPCore_API void registerTextureCompressionEncoder( const String &format, TextureCompressionEncoder encoder );
+    WPCore_API bool hasTextureCompressionEncoder( const String &format );
     WPCore_API bool encodeTextureCompression( const TextureCompressionRequest &request,
                                                TextureCompressionOutput &output, String &error );
     WPCore_API bool writeProjectAssetPolicy( const String &root, SmartPtr<Properties> settings, String &error );

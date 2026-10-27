@@ -14,6 +14,7 @@
 #include <cmath>
 #include <Workphone/System/ResourceID.hpp>
 #include <Workphone/System/ProjectLocalization.hpp>
+#include <Workphone/System/ProjectServices.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/System/PackageManager.hpp>
@@ -25,6 +26,65 @@ namespace workphone
 {
     namespace
     {
+        SmartPtr<Properties> serviceReply( bool success, const String &error )
+        {
+            auto result = make_ptr<Properties>();
+            result->setProperty( "success", success );
+            result->setProperty( "error", error );
+            return result;
+        }
+        SmartPtr<Properties> scriptCloudPut( const String &slot, const String &data )
+        {
+            Array<u8> bytes( data.begin(), data.end() );
+            String error;
+            const auto success = putProjectCloudSave( slot, bytes, error );
+            return serviceReply( success, error );
+        }
+        SmartPtr<Properties> scriptCloudGet( const String &slot )
+        {
+            Array<u8> bytes;
+            String error;
+            const auto success = getProjectCloudSave( slot, bytes, error );
+            auto result = serviceReply( success, error );
+            if( success ) result->setProperty( "data", bytes.empty() ? String() :
+                String( reinterpret_cast<const char *>( bytes.data() ), bytes.size() ) );
+            return result;
+        }
+        SmartPtr<Properties> scriptCloudRemove( const String &slot )
+        {
+            String error;
+            const auto success = removeProjectCloudSave( slot, error );
+            return serviceReply( success, error );
+        }
+        SmartPtr<Properties> scriptCloudList()
+        {
+            Array<String> slots;
+            String error;
+            const auto success = listProjectCloudSaves( slots, error );
+            auto result = serviceReply( success, error );
+            for( const auto &slot : slots )
+            {
+                auto item = make_ptr<Properties>();
+                item->setName( "Slot" );
+                item->setProperty( "slot", slot );
+                result->addChild( item );
+            }
+            return result;
+        }
+        SmartPtr<Properties> scriptAnalyticsRecord( const String &event, SmartPtr<Properties> fields )
+        {
+            String error;
+            const auto success = recordProjectAnalytics( event, fields, error );
+            return serviceReply( success, error );
+        }
+        SmartPtr<Properties> scriptCrashCapture( const String &reason )
+        {
+            String path, error;
+            const auto success = captureProjectCrashReport( reason, path, error );
+            auto result = serviceReply( success, error );
+            result->setProperty( "path", path );
+            return result;
+        }
         namespace profile_fs = std::filesystem;
         void profileRequire(bool valid, const char *message)
         {
@@ -552,7 +612,13 @@ namespace workphone
         using namespace luabind;
 
         module( L )[def( "localize", &localizeProjectString ),
-                    def( "getProjectLanguageTag", &getProjectLanguageTag )];
+                    def( "getProjectLanguageTag", &getProjectLanguageTag ),
+                    def( "putProjectCloudSave", &scriptCloudPut ),
+                    def( "getProjectCloudSave", &scriptCloudGet ),
+                    def( "removeProjectCloudSave", &scriptCloudRemove ),
+                    def( "listProjectCloudSaves", &scriptCloudList ),
+                    def( "recordProjectAnalytics", &scriptAnalyticsRecord ),
+                    def( "captureProjectCrashReport", &scriptCrashCapture )];
 
         module( L )[class_<FileInfo>( "FileInfo" )
                         .def_readwrite( "filePath", &FileInfo::filePath )

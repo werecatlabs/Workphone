@@ -40,6 +40,8 @@ namespace workphone
     };
 
     WPCore_API ProjectServiceProviders makeLocalProjectServiceProviders( const String &directory );
+    /** Installs plugin overrides for subsequent Apply/startup; empty fields use local providers. */
+    WPCore_API void setProjectServiceProviders( ProjectServiceProviders providers );
     /** Atomically publishes enable gates and providers. Remote providers may be injected by plugins. */
     WPCore_API bool configureProjectServices( ProjectServiceProviders providers, bool cloud,
                                              bool analytics, bool crash, String &error );

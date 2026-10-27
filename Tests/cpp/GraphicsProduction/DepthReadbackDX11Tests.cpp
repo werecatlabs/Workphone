@@ -30,6 +30,52 @@ void *wp_renderer_dx11_get_context( const wp_renderer_dx11 *r ) { return r->cont
 void *wp_renderer_dx11_get_scene_depth_texture( wp_renderer_dx11 *r ) { return r->depth; }
 }
 template<class T> void release( T *&p ) { if( p ) p->Release(); p = nullptr; }
+bool drawDepthPattern( wp_renderer_dx11 &native, unsigned width, unsigned height )
+{
+    static const char shader[] = R"(
+        float4 vs(uint index:SV_VertexID):SV_Position {
+            return float4(index==2?3:-1,index==1?3:-1,0,1);
+        }
+        float ps(float4 pixel:SV_Position,uint sampleIndex:SV_SampleIndex):SV_Depth {
+            if(pixel.x>=256) return 1;
+            return sampleIndex==0?.25:.75;
+        }
+    )";
+    ID3DBlob *vsCode = nullptr, *psCode = nullptr, *errors = nullptr;
+    ID3D11VertexShader *vs = nullptr;
+    ID3D11PixelShader *ps = nullptr;
+    ID3D11DepthStencilState *depth = nullptr;
+    ID3D11RasterizerState *raster = nullptr;
+    D3D11_DEPTH_STENCIL_DESC depthDesc{};
+    depthDesc.DepthEnable = TRUE; depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    depthDesc.DepthFunc = D3D11_COMPARISON_ALWAYS;
+    D3D11_RASTERIZER_DESC rasterDesc{};
+    rasterDesc.FillMode = D3D11_FILL_SOLID; rasterDesc.CullMode = D3D11_CULL_NONE;
+    rasterDesc.DepthClipEnable = TRUE; rasterDesc.MultisampleEnable = TRUE;
+    const bool ok = SUCCEEDED( D3DCompile( shader, sizeof( shader ) - 1, nullptr, nullptr, nullptr,
+        "vs", "vs_5_0", 0, 0, &vsCode, &errors ) ) &&
+        SUCCEEDED( D3DCompile( shader, sizeof( shader ) - 1, nullptr, nullptr, nullptr,
+        "ps", "ps_5_0", 0, 0, &psCode, &errors ) ) &&
+        SUCCEEDED( native.device->CreateVertexShader( vsCode->GetBufferPointer(), vsCode->GetBufferSize(), nullptr, &vs ) ) &&
+        SUCCEEDED( native.device->CreatePixelShader( psCode->GetBufferPointer(), psCode->GetBufferSize(), nullptr, &ps ) ) &&
+        SUCCEEDED( native.device->CreateDepthStencilState( &depthDesc, &depth ) ) &&
+        SUCCEEDED( native.device->CreateRasterizerState( &rasterDesc, &raster ) );
+    if( ok )
+    {
+        D3D11_VIEWPORT viewport{ 0, 0, float( width ), float( height ), 0, 1 };
+        native.context->RSSetViewports( 1, &viewport );
+        native.context->RSSetState( raster );
+        native.context->OMSetDepthStencilState( depth, 0 );
+        native.context->VSSetShader( vs, nullptr, 0 );
+        native.context->PSSetShader( ps, nullptr, 0 );
+        native.context->IASetInputLayout( nullptr );
+        native.context->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+        native.context->Draw( 3, 0 );
+    }
+    if( !ok ) std::fprintf( stderr, "Depth pattern setup failed: %s\n", errors ? static_cast<const char *>( errors->GetBufferPointer() ) : "D3D state creation" );
+    release( errors ); release( vsCode ); release( psCode ); release( vs ); release( ps ); release( depth ); release( raster );
+    return ok;
+}
 int main()
 {
     wp_renderer_dx11 native{};
@@ -72,6 +118,25 @@ int main()
                 native.context->OMGetRenderTargets( 0, nullptr, &restored );
                 ok = ok && restored == dsv;
                 release( restored );
+            }
+            ok = drawDepthPattern( native, desc.Width, desc.Height ) && ok;
+            std::vector<float> patterned;
+            unsigned width = 0, height = 0;
+            ok = reader.read( &renderer, patterned, width, height ) && ok;
+            if( width != 256 || height != 256 ) ok = false;
+            else for( unsigned y = 0; y < height; ++y ) for( unsigned x = 0; x < width; ++x )
+            {
+                const auto left = x * desc.Width / width, top = y * desc.Height / height;
+                const auto right = ( ( x + 1 ) * desc.Width + width - 1 ) / width;
+                const auto bottom = ( ( y + 1 ) * desc.Height + height - 1 ) / height;
+                const float expected = right > 256 ? 1.f :
+                    samples == 1 ? .25f : .75f;
+                if( std::abs( patterned[size_t( y ) * width + x] - expected ) >= .00001f )
+                {
+                    if( ok ) std::fprintf( stderr, "Depth mismatch %u,%u: %.6f expected %.6f\n", x, y,
+                        patterned[size_t( y ) * width + x], expected );
+                    ok = false;
+                }
             }
             std::printf( "%s depth readback: %u samples, conservative 513x259 -> 256x256: %s\n",
                 warp ? "WARP" : "hardware", samples, ok ? "passed" : "FAILED" );

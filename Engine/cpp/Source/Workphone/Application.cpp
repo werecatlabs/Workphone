@@ -507,6 +507,7 @@ namespace workphone::core
                 network->poll();
             }
             updateProjectIrradiance();
+            if( timer ) updateProjectRuntimeDiagnostics( timer->getTime() );
         }
 
         stateManager->preUpdate();

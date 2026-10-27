@@ -6,6 +6,7 @@
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
+#include <Workphone/Interface/System/IFactory.hpp>
 #include <Workphone/Script/ProjectScriptPolicy.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <filesystem>
@@ -35,6 +36,7 @@ namespace workphone
         std::mutex lifecycleMutex;
         String localProviderRoot;
         ProjectServiceProviders localProviders;
+        ProjectServiceProviders providerOverrides;
         s32 selectedNetworkBackend = -1;
         SmartPtr<INetworkManager> projectNetwork;
 #if defined( _WIN32 )
@@ -240,6 +242,12 @@ namespace workphone
                  std::make_shared<LocalCrash>( root / "crashes" ) };
     }
 
+    void setProjectServiceProviders( ProjectServiceProviders providers )
+    {
+        std::lock_guard<std::mutex> lock( lifecycleMutex );
+        providerOverrides = std::move( providers );
+    }
+
     bool configureProjectServices( ProjectServiceProviders providers, bool cloud, bool analytics,
                                     bool crash, String &error )
     {
@@ -283,8 +291,13 @@ namespace workphone
                 auto factory = app->getFactoryManager();
                 const String provider = networkBackend == 1 ? "WPNetworkManager" :
                                         networkBackend == 2 ? "BoostAsioNetworkManager" : "PlatformNetworkManager";
+                auto registration = factory ? factory->getFactoryByName( provider ) : nullptr;
+                if( !registration || !registration->isObjectDerivedFromByInfo( INetworkManager::typeInfo() ) )
+                    throw std::runtime_error( ( "Install a registered INetworkManager provider: " + provider ).c_str() );
                 nextNetwork = factory ? factory->createObjectFromType<INetworkManager>( provider ) : nullptr;
                 if( !nextNetwork ) throw std::runtime_error( ( "Install network provider: " + provider ).c_str() );
+                nextNetwork->setProperties( settings );
+                nextNetwork->load( settings );
                 nextNetwork->setServer( false );
             }
             const auto directory = ( fs::u8path( projectDirectory.c_str() ) / ".workphone/services" ).u8string();
@@ -293,7 +306,11 @@ namespace workphone
                 localProviders = makeLocalProjectServiceProviders( directory.c_str() );
                 localProviderRoot = directory.c_str();
             }
-            if( !configureProjectServices( localProviders, settings->getPropertyAsBool( "services.cloudSave" ),
+            auto providers = localProviders;
+            if( providerOverrides.cloud ) providers.cloud = providerOverrides.cloud;
+            if( providerOverrides.analytics ) providers.analytics = providerOverrides.analytics;
+            if( providerOverrides.crash ) providers.crash = providerOverrides.crash;
+            if( !configureProjectServices( std::move( providers ), settings->getPropertyAsBool( "services.cloudSave" ),
                     settings->getPropertyAsBool( "services.analytics" ),
                     settings->getPropertyAsBool( "services.crashReporting", true ), error ) ) return false;
             if( app && !multiplayer )
@@ -322,7 +339,8 @@ namespace workphone
         if( app && app->getNetworkManager() == projectNetwork ) app->setNetworkManager( nullptr );
         if( projectNetwork ) projectNetwork->unload( nullptr );
         projectNetwork = nullptr; selectedNetworkBackend = -1;
-        localProviders = {}; localProviderRoot.clear(); releaseProjectScriptManager(); releaseProjectIrradiance();
+        localProviders = {}; providerOverrides = {}; localProviderRoot.clear();
+        releaseProjectScriptManager(); releaseProjectIrradiance();
     }
 
     bool putProjectCloudSave( const String &slot, const Array<u8> &bytes, String &error )

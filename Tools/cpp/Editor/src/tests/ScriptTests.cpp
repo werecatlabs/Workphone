@@ -12,6 +12,7 @@
 #include <editor/MaterialShaderReloadActions.hpp>
 #include <Workphone/Interface/UI/IUITextEntry.hpp>
 #include <Workphone/System/FileSelection.hpp>
+#include <Workphone/System/ProjectServices.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Input/Joystick.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
@@ -324,6 +325,28 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
     saved.loadFromFile( project->getFilePath() );
     BOOST_CHECK_EQUAL( saved.getLabel(), "Saved through Lua controls" );
     BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "sound.masterVolume" ), 25 );
+
+    String serviceError;
+    auto localServices = makeLocalProjectServiceProviders( guard.directory.u8string().c_str() );
+    BOOST_REQUIRE_MESSAGE( configureProjectServices( localServices, true, true, false, serviceError ), serviceError );
+    scripts->loadScriptFromString( R"(
+        function ProjectSettings:projectSettingsServicesProbe()
+            local binary = "a" .. string.char(0, 255) .. "b"
+            assert(putProjectCloudSave("lua-slot", binary):getPropertyAsBool("success"))
+            local loaded = getProjectCloudSave("lua-slot")
+            assert(loaded:getPropertyAsBool("success"))
+            assert(loaded:getProperty("data") == binary)
+            assert(listProjectCloudSaves():getPropertyAsBool("success"))
+            assert(recordProjectAnalytics("lua_event", nil):getPropertyAsBool("success"))
+            assert(not captureProjectCrashReport("disabled"):getPropertyAsBool("success"))
+            assert(removeProjectCloudSave("lua-slot"):getPropertyAsBool("success"))
+            assert(localize("missing-key", "Fallback") == "Fallback")
+            self.window:setName("Lua service calls reached providers")
+        end
+    )" );
+    window->getInvoker()->callObjectMember( "projectSettingsServicesProbe" );
+    BOOST_REQUIRE_EQUAL( window->getName(), "Lua service calls reached providers" );
+    BOOST_REQUIRE( configureProjectServices( {}, false, false, false, serviceError ) );
 
     // Hidden settings windows must accept state restoration without applying
     // edits to the current project or writing its file.

@@ -3,12 +3,17 @@
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/DataUtil.hpp>
+#include <Workphone/Core/LogManager.hpp>
+#include <Workphone/Interface/System/IProfiler.hpp>
+#include <Workphone/Interface/System/IProfile.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
 #include <algorithm>
+#include <mutex>
+#include <cmath>
 #if defined( _WIN32 )
 #    include <windows.h>
 #endif
@@ -79,6 +84,50 @@ namespace workphone
     {
         auto settings = activeSettings();
         return !settings || settings->getPropertyAsBool( "diagnostics.profiler", true );
+    }
+
+    void updateProjectRuntimeDiagnostics( f64 timeSeconds, const String &projectDirectory )
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto settings = app ? app->getPlayerSettings() : nullptr;
+        if( !app || !settings || !std::isfinite( timeSeconds ) ) return;
+        const auto directory = projectDirectory.empty() ? app->getProjectPath() : projectDirectory;
+        if( directory.empty() ) return;
+        struct Schedule
+        {
+            const void *owner = nullptr;
+            std::string directory;
+            f64 lastTime = -1, nextWrite = 0;
+        };
+        static std::mutex mutex;
+        static Schedule schedule;
+        std::lock_guard<std::mutex> lock( mutex );
+        if( schedule.owner != app || schedule.directory != directory.c_str() || timeSeconds < schedule.lastTime )
+        {
+            schedule.owner = app;
+            schedule.directory = directory.c_str();
+            schedule.nextWrite = timeSeconds + 1;
+        }
+        schedule.lastTime = timeSeconds;
+        if( !settings->getPropertyAsBool( "diagnostics.telemetry", false ) || timeSeconds < schedule.nextWrite ) return;
+        schedule.nextWrite = timeSeconds + 1;
+        try
+        {
+            const auto folder = std::filesystem::u8path( directory.c_str() ) / "Cache/Diagnostics";
+            std::filesystem::create_directories( folder );
+            const auto path = folder / "telemetry.csv";
+            const bool header = !std::filesystem::exists( path ) || std::filesystem::file_size( path ) == 0;
+            std::ofstream stream( path, std::ios::app );
+            stream.exceptions( std::ios::badbit | std::ios::failbit );
+            if( header ) stream << "time_seconds,profiles,work_seconds\n";
+            size_t count = 0;
+            f64 total = 0;
+            if( auto profiler = app->getProfiler() )
+                for( auto profile : profiler->getProfiles() )
+                    if( profile ) { ++count; total += profile->getAverageTimeTaken(); }
+            stream << timeSeconds << ',' << count << ',' << total << '\n';
+        }
+        catch( const std::exception &error ) { WP_LOG_EXCEPTION( error ); }
     }
 
     void applyProjectWorkerPolicy( SmartPtr<Properties> settings, u32 workerIndex )

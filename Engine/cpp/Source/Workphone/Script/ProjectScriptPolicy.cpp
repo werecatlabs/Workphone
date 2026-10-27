@@ -43,6 +43,9 @@ namespace workphone
                 if( external )
                 {
                     auto factory = app->getFactoryManager();
+                    auto provider = factory ? factory->getFactoryByName( "ExternalProjectScriptManager" ) : nullptr;
+                    if( !provider || !provider->isObjectDerivedFromByInfo( IScriptManager::typeInfo() ) )
+                    { error = "ExternalProjectScriptManager must implement IScriptManager"; return false; }
                     next = factory ? factory->createObjectFromType<IScriptManager>( "ExternalProjectScriptManager" ) : nullptr;
                     if( !next ) { error = "Install ExternalProjectScriptManager provider plugin"; return false; }
                     next->load( nullptr );

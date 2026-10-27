@@ -148,7 +148,6 @@ namespace workphone::editor
             String path;
             f64 lastTime = -1;
             f64 nextSave = 0;
-            f64 nextTelemetry = 0;
             s32 interval = 0;
         };
         static thread_local Schedule schedule;
@@ -160,31 +159,10 @@ namespace workphone::editor
             schedule.path = project->getPath();
             schedule.interval = interval;
             schedule.nextSave = timeSeconds + interval * 60;
-            schedule.nextTelemetry = timeSeconds + 1;
         }
         schedule.lastTime = timeSeconds;
         const auto root = std::filesystem::u8path( project->getPath().c_str() );
-        if( settings->getPropertyAsBool( "diagnostics.telemetry", false ) && timeSeconds >= schedule.nextTelemetry )
-        {
-            schedule.nextTelemetry = timeSeconds + 1;
-            try
-            {
-                const auto folder = root / "Cache/Diagnostics";
-                std::filesystem::create_directories( folder );
-                const auto path = folder / "telemetry.csv";
-                const bool header = !std::filesystem::exists( path ) || std::filesystem::file_size( path ) == 0;
-                std::ofstream stream( path, std::ios::app );
-                stream.exceptions( std::ios::badbit | std::ios::failbit );
-                if( header ) stream << "time_seconds,profiles,work_seconds\n";
-                size_t count = 0;
-                f64 total = 0;
-                if( auto profiler = app->getProfiler() )
-                    for( auto profile : profiler->getProfiles() )
-                        if( profile ) { ++count; total += profile->getAverageTimeTaken(); }
-                stream << timeSeconds << ',' << count << ',' << total << '\n';
-            }
-            catch( const std::exception &error ) { WP_LOG_EXCEPTION( error ); }
-        }
+        updateProjectRuntimeDiagnostics( timeSeconds, project->getPath() );
         if( !settings->getPropertyAsBool( "editor.autosave", true ) ||
             timeSeconds < schedule.nextSave || app->isPlaying() ) return;
         schedule.nextSave = timeSeconds + interval * 60;

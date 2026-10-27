@@ -15,6 +15,8 @@ namespace workphone
     WPCore_API void applyProjectWorkerPolicy( SmartPtr<Properties> settings, u32 workerIndex );
     WPCore_API bool projectLogEnabled( u32 severity );
     WPCore_API bool projectProfilingEnabled();
+    WPCore_API void updateProjectRuntimeDiagnostics( f64 timeSeconds,
+                                                    const String &projectDirectory = {} );
 }
 
 #endif
