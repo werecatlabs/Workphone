@@ -4,6 +4,7 @@
 #include <workphone_graphics_renderer_software.h>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #if defined WP_PLATFORM_WIN32 && WP_BUILD_RENDERER_DX11
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>

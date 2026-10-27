@@ -154,7 +154,7 @@ namespace workphone
                 sound->unload( nullptr );
             }
         }
-        for( const auto &sound : m_sounds.snapshot() )
+        for( auto sound : m_sounds.snapshot() )
             if( sound && sound->isPlaying() ) sound->setVolume( sound->getVolume() );
     }
 

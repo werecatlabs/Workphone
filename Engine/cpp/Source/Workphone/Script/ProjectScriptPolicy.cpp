@@ -50,7 +50,7 @@ namespace workphone
                 }
                 if( auto scenes = app->getGameManager() )
                     for( auto actor : scenes->getActors() )
-                        for( auto script : actor->getComponentsByType<scene::Script>() ) script->destroyScriptData();
+                        for( auto script : actor->getComponentsByType<scene::Script>() ) script->resetProjectScriptInstance();
                 setProjectScriptManager( next );
                 if( previous ) previous->unload( nullptr );
             }

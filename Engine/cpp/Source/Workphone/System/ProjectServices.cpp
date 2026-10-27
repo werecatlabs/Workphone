@@ -24,12 +24,12 @@ namespace workphone
     namespace
     {
         namespace fs = std::filesystem;
-        struct State
+        struct ProjectServiceState
         {
             ProjectServiceProviders providers;
             bool cloud = false, analytics = false, crash = false;
         };
-        std::shared_ptr<const State> state = std::make_shared<State>();
+        std::shared_ptr<const ProjectServiceState> state = std::make_shared<ProjectServiceState>();
         std::mutex configureMutex;
         std::mutex lifecycleMutex;
         String localProviderRoot;
@@ -246,9 +246,9 @@ namespace workphone
         if( ( cloud && !providers.cloud ) || ( analytics && !providers.analytics ) || ( crash && !providers.crash ) )
         { error = "An enabled project service requires a provider"; return false; }
         if( providers.crash && !providers.crash->setEnabled( crash, error ) ) return false;
-        auto next = std::make_shared<State>(); next->providers = std::move( providers );
+        auto next = std::make_shared<ProjectServiceState>(); next->providers = std::move( providers );
         next->cloud = cloud; next->analytics = analytics; next->crash = crash;
-        std::atomic_store( &state, std::shared_ptr<const State>( next ) );
+        std::atomic_store( &state, std::shared_ptr<const ProjectServiceState>( next ) );
 #if defined( _WIN32 )
         if( crash && !crashFilterInstalled )
         {

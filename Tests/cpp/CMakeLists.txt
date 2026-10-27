@@ -781,3 +781,8 @@ if(WIN32)
     set_tests_properties(WPGraphics.project_gpu_particles_warp PROPERTIES
         SKIP_RETURN_CODE 77 ENVIRONMENT "WP_PARTICLE_TEST_WARP=1")
 endif()
+add_executable(WPHierarchicalDepthOcclusionTests HierarchicalDepthOcclusionTests.cpp)
+target_compile_features(WPHierarchicalDepthOcclusionTests PRIVATE cxx_std_17)
+target_include_directories(WPHierarchicalDepthOcclusionTests PRIVATE "${WP_ROOT}/Engine/cpp/Include")
+set_target_properties(WPHierarchicalDepthOcclusionTests PROPERTIES FOLDER Tests/Cpp)
+add_test(NAME WPGraphics.hierarchical_depth_occlusion COMMAND WPHierarchicalDepthOcclusionTests)

@@ -20,6 +20,8 @@ namespace workphone
         class WPCore_API Script : public Component
         {
         public:
+            /** Release a gameplay instance before switching project VMs; the component remains loaded. */
+            void resetProjectScriptInstance();
             /**
              * @class ScriptReceiver
              * @brief Receives and handles script calls for the UserComponent.

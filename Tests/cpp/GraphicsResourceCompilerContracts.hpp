@@ -4,6 +4,7 @@
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <Workphone/Graphics/DdsTexture.hpp>
+#include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 
 #include <cstring>
 #include <filesystem>
@@ -111,10 +112,10 @@ namespace graphics_compiler_contracts
         if( !compiler.getDependencies( context, dependencies, error ) )
             throw std::runtime_error(
                 ( String( "Texture dependency discovery failed: " ) + error ).c_str() );
-        require( dependencies.compileDependencies.size() == 1 &&
+        require( dependencies.compileDependencies.size() == 2 &&
                      !dependencies.compileDependencies.front().isResource &&
                      dependencies.compileDependencies.front().path == "data://image.tga" &&
-                     dependencies.installDependencies.empty(),
+                     dependencies.compileDependencies.back().optional && dependencies.installDependencies.empty(),
                  "Texture must expose its authored image as a raw compile dependency" );
         auto texture = cook( compiler, context );
         CookedTextureData textureData;
@@ -164,6 +165,37 @@ namespace graphics_compiler_contracts
             require(decodeCookedTexture(cook(compiler,nativeContext),passthrough,error) &&
                     passthrough.ddsBytes==nativeData.ddsBytes,"Authored DDS passthrough must retain exact native bytes");
             write(source/"image.texres",textureJson);
+        }
+        {
+            auto policy=make_ptr<Properties>();policy->setProperty("assets.compression",s32(3));
+            policy->setProperty("assets.textureCompression.pc",s32(1));policy->setProperty("platform.active",s32(0));
+            policy->setProperty("quality.texture",s32(2));policy->setProperty("quality.maxTextureSize",s32(4096));
+            require(writeProjectAssetPolicy(context.sourceRoot,policy,error),error.c_str());
+            const auto compressed=cook(compiler,context);CookedTextureData encoded;
+            require(compressed.payload.size()>4 && std::memcmp(compressed.payload.data(),"WPZ1",4)==0 &&
+                decodeCookedTexture(compressed,encoded,error) && encoded.storageFormat==71 &&
+                dds::inspect(encoded.ddsBytes).format==71,
+                "Project texture preference produces actual BC1 and bounded lossless payload compression");
+            write(source/"image.texres",R"({"version":1,"source":"data://image.tga","mipFilter":"colour","atlasColumns":1,"alphaCutoff":0.5,"compression":"none"})");
+            require(decodeCookedTexture(cook(compiler,context),encoded,error) && encoded.storageFormat==87,
+                "Explicit asset compression recipe overrides the project default");
+            write(source/"image.texres",textureJson);policy->setProperty("quality.texture",s32(1));
+            require(writeProjectAssetPolicy(context.sourceRoot,policy,error),error.c_str());
+            require(decodeCookedTexture(cook(compiler,context),encoded,error) && dds::inspect(encoded.ddsBytes).mips.front().width==2,
+                "Selected texture quality resizes cooked data while retaining valid mip tails");
+            policy->setProperty("assets.textureCompression.pc",s32(2));
+            require(writeProjectAssetPolicy(context.sourceRoot,policy,error),error.c_str());
+            std::ostringstream rejected;Array<String> diagnostics;
+            require(compiler.compile(context,rejected,diagnostics)==CompilationStatus::Failure && rejected.str().empty(),
+                "Missing BC7 encoder rejects without silently writing BC1 data");
+            bool dispatched=false;
+            registerTextureCompressionEncoder("bc7",[&](const TextureCompressionRequest &request,TextureCompressionOutput &,String &message){
+                dispatched=request.format=="bc7" && request.levels && request.levelCount>0;
+                message="Controlled provider failure";return false;});
+            require(compiler.compile(context,rejected,diagnostics)==CompilationStatus::Failure && dispatched && rejected.str().empty(),
+                "A registered provider receives the real image request and failure remains transactional");
+            registerTextureCompressionEncoder("bc7",{});
+            fs::remove(source/".workphone/ProjectAssetPolicy.settings");
         }
         {
             Array<TextureMipLevel> odd;
@@ -281,7 +313,7 @@ namespace graphics_compiler_contracts
         materialContext.sourcePath = ( source / "surface.matres" ).u8string().c_str();
         materialContext.dependencyArtifacts["data://image.texres"]=(compiled / "image.texres").u8string().c_str();
         require( compiler.getDependencies( materialContext, dependencies, error ) &&
-                     dependencies.compileDependencies.size() == 1 &&
+                     dependencies.compileDependencies.size() == 2 &&
                      dependencies.compileDependencies.front().isResource &&
                      dependencies.installDependencies.size() == 1 &&
                      dependencies.installDependencies.front() == texture.header.resourceId,

@@ -1,6 +1,7 @@
 #pragma once
 #include <d3dcompiler.h>
 #include <limits>
+#include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 
 // Included after the existing cooked-resource Fixture and draw helpers.
 namespace cooked_material_shader_contracts
@@ -61,6 +62,16 @@ namespace cooked_material_shader_contracts
             data.shader.shaderID=="Cooked.Contract" && data.shader.schemaVersion==7 &&
             data.shader.parameters.size()==9 && loaded->header.installDependencies.size()==1 && loaded->dependencies.size()==1,
             "v3 shader schema preserves identity/version and deduplicates durable texture dependencies");
+        for(s32 compression:{1,2,3})
+        {
+            auto packed=*loaded;packed.payload=compressProjectAssetPayload(loaded->payload,compression);
+            graphics_compiler_contracts::refreshIntegrity(packed);CookedMaterialData restored;
+            require(decodeCookedMaterial(packed,restored,error) && restored.shader.pixelDXBC==data.shader.pixelDXBC &&
+                restored.shader.vertexDXBC==data.shader.vertexDXBC && restored.shader.parameters.size()==data.shader.parameters.size(),
+                "Compressed shader assets preserve exact DXBC, typed parameters and dependency pins");
+            auto corrupt=packed;corrupt.payload.back()^=0x40;graphics_compiler_contracts::refreshIntegrity(corrupt);
+            require(!decodeCookedMaterial(corrupt,restored,error),"Corrupt compressed shader data fails its bounded decoder");
+        }
         const auto bytes=data.shader.pixelDXBC;
         // Includes are captured before reading during dependency scanning, and
         // become explicit build-key inputs for device-free HLSL compilation.

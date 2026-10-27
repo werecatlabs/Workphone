@@ -512,6 +512,11 @@ namespace workphone::scene
         }
     }
 
+    void Script::resetProjectScriptInstance()
+    {
+        destroyScriptData();
+    }
+
     void Script::destroyScriptData()
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
