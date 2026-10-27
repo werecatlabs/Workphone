@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 
 namespace workphone
@@ -74,7 +75,8 @@ namespace workphone
             const auto prepare = []( const auto &current, const auto &incoming ) {
                 using Items = std::decay_t<decltype( current )>;
                 Items candidate{ typename Items::allocator_type( sourceBudget ) };
-                if( incoming.size() > candidate.max_size() - current.size() )
+                if( current.size() > candidate.max_size() ||
+                    incoming.size() > candidate.max_size() - current.size() )
                     throw std::length_error( "Generated road inventory capacity overflow" );
                 candidate.reserve( std::max( current.capacity(), current.size() + incoming.size() ) );
                 candidate.insert( candidate.end(), current.begin(), current.end() );

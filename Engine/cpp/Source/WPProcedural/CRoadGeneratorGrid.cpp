@@ -113,8 +113,10 @@ namespace workphone
 
                 // Create the IRoad object
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
+                if( !road ) throw std::bad_alloc();
                 if( road )
                 {
+                    roadNetwork->addRoad( road );
                     String name = "RoadH_" + std::to_string( row );
                     road->setName( name );
                     road->setRoadType( "Residential" );
@@ -122,6 +124,7 @@ namespace workphone
                     // Add start and end nodes
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
+                    if( !startNode || !endNode ) throw std::bad_alloc();
                     if( startNode )
                     {
                         startNode->setPosition( start );
@@ -133,11 +136,8 @@ namespace workphone
                     if( startNode && endNode )
                     {
                         road->addNode( startNode );
-
                         road->addNode( endNode );
-
                         startNode->connect( endNode );
-
                         endNode->connect( startNode );
                     }
 
@@ -174,14 +174,17 @@ namespace workphone
                 RoadSegmentResult segResult = roadSystem.generateSegment( spec );
 
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
+                if( !road ) throw std::bad_alloc();
                 if( road )
                 {
+                    roadNetwork->addRoad( road );
                     String name = "RoadV_" + std::to_string( col );
                     road->setName( name );
                     road->setRoadType( "Residential" );
 
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
+                    if( !startNode || !endNode ) throw std::bad_alloc();
                     if( startNode )
                     {
                         startNode->setPosition( start );
@@ -193,11 +196,8 @@ namespace workphone
                     if( startNode && endNode )
                     {
                         road->addNode( startNode );
-
                         road->addNode( endNode );
-
                         startNode->connect( endNode );
-
                         endNode->connect( startNode );
                     }
 

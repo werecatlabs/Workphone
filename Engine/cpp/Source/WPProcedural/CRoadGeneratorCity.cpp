@@ -170,10 +170,8 @@ namespace workphone
                 RoadSegmentResult segResult = roadSystem.generateSegment( spec );
 
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
-                if( !road )
-                {
-                    return br;
-                }
+                if( !road ) throw std::bad_alloc();
+                roadNetwork->addRoad( road );
 
                 String name = String( namePrefix ) + std::to_string( index );
                 road->setName( name );
@@ -185,6 +183,7 @@ namespace workphone
 
                 SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                 SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
+                if( !startNode || !endNode ) throw std::bad_alloc();
                 if( startNode )
                 {
                     startNode->setPosition( start );
@@ -196,11 +195,8 @@ namespace workphone
                 if( startNode && endNode )
                 {
                     road->addNode( startNode );
-
                     road->addNode( endNode );
-
                     startNode->connect( endNode );
-
                     endNode->connect( startNode );
                 }
 

@@ -200,7 +200,7 @@ namespace workphone
             Array<Vector3F> sanitisePath( const Array<Vector3F> &points, const char *context )
             {
                 Array<Vector3F> result{ Allocator<Vector3F>( sourceBudget ) };
-                result.reserve( std::min( points.size(), kMaxGeneratedNodes ) );
+                result.reserve( std::min( points.capacity(), kMaxGeneratedNodes ) );
 
                 for( size_t i = 0; i < points.size(); ++i )
                 {
@@ -583,6 +583,11 @@ namespace workphone
                         }
 
                         auto nodes = segment->getRoadNodes();
+                        if( !nodes.get_allocator().isSourceBudgeted() )
+                        {
+                            auto admitted = makeSourceBudgetSnapshot( nodes );
+                            nodes.swap( admitted );
+                        }
                         if( nodes.size() < 2u )
                         {
                             WP_LOG_ERROR( "RoadGeneratorUtil::buildMesh - segment at index " +
@@ -1197,14 +1202,17 @@ namespace workphone
                                                         SmartPtr<IRoadNode> &roadNode,
                                                         SmartPtr<IRoad> &collidingRoad )
         {
-            roadNode = nullptr;
-            collidingRoad = nullptr;
+            const auto epoch = sourceBudgetDenialCount();
+            SmartPtr<IRoadNode> foundNode;
+            SmartPtr<IRoad> foundRoad;
 
             try
             {
                 if( !isSphereValid( nodeSphere ) )
                 {
                     WP_LOG_ERROR( "RoadGeneratorUtil::isNearExistingRoadNode - invalid query sphere." );
+                    roadNode = nullptr;
+                    collidingRoad = nullptr;
                     return false;
                 }
 
@@ -1230,6 +1238,11 @@ namespace workphone
                         }
 
                         auto candidateNodes = candidateRoad->getRoadNodes();
+                        if( !candidateNodes.get_allocator().isSourceBudgeted() )
+                        {
+                            auto admitted = makeSourceBudgetSnapshot( candidateNodes );
+                            candidateNodes.swap( admitted );
+                        }
                         if( candidateNodes.empty() )
                         {
                             if( auto concreteRoad =
@@ -1262,8 +1275,8 @@ namespace workphone
                                 distanceSquared < closestDistanceSquared )
                             {
                                 closestDistanceSquared = distanceSquared;
-                                roadNode = candidateNode;
-                                collidingRoad = candidateRoad;
+                                foundNode = candidateNode;
+                                foundRoad = candidateRoad;
                             }
                         }
                     }
@@ -1280,7 +1293,10 @@ namespace workphone
                     }
                 }
 
-                return roadNode != nullptr;
+                requireCompleteAdmission( epoch );
+                roadNode = foundNode;
+                collidingRoad = foundRoad;
+                return foundNode != nullptr;
             }
             catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
@@ -1291,6 +1307,8 @@ namespace workphone
             {
                 WP_LOG_ERROR( "RoadGeneratorUtil::isNearExistingRoadNode - unknown exception." );
             }
+            roadNode = nullptr;
+            collidingRoad = nullptr;
             return false;
         }
     }  // namespace procedural

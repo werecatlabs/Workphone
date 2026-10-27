@@ -4,6 +4,9 @@
 #include <Workphone/Math/FalloffGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
+#include <sstream>
+#include <cmath>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -40,8 +43,8 @@ namespace workphone
 
         void CTerrainGenerator::generate()
         {
+            const bool wasFinished = m_finished;
             m_finished = false;
-            m_terrain = nullptr;
 
             validate();
 
@@ -68,6 +71,7 @@ namespace workphone
             catch( ... )
             {
                 m_isGenerating = false;
+                m_finished = wasFinished;
                 throw;
             }
             m_isGenerating = false;
@@ -246,7 +250,6 @@ namespace workphone
 
         void CTerrainGenerator::setTerrain( SmartPtr<IProceduralTerrain> terrain )
         {
-            m_terrain = terrain;
         }
 
         bool CTerrainGenerator::isFinished() const
@@ -261,9 +264,10 @@ namespace workphone
 
         void CTerrainGenerator::setOptions( const STerrainGeneratorOptions &options )
         {
+            const auto previous = m_options;
             m_options = options;
-            validate();
-            onOptionChanged();
+            try { validate(); onOptionChanged(); }
+            catch( ... ) { m_options = previous; throw; }
         }
 
         void CTerrainGenerator::resetToDefaults()
@@ -334,31 +338,46 @@ namespace workphone
             options.autoUpdate = properties->getPropertyAsBool( "AutoUpdate", options.autoUpdate );
             options.normalize = properties->getPropertyAsBool( "Normalize", options.normalize );
 
+            const auto denials = sourceBudgetDenialCount();
             try
             {
                 String curveString;
                 if( properties->getPropertyValue( "HeightCurve", curveString ) )
                 {
-                    Array<f32> curveValues;
-                    StringUtil::parseArray( curveString, curveValues );
+                    Array<f32> curveValues{ Allocator<f32>( sourceBudget ) };
+                    size_t first = 0;
+                    for( auto end = curveString.find( ';', first ); end != String::npos;
+                         end = curveString.find( ';', first ) )
+                    {
+                        SourceBudgetText token( curveString.data() + first, end - first );
+                        std::basic_istringstream<char, std::char_traits<char>, SourceBudgetAllocator<char>> input( token );
+                        input.exceptions( std::ios_base::badbit );
+                        f32 value = 0;
+                        if( !( input >> value ) || !std::isfinite( value ) ) value = 0;
+                        curveValues.push_back( value );
+                        first = end + 1;
+                    }
                     if( !curveValues.empty() )
                     {
-                        Array<real_Num> points;
+                        Array<real_Num> points{ Allocator<real_Num>( sourceBudget ) };
                         points.reserve( curveValues.size() );
                         for( auto value : curveValues )
                         {
                             points.push_back( static_cast<real_Num>( value ) );
                         }
                         options.heightCurve = workphone::make_ptr<LinearSpline1<real_Num>>();
+                        if( !options.heightCurve ) throw std::bad_alloc();
                         options.heightCurve->setPoints( points );
                     }
                 }
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
             }
 
+            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
             setOptions( options );
         }
 
@@ -369,6 +388,27 @@ namespace workphone
                 return;
             }
 
+            String encodedCurve;
+            const auto pointCount = m_options.heightCurve ? m_options.heightCurve->getNumPoints() : 0;
+            if( pointCount > 0 )
+            {
+                auto curve = m_options.heightCurve;
+                Array<f32> curveValues{ Allocator<f32>( sourceBudget ) };
+                curveValues.reserve( pointCount );
+
+                for( u32 i = 0; i < pointCount; ++i )
+                {
+                    const auto t = pointCount == 1 ? real_Num( 0 ) :
+                        static_cast<real_Num>( i ) / static_cast<real_Num>( pointCount - 1 );
+                    curveValues.push_back( static_cast<f32>( curve->interpolate( t ) ) );
+                }
+
+                std::basic_ostringstream<char, std::char_traits<char>, SourceBudgetAllocator<char>> stream;
+                stream.exceptions( std::ios_base::badbit | std::ios_base::failbit );
+                for( const auto value : curveValues ) stream << value << ';';
+                const auto text = stream.str();
+                encodedCurve = String( text.data(), text.size() );
+            }
             properties->setProperty( "Width", m_options.width );
             properties->setProperty( "Height", m_options.height );
             properties->setProperty( "Depth", m_options.depth );
@@ -387,21 +427,7 @@ namespace workphone
             properties->setProperty( "AutoUpdate", m_options.autoUpdate );
             properties->setProperty( "Normalize", m_options.normalize );
 
-            const auto pointCount = m_options.heightCurve ? m_options.heightCurve->getNumPoints() : 0;
-            if( pointCount > 0 )
-            {
-                auto curve = m_options.heightCurve;
-                Array<f32> curveValues;
-                curveValues.reserve( pointCount );
-
-                for( u32 i = 0; i < pointCount; ++i )
-                {
-                    const auto t = static_cast<real_Num>( i ) / static_cast<real_Num>( pointCount - 1 );
-                    curveValues.push_back( static_cast<f32>( curve->interpolate( t ) ) );
-                }
-
-                properties->setProperty( "HeightCurve", StringUtil::toString( curveValues ) );
-            }
+            if( pointCount > 0 ) properties->setProperty( "HeightCurve", encodedCurve );
         }
 
         void CTerrainGenerator::generateRandom()
@@ -421,7 +447,6 @@ namespace workphone
             }
 
             auto terrain = workphone::make_ptr<CProceduralTerrain>();
-            m_terrain = terrain;
 
             const auto width = m_options.width;
             const auto height = m_options.height;
@@ -434,7 +459,7 @@ namespace workphone
             terrain->setSize( Vector3F( static_cast<f32>( width ), static_cast<f32>( depth ),
                                         static_cast<f32>( height ) ) );
 
-            Array<Array<real_Num>> falloff;
+            Array<Array<real_Num>> falloff{ Allocator<Array<real_Num>>( sourceBudget ) };
             if( m_options.useFalloffMap )
             {
                 const auto noiseSize = std::max( width, height );
@@ -448,7 +473,7 @@ namespace workphone
 
             auto noiseMap = generateNoise( falloff );
 
-            Array<f32> heightData;
+            Array<f32> heightData{ Allocator<f32>( sourceBudget ) };
             heightData.resize( width * height );
 
             for( int y = 0; y < height; ++y )
@@ -461,6 +486,7 @@ namespace workphone
 
             terrain->setHeightData( heightData );
             scene->addTerrain( terrain );
+            m_terrain = terrain;
         }
 
         Array<Array<real_Num>> CTerrainGenerator::generateNoise(

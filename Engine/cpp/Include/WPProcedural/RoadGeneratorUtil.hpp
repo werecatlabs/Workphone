@@ -97,7 +97,7 @@ namespace workphone
         //	Array<SmartPtr<IRoad>>	Roads;
         //};
 
-        class RoadGeneratorUtil : public ISharedObject
+        class WPProcedural_API RoadGeneratorUtil : public ISharedObject
         {
         public:
             static SmartPtr<IRoadElement> createRoadSegment( const Vector3F &posA, const Vector3F &posB,

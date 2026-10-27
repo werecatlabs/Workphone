@@ -334,7 +334,7 @@ namespace workphone
         {
             if( m_isGenerating ) throw std::logic_error( "Road generation is already active" );
             const auto city = getCity();
-            const auto owner = city ? city->getRoadNetwork() : nullptr;
+            auto owner = city ? city->getRoadNetwork() : nullptr;
             if( !owner ) { m_finished = true; return; }
             const auto token = ++m_generation;
             const bool wasFinished = m_finished;
@@ -358,7 +358,10 @@ namespace workphone
                 // Legacy void/null adapters can swallow a rejected reservation.
                 if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
                 if( token != m_generation || getCity() != city || city->getRoadNetwork() != owner )
+                {
+                    if( token == m_generation ) { m_isGenerating = false; m_finished = false; }
                     return;
+                }
                 owner->appendGenerated( staged.network->getRoads(), staged.network->getRoadConnections() );
                 // The live owner now retains these objects. Never unload committed children.
                 staged.network->releaseGenerationReferences();
@@ -428,15 +431,17 @@ namespace workphone
 
                 // Create the IRoad object
                 SmartPtr<CRoad> majorRd = workphone::make_ptr<CRoad>();
+                if( !majorRd ) throw std::bad_alloc();
                 if( majorRd )
                 {
-                        roadNetwork->addRoad( majorRd );
+                    roadNetwork->addRoad( majorRd );
                     majorRd->setName( "MajorRoad_" + StringUtil::toString( majorIdx ) );
                     majorRd->setRoadType( "MajorRoad" );
 
                     // Add start and end nodes
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
+                    if( !startNode || !endNode ) throw std::bad_alloc();
                     if( startNode )
                     {
                         startNode->setPosition( startPos );
@@ -448,11 +453,8 @@ namespace workphone
                     if( startNode && endNode )
                     {
                         majorRd->addNode( startNode );
-
                         majorRd->addNode( endNode );
-
                         startNode->connect( endNode );
-
                         endNode->connect( startNode );
                     }
 
@@ -512,6 +514,7 @@ namespace workphone
                     RoadSegmentResult minorSegResult = roadSystem.generateSegment( minorSpec );
 
                     auto minorRd = workphone::make_ptr<CRoad>();
+                    if( !minorRd ) throw std::bad_alloc();
                     if( minorRd )
                     {
                         roadNetwork->addRoad( minorRd );
@@ -522,6 +525,7 @@ namespace workphone
                         // Add start and end nodes
                         SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                         SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
+                        if( !startNode || !endNode ) throw std::bad_alloc();
                         if( startNode )
                         {
                             startNode->setPosition( startPos );
@@ -533,11 +537,8 @@ namespace workphone
                         if( startNode && endNode )
                         {
                             minorRd->addNode( startNode );
-
                             minorRd->addNode( endNode );
-
                             startNode->connect( endNode );
-
                             endNode->connect( startNode );
                         }
 

@@ -19,6 +19,10 @@
 #include "CityInventoryBudgetContracts.hpp"
 #include "RoadPayloadBudgetContracts.hpp"
 #include "ProceduralStorageBudgetContracts.hpp"
+#include "SplineHeightBudgetContracts.hpp"
+#include "RoadNetworkPublicationContracts.hpp"
+#include "RoadUtilityBudgetContracts.hpp"
+#include "LegacyRoadRollbackContracts.hpp"
 
 namespace
 {
@@ -126,6 +130,10 @@ void checkCityGeneratorContracts()
     city_inventory_budget_contracts::run();
     road_payload_budget_contracts::run();
     procedural_storage_budget_contracts::run();
+    spline_height_budget_contracts::run();
+    road_network_publication_contracts::run();
+    road_utility_budget_contracts::run();
+    legacy_road_rollback_contracts::run();
     using namespace workphone;
     using namespace workphone::procedural;
     auto coordinator = make_ptr<CityGeneratorDefault>();

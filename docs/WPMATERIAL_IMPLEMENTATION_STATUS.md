@@ -1589,3 +1589,41 @@ python -B Tools/ProfileMaterialNativePhases.py --receipt project_x64/material_m6
 After completion, independently verify with `Tools/VerifyMaterialNativePhases.py --receipt ... --scene ... --output NEW_VALIDATION_JSON`. The current evidence index is `project_x64/material_m6_native_phase_delivery_20261027.json`. The shared pointer retains the previous native-experiment delivery as a backup.
 
 **M6 remains incomplete.** The instrumentation implementation gate is closed; accepted phase/observer collection and identification of the built-in bulk-edit bottleneck remain open. No further renderer optimization or CPU reduction is claimed. Publication/total-path, broader scene/edit/pass coverage, hardware/cache/GPU/residency/frame-p95 and interactive/device-loss/visual/Editor/package/SDK gates remain open. WARP functional evidence does not certify physical hardware/cache behavior; historical M4/accepted earlier optimization results are unchanged.
+
+## M6 production native phase attribution completed (27 October 2026)
+
+The awake-display retry completes the planned **24 accepted processes**: nine phase-enabled, nine aggregate-only, and six normal/inactive controls. The prior presentation blocker is closed for this collection. The rejected `_01` attempt and occluded functional roundtrip remain excluded; accepted data is exclusively `project_x64/material_m6_native_phase_scene_02/`. All processes pass the unchanged duration, target, geometry/inventory, lifecycle, edit and presentation validators, including zero measured failed/occluded Presents. No renderer optimization was made.
+
+Independent verification reparses all raw profiles/reviews and output hashes, reconstructs the C/C++ overlays, verifies source/runtime/tool/asset identities and matching device/target, recomputes material totals without double-counting phases, and checks complete alternating control coverage. Every phase process exactly partitions aggregate binding cycles, sampled segments and all-region counts. Aggregate and phase modes use the same instrumented binary and the same existing clock intervals. The original native source and all Engine algorithms remain unchanged.
+
+**The built-in bulk-edit-specific increase is concentrated in edit authoring/publication, rather than an increase in native binding.** Median million raw owner-thread cycles/frame, three processes per active mode/case:
+
+| Observer mode | Scoped total unchanged → all edited | Native binding unchanged → all edited | Bulk authoring + edit publication |
+| --- | --- | --- | --- |
+| Aggregate only | 8.669 → 10.979 | 2.627 → 2.625 | 2.317 |
+| Phase enabled | 8.331 → 10.914 | 2.567 → 2.662 | 2.216 |
+
+Aggregate-only total rises **2.310 million cycles/frame**, while the median combined authoring/publication interval is **2.317 million**. Phase-enabled total rises **2.583 million**, with **2.216 million** in combined authoring/publication. Native-binding changes across individual built-in unchanged/bulk process comparisons range **-0.057 to +0.091 million** in aggregate mode and **-0.080 to +0.094 million** with phases, much smaller than the **1.787–2.701 million** total increases. These are measured interval comparisons, not a formal causal percentage: other intervals and observer/background variability offset one another, and component medians need not sum to total medians. Explicit value/revision verification remains excluded; edit publication includes retained verification-pin release and old-state retirement.
+
+The **largest measured native interval is texture/sampler binding**, ranked first in all nine phase processes. Built-in bulk phase medians:
+
+| Native phase | Million raw cycles/frame | Median share of sampled binding cycles |
+| --- | --- | --- |
+| Eligibility | 0.562 | 21.11% |
+| Fixed-function state | 0.612 | 22.99% |
+| Transfer metadata | 0.615 | 23.10% |
+| Terrain/shadow bindings | 0.034 | 1.31% |
+| Material shader bindings | 0.021 | 0.79% |
+| Texture/sampler bindings | 0.792 | 30.47% |
+
+The texture/sampler share is **29.74–31.17%** across built-in bulk runs and **29.56–30.70%** unchanged. Four unconditional phases execute **136 regions/frame** in both built-in cases; terrain/shadow and material-shader phases each execute **2/frame**. Thus bulk edits do not add binding-region work. The custom bulk reference raises those conditional phases to **28/frame** each, with median shares **7.39% / 7.28%**, while texture/sampler remains largest at **27.42%**. These are the common C material-binding phases; C++ custom-program Bind/Unbind is separately attributed. Overall material preparation remains larger than any native subphase: **4.136 million cycles/frame** in phase-enabled built-in bulk, versus **2.662 million** for all native binding combined.
+
+The next optimization priority for the **incremental bulk-edit cost** is material edit authoring and coalesced publication/old-state retirement. Native texture/sampler work is the leading measured binding interval for a separate follow-up, but its raw share does not justify another blind API-call or descriptor-cache rewrite. The two prior rejected candidates remain reverted. No speedup is claimed by this attribution collection.
+
+Observer limits remain material. Across nine matched aggregate/phase pairs, native-binding ratios vary **-3.95% to +4.53%**, and total scoped ratios **-4.87% to +5.96%**. Signed mixed results do not establish a stable bookkeeping-overhead bound. Single normal/inactive controls and three active processes per mode do not certify whole-frame behavior: for built-in unchanged, mean owner-update times are **149.06 ms normal / 149.73 inactive / 188.46 aggregate / 172.32 phase**. All controls remain included. Maximum-pair-tax-subtracted phase medians are zero in every group; no positive lower confidence bound is established. Phase shares include clock/callback/observer cost and are ranking evidence, not exact percentages of uninstrumented driver CPU. Background workloads are not fully controlled. WARP remains Microsoft Basic Render Driver, driver 10.0.19041.7802; no physical PMU/cache/GPU or representative frame-p95 acceptance follows.
+
+The 18 active runs cover **542.16 seconds / 3,901 owner updates / 2,884 changed frames / 86,520 verified revisions / 18,260 typed custom edits**, with **530,409 native calls / 358,765 uploads / 49,302 successful custom binds and unbinds** and zero native/probe failures. Scope remains built-in none/all and custom all, follow view, combined uploads; single edits, other views/policies and specialized passes remain open. The prior **15/15 Debug and 15/15 RelWithDebInfo** evidence retains zero source/binary input drift, and **89 Python guards** pass again. Normal renderer/native artifacts remain probe-free.
+
+Evidence: `material_m6_native_phase_scene_validation_20261027.json`, `material_m6_native_phase_analysis_20261027.json`, accepted raw manifest/runtimes, and `material_m6_native_phase_scene_delivery_20261027.json` under the isolated `project_x64/`. The previous blocked delivery and shared pointer are retained separately. Both isolated/shared status documents are updated; unrelated shared-checkout builds remain uncertified.
+
+**M6 remains incomplete.** Accepted native-phase collection and scoped bulk-edit bottleneck diagnosis are complete. Actual CPU reduction, consistent publication/total-path improvement, broader scene/edit/pass coverage, better observer bounds, physical hardware/cache/GPU/residency/frame-p95, retirement/device-loss/interactive/visual and current Editor/package/SDK certification remain open. Historical M4 memory and earlier accepted optimization results are unchanged.
