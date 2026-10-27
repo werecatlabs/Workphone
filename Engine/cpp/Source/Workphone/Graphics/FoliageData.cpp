@@ -560,7 +560,7 @@ namespace workphone::render
         {
             return reject( error, "Foliage bounds/pivot must be finite." );
         }
-        for( size_t k = 0; k < 3; ++k )
+        for( s32 k = 0; k < 3; ++k )
         {
             if( s.boundsMinimum[k] > s.boundsMaximum[k] ||
                 !range( f64( s.boundsMaximum[k] ) - s.boundsMinimum[k], 0, 100000 ) )
@@ -608,7 +608,7 @@ namespace workphone::render
                 {
                     return reject( error, "Foliage vertex normals must be normalized." );
                 }
-                for( size_t k = 0; k < 3; ++k )
+                for( s32 k = 0; k < 3; ++k )
                 {
                     const f64 tolerance =
                         1.e-4 * std::max( 1.0, f64( s.boundsMaximum[k] ) - s.boundsMinimum[k] );
