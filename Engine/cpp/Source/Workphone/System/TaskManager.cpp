@@ -307,6 +307,16 @@ namespace workphone
                 return;
             auto settings = applicationManager->getPlayerSettings();
             const bool primaryRender = settings && !settings->getPropertyAsBool( "tasks.renderThread", true );
+            if( threadId == Thread::ThreadId::Primary && settings )
+            {
+                if( settings->hasProperty( "graphics.frameRateLimit" ) )
+                    for( auto id : { TaskId::Primary, TaskId::Application, TaskId::Render } )
+                        if( auto task = getTask( id ) )
+                            task->setTargetFPS( settings->getPropertyAsInt( "graphics.frameRateLimit", 60 ) );
+                if( settings->hasProperty( "physics.simulationRate" ) )
+                    if( auto task = getTask( TaskId::Physics ) )
+                        task->setTargetFPS( settings->getPropertyAsInt( "physics.simulationRate", 60 ) );
+            }
 
             switch( threadId )
             {

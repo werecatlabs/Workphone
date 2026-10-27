@@ -501,7 +501,7 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
     BOOST_CHECK( !project->isDirty() );
 
     auto unavailableAA = requestFor( "applyProjectSettings" );
-    unavailableAA->setProperty( "graphics.antiAliasing", s32( 1 ) );
+    unavailableAA->setProperty( "graphics.antiAliasing", s32( 6 ) );
     processProjectSettingsAction( unavailableAA );
     BOOST_CHECK( !unavailableAA->getPropertyAsBool( "success", true ) );
     BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );

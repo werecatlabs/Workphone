@@ -184,13 +184,24 @@ void wp_pipeline_render_frame( wp_render_pipeline *p, void *scene, const wp_mat4
         const wp_f32 *reflection = p->ssr_on ? wp_ssr_get_texture( p->ssr ) : NULL;
         for( pixel = 0; pixel < px; ++pixel )
         {
-            wp_f32 visibility = (ao ? ao[pixel] : 1.0f) * (contact ? contact[pixel] : 1.0f);
+            wp_f32 visibility = (ao ? ao[pixel * 2u] : 1.0f) * (contact ? contact[pixel * 2u] : 1.0f);
             size_t channel;
+            size_t reflected_pixel = pixel;
+            wp_f32 reflection_weight = 0.0f;
+            if(reflection)
+            {
+                size_t half_pixel=((pixel/(size_t)p->width)/2u)*(size_t)((p->width+1)/2)+
+                                  ((pixel%(size_t)p->width)/2u);
+                wp_s32 x=(wp_s32)(reflection[half_pixel*4u]*(wp_f32)p->width);
+                wp_s32 y=(wp_s32)(reflection[half_pixel*4u+1u]*(wp_f32)p->height);
+                if(x>=0 && x<p->width && y>=0 && y<p->height)
+                { reflected_pixel=(size_t)y*(size_t)p->width+(size_t)x; reflection_weight=reflection[half_pixel*4u+3u]*.25f; }
+            }
             if( visibility < 0.0f ) visibility = 0.0f;
             if( visibility > 1.0f ) visibility = 1.0f;
             for( channel = 0; channel < 3u; ++channel )
                 p->history[pixel * 3u + channel] = p->hdr_input[pixel * 3u + channel] * visibility +
-                    (reflection ? reflection[pixel * 3u + channel] * 0.25f : 0.0f);
+                    p->hdr_input[reflected_pixel * 3u + channel] * reflection_weight;
         }
         source = p->history;
     }

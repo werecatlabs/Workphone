@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include "workphone_graphics_scene.h"
+#include "workphone_graphics_object.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -227,6 +228,12 @@ wp_u32 wp_graphics_cull_result_get_transform_dispatch_count( const wp_graphics_c
 void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result );
 wp_s32 wp_graphics_cull_result_get_candidate_count( const wp_graphics_cull_result *result );
 wp_s32 wp_graphics_cull_result_get_visible_count( const wp_graphics_cull_result *result );
+typedef wp_s32 ( *wp_graphics_occlusion_test )( const wp_aabb3f *local_bounds,
+                                                const wp_mat4f *world, void *context );
+/* Owner-only filtering of this private main view. Shared capture data and
+ * derived shadow views remain immutable. Unknown bounds always survive. */
+wp_s32 wp_graphics_cull_result_apply_occlusion( wp_graphics_cull_result *result,
+                                                wp_graphics_occlusion_test test, void *context );
 
 /** @brief Returns the i-th visible object in draw order, or NULL if out of range. */
 wp_graphics_object *wp_graphics_cull_result_get_object( const wp_graphics_cull_result *result,

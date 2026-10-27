@@ -49,7 +49,7 @@ namespace workphone::dds
 
     inline unsigned blockBytes( std::uint32_t f )
     {
-        return f == 71 || f == 72 ? 8 : f == 77 || f == 78 ? 16 : 0;
+        return f == 71 || f == 72 ? 8 : f == 77 || f == 78 || f == 98 || f == 99 ? 16 : 0;
     }
 
     inline bool supported( std::uint32_t f )
@@ -229,6 +229,7 @@ namespace workphone::dds
     {
         require( supported( format ) && !levels.empty() && levels.size() <= 15,
                  "Invalid DDS encoder input" );
+        require( format != 98 && format != 99, "BC7 encoding requires a registered provider" );
         std::vector<std::uint8_t> bytes( 148, 0 );
         const auto block = blockBytes( format );
         auto w = levels.front().width, h = levels.front().height;

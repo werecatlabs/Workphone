@@ -1277,6 +1277,22 @@ wp_s32 wp_graphics_cull_result_get_visible_count( const wp_graphics_cull_result 
     return result ? result->visible_count : 0;
 }
 
+wp_s32 wp_graphics_cull_result_apply_occlusion( wp_graphics_cull_result *result,
+                                                wp_graphics_occlusion_test test, void *context )
+{
+    wp_s32 i, kept = 0, removed = 0;
+    if( !result || !test || result->pass != WP_GRAPHICS_CULL_PASS_MAIN ) return 0;
+    for( i = 0; i < result->visible_count; ++i )
+    {
+        const wp_s32 index = result->indices[i];
+        const cull_entry *entry = &result->entries[index];
+        if( entry->has_bounds && test( &entry->bounds, &entry->world, context ) ) ++removed;
+        else result->indices[kept++] = index;
+    }
+    result->visible_count = kept;
+    return removed;
+}
+
 wp_graphics_object *wp_graphics_cull_result_get_object( const wp_graphics_cull_result *result,
                                                         wp_s32 index )
 {

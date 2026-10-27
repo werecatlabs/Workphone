@@ -10,11 +10,49 @@
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
 #include <set>
 #include <stdexcept>
+#include <cstdlib>
+#include <cerrno>
+#include <cmath>
+#include <cstring>
 
 namespace workphone::editor
 {
     namespace
     {
+        struct SettingDefinition
+        {
+            const char *name;
+            const char *type;
+            const char *defaultValue;
+            double minimum, maximum;
+            bool bounded;
+        };
+#include "ProjectSettingsSchema.inl"
+
+        String validateValues( const Properties &settings )
+        {
+            for( const auto &definition : settingDefinitions )
+            {
+                if( !settings.hasProperty( definition.name ) ) continue;
+                const auto value = settings.getProperty( definition.name );
+                bool valid = value.find( '\0' ) == String::npos && value.size() <= 65536;
+                if( std::strcmp( definition.type, "bool" ) == 0 )
+                    valid = valid && ( value == "true" || value == "false" || value == "0" || value == "1" );
+                else if( std::strcmp( definition.type, "string" ) != 0 )
+                {
+                    char *end = nullptr;
+                    errno = 0;
+                    const auto number = std::strtod( value.c_str(), &end );
+                    valid = valid && end != value.c_str() && end && !*end && errno != ERANGE &&
+                        std::isfinite( number ) && ( !definition.bounded ||
+                        ( number >= definition.minimum && number <= definition.maximum ) ) &&
+                        ( std::strcmp( definition.type, "int" ) != 0 || number == std::floor( number ) );
+                }
+                if( !valid ) return String( "Invalid project setting: " ) + definition.name;
+            }
+            return {};
+        }
+
         SmartPtr<Properties> snapshot( const Properties &source )
         {
             auto result = make_ptr<Properties>();
@@ -48,6 +86,12 @@ namespace workphone::editor
         if( !settings )
         {
             response->setProperty( "status", "Project settings are unavailable." );
+            return response;
+        }
+        const auto valuesError = validateValues( *settings );
+        if( !valuesError.empty() )
+        {
+            response->setProperty( "status", valuesError );
             return response;
         }
         using Validator = SmartPtr<Properties> ( * )( SmartPtr<Properties> );

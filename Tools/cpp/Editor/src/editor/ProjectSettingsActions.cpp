@@ -252,6 +252,19 @@ namespace workphone::editor
                     if( !result->getPropertyAsBool( "success" ) )
                         throw std::invalid_argument( result->getProperty( "status" ).c_str() );
                     request->setProperty( "status", result->getProperty( "status" ) );
+                    if( settings->getPropertyAsBool( "editor.advancedWarnings", true ) )
+                    {
+                        String warnings;
+                        if( settings->getPropertyAsInt( "build.config", 1 ) == 3 &&
+                            settings->getProperty( "build.signingProfile", "Default" ) == "Default" )
+                            warnings += "Shipping uses the default signing profile. ";
+                        if( settings->getPropertyAsInt( "quality.streamingBudgetMb", 512 ) >
+                            settings->getPropertyAsInt( "performance.memoryBudgetMb", 2048 ) )
+                            warnings += "Streaming budget exceeds the total CPU asset budget. ";
+                        request->setProperty( "warnings", warnings );
+                        if( !warnings.empty() )
+                            request->setProperty( "status", result->getProperty( "status" ) + " " + warnings );
+                    }
                 }
                 else if( action == "reloadRenderer" )
                 {

@@ -23,6 +23,7 @@ namespace workphone::render
         String target;
         bool packagedBuild = false;
         std::vector<u8> ddsBytes;
+        u32 storageFormat = 0; // v2 per-asset native encoding; target identity remains unchanged.
     };
 
     /** Exact versioned target profiles; zero denotes the existing portable BGRA

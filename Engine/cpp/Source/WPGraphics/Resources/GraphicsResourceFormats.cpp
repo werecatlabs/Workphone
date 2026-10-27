@@ -2,6 +2,7 @@
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <Workphone/Graphics/DdsTexture.hpp>
+#include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 
 #include <cmath>
 #include <cstring>
@@ -87,13 +88,17 @@ namespace workphone::render
             if( !data.ddsBytes.empty() )
             {
                 const auto image = dds::inspect( data.ddsBytes );
-                require( data.levels.empty() && image.format == ddsFormatForTarget( data.target ),
+                const auto expectedFormat = data.storageFormat ? data.storageFormat : ddsFormatForTarget( data.target );
+                require( !data.storageFormat || data.target.find( "windows" ) == 0 || data.target.find( "dx11" ) == 0 ||
+                         data.target.find( "pc" ) == 0 || data.target.find( "mac" ) == 0,
+                         "Per-asset DDS encoding is incompatible with the target platform" );
+                require( data.levels.empty() && image.format == expectedFormat,
                          "DDS artifact does not match its target profile" );
                 require( image.alphaMode == ( dds::blockBytes( image.format ) == 8 ? 3u : 1u ),
                          "DDS alpha mode does not match the opaque BC1 or straight-alpha profile" );
                 const auto &first = image.mips.front();
                 const bool compressed = dds::blockBytes( image.format ) != 0;
-                const bool srgb = image.format == 72 || image.format == 78 || image.format == 91;
+                const bool srgb = image.format == 72 || image.format == 78 || image.format == 91 || image.format == 99;
                 require( !compressed || ( first.width % 4 == 0 && first.height % 4 == 0 ),
                          "DX11 block-compressed base dimensions must be multiples of four" );
                 require( !compressed || data.mipSettings.filter != TextureMipFilter::Normal,
@@ -120,7 +125,7 @@ namespace workphone::render
                 require( image.mips.size() == count, "DDS mip count does not match the recipe" );
                 return;
             }
-            require( ddsFormatForTarget( data.target ) == 0,
+            require( !data.storageFormat && ddsFormatForTarget( data.target ) == 0,
                      "Windows DDS profile requires a native DDS payload" );
             require( !data.levels.empty() && data.levels.size() <= maxMipLevels,
                      "Invalid cooked texture mip count" );
@@ -498,7 +503,8 @@ namespace workphone::render
                          value.header.resourceType == expected &&
                          ( value.header.compilerVersion == compiler.versionFor( expected ) ||
                            ( expected == resource::ResourceTypeID( "matres" ) &&
-                             (value.header.compilerVersion == 2 || value.header.compilerVersion == 3) ) ),
+                             (value.header.compilerVersion == 2 || value.header.compilerVersion == 3 || value.header.compilerVersion == 4) ) ||
+                           ( expected == resource::ResourceTypeID( "texres" ) && value.header.compilerVersion == 2 ) ),
                      "Cooked graphics resource type or compiler version is incompatible" );
             require( value.payload.size() <= graphicsTextureByteLimit + 4096u &&
                          value.header.payloadSize == value.payload.size() &&
@@ -555,10 +561,11 @@ namespace workphone::render
         {
             validateTexture( data );
             writePrefix( output, data.ddsBytes.empty() ? textureMagic : ddsMagic, data.target,
-                         data.packagedBuild );
+                         data.packagedBuild, data.storageFormat ? 2 : 1 );
             write32( output, static_cast<u32>( data.mipSettings.filter ) );
             write32( output, data.mipSettings.atlasColumns );
             writeFloat( output, data.mipSettings.alphaCutoff );
+            if( data.storageFormat ) write32( output, data.storageFormat );
             if( !data.ddsBytes.empty() )
             {
                 write64( output, data.ddsBytes.size() );
@@ -592,8 +599,8 @@ namespace workphone::render
         error.clear();
         try
         {
-            const auto format = ddsFormatForTarget( texture.target );
-            const bool srgb = format == 72 || format == 78 || format == 91;
+            const auto format = texture.storageFormat ? texture.storageFormat : ddsFormatForTarget( texture.target );
+            const bool srgb = format == 72 || format == 78 || format == 91 || format == 99;
             switch( slot )
             {
             case MaterialTextureSlot::BaseColour: break; // Preserve the version-one contract.
@@ -741,16 +748,18 @@ namespace workphone::render
             validateResource( value, "texres" );
             require( value.header.installDependencies.empty() && value.dependencies.empty(),
                      "Cooked textures cannot contain install dependencies" );
-            Reader reader( value.payload );
+            const auto decodedPayload = decompressProjectAssetPayload( value.payload, graphicsTextureByteLimit + 4096u );
+            Reader reader( decodedPayload );
             CookedTextureData data;
-            require( value.payload.size() >= 4, "Truncated texture prefix" );
-            const auto magic = u32( value.payload[0] ) | u32( value.payload[1] ) << 8 |
-                               u32( value.payload[2] ) << 16 | u32( value.payload[3] ) << 24;
+            require( decodedPayload.size() >= 4, "Truncated texture prefix" );
+            const auto magic = u32( decodedPayload[0] ) | u32( decodedPayload[1] ) << 8 |
+                               u32( decodedPayload[2] ) << 16 | u32( decodedPayload[3] ) << 24;
             require( magic == textureMagic || magic == ddsMagic, "Unknown texture payload encoding" );
-            readPrefix( reader, magic, data.target, data.packagedBuild );
+            const auto version = readPrefix( reader, magic, data.target, data.packagedBuild, 2 );
             data.mipSettings.filter = static_cast<TextureMipFilter>( reader.read32() );
             data.mipSettings.atlasColumns = reader.read32();
             data.mipSettings.alphaCutoff = reader.readFloat();
+            if( version >= 2 ) data.storageFormat = reader.read32();
             validateSettings( data.mipSettings );
             if( magic == ddsMagic )
             {
@@ -802,12 +811,13 @@ namespace workphone::render
         {
             require( value.payload.size() <= graphicsMaterialShaderByteLimit+65536u, "Cooked material payload exceeds its size limit" );
             validateResource( value, "matres" );
-            Reader reader( value.payload );
+            const auto decodedPayload = decompressProjectAssetPayload( value.payload, graphicsMaterialShaderByteLimit + 65536u );
+            Reader reader( decodedPayload );
             CookedMaterialData data;
             const auto version = readPrefix( reader, materialMagic, data.target, data.packagedBuild, 3 );
             require( value.header.compilerVersion != 2 || version == 1,
                      "Legacy material compiler cannot produce extended material payloads" );
-            require(version >= 3 || value.payload.size() <= 4096,"Legacy cooked material exceeds its size limit");
+            require(version >= 3 || decodedPayload.size() <= 4096,"Legacy cooked material exceeds its size limit");
             require(value.header.compilerVersion >= 4 || version <= 2,
                 "Legacy material compiler cannot produce shader-schema payloads");
             data.baseColour.r = reader.readFloat();

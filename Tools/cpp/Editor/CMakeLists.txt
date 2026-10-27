@@ -1043,6 +1043,9 @@ if (WIN32)
 endif()
 
 if (WP_EDITOR_TESTS)
+    if(TARGET WorkphonePlatformWin32)
+        target_link_libraries(Editor "$<$<CONFIG:Debug>:WorkphonePlatformWin32>")
+    endif()
     target_include_directories(Editor PRIVATE
         "$<$<CONFIG:Debug>:${WP_ROOT}/Dependencies/imgui>")
     if (TARGET WPImGui AND TARGET imgui)
@@ -1093,6 +1096,9 @@ if (WP_EDITOR_TESTS)
         project_services_local_providers_test
         project_settings_build_profile_test
         project_settings_editor_policy_recovery_test
+        project_graphics_output_curves_test
+        project_graphics_backend_pipeline_profile_test
+        project_graphics_dx11_msaa_scale_resolve_test
         project_settings_runtime_subsystem_contract_test
         project_settings_runtime_graphics_director_test
         project_settings_runtime_validation_and_capabilities_test

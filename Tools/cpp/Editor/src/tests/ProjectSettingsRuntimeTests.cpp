@@ -129,7 +129,7 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_subsystem_contract_test )
     BOOST_CHECK( result->getProperty( "unavailableKeys" ).empty() );
 
     // A bad renderer choice must reject the complete draft before any subsystem changes.
-    settings->setProperty( "graphics.renderer.pc", 2 );
+    settings->setProperty( "graphics.renderer.pc", 99 );
     settings->setProperty( "sound.masterVolume", 80 );
     settings->setProperty( "physics.gravity", -2.0f );
     settings->setProperty( "graphics.frameRateLimit", 30 );
@@ -207,6 +207,8 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_validation_and_capabilities_test 
     }
     settings->setProperty( "physics.gravity", -9.8f );
     settings->setProperty( "graphics.antiAliasing", 1 );
+    BOOST_CHECK( validateProjectSettingsRuntime( settings )->getPropertyAsBool( "success" ) );
+    settings->setProperty( "graphics.antiAliasing", 6 );
     BOOST_CHECK( !validateProjectSettingsRuntime( settings )->getPropertyAsBool( "success" ) );
     settings->setProperty( "graphics.antiAliasing", 2 );
     BOOST_CHECK( validateProjectSettingsRuntime( settings )->getPropertyAsBool( "success" ) );
@@ -215,9 +217,9 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_validation_and_capabilities_test 
     describeProjectSettingsCapabilities( capabilities );
     BOOST_CHECK( capabilities->getPropertyAsBool( "capability.sound.masterVolume" ) );
     BOOST_CHECK( capabilities->getPropertyAsBool( "capability.graphics.shadowResolution" ) );
-    BOOST_CHECK( !capabilities->hasProperty( "capability.physics.threads" ) );
-    BOOST_CHECK( !capabilities->getProperty( "unavailable.physics.threads" ).empty() );
-    BOOST_CHECK( !capabilities->hasProperty( "capability.graphics.shadowDistance" ) );
+    BOOST_CHECK( capabilities->getPropertyAsBool( "capability.physics.threads" ) );
+    BOOST_CHECK( !capabilities->getProperty( "availability.physics.threads" ).empty() );
+    BOOST_CHECK( capabilities->getPropertyAsBool( "capability.graphics.shadowDistance" ) );
 
     core::IApplicationManager::setInstance( nullptr );
     const auto result = applyProjectSettingsRuntime( settings );
