@@ -32,6 +32,9 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <fstream>
+#include <cstdlib>
+#include <memory>
 
 namespace claw_texture_mip_contracts
 {
@@ -961,11 +964,187 @@ namespace claw_texture_mip_contracts
         }
     }
 
+    inline void rgbaDecodeBudgetContracts( Fixture &fixture, const char *sourcePath = nullptr )
+    {
+        constexpr u32 width = 4096, height = 4096;
+        constexpr u64 bitmapBytes = u64( width ) * height * 4u;
+        constexpr u64 metadataBytes = 64u << 10;
+        class Images final : public FileSystem
+        {
+        public:
+            std::vector<u8> encoded;
+            bool isExistingFile( const String &, bool, bool ) const override { return false; }
+            SmartPtr<workphone::IStream> open( const String &name, bool, bool, bool, bool, bool ) override
+            {
+                return make_ptr<MemoryFile>( encoded.data(), long( encoded.size() ), name, false );
+            }
+        };
+        auto files = make_ptr<Images>();
+        std::array<std::array<u8, 4>, 4> corners{
+            { { 1, 2, 3, 4 }, { 17, 29, 41, 53 },
+              { 61, 73, 89, 101 }, { 113, 127, 139, 151 } } };
+        std::array<u8, 4> centerColor;
+        // The 4K RGBA shape reproduces the helicopter material's 128 MiB clone
+        // request. Four distinct transparent corners also catch channel/order
+        // changes when the decoder bitmap is reused instead of converted.
+        {
+            struct FreeImageScope
+            {
+                FreeImageScope() { FreeImage_Initialise( FALSE ); }
+                ~FreeImageScope() { FreeImage_DeInitialise(); }
+            } freeImage;
+            using MemoryOwner = std::unique_ptr<FIMEMORY, decltype( &FreeImage_CloseMemory )>;
+            using BitmapOwner = std::unique_ptr<FIBITMAP, decltype( &FreeImage_Unload )>;
+            MemoryOwner memory( nullptr, &FreeImage_CloseMemory );
+            BitmapOwner bitmap( nullptr, &FreeImage_Unload );
+            if( sourcePath )
+            {
+                std::ifstream input( sourcePath, std::ios::binary | std::ios::ate );
+                require( input.good(), "Optional RGBA decode asset must be readable" );
+                const auto bytes = static_cast<std::streamoff>( input.tellg() );
+                require( bytes > 0 && bytes <= std::streamoff( 64u << 20 ),
+                         "Optional RGBA decode asset must have a bounded encoded payload" );
+                files->encoded.resize( static_cast<size_t>( bytes ) );
+                input.seekg( 0 );
+                require( bool( input.read( reinterpret_cast<char *>( files->encoded.data() ),
+                                           static_cast<std::streamsize>( bytes ) ) ),
+                         "Optional RGBA decode asset must read completely" );
+                memory.reset( FreeImage_OpenMemory( files->encoded.data(), DWORD( files->encoded.size() ) ) );
+                bitmap.reset( memory ? FreeImage_LoadFromMemory( FIF_PNG, memory.get(), 0 ) : nullptr );
+            }
+            else bitmap.reset( FreeImage_Allocate( width, height, 32 ) );
+            require( bitmap != nullptr, "RGBA fixture allocation" );
+            require( FreeImage_GetWidth( bitmap.get() ) == width && FreeImage_GetHeight( bitmap.get() ) == height &&
+                     FreeImage_GetImageType( bitmap.get() ) == FIT_BITMAP && FreeImage_GetBPP( bitmap.get() ) == 32,
+                     "RGBA decode fixture must use a 4096 by 4096 standard 32-bit bitmap" );
+            for( u32 y = 0; !sourcePath && y < height; ++y )
+            {
+                auto row = FreeImage_GetScanLine( bitmap.get(), y );
+                for( u32 x = 0; x < width; ++x )
+                {
+                    row[x * 4u] = 11; row[x * 4u + 1u] = 37;
+                    row[x * 4u + 2u] = 59; row[x * 4u + 3u] = 127;
+                }
+            }
+            for( u32 corner = 0; corner < 4; ++corner )
+            {
+                auto row = FreeImage_GetScanLine( bitmap.get(), corner < 2 ? height - 1u : 0u );
+                const auto x = corner % 2 ? width - 1u : 0u;
+                if( sourcePath ) std::copy_n( row + x * 4u, 4, corners[corner].begin() );
+                else std::copy( corners[corner].begin(), corners[corner].end(), row + x * 4u );
+            }
+            std::copy_n( FreeImage_GetScanLine( bitmap.get(), height - 1u - height / 2u ) + width / 2u * 4u,
+                         4, centerColor.begin() );
+            if( !sourcePath )
+            {
+                memory.reset( FreeImage_OpenMemory() );
+                require( memory && FreeImage_SaveToMemory( FIF_PNG, bitmap.get(), memory.get(), PNG_Z_BEST_SPEED ),
+                         "RGBA fixture PNG encoding" );
+                BYTE *encoded = nullptr; DWORD encodedBytes = 0;
+                require( FreeImage_AcquireMemory( memory.get(), &encoded, &encodedBytes ) && encodedBytes,
+                         "RGBA fixture PNG payload" );
+                files->encoded.assign( encoded, encoded + encodedBytes );
+            }
+        }
+
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto baseline = scheduler->stats();
+        const auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto working = size_t( StreamMemoryClass::WorkingCpu );
+        auto originalFiles = fixture.application->getFileSystem();
+        fixture.application->setFileSystem( files );
+        struct Restore
+        {
+            Fixture &fixture; SmartPtr<IFileSystem> files;
+            std::shared_ptr<WorldStreamingScheduler> scheduler; WorldStreamStats stats;
+            ~Restore()
+            {
+                String error;
+                for( auto type : { StreamMemoryClass::SourceCpu, StreamMemoryClass::WorkingCpu } )
+                    scheduler->setBudget( type, stats.limits[size_t( type )], error );
+                fixture.application->setFileSystem( files );
+            }
+        } restore{ fixture, originalFiles, scheduler, baseline };
+        String error;
+        require( scheduler->setBudget( StreamMemoryClass::SourceCpu,
+                     baseline.used[source] + ( 256ull << 20 ), error ) &&
+                 scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                     baseline.used[working] + ( 128ull << 20 ), error ),
+                 "4K RGBA decode uses the default 128 MiB working capacity" );
+        const auto checkPixels = [&]( const TextureMipLevel &mip ) {
+            require( mip.width == width && mip.height == height && mip.bgra.size() == bitmapBytes,
+                     "4K RGBA source retains its dimensions and complete base pixels" );
+            for( u32 corner = 0; corner < 4; ++corner )
+            {
+                const auto x = corner % 2 ? width - 1u : 0u;
+                const auto y = corner < 2 ? 0u : height - 1u;
+                require( std::equal( corners[corner].begin(), corners[corner].end(),
+                                    mip.bgra.begin() + ( size_t( y ) * width + x ) * 4u ),
+                         "Reused 32-bit decoder pixels preserve BGRA, transparency and top-down rows" );
+            }
+            const auto center = ( size_t( height / 2u ) * width + width / 2u ) * 4u;
+            require( std::equal( centerColor.begin(), centerColor.end(), mip.bgra.begin() + center ),
+                     "Reused decoder bitmap preserves interior alpha and color" );
+        };
+        {
+            ClawTexture texture;
+            texture.setFilePath( "rgba-4k.png" );
+            auto mip = texture.getCpuBaseMip( error );
+            require( mip != nullptr, "4K RGBA PNG must fit without a duplicate 64 MiB conversion bitmap" );
+            checkPixels( *mip );
+            require( scheduler->stats().used[working] == baseline.used[working],
+                     "Encoded/header/decoded working buffers retire after successful RGBA decode" );
+            const auto decoded = scheduler->stats();
+            std::printf( "RGBA decode %s: encoded=%llu requiredWorkingPeak=%llu lifetimeWorkingPeak=%llu "
+                         "workingBaseline=%llu workingAfterDecode=%llu limit=%llu\n",
+                         sourcePath ? sourcePath : "synthetic-4k.png",
+                         static_cast<unsigned long long>( files->encoded.size() ),
+                         static_cast<unsigned long long>( files->encoded.size() + bitmapBytes + 2u * metadataBytes ),
+                         static_cast<unsigned long long>( decoded.peakUsed[working] ),
+                         static_cast<unsigned long long>( baseline.used[working] ),
+                         static_cast<unsigned long long>( decoded.used[working] ),
+                         static_cast<unsigned long long>( decoded.limits[working] ) );
+            if( sourcePath )
+            {
+                auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+                auto nativeView = static_cast<ID3D11ShaderResourceView *>( texture.getNativeTextureView( native ) );
+                const auto desc = description( nativeView );
+                require( desc.Width == width && desc.Height == height && desc.MipLevels == 1 &&
+                         greenPixel( nativeView ) == corners[0][1],
+                         "Exact RGBA asset must upload its full-resolution base with the same top-left color" );
+            }
+        }
+        {
+            ClawTexture texture;
+            texture.setFilePath( "rgba-4k-retry.png" );
+            // Encoded bytes, the preflight header and the decoder bitmap plus
+            // codec metadata coexist at admission. One byte less must reject.
+            const auto exactPeak = files->encoded.size() + bitmapBytes + 2u * metadataBytes;
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                         baseline.used[working] + exactPeak - 1u, error ),
+                     "Admit RGBA header but deny the last required decoder byte" );
+            require( !texture.getCpuBaseMip( error ) &&
+                     scheduler->stats().used[working] == baseline.used[working],
+                     "RGBA decode refusal publishes no pixels and returns all transient reservations" );
+            require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                         baseline.used[working] + exactPeak, error ),
+                     "Restore the exact required single-bitmap working peak" );
+            auto mip = texture.getCpuBaseMip( error );
+            require( mip != nullptr, "Same RGBA texture retries after decoder capacity is restored" );
+            checkPixels( *mip );
+            require( scheduler->stats().used[working] == baseline.used[working],
+                     "Successful RGBA retry retires all transient working buffers" );
+        }
+    }
+
     inline void run()
     {
         Fixture fixture;
         fixture.initialize();
         boundedRawTextureContracts( fixture );
+        rgbaDecodeBudgetContracts( fixture );
+        if( const auto path = std::getenv( "WP_CLAW_RGBA_DECODE_FIXTURE" ); path && *path )
+            rgbaDecodeBudgetContracts( fixture, path );
         checkedByteStagingContracts();
         claw_texture_retirement_budget_contracts::run( fixture );
         ClawTexture texture;

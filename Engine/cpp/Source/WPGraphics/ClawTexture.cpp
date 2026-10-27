@@ -425,6 +425,11 @@ namespace
         }
         const auto bgraBytes = u64( width ) * height * 4u;
         const auto outputBytes = u64( outputWidth ) * outputHeight * 4u;
+        // ConvertTo32Bits clones an already standard 32-bit bitmap. Reuse that
+        // decoder allocation instead: a 4K RGBA image otherwise requires two
+        // 64 MiB working bitmaps before its separately charged retained pixels.
+        const bool reuseBitmap = header && FreeImage_GetImageType( header.get() ) == FIT_BITMAP &&
+                                 FreeImage_GetBPP( header.get() ) == 32;
         if( !width || !height || !outputWidth || !outputHeight ||
             originalWidth > 16384 || originalHeight > 16384 ||
             width > originalWidth || height > originalHeight || !pitch ||
@@ -437,7 +442,8 @@ namespace
         }
         auto sourceBudget = reserveTextureCpu( outputBytes, budgetError );
         auto decoderBudget = sourceBudget ? WorldStreamingScheduler::shared()->reserve(
-            StreamMemoryClass::WorkingCpu, u64( pitch ) * height + bgraBytes + 64u * 1024u,
+            StreamMemoryClass::WorkingCpu,
+            u64( pitch ) * height + ( reuseBitmap ? 0u : bgraBytes ) + 64u * 1024u,
             budgetError ) : StreamBudget{};
         if( !sourceBudget || !decoderBudget )
         {
@@ -450,13 +456,16 @@ namespace
         FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
         BitmapOwner bitmap( FreeImage_LoadFromMemory( format, memory.get(), decodeFlags ), &FreeImage_Unload );
         if( !bitmap || FreeImage_GetWidth( bitmap.get() ) != width ||
-            FreeImage_GetHeight( bitmap.get() ) != height || FreeImage_GetPitch( bitmap.get() ) > pitch )
+            FreeImage_GetHeight( bitmap.get() ) != height || FreeImage_GetPitch( bitmap.get() ) > pitch ||
+            ( reuseBitmap && ( FreeImage_GetImageType( bitmap.get() ) != FIT_BITMAP ||
+                               FreeImage_GetBPP( bitmap.get() ) != 32 ) ) )
         {
             WP_LOG_ERROR( "WPGraphics/Texture: decoded bitmap does not match its admitted header in '" +
                           filePath + "'." );
             return false;
         }
-        BitmapOwner converted( FreeImage_ConvertTo32Bits( bitmap.get() ), &FreeImage_Unload );
+        BitmapOwner converted( reuseBitmap ? bitmap.release() :
+                                            FreeImage_ConvertTo32Bits( bitmap.get() ), &FreeImage_Unload );
         bitmap.reset();
         memory.reset();
         if( !converted || FreeImage_GetWidth( converted.get() ) != width ||
