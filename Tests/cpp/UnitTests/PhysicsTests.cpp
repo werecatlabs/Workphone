@@ -9,6 +9,38 @@
 
 using namespace workphone;
 
+#if WP_BUILD_PHYSICS3
+BOOST_AUTO_TEST_CASE( physics_project_profile_configures_new_native_subsystems )
+{
+    TestGuard guard( true );
+    BOOST_REQUIRE( guard.applicationManager ); BOOST_REQUIRE( guard.factoryManager );
+    auto previous = guard.applicationManager->getPlayerSettings();
+    auto profile = make_ptr<Properties>();
+    profile->setProperty( "physics.gravity", -2.75f );
+    profile->setProperty( "physics.debugDraw", true );
+    profile->setProperty( "physics.solverIterations", 9 );
+    profile->setProperty( "physics.substeps", 3 );
+    profile->setProperty( "physics.threads", 2 );
+    guard.applicationManager->setPlayerSettings( profile );
+    guard.addCleanup( [app = guard.applicationManager, previous]() mutable { app->setPlayerSettings( previous ); } );
+    // The native plugin deliberately replaces the PhysicsManager factory and
+    // inherits its type identity. Match the application's interface dispatch.
+    auto manager = guard.factoryManager->make_object<physics::IPhysicsManager>();
+    BOOST_REQUIRE( manager );
+    guard.addCleanup( [manager]() mutable { manager->unload( nullptr ); } );
+    manager->load( nullptr );
+    BOOST_CHECK( manager->getEnableDebugDraw() );
+    auto scene = manager->addScene();
+    BOOST_REQUIRE( scene );
+    BOOST_CHECK_CLOSE( scene->getGravity().Y(), real_Num( -2.75 ), .0001 );
+    auto actual = scene->getProperties();
+    BOOST_CHECK_EQUAL( actual->getPropertyAsInt( "physics.solverIterations" ), 9 );
+    BOOST_CHECK_EQUAL( actual->getPropertyAsInt( "physics.substeps" ), 3 );
+    BOOST_CHECK_EQUAL( actual->getPropertyAsInt( "physics.threads" ), 2 );
+    BOOST_CHECK_CLOSE( actual->getPropertyAsFloat( "physics.gravity" ), -2.75f, .0001 );
+}
+#endif
+
 namespace
 {
     class PlayingStateGuard

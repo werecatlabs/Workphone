@@ -67,6 +67,7 @@ namespace workphone::physics
         ScopedLock lock( const_cast<WPPhysicsScene3 *>( this ) );
         auto properties = workphone::make_ptr<Properties>();
         const auto options = wp_physics_scene_get_simulation_options( m_scene );
+        properties->setProperty( "physics.gravity", wp_physics_scene_get_gravity( m_scene ).y );
         properties->setProperty( "physics.solverIterations", options.solver_iterations );
         properties->setProperty( "physics.substeps", options.minimum_substeps );
         properties->setProperty( "physics.simulationRate", options.simulation_rate );
@@ -101,6 +102,12 @@ namespace workphone::physics
         if( options.broadphase == 3 && !hasBroadphaseProvider() )
             throw std::runtime_error( "GPU Broadphase requires a registered physics::registerBroadphaseProvider plugin." );
         wp_physics_scene_set_simulation_options( m_scene, &options );
+        f32 gravity = 0;
+        if( properties->getPropertyValue( "physics.gravity", gravity ) )
+        {
+            auto vector = wp_physics_scene_get_gravity( m_scene );
+            vector.y = gravity; wp_physics_scene_set_gravity( m_scene, vector );
+        }
         properties->getPropertyValue( "physics.collisionLayers", m_collisionLayerNames );
     }
 

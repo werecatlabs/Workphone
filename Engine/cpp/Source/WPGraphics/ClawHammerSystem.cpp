@@ -1622,9 +1622,13 @@ namespace workphone
 #endif
                     }
 
+                    const bool waitingForWindow=!createWindow&&!getDefaultWindow()&&selectedApi!=RenderApi::Software;
+                    if(selectedApi!=RenderApi::None) m_configuredRendererType=selectedApi;
+                    if(waitingForWindow) selectedApi=RenderApi::Software;
+
                     // A registered API provider owns the complete selected profile.
                     const auto selectedName=projectProfile?projectRendererApi(projectProfile):String(renderApiName(selectedApi));
-                    if(auto provider=getProjectRendererProvider(selectedName))
+                    if(auto provider=waitingForWindow?nullptr:getProjectRendererProvider(selectedName))
                     {
                         String error;renderer=provider->create(projectProfile,error);
                         if(!renderer) {WP_LOG_ERROR("WPGraphics provider: "+error);return false;}
@@ -1836,13 +1840,21 @@ namespace workphone
                 RenderApi targetApi = m_configuredRendererType != RenderApi::None
                                           ? m_configuredRendererType
                                           : RenderApi::DX11;
+                SmartPtr<Properties> projectProfile;
+                if(auto app=core::IApplicationManager::instancePtr()) projectProfile=app->getPlayerSettings();
+                const auto providerName=projectProfile?projectRendererApi(projectProfile):String(renderApiName(targetApi));
+                if(auto provider=getProjectRendererProvider(providerName))
+                {
+                    String error;newRenderer=provider->create(projectProfile,error);
+                    if(!newRenderer) {WP_LOG_ERROR("WPGraphics provider: "+error);return nullptr;}
+                }
 
                 // Prefer DX12 if configured and available, otherwise DX11
-                if( targetApi == RenderApi::DX12 )
+                if(!newRenderer && targetApi == RenderApi::DX12 )
                 {
                     newRenderer = workphone::make_ptr<ClawRendererDX11>(true);
                 }
-                else
+                else if(!newRenderer && targetApi==RenderApi::DX11)
 #    if defined WP_BUILD_RENDERER_DX11
                 {
                     newRenderer = workphone::make_ptr<ClawRendererDX11>();

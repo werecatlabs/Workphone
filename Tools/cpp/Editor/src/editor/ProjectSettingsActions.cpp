@@ -158,12 +158,16 @@ namespace workphone::editor
             const auto destination = fs::absolute( fs::u8path( path.c_str() ) ).lexically_normal();
             auto temporary = destination;
             temporary += std::string( ( "." + StringUtil::getUUID() + ".tmp" ).c_str() );
-            settings->setProperty( "projectSettingsVersion", 1 );
+            auto document = workphone::make_ptr<Properties>();
+            document->setProperty( "projectSettingsVersion", 1 );
+            for( const auto &definition : settingDefinitions )
+                if( settings->hasProperty( definition.name ) )
+                    document->addProperty( settings->getPropertyObject( definition.name ) );
             try
             {
                 std::ofstream stream( temporary, std::ios::binary | std::ios::trunc );
                 stream.exceptions( std::ios::badbit | std::ios::failbit );
-                const auto text = DataUtil::toString( settings.get(), true );
+                const auto text = DataUtil::toString( document.get(), true );
                 stream.write( text.data(), static_cast<std::streamsize>( text.size() ) );
                 stream.close();
 #if defined( _WIN32 )
@@ -302,6 +306,8 @@ namespace workphone::editor
                     if( !build->getPropertyAsBool( "success" ) )
                         throw std::runtime_error( build->getProperty( "status" ).c_str() );
                     request->setProperty( "status", build->getProperty( "status" ) );
+                    request->setProperty( "path", build->getProperty( "path" ) );
+                    request->setProperty( "pending", build->getPropertyAsBool( "pending", false ) );
                 }
                 else throw std::invalid_argument( "Unknown project settings action: " + action );
             }

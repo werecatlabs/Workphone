@@ -1123,10 +1123,11 @@ static void wp_renderer_dx11_release_wrapped(wp_renderer_dx11 *r)
 }
 static void wp_renderer_dx11_acquire_back_buffer(wp_renderer_dx11 *r)
 {
-    UINT index;if(!r->on12||r->wrapped_acquired) return;
+    UINT index;wp_s32 default_target;if(!r->on12||r->wrapped_acquired) return;
+    default_target=!r->active_rt_view||r->active_rt_view==r->rt_view;
     index=IDXGISwapChain3_GetCurrentBackBufferIndex(r->swap_chain3);if(index>=2||!r->wrapped_buffers[index]) return;
     if(r->rt_view) ID3D11RenderTargetView_Release(r->rt_view);r->rt_view=r->wrapped_targets[index];ID3D11RenderTargetView_AddRef(r->rt_view);
-    r->active_rt_view=r->rt_view;r->wrapped_index=index;
+    if(default_target) r->active_rt_view=r->rt_view;r->wrapped_index=index;
     ID3D11On12Device_AcquireWrappedResources(r->on12,&r->wrapped_buffers[index],1);r->wrapped_acquired=1;
 }
 

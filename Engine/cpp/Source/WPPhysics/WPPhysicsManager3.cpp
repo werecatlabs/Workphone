@@ -556,6 +556,14 @@ namespace workphone::physics
         }
 
         setLoadingState( LoadingState::Loading );
+        if( auto app = core::IApplicationManager::instancePtr() )
+            if( auto profile = app->getPlayerSettings() )
+                if( profile->hasProperty( "physics.debugDraw" ) )
+                {
+                    const auto enabled = profile->getPropertyAsBool( "physics.debugDraw" );
+                    wp_physics_system_set_debug_draw( m_system, enabled ? 1 : 0 );
+                    PhysicsManager::setEnableDebugDraw( enabled );
+                }
         setLoadingState( LoadingState::Loaded );
     }
 

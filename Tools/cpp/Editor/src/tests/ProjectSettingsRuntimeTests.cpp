@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_graphics_director_test )
     settings->setProperty( "graphics.ambientOcclusion", true );
     updateProjectGraphicsSettings( settings, director );
     auto properties = director->getProperties();
-    BOOST_CHECK_EQUAL( properties->getPropertyAsInt( "Render API" ), 0 );
+    BOOST_CHECK_EQUAL( properties->getPropertyAsInt( "Render API" ), 1 );
     BOOST_CHECK_EQUAL( properties->getPropertyAsInt( "Quality" ), 0 );
     BOOST_CHECK_EQUAL( properties->getPropertyAsInt( "Shadow map size" ), 4096 );
     BOOST_CHECK( properties->getPropertyAsBool( "Temporal anti-aliasing" ) );
@@ -232,8 +232,9 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_validation_and_capabilities_test 
     core::IApplicationManager::setInstance( nullptr );
     const auto result = applyProjectSettingsRuntime( settings );
     BOOST_CHECK( result->getPropertyAsBool( "success" ) );
-    BOOST_CHECK_EQUAL( result->getProperty( "status" ),
-                       "Project settings stored; runtime is not loaded." );
+    BOOST_CHECK_EQUAL( result->getProperty( "status" ).find( "Project settings stored; runtime is not loaded." ), 0u );
+    BOOST_CHECK( result->getProperty( "pendingKeys" ).find( "graphics.antiAliasing" ) != String::npos );
+    BOOST_CHECK( result->getProperty( "pendingKeys" ).find( "physics.gravity" ) != String::npos );
 }
 
 #endif

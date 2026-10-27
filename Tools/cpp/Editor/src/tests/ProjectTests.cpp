@@ -3,6 +3,7 @@
 
 #include <editor/Project.hpp>
 #include <editor/ProjectSettingsActions.hpp>
+#include <Workphone/System/ProjectServices.hpp>
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
@@ -355,6 +356,7 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
 
         ~EditorGuard()
         {
+            releaseProjectServiceSettings();
             EditorManager::setSingletonPtr( previous );
             core::IApplicationManager::setInstance( previousApp );
         }

@@ -97,9 +97,17 @@ namespace
         for( int samples : { 1, 4 } )
         {
             if( !( supported & static_cast<unsigned>( samples ) ) ) continue;
+            // Loading creates the window views; the frame owner binds the actual
+            // selected output before a scene can replace it with sampleable depth.
+            wp_renderer_dx11_begin_frame( native );
             wp_renderer_dx11_set_scene_sampling( native, samples, .5f );
-            ok &= check( wp_renderer_dx11_begin_hdr_scene( native, 1.f ),
-                         "occlusion depth fixture must begin a native scene" );
+            if( !check( wp_renderer_dx11_begin_hdr_scene( native, 1.f ),
+                        "occlusion depth fixture must begin a native scene" ) )
+            {
+                ok = false;
+                wp_renderer_dx11_end_frame( native );
+                continue;
+            }
             ID3D11RenderTargetView *beforeTarget = nullptr;
             ID3D11DepthStencilView *beforeDepth = nullptr;
             context->OMGetRenderTargets( 1, &beforeTarget, &beforeDepth );
@@ -121,6 +129,7 @@ namespace
             if( beforeTarget ) beforeTarget->Release(); if( beforeDepth ) beforeDepth->Release();
             if( afterTarget ) afterTarget->Release(); if( afterDepth ) afterDepth->Release();
             wp_renderer_dx11_end_hdr_scene( native );
+            wp_renderer_dx11_end_frame( native );
             std::printf( "Occlusion GPU depth: %d samples, %ux%u snapshot\n", samples, width, height );
         }
         wp_renderer_dx11_set_scene_sampling( native, 1, 1.f );

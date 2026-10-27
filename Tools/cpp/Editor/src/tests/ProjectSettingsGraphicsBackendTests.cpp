@@ -227,6 +227,16 @@ BOOST_AUTO_TEST_CASE(project_graphics_dx11_msaa_scale_resolve_test)
             const auto offset=(height/2*width+width/2)*4;BOOST_CHECK_GT(pixels[offset+2],100u);BOOST_CHECK_LT(pixels[offset],100u);
             wp_renderer_dx11_end_frame(renderer);BOOST_CHECK_GE(wp_renderer_dx11_try_present(renderer,window.window,0),0);
         }
+
+        auto *target=wp_renderer_dx11_create_render_texture(renderer,12,10);BOOST_REQUIRE(target);
+        wp_renderer_dx11_set_render_texture(renderer,target);wp_renderer_dx11_begin_frame(renderer);wp_renderer_dx11_set_scene_sampling(renderer,4,1);wp_renderer_dx11_set_pipeline_mode(renderer,2,0);
+        BOOST_REQUIRE(wp_renderer_dx11_begin_hdr_scene(renderer,1));
+        D3D11_TEXTURE2D_DESC targetDepth{};static_cast<ID3D11Texture2D*>(wp_renderer_dx11_get_scene_depth_texture(renderer))->GetDesc(&targetDepth);
+        BOOST_CHECK_EQUAL(targetDepth.Width,12u);BOOST_CHECK_EQUAL(targetDepth.Height,10u);
+        wp_renderer_dx11_set_clear_color(renderer,.2f,.4f,.8f,1);wp_renderer_dx11_clear(renderer,WORKPHONE_CLEAR_FLAG_ALL);wp_renderer_dx11_end_hdr_scene(renderer);wp_renderer_dx11_end_frame(renderer);
+        std::array<unsigned char,12*10*4> targetPixels{};BOOST_REQUIRE(wp_renderer_dx11_copy_render_texture_rgba8(target,targetPixels.data(),targetPixels.size()));
+        BOOST_CHECK_GT(targetPixels[(5*12+6)*4+2],150u);
+        wp_renderer_dx11_set_render_texture(renderer,nullptr);wp_renderer_dx11_destroy_render_texture(target);
         wp_renderer_dx11_destroy(renderer);
     }
     wp_renderer_dx11_set_d3d12_execution(0);

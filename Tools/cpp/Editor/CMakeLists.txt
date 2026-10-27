@@ -340,6 +340,11 @@ else()
     add_executable(Editor ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+# Settings query the provider registry exported by the native physics module.
+if (WP_BUILD_PHYSICS3)
+    target_link_libraries(Editor WPPhysics)
+endif()
+
 # Public graphics material declarations include the native shader API.
 target_include_directories(Editor PRIVATE "${WP_ROOT}/Engine/c/Include")
 
@@ -1095,6 +1100,7 @@ if (WP_EDITOR_TESTS)
         project_settings_actions_test
         project_services_local_providers_test
         project_settings_build_profile_test
+        project_settings_shared_archive_test
         project_irradiance_provider_lifecycle_test
         project_settings_editor_policy_recovery_test
         project_graphics_output_curves_test

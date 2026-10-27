@@ -16,6 +16,9 @@
 #include <set>
 #include <cstdlib>
 #include <tinyxml.h>
+#if WP_EDITOR_TESTS
+#include <boost/test/unit_test.hpp>
+#endif
 
 namespace workphone::editor
 {
@@ -164,6 +167,52 @@ namespace workphone::editor
         {
             auto result = make_ptr<Properties>(); result->setProperty( "success", success );
             result->setProperty( "status", message ); return result;
+        }
+        fs::path archiveProjectOutput( const fs::path &root, const fs::path &output,
+                                       const String &projectFile, const Properties &settings )
+        {
+            Array<StringW> files;
+            for( const auto &entry : fs::directory_iterator( output ) )
+                if( entry.is_regular_file() && entry.path().extension() != ".zip" &&
+                    entry.path().extension() != ".fbscene" && entry.path().extension() != ".fbproject" &&
+                    ( settings.getPropertyAsBool( "build.debugSymbols", true ) || entry.path().extension() != ".pdb" ) )
+                    files.push_back( entry.path().wstring().c_str() );
+            for( const auto &file : stageRuntimeSupportFiles( root, output ) ) files.push_back( file.wstring().c_str() );
+            for( const char *folder : { "native", "Android" } )
+            {
+                const auto artifacts = output / folder;
+                if( !fs::is_directory( artifacts ) ) continue;
+                for( const auto &entry : fs::recursive_directory_iterator( artifacts ) )
+                {
+                    if( entry.is_symlink() ) throw std::runtime_error( "Build artifacts cannot be redirected" );
+                    if( entry.is_regular_file() )
+                    {
+                        const auto checked = checkedMember( output, entry.path().lexically_relative( output ).generic_u8string().c_str() );
+                        files.push_back( checked.wstring().c_str() );
+                    }
+                }
+            }
+            for( const auto &scene : scenePaths( settings ) )
+            {
+                const auto source = checkedMember( root, scene );
+                if( !fs::is_regular_file( source ) ) throw std::runtime_error( ( "Packaged scene is missing: " + scene ).c_str() );
+                const auto destination = output / fs::u8path( scene.c_str() );
+                fs::create_directories( destination.parent_path() ); fs::copy_file( source, destination, fs::copy_options::overwrite_existing );
+                files.push_back( destination.wstring().c_str() );
+            }
+            if( settings.getPropertyAsBool( "build.includeEditorData" ) )
+            {
+                const auto destination = output / "Editor" / "project.fbproject";
+                fs::create_directories( destination.parent_path() ); fs::copy_file( fs::u8path( projectFile.c_str() ), destination, fs::copy_options::overwrite_existing );
+                files.push_back( destination.wstring().c_str() );
+            }
+            const auto compression = settings.getPropertyAsInt( "build.compression", 1 );
+            constexpr int levels[] = { 0, 1, 6, 9 };
+            if( compression < 0 || compression > 3 ) throw std::invalid_argument( "Invalid build compression" );
+            const auto archive = output / "Project.zip";
+            const auto code = ZipUtil::createZipFileFromPath( archive.wstring().c_str(), files, output.wstring().c_str(), true, levels[compression] );
+            if( code != 0 || !fs::is_regular_file( archive ) ) throw std::runtime_error( "Unable to produce project archive" );
+            return archive;
         }
         void validate( const Properties &s )
         {
@@ -464,61 +513,54 @@ namespace workphone::editor
                 project->compile( configuration( *settings ), args, false );
             }
             auto app = core::IApplicationManager::instancePtr();
-            if( settings->getPropertyAsBool( "build.assetBundles", true ) )
+            const bool assetBundles=settings->getPropertyAsBool("build.assetBundles",true);
+            auto packages=app?app->getPackageManager():nullptr;
+            if( assetBundles )
             {
-                auto packages = app ? app->getPackageManager() : nullptr;
                 if( !packages ) throw std::runtime_error( "Resource packaging requires the package manager" );
                 if( packages->getResourcePackageProfile().empty() )
                     throw std::runtime_error( "Select a checked Resource Package profile before building asset bundles" );
-                if( !packages->startResourcePackage() ) throw std::runtime_error( packages->getResourcePackageDiagnostic().c_str() );
-                auto result = resultFor( true, "Plugin built. Checked asset packaging is running; inspect Resource Packages for completion." );
-                result->setProperty( "pending", true ); return result;
             }
             const auto root = fs::canonical( fs::u8path( project->getPath().c_str() ) );
             const auto output = outputDirectory( project, *settings );
-            Array<StringW> files;
-            for( const auto &entry : fs::directory_iterator( output ) )
-                if( entry.is_regular_file() && entry.path().extension() != ".zip" &&
-                    ( settings->getPropertyAsBool( "build.debugSymbols", true ) || entry.path().extension() != ".pdb" ) )
-                    files.push_back( entry.path().wstring().c_str() );
-            for( const auto &file : stageRuntimeSupportFiles( root, output ) ) files.push_back( file.wstring().c_str() );
-            for( const char *folder : { "native", "Android" } )
+            const auto archive=archiveProjectOutput(root,output,project->getFilePath(),*settings);
+            if(assetBundles)
             {
-                const auto artifacts = output / folder;
-                if( !fs::is_directory( artifacts ) ) continue;
-                for( const auto &entry : fs::recursive_directory_iterator( artifacts ) )
-                {
-                    if( entry.is_symlink() ) throw std::runtime_error( "Build artifacts cannot be redirected" );
-                    if( entry.is_regular_file() )
-                    {
-                        const auto checked = checkedMember( output, entry.path().lexically_relative( output ).generic_u8string().c_str() );
-                        files.push_back( checked.wstring().c_str() );
-                    }
-                }
+                if(!packages->startResourcePackage())throw std::runtime_error(packages->getResourcePackageDiagnostic().c_str());
+                auto result=resultFor(true,"Project archive created. Checked asset bundles are running separately in Resource Packages; they are pending and are not yet included in the archive.");
+                result->setProperty("pending",true);result->setProperty("path",archive.u8string().c_str());return result;
             }
-            for( const auto &scene : scenePaths( *settings ) )
-            {
-                const auto source = checkedMember( root, scene );
-                if( !fs::is_regular_file( source ) ) throw std::runtime_error( ( "Packaged scene is missing: " + scene ).c_str() );
-                const auto destination = output / fs::u8path( scene.c_str() );
-                fs::create_directories( destination.parent_path() ); fs::copy_file( source, destination, fs::copy_options::overwrite_existing );
-                files.push_back( destination.wstring().c_str() );
-            }
-            if( settings->getPropertyAsBool( "build.includeEditorData" ) )
-            {
-                const auto destination = output / "Editor" / "project.fbproject";
-                fs::create_directories( destination.parent_path() ); fs::copy_file( fs::u8path( project->getFilePath().c_str() ), destination, fs::copy_options::overwrite_existing );
-                files.push_back( destination.wstring().c_str() );
-            }
-            const auto compression = settings->getPropertyAsInt( "build.compression", 1 );
-            constexpr int levels[] = { 0, 1, 6, 9 };
-            if( compression < 0 || compression > 3 ) throw std::invalid_argument( "Invalid build compression" );
-            const auto archive = output / "Project.zip";
-            const auto code = ZipUtil::createZipFileFromPath( archive.wstring().c_str(), files, output.wstring().c_str(), true, levels[compression] );
-            if( code != 0 || !fs::is_regular_file( archive ) ) throw std::runtime_error( "Unable to produce project archive" );
             auto result = resultFor( true, "Project build and selected scene archive completed." );
             result->setProperty( "path", archive.u8string().c_str() ); return result;
         }
         catch( const std::exception &e ) { return resultFor( false, e.what() ); }
     }
+#if WP_EDITOR_TESTS
+    BOOST_AUTO_TEST_CASE( project_settings_shared_archive_test )
+    {
+        const auto root=fs::weakly_canonical(fs::temp_directory_path())/std::string(("workphone-shared-archive-"+StringUtil::getUUID()).c_str());
+        struct Cleanup{fs::path root;~Cleanup(){std::error_code ignored;fs::remove_all(root,ignored);}} cleanup{root};
+        const auto output=root/"Build/PC/x64/Release";fs::create_directories(output);
+        writeText(output/"Plugin.dll",String(16384,'P'));
+        writeText(output/"stale.fbscene","This scene was selected by an earlier build.");
+        writeText(root/"Scenes/Main.fbscene","selected scene");
+        writeText(root/"Localization/en.settings","local dictionary");
+        writeText(root/".workphone/lighting/bake.settings","local irradiance cache");
+        writeText(root/"project.fbproject","editor metadata");
+        auto settings=make_ptr<Properties>();settings->setProperty("project.startupScene","Scenes/Main.fbscene");
+        settings->setProperty("build.assetBundles",false);settings->setProperty("build.compression",s32(0));
+        const auto readArchive=[](const fs::path &path){std::ifstream stream(path,std::ios::binary);std::ostringstream bytes;bytes<<stream.rdbuf();return bytes.str();};
+        const auto raw=readArchive(archiveProjectOutput(root,output,(root/"project.fbproject").u8string().c_str(),*settings));
+        BOOST_CHECK(raw.find("project.fbproject")==std::string::npos);
+        BOOST_CHECK(raw.find("stale.fbscene")==std::string::npos);
+        settings->setProperty("build.assetBundles",true);settings->setProperty("build.compression",s32(3));
+        settings->setProperty("build.includeEditorData",true);
+        auto compressed=readArchive(archiveProjectOutput(root,output,(root/"project.fbproject").u8string().c_str(),*settings));
+        std::replace(compressed.begin(),compressed.end(),'\\','/');
+        BOOST_CHECK(raw.size()>compressed.size()*4);
+        for(const char *member:{"Scenes/Main.fbscene","Localization/en.settings",".workphone/lighting/bake.settings","Editor/project.fbproject"})
+            BOOST_CHECK_MESSAGE(compressed.find(member)!=std::string::npos,member);
+        BOOST_CHECK(compressed.find("stale.fbscene")==std::string::npos);
+    }
+#endif
 }
