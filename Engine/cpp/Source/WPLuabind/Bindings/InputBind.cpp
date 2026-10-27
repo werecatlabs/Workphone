@@ -4,10 +4,19 @@
 #include "WPLuabind/SmartPtrConverter.hpp"
 #include "WPLuabind/ParamConverter.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Input/Joystick.hpp>
 #include <luabind/luabind.hpp>
 
 namespace workphone
 {
+    f32 getRawJoystickAxis( const IJoystick *joystick, lua_Integer axis )
+    {
+        if( !joystick || axis < 0 || axis >= IJoystick::MAX_AXES ) return 0.0f;
+        if( auto concrete = dynamic_cast<const Joystick *>( joystick ) )
+            return concrete->getRawAxis( static_cast<s32>( axis ) );
+        return joystick->getAxis( static_cast<s32>( axis ) );
+    }
+
     // ---------------------------------------------------------------------------
     // IGameInput helpers
     // ---------------------------------------------------------------------------
@@ -185,14 +194,16 @@ namespace workphone
         module( L )[class_<JoystickVector>( "JoystickVector" )
                         .def( "size", &JoystickVector::size )
                         .def( "empty", &JoystickVector::empty )
-                        .def( "at", static_cast<SmartPtr<IJoystick> &(JoystickVector::*)( size_t )>(
-                                        &JoystickVector::at ) )];
+                        .def( "at", +[]( const JoystickVector &values, size_t index ) -> SmartPtr<IJoystick> {
+                            return values.at( index );
+                        } )];
 
         module( L )[class_<IJoystick, ISharedObject, SmartPtr<IJoystick>>( "IJoystick" )
                         .def( "isButtonDown", &IJoystick::isButtonDown )
                         .def( "isButtonPressed", &IJoystick::isButtonPressed )
                         .def( "isButtonReleased", &IJoystick::isButtonReleased )
                         .def( "getAxis", &IJoystick::getAxis )
+                        .def( "getRawAxis", getRawJoystickAxis )
                         .def( "getNumButtons", &IJoystick::getNumButtons )
                         .def( "getNumAxes", &IJoystick::getNumAxes )
                         .def( "getButtonName", &IJoystick::getButtonName )

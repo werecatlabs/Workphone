@@ -21,6 +21,7 @@
 #include <Workphone/Interface/Vehicle/IVehicleManager.hpp>
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include "CarControllerInput.hpp"
 
 namespace workphone::scene
 {
@@ -250,6 +251,8 @@ namespace workphone::scene
                 const bool driving = applicationManager->isPlaying() && !applicationManager->isPaused();
                 if( driving && m_playerControls )
                 {
+                    const auto settings = applicationManager->getPlayerSettings();
+                    const auto profile = settings ? settings->getChild( "Vehicle Controller" ) : nullptr;
                     if( auto input = applicationManager->getInputDeviceManager() )
                     {
                         const bool throttle = input->isKeyPressed( KeyCodes::KEY_KEY_W ) ||
@@ -261,17 +264,37 @@ namespace workphone::scene
                         const bool right = input->isKeyPressed( KeyCodes::KEY_KEY_D ) ||
                                            input->isKeyPressed( KeyCodes::KEY_RIGHT );
 
-                        if( throttle || brake || left || right )
+                        if( profile )
+                        {
+                            const auto devices = input->getCreateJoysticks() ? input->getJoysticks() :
+                                Array<SmartPtr<IJoystick>>();
+                            const auto sample = controller_input::sample( profile, devices,
+                                { throttle, brake, left, right } );
+                            // This flag belongs to legacy event input. Keeping it
+                            // clear also prevents a latched value if a profile is removed.
+                            m_joystickActive = false;
+                            setThrottle( sample.throttle );
+                            setBrake( sample.brake );
+                            setSteering( sample.steering );
+                        }
+                        else if( throttle || brake || left || right )
                         {
                             m_joystickActive = false;
                         }
 
-                        if( !m_joystickActive )
+                        if( !profile && !m_joystickActive )
                         {
                             setThrottle( throttle ? 1.f : 0.f );
                             setBrake( brake ? 1.f : 0.f );
                             setSteering( float( right ) - float( left ) );
                         }
+                    }
+                    else if( profile )
+                    {
+                        m_joystickActive = false;
+                        setThrottle( 0 );
+                        setBrake( 0 );
+                        setSteering( 0 );
                     }
                 }
 
@@ -1193,6 +1216,11 @@ namespace workphone::scene
         }
         else if( event->getEventType() == IInputEvent::EventType::Joystick )
         {
+            if( const auto application = core::IApplicationManager::instancePtr() )
+            {
+                const auto settings = application->getPlayerSettings();
+                if( settings && settings->getChild( "Vehicle Controller" ) ) return false;
+            }
             if( auto joystick = event->getJoystickState() )
             {
                 float throttle = 0, steering = owner->getSteering();

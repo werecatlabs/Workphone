@@ -65,6 +65,15 @@ namespace workphone
         return !m_buttonStates[button].load() && m_prevButtonStates[button].load();
     }
 
+    f32 Joystick::getRawAxis( s32 axis ) const
+    {
+        if( axis < 0 || axis >= MAX_AXES )
+        {
+            return 0.0f;
+        }
+        return m_axisValues[axis];
+    }
+
     f32 Joystick::getAxis( s32 axis ) const
     {
         if( axis < 0 || axis >= MAX_AXES )
