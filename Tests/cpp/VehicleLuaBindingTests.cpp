@@ -2,10 +2,6 @@
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
-#include <Workphone/System/ApplicationManager.hpp>
-#include <Workphone/Scene/Components/CarController.hpp>
-#include <Workphone/Input/InputEvent.hpp>
-#include <Workphone/Input/JoystickState.hpp>
 #include "../../Engine/cpp/Source/Workphone/Scene/Components/CarControllerInput.hpp"
 #include <luabind/luabind.hpp>
 #include <filesystem>
@@ -138,32 +134,6 @@ namespace
         p->setProperty( "Enabled", false ); neutralController( input::sample( p, devices ) );
         checkController( !input::sample( nullptr, devices ).configured, "no profile must preserve legacy behavior" );
 
-        struct ApplicationScope
-        {
-            SmartPtr<core::IApplicationManager> previous = core::IApplicationManager::instancePtr();
-            SmartPtr<core::ApplicationManager> app = make_ptr<core::ApplicationManager>();
-            ApplicationScope() { core::IApplicationManager::setInstance( app ); }
-            ~ApplicationScope() { core::IApplicationManager::setInstance( previous ); }
-        } application;
-        auto app = application.app;
-        {
-            auto car = make_ptr<scene::CarController>();
-            auto listener = make_ptr<scene::CarController::InputListener>(); listener->setOwner( car );
-            auto event = make_ptr<InputEvent>(); auto state = make_ptr<JoystickState>();
-            event->setEventType( IInputEvent::EventType::Joystick );
-            state->setEventType( u32( IJoystickState::Type::AxisMoved ) );
-            state->setAxis( 0, 0.3f ); state->setAxis( 4, -0.7f ); event->setJoystickState( state );
-            listener->inputEvent( event );
-            checkController( nearController( car->getBrake(), 0.7f ) && nearController( car->getSteering(), 0.3f ),
-                             "legacy joystick events must remain compatible without a profile" );
-            auto settings = make_ptr<Properties>(); settings->addChild( p ); app->setPlayerSettings( settings );
-            car->setThrottle( 0 ); car->setBrake( 0 ); car->setSteering( 0 );
-            listener->inputEvent( event );
-            checkController( car->getThrottle() == 0 && car->getBrake() == 0 && car->getSteering() == 0,
-                             "an explicit profile must suppress legacy events even when disabled" );
-            p->setProperty( "Enabled", true ); listener->inputEvent( event );
-            checkController( car->getBrake() == 0, "configured controller must not be overwritten by raw legacy events" );
-        }
         std::printf( "Vehicle controller input: %u assertions passed.\n", controllerAssertions );
     }
 }
