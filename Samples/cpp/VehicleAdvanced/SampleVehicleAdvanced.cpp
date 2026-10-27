@@ -31,6 +31,7 @@
 #    include <WPGraphics/ClawScene.hpp>
 #    include <workphone_graphics_object.h>
 #    include "MaterialSceneCpuWorkload.h"
+#    include "MaterialSceneCpuEdits.h"
 #endif
 
 #ifdef _WP_STATIC_LIB_
@@ -537,6 +538,7 @@ namespace workphone
                 wheelActor = nullptr;
             m_cameraController = nullptr;
             m_raceScene = nullptr;
+            m_materialEdits.reset();
             m_assets = {};
             m_cityExtent = m_citySpacing = 0;
             m_cityOverviewExtent = 0;
@@ -725,13 +727,21 @@ namespace workphone
 #endif
                 m_sceneProfile->frame();
             }
-            if( ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && !m_captureAttempted &&
+            const bool finishProfileThisFrame=( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && !m_captureAttempted &&
                 m_benchmarkStarted && m_profileFrames >= ( m_sceneProfile ? 31 : 30 ) &&
-                profileNow - m_profileStart > ( m_benchmarkSeconds > 0 ? m_benchmarkSeconds : 3 ) )
+                profileNow - m_profileStart > ( m_benchmarkSeconds > 0 ? m_benchmarkSeconds : 3 );
+#if defined(_WIN32) && WP_GRAPHICS_SYSTEM_CLAW
+            if(m_materialEdits && m_sceneProfile && m_sceneProfile->isMeasuring() && !finishProfileThisFrame)
+                m_materialEdits->apply(m_sceneProfile->materialCpu());
+#endif
+            if( finishProfileThisFrame )
             {
                 // Stop ROI before logging, owner inventories, GPU readbacks or
                 // formatting validation evidence can perturb the measurement.
                 if( m_sceneProfile ) m_sceneProfile->endMeasurement();
+#if defined(_WIN32) && WP_GRAPHICS_SYSTEM_CLAW
+                if(m_materialEdits && m_sceneProfile) m_sceneProfile->setMaterialEditEvidence(m_materialEdits->json());
+#endif
                 bool linearSceneValid = true;
                 size_t treeMeshes = 0, treeImposters = 0;
                 bool treeLODValid = m_assets.openCity || m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
@@ -2208,6 +2218,8 @@ namespace workphone
 #if defined(_WIN32) && WP_GRAPHICS_SYSTEM_CLAW
             if(auto renderer=dynamic_pointer_cast<render::ClawRendererDX11>(applicationManager->getGraphicsSystem()->getRenderer()))
                 advanced::installMaterialCpuPrograms(m_assets,*renderer);
+            if(std::getenv("WP_MATERIAL_SCENE_EDITS"))
+                m_materialEdits=std::make_shared<advanced::MaterialSceneCpuEdits>(m_assets);
 #endif
             m_sceneProfile->setWorkload( describeProfileScene( m_assets ) );
             m_sceneProfile->checkpoint( "scene_generated" );

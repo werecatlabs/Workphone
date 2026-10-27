@@ -2,6 +2,7 @@
 #define RoadMesh_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/RoadTypes.hpp>
 #include <Workphone/Interface/Procedural/RoadVertex.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
@@ -19,10 +20,15 @@ namespace workphone
         ///
         /// Accumulates RoadVertex / index pairs and exposes flat
         /// vertex / index arrays suitable for GPU upload.
-        struct WPCore_API RoadMesh
+        struct WPCore_API RoadMesh : SourceBudgetObject
         {
             RoadMesh();
             ~RoadMesh();
+            RoadMesh( const RoadMesh &other );
+            RoadMesh( RoadMesh && ) noexcept = default;
+            RoadMesh &operator=( const RoadMesh &other );
+            RoadMesh &operator=( RoadMesh && ) noexcept = default;
+            void swap( RoadMesh &other ) noexcept;
 
             /// Append another mesh with a world-space offset.
             void append( const RoadMesh &other, const Vector3<real_Num> &offset );
@@ -40,8 +46,8 @@ namespace workphone
 
             void clear();
 
-            Array<RoadVertex> vertices;
-            Array<u32> indices;
+            Array<RoadVertex> vertices{ Allocator<RoadVertex>( sourceBudget ) };
+            Array<u32> indices{ Allocator<u32>( sourceBudget ) };
         };
 
     }  // namespace procedural

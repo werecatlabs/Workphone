@@ -200,8 +200,9 @@ namespace workphone
                     road->addNode( endNode );
                 }
 
-                road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                   new RoadSegmentResult( segResult ) );
+                auto payload = std::make_unique<RoadSegmentResult>( segResult );
+                road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                payload.release();
 
                 roads.push_back( road );
 
@@ -402,8 +403,9 @@ namespace workphone
                                          : ii.type == IntersectionType::DeadEnd    ? "Dead end"
                                                                                    : "Intersection" );
                 conn->setPosition( ii.center );
-                conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
-                                   new IntersectionResult( intResult ) );
+                auto payload = std::make_unique<IntersectionResult>( intResult );
+                conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ), payload.get() );
+                payload.release();
 
                 connections.push_back( conn );
                 return conn;

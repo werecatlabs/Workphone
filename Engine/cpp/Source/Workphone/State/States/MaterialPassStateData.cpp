@@ -898,7 +898,10 @@ namespace workphone
         {
             return;
         }
-        auto previous = std::atomic_load( &m_renderState );
+        // Writers own the state lock/update boundary. Readers only load this
+        // shared_ptr atomically; borrowing its pointee here avoids a redundant
+        // atomic load/control-block increment before the publishing store.
+        const auto *previous = m_renderState.get();
         if( sameSurface( *m_pendingSurface, *previous ) )
         {
             m_pendingSurface.reset();

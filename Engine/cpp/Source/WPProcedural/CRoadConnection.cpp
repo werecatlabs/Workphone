@@ -95,7 +95,11 @@ namespace workphone
                 {
                     return;
                 }
+                // Transfer ownership only after metadata publication succeeds.
+                // On failure the caller retains the incoming payload.
+                IObject::setUserData( id, userData );
                 delete static_cast<IntersectionResult *>( previous );
+                return;
             }
             IObject::setUserData( id, userData );
         }

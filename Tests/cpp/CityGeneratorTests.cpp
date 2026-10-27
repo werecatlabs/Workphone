@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <vector>
 #include "CityInventoryBudgetContracts.hpp"
+#include "RoadPayloadBudgetContracts.hpp"
 
 namespace
 {
@@ -122,6 +123,7 @@ namespace
 void checkCityGeneratorContracts()
 {
     city_inventory_budget_contracts::run();
+    road_payload_budget_contracts::run();
     using namespace workphone;
     using namespace workphone::procedural;
     auto coordinator = make_ptr<CityGeneratorDefault>();

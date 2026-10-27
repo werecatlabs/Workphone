@@ -412,6 +412,43 @@ namespace
         std::cout << "persistent_records=1024 frames=8 views=3 preparations=1024 warm_allocations=0"
                   << " accounted_table_bytes=" << bytes << " slot_bytes_per_version="
                   << double(bytes - sizeof(cache)) / 1024 << '\n';
+
+        ClawMaterialRenderCache reusable;
+        std::vector<MaterialRenderState::Ptr> edited;
+        std::vector<ClawMaterialRenderCache::Handle> retiredHandles;
+        for(u32 i=0;i<32;++i)
+        {
+            edited.push_back(std::make_shared<MaterialRenderState>());
+            retiredHandles.push_back(reusable.resolve(edited.back()));
+        }
+        const auto warmAllocations=reusable.getStorageAllocationCount();
+        const auto warmBytes=reusable.getStorageBytes();
+        auto scheduler=WorldStreamingScheduler::shared();const auto budget=scheduler->stats();
+        const auto source=size_t(StreamMemoryClass::SourceCpu);
+        struct RestoreRecordLimit
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler;u64 limit;
+            ~RestoreRecordLimit(){String ignored;scheduler->setBudget(StreamMemoryClass::SourceCpu,limit,ignored);}
+        } restore{scheduler,budget.limits[source]};
+        String quotaError;
+        require(scheduler->setBudget(StreamMemoryClass::SourceCpu,budget.used[source],quotaError),quotaError.c_str());
+        for(u32 generation=0;generation<8;++generation)
+        {
+            edited.clear();reusable.collectExpired();
+            for(const auto handle:retiredHandles)
+                require(!reusable.lookup(handle),"Recycled identity nodes reject every retired generation");
+            retiredHandles.clear();
+            for(u32 i=0;i<32;++i)
+            {
+                auto next=std::make_shared<MaterialRenderState>();next->roughness=f32(i+generation)/64;
+                auto handle=reusable.resolve(next);
+                require(reusable.lookup(handle)->constants.surface.y==next->roughness,
+                        "Reused admitted nodes contain their new immutable values at a full budget");
+                edited.push_back(std::move(next));retiredHandles.push_back(handle);
+            }
+            require(reusable.getStorageAllocationCount()==warmAllocations && reusable.getStorageBytes()==warmBytes,
+                    "Bulk snapshot replacement reuses all identity-node capacity without upstream admission");
+        }
     }
 
     class DeferredGraphics : public render::ClawHammerSystem

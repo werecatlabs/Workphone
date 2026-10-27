@@ -14,7 +14,7 @@
 
 namespace workphone
 {
-    namespace advanced { class ProductionSceneProfile; }
+    namespace advanced { class ProductionSceneProfile; class MaterialSceneCpuEdits; }
 
     class SampleVehicleAdvanced : public core::Application
     {
@@ -137,6 +137,7 @@ namespace workphone
         std::string m_evidencePath, m_replayPath;
         std::string m_materialExportDirectory;
         advanced::ProductionSceneProfile *m_sceneProfile = nullptr;
+        std::shared_ptr<advanced::MaterialSceneCpuEdits> m_materialEdits;
         std::vector<advanced::ReviewControl> m_replayControls;
         size_t m_replayTick = 0;
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;

@@ -53,13 +53,17 @@ namespace workphone::render
         {
         public:
             ~Publication();
+            Publication(const Publication &) = delete;
+            Publication &operator=(const Publication &) = delete;
             bool Bind(wp_renderer_dx11 *, bool instanced) const;
             void Unbind(wp_renderer_dx11 *) const;
         private:
             friend class MaterialProgramDX11;
             struct Data;
-            std::unique_ptr<Data> m_data;
-            Publication();
+            // Aliases the enclosing Data allocation; its shared control block
+            // owns both this view and the immutable packed payload.
+            Data *m_data;
+            explicit Publication(Data *);
         };
         using PublicationPtr = std::shared_ptr<const Publication>;
         static Ptr Create(void *device, MaterialShaderParameterLayout::Ptr layout,

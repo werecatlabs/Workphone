@@ -26,7 +26,8 @@ namespace workphone
             ~CRoad() override;
 
             void unload( SmartPtr<ISharedObject> data ) override;
-            /// Takes ownership of WPRoadSegmentResult; other user data remains borrowed.
+            /// Takes ownership of WPRoadSegmentResult on success; caller retains it on failure.
+            /// Other user data remains borrowed.
             void setUserData( hash_type id, void *userData ) override;
 
             void build() override;

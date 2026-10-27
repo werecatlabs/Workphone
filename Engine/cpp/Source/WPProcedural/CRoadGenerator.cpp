@@ -440,8 +440,9 @@ namespace workphone
                     }
 
                     // Store the AAA mesh result
-                    majorRd->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                          new RoadSegmentResult( segResult ) );
+                    auto payload = std::make_unique<RoadSegmentResult>( segResult );
+                    majorRd->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                    payload.release();
 
                     majorRoads.push_back( majorRd );
                 }
@@ -520,8 +521,9 @@ namespace workphone
                         }
 
                         // Store the AAA mesh result
-                        minorRd->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                              new RoadSegmentResult( minorSegResult ) );
+                        auto payload = std::make_unique<RoadSegmentResult>( minorSegResult );
+                        minorRd->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                        payload.release();
 
                         minorRoads.push_back( minorRd );
                     }
@@ -674,8 +676,9 @@ namespace workphone
                                                                : "L corner" );
 
                     // Store the AAA intersection result
-                    roadConnection->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
-                                                 new IntersectionResult( intResult ) );
+                    auto payload = std::make_unique<IntersectionResult>( intResult );
+                    roadConnection->setUserData( StringUtil::getHash( "WPIntersectionResult" ), payload.get() );
+                    payload.release();
 
                     roadNetwork->addRoadConnection( roadConnection );
                 }

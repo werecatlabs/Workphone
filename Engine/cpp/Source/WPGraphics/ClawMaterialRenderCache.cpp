@@ -59,13 +59,16 @@ namespace workphone::render
             bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override
             { return this == &other; }
         } memory;
+        // Reuse admitted identity nodes across snapshot generations. Payload
+        // owners still expire normally; only empty node/slab capacity remains.
+        detail::MaterialStoragePool nodePool{memory};
         const u64 identity = tableIdentity();
         std::vector<Slot *, detail::MaterialStorageAllocator<Slot *>> pages{&memory};
         // Values are chain heads: distinct shared ownership identities at the
         // same address must not alias (including externally aliased snapshots).
         using Identity = const MaterialRenderState *;
         std::unordered_map<Identity, u32, std::hash<Identity>, std::equal_to<Identity>,
-            detail::MaterialStorageAllocator<std::pair<const Identity, u32>>> identities{&memory};
+            detail::MaterialStorageAllocator<std::pair<const Identity, u32>>> identities{&nodePool};
         u32 size = 0, resident = 0, freeHead = noSlot, sweep = 0;
 
         ~Store()
@@ -114,7 +117,11 @@ namespace workphone::render
         }
         Slot &allocate()
         {
-            collect(32);
+            // Reclamation supplies reusable slots. Once available, consume
+            // them before another sweep; a bulk edit must not scan 32 weak
+            // owners for every record it prepares. maintain() still performs
+            // bounded background reclamation, including frames without edits.
+            if(freeHead == noSlot) collect(32);
             if(freeHead != noSlot)
             {
                 auto &slot = at(freeHead); freeHead = slot.nextFree;

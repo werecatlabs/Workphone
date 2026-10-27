@@ -1,13 +1,15 @@
 #pragma once
 #include <cstdint>
 #include <windows.h>
+#include "MaterialSceneCpuNativeBridge.h"
 
 // Test-only ABI. The implementation is compiled into one renderer translation
 // unit by the mechanical source overlay; shipping sources contain no probes.
 namespace material_scene_cpu
 {
-    constexpr uint32_t Version = 1;
-    enum Stage : uint32_t { Publication, Capture, Retirement, Binding, StageCount };
+    constexpr uint32_t Version = 4;
+    enum Stage : uint32_t { Publication, Capture, Retirement, Binding, NativeUpload, NativeBinding,
+                           Authoring, EditPublication, EditVerification, StageCount };
     struct Metrics
     {
         uint64_t stageCycles[StageCount]{};
@@ -16,6 +18,9 @@ namespace material_scene_cpu
         uint64_t visitedSections = 0, sampledSections = 0;
         uint64_t texturePaths = 0, errors = 0;
         uint64_t bindCalls = 0, unbindCalls = 0, successfulBinds = 0;
+        uint64_t nativeDrawCalls=0, nativeUnscopedDrawCalls=0, nativeSampledDraws=0, nativeFailedDraws=0;
+        uint64_t nativeCombinedDraws=0, nativeSplitDraws=0;
+        uint64_t nativeUploadCalls=0, nativeAuxUploadCalls=0, nativeFailedUploads=0, nativeBindingRegions=0;
         uint64_t overheadMedian = 0, overheadMax = 0;
         uint32_t stride = 0, thread = 0;
     };
@@ -45,6 +50,8 @@ namespace material_scene_cpu
         bool active[StageCount]{};
         bool enabled = false;
         uint32_t random = 1;
+        uint32_t nativeRandom = 1;
+        bool nativeDraw=false, nativeSelected=false;
         uint64_t overheadMedian = 0, overheadMax = 0;
     };
     inline thread_local Context context;
@@ -77,6 +84,8 @@ namespace material_scene_cpu
         context.metrics.stride=stride; context.metrics.thread=GetCurrentThreadId();
         context.metrics.overheadMedian=context.overheadMedian; context.metrics.overheadMax=context.overheadMax;
         context.enabled=enabled; context.random=seed?seed:1;
+        context.nativeRandom=(seed^0x85ebca6bu)?(seed^0x85ebca6bu):1;
+        context.nativeDraw=context.nativeSelected=false;
         for(auto &active:context.active) active=false;
         if(!stride) ++context.metrics.errors;
     }
@@ -98,6 +107,7 @@ namespace material_scene_cpu
     inline void read(Metrics *out)
     {
         for(auto active:context.active) if(active) ++context.metrics.errors;
+        if(context.nativeDraw) ++context.metrics.errors;
         if(out) *out=context.metrics;
     }
     inline void texturePath() { if(context.enabled) ++context.metrics.texturePaths; }
@@ -159,11 +169,67 @@ namespace material_scene_cpu
     private: MaterialScope *section=nullptr; uint64_t started=0; bool sampled=false,resume=false;
     };
     inline void successfulBind() { if(context.enabled) ++context.metrics.successfulBinds; }
+    // The C object only forwards events. All clocks and sampling stay in the
+    // same DLL/owner-thread TLS as the C++ preparation and custom binding probes.
+    inline void nativeEvent(int event,int value)
+    {
+        if(!context.enabled) return;
+        auto &m=context.metrics;
+        if(event==WP_SCENE_NATIVE_DRAW_BEGIN)
+        {
+            if(context.nativeDraw) { ++m.errors;return; }
+            context.nativeDraw=true;++m.nativeDrawCalls;
+            if(value==0) ++m.nativeCombinedDraws;
+            else if(value==1) ++m.nativeSplitDraws;
+            else ++m.errors;
+            if(context.section) context.nativeSelected=context.section->isSampled();
+            else
+            {
+                ++m.nativeUnscopedDrawCalls;
+                auto &random=context.nativeRandom;random^=random<<13;random^=random>>17;random^=random<<5;
+                context.nativeSelected=m.stride && random%m.stride==0;
+            }
+            if(context.nativeSelected) ++m.nativeSampledDraws;
+            return;
+        }
+        if(!context.nativeDraw) { ++m.errors;return; }
+        if(event==WP_SCENE_NATIVE_DRAW_END)
+        {
+            if(context.active[NativeUpload] || context.active[NativeBinding]) ++m.errors;
+            if(!value) ++m.nativeFailedDraws;
+            context.nativeDraw=context.nativeSelected=false;return;
+        }
+        const auto stage=(event==WP_SCENE_NATIVE_UPLOAD_BEGIN || event==WP_SCENE_NATIVE_UPLOAD_END)?NativeUpload:NativeBinding;
+        if(event==WP_SCENE_NATIVE_UPLOAD_BEGIN || event==WP_SCENE_NATIVE_BIND_BEGIN)
+        {
+            if(context.active[stage]) { ++m.errors;return; }
+            context.active[stage]=true;
+            if(stage==NativeUpload) { ++m.nativeUploadCalls;if(value) ++m.nativeAuxUploadCalls; }
+            else ++m.nativeBindingRegions;
+            if(context.nativeSelected) context.started[stage]=clock();
+        }
+        else if(event==WP_SCENE_NATIVE_UPLOAD_END || event==WP_SCENE_NATIVE_BIND_END)
+        {
+            if(!context.active[stage]) { ++m.errors;return; }
+            if(context.nativeSelected)
+            {
+                const auto now=clock();
+                if(now<context.started[stage]) ++m.errors;else m.stageCycles[stage]+=now-context.started[stage];
+                ++m.stageSegments[stage];
+            }
+            if(stage==NativeUpload && !value) ++m.nativeFailedUploads;
+            context.active[stage]=false;
+        }
+        else ++m.errors;
+    }
 }
 #ifndef WORKPHONE_MATERIAL_SCENE_NO_EXPORT
-extern "C" __declspec(dllexport) const material_scene_cpu::Api *wp_material_scene_cpu_v1()
+extern "C" __declspec(dllexport) const material_scene_cpu::Api *wp_material_scene_cpu_v4()
 {
     using namespace material_scene_cpu;
+#ifdef WORKPHONE_MATERIAL_SCENE_NATIVE_BRIDGE
+    wp_material_scene_native_set_callback(nativeEvent);
+#endif
     static const Api api{Version,sizeof(Api),configure,begin,end,read,calibrate};
     return &api;
 }

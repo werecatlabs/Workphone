@@ -37,7 +37,7 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
-    add_executable(WPMaterialSceneCpuAttributionTests MaterialSceneCpuAttributionTests.cpp)
+    add_executable(WPMaterialSceneCpuAttributionTests MaterialSceneCpuAttributionTests.cpp MaterialSceneCpuNativeFixture.c)
     target_compile_features(WPMaterialSceneCpuAttributionTests PRIVATE cxx_std_17)
     set_target_properties(WPMaterialSceneCpuAttributionTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPGraphics.material_scene_cpu_attribution_contract COMMAND WPMaterialSceneCpuAttributionTests)

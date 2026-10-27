@@ -19,8 +19,7 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <WPProcedural/WPRoadSystem.hpp>
-#include <optional>
-#include <unordered_map>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -234,9 +233,11 @@ namespace workphone
                 Allocator<SmartPtr<IRoadConnection>>( sourceBudget ) };
 
             // Cached mesh data for AAA quality rendering
-            mutable std::unordered_map<IRoad *, std::optional<RoadSegmentResult>> m_cachedSegmentResults;
-            mutable std::unordered_map<IRoadConnection *, std::optional<IntersectionResult>>
-                m_cachedIntersectionResults;
+            using SegmentCache = SourceBudgetMap<IRoad *, RoadSegmentResult>;
+            using IntersectionCache = SourceBudgetMap<IRoadConnection *, IntersectionResult>;
+            // Lazy owners detach without constructing replacement map sentinels at the cap.
+            mutable SourceBudgetUnique<SegmentCache> m_cachedSegmentResults;
+            mutable SourceBudgetUnique<IntersectionCache> m_cachedIntersectionResults;
 
             WP_CLASS_REGISTER_DECL;
         };

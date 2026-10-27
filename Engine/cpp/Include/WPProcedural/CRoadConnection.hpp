@@ -30,7 +30,8 @@ namespace workphone
             ~CRoadConnection() override;
 
             void unload( SmartPtr<ISharedObject> data ) override;
-            /// Takes ownership of WPIntersectionResult; other user data remains borrowed.
+            /// Takes ownership of WPIntersectionResult on success; caller retains it on failure.
+            /// Other user data remains borrowed.
             void setUserData( hash_type id, void *userData ) override;
 
             // ---------------------------------------------------------------

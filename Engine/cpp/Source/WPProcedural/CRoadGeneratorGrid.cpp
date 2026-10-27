@@ -142,8 +142,9 @@ namespace workphone
                     // The road system produces the visual geometry; the CRoad stores the
                     // graph topology. The consuming renderer will query the mesh from
                     // the road's user data or section elements.
-                    road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                       new RoadSegmentResult( segResult ) );
+                    auto payload = std::make_unique<RoadSegmentResult>( segResult );
+                    road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                    payload.release();
 
                     roads.push_back( road );
                 }
@@ -194,8 +195,9 @@ namespace workphone
                         road->addNode( endNode );
                     }
 
-                    road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                       new RoadSegmentResult( segResult ) );
+                    auto payload = std::make_unique<RoadSegmentResult>( segResult );
+                    road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                    payload.release();
                     roads.push_back( road );
                 }
             }
@@ -228,8 +230,9 @@ namespace workphone
                         conn->setConnectionType( "4 way grid" );
                         conn->setType( IRoadConnection::EType::X_Crossing );
                         conn->setPosition( center );
-                        conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
-                                           new IntersectionResult( intResult ) );
+                        auto payload = std::make_unique<IntersectionResult>( intResult );
+                        conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ), payload.get() );
+                        payload.release();
                         connections.push_back( conn );
                     }
                 }

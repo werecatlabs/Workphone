@@ -2,10 +2,19 @@
 import argparse,json,subprocess,xml.etree.ElementTree as ET
 from pathlib import Path
 import ProfileMaterialCpu as profile
-from MaterialSceneCpuAttributionOverlay import overlay
+from MaterialSceneCpuAttributionOverlay import overlay,native_overlay
+
+
+def require_idle_build():
+    # Instrumentation temporarily redirects generated compile items. A second
+    # build could consume them even if it does not change any source bytes.
+    if subprocess.check_output(['powershell','-NoProfile','-Command',
+            "@(Get-Process MSBuild -ErrorAction SilentlyContinue).Count"],text=True).strip()!='0':
+        raise ValueError('Another MSBuild is active; renderer instrumentation requires an idle build root')
 
 
 def build(root,build,output):
+    require_idle_build()
     if output.exists():raise ValueError('Preserve previous output; choose a new directory')
     output.mkdir(parents=True)
     header=root/'Samples/cpp/VehicleAdvanced/MaterialSceneCpuAttributionProbe.hpp'
@@ -20,12 +29,15 @@ def build(root,build,output):
     save()
     run(['cmake','--build',str(build),'--config','RelWithDebInfo','--target','SampleVehicleAdvanced',
          '--parallel','4','--','/nr:false'],'normal_build')
+    if inputs()!=receipt['engine_and_sample_before']:
+        raise ValueError('Engine/sample source drift during normal build; refusing generated-project overrides')
     runtime=root/'bin/windows/v145/x64/MD/RelWithDebInfo';exe=runtime/'SampleVehicleAdvanced.exe'
     _,_,receipt['normal_runtime']=profile.freeze(exe,output/'runtime_normal')
     receipt['build_provenance']=profile.build_provenance(root,build)
     compiler=Path(receipt['build_provenance']['compiler']['CXX']['CMAKE_CXX_COMPILER'])
     msbuild=Path(compiler.as_posix().split('/VC/')[0])/'MSBuild/Current/Bin/amd64/MSBuild.exe'
     project=next(build.rglob('WPGraphics.vcxproj'));original=project.read_bytes()
+    native_project=next(build.rglob('WorkphonePlatformWin32.vcxproj'));native_original=native_project.read_bytes()
     ns='http://schemas.microsoft.com/developer/msbuild/2003';ET.register_namespace('',ns)
     tree=ET.fromstring(original);sources={};objects=[]
     names=('ClawRendererDX11','ClawMaterialDrawRecords','MaterialProgramDX11','ClawHammerSystem')
@@ -42,25 +54,54 @@ def build(root,build,output):
         if len(found)!=1 or not found[0].resolve().is_relative_to(build.resolve()):raise ValueError('Ambiguous renderer object')
         objects+=found
     edited=ET.tostring(tree,encoding='utf-8',xml_declaration=True)
+    native_source=root/'Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.c'
+    bridge=header.with_name('MaterialSceneCpuNativeBridge.h')
+    native_target=output/native_source.name
+    native_target.write_bytes(native_overlay(native_source.read_bytes(),bridge))
+    (output/'workphone_graphics_renderer_dx11.original.c').write_bytes(native_source.read_bytes())
+    native_tree=ET.fromstring(native_original)
+    entries=[i for i in native_tree.findall('.//{'+ns+'}ClCompile') if i.get('Include','').replace('\\','/').lower()==native_source.as_posix().lower()]
+    if len(entries)!=1:raise ValueError('Ambiguous native C compile input')
+    entries[0].set('Include',str(native_target))
+    ET.SubElement(entries[0],'{'+ns+'}CompileAs').text='CompileAsC'
+    ET.SubElement(entries[0],'{'+ns+'}AdditionalIncludeDirectories').text=str(native_source.parent)+';%(AdditionalIncludeDirectories)'
+    native_edited=ET.tostring(native_tree,encoding='utf-8',xml_declaration=True)
+    native_objects=[p for p in build.rglob('workphone_graphics_renderer_dx11.obj') if 'WorkphonePlatformWin32.dir' in str(p) and 'RelWithDebInfo' in p.parts]
+    if len(native_objects)!=1 or not native_objects[0].resolve().is_relative_to(build.resolve()):raise ValueError('Ambiguous native C object')
     command=[str(msbuild),str(project),'/p:Configuration=RelWithDebInfo','/p:Platform=x64',
              '/p:BuildProjectReferences=false','/m:4','/nr:false','/v:minimal']
-    receipt.update(sources=sources,probe_sha256=profile.digest(header));save();project.write_bytes(edited)
+    native_command=[str(msbuild),str(native_project),*command[2:]]
+    library=root/'libs/windows/v145/x64/MD/RelWithDebInfo/WorkphonePlatformWin32.lib'
+    receipt.update(sources=sources,probe_sha256=profile.digest(header),protocol='material_scene_cpu_v4',
+        native_source=str(native_source),native_source_sha256=profile.digest(native_source),
+        native_overlay_sha256=profile.digest(native_target),native_bridge_sha256=profile.digest(bridge))
+    save()
+    require_idle_build()
     try:
+        native_project.write_bytes(native_edited);project.write_bytes(edited)
+        run(native_command,'instrumented_native_c_build')
         run(command,'instrumented_build')
         exports=profile.command_output([str(compiler.with_name('dumpbin.exe')),'/exports',str(runtime/'WPGraphics.dll')],root)
-        if 'wp_material_scene_cpu_v1' not in exports:raise ValueError('Scene probe export missing')
+        if 'wp_material_scene_cpu_v4' not in exports:raise ValueError('Native scene probe export missing')
         _,_,receipt['profiled_runtime']=profile.freeze(exe,output/'runtime_profiled')
     finally:
-        if project.read_bytes()!=edited:raise ValueError('Generated project changed concurrently; refusing blind restoration')
-        project.write_bytes(original)
-        for obj in objects:obj.unlink()
+        for target,before,after in ((project,original,edited),(native_project,native_original,native_edited)):
+            if target.read_bytes() not in (before,after):raise ValueError('Generated project changed concurrently; refusing blind restoration')
+            target.write_bytes(before)
+        for obj in native_objects:
+            if obj.exists():obj.unlink()
+        run(native_command,'restore_normal_native_c_build')
+        for obj in objects:
+            if obj.exists():obj.unlink()
         run(command,'restore_normal_build')
     exports=profile.command_output([str(compiler.with_name('dumpbin.exe')),'/exports',str(runtime/'WPGraphics.dll')],root)
-    if 'wp_material_scene_cpu_v1' in exports:raise ValueError('Normal renderer still contains scene probe')
+    if 'wp_material_scene_cpu_v4' in exports:raise ValueError('Normal renderer still contains scene probe')
+    symbols=profile.command_output([str(compiler.with_name('dumpbin.exe')),'/symbols',str(library)],root)
+    if 'wp_material_scene_native_set_callback' in symbols:raise ValueError('Normal C library still contains scene probe')
     receipt['engine_and_sample_after']=inputs()
     if receipt['engine_and_sample_before']!=receipt['engine_and_sample_after']:raise ValueError('Source drift during capture')
-    if project.read_bytes()!=original:raise ValueError('Generated project restoration failed')
-    receipt.update(status='COMPLETE',normal_renderer_restored=True,source_unchanged=True);save()
+    if project.read_bytes()!=original or native_project.read_bytes()!=native_original:raise ValueError('Generated project restoration failed')
+    receipt.update(status='COMPLETE',normal_renderer_restored=True,normal_native_library_restored=True,source_unchanged=True);save()
     return receipt
 
 
@@ -68,6 +109,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     for key in ('root','build','output'):ap.add_argument('--'+key,type=Path,required=True)
     a=ap.parse_args()
+    if a.output.exists():ap.error('Preserve previous output; choose a new directory')
     try:build(a.root.resolve(),a.build.resolve(),a.output.resolve())
     except Exception as error:
         path=a.output/'receipt.json'

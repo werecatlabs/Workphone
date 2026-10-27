@@ -1,0 +1,49 @@
+"""Guard matched scene cohorts before reporting optimization percentages."""
+import copy,sys,unittest
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'Tools'))
+import ProfileMaterialSceneCpuComparison as comparison
+
+
+class MatchedSceneGuards(unittest.TestCase):
+    def rows(self):
+        return [{'cohort':cohort,'variant':variant,'mode':mode,'edit_case':case,'repetition':rep,
+                 'material':{'raw_combined_cycles_per_frame':100 if cohort=='control' else 80,
+                             'raw_edit_publication_cycles_per_frame':0 if case=='none' else (20 if cohort=='control' else 10),
+                             'raw_counters':{}}}
+                for cohort,variant,mode,case,rep in comparison.tasks(3)]
+
+    def test_complete_alternating_pairs_and_controls(self):
+        tasks=comparison.tasks(3);self.assertEqual(len(tasks),52);self.assertEqual(len(set(tasks)),52)
+        self.assertEqual(sum(t[2]=='active' for t in tasks),36)
+        orders=set()
+        for first,second in zip(tasks[::2],tasks[1::2]):
+            self.assertEqual(first[1:],second[1:]);self.assertNotEqual(first[0],second[0])
+            if first[2]=='active':orders.add((first[0],second[0]))
+        self.assertEqual(len(orders),2)
+
+    def test_missing_duplicate_or_wrong_case_rejects(self):
+        for change in ('missing','duplicate','wrong-case'):
+            rows=self.rows()
+            if change=='missing':rows.pop()
+            elif change=='duplicate':rows[-1]=copy.deepcopy(rows[0])
+            else:rows[-1]['edit_case']='other'
+            with self.subTest(change=change),self.assertRaises(ValueError):comparison.compare(rows,3)
+
+    def test_paired_stage_medians_and_zero_work(self):
+        result=comparison.compare(self.rows(),3);self.assertEqual(len(result),6)
+        for row in result:
+            self.assertAlmostEqual(row['observed_reductions']['raw_combined_cycles_per_frame'],.2)
+            expected=None if row['edit_case']=='none' else .5
+            self.assertEqual(row['observed_reductions']['raw_edit_publication_cycles_per_frame'],expected)
+            self.assertEqual(len(row['pairs']),3)
+
+    def test_only_reviewed_engine_changes_permitted(self):
+        path=next(iter(comparison.ALLOWED_CHANGES));before={path:'old','unrelated':'same'}
+        after={path:'new','unrelated':'same'}
+        self.assertEqual(set(comparison.source_changes(before,after)),{path})
+        for wrong in (before,{path:'new','unrelated':'changed'},{path:'new'}):
+            with self.assertRaises(ValueError):comparison.source_changes(before,wrong)
+
+
+if __name__=='__main__':unittest.main()
