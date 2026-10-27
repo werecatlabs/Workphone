@@ -1,6 +1,8 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
 #include <WPImGui/ImGuiText.hpp>
+#include <WPImGui/WPImGuiStyle.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <WPGraphics/UI/ClawUIManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
@@ -119,6 +121,55 @@ namespace
         }
     }
 
+    void projectThemeSelection()
+    {
+        auto settings = make_ptr<Properties>();
+        ImGui::StyleColorsDark();
+        auto &style = ImGui::GetStyle();
+        style.FramePadding = ImVec2( 9, 7 );
+        style.WindowBorderSize = 3;
+        const auto originalColour = style.Colors[ImGuiCol_WindowBg];
+        ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+        require( near( style.Colors[ImGuiCol_WindowBg].x, originalColour.x ) &&
+                     near( style.Colors[ImGuiCol_WindowBg].w, originalColour.w ),
+                 "a legacy profile must preserve the initialized ImGui palette" );
+        require( near( style.FramePadding.x, 9 ) && near( style.FramePadding.y, 7 ) &&
+                     near( style.WindowBorderSize, 3 ),
+                 "a legacy profile must preserve host layout metrics" );
+
+        settings->setProperty( "editor.theme", 3 );
+        ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+        require( near( style.WindowBorderSize, 2 ) && near( style.FrameBorderSize, 1 ) &&
+                     near( style.Colors[ImGuiCol_WindowBg].x, 0 ),
+                 "an explicit high contrast selection must change the real ImGui style" );
+
+        for( const auto theme : { 0, 2, 1 } )
+        {
+            settings->setProperty( "editor.theme", 3 );
+            ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+            settings->setProperty( "editor.theme", theme );
+            ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+            require( near( style.WindowBorderSize, 1 ) && near( style.FrameBorderSize, 0 ) &&
+                         near( style.FramePadding.x, 6 ) && near( style.FramePadding.y, 6 ),
+                     "explicit theme transitions must restore editor layout metrics" );
+        }
+        require( near( style.Colors[ImGuiCol_WindowBg].x, ui::WPImGuiStyle::gray( 6 ).x ),
+                 "the dark theme must restore the editor palette" );
+        style.FramePadding.x = 11;
+        ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+        require( near( style.FramePadding.x, 11 ),
+                 "an unchanged theme must not reset style customizations every frame" );
+
+        auto partial = make_ptr<Properties>();
+        partial->setProperty( "graphics.hdr", true );
+        ui::WPImGuiStyle::applyProjectTheme( partial.get() );
+        require( near( style.FramePadding.x, 11 ),
+                 "a partial graphics profile must not replace ImGui styling" );
+        ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+        require( near( style.FramePadding.x, 6 ),
+                 "an explicit selection after a legacy profile must apply again" );
+    }
+
     void displayedImageGeometry( Fixture &fixture, bool textureReady, bool fractional )
     {
         auto window = make_ptr<ui::ImGuiRenderWindow>();
@@ -193,10 +244,11 @@ int main()
     try
     {
         Fixture fixture;
+        projectThemeSelection();
         textReplacement();
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui text/viewport input: 3 cases, %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/viewport input: 4 cases, %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

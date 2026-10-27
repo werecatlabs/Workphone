@@ -1412,6 +1412,22 @@ namespace workphone
                 m_graphicsPipeline->setCamera(renderer->getCamera().get());
                 m_graphicsPipeline->setScene(renderer->getCamera()->getCreator().get());
                 const auto options = m_graphicsPipeline->getProperties();
+                // Legacy scene textures were rendered directly in display space. Only
+                // opt them into the scene resolve when an output policy was selected;
+                // loading an older project must not silently change its viewport colours.
+                const char *outputKeys[] = {
+                    "graphics.hdr", "graphics.colorSpace", "graphics.tonemapping",
+                    "graphics.antiAliasing", "graphics.renderScale", "graphics.dynamicResolution",
+                    "graphics.renderPipeline", "graphics.lightingMode", "graphics.gi",
+                    "graphics.postProcessing", "graphics.bloom", "graphics.motionBlur",
+                    "graphics.ambientOcclusion"
+                };
+                bool explicitOutput = false;
+                for( auto key : outputKeys ) explicitOutput |= options->hasProperty( key );
+                if( !explicitOutput &&
+                    ( renderer->getRenderTarget() != getDefaultWindow() ||
+                      !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) )
+                    return false;
                 const bool hdr = !options->hasProperty( "graphics.hdr" ) || options->getPropertyAsBool( "graphics.hdr" );
                 const s32 linear = options->hasProperty( "graphics.colorSpace" ) ? options->getPropertyAsInt( "graphics.colorSpace" ) : 1;
                 const s32 tone = options->hasProperty( "graphics.tonemapping" ) ? options->getPropertyAsInt( "graphics.tonemapping" ) : 3;

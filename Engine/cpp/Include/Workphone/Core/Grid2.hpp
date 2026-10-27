@@ -2,6 +2,7 @@
 #define WP_Grid2d_H
 
 #include <Workphone/Math/Vector2.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -10,8 +11,9 @@
 
 namespace workphone
 {
-    /** Represents a 2d grid. */
-    class WPCore_API Grid2
+    /** Coordinate parameters only; scalar heap bodies require SourceCpu admission.
+     * Embedded and stack instances own no separate cell storage. */
+    class WPCore_API Grid2 : public SourceBudgetObject
     {
     public:
         /** Default constructor*/

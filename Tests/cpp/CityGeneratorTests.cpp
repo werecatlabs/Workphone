@@ -27,6 +27,9 @@
 #include "ProceduralTextureStorageContracts.hpp"
 #include "BuildingPayloadBudgetContracts.hpp"
 #include "ProceduralMeshBuilderBudgetContracts.hpp"
+#include "GridStorageBudgetContracts.hpp"
+#include "CityCenterStorageBudgetContracts.hpp"
+#include "MeshFaceStorageBudgetContracts.hpp"
 
 namespace
 {
@@ -142,6 +145,9 @@ void checkCityGeneratorContracts()
     procedural_texture_storage_contracts::run();
     building_payload_budget_contracts::run();
     procedural_mesh_builder_budget_contracts::run();
+    grid_storage_budget_contracts::run();
+    city_center_storage_budget_contracts::run();
+    mesh_face_storage_budget_contracts::run();
     using namespace workphone;
     using namespace workphone::procedural;
     auto coordinator = make_ptr<CityGeneratorDefault>();

@@ -3,6 +3,7 @@
 
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Math/AABB3.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -20,7 +21,9 @@ namespace workphone
      * and storing grid parameters such as center, cell size and overall
      * extents.
      */
-    class WPCore_API Grid3
+    // Coordinate parameters only. Scalar heap bodies require SourceCpu admission;
+    // embedded and stack instances own no separate cell storage.
+    class WPCore_API Grid3 : public SourceBudgetObject
     {
     public:
         /**

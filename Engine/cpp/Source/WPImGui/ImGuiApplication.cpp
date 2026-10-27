@@ -3570,38 +3570,8 @@ namespace workphone::ui
         WP_ASSERT( graphicsSystem );
 
         // Apply the immutable profile on the actual UI frame thread.
-        if( auto settings = applicationManager->getPlayerSettings() )
-        {
-            static thread_local ImGuiContext *themeContext = nullptr;
-            static thread_local s32 lastTheme = -1;
-            const auto theme = settings->getPropertyAsInt( "editor.theme", 1 );
-            if( themeContext != ImGui::GetCurrentContext() || theme != lastTheme )
-            {
-                themeContext = ImGui::GetCurrentContext();
-                lastTheme = theme;
-                auto &style = ImGui::GetStyle();
-                style.FrameBorderSize = 0;
-                style.WindowBorderSize = 1;
-                if( theme == 0 ) ImGui::StyleColorsClassic();
-                else if( theme == 2 ) ImGui::StyleColorsLight();
-                else
-                {
-                    WPImGuiStyle::apply();
-                    if( theme == 3 )
-                    {
-                        style.Colors[ImGuiCol_Text] = ImVec4( 1, 1, 1, 1 );
-                        style.Colors[ImGuiCol_TextDisabled] = ImVec4( .8f, .8f, .8f, 1 );
-                        style.Colors[ImGuiCol_WindowBg] = ImVec4( 0, 0, 0, 1 );
-                        style.Colors[ImGuiCol_ChildBg] = ImVec4( 0, 0, 0, 1 );
-                        style.Colors[ImGuiCol_Border] = ImVec4( 1, 1, 1, 1 );
-                        style.Colors[ImGuiCol_FrameBg] = ImVec4( .12f, .12f, .12f, 1 );
-                        style.Colors[ImGuiCol_NavHighlight] = ImVec4( 1, 1, 0, 1 );
-                        style.FrameBorderSize = 1;
-                        style.WindowBorderSize = 2;
-                    }
-                }
-            }
-        }
+        const auto settings = applicationManager->getPlayerSettings();
+        WPImGuiStyle::applyProjectTheme( settings.get() );
 
         static auto show_demo_window = true;
         if( show_demo_window )

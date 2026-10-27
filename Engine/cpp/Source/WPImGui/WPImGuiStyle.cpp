@@ -1,5 +1,6 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <imgui.h>
 
 #include <algorithm>
@@ -131,5 +132,44 @@ namespace workphone::ui
         style.CellPadding = ImVec2( 4.0f, 6.0f );
 
         style.ScaleAllSizes( std::max( dpiScale, 1.0f ) );
+    }
+
+    void WPImGuiStyle::applyProjectTheme( const Properties *settings )
+    {
+        static thread_local ImGuiContext *themeContext = nullptr;
+        static thread_local s32 lastTheme = -1;
+        if( !settings || !settings->hasProperty( "editor.theme" ) )
+        {
+            // Legacy and partial profiles do not select a theme. Keep the style
+            // established by the host, including its layout and DPI choices.
+            themeContext = nullptr;
+            lastTheme = -1;
+            return;
+        }
+        auto *context = ImGui::GetCurrentContext();
+        if( !context ) return;
+        const auto theme = settings->getPropertyAsInt( "editor.theme" );
+        if( theme < 0 || theme > 3 || ( themeContext == context && theme == lastTheme ) ) return;
+        themeContext = context;
+        lastTheme = theme;
+
+        // Start every explicit theme from the same metrics so transitions out
+        // of high contrast restore ordinary borders and control spacing.
+        apply();
+        if( theme == 0 ) ImGui::StyleColorsClassic();
+        else if( theme == 2 ) ImGui::StyleColorsLight();
+        else if( theme == 3 )
+        {
+            auto &style = ImGui::GetStyle();
+            style.Colors[ImGuiCol_Text] = ImVec4( 1, 1, 1, 1 );
+            style.Colors[ImGuiCol_TextDisabled] = ImVec4( .8f, .8f, .8f, 1 );
+            style.Colors[ImGuiCol_WindowBg] = ImVec4( 0, 0, 0, 1 );
+            style.Colors[ImGuiCol_ChildBg] = ImVec4( 0, 0, 0, 1 );
+            style.Colors[ImGuiCol_Border] = ImVec4( 1, 1, 1, 1 );
+            style.Colors[ImGuiCol_FrameBg] = ImVec4( .12f, .12f, .12f, 1 );
+            style.Colors[ImGuiCol_NavHighlight] = ImVec4( 1, 1, 0, 1 );
+            style.FrameBorderSize = 1;
+            style.WindowBorderSize = 2;
+        }
     }
 }  // namespace workphone::ui

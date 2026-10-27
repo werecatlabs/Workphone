@@ -2,6 +2,7 @@
 #include "WPProcedural/CityCenter.hpp"
 #include "WPProcedural/CRoadNode.hpp"
 #include <Workphone/Workphone.hpp>
+#include <algorithm>
 
 namespace workphone
 {
@@ -9,6 +10,14 @@ namespace workphone
     {
         CityCenter::~CityCenter()
         {
+            unload( nullptr );
+        }
+
+        void CityCenter::unload( SmartPtr<ISharedObject> data )
+        {
+            // Detach derived storage before base node callbacks can reenter.
+            auto roads = std::move( m_roads );
+            CProceduralObject<IProceduralCityCenter>::unload( data );
         }
 
         CityCenter::CityCenter()
@@ -17,8 +26,9 @@ namespace workphone
 
         Array<SmartPtr<IRoadNode>> CityCenter::getRoadNodesFromCell( const Vector2I &cellIndex )
         {
-            Array<SmartPtr<IRoadNode>> roadNodes;
-            return roadNodes;
+            WP_UNUSED( cellIndex );
+            // A spatial road-node index is not implemented by this class.
+            return makeSourceBudgetSnapshot<SmartPtr<IRoadNode>>();
         }
 
         void CityCenter::setRoadNodeGrid( Grid2 roadNodeGrid )
@@ -48,7 +58,13 @@ namespace workphone
 
         void CityCenter::setRoads( Array<Handle> roads )
         {
-            // m_roads = roads;
+            if( roads.get_allocator().isSourceBudgeted() )
+            {
+                m_roads.swap( roads );
+                return;
+            }
+            auto candidate = makeSourceBudgetSnapshot( roads );
+            m_roads.swap( candidate );
         }
 
         const Array<Handle> &CityCenter::getRoads() const
@@ -63,11 +79,18 @@ namespace workphone
 
         void CityCenter::removeRoad( Handle handle )
         {
-            //			Array<Handle>::iterator it = std::find(m_roads.begin(), m_roads.end(),
-            // handle); 			if ( it != m_roads.end() )
-            //			{
-            //				m_roads.erase(it);
-            //			}
+            const auto it = std::find( m_roads.begin(), m_roads.end(), handle );
+            if( it == m_roads.end() ) return;
+
+            // Handle keeps its existing hash-only equality. Remove the first
+            // matching entry and retain spare capacity, staging before mutation.
+            auto candidate = makeSourceBudgetSnapshot<Handle>();
+            candidate.reserve( m_roads.capacity() );
+            for( auto current = m_roads.begin(); current != m_roads.end(); ++current )
+            {
+                if( current != it ) candidate.push_back( *current );
+            }
+            m_roads.swap( candidate );
         }
 
         void CityCenter::addRoad( Handle handle )

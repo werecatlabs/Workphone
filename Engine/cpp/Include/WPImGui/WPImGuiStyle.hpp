@@ -18,6 +18,9 @@ namespace workphone::ui
     public:
         static void apply( f32 dpiScale = 1.0f );
 
+        /// Apply an explicitly selected project theme; an absent selection preserves host styling.
+        static void applyProjectTheme( const Properties *settings );
+
         static ImVec4 gray( u32 level );
         static ImVec4 accent( u32 level = 1 );
 

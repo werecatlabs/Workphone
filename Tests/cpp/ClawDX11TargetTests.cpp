@@ -32,6 +32,7 @@
 #include "ClawRTTJobContracts.hpp"
 #include "ClawUIRTTContracts.hpp"
 #include "ClawSceneJobContracts.hpp"
+#include "ClawLegacyOutputContracts.hpp"
 
 namespace
 {
@@ -236,6 +237,86 @@ namespace
         manager.render();
         manager.render();
         ok &= check( callbacks == 1, "zero-element callback must run exactly once" );
+
+        // Exercise the actual ImGui submission after a scene resolve. Mid-tone
+        // colours, alpha, glyphs and image sampling must stay in display space.
+        auto *native = wp_renderer_get_dx11( wrapper.getNativeRenderer() );
+        const auto previousViewport = wp_renderer_get_viewport( wrapper.getNativeRenderer() );
+        constexpr int width = 128, height = 96;
+        auto *output = wp_renderer_dx11_create_render_texture( native, width, height );
+        const unsigned char imagePixel[] = { 48, 140, 208, 255 };
+        auto *image = wp_renderer_dx11_create_texture_native(
+            native, imagePixel, 1, 1, WORKPHONE_PIXEL_FORMAT_RGBA8 );
+        ok &= check( output && image, "ImGui display-space pixel fixtures must allocate" );
+        if( output && image )
+        {
+            std::vector<unsigned char> reference;
+            const auto supported = wp_renderer_dx11_supported_scene_samples( native );
+            for( int mode : { 0, 1, 2, 3 } )
+            {
+                const int samples = mode == 3 && ( supported & 4u ) ? 4 : 1;
+                wp_renderer_dx11_set_render_texture( native, output );
+                wp_renderer_dx11_set_viewport( native, { 0, 0, width, height } );
+                wp_renderer_dx11_begin_frame( native );
+                wp_renderer_dx11_set_clear_color( native, .2f, .4f, .8f, 1 );
+                wp_renderer_dx11_clear( native, WORKPHONE_CLEAR_FLAG_ALL );
+                if( mode )
+                {
+                    wp_renderer_dx11_set_scene_sampling( native, samples, mode == 3 ? .75f : 1.f );
+                    wp_renderer_dx11_set_pipeline_mode( native, mode == 2 ? 2 : 1, 1 );
+                    wp_renderer_dx11_set_post_options( native, 2, 1, 1, 731 );
+                    wp_renderer_dx11_set_output_options( native, 1, 1, mode == 1 ? 1 : 3 );
+                    const bool began = wp_renderer_dx11_begin_hdr_scene( native, 2.f ) != 0;
+                    ok &= check( began, "ImGui preceding HDR scene must begin" );
+                    if( began )
+                    {
+                        wp_renderer_dx11_clear( native, WORKPHONE_CLEAR_FLAG_ALL );
+                        wp_renderer_dx11_end_hdr_scene( native );
+                    }
+                }
+                ok &= check( !wp_renderer_dx11_is_hdr_scene_active( native ),
+                             "ImGui must draw after the HDR pass closes" );
+                manager.setupViewport( width, height );
+                manager.newFrame();
+                auto *pixels = ImGui::GetForegroundDrawList();
+                pixels->AddRectFilled( { 0, 0 }, { width, height }, IM_COL32( 24, 32, 40, 255 ) );
+                pixels->AddRectFilled( { 4, 4 }, { 36, 30 }, IM_COL32( 96, 128, 160, 255 ) );
+                pixels->AddRectFilled( { 40, 4 }, { 72, 30 }, IM_COL32( 192, 64, 32, 128 ) );
+                pixels->AddImage( image, { 80, 4 }, { 112, 30 } );
+                pixels->AddText( { 4, 40 }, IM_COL32( 176, 192, 208, 255 ), "ImGui HDR" );
+                manager.render();
+                std::vector<unsigned char> rendered( width * height * 4 );
+                ok &= check( wp_renderer_dx11_copy_render_texture_rgba8(
+                                 output, rendered.data(), rendered.size() ) != 0,
+                             "ImGui colour pixels must be readable" );
+                if( mode == 0 )
+                {
+                    reference = rendered;
+                    const auto panel = ( 12 * width + 12 ) * 4;
+                    const auto picture = ( 12 * width + 90 ) * 4;
+                    ok &= check( rendered[panel] == 96 && rendered[panel + 1] == 128 &&
+                                     rendered[panel + 2] == 160 && rendered[picture] == 48 &&
+                                     rendered[picture + 1] == 140 && rendered[picture + 2] == 208,
+                                 "ImGui reference must preserve authored panel and image colours" );
+                    unsigned glyphPixels = 0;
+                    for( int y = 40; y < 60; ++y ) for( int x = 4; x < 100; ++x )
+                        glyphPixels += rendered[( y * width + x ) * 4] > 60;
+                    ok &= check( glyphPixels > 20, "ImGui reference must contain visible glyphs" );
+                }
+                else ok &= check( rendered == reference,
+                    "HDR, deferred, temporal and MSAA scene passes must preserve all ImGui pixels" );
+                wp_renderer_dx11_end_frame( native );
+            }
+            std::puts( "ImGui display-space panel, alpha, glyph and image pixels match after HDR/deferred/MSAA." );
+        }
+        wp_renderer_dx11_set_scene_sampling( native, 1, 1.f );
+        wp_renderer_dx11_set_pipeline_mode( native, 0, 0 );
+        wp_renderer_dx11_set_post_options( native, 0, 0, 0, 0 );
+        wp_renderer_dx11_set_render_texture( native, nullptr );
+        wp_renderer_dx11_set_viewport( native, previousViewport );
+        manager.setupViewport( previousViewport.width, previousViewport.height );
+        if( image ) wp_renderer_dx11_destroy_texture_native( image );
+        if( output ) wp_renderer_dx11_destroy_render_texture( output );
         manager.shutdown();
         manager.shutdown();
         ok &= check( !manager.isInitialised(), "shutdown must be idempotent" );
@@ -896,7 +977,11 @@ int main()
                      "DX11 device evidence must be available" );
         auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
         ok &= testOcclusionDepthReadback( renderer );
-        try { ok &= claw_rtt_contracts::native(native); ok &= claw_scene_job_contracts::pixelsMatch(renderer); }
+        try {
+            ok &= claw_rtt_contracts::native(native);
+            ok &= claw_scene_job_contracts::pixelsMatch(renderer);
+            ok &= claw_legacy_output_contracts::run(window);
+        }
         catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.setRenderTarget( window );
 #if defined WP_TEST_IMGUI

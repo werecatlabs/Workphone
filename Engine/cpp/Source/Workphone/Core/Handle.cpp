@@ -83,6 +83,7 @@ namespace workphone
 
     auto Handle::operator=( const Handle &other ) -> Handle &
     {
+        if( this == &other ) return *this;
         SpinRWMutex::ScopedLock lockA( m_mutex, true );
         SpinRWMutex::ScopedLock lockB( other.m_mutex, false );
 
@@ -90,6 +91,8 @@ namespace workphone
         m_instanceId = other.m_instanceId;
         m_hash = other.m_hash;
         m_uuid = other.m_uuid;
+        m_classId = other.m_classId;
+        m_fileId = other.m_fileId;
         return *this;
     }
 
