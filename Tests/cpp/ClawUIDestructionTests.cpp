@@ -18,6 +18,13 @@
 #include <Workphone/Interface/UI/IUILayoutWindow.hpp>
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>
 #include <Workphone/Scene/Components/UI/Text.hpp>
+#include <Workphone/Scene/Components/UI/Button.hpp>
+#include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
+#include <Workphone/Scene/Systems/UI/LayoutTransformSystem.hpp>
+#include <Workphone/Scene/UiUtil.hpp>
+#include <Workphone/Memory/FactoryUtil.hpp>
+#include <Workphone/Interface/System/IEventListener.hpp>
+#include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Scene/CameraManager.hpp>
 #include <Workphone/Scene/GameActor.hpp>
@@ -79,6 +86,44 @@ namespace
         if( !condition )
             std::fprintf( stderr, "FAIL: %s\n", message );
         return condition;
+    }
+
+    bool testStartupFont( Fixture &fixture, const String &project, bool proportional,
+                          bool rememberedProject = false )
+    {
+        const auto previousProject = fixture.application->getProjectPath();
+        const auto previousSettings = fixture.application->getEditorSettings();
+        auto preferences = make_ptr<Properties>();
+        if( rememberedProject ) preferences->setProperty( "Project Path", project + "/project.fbproject" );
+        fixture.application->setEditorSettings( preferences );
+        fixture.application->setProjectPath( rememberedProject ? String() : project );
+        bool ok = true;
+        {
+            ui::ClawUIWorkphoneContext context;
+            ok &= check( context.isValid() && context.getFontPixels() && context.getFontWidth() > 0 &&
+                         context.getFontHeight() > 0, "startup font must produce a usable RGBA atlas" );
+            const auto *ctx = context.getContext();
+            const auto *font = ctx ? ctx->style.font : nullptr;
+            ok &= check( font && font->width && font->height == 13.0f,
+                         "startup font must preserve the default widget height" );
+            if( font && font->width )
+            {
+                const auto wide = font->width( font->userdata, 32.0f,
+                    reinterpret_cast<const wp_c8 *>( "WWW" ), 3 );
+                const auto narrow = font->width( font->userdata, 32.0f,
+                    reinterpret_cast<const wp_c8 *>( "iii" ), 3 );
+                ok &= check( wide > 0 && narrow > 0 &&
+                             ( proportional ? wide > narrow * 1.5f : wide == narrow ),
+                             proportional ? "project TTF must replace the embedded monospace face" :
+                                            "missing or invalid TTF must retain the embedded face" );
+            }
+            ok &= check( context.getFontTexture().ptr == context.getFontPixels() &&
+                         context.getNullTexture().texture.ptr == context.getFontPixels(),
+                         "font and null texture handles must reference the owned atlas pixels" );
+        }
+        fixture.application->setProjectPath( previousProject );
+        fixture.application->setEditorSettings( previousSettings );
+        return ok;
     }
 
     class CollectionProbe : public ui::ClawUIElement<ui::IUIElement>
@@ -380,6 +425,179 @@ namespace
         return ok;
     }
 
+    bool testSceneButtonAppearance()
+    {
+        ui::ClawUIManager manager;
+        auto element = manager.addElement( ui::IUIButton::typeInfo() );
+        auto buttonElement = dynamic_pointer_cast<ui::IUIButton>( element );
+        if( !buttonElement ) return check( false, "scene button needs a native renderer element" );
+        class VisibilityActor : public scene::GameActor
+        {
+        public:
+            bool isEnabledInScene() const override { return enabledInScene; }
+            bool isVisible() const override { return visible; }
+            bool enabledInScene = true, visible = true;
+        };
+        auto actor = make_ptr<VisibilityActor>();
+        auto component = make_ptr<scene::Button>();
+        component->setActor( actor );
+        component->setUseNativeUI( true );
+        component->setElement( element );
+        component->setEnabled( true );
+        const ColourF normal( 0.9f, 0.65f, 0.1f, 1.0f );
+        const ColourF hover( 1.0f, 0.8f, 0.25f, 1.0f );
+        const ColourF active( 0.65f, 0.4f, 0.02f, 1.0f );
+        const ColourF disabled( 0.12f, 0.13f, 0.14f, 0.7f );
+        const ColourF text( 0.02f, 0.025f, 0.03f, 1.0f );
+        component->setNormalColour( normal );
+        component->setHighlightedColour( hover );
+        component->setPressedColour( active );
+        component->setDisabledColour( disabled );
+        component->setTextSize( 28 );
+        component->setTextStr( "DRIVE" );
+        component->setColour( text );
+        const auto properties = buttonElement->getProperties();
+        ColourF actualNormal, actualHover, actualActive, actualDisabled;
+        properties->getPropertyValue( ui::IUIButton::normalColourStr, actualNormal );
+        properties->getPropertyValue( ui::IUIButton::hoverColourStr, actualHover );
+        properties->getPropertyValue( ui::IUIButton::activeColourStr, actualActive );
+        properties->getPropertyValue( "disabledColour", actualDisabled );
+        bool ok = check( actualNormal == normal && actualHover == hover && actualActive == active &&
+                         actualDisabled == disabled,
+                         "scene colour setters must immediately reach native button state" );
+        ok &= check( buttonElement->getTextSize() == 28 && buttonElement->getLabel() == "DRIVE" &&
+                     buttonElement->getColour() == text,
+                     "scene button size, label, and dark label colour must reach the renderer" );
+        component->setEnabled( false );
+        ok &= check( element->isVisible() && !element->isEnabled(),
+                     "a disabled button remains visible but cannot accept input" );
+        actor->enabledInScene = false;
+        component->setEnabled( true );
+        ok &= check( !element->isVisible() && !element->isEnabled(),
+                     "a disabled parent actor must still hide a button" );
+        actor->enabledInScene = true;
+        component->setEnabled( true );
+        ok &= check( element->isVisible() && element->isEnabled(),
+                     "showing the parent restores an enabled button" );
+        component->setActor( nullptr );
+        component->setElement( nullptr );
+        component = nullptr;
+        manager.clear();
+        return ok;
+    }
+
+    bool testButtonDrawStyleIsolation()
+    {
+        ui::ClawUIManager manager;
+        auto first = manager.addElement( ui::IUIButton::typeInfo() );
+        auto second = manager.addElement( ui::IUIButton::typeInfo() );
+        auto primary = dynamic_pointer_cast<ui::IUIButton>( first );
+        auto secondary = dynamic_pointer_cast<ui::IUIButton>( second );
+        auto primaryWidget = dynamic_cast<ui::IWorkphoneWidget *>( first.get() );
+        auto secondaryWidget = dynamic_cast<ui::IWorkphoneWidget *>( second.get() );
+        auto ctx = manager.getContext();
+        if( !primary || !secondary || !primaryWidget || !secondaryWidget || !ctx )
+            return check( false, "button draw contracts need real native widgets" );
+        const ColourF amber( 0.9f, 0.65f, 0.1f, 1.0f ), hover( 1.0f, 0.8f, 0.3f, 1.0f );
+        const ColourF pressed( 0.7f, 0.4f, 0.05f, 1.0f ), disabled( 0.12f, 0.13f, 0.14f, 0.7f );
+        const ColourF gray( 0.2f, 0.22f, 0.24f, 1.0f ), dark( 0.02f, 0.03f, 0.04f, 1.0f );
+        const auto appearance = [&]( ColourF normal ) {
+            auto properties = make_ptr<Properties>();
+            properties->setProperty( ui::IUIButton::normalColourStr, normal );
+            properties->setProperty( ui::IUIButton::hoverColourStr, hover );
+            properties->setProperty( ui::IUIButton::activeColourStr, pressed );
+            properties->setProperty( "disabledColour", disabled );
+            return properties;
+        };
+        primary->setProperties( appearance( amber ) );
+        secondary->setProperties( appearance( gray ) );
+        primary->setLabel( "DRIVE" );
+        secondary->setLabel( "BACK" );
+        primary->setTextSize( 28 ); secondary->setTextSize( 18 );
+        primary->setColour( dark ); secondary->setColour( ColourF::White );
+        primary->setPosition( Vector2F( 20, 20 ) ); secondary->setPosition( Vector2F( 20, 110 ) );
+        primary->setSize( Vector2F( 240, 70 ) ); secondary->setSize( Vector2F( 240, 60 ) );
+        primary->setHandleInputEvents( true ); secondary->setHandleInputEvents( true );
+        const auto sameColour = []( wp_color a, wp_color b ) {
+            return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+        };
+        struct Snapshot { bool firstFill = false, secondFill = false, text = false;
+            float firstHeight = 0, secondHeight = 0; wp_color firstText{}; wp_flags firstState = 0; };
+        const auto frame = [&]( int mouseX, int mouseY, bool down, ColourF expected ) {
+            Snapshot result;
+            wp_input_begin( ctx );
+            wp_input_motion( ctx, mouseX, mouseY );
+            wp_input_button( ctx, WORKPHONE_BUTTON_LEFT, mouseX, mouseY, down );
+            wp_input_end( ctx );
+            if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "Button appearance" ),
+                          wp_make_rect( 0, 0, 500, 300 ),
+                          WORKPHONE_WINDOW_NO_SCROLLBAR | WORKPHONE_WINDOW_BACKGROUND ) )
+            {
+                wp_layout_space_begin( ctx, WORKPHONE_STATIC, 300, 2 );
+                primaryWidget->draw( ctx );
+                result.firstState = ctx->last_widget_state;
+                secondaryWidget->draw( ctx );
+                wp_layout_space_end( ctx );
+            }
+            wp_end( ctx );
+            const wp_command *command;
+            wp_foreach( command, ctx )
+            {
+                if( command->type == WORKPHONE_COMMAND_RECT_FILLED )
+                {
+                    auto rect = reinterpret_cast<const wp_command_rect_filled *>( command );
+                    result.firstFill |= sameColour( rect->color,
+                        ui::ClawUIWorkphoneContext::toWorkphoneColor( expected ) );
+                    result.secondFill |= sameColour( rect->color,
+                        ui::ClawUIWorkphoneContext::toWorkphoneColor( gray ) );
+                }
+                if( command->type == WORKPHONE_COMMAND_TEXT )
+                {
+                    auto text = reinterpret_cast<const wp_command_text *>( command );
+                    if( text->length == 5 && std::strncmp( text->string, "DRIVE", 5 ) == 0 )
+                    {
+                        result.text = true; result.firstHeight = text->height;
+                        result.firstText = text->foreground;
+                        // The saved font descriptor must survive the second widget draw.
+                        result.firstFill &= text->font && text->font->height == text->height;
+                    }
+                    if( text->length == 4 && std::strncmp( text->string, "BACK", 4 ) == 0 )
+                        result.secondHeight = text->height;
+                }
+            }
+            wp_clear( ctx );
+            return result;
+        };
+        const auto sharedStyle = ctx->style.button;
+        const auto sharedFont = ctx->style.font;
+        auto normal = frame( 400, 240, false, amber );
+        bool ok = check( normal.firstFill && normal.secondFill && normal.text &&
+                         normal.firstHeight == 28 && normal.secondHeight == 18 &&
+                         sameColour( normal.firstText, ui::ClawUIWorkphoneContext::toWorkphoneColor( dark ) ),
+                         "two buttons must draw independent backgrounds, font sizes, and label colours" );
+        ok &= check( std::memcmp( &sharedStyle, &ctx->style.button, sizeof sharedStyle ) == 0 &&
+                     ctx->style.font == sharedFont,
+                     "button drawing must leave shared style and font unchanged" );
+        auto hovered = frame( 100, 50, false, hover );
+        ok &= check( hovered.firstFill && hovered.secondFill,
+                     "hover changes only the hovered button background" );
+        auto active = frame( 100, 50, true, pressed );
+        ok &= check( active.firstFill, "held pointer draws the authored pressed colour" );
+        frame( 100, 50, false, hover );
+        primary->setEnabled( false );
+        auto inactive = frame( 100, 50, true, disabled );
+        ok &= check( inactive.firstFill && inactive.text && inactive.firstText.a < normal.firstText.a &&
+                     inactive.firstText.r > normal.firstText.r &&
+                     !( inactive.firstState & ( WORKPHONE_WIDGET_STATE_ACTIVED | WORKPHONE_WIDGET_STATE_ACTIVE ) ),
+                     "disabled controls draw their disabled colour and subdued text without activation" );
+        primary->setEnabled( true ); primary->setVisible( false );
+        auto hidden = frame( 400, 240, false, amber );
+        ok &= check( !hidden.text && hidden.secondFill,
+                     "hidden buttons emit no text and do not affect visible neighbours" );
+        manager.clear();
+        return ok;
+    }
+
     bool testChildRemoval()
     {
         ui::ClawUIManager manager;
@@ -466,6 +684,116 @@ namespace
         return ok;
     }
 
+    bool testUiUtilButtonOwnInput( Fixture &fixture )
+    {
+        // Use the real UiUtil factory and layout-state allocation while keeping
+        // this test independent of scene files, graphics devices, and FSM ticks.
+        class VisibleActor : public scene::GameActor
+        {
+        public:
+            bool isEnabledInScene() const override { return true; }
+            bool isVisible() const override { return true; }
+        };
+        class DetachedGameManager : public scene::GameManager
+        {
+        public:
+            SmartPtr<scene::IGameActor> createActor() override { return make_ptr<VisibleActor>(); }
+            void destroyActor( SmartPtr<scene::IGameActor> actor, bool = true ) override
+            {
+                for( auto component : actor->getComponents() ) actor->removeComponentInstance( component );
+            }
+        };
+        class ClickCounter : public IEventListener
+        {
+        public:
+            Parameter handleEvent( EventType type, hash_type value, const Array<Parameter> &,
+                SmartPtr<ISharedObject>, SmartPtr<ISharedObject>, SmartPtr<IEvent> ) override
+            {
+                if( type == EventType::UI && value == IEvent::CLICK_HASH ) ++clicks;
+                return {};
+            }
+            unsigned clicks = 0;
+        };
+        auto previousGame = fixture.application->getGameManager();
+        auto previousFactories = fixture.application->getFactoryManager();
+        auto factories = make_ptr<FactoryManager>();
+        factories->load( nullptr );
+        fixture.application->setFactoryManager( factories );
+        auto game = make_ptr<DetachedGameManager>();
+        game->setLoadingState( LoadingState::Loaded );
+        fixture.application->setGameManager( game );
+        auto system = make_ptr<scene::LayoutTransformSystem>();
+        system->load( nullptr );
+        game->addSystem( scene::LayoutTransform::typeInfo(), system );
+        FactoryUtil::addFactory<scene::LayoutTransform>();
+        FactoryUtil::addFactory<scene::Button>();
+        ui::ClawUIManager manager;
+        auto root = manager.addElement( ui::IUILayoutWindow::typeInfo() );
+        auto native = manager.addElement( ui::IUIButton::typeInfo() );
+        root->load( nullptr );
+        auto actor = scene::UiUtil::createButton( "SETTINGS", false );
+        auto button = actor->getComponent<scene::Button>();
+        button->setUseNativeUI( true );
+        button->setElement( native );
+        button->setEnabled( true );
+        button->setTextStr( "SETTINGS" );
+        auto counter = make_ptr<ClickCounter>();
+        native->addObjectListener( counter );
+        root->addChild( native );
+        native->setPosition( Vector2F( 20, 20 ) );
+        native->setSize( Vector2F( 240, 70 ) );
+        auto widget = dynamic_cast<ui::IWorkphoneWidget *>( root.get() );
+        auto ctx = manager.getContext();
+        bool ok = check( !button->getCascadeInput() && !native->getHandleInputEvents(),
+            "UiUtil buttons use non-cascading input by default" );
+        const auto frame = [&]( bool down ) {
+            wp_input_begin( ctx );
+            wp_input_motion( ctx, 100, 50 );
+            wp_input_button( ctx, WORKPHONE_BUTTON_LEFT, 100, 50, down );
+            wp_input_end( ctx );
+            if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "UiUtil root input" ),
+                          wp_make_rect( 0, 0, 500, 300 ),
+                          WORKPHONE_WINDOW_NO_SCROLLBAR | WORKPHONE_WINDOW_BACKGROUND ) )
+            {
+                wp_layout_space_begin( ctx, WORKPHONE_STATIC, 300, 1 );
+                widget->draw( ctx );
+                wp_layout_space_end( ctx );
+            }
+            wp_end( ctx );
+            const auto state = ctx->last_widget_state;
+            wp_clear( ctx );
+            return state;
+        };
+        const auto hover = frame( false );
+        ok &= check( ( hover & WORKPHONE_WIDGET_STATE_HOVER ) != 0,
+            "a UiUtil button inside the native root layout must hover despite cascade=false" );
+        frame( true ); frame( false );
+        ok &= check( counter->clicks == 1,
+            "a UiUtil button inside the native root layout must receive exactly one native click" );
+        button->setEnabled( false );
+        frame( true ); frame( false );
+        ok &= check( counter->clicks == 1,
+            "a disabled UiUtil button must suppress native clicks" );
+        native->removeObjectListener( counter );
+        button->setElement( nullptr );
+        native->setOwner( nullptr );
+        root->removeChild( native );
+        manager.clear();
+        button = nullptr;
+        // Component::unload releases its layout-system slot. Remove the
+        // manager routing first so actor detachment only clears the registry.
+        game->removeSystem( scene::LayoutTransform::typeInfo() );
+        game->destroyActor( actor ); actor = nullptr;
+        system->unload( nullptr );
+        game->setLoadingState( LoadingState::Unloaded );
+        FactoryUtil::removeFactory<scene::Button>();
+        FactoryUtil::removeFactory<scene::LayoutTransform>();
+        fixture.application->setGameManager( previousGame );
+        factories->unload( nullptr );
+        fixture.application->setFactoryManager( previousFactories );
+        return ok;
+    }
+
     enum class Cleanup { Clear, Unload, Destructor };
 
     bool testTreeCleanup( Cleanup cleanup )
@@ -511,6 +839,21 @@ namespace
 int main( int argc, char **argv )
 {
     Fixture fixture;
+    if( argc >= 4 && std::strcmp( argv[1], "--project-font-only" ) == 0 )
+    {
+        // Optional asset diagnostics: callers supply a project with a valid
+        // Default.ttf and a private fixture project containing an invalid TTF.
+        // The test never creates or edits project/font files itself.
+        bool ok = testStartupFont( fixture, String(), false );
+        ok &= testStartupFont( fixture, String( argv[2] ) + "/NoSuchFontProject", false );
+        ok &= testStartupFont( fixture, String( argv[2] ), true );
+        ok &= testStartupFont( fixture, String( argv[2] ), true, true );
+        for( int index = 3; index < argc; ++index )
+            ok &= testStartupFont( fixture, String( argv[index] ), false );
+        std::printf( "Claw UI startup font contracts: %d cases, %u assertions, %s.\n", argc + 1, assertions,
+                     ok ? "passed" : "failed" );
+        return ok ? 0 : 1;
+    }
     if( argc > 1 && std::strcmp( argv[1], "--collection-sort-only" ) == 0 )
     {
         bool ok = testSortingExcludesOtherThreads();
@@ -521,6 +864,9 @@ int main( int argc, char **argv )
     }
     bool ok = testRemoveEachElement();
     ok &= testSceneTextAppearance();
+    ok &= testSceneButtonAppearance();
+    ok &= testButtonDrawStyleIsolation();
+    ok &= testUiUtilButtonOwnInput( fixture );
     ok &= testEditorCameraDuringPlay( fixture );
     ok &= testChildRemoval();
     ok &= testBulkRemoval();
@@ -532,6 +878,6 @@ int main( int argc, char **argv )
     ok &= testSortCapturesEachOrderOnce();
     ok &= testDrawPinsItsFrameMembers( fixture );
     if( ok )
-        std::printf( "Claw UI destruction tests: 12 cases, %u assertions passed.\n", assertions );
+        std::printf( "Claw UI destruction tests: 15 cases, %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }

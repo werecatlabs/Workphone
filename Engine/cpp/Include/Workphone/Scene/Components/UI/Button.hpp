@@ -199,6 +199,16 @@ namespace workphone
                                    const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
                                    SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
 
+            /**
+             * @brief Updates the visual state of the button element.
+             */
+            void updateElementState() override;
+
+            /**
+             * @brief Updates the visibility of the button element based on its state.
+             */
+            void updateVisibility() override;
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
@@ -206,11 +216,6 @@ namespace workphone
              * @brief Creates the UI elements for the button.
              */
             void createUI() override;
-
-            /**
-             * @brief Updates the visual state of the button element.
-             */
-            void updateElementState() override;
 
             /** @brief The color of the button in its normal state. */
             AtomicObject<ColourF> m_normalColour = ColourF::White;
