@@ -75,6 +75,11 @@ namespace workphone
          */
         f32 getAxis( s32 axis ) const override;
 
+        /** Normalized device value before dead zone, sensitivity or inversion.
+         * This nonvirtual helper leaves the IJoystick interface unchanged.
+         */
+        f32 getRawAxis( s32 axis ) const;
+
         /**
          * @brief Get the number of buttons reported for this joystick.
          *
