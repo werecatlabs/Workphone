@@ -46,6 +46,9 @@ namespace workphone::physics
 
     void WPPhysics::unload( SmartPtr<ISharedObject> data )
     {
+        // Application shutdown joins scene owners before unloading plugins.
+        // Drop borrowed provider code/context before any later app restart.
+        registerBroadphaseProvider( nullptr, nullptr );
         FactoryUtil::removeFactory<WPPhysicsTerrainShape3>();
         FactoryUtil::removeFactory<WPPhysicsMeshShape3>();
         FactoryUtil::removeFactory<WPPhysicsPlaneShape3>();
