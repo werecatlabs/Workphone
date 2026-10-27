@@ -3,7 +3,7 @@
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Interface/Procedural/ILSystemRule.hpp>
-#include <string>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 /**
  * @file LRule.hpp
@@ -23,12 +23,14 @@ namespace workphone
          * @brief Represents a single L-system rewriting rule.
          *
          * An LRule holds a predecessor (left-hand side) and a successor
-         * (right-hand side). It is a lightweight value-type used by the
+         * (right-hand side). It is a shared rule used by the
          * procedural L-system implementation.
          */
-        class WPProcedural_API LRule : public ILSystemRule
+        class WPProcedural_API LRule : public ILSystemRule, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             /**
              * @brief Default constructor.
              *
@@ -36,6 +38,10 @@ namespace workphone
              * are empty strings.
              */
             LRule();
+            ~LRule() override;
+            LRule( const LRule & ) = delete;
+            LRule &operator=( const LRule & ) = delete;
+            void unload( SmartPtr<ISharedObject> data ) override;
 
             /**
              * @brief Construct a rule with given predecessor and successor.
@@ -51,7 +57,7 @@ namespace workphone
              * Primarily intended for debugging/logging. Typical output is
              * the form "predecessor -> successor".
              */
-            void print();
+            void print() const override;
 
             /**
              * @brief Equality comparison for two LRule instances.
@@ -69,25 +75,25 @@ namespace workphone
              * @brief Get the predecessor of the rule.
              * @return The predecessor string.
              */
-            String getPredecessor() const;
+            String getPredecessor() const override;
 
             /**
              * @brief Set the predecessor of the rule.
              * @param predecessor New predecessor string.
              */
-            void setPredecessor( const String &predecessor );
+            void setPredecessor( const String &predecessor ) override;
 
             /**
              * @brief Get the successor of the rule.
              * @return The successor string.
              */
-            String getSuccessor() const;
+            String getSuccessor() const override;
 
             /**
              * @brief Set the successor of the rule.
              * @param successor New successor string.
              */
-            void setSuccessor( const String &successor );
+            void setSuccessor( const String &successor ) override;
 
         protected:
             /**

@@ -73,7 +73,7 @@ namespace workphone
              * This is intended for logging and debugging and may write to console,
              * a log system or other debug sinks as appropriate.
              */
-            virtual void print() = 0;
+            virtual void print() const = 0;
 
             WP_CLASS_REGISTER_DECL;
         };

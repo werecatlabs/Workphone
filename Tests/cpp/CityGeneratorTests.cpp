@@ -30,6 +30,8 @@
 #include "GridStorageBudgetContracts.hpp"
 #include "CityCenterStorageBudgetContracts.hpp"
 #include "MeshFaceStorageBudgetContracts.hpp"
+#include "LSystemStorageBudgetContracts.hpp"
+#include "NoiseRoadSeedBudgetContracts.hpp"
 
 namespace
 {
@@ -148,6 +150,8 @@ void checkCityGeneratorContracts()
     grid_storage_budget_contracts::run();
     city_center_storage_budget_contracts::run();
     mesh_face_storage_budget_contracts::run();
+    lsystem_storage_budget_contracts::run();
+    noise_road_seed_budget_contracts::run();
     using namespace workphone;
     using namespace workphone::procedural;
     auto coordinator = make_ptr<CityGeneratorDefault>();

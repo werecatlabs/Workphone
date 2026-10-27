@@ -3,8 +3,7 @@
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Interface/Procedural/ILSystem.hpp>
-#include <vector>
-#include <string>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include "LRule.hpp"
 
 namespace workphone
@@ -24,15 +23,24 @@ namespace workphone
          *
          * This class implements the ILSystem interface.
          */
-        class WPProcedural_API LSystem : public ILSystem
+        class WPProcedural_API LSystem : public ILSystem, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             /**
              * @brief Construct a new LSystem object.
              *
              * Initializes internal state (level counter, current string, etc.).
              */
             LSystem();
+            ~LSystem() override;
+            LSystem( const LSystem & ) = delete;
+            LSystem &operator=( const LSystem & ) = delete;
+
+            // Detach all grammar/state storage before retiring rule owners.
+            // Externally owned rules are never explicitly unloaded.
+            void unload( SmartPtr<ISharedObject> data ) override;
 
             /**
              * @brief Reset the L-system to its initial state.
@@ -40,7 +48,7 @@ namespace workphone
              * This resets the current level to 0 and sets the working
              * string back to the start axiom.
              */
-            void reset();
+            void reset() override;
 
             /**
              * @brief Add a symbol to the set of variables.
@@ -50,7 +58,7 @@ namespace workphone
              *
              * @param var Symbol (string) to add as a variable.
              */
-            void addVariable( const String &var );
+            void addVariable( const String &var ) override;
 
             /**
              * @brief Remove a symbol from the set of variables.
@@ -59,13 +67,13 @@ namespace workphone
              *
              * @param var Symbol (string) to remove.
              */
-            void removeVariable( const String &var );
+            void removeVariable( const String &var ) override;
 
             /**
              * @brief Print the currently registered variables to the
              *        debug/log output.
              */
-            void printVariables();
+            void printVariables() override;
 
             /**
              * @brief Add a symbol to the set of constants.
@@ -75,7 +83,7 @@ namespace workphone
              *
              * @param cons Symbol (string) to add as a constant.
              */
-            void addConstant( const String &cons );
+            void addConstant( const String &cons ) override;
 
             /**
              * @brief Remove a symbol from the set of constants.
@@ -84,13 +92,13 @@ namespace workphone
              *
              * @param cons Symbol (string) to remove.
              */
-            void removeConstant( const String &cons );
+            void removeConstant( const String &cons ) override;
 
             /**
              * @brief Print the currently registered constants to the
              *        debug/log output.
              */
-            void printConstants();
+            void printConstants() override;
 
             /**
              * @brief Register a production rule with the system.
@@ -100,7 +108,7 @@ namespace workphone
              *
              * @param rule Shared pointer to an ILSystemRule implementation.
              */
-            void addRule( SmartPtr<ILSystemRule> rule );
+            void addRule( SmartPtr<ILSystemRule> rule ) override;
 
             /**
              * @brief Remove a production rule from the system.
@@ -109,13 +117,13 @@ namespace workphone
              *
              * @param rule Shared pointer to the rule to remove.
              */
-            void removeRule( SmartPtr<ILSystemRule> rule );
+            void removeRule( SmartPtr<ILSystemRule> rule ) override;
 
             /**
              * @brief Print all registered production rules to the
              *        debug/log output.
              */
-            void printRules();
+            void printRules() override;
 
             /**
              * @brief Set the start axiom for the L-system.
@@ -125,12 +133,12 @@ namespace workphone
              *
              * @param start The start axiom string.
              */
-            void setStart( const String &start );
+            void setStart( const String &start ) override;
 
             /**
              * @brief Print the start axiom to the debug/log output.
              */
-            void printStart();
+            void printStart() override;
 
             /**
              * @brief Advance the L-system by one level and return the
@@ -141,7 +149,7 @@ namespace workphone
              *
              * @return String The string produced for the next level.
              */
-            String getNextLevel();
+            String getNextLevel() override;
 
             /**
              * @brief Generate and return the string for a specific level.
@@ -149,10 +157,11 @@ namespace workphone
              * This will (potentially) iterate rules until the requested
              * level is reached and then return that level's string.
              *
-             * @param level Target level to generate.
+             * @param level Target level to generate, starting with the axiom at 0.
+             * Negative levels are rejected without changing the current state.
              * @return String The string corresponding to the requested level.
              */
-            String getLevel( s32 level );
+            String getLevel( s32 level ) override;
 
         protected:
             /**
@@ -161,7 +170,7 @@ namespace workphone
              * Level 0 corresponds to the start axiom. Each call to
              * getNextLevel increments this value.
              */
-            s32 level;
+            s32 level = 0;
 
             /**
              * @brief Start axiom (initial string) for the system.
@@ -176,17 +185,26 @@ namespace workphone
             /**
              * @brief Registered production rules.
              */
-            Array<SmartPtr<ILSystemRule>> rules;
+            Array<SmartPtr<ILSystemRule>> rules{ Allocator<SmartPtr<ILSystemRule>>( sourceBudget ) };
 
             /**
              * @brief Symbols that can be replaced by rules.
              */
-            Array<String> variables;
+            Array<String> variables{ Allocator<String>( sourceBudget ) };
 
             /**
              * @brief Symbols that remain unchanged during production.
              */
-            Array<String> constants;
+            Array<String> constants{ Allocator<String>( sourceBudget ) };
+
+        private:
+            String evaluate( s32 targetLevel, bool fromStart );
+            String rewrite( const String &input, const Array<SmartPtr<ILSystemRule>> &owners,
+                            u64 generation, u64 denialEpoch ) const;
+            void checkEvaluation( u64 generation, u64 denialEpoch ) const;
+
+            u64 m_generation = 0;
+            bool m_rewriting = false;
         };
 
     }  // namespace procedural

@@ -11,12 +11,13 @@
 #include <Workphone/Interface/Procedural/RoadSystemTypes.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <memory>
 
 namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API WPRoadSystem
+        class WPProcedural_API WPRoadSystem : public SourceBudgetObject
         {
         public:
             // --- Nested aliases so callers may write either
@@ -31,11 +32,20 @@ namespace workphone
             /// is deterministic.
             explicit WPRoadSystem( u32 seed = 0 );
 
+            WPRoadSystem( const WPRoadSystem &other );
+            WPRoadSystem &operator=( const WPRoadSystem &other );
+            WPRoadSystem( WPRoadSystem && ) noexcept = default;
+            WPRoadSystem &operator=( WPRoadSystem && ) noexcept = default;
+            void swap( WPRoadSystem &other ) noexcept;
+
             /// Destructor releases the owned WPNoise instance.
             ~WPRoadSystem();
 
             /// Re-seed the noise generator.  All subsequent generation calls
-            /// use the new seed; previously built meshes are unaffected.
+            /// use the new seed; previously built meshes are unaffected. Failed
+            /// admission preserves the current seed and noise. A live same-seed
+            /// request does not allocate. Reseeding also restores a moved-from
+            /// system; noise-dependent generation otherwise throws logic_error.
             void setSeed( u32 seed );
 
             // -----------------------------------------------------------------
@@ -114,6 +124,7 @@ namespace workphone
             RoadMesh pedXing;
 
         private:
+            const WPNoise &noise() const;
             RoadMesh buildRoadSurface( const RoadSegmentSpec &spec, real_Num width, real_Num length,
                                        u32 segments, u32 lengthSegs );
             RoadMesh buildSidewalk( const RoadSegmentSpec &spec, real_Num sidewalkW, real_Num length,
@@ -125,7 +136,7 @@ namespace workphone
             RoadMesh buildCollision( const RoadSegmentSpec &spec, real_Num width, real_Num length );
 
             u32 mSeed;
-            WPNoise *mNoise;  // Owned
+            std::unique_ptr<WPNoise> mNoise;
         };
 
     }  // namespace procedural

@@ -24,6 +24,7 @@ if(BUILD_TESTING)
         if(WIN32)
         add_executable(ResourcePackageJobTests ${WP_ROOT}/Tests/cpp/ResourcePackageJobTests.cpp
             ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+            ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaDebugger.cpp
             ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
             ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp
             ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaScriptCompiler.cpp)
@@ -31,14 +32,14 @@ if(BUILD_TESTING)
             BOOST_BIND_GLOBAL_PLACEHOLDERS WP_PROFILE_LUA_CALLS=0)
         target_include_directories(ResourcePackageJobTests PRIVATE
             ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
-            ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+            ${WP_LUA_INCLUDE_DIR} ${WP_ROOT}/Dependencies/luabind/inc
             ${WP_ROOT}/Dependencies/luabind/inc/luabind)
         target_link_directories(ResourcePackageJobTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
         target_link_libraries(ResourcePackageJobTests PRIVATE
             $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPSQLite>
-            $<TARGET_LINKER_FILE:WPLuaBind> lua lua_cjson luabind)
+            $<TARGET_LINKER_FILE:WPLuaBind> lua lua_cjson luabind Boost::json ws2_32)
         add_dependencies(ResourcePackageJobTests WorkphoneResourcePackage)
         set_target_properties(ResourcePackageJobTests PROPERTIES FOLDER Tests/Cpp)
         add_test(NAME WorkphoneAssets.package_jobs

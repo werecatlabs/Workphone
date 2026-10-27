@@ -16,6 +16,7 @@
 #include "WPProcedural/WPNoise.hpp"
 #include <cmath>
 #include <algorithm>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -47,21 +48,47 @@ namespace workphone
         // ===================================================================
         // WPRoadSystem - constructor / destructor
         // ===================================================================
-        WPRoadSystem::WPRoadSystem( u32 seed ) : mSeed( seed )
+        WPRoadSystem::WPRoadSystem( u32 seed ) :
+            mSeed( seed ), mNoise( std::make_unique<WPNoise>( seed ) )
         {
-            mNoise = new WPNoise( seed );
         }
 
-        WPRoadSystem::~WPRoadSystem()
+        WPRoadSystem::WPRoadSystem( const WPRoadSystem &other ) :
+            oldTarmac( other.oldTarmac ), potholes( other.potholes ), manholes( other.manholes ),
+            gullyGrates( other.gullyGrates ), arrows( other.arrows ), pedXing( other.pedXing ),
+            mSeed( other.mSeed ),
+            mNoise( other.mNoise ? std::make_unique<WPNoise>( *other.mNoise ) : nullptr )
         {
-            delete mNoise;
         }
+
+        WPRoadSystem &WPRoadSystem::operator=( const WPRoadSystem &other )
+        {
+            if( this != &other ) { WPRoadSystem candidate( other ); swap( candidate ); }
+            return *this;
+        }
+
+        void WPRoadSystem::swap( WPRoadSystem &other ) noexcept
+        {
+            oldTarmac.swap( other.oldTarmac ); potholes.swap( other.potholes );
+            manholes.swap( other.manholes ); gullyGrates.swap( other.gullyGrates );
+            arrows.swap( other.arrows ); pedXing.swap( other.pedXing );
+            std::swap( mSeed, other.mSeed ); mNoise.swap( other.mNoise );
+        }
+
+        WPRoadSystem::~WPRoadSystem() = default;
 
         void WPRoadSystem::setSeed( u32 seed )
         {
+            if( mNoise && mSeed == seed ) return;
+            auto candidate = std::make_unique<WPNoise>( seed );
+            mNoise.swap( candidate );
             mSeed = seed;
-            delete mNoise;
-            mNoise = new WPNoise( seed );
+        }
+
+        const WPNoise &WPRoadSystem::noise() const
+        {
+            if( !mNoise ) throw std::logic_error( "A moved-from road system must be reseeded before noise-dependent generation" );
+            return *mNoise;
         }
 
         // ===================================================================
@@ -274,13 +301,13 @@ namespace workphone
                     // --- Wear variation ---
                     // FBM noise for surface irregularities (aggregate bumps)
                     real_Num wear =
-                        ( mNoise->fbm3( x * 0.55f + 3.0f, 2.2f, z * 0.35f, 3 ) - 0.5f ) * 0.07f;
+                        ( noise().fbm3( x * 0.55f + 3.0f, 2.2f, z * 0.35f, 3 ) - 0.5f ) * 0.07f;
 
                     // --- Potholes (rare, on older roads) ---
                     real_Num pothole = 0.0f;
                     if( spec.surface == RoadSurface::Asphalt )
                     {
-                        real_Num p = mNoise->worley2( x * 0.3f, z * 0.3f );
+                        real_Num p = noise().worley2( x * 0.3f, z * 0.3f );
                         if( p < 0.08f )
                         {
                             pothole = -0.04f * ( 0.08f - p ) / 0.08f;
@@ -291,7 +318,7 @@ namespace workphone
 
                     // --- Color mask (PBR variation) ---
                     // r = wear (exposed substrate), g = grime, b = AO
-                    real_Num baseNoise = mNoise->fbm3( x * 0.7f + 4.4f, 0, z * 0.7f + 4, 3 );
+                    real_Num baseNoise = noise().fbm3( x * 0.7f + 4.4f, 0, z * 0.7f + 4, 3 );
                     real_Num edgeWear = std::max( 0.0f, ( std::abs( normX ) - 0.7f ) / 0.3f ) * 0.4f;
                     real_Num dustAccum = std::max( 0.0f, std::abs( normX ) - 0.5f ) * 0.3f;
 
@@ -350,7 +377,7 @@ namespace workphone
             {
                 // Slab length varies (3.2 - 6.5m)
                 real_Num slabLen =
-                    3.2f + ( mNoise->noise3( slabIndex * 7.3f, 0, spec.seed ) * 0.5f + 0.5f ) * 3.3f;
+                    3.2f + ( noise().noise3( slabIndex * 7.3f, 0, spec.seed ) * 0.5f + 0.5f ) * 3.3f;
                 if( z + slabLen > length )
                 {
                     slabLen = length - z;
@@ -358,7 +385,7 @@ namespace workphone
 
                 // Gap between slabs (sometimes a larger gap for a driveway)
                 real_Num gap = 0.06f;
-                real_Num gapTest = mNoise->noise3( slabIndex * 11.1f, 0, spec.seed + 1 );
+                real_Num gapTest = noise().noise3( slabIndex * 11.1f, 0, spec.seed + 1 );
                 if( gapTest < 0.12f )
                 {
                     gap = 0.6f + ( gapTest + 0.12f ) * 4.0f;  // driveway ramp gap
@@ -366,7 +393,7 @@ namespace workphone
 
                 // Slab height variation (some slabs are slightly sunken)
                 real_Num slabH =
-                    sidewalkH + ( mNoise->noise3( slabIndex * 3.7f, 0, spec.seed + 2 ) - 0.5f ) * 0.024f;
+                    sidewalkH + ( noise().noise3( slabIndex * 3.7f, 0, spec.seed + 2 ) - 0.5f ) * 0.024f;
 
                 // Build slab as a chamfered box
                 real_Num slabX = roadHalfW + sidewalkW * 0.5f;
@@ -384,7 +411,7 @@ namespace workphone
 
                 // Color mask: broken corners get more wear
                 real_Num cornerWear = 0.0f;
-                real_Num cornerTest = mNoise->noise3( slabIndex * 5.5f, 0, spec.seed + 3 );
+                real_Num cornerTest = noise().noise3( slabIndex * 5.5f, 0, spec.seed + 3 );
                 if( cornerTest < 0.15f )
                 {
                     cornerWear = 0.8f;
@@ -392,7 +419,7 @@ namespace workphone
 
                 Vector3<real_Num> colorMask(
                     0.5f + cornerWear * 0.3f,                         // r: wear
-                    0.4f + mNoise->noise3( slabIndex, 0, 4 ) * 0.2f,  // g: grime
+                    0.4f + noise().noise3( slabIndex, 0, 4 ) * 0.2f,  // g: grime
                     0.15f                                             // b: AO
                 );
 
@@ -495,7 +522,7 @@ namespace workphone
             {
                 real_Num z0 = i * segLen;
                 real_Num z1 = z0 + segLen;
-                real_Num segH = kerbH + ( mNoise->noise3( i * 2.3f, 0, spec.seed ) - 0.5f ) * 0.04f;
+                real_Num segH = kerbH + ( noise().noise3( i * 2.3f, 0, spec.seed ) - 0.5f ) * 0.04f;
 
                 // 8 corners of the kerb segment
                 Vector3<real_Num> p0( x - kerbW * 0.5f, 0, z0 );
@@ -743,17 +770,17 @@ namespace workphone
                 for( u32 i = 0; i < numDrifts; ++i )
                 {
                     real_Num z = ( real_Num( i ) / numDrifts ) * length +
-                                 ( mNoise->noise3( i * 3.1f, 0, seedOffset ) * 0.5f + 0.5f ) * 1.5f;
+                                 ( noise().noise3( i * 3.1f, 0, seedOffset ) * 0.5f + 0.5f ) * 1.5f;
                     if( z > length )
                     {
                         continue;
                     }
 
                     // Position: just inside the kerb
-                    real_Num x = side * ( hw - 0.3f - mNoise->noise3( i, 0, seedOffset + 1 ) * 0.5f );
+                    real_Num x = side * ( hw - 0.3f - noise().noise3( i, 0, seedOffset + 1 ) * 0.5f );
                     real_Num driftR =
-                        0.35f + mNoise->noise3( i * 5.5f, 0, seedOffset + 2 ) * 0.5f + 0.4f;
-                    real_Num driftH = 0.03f + mNoise->noise3( i * 2.7f, 0, seedOffset + 3 ) * 0.02f;
+                        0.35f + noise().noise3( i * 5.5f, 0, seedOffset + 2 ) * 0.5f + 0.4f;
+                    real_Num driftH = 0.03f + noise().noise3( i * 2.7f, 0, seedOffset + 3 ) * 0.02f;
 
                     // Build a small flattened dome
                     u32 segs = 8;
@@ -763,7 +790,7 @@ namespace workphone
                         real_Num a = ( real_Num( s ) / segs ) * 2.0f * PI;
                         real_Num r =
                             driftR *
-                            ( 0.7f + mNoise->noise3( std::cos( a ) * 3, 0, std::sin( a ) * 3 ) * 0.3f );
+                            ( 0.7f + noise().noise3( std::cos( a ) * 3, 0, std::sin( a ) * 3 ) * 0.3f );
                         real_Num px = x + std::cos( a ) * r;
                         real_Num pz = z + std::sin( a ) * r;
 
@@ -794,10 +821,10 @@ namespace workphone
             u32 numPebbles = static_cast<u32>( length * 2.0f );
             for( u32 i = 0; i < numPebbles; ++i )
             {
-                real_Num z = ( mNoise->noise3( i * 7.7f, 0, seedOffset + 10 ) * 0.5f + 0.5f ) * length;
-                real_Num side = ( mNoise->noise3( i * 3.3f, 0, seedOffset + 11 ) > 0.5f ) ? 1.0f : -1.0f;
-                real_Num x = side * ( hw - 0.05f - mNoise->noise3( i, 0, seedOffset + 12 ) * 0.55f );
-                real_Num r = 0.03f + mNoise->noise3( i * 11, 0, seedOffset + 13 ) * 0.03f;
+                real_Num z = ( noise().noise3( i * 7.7f, 0, seedOffset + 10 ) * 0.5f + 0.5f ) * length;
+                real_Num side = ( noise().noise3( i * 3.3f, 0, seedOffset + 11 ) > 0.5f ) ? 1.0f : -1.0f;
+                real_Num x = side * ( hw - 0.05f - noise().noise3( i, 0, seedOffset + 12 ) * 0.55f );
+                real_Num r = 0.03f + noise().noise3( i * 11, 0, seedOffset + 13 ) * 0.03f;
 
                 // Small octahedron for each pebble
                 u32 baseIdx = static_cast<u32>( mesh.vertices.size() );
@@ -934,7 +961,7 @@ namespace workphone
                     real_Num y = ( 1.0f - r * r * 0.5f ) * 0.04f;
 
                     // Asphalt variation
-                    real_Num baseNoise = mNoise->fbm3( x * 0.7f, 0, z * 0.7f, 3 );
+                    real_Num baseNoise = noise().fbm3( x * 0.7f, 0, z * 0.7f, 3 );
                     y += ( baseNoise - 0.5f ) * 0.02f;
 
                     Vector3<real_Num> mask( 0.3f, 0.1f + baseNoise * 0.2f, 0.2f );

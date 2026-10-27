@@ -16,6 +16,7 @@
 #define WPNoise_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <cmath>
 #include <cstdint>
 
@@ -30,7 +31,7 @@ namespace workphone
          * once in the constructor from a seed value, and every subsequent
          * call is a pure function of (x, y, z, seed).
          */
-        class WPProcedural_API WPNoise
+        class WPProcedural_API WPNoise : public SourceBudgetObject
         {
         public:
             explicit WPNoise( u32 seed = 0x12345678 );
@@ -104,7 +105,7 @@ namespace workphone
 
         private:
             u32 mSeed;
-            u8 mPerm[512];  // Doubled permutation table for wraparound
+            u8 mPerm[512];  // Embedded table; charged with its owner, never a separate heap lease.
 
             void buildPermutation();
             real_Num fade( real_Num t ) const;

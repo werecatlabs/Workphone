@@ -3,12 +3,16 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 #include <WPProcedural/WPRoadSystem.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone::procedural
 {
-    class WPProcedural_API CRoadSystem : public IRoadSystem
+    class WPProcedural_API CRoadSystem : public IRoadSystem, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+
         void setSeed( u32 seed ) override;
         real_Num getRoadWidth( RoadClass cls ) override;
         real_Num getSidewalkWidth( RoadClass cls ) override;

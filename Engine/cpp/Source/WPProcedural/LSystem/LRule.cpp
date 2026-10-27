@@ -8,13 +8,26 @@ namespace workphone
     {
         LRule::LRule() = default;
 
-        LRule::LRule( const String &pre, const String &succ )
+        LRule::LRule( const String &pre, const String &succ ) :
+            m_predecessor( pre ), m_successor( succ )
         {
-            m_predecessor = pre;
-            m_successor = succ;
         }
 
-        void LRule::print()
+        LRule::~LRule()
+        {
+            unload( nullptr );
+        }
+
+        void LRule::unload( SmartPtr<ISharedObject> data )
+        {
+            String predecessor;
+            String successor;
+            predecessor.swap( m_predecessor );
+            successor.swap( m_successor );
+            ILSystemRule::unload( data );
+        }
+
+        void LRule::print() const
         {
             std::cout << "\t\t\t\t" << m_predecessor << "->" << m_successor << std::endl;
         }
@@ -26,7 +39,8 @@ namespace workphone
 
         void LRule::setPredecessor( const String &predecessor )
         {
-            m_predecessor = predecessor;
+            String candidate( predecessor );
+            m_predecessor.swap( candidate );
         }
 
         String LRule::getSuccessor() const
@@ -36,7 +50,8 @@ namespace workphone
 
         void LRule::setSuccessor( const String &successor )
         {
-            m_successor = successor;
+            String candidate( successor );
+            m_successor.swap( candidate );
         }
 
         bool operator==( LRule &rule1, LRule &rule2 )
