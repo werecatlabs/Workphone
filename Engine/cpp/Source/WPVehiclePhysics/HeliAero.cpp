@@ -972,7 +972,7 @@ namespace workphone::vehicle
         WP_ASSERT( Math<physics_Num>::isFinite( TP[9] ) );
         WP_ASSERT( Math<physics_Num>::isFinite( TP[10] ) );
 
-        callback( N1, N2, TP );
+        //callback( N1, N2, TP );
 
         WP_ASSERT( Math<physics_Num>::isFinite( TP[0] ) );
         WP_ASSERT( Math<physics_Num>::isFinite( TP[1] ) );
