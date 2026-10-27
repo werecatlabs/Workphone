@@ -360,23 +360,22 @@ namespace workphone::scene
 
     void Dropdown::setButton( SmartPtr<Button> button )
     {
-        auto pButton = button.get();
-
-        if( m_button.load() != pButton )
+        if( m_button.load() != button )
         {
-            m_button = pButton;
+            m_button = button;
 
             auto button = getButton();
             if( button )
             {
-                auto owner = WeakPtr<Dropdown>( this );
-                auto func = [owner, pButton]( hash_type value ) {
-                    if( auto dropdown = owner.lock() )
+                auto owner = getSharedFromThis<Dropdown>();
+                auto func = [owner, button]( hash_type value ) {
+                    if( SmartPtr<Dropdown> dropdown = owner )
                     {
-                        if( dropdown->getButton() != pButton )
+                        if( dropdown->getButton() != button )
                         {
                             return;
                         }
+
                         if( auto actor = dropdown->getActorPtr();
                             actor && dropdown->isEnabled() && actor->isEnabledInScene() )
                         {
