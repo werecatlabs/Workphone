@@ -22,6 +22,10 @@
 #include <iomanip>
 #include <cstdint>
 
+#if WP_BUILD_FILEWATCHER
+#    include <FileWatcher/FileWatcher.h>
+#endif
+
 #if WP_USE_BOOST
 #    include <boost/uuid/uuid.hpp>
 #    include <boost/uuid/uuid_generators.hpp>
@@ -142,11 +146,13 @@ namespace workphone
                 m_folderArchives.clear();
                 m_fileArchives.clear();
 
+#if WP_BUILD_FILEWATCHER
                 if( m_fileWatcher )
                 {
                     delete m_fileWatcher;
                     m_fileWatcher = nullptr;
                 }
+#endif
 
                 if( m_fileListener )
                 {

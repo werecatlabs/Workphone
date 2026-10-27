@@ -97,7 +97,7 @@ namespace workphone::scene
             {
                 m_eventHash = static_cast<hash_type>( std::stoll( hashStr ) );
             }
-            catch( const std::exception &e )
+            catch( const std::exception & )
             {
                 m_eventHash = 0;
             }

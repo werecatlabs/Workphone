@@ -3,6 +3,8 @@
 #include <Workphone/Graphics/Debug.hpp>
 #include <boost/test/unit_test.hpp>
 #include <boost/test/tools/floating_point_comparison.hpp>
+#include <cstdlib>
+#include <limits>
 #include <set>
 #include <vector>
 
@@ -221,6 +223,51 @@ BOOST_AUTO_TEST_CASE( math_isnan_isfinite )
     BOOST_CHECK( Math<float>::isFinite( 1.0f ) );
     BOOST_CHECK( !Math<float>::isFinite( std::numeric_limits<float>::infinity() ) );
     BOOST_CHECK( !Math<float>::isFinite( -std::numeric_limits<float>::infinity() ) );
+}
+
+namespace
+{
+    template <class T>
+    void checkIntegerMath()
+    {
+        const auto low = std::numeric_limits<T>::lowest();
+        const auto high = std::numeric_limits<T>::max();
+        BOOST_CHECK( Math<T>::isFinite( low ) );
+        BOOST_CHECK( Math<T>::isFinite( high ) );
+        BOOST_CHECK( !Math<T>::isNaN( low ) );
+        BOOST_CHECK( !Math<T>::isNaN( high ) );
+        BOOST_CHECK( Math<T>::equals( high, high ) );
+        BOOST_CHECK( !Math<T>::equals( low, high ) );
+        BOOST_CHECK( !Math<T>::equals( T( 1 ), T( 2 ) ) );
+        BOOST_CHECK_EQUAL( Math<T>::RangedRandom( high, high, 17 ), high );
+
+#ifndef WP_USE_RANDOMC_LIB
+        std::srand( 314159 );
+        const auto expected = static_cast<s64>( low ) +
+                              ( static_cast<s64>( high ) - static_cast<s64>( low ) ) *
+                                  std::rand() / RAND_MAX;
+        std::srand( 314159 );
+        BOOST_CHECK_EQUAL( static_cast<s64>( Math<T>::RangedRandom( low, high, 17 ) ), expected );
+#endif
+    }
+}  // namespace
+
+BOOST_AUTO_TEST_CASE( math_small_integer_definitions )
+{
+    checkIntegerMath<s8>();
+    checkIntegerMath<u8>();
+    checkIntegerMath<s16>();
+    checkIntegerMath<u16>();
+    checkIntegerMath<u32>();
+}
+
+BOOST_AUTO_TEST_CASE( math_unsigned_inverse_trigonometry )
+{
+    BOOST_CHECK_EQUAL( Math<u32>::ASin( 0 ), 0u );
+    BOOST_CHECK_EQUAL( Math<u32>::ASin( 1 ), 1u );
+    BOOST_CHECK_EQUAL( Math<u32>::ACos( 0 ), 1u );
+    BOOST_CHECK_EQUAL( Math<u32>::ACos( 1 ), 0u );
+    BOOST_CHECK_EQUAL( Math<u32>::ACos( std::numeric_limits<u32>::max() ), 0u );
 }
 
 BOOST_AUTO_TEST_CASE( math_normalize_value )

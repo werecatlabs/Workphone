@@ -149,7 +149,7 @@ namespace workphone
     auto ranged_random( T min, T max, [[maybe_unused]] int seed = 0 ) -> T
     {
 #ifndef WP_USE_RANDOMC_LIB
-        return min + ( max - min ) * rand() / 0x7fff;
+        return min + ( max - min ) * rand() / RAND_MAX;
 #else
         TRandomMersenne random( seed );
 
@@ -159,6 +159,12 @@ namespace workphone
         f32 result = (f32)min + ( (f32)max - (f32)min ) * randRatio;
         return (T)result;
 #endif
+    }
+
+    template <class T>
+    auto Math<T>::equals( const T af, const T bf, [[maybe_unused]] const T maxDiff ) -> bool
+    {
+        return af == bf;
     }
 
     template <>
@@ -238,6 +244,21 @@ namespace workphone
 #endif
     }
 
+    template <class T>
+    auto Math<T>::RangedRandom( T min, T max, s32 seed ) -> T
+    {
+        const auto randomSeed = seed ? seed : m_randomSeed++;
+        if constexpr( std::is_integral_v<T> && sizeof( T ) < sizeof( s64 ) )
+        {
+            // Widen before multiplying the range by rand(), including the full u32 range.
+            return static_cast<T>( ranged_random<s64>( min, max, randomSeed ) );
+        }
+        else
+        {
+            return ranged_random<T>( min, max, randomSeed );
+        }
+    }
+
     template <>
     auto Math<s32>::RangedRandom( s32 min, s32 max, s32 seed ) -> s32
     {
@@ -304,6 +325,12 @@ namespace workphone
         return ranged_random<f64>( min, max, m_randomSeed++ );
     }
 
+    template <class T>
+    auto Math<T>::isFinite( [[maybe_unused]] T value ) -> bool
+    {
+        return true;
+    }
+
     template <>
     auto Math<s32>::isFinite( s32 value ) -> bool
     {
@@ -339,6 +366,12 @@ namespace workphone
     auto Math<f64>::isFinite( f64 value ) -> bool
     {
         return std::isfinite( value );
+    }
+
+    template <class T>
+    auto Math<T>::isNaN( [[maybe_unused]] T value ) -> bool
+    {
+        return false;
     }
 
     template <>
@@ -401,7 +434,7 @@ namespace workphone
     template <class T>
     auto Math<T>::ASin( T fValue ) -> T
     {
-        if( T( -1.0 ) < fValue )
+        if( -1.0 < static_cast<long double>( fValue ) )
         {
             if( fValue < T( 1.0 ) )
             {
@@ -472,7 +505,7 @@ namespace workphone
     template <class T>
     auto Math<T>::ACos( T fValue ) -> T
     {
-        if( T( -1.0 ) < fValue )
+        if( -1.0 < static_cast<long double>( fValue ) )
         {
             if( fValue < T( 1.0 ) )
             {

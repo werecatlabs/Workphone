@@ -8,6 +8,8 @@
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
+#include <limits>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -764,7 +766,11 @@ namespace workphone
 
     void FSMManager::setSize( size_t size )
     {
-        m_size = size;
+        if( size > static_cast<size_t>( std::numeric_limits<s32>::max() ) )
+        {
+            throw std::length_error( "FSM capacity exceeds the supported s32 range" );
+        }
+        m_size = static_cast<s32>( size );
     }
 
     auto FSMManager::getGrowSize() const -> size_t
@@ -774,7 +780,11 @@ namespace workphone
 
     void FSMManager::setGrowSize( size_t growSize )
     {
-        m_growSize = growSize;
+        if( growSize > static_cast<size_t>( std::numeric_limits<s32>::max() ) )
+        {
+            throw std::length_error( "FSM grow size exceeds the supported s32 range" );
+        }
+        m_growSize = static_cast<s32>( growSize );
     }
 
     auto FSMManager::getPreviousStates() const -> Array<atomic_u8>

@@ -124,7 +124,7 @@ namespace workphone::render
     {
         Vector4F result;
         double sum = 0;
-        for( size_t i = 0; i < 4; ++i )
+        for( s32 i = 0; i < 4; ++i )
         {
             result[i] = std::isfinite( weights[i] ) ? std::max( 0.0f, weights[i] ) : 0;
             sum += result[i];
@@ -133,7 +133,7 @@ namespace workphone::render
         {
             return Vector4F( 1, 0, 0, 0 );
         }
-        for( size_t i = 0; i < 4; ++i )
+        for( s32 i = 0; i < 4; ++i )
         {
             result[i] = f32( result[i] / sum );
         }
@@ -187,7 +187,7 @@ namespace workphone::render
         {
             return fail( error, "Terrain detail normal identifier is invalid" );
         }
-        for( size_t channel = 0; channel < 4; ++channel )
+        for( s32 channel = 0; channel < 4; ++channel )
         {
             if( !inRange( appearance.macroTint[channel], 0, 1 ) ||
                 !inRange( appearance.snowTint[channel], 0, 1 ) )
@@ -236,7 +236,7 @@ namespace workphone::render
         for( const auto &weights : data.layerWeights )
         {
             double sum = 0;
-            for( size_t i = 0; i < 4; ++i )
+            for( s32 i = 0; i < 4; ++i )
             {
                 if( !std::isfinite( weights[i] ) || weights[i] < 0 || weights[i] > 1 )
                 {
@@ -281,7 +281,7 @@ namespace workphone::render
                 return fail( error,
                              "Terrain material scalars are outside their finite supported ranges" );
             }
-            for( size_t i = 0; i < 4; ++i )
+            for( s32 i = 0; i < 4; ++i )
             {
                 if( !std::isfinite( layer.tint[i] ) || layer.tint[i] < 0 || layer.tint[i] > 1 )
                 {
@@ -682,7 +682,7 @@ namespace workphone::render
         weights.reserve( data->layerWeights.size() * 4 );
         for( const auto &weight : data->layerWeights )
         {
-            for( size_t channel = 0; channel < 4; ++channel )
+            for( s32 channel = 0; channel < 4; ++channel )
             {
                 weights.push_back( weight[channel] );
             }
@@ -899,7 +899,7 @@ namespace workphone::render
                     return fail( error, "Terrain v2 requires four layers and matching weights/holes" );
                 }
                 Vector4F weight;
-                size_t channel = 0;
+                s32 channel = 0;
                 for( auto item = weights->child; item; item = item->next )
                 {
                     if( !number( item ) )
@@ -1060,7 +1060,7 @@ namespace workphone::render
                     return fail( error, "Terrain appearance vector is invalid" );
                 }
                 Vector2F mask;
-                size_t channel = 0;
+                s32 channel = 0;
                 for( auto value = masks->child; value; value = value->next )
                 {
                     if( !number( value ) )
