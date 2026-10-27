@@ -8,7 +8,9 @@ static wp_f32 wp_grid_dot( const wp_f32 *a, const wp_f32 *b )
 { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
 static wp_s32 wp_grid_index( wp_f32 unit, wp_u32 count )
 {
-    wp_s32 result=(wp_s32)floor((double)(unit*(wp_f32)count));
+    wp_s32 result;
+    if(unit<=0)return 0;if(unit>=1)return (wp_s32)count-1;
+    result=(wp_s32)floor((double)(unit*(wp_f32)count));
     if(result<0)return 0;if(result>=(wp_s32)count)return (wp_s32)count-1;return result;
 }
 static void wp_grid_ratio( wp_f32 center, wp_f32 radius, wp_f32 wmin, wp_f32 wmax,
@@ -49,12 +51,14 @@ wp_s32 wp_light_grid_build( const wp_local_light *lights, wp_u32 count,
         bounds[i].visible=0;
         for(j=0;j<3;++j)delta[j]=lights[i].position[j]-camera->position[j];
         depth=wp_grid_dot(delta,camera->forward);zmin=depth-lights[i].radius;zmax=depth+lights[i].radius;
+        if(!wp_grid_finite(depth) || !wp_grid_finite(zmin) || !wp_grid_finite(zmax))return 0;
         if(zmax<camera->z_near || zmin>camera->z_far)continue;
         for(j=0;j<4;++j)
         {
             const wp_f32 *row=camera->view_projection+j*4;
             clip[j]=wp_grid_dot(row,lights[i].position)+row[3];
             spread[j]=lights[i].radius*(wp_f32)sqrt((double)wp_grid_dot(row,row));
+            if(!wp_grid_finite(clip[j]) || !wp_grid_finite(spread[j]))return 0;
         }
         wmin=clip[3]-spread[3];wmax=clip[3]+spread[3];if(wmax<=0)continue;
         xmin=ymin=-1;xmax=ymax=1;

@@ -52,6 +52,8 @@ namespace workphone::editor
         fs::path outputDirectory( SmartPtr<Project> project, const Properties &s )
         {
             auto arch = architecture( s );
+            if( s.getPropertyAsInt( "platform.active", 0 ) == 3 &&
+                s.getPropertyAsBool( "build.android.universalStaging", false ) ) arch = "Universal";
             std::replace( arch.begin(), arch.end(), ';', '_' );
             return fs::u8path( project->getPath().c_str() ) / "Build" / platform( s ).c_str() /
                    arch.c_str() / configuration( s ).c_str();
@@ -89,6 +91,18 @@ namespace workphone::editor
                 }
             }
             return text;
+        }
+        String groovyQuote( const String &value )
+        {
+            String result = "'";
+            for( const auto c : value )
+            {
+                if( c == '\0' || c == '\n' || c == '\r' )
+                    throw std::invalid_argument( "Invalid Android profile value" );
+                if( c == '\\' || c == '\'' ) result += '\\';
+                result += c;
+            }
+            return result + "'";
         }
         Array<String> scenePaths( const Properties &s )
         {
@@ -229,7 +243,7 @@ namespace workphone::editor
         try
         {
             if( !settings ) throw std::invalid_argument( "Project profile is unavailable" );
-            bool domain = false;
+            bool domain = false, assetDomain=false, serviceDomain=false;
             String requested, runtimeKeys, buildKeys;
             const auto appendKey=[](String &list,const String &key){if(!list.empty())list+="; ";list+=key;};
             const char *textureKeys[]={"assets.textureCompression.pc","assets.textureCompression.mac","assets.textureCompression.ios","assets.textureCompression.android"};
@@ -238,6 +252,8 @@ namespace workphone::editor
             for( const auto &property : settings->getPropertiesAsArray() )
             {
                 const auto key = property.getName();
+                serviceDomain=serviceDomain || key.find("services.")==0 || key.find("scripting.")==0 || key.find("network.")==0;
+                assetDomain=assetDomain || key.find("assets.")==0 || key=="platform.active";
                 if( key.find( "services." ) == 0 || key.find( "scripting." ) == 0 || key.find( "network." ) == 0 ||
                     key.find( "build." ) == 0 || key.find( "assets." ) == 0 || key=="platform.active" )
                 {
@@ -256,8 +272,8 @@ namespace workphone::editor
             const auto root = editor && editor->getProject() ? editor->getProject()->getPath() : app->getProjectPath();
             if( root.empty() ) return pendingReply("Project backends will initialize when a project directory is available.");
             String error;
-            if( !writeProjectAssetPolicy( root, settings, error ) ) throw std::runtime_error( error.c_str() );
-            if( !applyProjectServiceSettings( settings, root, error ) )
+            if( assetDomain && !writeProjectAssetPolicy( root, settings, error ) ) throw std::runtime_error( error.c_str() );
+            if( serviceDomain && !applyProjectServiceSettings( settings, root, error ) )
                 throw std::runtime_error( error.c_str() );
             auto reply=resultFor( true, "Project script policy, local service providers and network lifecycle applied." );
             reply->setProperty("appliedKeys",runtimeKeys);reply->setProperty("pendingKeys",buildKeys);return reply;
@@ -320,30 +336,48 @@ namespace workphone::editor
 #else
             const auto gradle = androidProject / "gradlew";
 #endif
-            const auto task = settings->getPropertyAsBool( "build.android.appBundle", true ) ? "bundleRelease" : "assembleRelease";
+            const bool debug = settings->getPropertyAsInt( "build.config", 1 ) == 0;
+            const String variant = debug ? "Debug" : "Release";
+            const String variantDirectory = debug ? "debug" : "release";
+            const auto task = String( settings->getPropertyAsBool( "build.android.appBundle", true ) ? "bundle" : "assemble" ) + variant;
             const auto init = output / "WorkphoneAndroidProfile.gradle";
-            String gradleProfile = "allprojects { p -> p.plugins.withId('com.android.application') {\n";
-            gradleProfile += " p.android.defaultConfig.minSdk = " + StringUtil::toString( settings->getPropertyAsInt( "build.android.minSdk", 26 ) ) + "\n";
-            gradleProfile += " p.android.defaultConfig.targetSdk = " + StringUtil::toString( settings->getPropertyAsInt( "build.android.targetSdk", 35 ) ) + "\n";
-            gradleProfile += " p.android.sourceSets.main.jniLibs.srcDirs += [new File(" + cmakeQuote( ( output / "native" ).generic_u8string().c_str() ) + ")]\n";
-            gradleProfile += "} }\n";
-            writeText( init, gradleProfile );
             const auto id = settings->getProperty( "project.bundleId", "com.company.workphone" );
             if( id.empty() || id.find_first_not_of( "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_." ) != String::npos )
                 throw std::invalid_argument( "Android bundle identifier is invalid" );
+            String gradleProfile = "allprojects { p -> p.plugins.withId('com.android.application') { p.androidComponents.finalizeDsl { android ->\n";
+            gradleProfile += " p.android.defaultConfig.minSdk = " + StringUtil::toString( settings->getPropertyAsInt( "build.android.minSdk", 26 ) ) + "\n";
+            gradleProfile += " p.android.defaultConfig.targetSdk = " + StringUtil::toString( settings->getPropertyAsInt( "build.android.targetSdk", 35 ) ) + "\n";
+            gradleProfile += " p.android.defaultConfig.applicationId = " + groovyQuote( id ) + "\n";
+            gradleProfile += " p.android.defaultConfig.versionName = " + groovyQuote( settings->getProperty( "project.version", "0.1.0" ) ) + "\n";
+            gradleProfile += " p.android.defaultConfig.manifestPlaceholders['workphoneProductName'] = " + groovyQuote( settings->getProperty( "project.productName" ) ) + "\n";
+            const bool universal = settings->getPropertyAsBool( "build.android.universalStaging" );
+            gradleProfile += " p.android.defaultConfig.ndk.abiFilters.clear()\n p.android.defaultConfig.ndk.abiFilters.addAll(";
+            gradleProfile += universal ? "['armeabi-v7a','arm64-v8a','x86','x86_64']" : "[" + groovyQuote( architecture( *settings ) ) + "]";
+            gradleProfile += ")\n p.android.splits.abi.enable = false\n";
+            gradleProfile += " p.android.sourceSets.main.jniLibs.srcDirs += [new File(" + groovyQuote( ( output / "native" ).generic_u8string().c_str() ) + ")]\n";
+            const auto signing = settings->getProperty( "build.signingProfile", "Default" );
+            if( !signing.empty() && signing != "Default" )
+            {
+                gradleProfile += " def signing = p.android.signingConfigs.findByName(" + groovyQuote( signing ) + ")\n";
+                gradleProfile += " if (signing == null) throw new GradleException('Project signing profile is not defined')\n";
+                gradleProfile += " p.android.buildTypes.getByName(" + groovyQuote( variantDirectory ) + ").signingConfig = signing\n";
+            }
+            gradleProfile += "} } }\n";
+            writeText( init, gradleProfile );
             writeText( output / "AndroidManifest.xml", "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"" + id +
                 "\"><uses-sdk android:minSdkVersion=\"" + StringUtil::toString( settings->getPropertyAsInt( "build.android.minSdk", 26 ) ) +
                 "\" android:targetSdkVersion=\"" + StringUtil::toString( settings->getPropertyAsInt( "build.android.targetSdk", 35 ) ) +
                 "\"/><application android:label=\"" + quotedXml( settings->getProperty( "project.productName" ) ) + "\"/></manifest>" );
-            script += " add_custom_command(TARGET Plugin POST_BUILD COMMAND " + cmakeQuote( gradle.generic_u8string().c_str() ) +
+            if( !settings->getPropertyAsBool( "build.android.stageOnly" ) )
+                script += " add_custom_command(TARGET Plugin POST_BUILD COMMAND " + cmakeQuote( gradle.generic_u8string().c_str() ) +
                 " --project-dir " + cmakeQuote( androidProject.generic_u8string().c_str() ) + " --init-script " +
                 cmakeQuote( init.generic_u8string().c_str() ) + " " + task + " COMMAND ${CMAKE_COMMAND} -E copy_directory " +
                 cmakeQuote( ( androidProject / "app/build/outputs" /
-                    ( settings->getPropertyAsBool( "build.android.appBundle", true ) ? "bundle/release" : "apk/release" ) ).generic_u8string().c_str() ) +
+                    ( String( settings->getPropertyAsBool( "build.android.appBundle", true ) ? "bundle/" : "apk/" ) + variantDirectory ).c_str() ).generic_u8string().c_str() ) +
                 " " + cmakeQuote( ( output / "Android" ).generic_u8string().c_str() ) + " VERBATIM)\n";
         }
         const auto signing = settings->getProperty( "build.signingProfile", "Default" );
-        if( !signing.empty() && signing != "Default" )
+        if( settings->getPropertyAsInt( "platform.active" ) != 3 && !signing.empty() && signing != "Default" )
             script += " if(WIN32)\n  find_program(WP_SIGNTOOL signtool REQUIRED)\n  add_custom_command(TARGET Plugin POST_BUILD COMMAND ${WP_SIGNTOOL} sign /fd SHA256 /sha1 " + cmakeQuote( signing ) +
                       " $<TARGET_FILE:Plugin> VERBATIM)\n elseif(APPLE)\n  add_custom_command(TARGET Plugin POST_BUILD COMMAND codesign --force --sign " + cmakeQuote( signing ) + " $<TARGET_FILE:Plugin> VERBATIM)\n endif()\n";
         script += "endfunction()\ncmake_language(DEFER CALL workphone_apply_project_profile)\n";
@@ -374,6 +408,8 @@ namespace workphone::editor
             if( !ndk ) throw std::runtime_error( "Set ANDROID_NDK_HOME to the installed Android NDK" );
             const auto toolchain = fs::u8path( ndk ) / "build/cmake/android.toolchain.cmake";
             if( !fs::is_regular_file( toolchain ) ) throw std::runtime_error( "Android NDK toolchain file is missing" );
+            args.push_back( "-G" ); args.push_back( "Ninja" );
+            args.push_back( "-DCMAKE_BUILD_TYPE=" + configuration( *settings ) );
             args.push_back( "-DCMAKE_TOOLCHAIN_FILE=" + String( toolchain.generic_u8string().c_str() ) );
             args.push_back( "-DANDROID_ABI=" + architecture( *settings ) );
             args.push_back( "-DANDROID_PLATFORM=android-" + StringUtil::toString( settings->getPropertyAsInt( "build.android.minSdk", 26 ) ) );
@@ -394,8 +430,6 @@ namespace workphone::editor
 #if !defined( __APPLE__ )
             if( target == 1 || target == 2 ) throw std::runtime_error( "macOS/iOS builds require an Apple host with Xcode and its SDKs" );
 #endif
-            if( target == 3 && architecture( *settings ) == "Universal" )
-                throw std::runtime_error( "Android Universal requires a Gradle application with per-ABI native targets" );
             if( target == 3 )
             {
                 const auto androidProject = fs::u8path( project->getPath().c_str() ) / "Android";
@@ -407,8 +441,26 @@ namespace workphone::editor
                 if( !fs::is_regular_file( gradle ) )
                     throw std::runtime_error( "Android app packaging requires the project's Android/gradlew application wrapper" );
             }
-            const auto args = prepareProjectSettingsBuild( project, settings );
-            project->compile( configuration( *settings ), args, false );
+            if( target == 3 && architecture( *settings ) == "Universal" )
+            {
+                for( s32 abi = 0; abi < 4; ++abi )
+                {
+                    auto member = make_ptr<Properties>();
+                    DataUtil::parse( DataUtil::toString( settings.get() ), member.get() );
+                    member->setProperty( "build.architecture.android", abi );
+                    member->setProperty( "build.android.universalStaging", true );
+                    member->setProperty( "build.android.stageOnly", abi < 3 );
+                    const auto args = prepareProjectSettingsBuild( project, member );
+                    project->compile( configuration( *member ), args, false );
+                }
+                writeText( outputDirectory( project, *settings ) / "ProjectRuntime.settings",
+                           DataUtil::toString( settings.get(), true ) );
+            }
+            else
+            {
+                const auto args = prepareProjectSettingsBuild( project, settings );
+                project->compile( configuration( *settings ), args, false );
+            }
             auto app = core::IApplicationManager::instancePtr();
             if( settings->getPropertyAsBool( "build.assetBundles", true ) )
             {
@@ -428,6 +480,20 @@ namespace workphone::editor
                     ( settings->getPropertyAsBool( "build.debugSymbols", true ) || entry.path().extension() != ".pdb" ) )
                     files.push_back( entry.path().wstring().c_str() );
             for( const auto &file : stageRuntimeSupportFiles( root, output ) ) files.push_back( file.wstring().c_str() );
+            for( const char *folder : { "native", "Android" } )
+            {
+                const auto artifacts = output / folder;
+                if( !fs::is_directory( artifacts ) ) continue;
+                for( const auto &entry : fs::recursive_directory_iterator( artifacts ) )
+                {
+                    if( entry.is_symlink() ) throw std::runtime_error( "Build artifacts cannot be redirected" );
+                    if( entry.is_regular_file() )
+                    {
+                        const auto checked = checkedMember( output, entry.path().lexically_relative( output ).generic_u8string().c_str() );
+                        files.push_back( checked.wstring().c_str() );
+                    }
+                }
+            }
             for( const auto &scene : scenePaths( *settings ) )
             {
                 const auto source = checkedMember( root, scene );

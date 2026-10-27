@@ -53,6 +53,10 @@ void wp_renderer_dx11_set_post_options( wp_renderer_dx11 *renderer, wp_s32 anti_
  * convolved irradiance RGB float4 coefficients (40 floats per probe). */
 wp_s32 wp_renderer_dx11_set_irradiance_probes( wp_renderer_dx11 *renderer,
                                              const void *probes, wp_u32 count, wp_s32 mode );
+wp_s32 wp_renderer_dx11_set_local_lights(wp_renderer_dx11 *renderer,const wp_f32 *lights,
+    wp_u32 count,const wp_u32 *cells,const wp_u32 *indices,wp_u32 index_count,
+    wp_u32 grid_x,wp_u32 grid_y,wp_u32 grid_z,wp_f32 z_near,wp_f32 z_far,const wp_f32 *camera_forward);
+void wp_renderer_dx11_set_pipeline_mode(wp_renderer_dx11 *renderer,wp_s32 pipeline,wp_s32 ambient_occlusion);
 /* Applies to subsequent device creation and built-in shader compilation. */
 void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
                                           wp_s32 validation, wp_s32 allow_fallback );

@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <cstdlib>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -123,6 +124,55 @@ BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
     BOOST_CHECK(noDomain->getPropertyAsBool("success"));
     BOOST_CHECK(noDomain->getProperty("appliedKeys").empty());
     BOOST_CHECK(noDomain->getProperty("pendingKeys").empty());
+    {
+        struct NdkEnvironment
+        {
+            bool existed = std::getenv( "ANDROID_NDK_HOME" ) != nullptr;
+            std::string previous = existed ? std::getenv( "ANDROID_NDK_HOME" ) : "";
+            static void set( const std::string &value )
+            {
+#if defined( _WIN32 )
+                _putenv_s( "ANDROID_NDK_HOME", value.c_str() );
+#else
+                setenv( "ANDROID_NDK_HOME", value.c_str(), 1 );
+#endif
+            }
+            ~NdkEnvironment()
+            {
+#if defined( _WIN32 )
+                set( previous );
+#else
+                if( existed ) set( previous ); else unsetenv( "ANDROID_NDK_HOME" );
+#endif
+            }
+        } environment;
+        const auto ndk = temporary.root / "NDK";
+        std::filesystem::create_directories( ndk / "build/cmake" );
+        std::ofstream( ndk / "build/cmake/android.toolchain.cmake" ) << "# Profile-generation fixture\n";
+        NdkEnvironment::set( ndk.u8string() );
+        auto android = make_ptr<Properties>();
+        android->setProperty( "platform.active", 3 );
+        android->setProperty( "build.config", 0 );
+        android->setProperty( "build.architecture.android", 2 );
+        android->setProperty( "build.android.universalStaging", true );
+        android->setProperty( "build.android.stageOnly", true );
+        android->setProperty( "build.android.appBundle", false );
+        android->setProperty( "build.signingProfile", "projectReleaseKey" );
+        const auto args = prepareProjectSettingsBuild( project, android );
+        BOOST_CHECK( std::find( args.begin(), args.end(), String( "-DANDROID_ABI=x86" ) ) != args.end() );
+        BOOST_CHECK( std::find( args.begin(), args.end(), String( "Ninja" ) ) != args.end() );
+        const auto directory = temporary.root / "Project/Build/Android/Universal/Debug";
+        const auto read = []( const std::filesystem::path &path ) {
+            std::ifstream stream( path ); std::ostringstream result; result << stream.rdbuf(); return result.str();
+        };
+        const auto gradle = read( directory / "WorkphoneAndroidProfile.gradle" );
+        BOOST_CHECK( gradle.find( "['armeabi-v7a','arm64-v8a','x86','x86_64']" ) != std::string::npos );
+        BOOST_CHECK( gradle.find( "projectReleaseKey" ) != std::string::npos );
+        BOOST_CHECK( read( directory / "WorkphoneProjectProfile.cmake" ).find( "assembleDebug" ) == std::string::npos );
+        android->setProperty( "build.android.stageOnly", false );
+        prepareProjectSettingsBuild( project, android );
+        BOOST_CHECK( read( directory / "WorkphoneProjectProfile.cmake" ).find( "assembleDebug" ) != std::string::npos );
+    }
     settings->setProperty( "network.multiplayer", true );
     settings->setProperty( "network.backend", s32( 0 ) );
     BOOST_CHECK( !validateProjectSettingsProjectBackend( settings )->getPropertyAsBool( "success" ) );

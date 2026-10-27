@@ -962,6 +962,8 @@ namespace workphone
             if( !camera || jobs->camera != camera ||
                 wp_graphics_cull_result_validate( jobs->main, m_scene,
                     wp_graphics_cull_result_get_scene_generation( jobs->main ) ) != WP_GRAPHICS_CULL_OK ) return;
+            try
+            {
             // Terrain/foliage/particle callbacks can deform geometry without
             // native candidate revisions. Until those producers publish depth
             // revisions, this frame conservatively supplies no occlusion.
@@ -1008,6 +1010,11 @@ namespace workphone
             catch( const std::bad_alloc & ) { history.hierarchy.clear(); return; }
             history.surface = history.readback.surface( renderer );
             history.camera = camera; history.capturedJobs = jobs; history.capturedFrame = m_occlusionFrame;
+            }
+            catch( const std::bad_alloc & )
+            {
+                history.hierarchy.clear(); history.capturedJobs.reset(); history.materials.clear();
+            }
         }
 
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera )

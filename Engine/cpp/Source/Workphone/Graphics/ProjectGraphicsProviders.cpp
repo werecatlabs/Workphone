@@ -59,7 +59,7 @@ namespace workphone
         if(api=="DX11"||api=="DX12")
         {
             if(language>1||model==3||(model==2&&!fallback))
-            {error="No shader compiler provider is registered for language "+String(language)+", model "+String(model)+" on "+api+". Register a compatible compiler, choose HLSL SM4/SM5, or allow the SM6 compatibility fallback.";return false;}
+            {error="No shader compiler provider is registered for language "+std::to_string(language)+", model "+std::to_string(model)+" on "+api+". Register a compatible compiler, choose HLSL SM4/SM5, or allow the SM6 compatibility fallback.";return false;}
             if(model==2) notes="The built-in "+api+" compiler uses HLSL SM5 compatibility shaders; native SM6 requires a registered compiler provider.";
         }
         else if(language!=0)

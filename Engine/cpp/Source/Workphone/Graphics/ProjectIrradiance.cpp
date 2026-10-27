@@ -114,6 +114,7 @@ namespace workphone
         s32 activeMode=0;
         size_t nextProbe=0;
         String activeRoot;
+        String lastRefreshError;
 
         Array<wp_irradiance_probe> initialLocations()
         {
@@ -217,10 +218,19 @@ namespace workphone
     {
         std::lock_guard<std::mutex> lock(providerMutex);
         if((activeMode!=2 && activeMode!=3) || live.empty() || !provider)return;
-        auto &probe=live[nextProbe];String error;
-        if(provider->sample(probe.position,32,activeMode==3?2:0,activeMode==2,probe,error))
+        auto probe=live[nextProbe];String error;bool sampled=false;
+        try{sampled=provider->sample(probe.position,32,activeMode==3?2:0,activeMode==2,probe,error);}
+        catch(const std::exception &e){error=e.what();}
+        if(sampled)
         {
+            lastRefreshError.clear();
+            live[nextProbe]=probe;
             if(activeMode==3)wp_irradiance_combine(&baked[nextProbe],&probe,&published[nextProbe]);else published[nextProbe]=probe;
+        }
+        else
+        {
+            if(error.empty())error="Irradiance provider could not refresh a local probe";
+            if(error!=lastRefreshError){WP_LOG_ERROR("GI probe refresh failed: "+error);lastRefreshError=error;}
         }
         nextProbe=(nextProbe+1)%live.size();
     }
@@ -228,5 +238,5 @@ namespace workphone
     {std::lock_guard<std::mutex> lock(providerMutex);return published;}
     s32 getProjectIrradianceMode(){std::lock_guard<std::mutex> lock(providerMutex);return activeMode;}
     void releaseProjectIrradiance()
-    {std::lock_guard<std::mutex> lock(providerMutex);activeMode=0;provider.reset();baked.clear();live.clear();published.clear();activeRoot.clear();}
+    {std::lock_guard<std::mutex> lock(providerMutex);activeMode=0;provider.reset();baked.clear();live.clear();published.clear();activeRoot.clear();lastRefreshError.clear();}
 }

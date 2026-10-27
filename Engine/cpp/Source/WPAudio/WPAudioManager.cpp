@@ -175,7 +175,8 @@ namespace workphone
                                         label.find( L"speaker" ) != std::wstring::npos : m_outputDevice == 3 ?
                                         label.find( L"controller" ) != std::wstring::npos :
                                         label.find( L"mobile" ) != std::wstring::npos ||
-                                            label.find( L"phone" ) != std::wstring::npos;
+                                            label.find( L"handset" ) != std::wstring::npos ||
+                                            label.find( L"phone speaker" ) != std::wstring::npos;
                                     if( match ) device->GetId( &selectedDevice );
                                 }
                                 PropVariantClear( &name );

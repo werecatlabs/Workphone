@@ -7,15 +7,31 @@
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/ProjectLocalization.hpp>
 #include <Workphone/System/Profile.hpp>
+#include <Workphone/System/WorkerThread.hpp>
 #include <Workphone/Core/LogManagerDefault.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 #if WP_EDITOR_TESTS
 #include <boost/test/unit_test.hpp>
 using namespace workphone;
 using namespace workphone::editor;
+
+namespace
+{
+    class SettingsSchedulingProbe : public WorkerThread
+    {
+    public:
+        void run() override { ++executions; }
+        bool platformWorker() const { return m_platformWork != nullptr; }
+        bool dedicatedThread() const { return getThread() != nullptr; }
+        std::atomic<unsigned> executions{ 0 };
+    };
+}
 
 BOOST_AUTO_TEST_CASE( project_settings_editor_policy_recovery_test )
 {
@@ -83,6 +99,32 @@ BOOST_AUTO_TEST_CASE( project_settings_editor_policy_recovery_test )
     BOOST_CHECK_EQUAL( localizeProjectString( "absent", "Default" ), "Default" );
     BOOST_CHECK_EQUAL( localizeProjectText( "@{absent}" ), "absent" );
     guard.app->setPlayerSettings( active );
+#if defined( _WIN32 )
+    for( s32 backend : { 0, 1 } )
+    {
+        auto policy = project->getProperties();
+        policy->setProperty( "tasks.jobSystem", backend );
+        guard.app->setPlayerSettings( policy );
+        struct WorkerGuard
+        {
+            SmartPtr<SettingsSchedulingProbe> worker = make_ptr<SettingsSchedulingProbe>();
+            ~WorkerGuard() { worker->unload( nullptr ); }
+        } worker;
+        worker.worker->load( nullptr );
+        BOOST_REQUIRE( worker.worker->isLoaded() );
+        BOOST_CHECK_EQUAL( worker.worker->platformWorker(), backend == 1 );
+        BOOST_CHECK_EQUAL( worker.worker->dedicatedThread(), backend == 0 );
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 3 );
+        while( worker.worker->executions.load() == 0 && std::chrono::steady_clock::now() < deadline )
+            std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+        worker.worker->unload( nullptr );
+        BOOST_CHECK_EQUAL( worker.worker->executions.load(), 1u );
+        BOOST_CHECK( !worker.worker->platformWorker() );
+        BOOST_CHECK( !worker.worker->dedicatedThread() );
+        BOOST_CHECK( !guard.app->getQuit() );
+    }
+    guard.app->setPlayerSettings( active );
+#endif
     BOOST_CHECK_EQUAL( projectWorkerCount( 8 ), 3u );
     BOOST_CHECK_EQUAL( projectWorkerCount( 0 ), 0u );
     BOOST_CHECK( projectRunsBackgroundTasks() );

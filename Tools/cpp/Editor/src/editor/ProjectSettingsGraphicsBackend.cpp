@@ -37,8 +37,9 @@ namespace workphone::editor
         {
             String result;
             const auto add = [&]( const String &message ) { if( !result.empty() ) result += " "; result += message; };
-            if( settings.getPropertyAsInt( "graphics.renderPipeline" ) == 2 )
-                add( "Deferred shading requires a geometry G-buffer renderer; the current scene renderer is forward." );
+            String error,notes;
+            auto profile=workphone::make_ptr<Properties>(settings);
+            if(validateProjectGraphicsProviders(profile,error,notes)&&!notes.empty()) add(notes);
             return result;
         }
 

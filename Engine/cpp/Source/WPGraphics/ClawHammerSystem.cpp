@@ -22,6 +22,7 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRendererDX12.hpp>
 #include <WPGraphics/ClawRendererSoftware.hpp>
+#include <WPGraphics/ProjectSceneLights.hpp>
 #include <WPGraphics/ClawResourceGroupManager.hpp>
 #include <WPGraphics/ClawScene.hpp>
 #include <WPGraphics/ClawShader.hpp>
@@ -1429,11 +1430,14 @@ namespace workphone
                 else m_adaptiveSceneScale=1.0f;
                 wp_renderer_dx11_set_scene_sampling(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),samples,scale*m_adaptiveSceneScale);
                 const bool post=!options->hasProperty("graphics.postProcessing") || options->getPropertyAsBool("graphics.postProcessing");
+                auto nativeDx11=wp_renderer_get_dx11(dx11Renderer->getNativeRenderer());
+                wp_renderer_dx11_set_pipeline_mode(nativeDx11,options->getPropertyAsInt("graphics.renderPipeline"),
+                    post && options->getPropertyAsBool("graphics.ambientOcclusion"));
+                uploadProjectSceneLights(nativeDx11,renderer->getCamera()->getCreator(),renderer->getCamera(),options);
                 wp_renderer_dx11_set_post_options(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),aa,
                     post && options->getPropertyAsBool("graphics.bloom"),post && options->getPropertyAsBool("graphics.motionBlur"),
                     static_cast<wp_u64>(reinterpret_cast<uintptr_t>(renderer->getCamera().get())));
                 wp_renderer_dx11_set_output_options( wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
-                if(!m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping) return false;
                 return wp_renderer_dx11_begin_hdr_scene(
                     wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), 1.0f ) != 0;
             }

@@ -17,6 +17,9 @@ namespace workphone::render
     bool uploadProjectSceneLights( void *nativeRenderer, SmartPtr<IGraphicsScene> scene,
         SmartPtr<IGraphicsCamera> camera, SmartPtr<Properties> settings )
     {
+#if !defined( WP_PLATFORM_WIN32 ) || !WP_BUILD_RENDERER_DX11
+        (void)nativeRenderer;(void)scene;(void)camera;(void)settings;return false;
+#else
         if(!nativeRenderer || !camera || !scene)return false;
         std::array<wp_local_light,WP_LIGHT_GRID_MAX_LIGHTS> lights{};u32 count=0;
         for(auto light:scene->getObjectByType<IGraphicsLight>())
@@ -35,7 +38,9 @@ namespace workphone::render
         const Matrix4F viewMatrix(camera->getViewMatrix().ptr()),projection(camera->getProjectionMatrix().ptr());
         const auto inverseView=viewMatrix.inverse(),viewProjection=projection*viewMatrix;
         for(u32 row=0;row<4;++row)for(u32 col=0;col<4;++col)view.view_projection[row*4+col]=viewProjection[row][col];
-        const auto forward=camera->getDirection().normaliseCopy();
+        auto forward=camera->getDirection();
+        if(forward.lengthSquared()<.000001)forward=Vector3<real_Num>(-inverseView[0][2],-inverseView[1][2],-inverseView[2][2]);
+        forward.normalise();
         for(u32 axis=0;axis<3;++axis){view.position[axis]=inverseView[axis][3];view.forward[axis]=static_cast<float>(forward[axis]);}
         view.z_near=std::max(.0001f,camera->getNearClipDistance());view.z_far=camera->getFarClipDistance();
         const bool clustered=settings && settings->getPropertyAsInt("graphics.lightingMode",1)==3;
@@ -48,5 +53,6 @@ namespace workphone::render
         return wp_renderer_dx11_set_local_lights(static_cast<wp_renderer_dx11 *>(nativeRenderer),
             reinterpret_cast<const wp_f32 *>(lights.data()),count,ranges.data(),indices.data(),indexCount,
             gx,gy,gz,view.z_near,view.z_far,view.forward)!=0;
+#endif
     }
 }

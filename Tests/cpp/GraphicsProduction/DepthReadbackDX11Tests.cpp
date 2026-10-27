@@ -30,15 +30,14 @@ void *wp_renderer_dx11_get_context( const wp_renderer_dx11 *r ) { return r->cont
 void *wp_renderer_dx11_get_scene_depth_texture( wp_renderer_dx11 *r ) { return r->depth; }
 }
 template<class T> void release( T *&p ) { if( p ) p->Release(); p = nullptr; }
-bool drawDepthPattern( wp_renderer_dx11 &native, unsigned width, unsigned height )
+bool drawDepthPattern( wp_renderer_dx11 &native, unsigned width, unsigned height, unsigned samples )
 {
     static const char shader[] = R"(
         float4 vs(uint index:SV_VertexID):SV_Position {
             return float4(index==2?3:-1,index==1?3:-1,0,1);
         }
-        float ps(float4 pixel:SV_Position,uint sampleIndex:SV_SampleIndex):SV_Depth {
-            if(pixel.x>=256) return 1;
-            return sampleIndex==0?.25:.75;
+        float ps(float4 pixel:SV_Position):SV_Depth {
+            return pixel.x>=256 ? .95 : .75;
         }
     )";
     ID3DBlob *vsCode = nullptr, *psCode = nullptr, *errors = nullptr;
@@ -66,6 +65,7 @@ bool drawDepthPattern( wp_renderer_dx11 &native, unsigned width, unsigned height
         native.context->RSSetViewports( 1, &viewport );
         native.context->RSSetState( raster );
         native.context->OMSetDepthStencilState( depth, 0 );
+        native.context->OMSetBlendState( nullptr, nullptr, samples > 1 ? 2u : 1u );
         native.context->VSSetShader( vs, nullptr, 0 );
         native.context->PSSetShader( ps, nullptr, 0 );
         native.context->IASetInputLayout( nullptr );
@@ -119,39 +119,16 @@ int main()
                 ok = ok && restored == dsv;
                 release( restored );
             }
-            ok = drawDepthPattern( native, desc.Width, desc.Height ) && ok;
-            if( samples == 1 )
-            {
-                auto copyDesc = desc; copyDesc.BindFlags = 0; copyDesc.Usage = D3D11_USAGE_STAGING;
-                copyDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-                ID3D11Texture2D *copy = nullptr;
-                if( SUCCEEDED( native.device->CreateTexture2D( &copyDesc, nullptr, &copy ) ) )
-                {
-                    native.context->CopyResource( copy, native.depth );
-                    D3D11_MAPPED_SUBRESOURCE mapped{};
-                    if( SUCCEEDED( native.context->Map( copy, 0, D3D11_MAP_READ, 0, &mapped ) ) )
-                    {
-                        auto pixels = static_cast<unsigned *>( mapped.pData );
-                        std::printf( "Raw row: %.3f %.3f %.3f\n", ( pixels[0]&0xffffff )/16777215.f,
-                            ( pixels[256]&0xffffff )/16777215.f, ( pixels[512]&0xffffff )/16777215.f );
-                        native.context->Unmap( copy, 0 );
-                    }
-                    release( copy );
-                }
-            }
+            native.context->ClearDepthStencilView( dsv, D3D11_CLEAR_DEPTH, .25f, 0 );
+            ok = drawDepthPattern( native, desc.Width, desc.Height, samples ) && ok;
             std::vector<float> patterned;
             unsigned width = 0, height = 0;
             ok = reader.read( &renderer, patterned, width, height ) && ok;
-            std::printf( "Pattern row: x126=%.3f x127=%.3f x128=%.3f x129=%.3f\n",
-                patterned[126], patterned[127], patterned[128], patterned[129] );
             if( width != 256 || height != 256 ) ok = false;
             else for( unsigned y = 0; y < height; ++y ) for( unsigned x = 0; x < width; ++x )
             {
-                const auto left = x * desc.Width / width, top = y * desc.Height / height;
                 const auto right = ( ( x + 1 ) * desc.Width + width - 1 ) / width;
-                const auto bottom = ( ( y + 1 ) * desc.Height + height - 1 ) / height;
-                const float expected = right > 256 ? 1.f :
-                    samples == 1 ? .25f : .75f;
+                const float expected = right > 256 ? .95f : .75f;
                 if( std::abs( patterned[size_t( y ) * width + x] - expected ) >= .00001f )
                 {
                     if( ok ) std::fprintf( stderr, "Depth mismatch %u,%u: %.6f expected %.6f\n", x, y,
@@ -162,6 +139,7 @@ int main()
             std::printf( "%s depth readback: %u samples, conservative 513x259 -> 256x256: %s\n",
                 warp ? "WARP" : "hardware", samples, ok ? "passed" : "FAILED" );
             native.context->OMSetRenderTargets( 0, nullptr, nullptr );
+            native.context->OMSetBlendState( nullptr, nullptr, ~0u );
             release( dsv ); release( native.depth );
         }
     }
