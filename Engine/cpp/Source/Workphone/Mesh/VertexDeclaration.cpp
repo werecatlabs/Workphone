@@ -100,11 +100,14 @@ namespace workphone
 
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
+        if( !applicationManager ) throw std::logic_error( "Vertex declaration requires an application manager" );
 
         auto factoryManager = applicationManager->getFactoryManager();
         WP_ASSERT( factoryManager );
+        if( !factoryManager ) throw std::logic_error( "Vertex declaration requires a factory manager" );
 
         auto element = factoryManager->make_ptr<VertexElement>();
+        if( !element ) throw std::bad_alloc();
         element->setSource( source );
         element->setSize( size );
         element->setOffset( offset );

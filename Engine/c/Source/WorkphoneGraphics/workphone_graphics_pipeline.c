@@ -18,6 +18,7 @@ struct wp_render_pipeline
     wp_csm *csm;
     wp_s32 frame, shadows_on, ao_on, ssr_on, contact_on, taa_on;
     wp_s32 motion_blur_on, dof_on, bloom_on, exposure_on;
+    wp_s32 output_options_set, hdr_enabled, linear_workflow, tonemapping;
     wp_render_debug_view debug_view;
     wp_mat4f previous_vp, current_vp, inverse_vp;
 };
@@ -174,6 +175,25 @@ void wp_pipeline_render_frame( wp_render_pipeline *p, void *scene, const wp_mat4
         wp_contact_shadows_render( p->contact, p->depth, p->normal, proj, &inverse_projection,
                                    &sun_direction, p->frame );
     source = p->hdr_input;
+    /* These passes must feed the scene resolve rather than discard their results. */
+    if( p->ao_on || p->contact_on || p->ssr_on )
+    {
+        size_t pixel;
+        const wp_f32 *ao = p->ao_on ? wp_gtao_get_buffer( p->gtao ) : NULL;
+        const wp_f32 *contact = p->contact_on ? wp_contact_shadows_get_buffer( p->contact ) : NULL;
+        const wp_f32 *reflection = p->ssr_on ? wp_ssr_get_texture( p->ssr ) : NULL;
+        for( pixel = 0; pixel < px; ++pixel )
+        {
+            wp_f32 visibility = (ao ? ao[pixel] : 1.0f) * (contact ? contact[pixel] : 1.0f);
+            size_t channel;
+            if( visibility < 0.0f ) visibility = 0.0f;
+            if( visibility > 1.0f ) visibility = 1.0f;
+            for( channel = 0; channel < 3u; ++channel )
+                p->history[pixel * 3u + channel] = p->hdr_input[pixel * 3u + channel] * visibility +
+                    (reflection ? reflection[pixel * 3u + channel] * 0.25f : 0.0f);
+        }
+        source = p->history;
+    }
     if( p->taa_on )
     {
         wp_taa_next_jitter( p->taa );
@@ -234,6 +254,8 @@ void wp_pipeline_resize( wp_render_pipeline *p, wp_s32 w, wp_s32 h )
     if( !n )
         return;
     n->delta_time = p->delta_time;
+    if( p->output_options_set )
+        wp_pipeline_set_output_options( n, p->hdr_enabled, p->linear_workflow, p->tonemapping );
     flags[0] = p->shadows_on;
     flags[1] = p->ao_on;
     flags[2] = p->ssr_on;
@@ -339,6 +361,17 @@ void wp_pipeline_set_bloom_params( wp_render_pipeline *p, wp_f32 t, wp_f32 s )
     if( p )
         wp_hdr_bloom_set( p->hdr, t, s );
 }
+void wp_pipeline_set_output_options( wp_render_pipeline *p, wp_s32 hdr_enabled,
+                                     wp_s32 linear_workflow, wp_s32 tonemapping )
+{
+    if( !p ) return;
+    p->output_options_set = 1;
+    p->hdr_enabled = !!hdr_enabled;
+    p->linear_workflow = !!linear_workflow;
+    p->tonemapping = tonemapping;
+    wp_hdr_set_output_options( p->hdr, hdr_enabled, linear_workflow, tonemapping );
+}
+
 void wp_pipeline_set_debug_view( wp_render_pipeline *p, wp_render_debug_view m )
 {
     if( p )

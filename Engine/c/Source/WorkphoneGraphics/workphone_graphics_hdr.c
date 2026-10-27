@@ -39,6 +39,7 @@ struct wp_hdr
     wp_f32 bloom_threshold;
     wp_f32 bloom_knee;
     wp_f32 bloom_strength;
+    wp_s32 output_options_set, hdr_enabled, linear_workflow, tonemapping;
 };
 
 static wp_f32 wp_clamp( wp_f32 x, wp_f32 a, wp_f32 b )
@@ -345,12 +346,36 @@ void wp_hdr_composite( wp_hdr *ctx, const wp_f32 *color, const wp_f32 *bloom, co
             g *= vig;
             b *= vig;
             wp_f32 tr, tg, tb;
-            wp_hdr_tonemap_agx( r, g, b, &tr, &tg, &tb );
-            out[i] = wp_clamp( wp_hdr_linear_to_srgb( wp_clamp( tr, 0, 1 ) ), 0, 1 );
-            out[i + 1] = wp_clamp( wp_hdr_linear_to_srgb( wp_clamp( tg, 0, 1 ) ), 0, 1 );
-            out[i + 2] = wp_clamp( wp_hdr_linear_to_srgb( wp_clamp( tb, 0, 1 ) ), 0, 1 );
+            {
+                wp_s32 mode = ctx->output_options_set ? (ctx->hdr_enabled ? ctx->tonemapping : 0) : 3;
+                wp_s32 linear = !ctx->output_options_set || ctx->linear_workflow;
+                if( mode == 3 ) wp_hdr_tonemap_agx( r, g, b, &tr, &tg, &tb );
+                else if( mode == 2 )
+                { tr = r / (1.0f + r); tg = g / (1.0f + g); tb = b / (1.0f + b); }
+                else if( mode == 1 )
+                {
+                    tr = (r * (2.51f * r + 0.03f)) / (r * (2.43f * r + 0.59f) + 0.14f);
+                    tg = (g * (2.51f * g + 0.03f)) / (g * (2.43f * g + 0.59f) + 0.14f);
+                    tb = (b * (2.51f * b + 0.03f)) / (b * (2.43f * b + 0.59f) + 0.14f);
+                }
+                else { tr = r; tg = g; tb = b; }
+                tr = wp_clamp( tr, 0, 1 ); tg = wp_clamp( tg, 0, 1 ); tb = wp_clamp( tb, 0, 1 );
+                out[i] = linear ? wp_clamp( wp_hdr_linear_to_srgb(tr), 0, 1 ) : tr;
+                out[i + 1] = linear ? wp_clamp( wp_hdr_linear_to_srgb(tg), 0, 1 ) : tg;
+                out[i + 2] = linear ? wp_clamp( wp_hdr_linear_to_srgb(tb), 0, 1 ) : tb;
+            }
         }
     }
+}
+
+void wp_hdr_set_output_options( wp_hdr *ctx, wp_s32 hdr_enabled, wp_s32 linear_workflow,
+                                wp_s32 tonemapping )
+{
+    if( !ctx ) return;
+    ctx->output_options_set = 1;
+    ctx->hdr_enabled = !!hdr_enabled;
+    ctx->linear_workflow = !!linear_workflow;
+    ctx->tonemapping = tonemapping >= 0 && tonemapping <= 3 ? tonemapping : 3;
 }
 
 void wp_hdr_resize( wp_hdr *ctx, wp_s32 w, wp_s32 h )

@@ -28,5 +28,8 @@ wp_f32 wp_hdr_srgb_to_linear( wp_f32 c );
 wp_f32 wp_hdr_linear_to_srgb( wp_f32 c );
 void wp_hdr_resize( wp_hdr *ctx, wp_s32 width, wp_s32 height );
 void wp_hdr_bloom_set( wp_hdr *ctx, wp_f32 threshold, wp_f32 strength );
+/* 0=clamp, 1=ACES fitted, 2=Reinhard, 3=AgX filmic. */
+void wp_hdr_set_output_options( wp_hdr *ctx, wp_s32 hdr_enabled, wp_s32 linear_workflow,
+                                wp_s32 tonemapping );
 
 #endif

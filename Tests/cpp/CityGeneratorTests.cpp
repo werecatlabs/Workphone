@@ -23,6 +23,10 @@
 #include "RoadNetworkPublicationContracts.hpp"
 #include "RoadUtilityBudgetContracts.hpp"
 #include "LegacyRoadRollbackContracts.hpp"
+#include "ProceduralWorldBudgetContracts.hpp"
+#include "ProceduralTextureStorageContracts.hpp"
+#include "BuildingPayloadBudgetContracts.hpp"
+#include "ProceduralMeshBuilderBudgetContracts.hpp"
 
 namespace
 {
@@ -134,6 +138,10 @@ void checkCityGeneratorContracts()
     road_network_publication_contracts::run();
     road_utility_budget_contracts::run();
     legacy_road_rollback_contracts::run();
+    procedural_world_budget_contracts::run();
+    procedural_texture_storage_contracts::run();
+    building_payload_budget_contracts::run();
+    procedural_mesh_builder_budget_contracts::run();
     using namespace workphone;
     using namespace workphone::procedural;
     auto coordinator = make_ptr<CityGeneratorDefault>();

@@ -62,8 +62,8 @@ namespace workphone
                 return std::numeric_limits<uint32_t>::max();
             }
 
-            boundsValid = false;
             vertices.push_back( { p, {} } );
+            boundsValid = false;
             return static_cast<uint32_t>( vertices.size() - 1 );
         }
 
@@ -74,8 +74,8 @@ namespace workphone
                 WP_LOG_ERROR( "ProceduralMesh::addVertex - vertex limit reached (UINT32_MAX)." );
                 return std::numeric_limits<uint32_t>::max();
             }
-            boundsValid = false;
             vertices.push_back( v );
+            boundsValid = false;
             return static_cast<uint32_t>( vertices.size() - 1 );
         }
 
@@ -117,6 +117,9 @@ namespace workphone
                 return;
             }
 
+            if( indices.size() > indices.max_size() - 3 ) throw std::length_error( "Procedural index overflow" );
+            if( indices.capacity() - indices.size() < 3 )
+                indices.reserve( std::max( indices.size() + 3, indices.capacity() + indices.capacity() / 2 ) );
             indices.push_back( a );
             indices.push_back( b );
             indices.push_back( c );
@@ -124,33 +127,12 @@ namespace workphone
 
         void ProceduralMesh::append( const ProceduralMesh &other, const Vector3F &offset )
         {
-            if( other.vertices.empty() )
-            {
-                return;  // Nothing to append.
-            }
-
-            // Guard: the combined vertex count must not exceed UINT32_MAX.
-            const size_t combinedSize = vertices.size() + other.vertices.size();
-            if( combinedSize > static_cast<size_t>( std::numeric_limits<uint32_t>::max() ) )
-            {
-                WP_LOG_ERROR(
-                    "ProceduralMesh::append - combined vertex count would exceed UINT32_MAX." );
-                return;
-            }
-
-            if( &other == this )
-            {
-                try
-                {
-                    const auto copy = other;
-                    append( copy, offset );
-                }
-                catch( const std::exception &e )
-                {
-                    WP_LOG_ERROR( String( "ProceduralMesh::append - copy failed: " ) + e.what() );
-                }
-                return;
-            }
+            if( other.vertices.empty() ) return;
+            const auto vertexCount = other.vertices.size(), indexCount = other.indices.size();
+            if( vertices.size() > std::numeric_limits<u32>::max() ||
+                vertexCount > std::numeric_limits<u32>::max() - vertices.size() ||
+                indexCount > indices.max_size() - indices.size() )
+                throw std::length_error( "Procedural mesh append overflow" );
             if( !std::isfinite( offset.x ) || !std::isfinite( offset.y ) || !std::isfinite( offset.z ) ||
                 !other.hasGeometry() )
             {
@@ -159,47 +141,22 @@ namespace workphone
             }
             for( const auto &vertex : other.vertices )
             {
-                const auto p = vertex.position + offset;
-                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
-                {
-                    WP_LOG_ERROR( "ProceduralMesh::append - transformed position is non-finite." );
-                    return;
-                }
+                const auto position = vertex.position + offset;
+                if( !std::isfinite( position.x ) || !std::isfinite( position.y ) || !std::isfinite( position.z ) )
+                { WP_LOG_ERROR( "ProceduralMesh::append - non-finite transformed position." ); return; }
             }
-            try
-            {
-                // Reserve both arrays before changing either size. Vertex/index copies
-                // below cannot throw once this capacity is available.
-                vertices.reserve( combinedSize );
-                indices.reserve( indices.size() + other.indices.size() );
-            }
-            catch( const std::exception &e )
-            {
-                WP_LOG_ERROR( String( "ProceduralMesh::append - allocation failed: " ) + e.what() );
-                return;
-            }
+            const auto base = static_cast<u32>( vertices.size() );
+            if( vertices.capacity() < vertices.size() + vertexCount )
+                vertices.reserve( std::max( vertices.size() + vertexCount, vertices.capacity() + vertices.capacity() / 2 ) );
+            if( indices.capacity() < indices.size() + indexCount )
+                indices.reserve( std::max( indices.size() + indexCount, indices.capacity() + indices.capacity() / 2 ) );
             boundsValid = false;
-            const uint32_t base = static_cast<uint32_t>( vertices.size() );
-
-            for( const auto &v : other.vertices )
+            // Indexed prefix reads remain valid for self-append after either buffer relocates.
+            for( size_t i = 0; i < vertexCount; ++i )
             {
-                auto copy = v;
-                copy.position = copy.position + offset;
-                vertices.push_back( copy );
+                auto vertex = other.vertices[i]; vertex.position += offset; vertices.push_back( vertex );
             }
-
-            const uint32_t otherVSize = static_cast<uint32_t>( other.vertices.size() );
-            for( auto idx : other.indices )
-            {
-                if( idx >= otherVSize )
-                {
-                    WP_LOG_ERROR( "ProceduralMesh::append - source index " + std::to_string( idx ) +
-                                  " is out of range in other mesh." );
-                    continue;
-                }
-
-                indices.push_back( base + idx );
-            }
+            for( size_t i = 0; i < indexCount; ++i ) indices.push_back( base + other.indices[i] );
         }
 
         void ProceduralMesh::computeNormals()
@@ -300,6 +257,10 @@ namespace workphone
                 const float hy = sy * 0.5f;
                 const float hz = sz * 0.5f;
 
+                if( outMesh.vertices.size() > std::numeric_limits<u32>::max() - 8 )
+                    throw std::length_error( "Box vertex overflow" );
+                outMesh.vertices.reserve( outMesh.vertices.size() + 8 );
+                outMesh.indices.reserve( outMesh.indices.size() + 36 );
                 const uint32_t v0 = outMesh.addVertex( offset + Vector3F{ -hx, -hy, -hz } );
                 const uint32_t v1 = outMesh.addVertex( offset + Vector3F{ hx, -hy, -hz } );
                 const uint32_t v2 = outMesh.addVertex( offset + Vector3F{ hx, hy, -hz } );
@@ -337,6 +298,7 @@ namespace workphone
                 outMesh.addTriangle( v3, v7, v6 );
                 outMesh.addTriangle( v3, v6, v2 );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -432,11 +394,18 @@ namespace workphone
 
                 // Reserve index arrays up front to avoid partial-build on allocation
                 // failure.
-                Array<uint32_t> top;
-                Array<uint32_t> bottom;
+                Array<uint32_t> top{ Allocator<uint32_t>( sourceBudget ) };
+                Array<uint32_t> bottom{ Allocator<uint32_t>( sourceBudget ) };
                 top.reserve( static_cast<size_t>( s ) );
                 bottom.reserve( static_cast<size_t>( s ) );
 
+                const auto addedVertices = size_t( s ) * 2 + 2;
+                const auto addedIndices = size_t( s ) * 12;
+                if( addedVertices > std::numeric_limits<u32>::max() - outMesh.vertices.size() ||
+                    addedIndices > outMesh.indices.max_size() - outMesh.indices.size() )
+                    throw std::length_error( "Cylinder geometry overflow" );
+                outMesh.vertices.reserve( outMesh.vertices.size() + addedVertices );
+                outMesh.indices.reserve( outMesh.indices.size() + addedIndices );
                 const uint32_t topCenter = outMesh.addVertex( offset + Vector3F{ 0.0f, halfH, 0.0f } );
                 const uint32_t bottomCenter =
                     outMesh.addVertex( offset + Vector3F{ 0.0f, -halfH, 0.0f } );
@@ -481,6 +450,7 @@ namespace workphone
                     outMesh.addTriangle( bottomCenter, bottom[n], bottom[i] );
                 }
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -572,6 +542,7 @@ namespace workphone
             try
             {
                 // Build the child mesh once and replicate it.
+                const auto denials = sourceBudgetDenialCount();
                 ProceduralMesh childMesh;
                 child->build( childMesh );
 
@@ -581,11 +552,16 @@ namespace workphone
                     return;
                 }
 
+                ProceduralMesh batch;
                 for( int i = 0; i < count; ++i )
                 {
-                    outMesh.append( childMesh, step * static_cast<float>( i ) );
+                    batch.append( childMesh, step * static_cast<float>( i ) );
+                    if( sourceBudgetDenialCount() != denials ) return;
                 }
+                if( sourceBudgetDenialCount() != denials ) return;
+                outMesh.append( batch );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -664,6 +640,8 @@ namespace workphone
 
         void CompositeRule::build( ProceduralMesh &outMesh ) const
         {
+            const auto denials = sourceBudgetDenialCount();
+            ProceduralMesh batch;
             for( const auto &rule : children )
             {
                 if( !rule )
@@ -674,14 +652,23 @@ namespace workphone
 
                 try
                 {
-                    rule->build( outMesh );
+                    rule->build( batch );
+                    if( sourceBudgetDenialCount() != denials ) return;
                 }
+                catch( const std::bad_alloc & ) { throw; }
                 catch( std::exception &e )
                 {
                     WP_LOG_EXCEPTION( e );
                     // Continue with remaining children.
                 }
             }
+            try
+            {
+                if( sourceBudgetDenialCount() != denials ) return;
+                if( batch.hasGeometry() ) outMesh.append( batch );
+            }
+            catch( const std::bad_alloc & ) { throw; }
+            catch( std::exception &e ) { WP_LOG_EXCEPTION( e ); }
         }
 
         SmartPtr<Properties> CompositeRule::getProperties() const
@@ -812,8 +799,10 @@ namespace workphone
             {
                 // Build into a staging mesh so the previous result is preserved on
                 // failure.
+                const auto denials = sourceBudgetDenialCount();
                 ProceduralMesh staged;
                 component.rootRule->build( staged );
+                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
 
                 if( staged.hasGeometry() )
                 {

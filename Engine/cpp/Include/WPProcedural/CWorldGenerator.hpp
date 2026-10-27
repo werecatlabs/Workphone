@@ -17,7 +17,7 @@ namespace workphone
          * All world-level tunables are grouped together so presets can be swapped,
          * duplicated, saved, and edited by tools without changing generation logic.
          */
-        struct WPProcedural_API SWorldGeneratorOptions
+        struct WPProcedural_API SWorldGeneratorOptions : SourceBudgetObject
         {
             int worldWidth = 2048;
             int worldHeight = 2048;
@@ -135,14 +135,17 @@ namespace workphone
 
             void generateWorld();
             void generateScenes();
+            void generateScenes( const Array<SmartPtr<IProceduralScene>> &scenes );
             SmartPtr<IProceduralScene> createDefaultScene();
 
             SWorldGeneratorOptions m_options;
             SmartPtr<IProceduralWorld> m_world;
-            Array<SmartPtr<IProceduralScene>> m_scenes;
+            Array<SmartPtr<IProceduralScene>> m_scenes{
+                Allocator<SmartPtr<IProceduralScene>>( sourceBudget ) };
 
             bool m_finished = false;
             bool m_isGenerating = false;
+            u64 m_generation = 0;
         };
     }  // end namespace procedural
 }  // namespace workphone

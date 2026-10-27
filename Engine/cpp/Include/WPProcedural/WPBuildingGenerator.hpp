@@ -23,6 +23,7 @@
 #include "WPProcedural/WPNoise.hpp"
 #include <string>
 #include <vector>
+#include <Workphone/System/SourceBudgetStdString.hpp>
 
 namespace workphone
 {
@@ -41,7 +42,7 @@ namespace workphone
         };
 
         /// Parameters describing one building to generate.
-        struct WPProcedural_API BuildingSpec
+        struct WPProcedural_API BuildingSpec : SourceBudgetObject
         {
             u32 seed = 0;
             s32 floors = 4;
@@ -68,7 +69,7 @@ namespace workphone
                 s32 side = 0;           ///< 0=front, 1=right, 2=back, 3=left
             };
 
-            Array<Setback> setbacks;
+            Array<Setback> setbacks{ Allocator<Setback>( sourceBudget ) };
 
             /// Per-floor room plans (optional). If absent, just wall shell is generated.
             bool generateInterior = false;
@@ -77,20 +78,79 @@ namespace workphone
             bool generateDamage = false;
 
             /// Random tint family: cream, sand, blue, pink, white, plaster variants.
-            std::string wallKey = "";
+            SourceBudgetStdString wallKey;
+
+            BuildingSpec() = default;
+            BuildingSpec( const BuildingSpec &other ) :
+                seed( other.seed ), floors( other.floors ), width( other.width ), depth( other.depth ),
+                floorH( other.floorH ), wallThick( other.wallThick ), type( other.type ),
+                setbacks( makeSourceBudgetSnapshot( other.setbacks ) ),
+                generateInterior( other.generateInterior ), generateDamage( other.generateDamage ),
+                wallKey( other.wallKey )
+            {
+            }
+            BuildingSpec( BuildingSpec && ) noexcept = default;
+            BuildingSpec &operator=( BuildingSpec && ) noexcept = default;
+            BuildingSpec &operator=( const BuildingSpec &other )
+            {
+                if( this != &other )
+                {
+                    BuildingSpec candidate( other );
+                    swap( candidate );
+                }
+                return *this;
+            }
+            void swap( BuildingSpec &other ) noexcept
+            {
+                using std::swap;
+                swap( seed, other.seed ); swap( floors, other.floors );
+                swap( width, other.width ); swap( depth, other.depth );
+                swap( floorH, other.floorH ); swap( wallThick, other.wallThick );
+                swap( type, other.type ); setbacks.swap( other.setbacks );
+                swap( generateInterior, other.generateInterior );
+                swap( generateDamage, other.generateDamage ); wallKey.swap( other.wallKey );
+            }
         };
 
         /// Resulting geometry of a generated building (all transforms applied).
-        struct WPProcedural_API BuildingResult
+        struct WPProcedural_API BuildingResult : SourceBudgetObject
         {
             ProceduralMesh body;
-            Array<ProceduralMesh> windows;
-            Array<ProceduralMesh> details;  // AC units, antennas, etc.
+            Array<ProceduralMesh> windows{ Allocator<ProceduralMesh>( sourceBudget ) };
+            Array<ProceduralMesh> details{ Allocator<ProceduralMesh>( sourceBudget ) };  // AC units, antennas, etc.
             ProceduralMesh roof;
             ProceduralMesh parapet;
-            Array<ProceduralMesh> interiors;
+            Array<ProceduralMesh> interiors{ Allocator<ProceduralMesh>( sourceBudget ) };
             Vector3<real_Num> position;
             real_Num wallKeyVariant = 0.0f;  // [0,1] tint choice
+
+            BuildingResult() = default;
+            BuildingResult( const BuildingResult &other ) :
+                body( other.body ), windows( makeSourceBudgetSnapshot( other.windows ) ),
+                details( makeSourceBudgetSnapshot( other.details ) ), roof( other.roof ),
+                parapet( other.parapet ), interiors( makeSourceBudgetSnapshot( other.interiors ) ),
+                position( other.position ), wallKeyVariant( other.wallKeyVariant )
+            {
+            }
+            BuildingResult( BuildingResult && ) noexcept = default;
+            BuildingResult &operator=( BuildingResult && ) noexcept = default;
+            BuildingResult &operator=( const BuildingResult &other )
+            {
+                if( this != &other )
+                {
+                    BuildingResult candidate( other );
+                    swap( candidate );
+                }
+                return *this;
+            }
+            void swap( BuildingResult &other ) noexcept
+            {
+                body.swap( other.body ); windows.swap( other.windows );
+                details.swap( other.details ); roof.swap( other.roof );
+                parapet.swap( other.parapet ); interiors.swap( other.interiors );
+                using std::swap;
+                swap( position, other.position ); swap( wallKeyVariant, other.wallKeyVariant );
+            }
         };
 
         /**

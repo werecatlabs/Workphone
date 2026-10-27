@@ -207,6 +207,8 @@ void wp_pipeline_set_taa_params( wp_render_pipeline *pipeline, wp_f32 feedback )
  * @param strength Bloom strength
  */
 void wp_pipeline_set_bloom_params( wp_render_pipeline *pipeline, wp_f32 threshold, wp_f32 strength );
+void wp_pipeline_set_output_options( wp_render_pipeline *pipeline, wp_s32 hdr_enabled,
+                                     wp_s32 linear_workflow, wp_s32 tonemapping );
 
 /* =========================================================================
  * Debug views

@@ -93,7 +93,7 @@ namespace workphone
 
         Color4 &Texture2D::at( int x, int y )
         {
-            if( width <= 0 || height <= 0 || x < 0 || x >= width || y < 0 || y >= height )
+            if( !isValid() || x < 0 || x >= width || y < 0 || y >= height )
             {
                 WP_LOG_ERROR( "Texture2D::at - coordinates (" + std::to_string( x ) + ", " +
                               std::to_string( y ) + ") out of range for " + std::to_string( width ) +
@@ -108,7 +108,7 @@ namespace workphone
 
         const Color4 &Texture2D::at( int x, int y ) const
         {
-            if( width <= 0 || height <= 0 || x < 0 || x >= width || y < 0 || y >= height )
+            if( !isValid() || x < 0 || x >= width || y < 0 || y >= height )
             {
                 WP_LOG_ERROR( "Texture2D::at (const) - coordinates (" + std::to_string( x ) + ", " +
                               std::to_string( y ) + ") out of range for " + std::to_string( width ) +
@@ -122,8 +122,9 @@ namespace workphone
 
         bool Texture2D::isValid() const
         {
-            return width > 0 && height > 0 &&
-                   pixels.size() == static_cast<size_t>( width ) * static_cast<size_t>( height );
+            if( width <= 0 || height <= 0 ) return false;
+            const auto w = static_cast<size_t>( width ), h = static_cast<size_t>( height );
+            return w <= pixels.max_size() / h && pixels.size() == w * h;
         }
 
         SmartPtr<Properties> Texture2D::getProperties() const
@@ -685,9 +686,14 @@ namespace workphone
 
             try
             {
+                const auto w = static_cast<size_t>( width ), h = static_cast<size_t>( height );
+                if( w > std::numeric_limits<size_t>::max() / h ||
+                    w * h > texture.pixels.max_size() )
+                    throw std::length_error( "TextureBaker pixel capacity overflow" );
+                const auto denials = sourceBudgetDenialCount();
+                texture.pixels.resize( w * h );
                 texture.width = width;
                 texture.height = height;
-                texture.pixels.resize( static_cast<size_t>( width ) * static_cast<size_t>( height ) );
 
                 // When width == 1 or height == 1 we cannot divide by (dim - 1)
                 // without a zero divisor; clamp to [0, 1] directly in that case.
@@ -704,8 +710,11 @@ namespace workphone
 
                         try
                         {
-                            texture.at( x, y ) = rule.sample( u, v );
+                            // Dimensions and the entire store were admitted before callbacks.
+                            texture.pixels[static_cast<size_t>( y ) * w + static_cast<size_t>( x )] =
+                                rule.sample( u, v );
                         }
+                        catch( const std::bad_alloc & ) { throw; }
                         catch( std::exception &e )
                         {
                             WP_LOG_EXCEPTION( e );
@@ -713,11 +722,14 @@ namespace workphone
                         }
                     }
                 }
+                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
-                // Return whatever was built so far rather than an uninitialised object.
+                // Descriptor and storage remain coherent even for a rejected oversized request.
+                texture.clear();
             }
 
             return texture;

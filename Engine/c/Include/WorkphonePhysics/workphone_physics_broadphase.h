@@ -67,6 +67,9 @@ wp_s32 wp_broadphase_get_simd_enabled( const wp_broadphase *bp );
  * ====================================================================== */
 
 wp_broadphase_type wp_broadphase_get_type( const wp_broadphase *bp );
+/* Changes traversal without invalidating proxy handles. SAP uses an X-axis
+ * sweep; DBVT uses the persistent tree; ABP chooses between them by population. */
+void wp_broadphase_set_type( wp_broadphase *bp, wp_broadphase_type type );
 
 wp_vec3f wp_broadphase_get_world_min( const wp_broadphase *bp );
 void wp_broadphase_set_world_min( wp_broadphase *bp, wp_vec3f min );

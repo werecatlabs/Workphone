@@ -18,6 +18,10 @@ namespace workphone
             virtual void addScene( SmartPtr<IProceduralScene> scene ) = 0;
             virtual void removeScene( SmartPtr<IProceduralScene> scene ) = 0;
             virtual Array<SmartPtr<IProceduralScene>> getScenes() const = 0;
+
+            /// Atomically replace the scene inventory after admission. Unsupported
+            /// owners reject before mutation; scene contents remain externally owned.
+            virtual void setScenes( const Array<SmartPtr<IProceduralScene>> &scenes );
         };
     }  // end namespace procedural
 }  // namespace workphone

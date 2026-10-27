@@ -1485,6 +1485,20 @@ namespace workphone::scene
                 setCollisionMaskOverride( collisionMaskOverride );
             }
 
+            // Named project layers are translated to the existing native group
+            // mask, so scene contacts and ray queries share the same filter.
+            String collisionLayer;
+            if( properties->getPropertyValue( "collisionLayer", collisionLayer ) )
+            {
+                auto application = core::IApplicationManager::instancePtr();
+                auto manager = application ? application->getPhysicsManager() : nullptr;
+                auto scene = manager ? manager->getPhysicsScene() : nullptr;
+                auto layers = scene ? scene->getProperties() : nullptr;
+                u32 mask = 0;
+                if( layers && layers->getPropertyValue( "layer." + collisionLayer, mask ) )
+                    setGroupMask( mask );
+            }
+
             updatePhysicsState();
             updateSmoothTransformState();
         }

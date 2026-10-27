@@ -679,6 +679,43 @@ void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback c
         bp->order_dirty = 0;
     }
     count = bp->ordered_count;
+    if( bp->type == WORKPHONE_BROADPHASE_SAP ||
+        ( bp->type == WORKPHONE_BROADPHASE_ABP && count < 64 ) )
+    {
+        /* Preserve canonical callback ordering while pruning each row on X.
+         * The scratch array is scene-owned and does not allocate during traversal. */
+        wp_s32 j;
+        for( i = 0; i < count; ++i ) bp->hits[i] = bp->ordered[i];
+        for( i = 1; i < count; ++i )
+        {
+            wp_bp_order value = bp->hits[i];
+            j = i;
+            while( j > 0 && bp->nodes[bp->hits[j - 1].proxy].exact.min.x >
+                              bp->nodes[value.proxy].exact.min.x )
+            {
+                bp->hits[j] = bp->hits[j - 1];
+                --j;
+            }
+            bp->hits[j] = value;
+        }
+        for( i = 0; i < count; ++i )
+        {
+            wp_bp_node *a = &bp->nodes[bp->hits[i].proxy];
+            for( j = i + 1; j < count; ++j )
+            {
+                wp_bp_node *b = &bp->nodes[bp->hits[j].proxy];
+                if( b->exact.min.x > a->exact.max.x ) break;
+                if( ( a->movable || b->movable ) && overlaps( a->exact, b->exact ) )
+                {
+                    wp_broadphase_pair pair;
+                    pair.body_a = a->order <= b->order ? a->body : b->body;
+                    pair.body_b = a->order <= b->order ? b->body : a->body;
+                    callback( &pair, context );
+                }
+            }
+        }
+        return;
+    }
     /* Tree rotations can change ancestor rank bounds even without a reorder. */
     update_rank_bounds( bp, bp->root );
     for( i = 0; i < count; ++i )
@@ -710,6 +747,12 @@ void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback c
             callback( &pair, context );
         }
     }
+}
+
+void wp_broadphase_set_type( wp_broadphase *bp, wp_broadphase_type type )
+{
+    if( bp && type >= WORKPHONE_BROADPHASE_SAP && type <= WORKPHONE_BROADPHASE_ABP )
+        bp->type = type;
 }
 
 static void cache_pair( const wp_broadphase_pair *pair, void *context )

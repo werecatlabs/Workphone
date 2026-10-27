@@ -14,6 +14,7 @@ namespace workphone
         public:
             MeshGeneratorDefault();
             ~MeshGeneratorDefault() override;
+            void unload( SmartPtr<ISharedObject> data ) override;
 
             SmartPtr<IMesh> generate( SmartPtr<IRoadNetwork> roadNetwork ) override;
 
@@ -97,9 +98,9 @@ namespace workphone
             String getGenerationStatus() const override;
 
         private:
-            bool beginGeneration();
-            SmartPtr<IMesh> finishGeneration( SmartPtr<IMesh> mesh );
-            SmartPtr<IMesh> failGeneration( const String &message );
+            bool beginGeneration( u64 token );
+            SmartPtr<IMesh> finishGeneration( SmartPtr<IMesh> mesh, u64 token, u64 denials );
+            SmartPtr<IMesh> failGeneration( const String &message, u64 token );
             real_Num m_meshQuality = 1;
             u32 m_numLodLevels = 1;
             real_Num m_lodDistance = 100;
@@ -115,7 +116,8 @@ namespace workphone
             real_Num m_vertexMergeTolerance = 0.0001;
             bool m_generateCollision = false;
             real_Num m_collisionSimplification = 0;
-            Array<SmartPtr<IMesh>> m_generatedMeshes;
+            Array<SmartPtr<IMesh>> m_generatedMeshes{ Allocator<SmartPtr<IMesh>>( sourceBudget ) };
+            u64 m_generation = 0;
             real_Num m_progress = 0;
             String m_status = "Ready";
         };

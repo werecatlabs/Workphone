@@ -233,28 +233,36 @@ namespace workphone
                                        const Array<Vector2<real_Num>> &uvs ) -> SmartPtr<IVertexBuffer>
     {
         auto numVertices = positions.size();
+        if( numVertices > std::numeric_limits<u32>::max() || normals.size() != numVertices || uvs.size() != numVertices )
+            throw std::length_error( "Mesh vertex input sizes do not match" );
 
         auto vertexDeclaration = workphone::make_ptr<VertexDeclaration>();
+        if( !vertexDeclaration ) throw std::bad_alloc();
         u32 offset = 0;
 
         auto element = vertexDeclaration->addElement( 0, offset, VertexElementSemantic::VES_POSITION,
                                                       VertexElementType::VET_FLOAT3 );
+        if( !element ) throw std::bad_alloc();
         offset = element->getSize();
 
         element = vertexDeclaration->addElement( 0, offset, VertexElementSemantic::VES_NORMAL,
                                                  VertexElementType::VET_FLOAT3 );
+        if( !element ) throw std::bad_alloc();
         offset += element->getSize();
 
         element =
             vertexDeclaration->addElement( 0, offset, VertexElementSemantic::VES_TEXTURE_COORDINATES,
                                            VertexElementType::VET_FLOAT2, 0 );
+        if( !element ) throw std::bad_alloc();
         offset += element->getSize();
 
         auto vertexBuffer = workphone::make_ptr<VertexBuffer>();
+        if( !vertexBuffer ) throw std::bad_alloc();
         vertexBuffer->setVertexDeclaration( vertexDeclaration );
         vertexBuffer->setNumVertices( static_cast<u32>( numVertices ) );
 
         auto vertexData = static_cast<f32 *>( vertexBuffer->createVertexData() );
+        if( numVertices && !vertexData ) throw std::bad_alloc();
         f32 *vertexDataPtr = vertexData;
 
         for( size_t i = 0; i < numVertices; ++i )
@@ -329,6 +337,7 @@ namespace workphone
     auto MeshUtil::createIndexBuffer( const Array<u32> &indices ) -> SmartPtr<IIndexBuffer>
     {
         auto indexBuffer = workphone::make_ptr<IndexBuffer>();
+        if( !indexBuffer ) throw std::bad_alloc();
         if( indices.size() > std::numeric_limits<u32>::max() )
         {
             WP_LOG_ERROR(
@@ -346,11 +355,13 @@ namespace workphone
         if( use32Bit )
         {
             auto indexData = static_cast<u32 *>( indexBuffer->createIndexData() );
+            if( !indices.empty() && !indexData ) throw std::bad_alloc();
             std::copy( indices.begin(), indices.end(), indexData );
         }
         else
         {
             auto indexData = static_cast<u16 *>( indexBuffer->createIndexData() );
+            if( !indices.empty() && !indexData ) throw std::bad_alloc();
             for( const auto index : indices )
             {
                 *indexData++ = static_cast<u16>( index );
@@ -362,7 +373,9 @@ namespace workphone
     auto MeshUtil::createSubMesh( SmartPtr<IVertexBuffer> vertexBuffer,
                                   SmartPtr<IIndexBuffer> indexBuffer ) -> SmartPtr<ISubMesh>
     {
+        if( !vertexBuffer || !indexBuffer ) throw std::bad_alloc();
         auto subMesh = workphone::make_ptr<SubMesh>();
+        if( !subMesh ) throw std::bad_alloc();
         subMesh->setVertexBuffer( vertexBuffer );
         subMesh->setIndexBuffer( indexBuffer );
 
@@ -394,7 +407,9 @@ namespace workphone
         auto subMesh = MeshUtil::createSubMesh( vertexBuffer, indexBuffer );
 
         auto mesh = workphone::make_ptr<Mesh>();
+        if( !mesh || !subMesh ) throw std::bad_alloc();
         mesh->addSubMesh( subMesh );
+        if( mesh->getNumSubMeshes() == 0 ) throw std::bad_alloc();
         return mesh;
     }
 

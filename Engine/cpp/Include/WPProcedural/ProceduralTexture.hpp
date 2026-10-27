@@ -4,6 +4,7 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <vector>
 #include <memory>
 #include <cmath>
@@ -48,11 +49,35 @@ namespace workphone
          * index y * width + x.  The at() accessor validates bounds and
          * returns a safe reference to a static black pixel on failure.
          */
-        struct WPProcedural_API Texture2D
+        struct WPProcedural_API Texture2D : SourceBudgetObject
         {
             int width = 0;         ///< Horizontal resolution in pixels.
             int height = 0;        ///< Vertical resolution in pixels.
-            Array<Color4> pixels;  ///< Flat row-major pixel store.
+            Array<Color4> pixels{ Allocator<Color4>( sourceBudget ) };  ///< Admitted row-major store.
+
+            Texture2D() = default;
+            Texture2D( int w, int h, const Array<Color4> &data = {} ) :
+                width( w ), height( h ), pixels( makeSourceBudgetSnapshot( data ) ) {}
+            Texture2D( const Texture2D &other ) :
+                width( other.width ), height( other.height ),
+                pixels( makeSourceBudgetSnapshot( other.pixels ) ) {}
+            Texture2D( Texture2D && ) noexcept = default;
+            Texture2D &operator=( Texture2D && ) noexcept = default;
+            Texture2D &operator=( const Texture2D &other )
+            {
+                if( this != &other ) { Texture2D candidate( other ); swap( candidate ); }
+                return *this;
+            }
+            void swap( Texture2D &other ) noexcept
+            {
+                std::swap( width, other.width ); std::swap( height, other.height );
+                pixels.swap( other.pixels );
+            }
+            void clear() noexcept
+            {
+                auto retired = std::move( pixels );
+                width = height = 0;
+            }
 
             /**
              * @brief Bounds-checked pixel accessor.
@@ -79,7 +104,9 @@ namespace workphone
          * and exposes its parameters through getProperties() / setProperties()
          * for game-editor access.
          */
-        class WPProcedural_API TextureRule
+        // Ordinary new bodies use SourceCpu; caller-owned shared_ptr control blocks and
+        // arbitrary custom rule captures retain their caller's allocation policy.
+        class WPProcedural_API TextureRule : public SourceBudgetObject
         {
         public:
             virtual ~TextureRule() = default;

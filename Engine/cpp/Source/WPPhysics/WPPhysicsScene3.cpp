@@ -3,15 +3,42 @@
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 namespace workphone::physics
 {
+    namespace
+    {
+        void executePhysicsRanges( void *, wp_u32 count, wp_u32 workers,
+                                   wp_physics_range_task task, void *context )
+        {
+            workers = std::min( workers, count );
+            std::vector<std::thread> threads;
+            wp_u32 next = 0;
+            try
+            {
+                threads.reserve( workers > 0 ? workers - 1 : 0 );
+                for( ; next + 1 < workers; ++next )
+                {
+                    const auto begin = count * next / workers;
+                    const auto end = count * ( next + 1 ) / workers;
+                    threads.emplace_back( [=]() { task( context, begin, end ); } );
+                }
+            }
+            catch( ... ) { /* Complete undispatched ranges on the simulation owner. */ }
+            task( context, workers ? count * next / workers : 0, count );
+            for( auto &thread : threads ) thread.join();
+        }
+    }
+
     WPPhysicsScene3::WPPhysicsScene3() : m_scene( wp_physics_scene_create() )
     {
         if( !m_scene )
         {
             throw std::runtime_error( "Failed to create a WPPhysics scene." );
         }
+        wp_physics_scene_set_executor( m_scene, executePhysicsRanges, nullptr );
     }
 
     WPPhysicsScene3::~WPPhysicsScene3()
@@ -19,6 +46,44 @@ namespace workphone::physics
         clear();
         wp_physics_scene_destroy( m_scene );
         m_scene = nullptr;
+    }
+
+    SmartPtr<Properties> WPPhysicsScene3::getProperties() const
+    {
+        ScopedLock lock( const_cast<WPPhysicsScene3 *>( this ) );
+        auto properties = workphone::make_ptr<Properties>();
+        const auto options = wp_physics_scene_get_simulation_options( m_scene );
+        properties->setProperty( "physics.solverIterations", options.solver_iterations );
+        properties->setProperty( "physics.substeps", options.minimum_substeps );
+        properties->setProperty( "physics.simulationRate", options.simulation_rate );
+        properties->setProperty( "physics.threads", options.workers );
+        properties->setProperty( "physics.continuousCollision", options.continuous_collision != 0 );
+        properties->setProperty( "physics.deterministic", options.deterministic != 0 );
+        properties->setProperty( "physics.broadphase", options.broadphase );
+        properties->setProperty( "physics.collisionLayers", m_collisionLayerNames );
+        const auto layers = StringUtil::split( m_collisionLayerNames, "," );
+        for( size_t i = 0; i < layers.size() && i < 32; ++i )
+            properties->setProperty( "layer." + StringUtil::trim( layers[i] ), u32( 1 ) << i );
+        return properties;
+    }
+
+    void WPPhysicsScene3::setProperties( SmartPtr<Properties> properties )
+    {
+        if( !properties ) return;
+        ScopedLock lock( this );
+        auto options = wp_physics_scene_get_simulation_options( m_scene );
+        properties->getPropertyValue( "physics.solverIterations", options.solver_iterations );
+        properties->getPropertyValue( "physics.substeps", options.minimum_substeps );
+        properties->getPropertyValue( "physics.simulationRate", options.simulation_rate );
+        properties->getPropertyValue( "physics.threads", options.workers );
+        properties->getPropertyValue( "physics.broadphase", options.broadphase );
+        bool continuous = options.continuous_collision != 0, deterministic = options.deterministic != 0;
+        properties->getPropertyValue( "physics.continuousCollision", continuous );
+        properties->getPropertyValue( "physics.deterministic", deterministic );
+        options.continuous_collision = continuous;
+        options.deterministic = deterministic;
+        wp_physics_scene_set_simulation_options( m_scene, &options );
+        properties->getPropertyValue( "physics.collisionLayers", m_collisionLayerNames );
     }
 
     void WPPhysicsScene3::update()

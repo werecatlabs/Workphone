@@ -8,6 +8,8 @@
 #include <Workphone/Math/Math.hpp>
 
 #include <algorithm>
+#include <stdexcept>
+#include <utility>
 
 namespace workphone
 {
@@ -25,7 +27,10 @@ namespace workphone
 
         CWorldGenerator::CWorldGenerator() = default;
 
-        CWorldGenerator::~CWorldGenerator() = default;
+        CWorldGenerator::~CWorldGenerator()
+        {
+            clear();
+        }
 
         void CWorldGenerator::unload( SmartPtr<ISharedObject> data )
         {
@@ -40,88 +45,103 @@ namespace workphone
 
         void CWorldGenerator::setProceduralWorld( SmartPtr<IProceduralWorld> proceduralWorld )
         {
+            ++m_generation;
             m_world = proceduralWorld;
+            m_isGenerating = false;
+            m_finished = false;
         }
 
         const Array<SmartPtr<IProceduralScene>> CWorldGenerator::getScenes() const
         {
-            return m_scenes;
+            return makeSourceBudgetSnapshot( m_scenes );
         }
 
         void CWorldGenerator::addScene( SmartPtr<IProceduralScene> scene )
         {
-            if( !scene )
+            if( !scene ) return;
+            auto candidate = makeSourceBudgetSnapshot( m_scenes );
+            candidate.push_back( scene );
+            auto world = m_world;
+            const auto token = m_generation;
+            if( world )
             {
-                return;
+                auto worldScenes = world->getScenes();
+                worldScenes.push_back( scene );
+                world->setScenes( worldScenes );
             }
-
-            m_scenes.push_back( scene );
-
-            if( m_world )
-            {
-                m_world->addScene( scene );
-            }
-
+            if( token != m_generation || world != m_world ) return;
+            m_scenes.swap( candidate );
+            ++m_generation;
+            m_isGenerating = false;
+            m_finished = false;
             onOptionChanged();
         }
 
         void CWorldGenerator::removeScene( SmartPtr<IProceduralScene> scene )
         {
-            if( !scene )
-            {
-                return;
-            }
-
+            if( !scene ) return;
+            auto world = m_world;
+            const auto token = m_generation;
+            // Concrete removal needs no admission. Custom owners retain the same
+            // callback responsibility as their existing removeScene contract.
+            if( world ) world->removeScene( scene );
+            if( token != m_generation || world != m_world ) return;
             auto it = std::find( m_scenes.begin(), m_scenes.end(), scene );
-            if( it != m_scenes.end() )
-            {
-                m_scenes.erase( it );
-            }
-
-            if( m_world )
-            {
-                m_world->removeScene( scene );
-            }
+            if( it != m_scenes.end() ) m_scenes.erase( it );
+            ++m_generation;
+            m_isGenerating = false;
+            m_finished = false;
         }
 
         void CWorldGenerator::setScenes( Array<SmartPtr<IProceduralScene>> scenes )
         {
-            m_scenes = std::move( scenes );
-
-            if( m_world )
+            auto candidate = scenes.get_allocator().isSourceBudgeted() ? std::move( scenes ) :
+                makeSourceBudgetSnapshot( scenes );
+            auto world = m_world;
+            const auto token = m_generation;
+            if( world )
             {
-                // Re-synchronise world scene list.
-                for( auto &scene : m_scenes )
-                {
-                    m_world->addScene( scene );
-                }
+                // Preserve the legacy append-to-world behavior, including order.
+                auto worldScenes = world->getScenes();
+                if( candidate.size() > worldScenes.max_size() - worldScenes.size() )
+                    throw std::length_error( "World scene inventory capacity overflow" );
+                worldScenes.reserve( worldScenes.size() + candidate.size() );
+                for( const auto &scene : candidate ) worldScenes.push_back( scene );
+                world->setScenes( worldScenes );
             }
+            if( token != m_generation || world != m_world ) return;
+            m_scenes.swap( candidate );
+            ++m_generation;
+            m_isGenerating = false;
+            m_finished = false;
         }
 
         void CWorldGenerator::generate()
         {
+            if( m_isGenerating ) throw std::logic_error( "World generation is already active" );
+            const bool wasFinished = m_finished;
+            const auto previousSeed = m_options.seed;
+            const auto token = ++m_generation;
             m_finished = false;
-
-            validate();
-
-            if( m_options.randomizeSeed )
-            {
-                m_options.seed =
-                    static_cast<int>( Math<real_Num>::RangedRandom( 0.0, s_randomSeedMax ) );
-            }
-
             m_isGenerating = true;
             try
             {
+                validate();
+                if( m_options.randomizeSeed )
+                    m_options.seed = static_cast<int>( Math<real_Num>::RangedRandom( 0.0, s_randomSeedMax ) );
                 generateWorld();
             }
             catch( ... )
             {
-                m_isGenerating = false;
+                if( token == m_generation )
+                {
+                    m_isGenerating = false;
+                    m_finished = wasFinished;
+                    m_options.seed = previousSeed;
+                }
                 throw;
             }
-            m_isGenerating = false;
-            m_finished = true;
+            if( token == m_generation ) { m_isGenerating = false; m_finished = true; }
         }
 
         void CWorldGenerator::validate()
@@ -144,9 +164,13 @@ namespace workphone
 
         void CWorldGenerator::clear()
         {
+            ++m_generation;
+            auto scenes = std::move( m_scenes );
+            auto world = std::exchange( m_world, nullptr );
+            auto input = std::exchange( m_input, nullptr );
+            auto output = std::exchange( m_output, nullptr );
+            auto parent = std::exchange( m_parent, nullptr );
             resetToDefaults();
-            m_world = nullptr;
-            m_scenes.clear();
             m_finished = false;
             m_isGenerating = false;
         }
@@ -163,9 +187,10 @@ namespace workphone
 
         void CWorldGenerator::setOptions( const SWorldGeneratorOptions &options )
         {
+            const auto previous = m_options;
             m_options = options;
-            validate();
-            onOptionChanged();
+            try { validate(); onOptionChanged(); }
+            catch( ... ) { m_options = previous; throw; }
         }
 
         void CWorldGenerator::resetToDefaults()
@@ -436,32 +461,62 @@ namespace workphone
 
         void CWorldGenerator::generateWorld()
         {
-            if( !m_world )
+            const auto token = m_generation;
+            auto previousWorld = m_world;
+            auto world = m_world;
+            const bool newWorld = !world;
+            const auto denials = sourceBudgetDenialCount();
+            if( !world ) world = workphone::make_ptr<CProceduralWorld>();
+            if( !world ) throw std::bad_alloc();
+            auto scenes = makeSourceBudgetSnapshot( m_scenes );
+            const bool defaultScene = scenes.empty();
+            if( defaultScene )
             {
-                m_world = workphone::make_ptr<CProceduralWorld>();
+                auto scene = createDefaultScene();
+                if( !scene ) throw std::bad_alloc();
+                scenes.push_back( scene );
             }
-
-            if( m_scenes.empty() )
+            auto worldScenes = makeSourceBudgetSnapshot<SmartPtr<IProceduralScene>>();
+            if( newWorld ) worldScenes = makeSourceBudgetSnapshot( scenes );
+            else if( defaultScene )
             {
-                addScene( createDefaultScene() );
+                worldScenes = world->getScenes();
+                worldScenes.push_back( scenes.front() );
             }
-
-            generateScenes();
+            // Default objects remain private until all terrain work and final
+            // world-inventory admission succeeds. External scene callbacks can
+            // still mutate their own contents and retain their existing contract.
+            if( token != m_generation || previousWorld != m_world ) return;
+            generateScenes( scenes );
+            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            if( token != m_generation || previousWorld != m_world ) return;
+            if( newWorld || defaultScene ) world->setScenes( worldScenes );
+            if( token != m_generation || previousWorld != m_world ) return;
+            m_scenes.swap( scenes );
+            m_world = world;
         }
 
         void CWorldGenerator::generateScenes()
         {
-            if( !m_options.generateTerrain )
+            auto scenes = makeSourceBudgetSnapshot( m_scenes );
+            generateScenes( scenes );
+        }
+
+        void CWorldGenerator::generateScenes( const Array<SmartPtr<IProceduralScene>> &scenes )
+        {
+            const auto token = m_generation;
+            const auto options = m_options;
+            if( !options.generateTerrain )
             {
                 return;
             }
 
-            const auto chunkWidth = m_options.chunkSize;
-            const auto chunkHeight = m_options.chunkSize;
-            const auto chunksX = std::max( 1, m_options.worldWidth / chunkWidth );
-            const auto chunksY = std::max( 1, m_options.worldHeight / chunkHeight );
+            const auto chunkWidth = options.chunkSize;
+            const auto chunkHeight = options.chunkSize;
+            const auto chunksX = std::max( 1, options.worldWidth / chunkWidth );
+            const auto chunksY = std::max( 1, options.worldHeight / chunkHeight );
 
-            for( auto scene : m_scenes )
+            for( auto scene : scenes )
             {
                 if( !scene )
                 {
@@ -472,36 +527,39 @@ namespace workphone
                 {
                     for( int cx = 0; cx < chunksX; ++cx )
                     {
+                        if( token != m_generation ) return;
                         auto terrainGenerator = workphone::make_ptr<CTerrainGenerator>();
+                        if( !terrainGenerator ) throw std::bad_alloc();
                         terrainGenerator->setProceduralScene( scene );
                         terrainGenerator->setWidth( chunkWidth );
                         terrainGenerator->setHeight( chunkHeight );
-                        terrainGenerator->setDepth( m_options.worldDepth );
-                        terrainGenerator->setOctaves( m_options.octaves );
-                        terrainGenerator->setScale( m_options.scale );
-                        terrainGenerator->setLacunarity( m_options.lacunarity );
-                        terrainGenerator->setPersistence( m_options.persistence );
-                        terrainGenerator->setOffset( static_cast<f32>( m_options.seed ) );
-                        terrainGenerator->setSeed( m_options.seed + cx + cy * chunksX );
+                        terrainGenerator->setDepth( options.worldDepth );
+                        terrainGenerator->setOctaves( options.octaves );
+                        terrainGenerator->setScale( options.scale );
+                        terrainGenerator->setLacunarity( options.lacunarity );
+                        terrainGenerator->setPersistence( options.persistence );
+                        terrainGenerator->setOffset( static_cast<f32>( options.seed ) );
+                        terrainGenerator->setSeed( options.seed + cx + cy * chunksX );
                         terrainGenerator->setRandomize( false );
                         terrainGenerator->generate();
+                        if( token != m_generation ) return;
                     }
                 }
             }
 
             // Placeholders for future feature toggles. Right now they just
             // express intent in the data-driven options struct.
-            if( m_options.generateRoads )
+            if( options.generateRoads )
             {
                 // TODO: invoke a road generator once one is wired in.
             }
 
-            if( m_options.generateCities )
+            if( options.generateCities )
             {
                 // TODO: invoke a city generator once one is wired in.
             }
 
-            if( m_options.generateVegetation )
+            if( options.generateVegetation )
             {
                 // TODO: invoke a vegetation generator once one is wired in.
             }

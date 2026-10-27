@@ -116,6 +116,23 @@ wp_spatial_partitioning_method wp_physics_scene_get_spatial_partitioning(
  * ====================================================================== */
 
 void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt );
+typedef void ( *wp_physics_range_task )( void *context, wp_u32 begin, wp_u32 end );
+typedef void ( *wp_physics_parallel_for )( void *executor, wp_u32 count, wp_u32 workers,
+                                         wp_physics_range_task task, void *context );
+typedef struct wp_scene_simulation_options
+{
+    wp_u32 solver_iterations, minimum_substeps, simulation_rate, workers;
+    wp_s32 continuous_collision, deterministic;
+    /* 0: sweep and prune; 1: dynamic AABB tree; 2: automatic. */
+    wp_u32 broadphase;
+} wp_scene_simulation_options;
+void wp_physics_scene_set_simulation_options( wp_physics_scene *scene,
+                                             const wp_scene_simulation_options *options );
+wp_scene_simulation_options wp_physics_scene_get_simulation_options( const wp_physics_scene *scene );
+/* The executor must join all tasks before returning. Contacts remain ordered
+ * on the simulation owner; integration ranges touch disjoint bodies. */
+void wp_physics_scene_set_executor( wp_physics_scene *scene, wp_physics_parallel_for executor,
+                                   void *context );
 wp_s32 wp_physics_scene_fetch_results( wp_physics_scene *scene, wp_s32 block );
 
 /* Counts from the most recent successful simulate call, summed over substeps. */

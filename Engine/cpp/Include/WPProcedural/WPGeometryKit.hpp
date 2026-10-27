@@ -33,7 +33,7 @@ namespace workphone
          *
          * All methods are static and stateless.
          */
-        class WPCore_API WPGeometryKit
+        class WPProcedural_API WPGeometryKit
         {
         public:
             // -----------------------------------------------------------------

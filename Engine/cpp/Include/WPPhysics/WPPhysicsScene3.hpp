@@ -19,6 +19,8 @@ namespace workphone::physics
     public:
         WPPhysicsScene3();
         ~WPPhysicsScene3() override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         /** @brief Updates the physics scene state. */
         void update() override;
@@ -140,6 +142,7 @@ namespace workphone::physics
         void publishActiveTransforms();
 
         wp_physics_scene *m_scene = nullptr;  ///< Handle to the internal physics scene.
+        String m_collisionLayerNames = "Default,Player,Enemy,World,Trigger,UI";
 
         ConcurrentArray<SmartPtr<IPhysicsBody3>> m_actors;  ///< List of actors managed by this scene.
 
