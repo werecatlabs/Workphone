@@ -84,6 +84,12 @@ namespace workphone
              */
             virtual void addRoads( const Array<SmartPtr<IRoad>> &roads ) = 0;
 
+            /** Append a complete generated batch after admission. Existing road/node state
+             * and cached results must remain valid on failure. Unsupported owners reject
+             * before mutation; this does not rebuild existing node adjacency. */
+            virtual void appendGenerated( const Array<SmartPtr<IRoad>> &roads,
+                                          const Array<SmartPtr<IRoadConnection>> &connections );
+
             /**
              * @brief Removes multiple roads from the network.
              * @param roads Array of smart pointers to roads to remove.

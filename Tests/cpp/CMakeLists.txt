@@ -37,6 +37,12 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
+    add_executable(WPMaterialSceneCpuPhaseTests MaterialSceneCpuPhaseTests.cpp MaterialSceneCpuPhaseFixture.c)
+    target_compile_features(WPMaterialSceneCpuPhaseTests PRIVATE cxx_std_17)
+    set_target_properties(WPMaterialSceneCpuPhaseTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.material_native_phase_contract COMMAND WPMaterialSceneCpuPhaseTests)
+    set_tests_properties(WPGraphics.material_native_phase_contract PROPERTIES
+        LABELS "graphics;material;cpu;headless" TIMEOUT 30)
     add_executable(WPMaterialSceneCpuAttributionTests MaterialSceneCpuAttributionTests.cpp MaterialSceneCpuNativeFixture.c)
     target_compile_features(WPMaterialSceneCpuAttributionTests PRIVATE cxx_std_17)
     set_target_properties(WPMaterialSceneCpuAttributionTests PROPERTIES FOLDER Tests/Cpp)

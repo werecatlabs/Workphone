@@ -64,6 +64,14 @@ namespace workphone
             /** @brief Unload all resources. */
             void unload( SmartPtr<ISharedObject> data ) override;
 
+            /** Staging-only handoff after successful publication to another owner.
+             * Detaches every inventory/cache without unloading shared children. Never
+             * use this instead of unload() when abandoning an unpublished generation. */
+            void releaseGenerationReferences() noexcept;
+
+            void appendGenerated( const Array<SmartPtr<IRoad>> &roads,
+                                  const Array<SmartPtr<IRoadConnection>> &connections ) override;
+
             // --------------------------------------------------------------
             // Node queries
             // --------------------------------------------------------------

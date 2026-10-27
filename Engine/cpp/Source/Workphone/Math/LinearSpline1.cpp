@@ -1,5 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Math/LinearSpline1.hpp>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -30,53 +33,141 @@ namespace workphone
     LinearSpline1<T>::~LinearSpline1() = default;
 
     template <class T>
-    void LinearSpline1<T>::setPoints( const Array<Pair<T, T>> &points )
+    LinearSpline1<T>::LinearSpline1( const LinearSpline1 &other ) :
+        ISharedObject(),
+        m_autoCalc( other.m_autoCalc ),
+        m_times( makeSourceBudgetSnapshot( other.m_times ) ),
+        m_points( makeSourceBudgetSnapshot( other.m_points ) ),
+        m_tangents( makeSourceBudgetSnapshot( other.m_tangents ) ),
+        m_coeffs( other.m_coeffs )
     {
-        for( auto &p : points )
+    }
+
+    template <class T>
+    LinearSpline1<T> &LinearSpline1<T>::operator=( const LinearSpline1 &other )
+    {
+        if( this != &other )
         {
-            m_times.push_back( p.first );
-            m_points.push_back( Vector3<T>( p.second, 0.0, 0.0 ) );
+            auto times = makeSourceBudgetSnapshot( other.m_times );
+            auto points = makeSourceBudgetSnapshot( other.m_points );
+            auto tangents = makeSourceBudgetSnapshot( other.m_tangents );
+            m_times.swap( times );
+            m_points.swap( points );
+            m_tangents.swap( tangents );
+            m_autoCalc = other.m_autoCalc;
+            m_coeffs = other.m_coeffs;
+        }
+        return *this;
+    }
+
+    template <class T>
+    void LinearSpline1<T>::unload( SmartPtr<ISharedObject> data )
+    {
+        clear();
+    }
+
+    namespace
+    {
+        template<class T>
+        Array<Vector3<T>> heightSplineTangents( const Array<Vector3<T>> &points,
+                                               size_t retainedCapacity )
+        {
+            auto tangents = makeSourceBudgetSnapshot<Vector3<T>>();
+            if( points.empty() ) return tangents;
+            tangents.reserve( std::max( retainedCapacity, points.size() ) );
+            tangents.resize( points.size() );
+            if( points.size() == 1 )
+            {
+                tangents[0] = Vector3<T>( 0, 0, 0 );
+                return tangents;
+            }
+            const bool closed = points.front() == points.back();
+            for( size_t i = 0; i < points.size(); ++i )
+            {
+                if( i == 0 )
+                    tangents[i] = T( 0.5 ) * ( points[1] - points[closed ? points.size() - 2 : 0] );
+                else if( i + 1 == points.size() )
+                    tangents[i] = closed ? tangents[0] : T( 0.5 ) * ( points[i] - points[i - 1] );
+                else
+                    tangents[i] = T( 0.5 ) * ( points[i + 1] - points[i - 1] );
+            }
+            return tangents;
+        }
+
+        template<class T>
+        void publishHeightPoints( Array<T> &oldTimes, Array<Vector3<T>> &oldPoints,
+                                  Array<Vector3<T>> &oldTangents, bool autoCalculate,
+                                  Array<T> &times, Array<Vector3<T>> &points )
+        {
+            auto tangents = autoCalculate ? heightSplineTangents( points, oldTangents.capacity() ) :
+                                            makeSourceBudgetSnapshot<Vector3<T>>();
+            oldTimes.swap( times );
+            oldPoints.swap( points );
+            oldTangents.swap( tangents );
         }
     }
 
     template <class T>
-    void LinearSpline1<T>::setPoints( const Array<T> &keys, const Array<T> &points )
+    void LinearSpline1<T>::setPoints( const Array<Pair<T, T>> &input )
     {
-        m_times = keys;
-
-        for( auto &p : points )
+        auto times = makeSourceBudgetSnapshot<T>();
+        auto points = makeSourceBudgetSnapshot<Vector3<T>>();
+        times.reserve( input.capacity() );
+        points.reserve( input.capacity() );
+        for( const auto &p : input )
         {
-            m_points.push_back( Vector3<T>( p, 0.0, 0.0 ) );
+            times.push_back( p.first );
+            points.push_back( Vector3<T>( p.second, 0, 0 ) );
         }
+        publishHeightPoints( m_times, m_points, m_tangents, m_autoCalc, times, points );
     }
 
     template <class T>
-    void LinearSpline1<T>::setPoints( const Array<T> &points )
+    void LinearSpline1<T>::setPoints( const Array<T> &keys, const Array<T> &input )
     {
-        for( auto &p : points )
+        if( keys.size() != input.size() )
+            throw std::invalid_argument( "Height spline keys and values must have equal counts" );
+        auto times = makeSourceBudgetSnapshot( keys );
+        auto points = makeSourceBudgetSnapshot<Vector3<T>>();
+        points.reserve( input.capacity() );
+        for( const auto &p : input ) points.push_back( Vector3<T>( p, 0, 0 ) );
+        publishHeightPoints( m_times, m_points, m_tangents, m_autoCalc, times, points );
+    }
+
+    template <class T>
+    void LinearSpline1<T>::setPoints( const Array<T> &input )
+    {
+        auto times = makeSourceBudgetSnapshot<T>();
+        auto points = makeSourceBudgetSnapshot<Vector3<T>>();
+        times.reserve( input.capacity() );
+        points.reserve( input.capacity() );
+        for( size_t i = 0; i < input.size(); ++i )
         {
-            m_points.push_back( Vector3<T>( p, 0.0, 0.0 ) );
+            times.push_back( static_cast<T>( i ) );
+            points.push_back( Vector3<T>( input[i], 0, 0 ) );
         }
+        publishHeightPoints( m_times, m_points, m_tangents, m_autoCalc, times, points );
     }
 
     template <class T>
     T LinearSpline1<T>::interpolate( T t )
     {
-        // Work out which segment this is in
-        auto fSeg = t * ( m_points.size() - 1 );
-        auto segIdx = (u32)fSeg;
-
-        // Apportion t
-        auto p = fSeg - segIdx;
-
-        return interpolate( segIdx, p );
+        if( m_points.empty() ) throw std::out_of_range( "Height spline has no control points" );
+        if( !std::isfinite( t ) ) throw std::invalid_argument( "Height spline parameter must be finite" );
+        if( m_points.size() == 1 || t <= T( 0 ) ) return m_points.front().X();
+        if( t >= T( 1 ) ) return m_points.back().X();
+        const auto segment = t * static_cast<T>( m_points.size() - 1 );
+        const auto index = static_cast<u32>( segment );
+        return interpolate( index, segment - static_cast<T>( index ) );
     }
 
     template <class T>
     T LinearSpline1<T>::interpolate( u32 fromIndex, T t ) const
     {
         // Bounds check
-        WP_ASSERT( fromIndex < m_points.size() && "fromIndex out of bounds" );
+        if( fromIndex >= m_points.size() ) throw std::out_of_range( "Height spline index out of bounds" );
+        if( !std::isfinite( t ) ) throw std::invalid_argument( "Height spline parameter must be finite" );
+        t = std::clamp( t, T( 0 ), T( 1 ) );
 
         if( ( fromIndex + 1 ) == m_points.size() )
         {
@@ -94,6 +185,9 @@ namespace workphone
         {
             return m_points[fromIndex + 1].x;
         }
+
+        if( m_tangents.size() != m_points.size() )
+            throw std::logic_error( "Height spline tangents require recalculation" );
 
         // Real interpolation
         // Form a vector of powers of t
@@ -140,79 +234,23 @@ namespace workphone
     template <class T>
     void LinearSpline1<T>::clear()
     {
-        m_points.clear();
+        auto times = std::move( m_times );
+        auto points = std::move( m_points );
+        auto tangents = std::move( m_tangents );
     }
 
     template <class T>
     void LinearSpline1<T>::setAutoCalculate( bool autoCalc )
     {
+        if( autoCalc && !m_autoCalc ) recalcTangents();
         m_autoCalc = autoCalc;
     }
 
     template <class T>
     void LinearSpline1<T>::recalcTangents()
     {
-        // Catmull-Rom approach
-        //
-        // tangent[i] = 0.5 * (point[i+1] - point[i-1])
-        //
-        // Assume endpoint tangents are parallel with line with neighbour
-
-        size_t i, numPoints;
-        bool isClosed;
-
-        numPoints = m_points.size();
-        if( numPoints < 2 )
-        {
-            // Can't do anything yet
-            return;
-        }
-
-        // Closed or open?
-        if( m_points[0] == m_points[numPoints - 1] )
-        {
-            isClosed = true;
-        }
-        else
-        {
-            isClosed = false;
-        }
-
-        m_tangents.resize( numPoints );
-
-        for( i = 0; i < numPoints; ++i )
-        {
-            if( i == 0 )
-            {
-                // Special case start
-                if( isClosed )
-                {
-                    // Use numPoints-2 since numPoints-1 is the last point and == [0]
-                    m_tangents[i] = T( 0.5 ) * ( m_points[1] - m_points[numPoints - 2] );
-                }
-                else
-                {
-                    m_tangents[i] = T( 0.5 ) * ( m_points[1] - m_points[0] );
-                }
-            }
-            else if( i == numPoints - 1 )
-            {
-                // Special case end
-                if( isClosed )
-                {
-                    // Use same tangent as already calculated for [0]
-                    m_tangents[i] = m_tangents[0];
-                }
-                else
-                {
-                    m_tangents[i] = T( 0.5 ) * ( m_points[i] - m_points[i - 1] );
-                }
-            }
-            else
-            {
-                m_tangents[i] = T( 0.5 ) * ( m_points[i + 1] - m_points[i - 1] );
-            }
-        }
+        auto tangents = heightSplineTangents( m_points, m_tangents.capacity() );
+        m_tangents.swap( tangents );
     }
 
     // explicit instantiation

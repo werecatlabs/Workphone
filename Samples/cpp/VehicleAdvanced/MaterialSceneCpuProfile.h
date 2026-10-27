@@ -1,6 +1,7 @@
 #pragma once
 #if defined(_WIN32)
 #include "MaterialSceneCpuAttributionProbe.hpp"
+#include "MaterialSceneCpuNativePhases.hpp"
 #include <cstdlib>
 #include <ostream>
 #include <stdexcept>
@@ -20,15 +21,24 @@ namespace workphone::advanced
             api=get?get():nullptr;
             if(!api || api->version!=Version || api->bytes!=sizeof(Api))
                 throw std::runtime_error("Material scene attribution requires its matching test renderer overlay");
+            if(std::getenv("WP_MATERIAL_SCENE_NATIVE_PHASES"))
+            {
+                auto getPhases=reinterpret_cast<GetNativePhaseApi>(GetProcAddress(module,"wp_material_scene_native_phases_v1"));
+                phases=getPhases?getPhases():nullptr;
+                if(!phases || phases->version!=NativePhaseVersion || phases->bytes!=sizeof(NativePhaseApi))
+                    throw std::runtime_error("Native phase attribution requires its matching test overlay");
+                phases->enable(true);
+            }
             api->calibrate(); api->configure(32,0x9e3779b9u,true);
         }
         void end()
         {
             if(!api) return;
             api->read(&metrics);
+            if(phases) phases->read(&phaseMetrics);
             api->configure(32,1,false);
             if(metrics.errors || !metrics.visitedSections || !metrics.sampledSections ||
-               metrics.thread!=GetCurrentThreadId())
+               metrics.thread!=GetCurrentThreadId() || (phases && phaseMetrics.errors))
                 throw std::runtime_error("Material scene attribution has incomplete owner-thread coverage");
         }
         void beginStage(material_scene_cpu::Stage stage) { if(api) api->begin(stage); }
@@ -70,10 +80,27 @@ namespace workphone::advanced
                 << ",\"editVerificationSegments\":" << m.stageSegments[material_scene_cpu::EditVerification]
                 << ",\"clockOverheadMedian\":" << m.overheadMedian << ",\"clockOverheadMax\":" << m.overheadMax
                 << ",\"clockErrors\":" << m.errors << "}";
+            if(phases)
+            {
+                const auto &p=phaseMetrics;
+                out << ",\n\"nativeMaterialPhases\":{\"protocol\":\"material_native_phases_v1\",\"clock\":\"QueryThreadCycleTime\""
+                    << ",\"thread\":" << p.thread << ",\"stride\":" << p.stride << ",\"draws\":" << p.draws
+                    << ",\"sampledDraws\":" << p.sampledDraws << ",\"errors\":" << p.errors << ",\"phases\":[";
+                for(uint32_t i=0;i<material_scene_cpu::NativePhaseCount;++i)
+                {
+                    if(i) out << ',';
+                    out << "{\"id\":" << i+1 << ",\"name\":\"" << material_scene_cpu::NativePhaseNames[i]
+                        << "\",\"cycles\":" << p.cycles[i] << ",\"segments\":" << p.segments[i]
+                        << ",\"regions\":" << p.regions[i] << '}';
+                }
+                out << "]}";
+            }
         }
     private:
         const material_scene_cpu::Api *api=nullptr;
         material_scene_cpu::Metrics metrics;
+        const material_scene_cpu::NativePhaseApi *phases=nullptr;
+        material_scene_cpu::NativePhaseMetrics phaseMetrics;
     };
 }
 

@@ -57,6 +57,9 @@ namespace workphone
          * @details Safely destroys the spline object and releases any allocated resources.
          */
         ~LinearSpline1() override;
+        LinearSpline1( const LinearSpline1 &other );
+        LinearSpline1 &operator=( const LinearSpline1 &other );
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         /**
          * @brief Sets spline control points using key-value pairs.
@@ -232,13 +235,13 @@ namespace workphone
         bool m_autoCalc = true;
 
         /// @brief Array of parameter values (time points) for each control point
-        Array<T> m_times;
+        Array<T> m_times{ Allocator<T>( sourceBudget ) };
 
         /// @brief Array of 3D control points (only X component is used for 1D splines)
-        Array<Vector3<T>> m_points;
+        Array<Vector3<T>> m_points{ Allocator<Vector3<T>>( sourceBudget ) };
 
         /// @brief Array of 3D tangent vectors for smooth interpolation
-        Array<Vector3<T>> m_tangents;
+        Array<Vector3<T>> m_tangents{ Allocator<Vector3<T>>( sourceBudget ) };
 
         /// @brief 4x4 coefficient matrix for Hermite polynomial interpolation
         Matrix4<T> m_coeffs = Matrix4<T>::identity();

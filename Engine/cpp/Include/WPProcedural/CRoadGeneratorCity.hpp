@@ -36,7 +36,9 @@ namespace workphone
             void generateGrid();
             void generateRoads();
             void generateRoads8();
-            void generateCityRoadsAAA();
+            void buildNetwork( SmartPtr<IRoadNetwork> target,
+                               SmartPtr<IRoadNetwork> source ) override;
+            void generateCityRoadsAAA( SmartPtr<IRoadNetwork> roadNetwork );
 
             SmartPtr<ISharedObject> m_selectedLayer;
 

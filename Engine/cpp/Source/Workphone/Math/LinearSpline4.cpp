@@ -1,5 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Math/LinearSpline4.hpp>
+#include <cmath>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -14,6 +16,35 @@ namespace workphone
     }
 
     template <class T>
+    LinearSpline4<T>::LinearSpline4( const LinearSpline4 &other ) :
+        ISharedObject(), m_points( makeSourceBudgetSnapshot( other.m_points ) )
+    {
+    }
+
+    template <class T>
+    LinearSpline4<T> &LinearSpline4<T>::operator=( const LinearSpline4 &other )
+    {
+        if( this != &other )
+        {
+            auto points = makeSourceBudgetSnapshot( other.m_points );
+            m_points.swap( points );
+        }
+        return *this;
+    }
+
+    template <class T>
+    void LinearSpline4<T>::unload( SmartPtr<ISharedObject> data )
+    {
+        clear();
+    }
+
+    template <class T>
+    void LinearSpline4<T>::clear()
+    {
+        auto points = std::move( m_points );
+    }
+
+    template <class T>
     Vector4<T> LinearSpline4<T>::interpolate( T t )
     {
         // Perform linear interpolation
@@ -21,6 +52,10 @@ namespace workphone
         {
             throw std::out_of_range( "LinearSpline4 requires at least 2 points for interpolation" );
         }
+
+        if( !std::isfinite( t ) ) throw std::invalid_argument( "Spline parameter must be finite" );
+        if( t <= T( 0 ) ) return m_points.front();
+        if( t >= T( 1 ) ) return m_points.back();
 
         // Find the segment in which 't' lies
         auto numSegments = m_points.size() - 1;
@@ -49,19 +84,21 @@ namespace workphone
     template <class T>
     void LinearSpline4<T>::addPoint( const Vector4<T> &point )
     {
-        m_points.push_back( point );
+        const auto value = point;
+        m_points.push_back( value );
     }
 
     template <class T>
     Array<Vector4<T>> LinearSpline4<T>::getPoints() const
     {
-        return m_points;
+        return makeSourceBudgetSnapshot( m_points );
     }
 
     template <class T>
     void LinearSpline4<T>::setPoints( const Array<Vector4<T>> &points )
     {
-        m_points = points;
+        auto candidate = makeSourceBudgetSnapshot( points );
+        m_points.swap( candidate );
     }
 
     // explicit instantiation

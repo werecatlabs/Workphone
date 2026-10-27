@@ -2,6 +2,7 @@
 #define LinearSpline4_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Core/Array.hpp>
 #include <Workphone/Math/Vector4.hpp>
 
 namespace workphone
@@ -39,6 +40,10 @@ namespace workphone
          * Ensures proper cleanup when the object is destroyed.
          */
         ~LinearSpline4() override;
+        LinearSpline4( const LinearSpline4 &other );
+        LinearSpline4 &operator=( const LinearSpline4 &other );
+        void unload( SmartPtr<ISharedObject> data ) override;
+        void clear();
 
         /**
          * @brief Performs linear interpolation at parameter t.
@@ -100,7 +105,7 @@ namespace workphone
          *
          * Contains all the 4D vectors that define the spline's shape.
          */
-        Array<Vector4<T>> m_points;
+        Array<Vector4<T>> m_points{ Allocator<Vector4<T>>( sourceBudget ) };
     };
 
     /**

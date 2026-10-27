@@ -6,6 +6,7 @@
 #include "WPProcedural/CRoadSection.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -28,6 +29,84 @@ namespace workphone
             constexpr f32 kEpsilon = 1.0e-6f;
             constexpr f32 kPi = 3.14159265358979323846f;
             constexpr size_t kMaxGeneratedNodes = 10000u;
+
+            // A temporary graph owns cycles before publication. Rollback tears down
+            // only newly constructed objects; referenced external roads stay borrowed.
+            struct RoadBuildCleanup
+            {
+                SmartPtr<IRoad> road;
+                bool published = false;
+                ~RoadBuildCleanup()
+                {
+                    if( road && !published )
+                    {
+                        try { road->unload( nullptr ); } catch( ... ) {}
+                    }
+                }
+            };
+
+            struct MeshBuildCleanup
+            {
+                SmartPtr<IMesh> mesh;
+                bool published = false;
+                ~MeshBuildCleanup()
+                {
+                    if( mesh && !published )
+                    {
+                        try { mesh->unload( nullptr ); } catch( ... ) {}
+                    }
+                }
+            };
+
+            struct NodePairCleanup
+            {
+                SmartPtr<IRoadNode> a, b;
+                bool published = false;
+                ~NodePairCleanup()
+                {
+                    if( !published )
+                    {
+                        try { if( a ) a->unload( nullptr ); } catch( ... ) {}
+                        try { if( b ) b->unload( nullptr ); } catch( ... ) {}
+                    }
+                }
+            };
+
+            struct RoadListCleanup
+            {
+                Array<SmartPtr<IRoad>> &roads;
+                size_t first;
+                bool published = false;
+                ~RoadListCleanup()
+                {
+                    if( !published )
+                    {
+                        for( size_t i = first; i < roads.size(); ++i )
+                        {
+                            try { if( roads[i] ) roads[i]->unload( nullptr ); } catch( ... ) {}
+                        }
+                    }
+                }
+            };
+
+            void requireCompleteAdmission( u64 epoch )
+            {
+                if( sourceBudgetDenialCount() != epoch ) throw std::bad_alloc();
+            }
+
+            template<class T>
+            void reserveAppend( Array<T> &values, size_t count )
+            {
+                if( count > values.max_size() - values.size() )
+                    throw std::length_error( "Road utility output capacity overflow" );
+                const auto required = values.size() + count;
+                if( required > values.capacity() )
+                {
+                    const auto growth = std::min( values.capacity() / 2,
+                                                  values.max_size() - values.capacity() );
+                    values.reserve( std::max( required, values.capacity() + growth ) );
+                }
+            }
 
             bool isFinite( f32 value )
             {
@@ -120,7 +199,7 @@ namespace workphone
 
             Array<Vector3F> sanitisePath( const Array<Vector3F> &points, const char *context )
             {
-                Array<Vector3F> result;
+                Array<Vector3F> result{ Allocator<Vector3F>( sourceBudget ) };
                 result.reserve( std::min( points.size(), kMaxGeneratedNodes ) );
 
                 for( size_t i = 0; i < points.size(); ++i )
@@ -185,6 +264,7 @@ namespace workphone
                                                 const String &roadType, f32 width,
                                                 SmartPtr<IRoad> connectedRoad = nullptr )
             {
+                const auto epoch = sourceBudgetDenialCount();
                 auto points = sanitisePath( sourcePoints, "RoadGeneratorUtil::createRoadFromPath" );
                 if( points.size() < 2u )
                 {
@@ -205,10 +285,11 @@ namespace workphone
                     return nullptr;
                 }
 
+                RoadBuildCleanup cleanup{ road };
                 road->setRoadType( roadType );
                 road->addRoadSection( section );
 
-                Array<SmartPtr<IRoadNode>> nodes;
+                Array<SmartPtr<IRoadNode>> nodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
                 nodes.reserve( points.size() );
 
                 for( size_t i = 0; i < points.size(); ++i )
@@ -237,6 +318,7 @@ namespace workphone
 
                         nodes.push_back( node );
                     }
+                    catch( const std::bad_alloc & ) { throw; }
                     catch( std::exception &e )
                     {
                         WP_LOG_EXCEPTION( e );
@@ -265,7 +347,7 @@ namespace workphone
 
                 const auto elementRoadType =
                     roadType == "MajorRoad" ? IRoad::RoadType::Trunk : IRoad::RoadType::Residential;
-                Array<SmartPtr<IRoadElement>> elements;
+                Array<SmartPtr<IRoadElement>> elements{ Allocator<SmartPtr<IRoadElement>>( sourceBudget ) };
                 elements.reserve( nodes.size() - 1u );
 
                 for( size_t i = 0; i + 1u < nodes.size(); ++i )
@@ -279,6 +361,7 @@ namespace workphone
                             elements.push_back( element );
                         }
                     }
+                    catch( const std::bad_alloc & ) { throw; }
                     catch( std::exception &e )
                     {
                         WP_LOG_EXCEPTION( e );
@@ -294,13 +377,23 @@ namespace workphone
                 section->setElements( elements );
                 road->setRoadSegments( elements );
                 road->updateBounds();
+                requireCompleteAdmission( epoch );
+                cleanup.published = true;
                 return road;
+            }
+
+            Array<Vector3F> makePointPair( const Vector3F &a, const Vector3F &b )
+            {
+                auto result = makeSourceBudgetSnapshot<Vector3F>();
+                result.reserve( 2 );
+                result.push_back( a ); result.push_back( b );
+                return result;
             }
 
             Array<Vector3F> makeStraightPath( const Vector3F &start, const Vector3F &direction,
                                               f32 distance )
             {
-                Array<Vector3F> points;
+                Array<Vector3F> points{ Allocator<Vector3F>( sourceBudget ) };
                 points.reserve( 2u );
                 points.push_back( start );
                 points.push_back( start +
@@ -311,7 +404,7 @@ namespace workphone
             Array<Vector3F> makeHermitePath( const Vector3F &start, const Vector3F &target,
                                              const Vector3F &initialDirection )
             {
-                Array<Vector3F> points;
+                Array<Vector3F> points{ Allocator<Vector3F>( sourceBudget ) };
                 const auto delta = target - start;
                 const auto distance = delta.length();
                 if( !isFinite( distance ) || distance <= kMinRoadDistance )
@@ -346,7 +439,7 @@ namespace workphone
 
             Array<Vector3F> makeCircularPath( const Vector3F &center, f32 radius, size_t segmentCount )
             {
-                Array<Vector3F> points;
+                Array<Vector3F> points{ Allocator<Vector3F>( sourceBudget ) };
                 segmentCount = std::clamp<size_t>( segmentCount, 8u, 256u );
                 points.reserve( segmentCount + 1u );
 
@@ -398,6 +491,7 @@ namespace workphone
                                                                      const Vector3F &tangentB,
                                                                      f32 widthA, f32 widthB )
         {
+            const auto epoch = sourceBudgetDenialCount();
             try
             {
                 if( !isPositionValid( posA ) || !isPositionValid( posB ) )
@@ -431,6 +525,7 @@ namespace workphone
                     return nullptr;
                 }
 
+                NodePairCleanup cleanup{ nodeA, nodeB };
                 nodeA->setPosition( posA );
                 nodeB->setPosition( posB );
                 nodeA->connect( nodeB );
@@ -442,8 +537,11 @@ namespace workphone
                 {
                     element->build();
                 }
+                requireCompleteAdmission( epoch );
+                cleanup.published = bool( element );
                 return element;
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -460,6 +558,7 @@ namespace workphone
 
         SmartPtr<IMesh> RoadGeneratorUtil::buildMesh( const Array<SmartPtr<IRoadElement>> &roadSegments )
         {
+            const auto epoch = sourceBudgetDenialCount();
             try
             {
                 if( roadSegments.empty() )
@@ -468,8 +567,8 @@ namespace workphone
                     return nullptr;
                 }
 
-                Array<Vector3F> positions;
-                Array<Vector2F> uvs;
+                Array<Vector3F> positions{ Allocator<Vector3F>( sourceBudget ) };
+                Array<Vector2F> uvs{ Allocator<Vector2F>( sourceBudget ) };
 
                 for( size_t segmentIndex = 0; segmentIndex < roadSegments.size(); ++segmentIndex )
                 {
@@ -515,6 +614,7 @@ namespace workphone
                                                uvs );
                         }
                     }
+                    catch( const std::bad_alloc & ) { throw; }
                     catch( std::exception &e )
                     {
                         WP_LOG_EXCEPTION( e );
@@ -541,10 +641,12 @@ namespace workphone
                     return nullptr;
                 }
 
-                Array<Vector3<real_Num>> meshPositions( positions.begin(), positions.end() );
-                Array<Vector3<real_Num>> normals;
-                Array<Vector2<real_Num>> meshUvs( uvs.begin(), uvs.end() );
-                Array<u32> indices;
+                Array<Vector3<real_Num>> meshPositions( positions.begin(), positions.end(),
+                    Allocator<Vector3<real_Num>>( sourceBudget ) );
+                Array<Vector3<real_Num>> normals{ Allocator<Vector3<real_Num>>( sourceBudget ) };
+                Array<Vector2<real_Num>> meshUvs( uvs.begin(), uvs.end(),
+                    Allocator<Vector2<real_Num>>( sourceBudget ) );
+                Array<u32> indices{ Allocator<u32>( sourceBudget ) };
                 normals.assign( meshPositions.size(), Vector3<real_Num>( 0.0, 1.0, 0.0 ) );
                 indices.reserve( meshPositions.size() );
                 for( u32 i = 0; i < static_cast<u32>( meshPositions.size() ); ++i )
@@ -553,6 +655,8 @@ namespace workphone
                 }
 
                 auto mesh = MeshUtil::createMesh( meshPositions, normals, meshUvs, indices );
+                MeshBuildCleanup cleanup{ mesh };
+                requireCompleteAdmission( epoch );
                 if( !mesh )
                 {
                     WP_LOG_ERROR( "RoadGeneratorUtil::buildMesh - mesh creation failed." );
@@ -563,8 +667,11 @@ namespace workphone
                 {
                     subMesh->setMaterialName( "RoadDefault" );
                 }
+                requireCompleteAdmission( epoch );
+                cleanup.published = true;
                 return mesh;
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -610,10 +717,27 @@ namespace workphone
                 const Vector2F localUvs[] = { Vector2F( 0.0f, 0.0f ), Vector2F( 0.0f, 1.0f ),
                                               Vector2F( 1.0f, 1.0f ), Vector2F( 0.0f, 0.0f ),
                                               Vector2F( 1.0f, 1.0f ), Vector2F( 1.0f, 0.0f ) };
-                vertexPositions.insert( vertexPositions.end(), std::begin( localPositions ),
-                                        std::end( localPositions ) );
-                uvs.insert( uvs.end(), std::begin( localUvs ), std::end( localUvs ) );
+                auto append = [&]( Array<Vector3F> &positions, Array<Vector2F> &coordinates ) {
+                    reserveAppend( positions, 6 );
+                    reserveAppend( coordinates, 6 );
+                    positions.insert( positions.end(), std::begin( localPositions ), std::end( localPositions ) );
+                    coordinates.insert( coordinates.end(), std::begin( localUvs ), std::end( localUvs ) );
+                };
+                if( vertexPositions.get_allocator().isSourceBudgeted() &&
+                    uvs.get_allocator().isSourceBudgeted() )
+                {
+                    append( vertexPositions, uvs );
+                }
+                else
+                {
+                    auto positions = makeSourceBudgetSnapshot( vertexPositions );
+                    auto coordinates = makeSourceBudgetSnapshot( uvs );
+                    append( positions, coordinates );
+                    vertexPositions.swap( positions );
+                    uvs.swap( coordinates );
+                }
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -651,6 +775,7 @@ namespace workphone
                                      highwayInfo->InitialDirection );
                 return createRoadFromPath( path, "MajorRoad", 14.0f, highwayInfo->TargetRoad );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -715,6 +840,7 @@ namespace workphone
                     makeStraightPath( straightRoadInfo->StartPos, straightRoadInfo->StartDir, distance ),
                     "Residential", kDefaultRoadWidth, straightRoadInfo->ConnentedRoad );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -761,6 +887,7 @@ namespace workphone
                 return createRoadFromPath( makeStraightPath( start, direction, distance ), "Residential",
                                            kDefaultRoadWidth );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -804,6 +931,7 @@ namespace workphone
                                            "Residential", kDefaultRoadWidth,
                                            radialPatternInfo->ConnentedRoad );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -829,6 +957,7 @@ namespace workphone
                 return createRoadFromPath( makeStraightPath( startPos, startDir, kDefaultRoadDistance ),
                                            "Residential", kDefaultRoadWidth, connentedRoad );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -875,6 +1004,7 @@ namespace workphone
                 return createRoadFromPath( makeCircularPath( center, radius, segmentCount ), "RingRoad",
                                            kDefaultRoadWidth );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -901,6 +1031,7 @@ namespace workphone
                 return createRoadFromPath( makeCircularPath( centerPosition, radius, segmentCount ),
                                            "RoundAbout", kDefaultRoadWidth );
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -927,6 +1058,7 @@ namespace workphone
         void RoadGeneratorUtil::createCheckerPattern( SmartPtr<ICityBlock> block,
                                                       Array<SmartPtr<IRoad>> &roads )
         {
+            const auto epoch = sourceBudgetDenialCount();
             try
             {
                 if( !block )
@@ -983,28 +1115,36 @@ namespace workphone
                 const auto zLineCount = std::min<size_t>(
                     static_cast<size_t>( std::floor( ( maxZ - minZ ) / spacing ) ) + 1u, 128u );
 
+                auto candidate = makeSourceBudgetSnapshot( roads );
+                RoadListCleanup cleanup{ candidate, candidate.size() };
+                reserveAppend( candidate, xLineCount + zLineCount );
+
                 for( size_t i = 0; i < xLineCount; ++i )
                 {
                     const auto x = std::min( minX + static_cast<f32>( i ) * spacing, maxX );
-                    auto road = createRoadFromPath( { Vector3F( x, y, minZ ), Vector3F( x, y, maxZ ) },
+                    auto road = createRoadFromPath( makePointPair( Vector3F( x, y, minZ ), Vector3F( x, y, maxZ ) ),
                                                     "Residential", kDefaultRoadWidth );
                     if( road )
                     {
-                        roads.push_back( road );
+                        candidate.push_back( road );
                     }
                 }
 
                 for( size_t i = 0; i < zLineCount; ++i )
                 {
                     const auto z = std::min( minZ + static_cast<f32>( i ) * spacing, maxZ );
-                    auto road = createRoadFromPath( { Vector3F( minX, y, z ), Vector3F( maxX, y, z ) },
+                    auto road = createRoadFromPath( makePointPair( Vector3F( minX, y, z ), Vector3F( maxX, y, z ) ),
                                                     "Residential", kDefaultRoadWidth );
                     if( road )
                     {
-                        roads.push_back( road );
+                        candidate.push_back( road );
                     }
                 }
+                requireCompleteAdmission( epoch );
+                roads.swap( candidate );
+                cleanup.published = true;
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -1040,6 +1180,7 @@ namespace workphone
                 }
                 return false;
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -1126,6 +1267,7 @@ namespace workphone
                             }
                         }
                     }
+                    catch( const std::bad_alloc & ) { throw; }
                     catch( std::exception &e )
                     {
                         WP_LOG_EXCEPTION( e );
@@ -1140,6 +1282,7 @@ namespace workphone
 
                 return roadNode != nullptr;
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );

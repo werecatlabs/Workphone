@@ -8,6 +8,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 #include <unordered_map>
 
 namespace workphone
@@ -41,6 +42,57 @@ namespace workphone
         CRoadNetwork::~CRoadNetwork()
         {
             unload( nullptr );
+        }
+
+        void CRoadNetwork::releaseGenerationReferences() noexcept
+        {
+            // Move storage owners, rather than map contents: constructing replacement
+            // map sentinels may allocate on MSVC even when moving an empty map.
+            auto nodes = std::move( m_nodes );
+            auto merged = std::move( m_mergedNodes );
+            auto networkNodes = std::move( m_mergedNetworkNodes );
+            auto roads = std::move( m_roads );
+            auto major = std::move( m_majorRoads );
+            auto minor = std::move( m_minorRoads );
+            auto connections = std::move( m_roadConnections );
+            auto segments = std::move( m_cachedSegmentResults );
+            auto intersections = std::move( m_cachedIntersectionResults );
+        }
+
+        void CRoadNetwork::appendGenerated( const Array<SmartPtr<IRoad>> &roads,
+                                            const Array<SmartPtr<IRoadConnection>> &connections )
+        {
+            const auto hasNew = []( const auto &current, const auto &incoming ) {
+                return std::any_of( incoming.begin(), incoming.end(), [&]( const auto &item ) {
+                    return item && std::find( current.begin(), current.end(), item ) == current.end();
+                } );
+            };
+            const bool appendRoads = hasNew( m_roads, roads );
+            const bool appendConnections = hasNew( m_roadConnections, connections );
+            if( !appendRoads && !appendConnections ) return;
+
+            const auto prepare = []( const auto &current, const auto &incoming ) {
+                using Items = std::decay_t<decltype( current )>;
+                Items candidate{ typename Items::allocator_type( sourceBudget ) };
+                if( incoming.size() > candidate.max_size() - current.size() )
+                    throw std::length_error( "Generated road inventory capacity overflow" );
+                candidate.reserve( std::max( current.capacity(), current.size() + incoming.size() ) );
+                candidate.insert( candidate.end(), current.begin(), current.end() );
+                for( const auto &item : incoming )
+                {
+                    if( item && std::find( candidate.begin(), candidate.end(), item ) == candidate.end() )
+                        candidate.push_back( item );
+                }
+                return candidate;
+            };
+            // Prepare both inventories before either becomes visible. Existing nodes,
+            // adjacency and cache entries are deliberately untouched by publication.
+            auto pendingRoads = appendRoads ? prepare( m_roads, roads ) :
+                makeSourceBudgetSnapshot<SmartPtr<IRoad>>();
+            auto pendingConnections = appendConnections ? prepare( m_roadConnections, connections ) :
+                makeSourceBudgetSnapshot<SmartPtr<IRoadConnection>>();
+            if( appendRoads ) m_roads.swap( pendingRoads );
+            if( appendConnections ) m_roadConnections.swap( pendingConnections );
         }
 
         void CRoadNetwork::unload( SmartPtr<ISharedObject> data )
@@ -198,6 +250,7 @@ namespace workphone
 
                 // Result caches are populated only when an actual result exists.
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -213,6 +266,7 @@ namespace workphone
                     addRoad( road );
                 }
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -291,6 +345,7 @@ namespace workphone
 
                 // Avoid a second allocation after publishing the inventory entry.
             }
+            catch( const std::bad_alloc & ) { throw; }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );

@@ -62,34 +62,21 @@ namespace workphone
 
         void CRoadGeneratorGrid::generate()
         {
-            try
-            {
-                generateGridAAA();
-            }
-            catch( std::exception &e )
-            {
-                WP_LOG_EXCEPTION( e );
-            }
+            CRoadGenerator::generate();
+        }
+
+        void CRoadGeneratorGrid::buildNetwork( SmartPtr<IRoadNetwork> target,
+                                  SmartPtr<IRoadNetwork> )
+        {
+            generateGridAAA( target );
         }
 
         // ===================================================================
         // GENERATE GRID AAA - the new working implementation
         // ===================================================================
-        void CRoadGeneratorGrid::generateGridAAA()
+        void CRoadGeneratorGrid::generateGridAAA( SmartPtr<IRoadNetwork> roadNetwork )
         {
-            SmartPtr<IProceduralCity> city = getCity();
-            if( !city )
-            {
-                WP_LOG_ERROR( "CRoadGeneratorGrid::generateGridAAA - no city set." );
-                return;
-            }
-
-            auto roadNetwork = city->getRoadNetwork();
-            if( !roadNetwork )
-            {
-                WP_LOG_ERROR( "CRoadGeneratorGrid::generateGridAAA - no road network on city." );
-                return;
-            }
+            if( !roadNetwork ) return;
 
             // Grid parameters
             const s32 gridX = m_gridSize.X();
@@ -145,10 +132,13 @@ namespace workphone
                     }
                     if( startNode && endNode )
                     {
-                        startNode->connect( endNode );
-                        endNode->connect( startNode );
                         road->addNode( startNode );
+
                         road->addNode( endNode );
+
+                        startNode->connect( endNode );
+
+                        endNode->connect( startNode );
                     }
 
                     // Store the AAA mesh result on the road (via road elements/sections)
@@ -202,10 +192,13 @@ namespace workphone
                     }
                     if( startNode && endNode )
                     {
-                        startNode->connect( endNode );
-                        endNode->connect( startNode );
                         road->addNode( startNode );
+
                         road->addNode( endNode );
+
+                        startNode->connect( endNode );
+
+                        endNode->connect( startNode );
                     }
 
                     auto payload = std::make_unique<RoadSegmentResult>( segResult );
@@ -259,7 +252,7 @@ namespace workphone
             }
 
             // --- Setup the graph ---
-            roadNetwork->setupGraph();
+            // Endpoint adjacency is prepared only on the new, private roads.
         }
 
         void CRoadGeneratorGrid::setCity( SmartPtr<IProceduralCity> value )

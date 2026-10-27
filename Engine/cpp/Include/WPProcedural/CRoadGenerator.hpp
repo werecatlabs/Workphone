@@ -132,8 +132,11 @@ namespace workphone
             void generateRoads();
             void generateRoads8();
             void createIntersections();
-            void generateRoadsAAA();
-            void createIntersectionsAAA();
+            virtual void buildNetwork( SmartPtr<IRoadNetwork> target,
+                                       SmartPtr<IRoadNetwork> source );
+            void generateRoadsAAA( SmartPtr<IRoadNetwork> roadNetwork );
+            void createIntersectionsAAA( SmartPtr<IRoadNetwork> roadNetwork,
+                                         SmartPtr<IRoadNetwork> source );
 
             SmartPtr<IRoadConnection> createConnection( const String &assetPath,
                                                         Transform3<real_Num> t );
@@ -158,6 +161,7 @@ namespace workphone
             SRoadGeneratorOptions m_options;
             bool m_finished = false;
             bool m_isGenerating = false;
+            u64 m_generation = 0;
         };
     }  // end namespace procedural
 }  // namespace workphone

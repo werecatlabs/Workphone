@@ -148,6 +148,7 @@ namespace workphone
             BuiltRoad buildRoadSegment( WPRoadSystem &roadSystem, const WPNoise &noise,
                                         const Vector3<real_Num> &start, const Vector3<real_Num> &end,
                                         RoadClass roadClass, u32 seed, Array<SmartPtr<IRoad>> &roads,
+                                        SmartPtr<IRoadNetwork> roadNetwork,
                                         const char *namePrefix, s32 index )
             {
                 BuiltRoad br;
@@ -194,10 +195,13 @@ namespace workphone
                 }
                 if( startNode && endNode )
                 {
-                    startNode->connect( endNode );
-                    endNode->connect( startNode );
                     road->addNode( startNode );
+
                     road->addNode( endNode );
+
+                    startNode->connect( endNode );
+
+                    endNode->connect( startNode );
                 }
 
                 auto payload = std::make_unique<RoadSegmentResult>( segResult );
@@ -444,35 +448,22 @@ namespace workphone
 
         void CRoadGeneratorCity::generate()
         {
-            try
-            {
-                generateCityRoadsAAA();
-            }
-            catch( std::exception &e )
-            {
-                WP_LOG_EXCEPTION( e );
-            }
+            CRoadGenerator::generate();
+        }
+
+        void CRoadGeneratorCity::buildNetwork( SmartPtr<IRoadNetwork> target,
+                                  SmartPtr<IRoadNetwork> )
+        {
+            generateCityRoadsAAA( target );
         }
 
         // ===================================================================
         // generateCityRoadsAAA - the full AAA implementation
         // ===================================================================
 
-        void CRoadGeneratorCity::generateCityRoadsAAA()
+        void CRoadGeneratorCity::generateCityRoadsAAA( SmartPtr<IRoadNetwork> roadNetwork )
         {
-            SmartPtr<IProceduralCity> city = getCity();
-            if( !city )
-            {
-                WP_LOG_ERROR( "CRoadGeneratorCity::generateCityRoadsAAA - no city set." );
-                return;
-            }
-
-            auto roadNetwork = city->getRoadNetwork();
-            if( !roadNetwork )
-            {
-                WP_LOG_ERROR( "CRoadGeneratorCity::generateCityRoadsAAA - no road network." );
-                return;
-            }
+            if( !roadNetwork ) return;
 
             // ---------------------------------------------------------------
             // Layout noise - deterministic, seeded.
@@ -547,7 +538,7 @@ namespace workphone
                 RoadClass rc = hClasses[row];
 
                 buildRoadSegment( roadSystem, layoutNoise, start, end, rc,
-                                  kBaseSeed + static_cast<u32>( row * 1000 ), roads, "CityRoadH_", row );
+                                  kBaseSeed + static_cast<u32>( row * 1000 ), roads, roadNetwork, "CityRoadH_", row );
             }
 
             // ---------------------------------------------------------------
@@ -559,7 +550,7 @@ namespace workphone
                 RoadClass rc = vClasses[col];
 
                 buildRoadSegment( roadSystem, layoutNoise, start, end, rc,
-                                  kBaseSeed + static_cast<u32>( col * 2000 + 500 ), roads, "CityRoadV_",
+                                  kBaseSeed + static_cast<u32>( col * 2000 + 500 ), roads, roadNetwork, "CityRoadV_",
                                   col );
             }
 
@@ -589,7 +580,7 @@ namespace workphone
                 roadNetwork->addRoadConnection( conn );
             }
 
-            roadNetwork->setupGraph();
+            // Endpoint adjacency is prepared only on the new, private roads.
         }
 
         // ===================================================================
