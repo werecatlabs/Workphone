@@ -2,6 +2,7 @@
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Application.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <Workphone/System/ProjectServices.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
@@ -161,6 +162,21 @@ namespace workphone::core
             createPlugins();
             WP_ASSERT( applicationManager->isValid() );
 
+            if( auto profile = applicationManager->getPlayerSettings() )
+            {
+                if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 )
+                {
+                    auto factory = applicationManager->getFactoryManager();
+                    auto external = factory->createObjectFromType<IThreadPool>( profile->getProperty( "tasks.providerType" ) );
+                    if( !external ) throw std::runtime_error( "External job-system provider could not be created" );
+                    if( auto previous = applicationManager->getThreadPool() ) previous->unload( nullptr );
+                    external->setNumThreads( projectWorkerCount( getActiveThreads() ) );
+                    external->load( profile );
+                    applicationManager->setThreadPool( external );
+                    external->setState( IThreadPool::State::Start );
+                }
+            }
+
             allocatePoolMemory();
             WP_LOG( "Pool memory allocated." );
             WP_ASSERT( applicationManager->isValid() );
@@ -272,6 +288,16 @@ namespace workphone::core
             createDefaultFont();
 
             loadScripts();
+
+            if( auto profile = applicationManager->getPlayerSettings() )
+            {
+                if( profile->hasProperty( "services.crashReporting" ) || profile->hasProperty( "network.multiplayer" ) )
+                {
+                    String error;
+                    if( !applyProjectServiceSettings( profile, applicationManager->getProjectPath(), error ) )
+                        throw std::runtime_error( error.c_str() );
+                }
+            }
 
             if( auto sceneManager = applicationManager->getGameManager() )
             {
@@ -2544,6 +2570,8 @@ namespace workphone::core
         WP_ASSERT( factoryManager );
 
         auto numThreads = projectWorkerCount( static_cast<u32>( getActiveThreads() ) );
+        if( auto profile = applicationManager->getPlayerSettings() )
+            if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 ) numThreads = 0;
 
         auto maxThreads = Thread::hardware_concurrency();
         if( numThreads > maxThreads )

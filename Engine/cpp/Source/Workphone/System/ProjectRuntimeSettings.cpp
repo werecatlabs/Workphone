@@ -43,6 +43,7 @@ namespace workphone
         auto settings = workphone::make_ptr<Properties>();
         DataUtil::parse( text, settings.get() );
         app->setPlayerSettings( settings );
+        app->setProjectPath( std::filesystem::absolute( path ).parent_path().u8string() );
     }
 
     u32 projectWorkerCount( u32 applicationDefault )

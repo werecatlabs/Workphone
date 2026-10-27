@@ -64,6 +64,9 @@ namespace workphone
         properties->getPropertyValue( "sound.spatialization", m_spatializationEnabled );
         properties->getPropertyValue( "sound.streaming", m_streamingEnabled );
         properties->getPropertyValue( "sound.occlusion", m_occlusionEnabled );
+        m_voiceLimit = std::clamp( m_voiceLimit, 1u, 512u );
+        m_playbackSampleRate = std::clamp( m_playbackSampleRate, 22050u, 96000u );
+        m_playbackBufferFrames = std::clamp( m_playbackBufferFrames, 128u, 4096u );
         for( auto &sound : m_sounds.snapshot() )
             if( sound && sound->isLoaded() ) sound->setVolume( sound->getVolume() );
     }

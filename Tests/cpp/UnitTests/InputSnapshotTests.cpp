@@ -2,6 +2,9 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Input/InputDeviceManager.hpp>
 #include <Workphone/Input/KeyboardState.hpp>
+#include <Workphone/Input/InputEvent.hpp>
+#include <Workphone/Interface/Input/IGameInputMap.hpp>
+#include <Workphone/Interface/Input/IGameInputState.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/System/WindowMessageData.hpp>
 #include <boost/test/unit_test.hpp>
@@ -16,6 +19,11 @@ using namespace workphone;
 
 namespace
 {
+    class ProjectSettingsInput : public InputDeviceManager
+    {
+    public:
+        ProjectSettingsInput() { m_inputEventQueue.resize( static_cast<u32>( TaskId::Count ) ); }
+    };
     class SnapshotInput : public InputDeviceManager
     {
     public:
@@ -65,6 +73,53 @@ namespace
         std::function<void()> onDestroy;
         ~SnapshotLifetimeProbe() override { if( onDestroy ) onDestroy(); }
     };
+}
+
+BOOST_AUTO_TEST_CASE( input_project_settings_gate_events_mapping_and_rebinding )
+{
+    auto input = make_ptr<ProjectSettingsInput>();
+    auto settings = make_ptr<Properties>();
+    settings->setProperty( "input.gamepad", false );
+    settings->setProperty( "input.touch", false );
+    settings->setProperty( "input.gestures", false );
+    settings->setProperty( "input.mouseCapture", false );
+    settings->setProperty( "input.rebinds", true );
+    input->setProperties( settings );
+    auto player = input->addGameInput( 91 );
+    BOOST_REQUIRE( player );
+    auto map = player->getGameInputMap();
+    BOOST_REQUIRE( map );
+    map->setKeyboardAction( 42, "A", "" );
+    BOOST_CHECK_EQUAL( map->getActionFromKey( 65 ), 42u );
+    auto key = make_ptr<KeyboardState>();
+    key->setKeyCode( 65 ); key->setPressedDown( true );
+    auto event = make_ptr<InputEvent>();
+    event->setEventType( IInputEvent::EventType::Key ); event->setKeyboardState( key );
+    BOOST_CHECK( input->postEvent( event ) );
+    BOOST_REQUIRE( event->getGameInputState() );
+    BOOST_CHECK_EQUAL( event->getGameInputState()->getAction(), 42u );
+    BOOST_CHECK_EQUAL( event->getGameInputId(), 91u );
+    settings->setProperty( "input.rebinds", false ); input->setProperties( settings );
+    map->setKeyboardAction( 42, "B", "" );
+    BOOST_CHECK_EQUAL( map->getActionFromKey( 65 ), 42u );
+    BOOST_CHECK_EQUAL( map->getActionFromKey( 66 ), IGameInput::UNASSIGNED );
+    settings->setProperty( "input.rebinds", true ); input->setProperties( settings );
+    map->setKeyboardAction( 42, "B", "" );
+    BOOST_CHECK_EQUAL( map->getActionFromKey( 66 ), 42u );
+    auto joystick = make_ptr<InputEvent>(); joystick->setEventType( IInputEvent::EventType::Joystick );
+    BOOST_CHECK( !input->postEvent( joystick ) );
+    auto touch = make_ptr<InputEvent>(); touch->setEventType( IInputEvent::EventType::User );
+    auto touchValues = make_ptr<Properties>(); touchValues->setProperty( "input.kind", "touch" );
+    touch->setProperties( touchValues );
+    BOOST_CHECK( !input->postEvent( touch ) );
+    settings->setProperty( "input.touch", true ); input->setProperties( settings );
+    BOOST_CHECK( input->postEvent( touch ) );
+    settings->setProperty( "input.system", 2 ); input->setProperties( settings );
+    auto raw = make_ptr<InputEvent>(); raw->setEventType( IInputEvent::EventType::Key );
+    raw->setKeyboardState( key );
+    BOOST_CHECK( input->postEvent( raw ) );
+    BOOST_CHECK( !raw->getGameInputState() );
+    BOOST_CHECK( !input->getProperties()->getPropertyAsBool( "input.mouseCapture" ) );
 }
 
 BOOST_AUTO_TEST_CASE( input_keyboard_snapshot_publication_holds_reference_acquisition_lock )

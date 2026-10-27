@@ -150,6 +150,18 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loading );
+            bool startupFullscreen=false;
+            if(getName()=="DefaultWindow")
+                if(auto app=core::IApplicationManager::instancePtr())
+                    if(auto settings=app->getPlayerSettings())
+                    {
+                        const auto resolution=settings->getPropertyAsInt("graphics.resolution");
+                        constexpr s32 sizes[][2]={{1920,1080},{1280,720},{2560,1440},{3840,2160}};
+                        if(resolution>=0 && resolution<4) resize(sizes[resolution][0],sizes[resolution][1]);
+                        else if(resolution==5) resize(std::max(1,settings->getPropertyAsInt("graphics.customWidth")),
+                                                      std::max(1,settings->getPropertyAsInt("graphics.customHeight")));
+                        settings->getPropertyValue("graphics.fullscreen",startupFullscreen);
+                    }
             const auto requestedSize = getSize();
             WP_LOG_INFO( "WPGraphics/Window: loading '" + getName() + "' at " +
                          std::to_string( requestedSize.x ) + "x" + std::to_string( requestedSize.y ) );
@@ -191,6 +203,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loaded );
+            if(startupFullscreen) setFullscreen(true);
             WP_LOG_INFO( "WPGraphics/Window: '" + getName() + "' initialized." );
         }
 

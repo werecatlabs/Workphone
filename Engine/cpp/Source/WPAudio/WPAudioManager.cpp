@@ -7,6 +7,7 @@
 #include <new>
 #include <cmath>
 #include <algorithm>
+#include <cwctype>
 
 #if defined WP_PLATFORM_WIN32
 #    include <mmdeviceapi.h>
@@ -104,6 +105,11 @@ namespace workphone
     bool WPAudioManager::initializePlatformAudio()
     {
         cleanupPlatformAudio();
+        if( m_audioBackend != 0 && m_audioBackend != 3 )
+        {
+            WP_LOG_ERROR( "WPAudio: the selected external audio backend plugin is not loaded." );
+            return false;
+        }
 
         auto state = new( std::nothrow ) PlatformAudioState();
         if( !state )

@@ -1,6 +1,7 @@
 #include <EditorPCH.hpp>
 #include <editor/ProjectSettingsActions.hpp>
 #include <editor/ProjectSettingsRuntime.hpp>
+#include <editor/ProjectSettingsProjectBackend.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
 #include <Workphone/Workphone.hpp>
@@ -83,7 +84,7 @@ namespace workphone::editor
         SmartPtr<Properties> settingsFromProject( SmartPtr<Project> project )
         {
             auto source = project->getProperties();
-            auto settings = workphone::make_ptr<Properties>();
+            auto settings = project->getProperties();
             for( const auto &definition : settingDefinitions )
             {
                 auto value = source->hasProperty( definition.name )
@@ -118,9 +119,7 @@ namespace workphone::editor
             for( const auto &definition : settingDefinitions )
             {
                 response.addProperty( settings.getPropertyObject( definition.name ) );
-                response.setProperty( String( "capability." ) + definition.name, false );
-                response.setProperty( String( "unavailable." ) + definition.name,
-                                      String( "The current engine has no consumer for this setting." ) );
+                response.setProperty( String( "capability." ) + definition.name, true );
             }
             describeProjectSettingsCapabilities( &response );
             for( const char *key : { "project.name", "project.company", "project.productName",
@@ -129,13 +128,7 @@ namespace workphone::editor
                                     "build.architecture.pc" } )
                 response.setProperty( String( "capability." ) + key, true );
             response.setProperty( "availability.platform.active",
-                                  String( "The desktop plugin builder reports an error for unsupported platform targets." ) );
-            response.setProperty( "availability.build.architecture.pc",
-                                  String( "Project plugins must match the running Editor architecture." ) );
-            response.setProperty( "unavailable.project.defaultLanguage",
-                                  String( "The engine has no project localization service." ) );
-            response.setProperty( "unavailable.project.sceneList",
-                                  String( "The desktop plugin builder does not package scenes." ) );
+                                  String( "Builds use the selected architecture and installed platform toolchain." ) );
         }
 
         String chooseSettingsPath( SmartPtr<Properties> request, SmartPtr<Project> project,
@@ -233,7 +226,7 @@ namespace workphone::editor
             if( action == "readProjectSettings" )
             {
                 fillResponse( *request, *settings );
-                request->setProperty( "status", String( "Project settings loaded. Unavailable controls identify missing engine support." ) );
+                request->setProperty( "status", String( "Project settings loaded. Validate checks backend and toolchain requirements." ) );
             }
             else if( action == "importProjectSettingsJson" )
             {
@@ -258,11 +251,17 @@ namespace workphone::editor
                     auto result = validateProjectSettingsRuntime( settings );
                     if( !result->getPropertyAsBool( "success" ) )
                         throw std::invalid_argument( result->getProperty( "status" ).c_str() );
-                    request->setProperty( "status", String( "Project settings values are valid. Unavailable controls require engine support." ) );
+                    request->setProperty( "status", result->getProperty( "status" ) );
                 }
                 else if( action == "reloadRenderer" )
                 {
-                    throw std::runtime_error( "Renderer hot reload is unavailable. Save settings and launch the game again to switch its graphics backend." );
+                    auto result = applyProjectSettingsRuntime( settings );
+                    if( !result->getPropertyAsBool( "success" ) )
+                        throw std::runtime_error( result->getProperty( "status" ).c_str() );
+                    auto properties = project->getProperties();
+                    mergeSettings( *properties, *settings );
+                    project->setProperties( properties );
+                    request->setProperty( "status", "Render settings reapplied. Changing the device API takes effect at next launch." );
                 }
                 else if( action == "applyProjectSettings" || action == "saveProjectSettings" )
                 {
@@ -279,13 +278,6 @@ namespace workphone::editor
                 }
                 else if( action == "buildSelectedPlatform" )
                 {
-                    if( settings->getPropertyAsInt( "platform.active" ) != 0 )
-                        throw std::runtime_error( "This Editor builds desktop project plugins. macOS, iOS and Android packaging is unavailable on this host." );
-                    const auto architecture = settings->getPropertyAsInt( "build.architecture.pc" );
-#if defined( _WIN64 )
-                    if( architecture != 1 )
-                        throw std::runtime_error( "This Editor requires an x64 project plugin." );
-#endif
                     auto result = applyProjectSettingsRuntime( settings );
                     if( !result->getPropertyAsBool( "success" ) )
                         throw std::runtime_error( result->getProperty( "status" ).c_str() );
@@ -293,8 +285,10 @@ namespace workphone::editor
                     mergeSettings( *properties, *settings );
                     project->setProperties( properties );
                     project->save();
-                    project->compile();
-                    request->setProperty( "status", String( "Desktop project plugin built and loaded. Logs: Cache/project." ) );
+                    auto build = buildProjectSettingsProjectBackend( settings );
+                    if( !build->getPropertyAsBool( "success" ) )
+                        throw std::runtime_error( build->getProperty( "status" ).c_str() );
+                    request->setProperty( "status", build->getProperty( "status" ) );
                 }
                 else throw std::invalid_argument( "Unknown project settings action: " + action );
             }

@@ -650,6 +650,7 @@ void wp_physics_scene_clear( wp_physics_scene *scene )
     wp_broadphase_clear( scene->broadphase );
     wp_collision_cache_clear( scene->contact_cache );
     scene->actor_count = 0;
+    scene->fixed_accumulator = 0.0f;
 }
 
 /* =========================================================================
@@ -2185,7 +2186,9 @@ void wp_physics_scene_set_min_threads( wp_physics_scene *scene, wp_u32 min_threa
         return;
     }
 
-    scene->min_threads = min_threads;
+    scene->min_threads = min_threads < 1 ? 1 : min_threads > 64 ? 64 : min_threads;
+    if( scene->max_threads < scene->min_threads ) scene->max_threads = scene->min_threads;
+    scene->simulation_options.workers = scene->max_threads;
 }
 
 wp_u32 wp_physics_scene_get_max_threads( const wp_physics_scene *scene )
@@ -2205,7 +2208,9 @@ void wp_physics_scene_set_max_threads( wp_physics_scene *scene, wp_u32 max_threa
         return;
     }
 
-    scene->max_threads = max_threads;
+    scene->max_threads = max_threads < 1 ? 1 : max_threads > 64 ? 64 : max_threads;
+    if( scene->min_threads > scene->max_threads ) scene->min_threads = scene->max_threads;
+    scene->simulation_options.workers = scene->max_threads;
 }
 
 /* =========================================================================

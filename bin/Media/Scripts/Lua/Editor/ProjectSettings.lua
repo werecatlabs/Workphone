@@ -44,6 +44,8 @@ ProjectSettingsTypes =
 	TextureFiltering = 49,
 	Anisotropy = 50,
 	PresentMode = 51,
+	CustomWidth = 52,
+	CustomHeight = 53,
 
 	-- Render pipeline / lighting
 	RenderPipeline = 60,
@@ -197,6 +199,8 @@ local ProjectSettingsDefaults =
 	allowRendererFallback = true,
 
 	resolution = 0,
+	customWidth = 1920,
+	customHeight = 1080,
 	fullscreen = false,
 	vsync = true,
 	frameRateLimit = 60,
@@ -342,6 +346,8 @@ local ProjectSettingsStoreMap =
 	allowRendererFallback = { name = "graphics.allowRendererFallback", type = "bool" },
 
 	resolution = { name = "graphics.resolution", type = "int" },
+	customWidth = { name = "graphics.customWidth", type = "int" },
+	customHeight = { name = "graphics.customHeight", type = "int" },
 	fullscreen = { name = "graphics.fullscreen", type = "bool" },
 	vsync = { name = "graphics.vsync", type = "bool" },
 	frameRateLimit = { name = "graphics.frameRateLimit", type = "int" },
@@ -463,8 +469,8 @@ local ProjectSettingsStoreMap =
 	showAdvancedWarnings = { name = "editor.advancedWarnings", type = "bool" },
 }
 
-local PlatformNames = { "PC", "macOS (build unavailable)", "iOS (build unavailable)", "Android (build unavailable)" };
-local PcRendererNames = { "Auto", "DirectX 11", "DirectX 12 (unavailable)", "Vulkan (unavailable)", "OpenGL (unavailable)", "Software (CPU)" };
+local PlatformNames = { "PC", "macOS", "iOS", "Android" };
+local PcRendererNames = { "Auto", "DirectX 11", "DirectX 12", "Vulkan", "OpenGL", "Software (CPU)" };
 local MacRendererNames = { "Auto", "Metal", "Vulkan / MoltenVK", "OpenGL" };
 local IosRendererNames = { "Auto", "Metal", "OpenGL ES" };
 local AndroidRendererNames = { "Auto", "Vulkan", "OpenGL ES" };
@@ -756,10 +762,11 @@ function ProjectSettings:load()
 
 	-- Graphics -------------------------------------------------------------
 	local displayHeader = self:addHeader(ui, graphicsTab, "Display");
-	addText(ui, displayHeader, "Game graphics changes apply to the next standalone launch. Unavailable controls need engine support.");
-	addText(ui, displayHeader, "Post effects require the Software game renderer.");
+	addText(ui, displayHeader, "Display and render policies apply live. Device/API changes apply on next launch.");
 	self:bind(addDropdown(ui, displayHeader, "Resolution", ProjectSettingsTypes.Resolution,
 		{ "1920x1080", "1280x720", "2560x1440", "3840x2160", "Device Native", "Custom" }, self.settings.resolution), "resolution", "dropdown");
+	self:bind(addSlider(ui, displayHeader, "Custom Width", ProjectSettingsTypes.CustomWidth, 320.0, 8192.0, self.settings.customWidth), "customWidth", "intSlider");
+	self:bind(addSlider(ui, displayHeader, "Custom Height", ProjectSettingsTypes.CustomHeight, 200.0, 8192.0, self.settings.customHeight), "customHeight", "intSlider");
 	self:bind(addToggle(ui, displayHeader, "Fullscreen", ProjectSettingsTypes.Fullscreen, self.settings.fullscreen), "fullscreen", "toggle");
 	self:bind(addToggle(ui, displayHeader, "VSync", ProjectSettingsTypes.VSync, self.settings.vsync), "vsync", "toggle");
 	self:bind(addSlider(ui, displayHeader, "Frame Rate Limit", ProjectSettingsTypes.FrameRateLimit, 15.0, 240.0, self.settings.frameRateLimit), "frameRateLimit", "intSlider");
@@ -771,7 +778,7 @@ function ProjectSettings:load()
 	self:bind(addDropdown(ui, renderingHeader, "Render Pipeline", ProjectSettingsTypes.RenderPipeline,
 		{ "Forward", "Forward+", "Deferred", "Mobile Forward" }, self.settings.renderPipeline), "renderPipeline", "dropdown");
 	self:bind(addDropdown(ui, renderingHeader, "Anti-Aliasing", ProjectSettingsTypes.AntiAliasing,
-		{ "None", "FXAA (unavailable)", "TAA", "MSAA 2x (unavailable)", "MSAA 4x (unavailable)", "MSAA 8x (unavailable)" }, self.settings.aa), "aa", "dropdown");
+		{ "None", "FXAA", "TAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" }, self.settings.aa), "aa", "dropdown");
 	self:bind(addToggle(ui, renderingHeader, "Dynamic Resolution", ProjectSettingsTypes.DynamicResolution, self.settings.dynamicResolution), "dynamicResolution", "toggle");
 	self:bind(addToggle(ui, renderingHeader, "HDR", ProjectSettingsTypes.HDR, self.settings.hdr), "hdr", "toggle");
 	self:bind(addDropdown(ui, renderingHeader, "Color Space", ProjectSettingsTypes.ColorSpace,
@@ -834,7 +841,7 @@ function ProjectSettings:load()
 	self:bind(addSlider(ui, physicsHeader, "Substeps", ProjectSettingsTypes.PhysicsSubsteps, 1.0, 8.0, self.settings.physicsSubsteps), "physicsSubsteps", "intSlider");
 	self:bind(addSlider(ui, physicsHeader, "Physics Threads", ProjectSettingsTypes.PhysicsThreads, 1.0, 16.0, self.settings.physicsThreads), "physicsThreads", "intSlider");
 	self:bind(addDropdown(ui, physicsHeader, "Broadphase", ProjectSettingsTypes.Broadphase,
-		{ "Sweep And Prune", "Multi Box Prune", "Automatic Box Prune", "GPU Broadphase" }, self.settings.broadphase), "broadphase", "dropdown");
+		{ "Sweep And Prune", "Dynamic AABB Tree", "Automatic", "GPU Provider" }, self.settings.broadphase), "broadphase", "dropdown");
 	self:bind(addToggle(ui, physicsHeader, "Continuous Collision", ProjectSettingsTypes.ContinuousCollision, self.settings.continuousCollision), "continuousCollision", "toggle");
 	self:bind(addToggle(ui, physicsHeader, "Deterministic Physics", ProjectSettingsTypes.DeterministicPhysics, self.settings.deterministicPhysics), "deterministicPhysics", "toggle");
 	self:bind(addToggle(ui, physicsHeader, "Physics Debug Draw", ProjectSettingsTypes.PhysicsDebugDraw, self.settings.physicsDebugDraw), "physicsDebugDraw", "toggle");
@@ -873,7 +880,7 @@ function ProjectSettings:load()
 	self:bind(addDropdown(ui, buildHeader, "Build Config", ProjectSettingsTypes.BuildConfig,
 		{ "Debug", "Development", "Release", "Shipping" }, self.settings.buildConfig), "buildConfig", "dropdown");
 	self:bind(addDropdown(ui, buildHeader, "PC Architecture", ProjectSettingsTypes.ArchitecturePC,
-		{ "x86 (unavailable)", "x64", "ARM64 (unavailable)" }, self.settings.architecturePC), "architecturePC", "dropdown");
+		{ "x86", "x64", "ARM64" }, self.settings.architecturePC), "architecturePC", "dropdown");
 	self:bind(addDropdown(ui, buildHeader, "macOS Architecture", ProjectSettingsTypes.ArchitectureMac,
 		{ "Intel", "Apple Silicon", "Universal" }, self.settings.architectureMac), "architectureMac", "dropdown");
 	self:bind(addDropdown(ui, buildHeader, "iOS Architecture", ProjectSettingsTypes.ArchitectureIOS,
@@ -947,9 +954,8 @@ function ProjectSettings:load()
 	self.saveButton = addButton(ui, actionsHeader, "Save", ProjectSettingsTypes.Save, true);
 	self.resetButton = addButton(ui, actionsHeader, "Reset", ProjectSettingsTypes.Reset, true);
 	self.validateButton = addButton(ui, actionsHeader, "Validate", ProjectSettingsTypes.Validate, false);
-	self.reloadRendererButton = addButton(ui, actionsHeader, "Game renderer applies on next launch", ProjectSettingsTypes.ReloadRenderer, true);
-	self.reloadRendererButton:setEnabled(false, false);
-	self.buildSelectedButton = addButton(ui, actionsHeader, "Build Desktop Plugin", ProjectSettingsTypes.BuildSelected, true);
+	self.reloadRendererButton = addButton(ui, actionsHeader, "Reapply Renderer Settings", ProjectSettingsTypes.ReloadRenderer, true);
+	self.buildSelectedButton = addButton(ui, actionsHeader, "Build Selected Platform", ProjectSettingsTypes.BuildSelected, true);
 	self.exportJsonButton = addButton(ui, actionsHeader, "Export JSON", ProjectSettingsTypes.ExportJson, false);
 	self.importJsonButton = addButton(ui, actionsHeader, "Import JSON", ProjectSettingsTypes.ImportJson, true);
 	self.statusText = addText(ui, actionsHeader, self.statusMessage);
@@ -1129,7 +1135,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 
 	for key, value in pairs(preserved) do self.settings[key] = value; end
 	self:syncToControls();
-	self:setStatus(safeOption(PlatformNames, platform) .. " profile staged. Review settings, then Apply or Save. The current toolchain builds PC projects.");
+	self:setStatus(safeOption(PlatformNames, platform) .. " profile staged. Apply or Save, then build with the installed target toolchain.");
 end
 
 function ProjectSettings:applySettings(updateStatus)

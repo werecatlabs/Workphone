@@ -46,6 +46,14 @@ typedef struct wp_geometry_dx11 wp_geometry_dx11;
 wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *renderer, wp_f32 exposure );
 void wp_renderer_dx11_set_output_options( wp_renderer_dx11 *renderer, wp_s32 hdr_enabled,
                                          wp_s32 linear_workflow, wp_s32 tonemapping );
+void wp_renderer_dx11_set_scene_sampling( wp_renderer_dx11 *renderer, wp_s32 samples, wp_f32 scale );
+/* Applies to subsequent device creation and built-in shader compilation. */
+void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
+                                          wp_s32 validation, wp_s32 allow_fallback );
+wp_u32 wp_renderer_dx11_supported_scene_samples( wp_renderer_dx11 *renderer );
+/* Borrowed scene depth, valid until the next scene-target allocation. The
+ * resource is R24G8_TYPELESS and supports R24_UNORM_X8_TYPELESS SRV reads. */
+void *wp_renderer_dx11_get_scene_depth_texture( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *renderer );
 wp_s32 wp_renderer_dx11_is_hdr_scene_active( const wp_renderer_dx11 *renderer );
 void *wp_renderer_dx11_get_hdr_scene_view( const wp_renderer_dx11 *renderer );

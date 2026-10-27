@@ -386,13 +386,16 @@ static int test_project_simulation_options_have_effects( void )
     wp_physics_scene *scene = wp_physics_scene_create();
     wp_rigidbody *a = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
     wp_rigidbody *b = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_rigidbody *wall = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
     wp_collision_shape *shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_collision_shape *shape_b = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_collision_shape *shape_wall = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
     wp_scene_simulation_options options;
     wp_f32 x;
-    CHECK( scene && a && b && shape );
+    CHECK( scene && a && b && wall && shape && shape_b && shape_wall );
     wp_physics_scene_set_gravity( scene, vector3( 0, 0, 0 ) );
-    wp_rigidbody_add_shape( a, shape );
-    wp_rigidbody_add_shape( b, shape );
+    CHECK( wp_rigidbody_add_shape( a, shape ) >= 0 );
+    CHECK( wp_rigidbody_add_shape( b, shape_b ) >= 0 );
     wp_rigidbody_set_position( b, vector3( 0, 10, 0 ) );
     wp_rigidbody_set_linear_velocity( a, vector3( 120, 0, 0 ) );
     CHECK( wp_physics_scene_add_actor( scene, a ) && wp_physics_scene_add_actor( scene, b ) );
@@ -419,12 +422,25 @@ static int test_project_simulation_options_have_effects( void )
     CHECK( wp_rigidbody_get_position( a ).x == x );
     wp_physics_scene_simulate( scene, 1.0f / 120.0f );
     CHECK( wp_rigidbody_get_position( a ).x > x );
+    options.deterministic = 0;
+    options.solver_iterations = 3;
+    wp_physics_scene_set_simulation_options( scene, &options );
+    CHECK( wp_rigidbody_add_shape( wall, shape_wall ) >= 0 );
+    wp_rigidbody_set_position( wall, vector3( 1.0f, 0, 0 ) );
+    CHECK( wp_physics_scene_add_actor( scene, wall ) );
+    wp_rigidbody_set_position( a, vector3( 0, 0, 0 ) );
+    wp_rigidbody_set_position( b, vector3( 0.5f, 0, 0 ) );
+    wp_rigidbody_set_linear_velocity( a, vector3( 0, 0, 0 ) );
+    wp_physics_scene_simulate( scene, 1.0f / 60.0f );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs > 2 );
+    CHECK( wp_rigidbody_get_position( a ).x < -0.2f );
     options.solver_iterations = 0;
     wp_physics_scene_set_simulation_options( scene, &options );
-    CHECK( wp_physics_scene_get_simulation_options( scene ).solver_iterations == 1 );
+    CHECK( wp_physics_scene_get_simulation_options( scene ).solver_iterations == 3 );
     wp_physics_scene_destroy( scene );
-    wp_rigidbody_destroy( a ); wp_rigidbody_destroy( b );
+    wp_rigidbody_destroy( a ); wp_rigidbody_destroy( b ); wp_rigidbody_destroy( wall );
     wp_collision_shape_destroy( shape );
+    wp_collision_shape_destroy( shape_b ); wp_collision_shape_destroy( shape_wall );
     return 1;
 }
 

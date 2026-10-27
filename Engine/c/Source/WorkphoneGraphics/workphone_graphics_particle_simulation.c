@@ -11,6 +11,9 @@ struct wp_particle_simulation
     wp_u32 capacity, count, dropped, seed, random;
     double remainder, emission, elapsed;
     wp_particle_state state;
+    wp_particle_integrator integrator;
+    void *integrator_context;
+    wp_u32 accelerated_steps, accelerator_failures;
 };
 
 static int finite_value( wp_f32 value )
@@ -135,18 +138,28 @@ wp_s32 wp_particle_simulation_emit( wp_particle_simulation *s, wp_vec3f position
 static void step( wp_particle_simulation *s )
 {
     wp_u32 i, c, spawn, available, dropped;
+    wp_s32 accelerated;
     double emission_dt;
     const wp_f32 dt = (wp_f32)WP_PARTICLE_SIMULATION_STEP;
+    accelerated = 0;
+    if( s->integrator && s->count )
+    {
+        accelerated = s->integrator( s->integrator_context, s->samples, s->count, &s->settings, dt );
+        if( accelerated ) { if( s->accelerated_steps != (wp_u32)~0u ) ++s->accelerated_steps; }
+        else if( s->accelerator_failures != (wp_u32)~0u ) ++s->accelerator_failures;
+    }
     i = 0;
     while( i < s->count )
     {
         wp_particle_sample *p = &s->samples[i];
-        p->age += dt;
+        if( !accelerated ) p->age += dt;
         if( (double)p->age + 1e-6 >= p->lifetime )
         {
             s->samples[i] = s->samples[--s->count];
             continue;
         }
+        if( !accelerated )
+        {
         p->position.x += p->velocity.x * dt + 0.5f * s->settings.gravity.x * dt * dt;
         p->position.y += p->velocity.y * dt + 0.5f * s->settings.gravity.y * dt * dt;
         p->position.z += p->velocity.z * dt + 0.5f * s->settings.gravity.z * dt * dt;
@@ -156,6 +169,7 @@ static void step( wp_particle_simulation *s )
         for( c = 0; c < 4; ++c )
             p->color[c] = s->settings.color_start[c] +
                 (s->settings.color_end[c] - s->settings.color_start[c]) * (p->age / p->lifetime);
+        }
         ++i;
     }
     emission_dt = WP_PARTICLE_SIMULATION_STEP;
@@ -207,3 +221,14 @@ const wp_particle_sample *wp_particle_simulation_get_samples( const wp_particle_
 {
     return s ? s->samples : NULL;
 }
+
+void wp_particle_simulation_set_integrator( wp_particle_simulation *s,
+                                           wp_particle_integrator integrator, void *context )
+{
+    if( !s ) return;
+    s->integrator = integrator; s->integrator_context = context;
+}
+wp_u32 wp_particle_simulation_get_accelerated_steps( const wp_particle_simulation *s )
+{ return s ? s->accelerated_steps : 0; }
+wp_u32 wp_particle_simulation_get_accelerator_failures( const wp_particle_simulation *s )
+{ return s ? s->accelerator_failures : 0; }

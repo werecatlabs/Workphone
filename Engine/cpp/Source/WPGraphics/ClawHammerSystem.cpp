@@ -208,6 +208,9 @@ namespace workphone
                 props->setProperty( "native_system_active", m_sys != nullptr );
                 props->setProperty( "vsync", getVSync() );
                 props->setProperty( "diagnostics.gpuProfiler", m_gpuProfilerEnabled.load(std::memory_order_relaxed) );
+                if(auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer()))
+                    props->setProperty("msaa_supported_mask",wp_renderer_dx11_supported_scene_samples(
+                        wp_renderer_get_dx11(renderer->getNativeRenderer())));
                 std::lock_guard<std::mutex> lock( m_statisticsMutex );
                 props->setProperty( "native_update_serial", m_nativeUpdateSerial );
                 props->setProperty( "native_render_serial", m_nativeRenderSerial );
@@ -243,7 +246,7 @@ namespace workphone
                 bool enabled;
                 if(properties->getPropertyValue("diagnostics.gpuProfiler",enabled))
                     m_gpuProfilerEnabled.store(enabled,std::memory_order_relaxed);
-                if( properties->getPropertyValue( "vsync", enabled ) )
+                if( properties->getPropertyValue( "vsync", enabled ) || properties->getPropertyValue("graphics.vsync",enabled) )
                 {
                     m_vsync.store( enabled, std::memory_order_relaxed );
                 }
@@ -1396,13 +1399,29 @@ namespace workphone
             // in the effects stage, leaving display UI outside tone mapping.
             if( auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
             {
+                if(!renderer->getCamera()) return false;
+                m_graphicsPipeline->setCamera(renderer->getCamera().get());
+                m_graphicsPipeline->setScene(renderer->getCamera()->getCreator().get());
                 const auto options = m_graphicsPipeline->getProperties();
                 const bool hdr = !options->hasProperty( "graphics.hdr" ) || options->getPropertyAsBool( "graphics.hdr" );
                 const s32 linear = options->hasProperty( "graphics.colorSpace" ) ? options->getPropertyAsInt( "graphics.colorSpace" ) : 1;
                 const s32 tone = options->hasProperty( "graphics.tonemapping" ) ? options->getPropertyAsInt( "graphics.tonemapping" ) : 3;
+                const s32 aa=options->getPropertyAsInt("graphics.antiAliasing");
+                const s32 samples=aa==3 ? 2 : aa==4 ? 4 : aa==5 ? 8 : 1;
+                f32 scale=1.0f;options->getPropertyValue("graphics.renderScale",scale);
+                if(options->getPropertyAsBool("graphics.dynamicResolution"))
+                {
+                    auto app=core::IApplicationManager::instancePtr();
+                    auto timer=app ? app->getTimer() : nullptr;
+                    const auto dt=timer ? timer->getDeltaTime() : 0;
+                    const s32 fps=std::max(15,options->getPropertyAsInt("graphics.frameRateLimit"));
+                    if(dt>1.1/fps) m_adaptiveSceneScale=std::max(0.5f,m_adaptiveSceneScale-0.0625f);
+                    else if(dt>0 && dt<0.8/fps) m_adaptiveSceneScale=std::min(1.0f,m_adaptiveSceneScale+0.0625f);
+                }
+                else m_adaptiveSceneScale=1.0f;
+                wp_renderer_dx11_set_scene_sampling(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),samples,scale*m_adaptiveSceneScale);
                 wp_renderer_dx11_set_output_options( wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
-                if( renderer->getRenderTarget() != getDefaultWindow() || !renderer->getCamera() ||
-                    !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) return false;
+                if(!m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping) return false;
                 return wp_renderer_dx11_begin_hdr_scene(
                     wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), 1.0f ) != 0;
             }
@@ -1459,6 +1478,8 @@ namespace workphone
             {
                 wp_renderer_dx11_end_hdr_scene(
                     wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ) );
+                if(auto scene=dynamic_cast<ClawScene*>(m_graphicsPipeline->getScene()))
+                    scene->captureOcclusionDepth(dx11Renderer->getNativeRenderer(),renderer->getCamera());
                 return;
             }
             if( !renderer || !m_graphicsPipeline || !m_graphicsPipeline->isInitialized() )
@@ -1489,6 +1510,8 @@ namespace workphone
             }
 
             m_graphicsPipeline->endFrame();
+            if(auto scene=dynamic_cast<ClawScene*>(m_graphicsPipeline->getScene()))
+                scene->captureOcclusionDepth(softwareNativeRenderer,renderer->getCamera());
         }
 
         void ClawHammerSystem::messagePump()

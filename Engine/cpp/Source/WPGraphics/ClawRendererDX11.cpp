@@ -119,6 +119,11 @@ namespace workphone::render
             WP_LOG_WARNING(
                 "WPGraphics/DX11: no native window handle; device initialization may fail." );
         }
+        if(auto app=core::IApplicationManager::instancePtr())
+            if(auto settings=app->getPlayerSettings())
+                wp_renderer_dx11_set_startup_options(settings->getPropertyAsInt("graphics.renderer.mode"),
+                    settings->getPropertyAsInt("graphics.shaderModel"),settings->getPropertyAsBool("graphics.validationLayers"),
+                    !settings->hasProperty("graphics.allowRendererFallback") || settings->getPropertyAsBool("graphics.allowRendererFallback"));
         m_renderer = wp_renderer_create_dx11( nativeWindow, static_cast<wp_s32>( m_rtWidth ),
                                               static_cast<wp_s32>( m_rtHeight ) );
 

@@ -12,6 +12,8 @@
 #include <mutex>
 #include <algorithm>
 #include <chrono>
+#include <atomic>
+#include <stdexcept>
 #if defined( _WIN32 )
 #    include <windows.h>
 #    include <dbghelp.h>
@@ -208,8 +210,8 @@ namespace workphone
             }
         };
 #if defined( _WIN32 )
-        LPTOP_LEVEL_EXCEPTION_FILTER previousExceptionFilter = nullptr;
-        std::once_flag installCrashFilter;
+        std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> previousExceptionFilter{ nullptr };
+        bool crashFilterInstalled = false;
         LONG WINAPI crashFilter( EXCEPTION_POINTERS *exception )
         {
             static std::atomic_flag capturing = ATOMIC_FLAG_INIT;
@@ -223,7 +225,8 @@ namespace workphone
                 currentException = nullptr;
             }
             capturing.clear();
-            return previousExceptionFilter ? previousExceptionFilter( exception ) : EXCEPTION_CONTINUE_SEARCH;
+            const auto previous = previousExceptionFilter.load();
+            return previous ? previous( exception ) : EXCEPTION_CONTINUE_SEARCH;
         }
 #endif
     }
@@ -247,7 +250,16 @@ namespace workphone
         next->cloud = cloud; next->analytics = analytics; next->crash = crash;
         std::atomic_store( &state, std::shared_ptr<const State>( next ) );
 #if defined( _WIN32 )
-        std::call_once( installCrashFilter, [] { previousExceptionFilter = SetUnhandledExceptionFilter( crashFilter ); } );
+        if( crash && !crashFilterInstalled )
+        {
+            previousExceptionFilter.store( SetUnhandledExceptionFilter( crashFilter ) );
+            crashFilterInstalled = true;
+        }
+        else if( !crash && crashFilterInstalled )
+        {
+            SetUnhandledExceptionFilter( previousExceptionFilter.load() );
+            crashFilterInstalled = false;
+        }
 #endif
         error.clear(); return true;
     }

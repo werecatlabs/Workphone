@@ -3,6 +3,7 @@
 #include <Workphone/Input/InputActionData.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Interface/Input/IGameInput.hpp>
+#include <cctype>
 
 namespace workphone
 {
@@ -62,13 +63,7 @@ namespace workphone
 
     void GameInputMap::setKeyboardAction( u32 id, const String &key0, const String &key1 )
     {
-        if( m_keyboardMap.find( id ) != m_keyboardMap.end() )
-        {
-            auto app = core::IApplicationManager::instancePtr();
-            auto input = app ? app->getInputDeviceManager() : nullptr;
-            auto settings = input ? input->getProperties() : nullptr;
-            if( settings && !settings->getPropertyAsBool( "input.rebinds", true ) ) return;
-        }
+        if( !m_rebindingEnabled && m_keyboardMap.find( id ) != m_keyboardMap.end() ) return;
         auto key0Hash = StringUtil::getHash( key0 );
         auto key1Hash = StringUtil::getHash( key1 );
         auto inputAction = workphone::make_ptr<InputActionData>( key0Hash, key1Hash, id );
@@ -79,13 +74,7 @@ namespace workphone
 
     void GameInputMap::setJoystickAction( u32 id, u32 button0, u32 button1 )
     {
-        if( m_joystickMap.find( id ) != m_joystickMap.end() )
-        {
-            auto app = core::IApplicationManager::instancePtr();
-            auto input = app ? app->getInputDeviceManager() : nullptr;
-            auto settings = input ? input->getProperties() : nullptr;
-            if( settings && !settings->getPropertyAsBool( "input.rebinds", true ) ) return;
-        }
+        if( !m_rebindingEnabled && m_joystickMap.find( id ) != m_joystickMap.end() ) return;
         auto inputAction = workphone::make_ptr<InputActionData>( button0, button1, id );
         setJoystickAction( id, inputAction );
     }

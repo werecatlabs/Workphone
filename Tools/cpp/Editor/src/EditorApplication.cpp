@@ -1,5 +1,7 @@
 #include <EditorPCH.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <editor/ProjectSettingsEditorBackend.hpp>
+#include <editor/ProjectSettingsProjectBackend.hpp>
 #include <boost/json.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -981,6 +983,8 @@ namespace workphone::editor
             break;
             case TaskId::Primary:
             {
+                updateProjectSettingsEditorBackend( t );
+                updateProjectSettingsProjectBackend();
                 // Scripts can request a return to edit mode through the shared
                 // application interface. Complete the same snapshot restoration
                 // used by the toolbar before accepting another Play request.
@@ -1569,6 +1573,8 @@ namespace workphone::editor
                 loadProjectRuntimeSettings( std::filesystem::u8path( projectFile.c_str() ).parent_path().u8string() );
         }
         auto numThreads = projectWorkerCount( getActiveThreads() );
+        if( auto profile = applicationManager->getPlayerSettings() )
+            if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 ) numThreads = 0;
 
         auto maxThreads = Thread::hardware_concurrency();
         if( numThreads > maxThreads )

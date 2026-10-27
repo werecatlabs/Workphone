@@ -31,6 +31,16 @@ typedef struct wp_particle_sample
     wp_f32 color[4];
 } wp_particle_sample;
 
+/* Optional accelerator advances age, position, velocity and color for the supplied
+ * live prefix. It must leave host samples unchanged on failure. Emission and
+ * lifetime compaction remain deterministic in the existing fixed-step driver. */
+typedef wp_s32 (*wp_particle_integrator)( void *context, wp_particle_sample *samples,
+    wp_u32 count, const wp_particle_simulation_settings *settings, wp_f32 seconds );
+void wp_particle_simulation_set_integrator( wp_particle_simulation *simulation,
+                                           wp_particle_integrator integrator, void *context );
+wp_u32 wp_particle_simulation_get_accelerated_steps( const wp_particle_simulation *simulation );
+wp_u32 wp_particle_simulation_get_accelerator_failures( const wp_particle_simulation *simulation );
+
 void wp_particle_simulation_default_settings( wp_particle_simulation_settings *settings );
 wp_particle_simulation *wp_particle_simulation_create( wp_u32 capacity, wp_u32 seed );
 void wp_particle_simulation_destroy( wp_particle_simulation *simulation );

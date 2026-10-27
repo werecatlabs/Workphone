@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/System/ProjectServices.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Core/DebugTrace.hpp>
 #include <Workphone/Core/Path.hpp>
@@ -263,6 +264,7 @@ namespace workphone::core
                 // Lua userdata owns strong references to pooled UI/graphics objects.
                 // Release those references while their factories and managers are alive;
                 // closing the VM after UI factory teardown accesses freed pool storage.
+                releaseProjectServiceSettings();
                 if( auto scriptManager = getScriptManager() )
                 {
                     scriptManager->unload( nullptr );

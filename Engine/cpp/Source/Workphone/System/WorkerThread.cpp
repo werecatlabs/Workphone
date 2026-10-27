@@ -9,6 +9,7 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TimerChrono.hpp>
 #include <thread>
+#include <stdexcept>
 #if defined( _WIN32 )
 #    include <windows.h>
 #endif
@@ -37,7 +38,16 @@ namespace workphone
             {
                 auto work = CreateThreadpoolWork( []( PTP_CALLBACK_INSTANCE callback, void *owner, PTP_WORK ) {
                     CallbackMayRunLong( callback );
+                    const int priority = GetThreadPriority( GetCurrentThread() );
+                    GROUP_AFFINITY affinity = {};
+                    GetThreadGroupAffinity( GetCurrentThread(), &affinity );
                     static_cast<WorkerThread *>( owner )->run();
+                    SetThreadPriority( GetCurrentThread(), priority );
+                    if( affinity.Mask ) SetThreadGroupAffinity( GetCurrentThread(), &affinity, nullptr );
+                    using SelectSets = BOOL ( WINAPI * )( HANDLE, const ULONG *, ULONG );
+                    auto selectSets = reinterpret_cast<SelectSets>( GetProcAddress(
+                        GetModuleHandleW( L"kernel32.dll" ), "SetThreadSelectedCpuSets" ) );
+                    if( selectSets ) selectSets( GetCurrentThread(), nullptr, 0 );
                 }, this, nullptr );
                 if( !work ) throw std::runtime_error( "Unable to create a platform worker" );
                 m_platformWork = work;

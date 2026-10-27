@@ -42,6 +42,7 @@ namespace workphone
          * @brief Virtual destructor.
          */
         ~GameInputMap() override;
+        void setRebindingEnabled( bool enabled ) { m_rebindingEnabled = enabled; }
 
         /**
          * @brief Lookup the action id associated with a keyboard key code.
@@ -138,6 +139,7 @@ namespace workphone
 
         /// Mapping table from joystick button id to input action data.
         Map<u32, SmartPtr<IInputAction>> m_joystickMap;
+        bool m_rebindingEnabled = true;
     };
 }  // namespace workphone
 

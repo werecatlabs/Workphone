@@ -52,6 +52,12 @@ static wp_f32 wp_lum( wp_f32 r, wp_f32 g, wp_f32 b )
     return r * 0.2126f + g * 0.7152f + b * 0.0722f;
 }
 
+static wp_f32 wp_hdr_filmic( wp_f32 x )
+{
+    wp_f32 white = ((11.2f*(.15f*11.2f+.05f)+.004f)/(11.2f*(.15f*11.2f+.5f)+.06f))-.02f/.3f;
+    return (((x*(.15f*x+.05f)+.004f)/(x*(.15f*x+.5f)+.06f))-.02f/.3f)/white;
+}
+
 static wp_f32 wp_hdr_pow( wp_f32 x, wp_f32 y )
 {
     return x <= 0 ? 0 : (wp_f32)pow( x, y );
@@ -349,7 +355,9 @@ void wp_hdr_composite( wp_hdr *ctx, const wp_f32 *color, const wp_f32 *bloom, co
             {
                 wp_s32 mode = ctx->output_options_set ? (ctx->hdr_enabled ? ctx->tonemapping : 0) : 3;
                 wp_s32 linear = !ctx->output_options_set || ctx->linear_workflow;
-                if( mode == 3 ) wp_hdr_tonemap_agx( r, g, b, &tr, &tg, &tb );
+                if( mode == 3 && ctx->output_options_set )
+                { tr=wp_hdr_filmic(r);tg=wp_hdr_filmic(g);tb=wp_hdr_filmic(b); }
+                else if( mode == 3 ) wp_hdr_tonemap_agx( r, g, b, &tr, &tg, &tb );
                 else if( mode == 2 )
                 { tr = r / (1.0f + r); tg = g / (1.0f + g); tb = b / (1.0f + b); }
                 else if( mode == 1 )

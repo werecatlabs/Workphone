@@ -13,6 +13,7 @@
 #include <Workphone/Input/MouseState.hpp>
 #include <Workphone/Input/KeyboardState.hpp>
 #include <Workphone/Input/GameInput.hpp>
+#include <Workphone/Input/GameInputMap.hpp>
 #include <Workphone/Input/GameInputState.hpp>
 #include <Workphone/Interface/Input/IGameInputMap.hpp>
 #include <Workphone/Input/Joystick.hpp>
@@ -254,6 +255,9 @@ namespace workphone
         properties->getPropertyValue( "input.rebinds", m_rebindingEnabled );
         properties->getPropertyValue( "input.gestures", m_gesturesEnabled );
         properties->getPropertyValue( "input.haptics", m_hapticsEnabled );
+        for( const auto &entry : m_gameInputs )
+            if( const auto map = dynamic_cast<GameInputMap *>( entry.second->getGameInputMap().get() ) )
+                map->setRebindingEnabled( m_rebindingEnabled );
 #ifdef WP_PLATFORM_WIN32
         HWND windowHandle = nullptr;
         if( auto window = getWindow() ) window->getWindowHandle( &windowHandle );
@@ -261,8 +265,8 @@ namespace workphone
         {
             if( m_touchEnabled ) RegisterTouchWindow( windowHandle, 0 );
             else UnregisterTouchWindow( windowHandle );
-            GESTURECONFIG gestures = { 0, m_gesturesEnabled ? GC_ALLGESTURES : 0,
-                                          m_gesturesEnabled ? 0 : GC_ALLGESTURES };
+            GESTURECONFIG gestures = { 0, static_cast<DWORD>( m_gesturesEnabled ? GC_ALLGESTURES : 0 ),
+                                          static_cast<DWORD>( m_gesturesEnabled ? 0 : GC_ALLGESTURES ) };
             SetGestureConfig( windowHandle, 0, 1, &gestures, sizeof( gestures ) );
             if( !m_mouseCaptureEnabled && GetCapture() == windowHandle ) ReleaseCapture();
         }
@@ -883,6 +887,8 @@ namespace workphone
         {
             auto gameInput = workphone::make_ptr<GameInput>();
             gameInput->setId( id );
+            if( auto map = dynamic_cast<GameInputMap *>( gameInput->getGameInputMap().get() ) )
+                map->setRebindingEnabled( m_rebindingEnabled );
             m_gameInputs[id] = gameInput;
             return gameInput;
         }

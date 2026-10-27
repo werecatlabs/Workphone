@@ -9,7 +9,7 @@ namespace workphone::editor
     namespace
     {
         const char *keys[] = {
-            "graphics.resolution", "graphics.fullscreen", "graphics.vsync", "graphics.presentMode",
+            "graphics.resolution", "graphics.customWidth", "graphics.customHeight", "graphics.fullscreen", "graphics.vsync", "graphics.presentMode", "graphics.frameRateLimit",
             "graphics.renderScale", "graphics.dynamicResolution", "graphics.hdr", "graphics.colorSpace",
             "graphics.textureFiltering", "graphics.anisotropy", "graphics.renderPipeline", "graphics.antiAliasing",
             "graphics.shadowQuality", "graphics.shadowDistance", "graphics.shadowResolution", "graphics.lightingMode",
@@ -35,8 +35,6 @@ namespace workphone::editor
         {
             String result;
             const auto add = [&]( const String &message ) { if( !result.empty() ) result += " "; result += message; };
-            if( settings.getPropertyAsInt( "graphics.antiAliasing" ) > 2 )
-                add( "MSAA requires a multisampled GPU scene target and resolve implementation; the current renderer has None, FXAA and TAA paths." );
             if( settings.getPropertyAsInt( "graphics.renderPipeline" ) == 2 )
                 add( "Deferred shading requires a geometry G-buffer renderer; the current scene renderer is forward." );
             if( settings.getPropertyAsInt( "graphics.gi" ) != 0 )
@@ -71,6 +69,17 @@ namespace workphone::editor
             s32 renderer = 0;
             if( settings->getPropertyValue( "graphics.renderer.pc", renderer ) && renderer >= 2 && renderer <= 4 )
                 error = "The requested PC API is not compiled into this Editor. Install/build its renderer plugin or choose Auto, DirectX 11 or Software.";
+            const auto app=core::IApplicationManager::instancePtr();
+            const auto graphics=app ? app->getGraphicsSystem() : nullptr;
+            const s32 aa=settings->getPropertyAsInt("graphics.antiAliasing");
+            const s32 samples=aa==3 ? 2 : aa==4 ? 4 : aa==5 ? 8 : 1;
+            if(graphics && aa>2)
+            {
+                const auto properties=graphics->getProperties();
+                s32 mask=0;
+                if(properties->getPropertyValue("msaa_supported_mask",mask) && !(mask & samples))
+                    error="This graphics device does not support the requested MSAA sample count.";
+            }
             if( error.empty() && settings->getPropertyAsInt( "graphics.resolution" ) == 5 &&
                 (settings->getPropertyAsInt("graphics.customWidth") <= 0 || settings->getPropertyAsInt("graphics.customHeight") <= 0) )
                 error = "Custom resolution requires explicit graphics.customWidth and graphics.customHeight values.";

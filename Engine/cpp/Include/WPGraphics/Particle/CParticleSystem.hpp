@@ -38,6 +38,8 @@ namespace workphone
             bool setSimulationSettings( const wp_particle_simulation_settings &settings );
             void setSeed( u32 seed );
             u32 getDroppedParticleCount() const;
+            u32 getGpuSimulationDispatchCount() const;
+            u32 getGpuSimulationFailureCount() const;
             bool emitParticle( const Vector3F &position, const Vector3F &velocity, f32 size,
                                f32 lifetime );
             WP_CLASS_REGISTER_DECL;
@@ -146,6 +148,9 @@ namespace workphone
             u32 m_zOrder = 0;
             mutable std::mutex m_simulationMutex;
             wp_particle_simulation *m_simulation = nullptr;
+            void *m_particleCompute = nullptr;
+            void *m_particleComputeDevice = nullptr;
+            bool m_gpuUnavailableLogged = false;
             wp_particle_simulation_settings m_simulationSettings{};
             u32 m_seed = 1;
             String m_materialName;

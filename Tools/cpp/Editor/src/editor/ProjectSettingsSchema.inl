@@ -22,6 +22,8 @@ static const SettingDefinition settingDefinitions[] =
     { "graphics.validationLayers", "bool", "false", 0, 0, false },
     { "graphics.allowRendererFallback", "bool", "true", 0, 0, false },
     { "graphics.resolution", "int", "0", 0, 5, true },
+    { "graphics.customWidth", "int", "1920", 320, 8192, true },
+    { "graphics.customHeight", "int", "1080", 200, 8192, true },
     { "graphics.fullscreen", "bool", "false", 0, 0, false },
     { "graphics.vsync", "bool", "true", 0, 0, false },
     { "graphics.frameRateLimit", "int", "60", 15.0, 240.0, true },
