@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/Profile.hpp>
 #include <Workphone/Core/Util.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
@@ -29,6 +30,7 @@ namespace workphone
 
     void Profile::start()
     {
+        if( !projectProfilingEnabled() ) return;
         ScopedLock lock( this );
 
         m_start = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -36,6 +38,7 @@ namespace workphone
 
     void Profile::end()
     {
+        if( !projectProfilingEnabled() ) return;
         ScopedLock lock( this );
 
         auto applicationManager = core::IApplicationManager::instance();
@@ -93,6 +96,7 @@ namespace workphone
 
     void Profile::setTimeTaken( float timeTaken )
     {
+        if( !projectProfilingEnabled() ) return;
         ScopedLock lock( this );
 
         m_timeTaken = timeTaken;

@@ -43,6 +43,8 @@ namespace workphone
          * @brief Virtual destructor.
          */
         ~InputDeviceManager() override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         /**
          * @brief Load configuration or shared data required by the manager.
@@ -492,6 +494,9 @@ namespace workphone
 
         /// Managed joystick device list.
         Array<SmartPtr<IJoystick>> m_joysticks;
+        bool m_touchEnabled = true, m_mouseCaptureEnabled = true;
+        bool m_rebindingEnabled = true, m_gesturesEnabled = true, m_hapticsEnabled = true;
+        s32 m_projectInputSystem = 0;
 
         /// Platform joystick backend and native device ids. A value of zero means
         /// no backend has detected a connected device, one is XInput, and two is

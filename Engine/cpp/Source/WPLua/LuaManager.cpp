@@ -8,6 +8,8 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/System/IPlugin.hpp>
 #include <Workphone/Interface/System/IPluginManager.hpp>
+#include <Workphone/Script/ProjectScriptPolicy.hpp>
+#include <Workphone/Scene/Components/Script.hpp>
 #include <WPLuabind/WPLuabind.hpp>
 #include <sstream>
 #include <stdarg.h>
@@ -867,6 +869,9 @@ namespace workphone
 
     void LuaManager::reloadScripts()
     {
+        auto app = core::IApplicationManager::instancePtr();
+        auto settings = app ? app->getPlayerSettings() : nullptr;
+        if( settings && !settings->getPropertyAsBool( "scripting.hotReload", true ) ) return;
         m_bReload = true;
     }
 
@@ -1080,12 +1085,34 @@ namespace workphone
     Array<String> LuaManager::getClassNames() const
     {
         auto array = m_classNames.snapshot();
-        return { array.begin(), array.end() };
+        Array<String> runtime{ array.begin(), array.end() };
+        auto app = core::IApplicationManager::instancePtr();
+        auto settings = app ? app->getPlayerSettings() : nullptr;
+        const auto reflection = settings ? settings->getPropertyAsInt( "scripting.reflection", 1 ) : 1;
+        if( reflection == 0 ) return {};
+        if( reflection == 1 || !app ) return runtime;
+        const auto source = Path::readAllText( app->getProjectPath() + "/.workphone/generated/ScriptReflection.settings" );
+        auto generated = make_ptr<Properties>();
+        if( !source.empty() ) DataUtil::parse( source, generated.get() );
+        Array<String> classes;
+        generated->getPropertyValue( "classNames", classes );
+        if( reflection == 2 ) return classes;
+        for( const auto &name : runtime )
+            if( std::find( classes.begin(), classes.end(), name ) == classes.end() ) classes.push_back( name );
+        return classes;
     }
 
     s32 LuaManager::invokeObject( SmartPtr<ISharedObject> object, const String &functionName,
                                  const Parameters *parameters, Parameters *results )
     {
+        if( object && dynamic_cast<scene::Script *>( object.get() ) )
+        {
+            if( !projectScriptExecutionEnabled() ) return 0;
+            auto app = core::IApplicationManager::instancePtr();
+            auto settings = app ? app->getPlayerSettings() : nullptr;
+            if( settings && settings->getPropertyAsInt( "scripting.reflection", 1 ) == 0 &&
+                ( functionName == "getProperties" || functionName == "setProperties" ) ) return 0;
+        }
         ScopedLock lock( this );
         auto data = object ? dynamic_pointer_cast<LuaObjectData>( object->getScriptData() ) : nullptr;
         if( !isLoaded() || !data || data->getLuaState() != getLuaState() || !data->getObject() )

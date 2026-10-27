@@ -7,6 +7,15 @@
 
 namespace workphone
 {
+    SmartPtr<Properties> InputEvent::getProperties() const
+    {
+        return m_eventProperties ? m_eventProperties : workphone::make_ptr<Properties>();
+    }
+
+    void InputEvent::setProperties( SmartPtr<Properties> properties )
+    {
+        m_eventProperties = properties;
+    }
     WP_CLASS_REGISTER_DERIVED( workphone, InputEvent, IInputEvent );
 
     InputEvent::InputEvent() = default;

@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Application.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
@@ -145,6 +146,8 @@ namespace workphone::core
 
             createFsm();
             WP_ASSERT( applicationManager->isValid() );
+
+            loadProjectRuntimeSettings( applicationManager->getProjectPath() );
 
             createThreadPool();
             WP_ASSERT( applicationManager->isValid() );
@@ -2540,7 +2543,7 @@ namespace workphone::core
         auto factoryManager = applicationManager->getFactoryManager();
         WP_ASSERT( factoryManager );
 
-        auto numThreads = static_cast<u32>( getActiveThreads() );
+        auto numThreads = projectWorkerCount( static_cast<u32>( getActiveThreads() ) );
 
         auto maxThreads = Thread::hardware_concurrency();
         if( numThreads > maxThreads )

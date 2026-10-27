@@ -9,6 +9,9 @@
 #include <algorithm>
 
 #if defined WP_PLATFORM_WIN32
+#    include <mmdeviceapi.h>
+#    include <functiondiscoverykeys_devpkey.h>
+#    include <propvarutil.h>
 #    if WP_USE_XAUDIO2
 #        include <xaudio2.h>
 #    elif WP_USE_WASAPI
@@ -71,6 +74,7 @@ namespace workphone
 
         auto factoryManager = WPAudio::getFactoryManager();
         setFactoryManager( factoryManager );
+        SoundManager::load( data );
 
         if( !initializePlatformAudio() )
         {
@@ -78,7 +82,6 @@ namespace workphone
             return;
         }
 
-        SoundManager::load( data );
         setLoadingState( LoadingState::Loaded );
     }
 
@@ -132,7 +135,61 @@ namespace workphone
             return false;
         }
 
-        result = state->xAudio2->CreateMasteringVoice( &state->masterVoice );
+        LPWSTR selectedDevice = nullptr;
+        if( m_outputDevice != 0 )
+        {
+            IMMDeviceEnumerator *enumerator = nullptr;
+            IMMDeviceCollection *devices = nullptr;
+            if( SUCCEEDED( CoCreateInstance( __uuidof( MMDeviceEnumerator ), nullptr, CLSCTX_ALL,
+                                            __uuidof( IMMDeviceEnumerator ),
+                                            reinterpret_cast<void **>( &enumerator ) ) ) )
+            {
+                if( SUCCEEDED( enumerator->EnumAudioEndpoints( eRender, DEVICE_STATE_ACTIVE, &devices ) ) )
+                {
+                    UINT count = 0;
+                    devices->GetCount( &count );
+                    for( UINT i = 0; i < count && !selectedDevice; ++i )
+                    {
+                        IMMDevice *device = nullptr;
+                        IPropertyStore *store = nullptr;
+                        if( SUCCEEDED( devices->Item( i, &device ) ) )
+                        {
+                            if( SUCCEEDED( device->OpenPropertyStore( STGM_READ, &store ) ) )
+                            {
+                                PROPVARIANT name;
+                                PropVariantInit( &name );
+                                if( SUCCEEDED( store->GetValue( PKEY_Device_FriendlyName, &name ) ) &&
+                                    name.vt == VT_LPWSTR && name.pwszVal )
+                                {
+                                    std::wstring label( name.pwszVal );
+                                    std::transform( label.begin(), label.end(), label.begin(),
+                                        []( wchar_t c ) { return static_cast<wchar_t>( std::towlower( c ) ); } );
+                                    const bool match = m_outputDevice == 1 ?
+                                        label.find( L"head" ) != std::wstring::npos : m_outputDevice == 2 ?
+                                        label.find( L"speaker" ) != std::wstring::npos : m_outputDevice == 3 ?
+                                        label.find( L"controller" ) != std::wstring::npos : false;
+                                    if( match ) device->GetId( &selectedDevice );
+                                }
+                                PropVariantClear( &name );
+                                store->Release();
+                            }
+                            device->Release();
+                        }
+                    }
+                    devices->Release();
+                }
+                enumerator->Release();
+            }
+            if( !selectedDevice )
+            {
+                WP_LOG_ERROR( "WPAudio: requested output device is not connected." );
+                cleanupPlatformAudio();
+                return false;
+            }
+        }
+        result = state->xAudio2->CreateMasteringVoice( &state->masterVoice, 2,
+            m_playbackSampleRate, 0, selectedDevice );
+        if( selectedDevice ) CoTaskMemFree( selectedDevice );
         if( FAILED( result ) )
         {
             WP_LOG_ERROR( "WPAudio: cannot open the output device: " + StringUtil::toString( result ) );

@@ -460,6 +460,55 @@ namespace workphone
 
         switch( msg )
         {
+        case WM_TOUCH:
+        {
+            const auto touchHandle = reinterpret_cast<HTOUCHINPUT>( lParam );
+            const auto count = LOWORD( wParam );
+            if( manager.m_touchEnabled && count > 0 && count <= 256 )
+            {
+                std::vector<TOUCHINPUT> touches( count );
+                if( GetTouchInputInfo( touchHandle, count, touches.data(), sizeof( TOUCHINPUT ) ) )
+                    for( const auto &touch : touches )
+                    {
+                        POINT point = { TOUCH_COORD_TO_PIXEL( touch.x ), TOUCH_COORD_TO_PIXEL( touch.y ) };
+                        ScreenToClient( reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ), &point );
+                        auto input = workphone::make_ptr<InputEvent>();
+                        auto values = workphone::make_ptr<Properties>();
+                        input->setEventType( IInputEvent::EventType::User );
+                        values->setProperty( "input.kind", "touch" );
+                        values->setProperty( "input.id", static_cast<u32>( touch.dwID ) );
+                        values->setProperty( "input.x", static_cast<s32>( point.x ) );
+                        values->setProperty( "input.y", static_cast<s32>( point.y ) );
+                        values->setProperty( "input.pressed", ( touch.dwFlags & TOUCHEVENTF_UP ) == 0 );
+                        input->setProperties( values );
+                        manager.postEvent( input );
+                    }
+            }
+            CloseTouchInputHandle( touchHandle );
+            break;
+        }
+        case WM_GESTURE:
+        {
+            const auto gestureHandle = reinterpret_cast<HGESTUREINFO>( lParam );
+            GESTUREINFO gesture = {};
+            gesture.cbSize = sizeof( gesture );
+            if( manager.m_gesturesEnabled && GetGestureInfo( gestureHandle, &gesture ) )
+            {
+                auto input = workphone::make_ptr<InputEvent>();
+                auto values = workphone::make_ptr<Properties>();
+                input->setEventType( IInputEvent::EventType::User );
+                values->setProperty( "input.kind", "gesture" );
+                values->setProperty( "input.gesture", static_cast<u32>( gesture.dwID ) );
+                values->setProperty( "input.flags", static_cast<u32>( gesture.dwFlags ) );
+                values->setProperty( "input.argument", static_cast<u64>( gesture.ullArguments ) );
+                values->setProperty( "input.x", static_cast<s32>( gesture.ptsLocation.x ) );
+                values->setProperty( "input.y", static_cast<s32>( gesture.ptsLocation.y ) );
+                input->setProperties( values );
+                manager.postEvent( input );
+            }
+            CloseGestureInfoHandle( gestureHandle );
+            break;
+        }
         case WM_MOUSEMOVE:
         {
             if( !manager.m_createMouse )
@@ -511,7 +560,7 @@ namespace workphone
             manager.m_dragStartPosition = currentPos;
             if( auto windowHandle = reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ) )
             {
-                SetCapture( windowHandle );
+                if( manager.m_mouseCaptureEnabled ) SetCapture( windowHandle );
             }
             postMouseEvent( IMouseState::Event::LeftPressed, currentPos, wParam, IMouseState::MOUSE_LEFT,
                             true, true );
@@ -528,7 +577,7 @@ namespace workphone
             manager.m_dragStartPosition = getMousePositionFromLParam( lParam );
             if( auto windowHandle = reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ) )
             {
-                SetCapture( windowHandle );
+                if( manager.m_mouseCaptureEnabled ) SetCapture( windowHandle );
             }
             postMouseEvent( IMouseState::Event::LeftPressed, manager.m_dragStartPosition, wParam,
                             IMouseState::MOUSE_LEFT, true, false );

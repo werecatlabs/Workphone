@@ -2,6 +2,7 @@
 #include <Workphone/Script/ScriptInvoker.hpp>
 #include <Workphone/Interface/Script/IScriptManager.hpp>
 #include <Workphone/Interface/Script/IScriptEvent.hpp>
+#include <Workphone/Script/ProjectScriptPolicy.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <utility>
@@ -42,7 +43,7 @@ namespace workphone
     void ScriptInvoker::callObjectMember( const String &functionName )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
+        auto scriptManager = applicationManager ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
         if( !scriptManager )
         {
             return;
@@ -60,7 +61,7 @@ namespace workphone
     void ScriptInvoker::callObjectMember( const String &functionName, const Parameters &params )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
+        auto scriptManager = applicationManager ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
         if( !scriptManager )
         {
             return;
@@ -79,7 +80,7 @@ namespace workphone
                                           Parameters &results )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
+        auto scriptManager = applicationManager ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
         if( !scriptManager )
         {
             return;
@@ -102,7 +103,7 @@ namespace workphone
             const auto &event = it->second;
 
             auto applicationManager = core::IApplicationManager::instance();
-            auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
+            auto scriptManager = applicationManager ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
             if( !scriptManager )
             {
                 auto message = String( "No script manager found. When on event class: " ) +
@@ -133,7 +134,7 @@ namespace workphone
             const auto &event = it->second;
 
             auto applicationManager = core::IApplicationManager::instance();
-            auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
+            auto scriptManager = applicationManager ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
             if( !scriptManager )
             {
                 auto message = String( "No script manager found. When on event class: " ) +
@@ -165,7 +166,7 @@ namespace workphone
             const auto &event = it->second;
 
             auto applicationManager = core::IApplicationManager::instance();
-            auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
+            auto scriptManager = applicationManager ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
             if( !scriptManager )
             {
                 auto message = String( "No script manager found. When on event class: " ) +
@@ -224,7 +225,7 @@ namespace workphone
             const auto &event = it->second;
 
             auto engine = core::IApplicationManager::instance();
-            auto scriptMgr = engine ? engine->getScriptManager() : nullptr;
+            auto scriptMgr = engine ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
             if( !scriptMgr )
             {
                 WP_LOG( "No script manager found." );
@@ -260,7 +261,7 @@ namespace workphone
             const auto &event = it->second;
 
             auto engine = core::IApplicationManager::instance();
-            auto scriptMgr = engine ? engine->getScriptManager() : nullptr;
+            auto scriptMgr = engine ? getProjectScriptManager( getOwnerPtr() ) : nullptr;
             if( !scriptMgr )
             {
                 WP_LOG( "No script manager found." );

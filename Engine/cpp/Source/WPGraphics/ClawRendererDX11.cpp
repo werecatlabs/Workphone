@@ -499,8 +499,16 @@ namespace workphone::render
 
         Array<DrawParticle> draw;
         draw.reserve( particles.size() );
-        for( const auto &particle : particles )
+        size_t particleStride = 1;
+        if(auto app = core::IApplicationManager::instancePtr())
+            if(auto settings = app->getPlayerSettings())
+            {
+                const auto quality = std::clamp(settings->getPropertyAsInt("quality.particles"),0,3);
+                particleStride = quality == 0 ? 4u : quality == 1 ? 2u : 1u;
+            }
+        for(size_t particleIndex=0; particleIndex<particles.size(); particleIndex += particleStride)
         {
+            const auto &particle = particles[particleIndex];
             const auto center = world.transformAffine( Vector3F( particle.position.x * scale.X(),
                                                                  particle.position.y * scale.Y(),
                                                                  particle.position.z * scale.Z() ) );
@@ -658,6 +666,19 @@ namespace workphone::render
             return false;
         }
         mapSize = std::clamp( mapSize, 64, 8192 );
+        f32 shadowDistance = 200.0f;
+        if(auto app = core::IApplicationManager::instancePtr())
+            if(auto settings = app->getPlayerSettings())
+            {
+                s32 quality = 2, resolution = 2;
+                settings->getPropertyValue("graphics.shadowQuality",quality);
+                settings->getPropertyValue("graphics.shadowResolution",resolution);
+                settings->getPropertyValue("graphics.shadowDistance",shadowDistance);
+                if(quality == 0 || shadowDistance <= 0) return false;
+                wp_renderer_dx11_set_shadow_filter_quality(dx11,quality);
+                constexpr s32 sizes[] = {512,1024,2048,4096};
+                mapSize = sizes[std::clamp(resolution,0,3)];
+            }
         const auto direction = m_lightDirection.normaliseCopy();
         const Vector3F up =
             std::abs( direction.Y() ) > 0.95f ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 );
@@ -691,7 +712,7 @@ namespace workphone::render
         const float nearClip = camera->getNearClipDistance();
         const float farClip = camera->getFarClipDistance();
         const float fraction = std::clamp(
-            ( std::min( farClip, 200.0f ) - nearClip ) / std::max( farClip - nearClip, 0.001f ), 0.001f,
+            ( std::min( farClip, shadowDistance ) - nearClip ) / std::max( farClip - nearClip, 0.001f ), 0.001f,
             1.0f );
         for( int y = -1; y <= 1; y += 2 )
         {
@@ -828,8 +849,15 @@ namespace workphone::render
         wp_renderer_set_cull_mode(
             m_renderer, source.twoSided ? WORKPHONE_CULL_MODE_NONE : WORKPHONE_CULL_MODE_BACK );
         wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
-        const auto submitted = wp_renderer_dx11_draw_foliage_instances(
-            native, geometry, s32( first ), s32( indices ), instances, s32( count ), &parameters );
+        bool batch = true;
+        if(auto app = core::IApplicationManager::instancePtr())
+            if(auto settings = app->getPlayerSettings()) settings->getPropertyValue("performance.staticBatching",batch);
+        u32 submitted = 0;
+        const u32 chunk = batch ? count : 1u;
+        for(u32 offset=0; offset<count; offset += chunk)
+            submitted += wp_renderer_dx11_draw_foliage_instances(
+                native, geometry, s32( first ), s32( indices ), instances + offset,
+                s32(std::min(chunk,count-offset)), &parameters );
         m_primitiveCount =
             u32( std::min<u64>( std::numeric_limits<u32>::max(),
                                 u64( m_primitiveCount ) + u64( indices / 3 ) * submitted ) );
@@ -1057,9 +1085,18 @@ namespace workphone::render
             }
 
             wp_renderer_dx11_set_material_textures( dx11, textureViews );
+            u32 projectFilter = prepared ? prepared->filter : 1u;
+            u32 projectAnisotropy = prepared ? prepared->anisotropy : 1u;
+            if( auto app = core::IApplicationManager::instancePtr() )
+                if( auto settings = app->getPlayerSettings() )
+                {
+                    s32 value;
+                    if( settings->getPropertyValue("graphics.textureFiltering",value) ) projectFilter = static_cast<u32>(std::clamp(value,0,2));
+                    if( settings->getPropertyValue("graphics.anisotropy",value) ) projectAnisotropy = static_cast<u32>(std::clamp(value,1,16));
+                }
             wp_renderer_dx11_set_material_sampler(
                 dx11, prepared ? prepared->wrapU : 0u, prepared ? prepared->wrapV : 0u,
-                prepared ? prepared->filter : 1u, prepared ? prepared->anisotropy : 1u );
+                projectFilter, projectAnisotropy );
 
             wp_material_dx11 nativeMaterial = prepared ? prepared->compose() : wp_material_dx11{};
             if( !prepared )
@@ -1076,9 +1113,17 @@ namespace workphone::render
                 nativeMaterial.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
             }
             applySceneLighting( nativeMaterial );
+            bool reflectionProbes = true;
+            if(auto app = core::IApplicationManager::instancePtr())
+                if(auto settings = app->getPlayerSettings())
+                {
+                    settings->getPropertyValue("graphics.reflectionProbes",reflectionProbes);
+                    if(settings->hasProperty("graphics.lightingMode") && settings->getPropertyAsInt("graphics.lightingMode") == 0)
+                        nativeMaterial.uv_transform.z = 0.0f;
+                }
 
             // A material's reflection probe overrides the sky environment for this draw.
-            if( material )
+            if( material && reflectionProbes )
             {
                 if( auto reflection =
                         getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
@@ -1166,9 +1211,15 @@ namespace workphone::render
             {
                 if( geometry && count > 0 && count % 3u == 0 )
                 {
-                    const auto drawn = wp_renderer_dx11_draw_geometry_pntc_instanced_bound(
-                        dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ), 0,
-                        instances, static_cast<wp_s32>( instanceCount ), activate, activationData );
+                    bool batch = true;
+                    if(auto app = core::IApplicationManager::instancePtr())
+                        if(auto settings = app->getPlayerSettings()) settings->getPropertyValue("performance.dynamicBatching",batch);
+                    u32 drawn = 0;
+                    const u32 chunk = batch ? instanceCount : 1u;
+                    for(u32 offset=0; offset<instanceCount; offset += chunk)
+                        drawn += wp_renderer_dx11_draw_geometry_pntc_instanced_bound(
+                            dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ), 0,
+                            instances + offset, static_cast<wp_s32>(std::min(chunk,instanceCount-offset)), activate, activationData );
                     if( drawn > 0 )
                     {
                         submitted += drawn;

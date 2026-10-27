@@ -8,6 +8,9 @@
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include "workphone_graphics_renderer.h"
 #include <Workphone/Interface/Graphics/IGraphicsWindow.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/System/ITimer.hpp>
+#include <Workphone/Core/Properties.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -215,7 +218,25 @@ namespace workphone::render
             return;
         }
 
-        const auto size = m_renderTarget->getSize();
+        auto size = m_renderTarget->getSize();
+        if(auto app = core::IApplicationManager::instancePtr())
+            if(auto settings = app->getPlayerSettings())
+            {
+                f32 scale = 1.0f;
+                settings->getPropertyValue("graphics.renderScale",scale);
+                if(settings->getPropertyAsBool("graphics.dynamicResolution"))
+                {
+                    const auto timer = app->getTimer();
+                    const auto delta = timer ? timer->getDeltaTime() : 0.0;
+                    const auto fps = std::max(15,settings->getPropertyAsInt("graphics.frameRateLimit"));
+                    if(delta > 1.1 / fps) m_adaptiveRenderScale = std::max(0.5f,m_adaptiveRenderScale - 0.0625f);
+                    else if(delta > 0 && delta < 0.8 / fps) m_adaptiveRenderScale = std::min(1.0f,m_adaptiveRenderScale + 0.0625f);
+                }
+                else m_adaptiveRenderScale = 1.0f;
+                scale = std::clamp(scale * m_adaptiveRenderScale,0.25f,2.0f);
+                size.x = std::max(1,static_cast<s32>(size.x * scale));
+                size.y = std::max(1,static_cast<s32>(size.y * scale));
+            }
         if( size.x > 0 && size.y > 0 && size != m_bufferSize &&
             wp_renderer_resize( m_renderer, size.x, size.y ) )
         {
@@ -241,12 +262,15 @@ namespace workphone::render
         {
             const auto position = m_viewport->getActualPosition();
             const auto size = m_viewport->getActualSize();
-            nativeViewport.x = static_cast<wp_s32>( position.X() );
-            nativeViewport.y = static_cast<wp_s32>( position.Y() );
+            const auto targetSize = m_renderTarget ? m_renderTarget->getSize() : m_bufferSize;
+            const auto scaleX = static_cast<f32>(m_bufferSize.x) / std::max(1,targetSize.x);
+            const auto scaleY = static_cast<f32>(m_bufferSize.y) / std::max(1,targetSize.y);
+            nativeViewport.x = static_cast<wp_s32>( position.X() * scaleX );
+            nativeViewport.y = static_cast<wp_s32>( position.Y() * scaleY );
             if( size.X() > 0 && size.Y() > 0 )
             {
-                nativeViewport.width = static_cast<wp_s32>( size.X() );
-                nativeViewport.height = static_cast<wp_s32>( size.Y() );
+                nativeViewport.width = static_cast<wp_s32>( size.X() * scaleX );
+                nativeViewport.height = static_cast<wp_s32>( size.Y() * scaleY );
             }
         }
 

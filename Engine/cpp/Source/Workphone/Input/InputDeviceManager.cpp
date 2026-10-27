@@ -1,4 +1,4 @@
-﻿#include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Input/InputDeviceManager.hpp>
 #include <Workphone/Interface/Input/IInputEvent.hpp>
 #include <Workphone/Interface/Input/IJoystick.hpp>
@@ -13,6 +13,8 @@
 #include <Workphone/Input/MouseState.hpp>
 #include <Workphone/Input/KeyboardState.hpp>
 #include <Workphone/Input/GameInput.hpp>
+#include <Workphone/Input/GameInputState.hpp>
+#include <Workphone/Interface/Input/IGameInputMap.hpp>
 #include <Workphone/Input/Joystick.hpp>
 #include <Workphone/Input/JoystickState.hpp>
 #include <Workphone/System/WindowMessageData.hpp>
@@ -229,11 +231,78 @@ namespace workphone
         }
     }
 
+    SmartPtr<Properties> InputDeviceManager::getProperties() const
+    {
+        auto properties = workphone::make_ptr<Properties>();
+        properties->setProperty( "input.system", m_projectInputSystem );
+        properties->setProperty( "input.gamepad", m_createJoysticks );
+        properties->setProperty( "input.touch", m_touchEnabled );
+        properties->setProperty( "input.mouseCapture", m_mouseCaptureEnabled );
+        properties->setProperty( "input.rebinds", m_rebindingEnabled );
+        properties->setProperty( "input.gestures", m_gesturesEnabled );
+        properties->setProperty( "input.haptics", m_hapticsEnabled );
+        return properties;
+    }
+
+    void InputDeviceManager::setProperties( SmartPtr<Properties> properties )
+    {
+        if( !properties ) return;
+        properties->getPropertyValue( "input.system", m_projectInputSystem );
+        properties->getPropertyValue( "input.gamepad", m_createJoysticks );
+        properties->getPropertyValue( "input.touch", m_touchEnabled );
+        properties->getPropertyValue( "input.mouseCapture", m_mouseCaptureEnabled );
+        properties->getPropertyValue( "input.rebinds", m_rebindingEnabled );
+        properties->getPropertyValue( "input.gestures", m_gesturesEnabled );
+        properties->getPropertyValue( "input.haptics", m_hapticsEnabled );
+#ifdef WP_PLATFORM_WIN32
+        HWND windowHandle = nullptr;
+        if( auto window = getWindow() ) window->getWindowHandle( &windowHandle );
+        if( windowHandle )
+        {
+            if( m_touchEnabled ) RegisterTouchWindow( windowHandle, 0 );
+            else UnregisterTouchWindow( windowHandle );
+            GESTURECONFIG gestures = { 0, m_gesturesEnabled ? GC_ALLGESTURES : 0,
+                                          m_gesturesEnabled ? 0 : GC_ALLGESTURES };
+            SetGestureConfig( windowHandle, 0, 1, &gestures, sizeof( gestures ) );
+            if( !m_mouseCaptureEnabled && GetCapture() == windowHandle ) ReleaseCapture();
+        }
+        if( !m_hapticsEnabled || properties->hasProperty( "input.vibration.left" ) ||
+            properties->hasProperty( "input.vibration.right" ) )
+        {
+            using SetState = DWORD( WINAPI * )( DWORD, XINPUT_VIBRATION * );
+            static SetState setState = []() -> SetState {
+                for( const auto dll : { L"xinput1_4.dll", L"xinput9_1_0.dll", L"xinput1_3.dll" } )
+                    if( auto module = LoadLibraryW( dll ) )
+                        if( auto symbol = GetProcAddress( module, "XInputSetState" ) )
+                            return reinterpret_cast<SetState>( symbol );
+                return nullptr;
+            }();
+            if( setState )
+            {
+                f32 left = 0, right = 0;
+                u32 device = 0;
+                properties->getPropertyValue( "input.vibration.left", left );
+                properties->getPropertyValue( "input.vibration.right", right );
+                properties->getPropertyValue( "input.vibration.device", device );
+                XINPUT_VIBRATION vibration = {};
+                vibration.wLeftMotorSpeed = m_hapticsEnabled ?
+                    static_cast<WORD>( std::clamp( left, 0.0f, 1.0f ) * 65535.0f ) : 0;
+                vibration.wRightMotorSpeed = m_hapticsEnabled ?
+                    static_cast<WORD>( std::clamp( right, 0.0f, 1.0f ) * 65535.0f ) : 0;
+                if( m_hapticsEnabled ) setState( device, &vibration );
+                else for( DWORD i = 0; i < XUSER_MAX_COUNT; ++i ) setState( i, &vibration );
+            }
+        }
+#endif
+    }
+
     void InputDeviceManager::load( SmartPtr<ISharedObject> data )
     {
         try
         {
             setLoadingState( LoadingState::Loading );
+            if( auto application = core::IApplicationManager::instancePtr() )
+                setProperties( application->getPlayerSettings() );
 
             m_currentInputEvent = workphone::make_ptr<InputEvent>();
             m_currentMouseState = workphone::make_ptr<MouseState>();
@@ -704,6 +773,8 @@ namespace workphone
 
     void InputDeviceManager::triggerEvent( SmartPtr<IInputEvent> inputEvent )
     {
+        if( !inputEvent || ( !m_createJoysticks &&
+            inputEvent->getEventType() == IInputEvent::EventType::Joystick ) ) return;
         for( auto &listener : m_listeners )
         {
             if( listener )
@@ -721,6 +792,45 @@ namespace workphone
 
     bool InputDeviceManager::postEvent( SmartPtr<IInputEvent> event )
     {
+        if( !event || ( !m_createJoysticks && event->getEventType() == IInputEvent::EventType::Joystick ) )
+            return false;
+        if( event->getEventType() == IInputEvent::EventType::User )
+        {
+            auto properties = event->getProperties();
+            const auto kind = properties ? properties->getProperty( "input.kind" ) : String();
+            if( ( kind == "touch" && !m_touchEnabled ) ||
+                ( kind == "gesture" && !m_gesturesEnabled ) ) return false;
+        }
+        if( m_projectInputSystem != 2 )
+        {
+            for( const auto &entry : m_gameInputs )
+            {
+                const auto map = entry.second ? entry.second->getGameInputMap() : nullptr;
+                if( !map ) continue;
+                u32 action = IGameInput::UNASSIGNED;
+                bool pressed = false;
+                if( auto key = event->getKeyboardState() )
+                {
+                    action = map->getActionFromKey( key->getKeyCode() );
+                    pressed = key->isPressedDown();
+                }
+                else if( auto joystick = event->getJoystickState() )
+                {
+                    if( joystick->getJoystick() != entry.second->getJoystickId() ) continue;
+                    action = map->getActionFromButton( joystick->getButtonId() );
+                    pressed = joystick->isPressedDown();
+                }
+                if( action != IGameInput::UNASSIGNED )
+                {
+                    auto mapped = workphone::make_ptr<GameInputState>();
+                    mapped->setAction( action );
+                    mapped->setEventType( StringUtil::getHash32( pressed ? "Pressed" : "Released" ) );
+                    event->setGameInputState( mapped );
+                    event->setGameInputId( entry.first );
+                    break;
+                }
+            }
+        }
         if( m_inputEventQueue.empty() )
         {
             return false;
@@ -994,6 +1104,7 @@ namespace workphone
                 m_windowListener = windowListener;
             }
             window->addListener( m_windowListener );
+            setProperties( getProperties() );
         }
     }
 
@@ -1122,6 +1233,55 @@ namespace workphone
 
         switch( msg )
         {
+        case WM_TOUCH:
+        {
+            const auto touchHandle = reinterpret_cast<HTOUCHINPUT>( lParam );
+            const auto count = LOWORD( wParam );
+            if( owner->m_touchEnabled && count > 0 && count <= 256 )
+            {
+                std::vector<TOUCHINPUT> touches( count );
+                if( GetTouchInputInfo( touchHandle, count, touches.data(), sizeof( TOUCHINPUT ) ) )
+                    for( const auto &touch : touches )
+                    {
+                        POINT point = { TOUCH_COORD_TO_PIXEL( touch.x ), TOUCH_COORD_TO_PIXEL( touch.y ) };
+                        ScreenToClient( reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ), &point );
+                        auto input = workphone::make_ptr<InputEvent>();
+                        auto values = workphone::make_ptr<Properties>();
+                        input->setEventType( IInputEvent::EventType::User );
+                        values->setProperty( "input.kind", "touch" );
+                        values->setProperty( "input.id", static_cast<u32>( touch.dwID ) );
+                        values->setProperty( "input.x", static_cast<s32>( point.x ) );
+                        values->setProperty( "input.y", static_cast<s32>( point.y ) );
+                        values->setProperty( "input.pressed", ( touch.dwFlags & TOUCHEVENTF_UP ) == 0 );
+                        input->setProperties( values );
+                        owner->postEvent( input );
+                    }
+            }
+            CloseTouchInputHandle( touchHandle );
+            break;
+        }
+        case WM_GESTURE:
+        {
+            const auto gestureHandle = reinterpret_cast<HGESTUREINFO>( lParam );
+            GESTUREINFO gesture = {};
+            gesture.cbSize = sizeof( gesture );
+            if( owner->m_gesturesEnabled && GetGestureInfo( gestureHandle, &gesture ) )
+            {
+                auto input = workphone::make_ptr<InputEvent>();
+                auto values = workphone::make_ptr<Properties>();
+                input->setEventType( IInputEvent::EventType::User );
+                values->setProperty( "input.kind", "gesture" );
+                values->setProperty( "input.gesture", static_cast<u32>( gesture.dwID ) );
+                values->setProperty( "input.flags", static_cast<u32>( gesture.dwFlags ) );
+                values->setProperty( "input.argument", static_cast<u64>( gesture.ullArguments ) );
+                values->setProperty( "input.x", static_cast<s32>( gesture.ptsLocation.x ) );
+                values->setProperty( "input.y", static_cast<s32>( gesture.ptsLocation.y ) );
+                input->setProperties( values );
+                owner->postEvent( input );
+            }
+            CloseGestureInfoHandle( gestureHandle );
+            break;
+        }
         case WM_MOUSEMOVE:
         {
             if( !owner->m_createMouse )
@@ -1173,7 +1333,7 @@ namespace workphone
             owner->m_dragStartPosition = currentPos;
             if( auto windowHandle = reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ) )
             {
-                SetCapture( windowHandle );
+                if( owner->m_mouseCaptureEnabled ) SetCapture( windowHandle );
             }
             postMouseEvent( IMouseState::Event::LeftPressed, currentPos, wParam, IMouseState::MOUSE_LEFT,
                             true, true );
@@ -1190,7 +1350,7 @@ namespace workphone
             owner->m_dragStartPosition = getMousePositionFromLParam( lParam );
             if( auto windowHandle = reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ) )
             {
-                SetCapture( windowHandle );
+                if( owner->m_mouseCaptureEnabled ) SetCapture( windowHandle );
             }
             postMouseEvent( IMouseState::Event::LeftPressed, owner->m_dragStartPosition, wParam,
                             IMouseState::MOUSE_LEFT, true, false );

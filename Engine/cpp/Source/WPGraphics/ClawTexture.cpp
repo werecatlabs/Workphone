@@ -42,6 +42,7 @@ namespace
         workphone::SourceBudgetString cookedProfile;
         workphone::SourceBudgetString sourcePath;
         bool decodeAttempted = false;
+        workphone::u32 projectMipPolicy = 0;
         void *textureView = nullptr;
         wp_renderer_dx11 *renderer = nullptr;
         void *device = nullptr;
@@ -193,16 +194,25 @@ namespace
     template <class Levels>
     void *uploadMipLevels( wp_renderer_dx11 *renderer, const Levels &levels, bool *budgetDenied = nullptr )
     {
+        size_t first = 0;
+        workphone::s32 quality = 2, maximum = 0;
+        if( auto app = workphone::core::IApplicationManager::instancePtr() )
+            if(auto settings = app->getPlayerSettings())
+            { settings->getPropertyValue("quality.texture",quality); settings->getPropertyValue("quality.maxTextureSize",maximum); }
+        const size_t skip = quality == 0 ? 2u : quality == 1 ? 1u : 0u;
+        while(first + 1 < levels.size() && (first < skip ||
+              (maximum > 0 && (levels[first].width > static_cast<workphone::u32>(maximum) || levels[first].height > static_cast<workphone::u32>(maximum))))) ++first;
         workphone::u64 bytes = 0;
-        for( const auto &level : levels ) bytes += level.bgra.size();
+        for(size_t i = first; i < levels.size(); ++i) bytes += levels[i].bgra.size();
         workphone::String error;
         auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
             workphone::StreamMemoryClass::Gpu, bytes, error );
         if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
         std::vector<wp_texture_mip_dx11> nativeLevels;
         nativeLevels.reserve( levels.size() );
-        for( const auto &level : levels )
+        for(size_t i = first; i < levels.size(); ++i)
         {
+            const auto &level = levels[i];
             nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
         }
         return retainUploadedTexture( wp_renderer_dx11_create_texture_mips_native(
@@ -213,15 +223,24 @@ namespace
                      bool *budgetDenied = nullptr )
     {
         const auto image = workphone::dds::inspect( bytes );
+        size_t first = 0;
+        workphone::s32 quality = 2, maximum = 0;
+        if(auto app = workphone::core::IApplicationManager::instancePtr())
+            if(auto settings = app->getPlayerSettings())
+            { settings->getPropertyValue("quality.texture",quality); settings->getPropertyValue("quality.maxTextureSize",maximum); }
+        const size_t skip = quality == 0 ? 2u : quality == 1 ? 1u : 0u;
+        while(first + 1 < image.mips.size() && (first < skip || (maximum > 0 &&
+              (image.mips[first].width > static_cast<workphone::u32>(maximum) || image.mips[first].height > static_cast<workphone::u32>(maximum))))) ++first;
         workphone::u64 residentBytes = 0;
-        for( const auto &m : image.mips ) residentBytes += m.size;
+        for(size_t i=first; i<image.mips.size(); ++i) residentBytes += image.mips[i].size;
         workphone::String error;
         auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
             workphone::StreamMemoryClass::Gpu, residentBytes, error );
         if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
         std::vector<wp_texture_encoded_mip_dx11> levels;
-        for( const auto &m : image.mips )
+        for(size_t i=first; i<image.mips.size(); ++i)
         {
+            const auto &m = image.mips[i];
             levels.push_back( { bytes.data() + m.offset, m.width, m.height, m.size } );
         }
         return retainUploadedTexture( wp_renderer_dx11_create_texture_encoded_mips_native(
@@ -577,6 +596,13 @@ namespace
         }
 
         auto &data = found->second;
+        u32 policy = 0;
+        if(auto app = core::IApplicationManager::instancePtr())
+            if(auto settings = app->getPlayerSettings())
+                policy = static_cast<u32>(settings->getPropertyAsInt("quality.texture") + 1) * 65536u +
+                         static_cast<u32>(settings->getPropertyAsInt("quality.maxTextureSize"));
+        if(data.projectMipPolicy != policy)
+        { data.projectMipPolicy = policy; data.uploadPending = true; }
         const auto previousView = data.device == device ? data.textureView : nullptr;
         if( ( data.pixels.empty() && data.floatPixels.empty() && data.cookedLevels.empty() && data.ddsBytes.empty() ) ||
             ( !data.uploadPending && data.attemptedRenderer == dx11 && data.attemptedDevice == device ) )

@@ -1,6 +1,7 @@
 #include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/WPAudioSound.hpp>
 #include <WPAudio/SharedClipCache.hpp>
+#include <Workphone/Sound/SoundManager.hpp>
 #include <Workphone/Workphone.hpp>
 
 #include <algorithm>
@@ -110,6 +111,23 @@ namespace workphone
         bool paused = false;
 
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
+        bool streaming = false;
+        size_t streamCursor = 0, streamBlockBytes = 0;
+        bool submitStreamBlock()
+        {
+            if( streamCursor >= wav->samples.size() )
+            {
+                if( !loop ) return false;
+                streamCursor = 0;
+            }
+            XAUDIO2_BUFFER next = {};
+            next.AudioBytes = static_cast<UINT32>( std::min( streamBlockBytes,
+                                                           wav->samples.size() - streamCursor ) );
+            next.pAudioData = wav->samples.data() + streamCursor;
+            streamCursor += next.AudioBytes;
+            if( streamCursor == wav->samples.size() && !loop ) next.Flags = XAUDIO2_END_OF_STREAM;
+            return SUCCEEDED( sourceVoice->SubmitSourceBuffer( &next ) );
+        }
         struct VoiceCallback final : IXAudio2VoiceCallback
         {
             explicit VoiceCallback( PlatformSoundState *owner ) : owner( owner )
@@ -135,6 +153,7 @@ namespace workphone
 
             void STDMETHODCALLTYPE OnBufferEnd( void * ) override
             {
+                if( owner->streaming && owner->playing ) owner->submitStreamBlock();
             }
 
             void STDMETHODCALLTYPE OnLoopEnd( void * ) override
@@ -338,6 +357,14 @@ namespace workphone
         state->buffer.pAudioData = state->wav->samples.data();
         state->buffer.Flags = XAUDIO2_END_OF_STREAM;
         state->buffer.LoopCount = state->loop ? XAUDIO2_LOOP_INFINITE : 0;
+        if( auto manager = workphone::dynamic_pointer_cast<SoundManager>( getOwner() ) )
+        {
+            state->streaming = manager->isStreamingEnabled();
+            state->streamBlockBytes = static_cast<size_t>( manager->getPlaybackBufferFrames() ) *
+                                      state->wav->channels * state->wav->bitsPerSample / 8;
+            state->streamBlockBytes = std::max<size_t>( state->streamBlockBytes,
+                                                       state->wav->channels * state->wav->bitsPerSample / 8 );
+        }
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
         if( state->wav->formatTag != WavFormatPcm )
         {
@@ -516,6 +543,8 @@ namespace workphone
         {
             return;
         }
+        if( auto manager = workphone::dynamic_pointer_cast<SoundManager>( getOwner() ) )
+            if( !manager->admitVoice( this ) ) return;
 
         // Set this before starting the native backend because very short buffers can invoke
         // their completion callback before the start call returns.
@@ -524,8 +553,9 @@ namespace workphone
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         XAUDIO2_VOICE_STATE voiceState = {};
         state->sourceVoice->GetState( &voiceState );
-        if( voiceState.BuffersQueued == 0 &&
-            FAILED( state->sourceVoice->SubmitSourceBuffer( &state->buffer ) ) )
+        if( voiceState.BuffersQueued == 0 && state->streaming ) state->streamCursor = 0;
+        if( voiceState.BuffersQueued == 0 && ( state->streaming ? !state->submitStreamBlock() :
+            FAILED( state->sourceVoice->SubmitSourceBuffer( &state->buffer ) ) ) )
         {
             state->playing = false;
             return;
@@ -624,6 +654,9 @@ namespace workphone
             return;
         }
         auto effectiveGain = getVolume();
+        auto effectivePan = getPan();
+        if( auto manager = workphone::dynamic_pointer_cast<SoundManager>( getOwner() ) )
+            manager->getMixParameters( this, effectiveGain, effectivePan );
 #if !defined WP_PLATFORM_WIN32
         if( auto owner = getOwner() )
         {
@@ -632,6 +665,15 @@ namespace workphone
 #endif
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         state->sourceVoice->SetVolume( effectiveGain );
+        if( state->wav && state->wav->channels <= 2 )
+        {
+            const float left = std::sqrt( std::clamp( 1.0f - effectivePan, 0.0f, 1.0f ) );
+            const float right = std::sqrt( std::clamp( 1.0f + effectivePan, 0.0f, 1.0f ) );
+            const float mono[] = { left, right };
+            const float stereo[] = { left, 0, 0, right };
+            state->sourceVoice->SetOutputMatrix( nullptr, state->wav->channels, 2,
+                                                state->wav->channels == 1 ? mono : stereo );
+        }
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
         AudioQueueSetParameter( state->queue, kAudioQueueParam_Volume, effectiveGain );
 #elif defined WP_PLATFORM_ANDROID
@@ -650,7 +692,7 @@ namespace workphone
         {
             state->loop = loop;
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
-            state->buffer.LoopCount = loop ? XAUDIO2_LOOP_INFINITE : 0;
+            state->buffer.LoopCount = !state->streaming && loop ? XAUDIO2_LOOP_INFINITE : 0;
             // ExitLoop affects the submitted buffer; changing the descriptor alone does not.
             // Enabling looping after submission takes effect on the next play/restart.
             if( !loop && state->sourceVoice )

@@ -207,6 +207,7 @@ namespace workphone
             {
                 props->setProperty( "native_system_active", m_sys != nullptr );
                 props->setProperty( "vsync", getVSync() );
+                props->setProperty( "diagnostics.gpuProfiler", m_gpuProfilerEnabled.load(std::memory_order_relaxed) );
                 std::lock_guard<std::mutex> lock( m_statisticsMutex );
                 props->setProperty( "native_update_serial", m_nativeUpdateSerial );
                 props->setProperty( "native_render_serial", m_nativeRenderSerial );
@@ -240,6 +241,8 @@ namespace workphone
                     m_statisticsSnapshotRequested = true;
                 }
                 bool enabled;
+                if(properties->getPropertyValue("diagnostics.gpuProfiler",enabled))
+                    m_gpuProfilerEnabled.store(enabled,std::memory_order_relaxed);
                 if( properties->getPropertyValue( "vsync", enabled ) )
                 {
                     m_vsync.store( enabled, std::memory_order_relaxed );
@@ -923,6 +926,9 @@ namespace workphone
             // validation fails, the previous native descriptors still have live contexts.
             std::vector<FramePassContext> nextFramePasses;
             auto renderer = getRenderer();
+            if(auto dx11 = dynamic_pointer_cast<ClawRendererDX11>(renderer))
+                wp_renderer_dx11_set_gpu_profiling( wp_renderer_get_dx11(dx11->getNativeRenderer()),
+                                                   m_gpuProfilerEnabled.load(std::memory_order_relaxed) );
             if( !renderer )
             {
                 if( !wp_graphics_system_set_render_passes( m_sys, nullptr, 0 ) )
@@ -1390,6 +1396,11 @@ namespace workphone
             // in the effects stage, leaving display UI outside tone mapping.
             if( auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
             {
+                const auto options = m_graphicsPipeline->getProperties();
+                const bool hdr = !options->hasProperty( "graphics.hdr" ) || options->getPropertyAsBool( "graphics.hdr" );
+                const s32 linear = options->hasProperty( "graphics.colorSpace" ) ? options->getPropertyAsInt( "graphics.colorSpace" ) : 1;
+                const s32 tone = options->hasProperty( "graphics.tonemapping" ) ? options->getPropertyAsInt( "graphics.tonemapping" ) : 3;
+                wp_renderer_dx11_set_output_options( wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
                 if( renderer->getRenderTarget() != getDefaultWindow() || !renderer->getCamera() ||
                     !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) return false;
                 return wp_renderer_dx11_begin_hdr_scene(
@@ -1416,8 +1427,10 @@ namespace workphone
                                  : Vector2<real_Num>(
                                        static_cast<real_Num>( target ? target->getSize().x : 0 ),
                                        static_cast<real_Num>( target ? target->getSize().y : 0 ) );
-            const auto width = static_cast<s32>( size.x );
-            const auto height = static_cast<s32>( size.y );
+            const auto softwareRenderer = dynamic_pointer_cast<ClawRendererSoftware>(renderer);
+            const auto nativeRenderer = softwareRenderer ? softwareRenderer->getNativeRenderer() : nullptr;
+            const auto width = nativeRenderer ? wp_renderer_get_width(nativeRenderer) : static_cast<s32>( size.x );
+            const auto height = nativeRenderer ? wp_renderer_get_height(nativeRenderer) : static_cast<s32>( size.y );
             if( width <= 0 || height <= 0 )
             {
                 return false;

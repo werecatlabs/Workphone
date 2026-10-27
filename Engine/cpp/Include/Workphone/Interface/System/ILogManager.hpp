@@ -24,6 +24,10 @@ namespace workphone
             Info,
             Exception,
 
+            Trace,
+            Debug,
+            Fatal,
+
             Count
         };
 

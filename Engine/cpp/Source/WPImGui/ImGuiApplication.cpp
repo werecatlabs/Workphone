@@ -3171,6 +3171,38 @@ namespace workphone::ui
     void ImGuiApplication::showGuizmo()
     {
         ImGuiIO &io = ImGui::GetIO();
+        // Theme is selected by the immutable active project profile and applied
+        // on the UI thread, never from a worker executing a settings request.
+        if( auto settings = applicationManager->getPlayerSettings() )
+        {
+            static thread_local ImGuiContext *themeContext = nullptr;
+            static thread_local s32 lastTheme = -1;
+            const auto theme = settings->getPropertyAsInt( "editor.theme", 1 );
+            if( themeContext != ImGui::GetCurrentContext() || theme != lastTheme )
+            {
+                themeContext = ImGui::GetCurrentContext();
+                lastTheme = theme;
+                if( theme == 0 ) ImGui::StyleColorsClassic();
+                else if( theme == 2 ) ImGui::StyleColorsLight();
+                else
+                {
+                    WPImGuiStyle::apply();
+                    if( theme == 3 )
+                    {
+                        auto &style = ImGui::GetStyle();
+                        style.Colors[ImGuiCol_Text] = ImVec4( 1, 1, 1, 1 );
+                        style.Colors[ImGuiCol_TextDisabled] = ImVec4( .8f, .8f, .8f, 1 );
+                        style.Colors[ImGuiCol_WindowBg] = ImVec4( 0, 0, 0, 1 );
+                        style.Colors[ImGuiCol_ChildBg] = ImVec4( 0, 0, 0, 1 );
+                        style.Colors[ImGuiCol_Border] = ImVec4( 1, 1, 1, 1 );
+                        style.Colors[ImGuiCol_FrameBg] = ImVec4( .12f, .12f, .12f, 1 );
+                        style.Colors[ImGuiCol_NavHighlight] = ImVec4( 1, 1, 0, 1 );
+                        style.FrameBorderSize = 1;
+                        style.WindowBorderSize = 2;
+                    }
+                }
+            }
+        }
         if( isPerspective )
         {
             Perspective( fov, io.DisplaySize.x / io.DisplaySize.y, 0.1f, 100.f, cameraProjection );

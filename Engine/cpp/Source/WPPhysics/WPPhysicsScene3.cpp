@@ -39,6 +39,8 @@ namespace workphone::physics
             throw std::runtime_error( "Failed to create a WPPhysics scene." );
         }
         wp_physics_scene_set_executor( m_scene, executePhysicsRanges, nullptr );
+        if( auto application = core::IApplicationManager::instancePtr() )
+            setProperties( application->getPlayerSettings() );
     }
 
     WPPhysicsScene3::~WPPhysicsScene3()

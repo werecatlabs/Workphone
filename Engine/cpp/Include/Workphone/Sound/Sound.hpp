@@ -22,6 +22,8 @@ namespace workphone
 
         /** Destructor. */
         ~Sound() override;
+        const String &getCategory() const { return m_category; }
+        void setCategory( const String &category );
 
         /** @copydoc ISound::play */
         void play() override;
@@ -129,6 +131,7 @@ namespace workphone
 
         /** Whether the sound is currently playing. */
         bool m_isPlaying = false;
+        String m_category = "sfx";
     };
 }  // namespace workphone
 

@@ -10,6 +10,10 @@
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/State/States/SoundManagerStateData.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
+#include <cmath>
 
 namespace workphone
 {
@@ -22,8 +26,100 @@ namespace workphone
         destroyAll();
     }
 
+    SmartPtr<Properties> SoundManager::getProperties() const
+    {
+        auto result = workphone::make_ptr<Properties>();
+        result->setProperty( "sound.masterVolume", s32( getVolume() * 100.0f + 0.5f ) );
+        result->setProperty( "sound.musicVolume", s32( m_musicGain * 100.0f + 0.5f ) );
+        result->setProperty( "sound.sfxVolume", s32( m_sfxGain * 100.0f + 0.5f ) );
+        result->setProperty( "sound.voiceVolume", s32( m_voiceGain * 100.0f + 0.5f ) );
+        result->setProperty( "sound.sampleRate", m_playbackSampleRate );
+        result->setProperty( "sound.bufferSize", m_playbackBufferFrames );
+        result->setProperty( "sound.voiceLimit", m_voiceLimit );
+        result->setProperty( "sound.backend", m_audioBackend );
+        result->setProperty( "sound.outputDevice", m_outputDevice );
+        result->setProperty( "sound.spatialization", m_spatializationEnabled );
+        result->setProperty( "sound.streaming", m_streamingEnabled );
+        result->setProperty( "sound.occlusion", m_occlusionEnabled );
+        return result;
+    }
+
+    void SoundManager::setProperties( SmartPtr<Properties> properties )
+    {
+        if( !properties ) return;
+        s32 volume = 0;
+        if( properties->getPropertyValue( "sound.masterVolume", volume ) )
+            setVolume( std::clamp( volume, 0, 100 ) / 100.0f );
+        if( properties->getPropertyValue( "sound.musicVolume", volume ) )
+            m_musicGain = std::clamp( volume, 0, 100 ) / 100.0f;
+        if( properties->getPropertyValue( "sound.sfxVolume", volume ) )
+            m_sfxGain = std::clamp( volume, 0, 100 ) / 100.0f;
+        if( properties->getPropertyValue( "sound.voiceVolume", volume ) )
+            m_voiceGain = std::clamp( volume, 0, 100 ) / 100.0f;
+        properties->getPropertyValue( "sound.sampleRate", m_playbackSampleRate );
+        properties->getPropertyValue( "sound.bufferSize", m_playbackBufferFrames );
+        properties->getPropertyValue( "sound.voiceLimit", m_voiceLimit );
+        properties->getPropertyValue( "sound.backend", m_audioBackend );
+        properties->getPropertyValue( "sound.outputDevice", m_outputDevice );
+        properties->getPropertyValue( "sound.spatialization", m_spatializationEnabled );
+        properties->getPropertyValue( "sound.streaming", m_streamingEnabled );
+        properties->getPropertyValue( "sound.occlusion", m_occlusionEnabled );
+        for( auto &sound : m_sounds.snapshot() )
+            if( sound && sound->isLoaded() ) sound->setVolume( sound->getVolume() );
+    }
+
+    bool SoundManager::admitVoice( const ISound *sound ) const
+    {
+        u32 active = 0;
+        for( const auto &candidate : m_sounds.snapshot() )
+            if( candidate && candidate.get() != sound && candidate->isPlaying() ) ++active;
+        return active < m_voiceLimit;
+    }
+
+    void SoundManager::getMixParameters( ISound *sound, f32 &gain, f32 &pan ) const
+    {
+        if( !sound ) { gain = pan = 0; return; }
+        gain = sound->getVolume();
+        auto concrete = dynamic_cast<Sound *>( sound );
+        pan = concrete ? concrete->getPan() : 0.0f;
+        if( concrete )
+            gain *= concrete->getCategory() == "music" ? m_musicGain :
+                    concrete->getCategory() == "voice" ? m_voiceGain : m_sfxGain;
+        if( sound->getFlag( ISound::SOUND_FLAG_MUTE ) ) gain = 0.0f;
+        const auto listeners = m_listeners.snapshot();
+        if( !m_spatializationEnabled || !sound->getFlag( ISound::SOUND_FLAG_3D ) || listeners.empty() )
+            return;
+        const auto listener = listeners.front();
+        const auto offset = sound->getPosition() - listener->getPosition();
+        const auto distance = static_cast<f32>( offset.length() );
+        f32 minimum = 1.0f, maximum = 10000.0f;
+        sound->getMinMaxDistance( minimum, maximum );
+        maximum = std::max( maximum, minimum + 0.001f );
+        gain *= std::clamp( 1.0f - ( distance - minimum ) / ( maximum - minimum ), 0.0f, 1.0f );
+        if( distance > 0.001f )
+        {
+            const auto right = listener->getForwardVector().crossProduct( Vector3<real_Num>::unitY() ).normaliseCopy();
+            pan = std::clamp( static_cast<f32>( offset.dotProduct( right ) / distance ), -1.0f, 1.0f );
+        }
+        if( m_occlusionEnabled && distance > 0.1f )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto physics = app ? app->getPhysicsManager() : nullptr;
+            auto scene = physics ? physics->getPhysicsScene() : nullptr;
+            if( scene )
+            {
+                ScopedLock lock( scene.get() );
+                Vector3<real_Num> point, normal;
+                SmartPtr<ISharedObject> object;
+                if( scene->intersects( listener->getPosition(), sound->getPosition(), point, normal, object ) &&
+                    ( point - listener->getPosition() ).length() < distance - 0.05f ) gain *= 0.25f;
+            }
+        }
+    }
+
     void SoundManager::load( SmartPtr<ISharedObject> data )
     {
+        if( auto app = core::IApplicationManager::instancePtr() ) setProperties( app->getPlayerSettings() );
         m_sounds.reserve( 100 );
     }
 
@@ -55,6 +151,8 @@ namespace workphone
                 sound->unload( nullptr );
             }
         }
+        for( const auto &sound : m_sounds.snapshot() )
+            if( sound && sound->isPlaying() ) sound->setVolume( sound->getVolume() );
     }
 
     void SoundManager::destroyResource( SmartPtr<IResource> resource )

@@ -574,32 +574,41 @@ namespace workphone::editor
         }
         const auto destination = checkedPath( filePath );
         auto properties = workphone::static_pointer_cast<Properties>( toData() );
-        const auto graphicsPath = destination.parent_path() / "GameGraphics.settings";
-        const bool hadGraphics = fs::is_regular_file( graphicsPath );
-        String previousGraphics;
-        if( hadGraphics )
+        const fs::path paths[] = { destination.parent_path() / "ProjectRuntime.settings",
+                                  destination.parent_path() / "GameGraphics.settings", destination };
+        const String contents[] = {
+            DataUtil::toString( properties.get(), true ),
+            DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ),
+            DataUtil::toString( properties.get(), true ) };
+        String previous[3];
+        bool existed[3] = {};
+        for( size_t i = 0; i < 3; ++i )
         {
-            std::ifstream stream( graphicsPath, std::ios::binary );
-            if( !stream ) throw std::runtime_error( "Unable to read previous game graphics settings" );
+            existed[i] = fs::is_regular_file( paths[i] );
+            if( !existed[i] ) continue;
+            std::ifstream stream( paths[i], std::ios::binary );
+            if( !stream ) throw std::runtime_error( "Unable to read previous project settings" );
             std::ostringstream buffer;
             buffer << stream.rdbuf();
-            if( stream.bad() ) throw std::runtime_error( "Unable to read previous game graphics settings" );
-            previousGraphics = buffer.str();
+            if( stream.bad() ) throw std::runtime_error( "Unable to read previous project settings" );
+            previous[i] = buffer.str();
         }
-        // Publish the main project only after its standalone graphics sidecar is
-        // writable. Restore that sidecar if publishing the main project fails.
-        writeProjectFile( graphicsPath,
-                          DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ) );
+        // Publish the main file last. Every already-published sidecar is restored
+        // if a later write fails, including an unwritable runtime profile.
+        size_t published = 0;
         try
         {
-            writeProjectFile( destination, DataUtil::toString( properties.get(), true ) );
+            for( ; published < 3; ++published )
+                writeProjectFile( paths[published], contents[published] );
         }
         catch( ... )
         {
-            if( hadGraphics )
-                writeProjectFile( graphicsPath, previousGraphics );
-            else
-                fs::remove( graphicsPath );
+            while( published > 0 )
+            {
+                --published;
+                if( existed[published] ) writeProjectFile( paths[published], previous[published] );
+                else fs::remove( paths[published] );
+            }
             throw;
         }
         m_projectDirectory = destination.parent_path().u8string();
@@ -916,12 +925,29 @@ namespace workphone::editor
 
     void Project::compile()
     {
+        auto app = core::IApplicationManager::instancePtr();
+        if( !app ) throw std::runtime_error( "Compilation requires the application manager" );
+        compile( app->getBuildConfig(), {}, true );
+    }
+
+    void Project::compile( const String &configuration, const Array<String> &configureArguments,
+                           bool loadPlugin )
+    {
         if( m_archive )
         {
             throw std::runtime_error( "Extract the archived project before compiling" );
         }
         const auto directory = checkedPath( m_projectDirectory );
-        const auto buildDirectory = directory / "Cache/project";
+        if( configuration != "Debug" && configuration != "RelWithDebInfo" &&
+            configuration != "Release" && configuration != "MinSizeRel" )
+            throw std::invalid_argument( "Unknown project build configuration" );
+        String profileKey;
+        for( const auto &argument : configureArguments ) { profileKey += argument; profileKey += '\n'; }
+        const auto profileHash = StringUtil::toString( StringUtil::getHash( profileKey ) );
+        const auto buildDirectory = configureArguments.empty()
+                                        ? directory / "Cache/project"
+                                        : directory / "Cache/project-profiles" / configuration.c_str() /
+                                              profileHash.c_str();
         auto app = core::IApplicationManager::instancePtr();
         if( !app )
         {
@@ -948,19 +974,29 @@ namespace workphone::editor
             }
             manager->generateProject();
         }
-        const auto configuration = app->getBuildConfig();
+        // Loading a DLL against a different CRT/build configuration is unsafe.
+        loadPlugin = loadPlugin && configuration == app->getBuildConfig();
         app->setCachePath( cacheDirectoryPath( directory / "Cache" ) );
         app->setProjectLibraryName( "Plugin" );
         const auto library = app->getProjectLibraryPath();
-        const auto outputDirectory = checkedPath( library ).parent_path().u8string();
+        const auto outputDirectory = loadPlugin
+                                         ? checkedPath( library ).parent_path().u8string()
+                                         : ( buildDirectory / "artifacts" ).u8string();
         auto upperConfig = configuration;
         std::transform( upperConfig.begin(), upperConfig.end(), upperConfig.begin(),
                         []( unsigned char c ) { return static_cast<char>( std::toupper( c ) ); } );
-        runCMake( { "-S", directory.u8string(), "-B", buildDirectory.u8string(),
-                    "-DCMAKE_BUILD_TYPE=" + configuration,
-                    "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory,
-                    "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory },
-                  buildDirectory / "configure.log" );
+        Array<String> arguments = { "-S", directory.u8string(), "-B", buildDirectory.u8string(),
+            "-DCMAKE_BUILD_TYPE=" + configuration,
+            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory,
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory };
+        arguments.insert( arguments.end(), configureArguments.begin(), configureArguments.end() );
+        runCMake( arguments, buildDirectory / "configure.log" );
+        if( !loadPlugin )
+        {
+            runCMake( { "--build", buildDirectory.u8string(), "--config", configuration,
+                        "--target", "Plugin" }, buildDirectory / "build.log" );
+            return;
+        }
         auto oldPlugin = m_plugin;
         if( oldPlugin )
         {

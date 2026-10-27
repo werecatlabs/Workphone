@@ -129,6 +129,8 @@ namespace workphone
 
         /// Atomic flag that controls whether keyboard input should be accepted.
         atomic_bool m_keyboardInputEnabled;
+        SmartPtr<IGameInputMap> m_gameInputMap;
+        u32 m_playerIndex = 0, m_joystickId = 0;
     };
 
 }  // namespace workphone

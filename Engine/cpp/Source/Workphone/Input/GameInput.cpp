@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Input/GameInput.hpp>
 #include <Workphone/Interface/Input/IGameInputMap.hpp>
+#include <Workphone/Input/GameInputMap.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 
 namespace workphone
@@ -8,36 +9,43 @@ namespace workphone
 
     WP_CLASS_REGISTER_DERIVED( workphone, GameInput, IGameInput );
 
-    GameInput::GameInput() = default;
+    GameInput::GameInput() : m_gameInputMap( workphone::make_ptr<GameInputMap>() )
+    {
+        m_keyboardInputEnabled = true;
+        m_inputReady = true;
+        m_dongleReady = false;
+    }
 
     GameInput::~GameInput() = default;
 
     bool GameInput::isAssigned() const
     {
-        return false;
+        return m_inputReady;
     }
 
     SmartPtr<IGameInputMap> GameInput::getGameInputMap() const
     {
-        return nullptr;
+        return m_gameInputMap;
     }
 
     void GameInput::setPlayerIndex( u32 playerIndex )
     {
+        m_playerIndex = playerIndex;
     }
 
     u32 GameInput::getPlayerIndex() const
     {
-        return 0;
+        return m_playerIndex;
     }
 
     u32 GameInput::getJoystickId() const
     {
-        return 0;
+        return m_joystickId;
     }
 
     void GameInput::setJoystickId( u32 joystickId )
     {
+        m_joystickId = joystickId;
     }
 
     bool GameInput::isDongleReady() const

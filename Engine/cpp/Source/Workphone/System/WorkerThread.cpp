@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/WorkerThread.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
@@ -8,6 +9,9 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TimerChrono.hpp>
 #include <thread>
+#if defined( _WIN32 )
+#    include <windows.h>
+#endif
 
 namespace workphone
 {
@@ -25,8 +29,23 @@ namespace workphone
         try
         {
             setLoadingState( LoadingState::Loading );
-
-            m_thread = new std::thread( &WorkerThread::run, this );
+            m_shutdownRequested = false;
+#if defined( _WIN32 )
+            auto app = core::IApplicationManager::instancePtr();
+            auto settings = app ? app->getPlayerSettings() : nullptr;
+            if( settings && settings->getPropertyAsInt( "tasks.jobSystem", 0 ) == 1 )
+            {
+                auto work = CreateThreadpoolWork( []( PTP_CALLBACK_INSTANCE callback, void *owner, PTP_WORK ) {
+                    CallbackMayRunLong( callback );
+                    static_cast<WorkerThread *>( owner )->run();
+                }, this, nullptr );
+                if( !work ) throw std::runtime_error( "Unable to create a platform worker" );
+                m_platformWork = work;
+                SubmitThreadpoolWork( work );
+            }
+            else
+#endif
+                m_thread = new std::thread( &WorkerThread::run, this );
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -43,6 +62,17 @@ namespace workphone
             if( isLoaded() )
             {
                 setLoadingState( LoadingState::Unloading );
+                m_shutdownRequested = true;
+                setState( State::Stop );
+#if defined( _WIN32 )
+                if( m_platformWork )
+                {
+                    auto work = static_cast<PTP_WORK>( m_platformWork );
+                    WaitForThreadpoolWorkCallbacks( work, TRUE );
+                    CloseThreadpoolWork( work );
+                    m_platformWork = nullptr;
+                }
+#endif
 
                 if( auto thread = getThread() )
                 {
@@ -77,7 +107,8 @@ namespace workphone
             auto timer = pTimer.get();
             WP_ASSERT( timer );
 
-            while( applicationManager->isRunning() && !applicationManager->getQuit() )
+            SmartPtr<Properties> previousPolicy;
+            while( !m_shutdownRequested && applicationManager->isRunning() && !applicationManager->getQuit() )
             {
                 switch( auto state = getState() )
                 {
@@ -85,9 +116,20 @@ namespace workphone
                 {
                     Thread::setCurrentThreadId( m_workerThreadId );
 
-                    while( applicationManager->isRunning() && !applicationManager->getQuit() &&
+                    while( !m_shutdownRequested && applicationManager->isRunning() && !applicationManager->getQuit() &&
                            getState() != State::Stop )
                     {
+                        auto policy = applicationManager->getPlayerSettings();
+                        if( policy.get() != previousPolicy.get() )
+                        {
+                            applyProjectWorkerPolicy( policy, static_cast<u32>( getThreadId() ) );
+                            previousPolicy = policy;
+                        }
+                        if( !projectRunsBackgroundTasks() )
+                        {
+                            Thread::sleep( 0.01 );
+                            continue;
+                        }
                         auto jobQueue = applicationManager->getJobQueuePtr();
                         auto taskManager = applicationManager->getTaskManagerPtr();
 

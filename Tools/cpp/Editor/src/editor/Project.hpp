@@ -140,6 +140,9 @@ namespace workphone
              * Writes configure.log and build.log under Cache/project and throws on failure.
              */
             void compile();
+            /** Build a selected profile; cross-configuration binaries are never loaded in the Editor. */
+            void compile( const String &configuration, const Array<String> &configureArguments,
+                          bool loadPlugin = true );
 
             /** @return Header source generated for the project plugin. */
             String getPluginHeader() const;

@@ -53,6 +53,14 @@ namespace workphone
 
         /** Destructor. */
         ~SoundManager() override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
+        /** Computes category, positional attenuation and obstruction without
+         * changing the authored per-sound volume/pan. */
+        void getMixParameters( ISound *sound, f32 &gain, f32 &pan ) const;
+        bool admitVoice( const ISound *sound ) const;
+        u32 getPlaybackBufferFrames() const { return m_playbackBufferFrames; }
+        bool isStreamingEnabled() const { return m_streamingEnabled; }
 
         /** @copydoc ISoundManager::load */
         void load( SmartPtr<ISharedObject> data ) override;
@@ -239,6 +247,10 @@ namespace workphone
 
         /** The mutex. */
         mutable RecursiveSpinMutex m_mutex;
+        f32 m_musicGain = 1.0f, m_sfxGain = 1.0f, m_voiceGain = 1.0f;
+        u32 m_voiceLimit = 128, m_playbackSampleRate = 48000, m_playbackBufferFrames = 1024;
+        s32 m_outputDevice = 0, m_audioBackend = 0;
+        bool m_spatializationEnabled = true, m_streamingEnabled = true, m_occlusionEnabled = false;
     };
 
     inline IStateContext *SoundManager::getStateContextPtr() const

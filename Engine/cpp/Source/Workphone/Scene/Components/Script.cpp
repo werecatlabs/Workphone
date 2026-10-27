@@ -3,6 +3,7 @@
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Script/ScriptInvoker.hpp>
 #include <Workphone/Script/ScriptEvent.hpp>
+#include <Workphone/Script/ProjectScriptPolicy.hpp>
 #include <Workphone/Interface/System/IFSMManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/ITransform.hpp>
@@ -115,7 +116,7 @@ namespace workphone::scene
             }
             else
             {
-                if( auto scriptManager = applicationManager->getScriptManager() )
+                if( auto scriptManager = getProjectScriptManager( this ) )
                 {
                     scriptManager->destroyObject( this );
                 }
@@ -150,6 +151,8 @@ namespace workphone::scene
 
     void Script::update()
     {
+        if( !projectScriptExecutionEnabled() ) return;
+        if( !getScriptData() ) createScriptData();
         auto state = getState();
         if( state == State::Play || getUpdateInEditMode() )
         {
@@ -440,7 +443,7 @@ namespace workphone::scene
                 WP_ASSERT( applicationManager );
                 WP_ASSERT( applicationManager->isValid() );
 
-                auto scriptManager = applicationManager->getScriptManager();
+                auto scriptManager = getProjectScriptManager( this );
                 WP_ASSERT( scriptManager );
                 WP_ASSERT( scriptManager->isValid() );
 
@@ -481,6 +484,7 @@ namespace workphone::scene
 
     void Script::createScriptData()
     {
+        if( !projectScriptExecutionEnabled() ) return;
         auto scriptData = getScriptData();
         if( !scriptData )
         {
@@ -488,7 +492,7 @@ namespace workphone::scene
             WP_ASSERT( applicationManager );
             WP_ASSERT( applicationManager->isValid() );
 
-            auto scriptManager = applicationManager->getScriptManager();
+            auto scriptManager = getProjectScriptManager( this );
             if( scriptManager )
             {
                 WP_ASSERT( scriptManager->isValid() );
@@ -511,7 +515,7 @@ namespace workphone::scene
     void Script::destroyScriptData()
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
+        auto scriptManager = applicationManager ? getProjectScriptManager( this ) : nullptr;
         if( scriptManager )
         {
             scriptManager->destroyObject( this );

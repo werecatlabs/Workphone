@@ -334,6 +334,17 @@ namespace workphone::scene
             }
         }
 
+        if( auto app = core::IApplicationManager::instancePtr() )
+            if( auto settings = app->getPlayerSettings() )
+            {
+                f32 bias = 1.0f;
+                settings->getPropertyValue("quality.lodBias",bias);
+                s32 quality = 2;
+                settings->getPropertyValue("quality.mesh",quality);
+                constexpr f32 detailFactors[] = {0.5f,0.75f,1.0f,1.5f};
+                if(std::isfinite(bias) && bias > 0)
+                    cameraLODBias *= std::clamp(bias,0.1f,4.0f) * detailFactors[std::clamp(quality,0,3)];
+            }
         const auto groupCount = m_groupSlots.size();
         batch->worldReferencePoints.reserve( groupCount );
         batch->worldRadii.reserve( groupCount );

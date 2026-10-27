@@ -7,6 +7,8 @@
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <algorithm>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Core/Properties.hpp>
 
 namespace workphone::render
 {
@@ -151,7 +153,16 @@ namespace workphone::render
                 p.requested = snapshot;
                 p.requestedSourceBudget = std::move( sourceBudget );
             }
-            auto demand = selectTerrainTiles( p.descriptions, views, p.demand, p.maximumTiles );
+            auto qualityViews = views;
+            if(auto app = core::IApplicationManager::instancePtr())
+                if(auto settings = app->getPlayerSettings())
+                {
+                    s32 quality = 2;
+                    settings->getPropertyValue("quality.terrain",quality);
+                    constexpr f32 tolerances[] = {4.0f,2.0f,1.0f,0.5f};
+                    for(auto &view : qualityViews) view.maximumPixelError *= tolerances[std::clamp(quality,0,3)];
+                }
+            auto demand = selectTerrainTiles( p.descriptions, qualityViews, p.demand, p.maximumTiles );
             // Distance order controls worker priority, never publication identity.
             // A camera crossing a tile centre must not restart the same demand.
             auto canonicalDemand = demand;

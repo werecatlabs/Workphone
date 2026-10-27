@@ -14,6 +14,8 @@ namespace workphone
 
         /** Destructor. */
         ~InputEvent() override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         /** @copydoc IInputEvent::getMouseState */
         SmartPtr<IMouseState> getMouseState() const override;
@@ -83,6 +85,7 @@ namespace workphone
 
         ///
         void *m_window = nullptr;
+        SmartPtr<Properties> m_eventProperties;
     };
 }  // namespace workphone
 

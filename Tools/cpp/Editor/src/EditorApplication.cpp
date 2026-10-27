@@ -1,4 +1,5 @@
 #include <EditorPCH.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <boost/json.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -1559,7 +1560,15 @@ namespace workphone::editor
         auto factoryManager = applicationManager->getFactoryManagerPtr();
         WP_ASSERT( factoryManager );
 
-        auto numThreads = getActiveThreads();
+        loadEditorPreferences();
+        if( auto preferences = applicationManager->getEditorSettings() )
+        {
+            auto projectFile = preferences->getProperty( "Project Path" );
+            if( !projectFile.empty() && std::filesystem::is_regular_file(
+                    std::filesystem::u8path( projectFile.c_str() ) ) )
+                loadProjectRuntimeSettings( std::filesystem::u8path( projectFile.c_str() ).parent_path().u8string() );
+        }
+        auto numThreads = projectWorkerCount( getActiveThreads() );
 
         auto maxThreads = Thread::hardware_concurrency();
         if( numThreads > maxThreads )
@@ -2475,8 +2484,8 @@ namespace workphone::editor
     {
         auto applicationManager = core::IApplicationManager::instance();
 
-        auto playerSettings = workphone::make_ptr<Properties>();
-        applicationManager->setPlayerSettings( playerSettings );
+        if( !applicationManager->getPlayerSettings() )
+            applicationManager->setPlayerSettings( workphone::make_ptr<Properties>() );
 
         loadEditorPreferences();
 

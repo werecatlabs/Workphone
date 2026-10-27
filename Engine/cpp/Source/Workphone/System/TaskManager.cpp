@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/TaskManager.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/Core/BitUtil.hpp>
@@ -224,7 +225,7 @@ namespace workphone
         if( auto threadPool = applicationManager->getThreadPoolPtr() )
         {
             auto taskCount = 0;
-            const auto numThreads = threadPool->getNumThreads();
+            const auto numThreads = projectWorkerCount( threadPool->getNumThreads() );
             const auto numTasks = static_cast<u32>( TaskId::Count );
 
             for( u32 i = 0; i < numTasks; ++i )
@@ -239,6 +240,12 @@ namespace workphone
 
                 auto &affinity = m_affinity[i];
                 auto &hint = m_threadHint[i];
+
+                if( numThreads == 0 )
+                {
+                    hint = static_cast<s32>( Thread::ThreadId::Primary );
+                    continue;
+                }
 
                 if( affinity == -1 )
                 {
@@ -294,6 +301,12 @@ namespace workphone
             calculateTaskAffinity();
 
             auto threadId = Thread::getCurrentThreadId();
+            const auto workerCount = threadPool ? projectWorkerCount( threadPool->getNumThreads() ) : 0;
+            if( threadId != Thread::ThreadId::Primary &&
+                ( !projectRunsBackgroundTasks() || static_cast<u32>( threadId ) >= workerCount ) )
+                return;
+            auto settings = applicationManager->getPlayerSettings();
+            const bool primaryRender = settings && !settings->getPropertyAsBool( "tasks.renderThread", true );
 
             switch( threadId )
             {
@@ -322,7 +335,7 @@ namespace workphone
                     {
                     case Thread::ThreadId::Primary:
                     {
-                        auto numThreads = threadPool->getNumThreads();
+                        auto numThreads = workerCount;
                         if( numThreads == 0 )
                         {
                             const auto numTasks = static_cast<size_t>( TaskId::Count );
@@ -358,7 +371,8 @@ namespace workphone
                             const auto numTasks = static_cast<size_t>( TaskId::Count );
                             for( size_t i = 0; i < numTasks; ++i )
                             {
-                                if( !getFlags( static_cast<u32>( i ), Task::primary_flag ) )
+                                if( !getFlags( static_cast<u32>( i ), Task::primary_flag ) &&
+                                    !( primaryRender && i == static_cast<size_t>( TaskId::Render ) ) )
                                 {
                                     continue;
                                 }
@@ -416,6 +430,8 @@ namespace workphone
                                 {
                                     continue;
                                 }
+                                if( primaryRender && i == static_cast<size_t>( TaskId::Render ) )
+                                    continue;
 
                                 if( i >= tasks.size() )
                                 {

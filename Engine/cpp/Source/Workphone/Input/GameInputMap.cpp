@@ -10,6 +10,17 @@ namespace workphone
 
     namespace
     {
+        u32 nativeKeyForName( const String &name )
+        {
+            if( name.size() == 1 ) return static_cast<u32>( std::toupper( static_cast<unsigned char>( name[0] ) ) );
+            const std::pair<const char *, u32> keys[] = {
+                { "Space", 32 }, { "Enter", 13 }, { "Escape", 27 }, { "Tab", 9 },
+                { "Left", 37 }, { "Up", 38 }, { "Right", 39 }, { "Down", 40 },
+                { "Shift", 16 }, { "Control", 17 }, { "Alt", 18 }
+            };
+            for( const auto &key : keys ) if( name == key.first ) return key.second;
+            return 0;
+        }
         SmartPtr<InputActionData> cloneInputActionData( const SmartPtr<IInputAction> &action )
         {
             auto data = workphone::dynamic_pointer_cast<InputActionData>( action );
@@ -51,6 +62,13 @@ namespace workphone
 
     void GameInputMap::setKeyboardAction( u32 id, const String &key0, const String &key1 )
     {
+        if( m_keyboardMap.find( id ) != m_keyboardMap.end() )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto input = app ? app->getInputDeviceManager() : nullptr;
+            auto settings = input ? input->getProperties() : nullptr;
+            if( settings && !settings->getPropertyAsBool( "input.rebinds", true ) ) return;
+        }
         auto key0Hash = StringUtil::getHash( key0 );
         auto key1Hash = StringUtil::getHash( key1 );
         auto inputAction = workphone::make_ptr<InputActionData>( key0Hash, key1Hash, id );
@@ -61,6 +79,13 @@ namespace workphone
 
     void GameInputMap::setJoystickAction( u32 id, u32 button0, u32 button1 )
     {
+        if( m_joystickMap.find( id ) != m_joystickMap.end() )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto input = app ? app->getInputDeviceManager() : nullptr;
+            auto settings = input ? input->getProperties() : nullptr;
+            if( settings && !settings->getPropertyAsBool( "input.rebinds", true ) ) return;
+        }
         auto inputAction = workphone::make_ptr<InputActionData>( button0, button1, id );
         setJoystickAction( id, inputAction );
     }
@@ -86,6 +111,10 @@ namespace workphone
             {
                 return (u32)actionData->getActionId();
             }
+            if( const auto data = workphone::dynamic_pointer_cast<InputActionData>( actionData ) )
+                if( key != 0 && ( nativeKeyForName( data->getPrimaryName() ) == key ||
+                                 nativeKeyForName( data->getSecondaryName() ) == key ) )
+                    return static_cast<u32>( data->getActionId() );
         }
 
         return IGameInput::UNASSIGNED;

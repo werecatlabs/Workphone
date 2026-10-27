@@ -120,6 +120,7 @@ namespace workphone
             Array<SmartPtr<ITexture>> m_textures;
 
             Vector2I m_bufferSize;
+            f32 m_adaptiveRenderScale = 1.0f;
             bool m_inFrame = false;
             bool m_screenDepthTest = true;
 

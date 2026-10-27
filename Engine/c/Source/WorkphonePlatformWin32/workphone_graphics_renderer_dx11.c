@@ -157,9 +157,10 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     " q = q * float3(0.5, -0.5, 0.5) + 0.5;\n"
     " if (any(q < 0.0) || any(q > 1.0)) return 1.0;\n"
     " float visibility = 0.0; float bias = shadow_controls.w * (1.0 + 2.0 * (1.0 - ndl));\n"
-    " [unroll] for (int y = -1; y <= 1; ++y) [unroll] for (int x = -1; x <= 1; ++x)\n"
+    " int radius=clamp((int)shadow_controls.x-1,0,3);\n"
+    " [loop] for (int y = -radius; y <= radius; ++y) [loop] for (int x = -radius; x <= radius; ++x)\n"
     " visibility += shadow_tex.SampleCmpLevelZero(shadow_sampler, q.xy + float2(x,y) * shadow_controls.z, q.z - bias);\n"
-    " return visibility / 9.0; }\n"
+    " return visibility / ((2*radius+1)*(2*radius+1)); }\n"
     "TextureCube environment_tex : register(t7); SamplerState environment_sampler : register(s1);\n"
     "Texture2D tex : register(t0); SamplerState tex_sampler : register(s0);\n"
     "Texture2D normal_tex : register(t1); Texture2D metallic_tex : register(t2);\n"
@@ -497,6 +498,7 @@ struct wp_renderer_dx11
     unsigned statistics_epoch;
     wp_gpu_frame_query gpu_queries[WP_DX11_GPU_QUERY_COUNT];
     wp_s32 active_gpu_query;
+    wp_s32 gpu_profiling_disabled;
     wp_s32 gpu_queries_initialized;
     wp_s32 pntc_bindings_valid;
     ID3D11Buffer *bound_vertex_buffer, *bound_index_buffer;
@@ -525,6 +527,8 @@ struct wp_renderer_dx11
     UINT hdr_viewport_count, hdr_scissor_count, hdr_width, hdr_height;
     wp_s32 hdr_active, hdr_target_srgb;
     wp_f32 hdr_exposure;
+    ID3D11Buffer *project_output_cb;
+    wp_vec4f project_output_values;
     wp_u64 hdr_completed_frames;
     wp_vec4f hdr_output_values;
     wp_s32 hdr_output_valid;
@@ -587,6 +591,7 @@ struct wp_renderer_dx11
     ID3D11Buffer *cb_shadow;
     wp_shadow_constants_dx11 shadow;
     wp_s32 shadow_size, shadow_pass, shadow_ready, shadow_dirty;
+    wp_s32 shadow_filter_quality;
     ID3D11RenderTargetView *shadow_saved_rt;
     ID3D11DepthStencilView *shadow_saved_ds;
     wp_viewport_i shadow_saved_viewport;
@@ -2015,10 +2020,16 @@ static const char wp_hdr_composite_vs[] =
     " float2 uv=float2((id<<1)&2,id&2); o.p=float4(uv*float2(2,-2)+float2(-1,1),0,1); return o; }";
 static const char wp_hdr_composite_ps[] =
     "cbuffer SceneOutput:register(b5) { float4 scene_output; }; Texture2D scene:register(t0);"
+    "cbuffer ProjectOutput:register(b6) { float4 project_output; };"
     "float4 main(float4 p:SV_POSITION):SV_TARGET {"
     " float3 c=max(scene.Load(int3(int2(p.xy),0)).rgb,0.0)*scene_output.y;"
-    " c=saturate((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14));"
-    " if(scene_output.w<0.5) c=lerp(12.92*c,1.055*pow(c,1.0/2.4)-0.055,step(0.0031308,c));"
+    " float mode=project_output.w>0.5 ? project_output.z : 1.0;"
+    " if(project_output.w>0.5 && project_output.x<0.5) mode=0.0;"
+    " if(mode>1.5 && mode<2.5) c=c/(1+c);"
+    " else if(mode>0.5) c=(c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14);"
+    " c=saturate(c);"
+    " if(scene_output.w<0.5 && (project_output.w<0.5 || project_output.y>0.5))"
+    " c=lerp(12.92*c,1.055*pow(c,1.0/2.4)-0.055,step(0.0031308,c));"
     " return float4(c,1); }";
 
 static wp_s32 wp_renderer_dx11_prepare_hdr( wp_renderer_dx11 *r, UINT width, UINT height )
@@ -2202,6 +2213,34 @@ wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *r, wp_f32 exposure )
     return 1;
 }
 
+void wp_renderer_dx11_set_output_options( wp_renderer_dx11 *r, wp_s32 hdr_enabled,
+                                         wp_s32 linear_workflow, wp_s32 tonemapping )
+{
+    D3D11_BUFFER_DESC description;
+    wp_vec4f options;
+    if( !r || !r->device || !r->context ) return;
+    options.x = hdr_enabled ? 1.0f : 0.0f;
+    options.y = linear_workflow ? 1.0f : 0.0f;
+    options.z = (wp_f32)(tonemapping >= 0 && tonemapping <= 3 ? tonemapping : 3);
+    options.w = 1.0f;
+    if( !r->project_output_cb )
+    {
+        memset( &description, 0, sizeof(description) );
+        description.ByteWidth = sizeof(wp_vec4f);
+        description.Usage = D3D11_USAGE_DEFAULT;
+        description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        if( FAILED( ID3D11Device_CreateBuffer( r->device, &description, NULL, &r->project_output_cb ) ) ) return;
+        memset( &r->project_output_values, 0, sizeof(r->project_output_values) );
+    }
+    if( memcmp( &options, &r->project_output_values, sizeof(options) ) )
+    {
+        ID3D11DeviceContext_UpdateSubresource( r->context, (ID3D11Resource*)r->project_output_cb,
+                                             0, NULL, &options, 0, 0 );
+        r->project_output_values = options;
+    }
+    ID3D11DeviceContext_PSSetConstantBuffers( r->context, 6, 1, &r->project_output_cb );
+}
+
 void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *r )
 {
     ID3D11RasterizerState *raster = NULL;
@@ -2312,6 +2351,7 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
     if( r->hdr_vs ) ID3D11VertexShader_Release( r->hdr_vs );
     if( r->hdr_ps ) ID3D11PixelShader_Release( r->hdr_ps );
     if( r->hdr_output_cb ) ID3D11Buffer_Release( r->hdr_output_cb );
+    if( r->project_output_cb ) ID3D11Buffer_Release( r->project_output_cb );
     if( r->hdr_raster ) ID3D11RasterizerState_Release( r->hdr_raster );
     if( r->hdr_depth ) ID3D11DepthStencilState_Release( r->hdr_depth );
     if( r->hdr_blend ) ID3D11BlendState_Release( r->hdr_blend );
@@ -2606,6 +2646,7 @@ static void begin_frame_statistics( wp_renderer_dx11 *r )
     if( !r->measuring ) return;
     r->frame_measuring = 1;
     QueryPerformanceCounter( &r->frame_start );
+    if( r->gpu_profiling_disabled ) { r->active_gpu_query = -1; return; }
     if( !r->gpu_queries_initialized )
     {
         r->gpu_queries_initialized = 1;
@@ -2651,6 +2692,13 @@ static void begin_frame_statistics( wp_renderer_dx11 *r )
         ID3D11DeviceContext_Begin( r->context, (ID3D11Asynchronous *)q->disjoint );
         ID3D11DeviceContext_End( r->context, (ID3D11Asynchronous *)q->start );
     }
+}
+
+void wp_renderer_dx11_set_gpu_profiling( wp_renderer_dx11 *r, wp_s32 enabled )
+{
+    if( !r ) return;
+    r->gpu_profiling_disabled = !enabled;
+    if( enabled && !r->measuring ) wp_renderer_dx11_reset_statistics(r);
 }
 
 void wp_renderer_dx11_begin_frame( wp_renderer_dx11 *r )
@@ -4692,12 +4740,21 @@ void wp_renderer_dx11_enable_shadow_receiving( wp_renderer_dx11 *r, wp_s32 enabl
 {
     wp_f32 value;
     if( !r ) return;
-    value = enabled && r->shadow_ready && !r->shadow_pass ? 1.0f : 0.0f;
+    value = enabled && r->shadow_ready && !r->shadow_pass ?
+            (wp_f32)(r->shadow_filter_quality > 0 ? r->shadow_filter_quality : 2) : 0.0f;
     if( r->shadow.controls.x != value )
     {
         r->shadow.controls.x = value;
         r->shadow_dirty = 1;
     }
+}
+
+void wp_renderer_dx11_set_shadow_filter_quality( wp_renderer_dx11 *r, wp_s32 quality )
+{
+    if(!r) return;
+    r->shadow_filter_quality = quality < 1 ? 1 : quality > 4 ? 4 : quality;
+    if(r->shadow.controls.x > 0)
+    { r->shadow.controls.x = (wp_f32)r->shadow_filter_quality; r->shadow_dirty = 1; }
 }
 
 /* =========================================================================

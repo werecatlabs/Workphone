@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/JobQueue.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
@@ -248,7 +249,8 @@ namespace workphone
             }
 
             auto threadPool = applicationManager->getThreadPool();
-            if( ( threadPool == nullptr ) || ( threadPool && threadPool->getNumThreads() == 0 ) )
+            if( !projectRunsBackgroundTasks() || !threadPool ||
+                projectWorkerCount( threadPool->getNumThreads() ) == 0 )
             {
                 if( m_jobs.try_pop( job ) )
                 {
@@ -259,6 +261,7 @@ namespace workphone
         break;
         default:
         {
+            if( !projectRunsBackgroundTasks() ) break;
             SmartPtr<IJob> job;
             if( m_jobs.try_pop( job ) )
             {

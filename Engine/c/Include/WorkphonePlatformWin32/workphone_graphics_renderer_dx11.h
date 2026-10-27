@@ -44,6 +44,8 @@ typedef struct wp_geometry_dx11 wp_geometry_dx11;
  * The returned SRV is borrowed until a successful resize or renderer destruction;
  * clients must not leave it bound when beginning another scene. No CPU readback. */
 wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *renderer, wp_f32 exposure );
+void wp_renderer_dx11_set_output_options( wp_renderer_dx11 *renderer, wp_s32 hdr_enabled,
+                                         wp_s32 linear_workflow, wp_s32 tonemapping );
 void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *renderer );
 wp_s32 wp_renderer_dx11_is_hdr_scene_active( const wp_renderer_dx11 *renderer );
 void *wp_renderer_dx11_get_hdr_scene_view( const wp_renderer_dx11 *renderer );
@@ -161,6 +163,7 @@ wp_s32 wp_renderer_dx11_validate_terrain_material( wp_renderer_dx11 *renderer,
 wp_s32 wp_renderer_dx11_begin_shadow_map( wp_renderer_dx11 *renderer, const wp_mat4f *light_matrix, wp_s32 size );
 void wp_renderer_dx11_end_shadow_map( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_enable_shadow_receiving( wp_renderer_dx11 *renderer, wp_s32 enabled );
+void wp_renderer_dx11_set_shadow_filter_quality( wp_renderer_dx11 *renderer, wp_s32 quality );
 
 /* =========================================================================
  * Lifecycle
@@ -248,6 +251,7 @@ typedef struct wp_render_statistics_dx11
 /** Call after external code (e.g. ImGui) changes the immediate context state. */
 void wp_renderer_dx11_invalidate_state( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_reset_statistics( wp_renderer_dx11 *renderer );
+void wp_renderer_dx11_set_gpu_profiling( wp_renderer_dx11 *renderer, wp_s32 enabled );
 /** Fixed-cost numeric readback: copies counters and computes aggregate means,
  * without allocating, sorting or traversing frame history. interval_p95_ms is
  * zero/unavailable in this path; use get_statistics for the history percentile.

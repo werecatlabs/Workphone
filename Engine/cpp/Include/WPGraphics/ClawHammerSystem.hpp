@@ -262,6 +262,7 @@ namespace workphone
             ///< Configured renderer type (selected before configure())
             RenderApi m_configuredRendererType = RenderApi::None;
             std::atomic<bool> m_vsync{ false };
+            std::atomic<bool> m_gpuProfilerEnabled{ true };
             // Cached timings must be released with this graphics system, before
             // the application destroys its profiler and allocation pools.
             SmartPtr<IProfile> m_preparationProfile;
