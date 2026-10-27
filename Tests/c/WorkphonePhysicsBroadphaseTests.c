@@ -28,9 +28,10 @@ typedef struct test_box
 /* The broadphase treats body pointers as opaque identities. */
 static int identities[8192];
 static int simd_mode;
+static wp_broadphase_type algorithm_mode = WORKPHONE_BROADPHASE_DBVT;
 static wp_broadphase *create_test_broadphase( void )
 {
-    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_DBVT );
+    wp_broadphase *bp = wp_broadphase_create( algorithm_mode );
     CHECK( bp );
     CHECK( wp_broadphase_set_simd_enabled( bp, simd_mode ) == wp_broadphase_get_simd_enabled( bp ) );
     return bp;
@@ -447,6 +448,8 @@ static void test_solver_corrections_invalidate_bounds( void )
 
 int main( void )
 {
+    for( algorithm_mode = WORKPHONE_BROADPHASE_SAP; algorithm_mode <= WORKPHONE_BROADPHASE_ABP;
+         algorithm_mode = (wp_broadphase_type)( algorithm_mode + 1 ) )
     for( simd_mode = 0; simd_mode < 2; ++simd_mode )
     {
         random_state = 12673;

@@ -62,6 +62,7 @@ namespace workphone::scene
     }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, WorldStreaming, Component );
+    
     WorldStreaming::WorldStreaming() = default;
 
     WorldStreaming::~WorldStreaming()

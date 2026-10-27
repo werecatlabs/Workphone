@@ -685,33 +685,40 @@ void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback c
         /* Preserve canonical callback ordering while pruning each row on X.
          * The scratch array is scene-owned and does not allocate during traversal. */
         wp_s32 j;
-        for( i = 0; i < count; ++i ) bp->hits[i] = bp->ordered[i];
+        for( i = 0; i < count; ++i ) bp->stack[i] = bp->ordered[i].proxy;
         for( i = 1; i < count; ++i )
         {
-            wp_bp_order value = bp->hits[i];
+            wp_s32 value = bp->stack[i];
             j = i;
-            while( j > 0 && bp->nodes[bp->hits[j - 1].proxy].exact.min.x >
-                              bp->nodes[value.proxy].exact.min.x )
+            while( j > 0 && bp->nodes[bp->stack[j - 1]].exact.min.x >
+                              bp->nodes[value].exact.min.x )
             {
-                bp->hits[j] = bp->hits[j - 1];
+                bp->stack[j] = bp->stack[j - 1];
                 --j;
             }
-            bp->hits[j] = value;
+            bp->stack[j] = value;
         }
         for( i = 0; i < count; ++i )
         {
-            wp_bp_node *a = &bp->nodes[bp->hits[i].proxy];
-            for( j = i + 1; j < count; ++j )
+            wp_bp_node *a = &bp->nodes[bp->ordered[i].proxy];
+            wp_s32 found = 0, h;
+            for( j = 0; j < count; ++j )
             {
-                wp_bp_node *b = &bp->nodes[bp->hits[j].proxy];
+                wp_bp_node *b = &bp->nodes[bp->stack[j]];
                 if( b->exact.min.x > a->exact.max.x ) break;
-                if( ( a->movable || b->movable ) && overlaps( a->exact, b->exact ) )
+                if( b->rank > i && ( a->movable || b->movable ) && overlaps( a->exact, b->exact ) )
                 {
-                    wp_broadphase_pair pair;
-                    pair.body_a = a->order <= b->order ? a->body : b->body;
-                    pair.body_b = a->order <= b->order ? b->body : a->body;
-                    callback( &pair, context );
+                    bp->hits[found].proxy = bp->stack[j];
+                    bp->hits[found++].order = (wp_u32)b->rank;
                 }
+            }
+            if( found > 1 ) qsort( bp->hits, found, sizeof( *bp->hits ), compare_order );
+            for( h = 0; h < found; ++h )
+            {
+                wp_broadphase_pair pair;
+                pair.body_a = a->body;
+                pair.body_b = bp->nodes[bp->hits[h].proxy].body;
+                callback( &pair, context );
             }
         }
         return;

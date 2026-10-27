@@ -20,12 +20,6 @@ namespace workphone::editor
     namespace
     {
         namespace fs = std::filesystem;
-        std::mutex backendMutex;
-        String activeServiceRoot;
-        ProjectServiceProviders serviceProviders;
-        s32 activeNetworkBackend = -1;
-        SmartPtr<INetworkManager> ownedNetwork;
-        SmartPtr<IScriptManager> ownedVm;
 
         String configuration( const Properties &s )
         {
@@ -184,66 +178,23 @@ namespace workphone::editor
         try
         {
             if( !settings ) throw std::invalid_argument( "Project profile is unavailable" );
+            bool domain = false;
+            for( const auto &property : settings->getPropertiesAsArray() )
+            {
+                const auto key = property.getName();
+                if( key.find( "services." ) == 0 || key.find( "scripting." ) == 0 || key.find( "network." ) == 0 ||
+                    key.find( "build." ) == 0 || key.find( "project." ) == 0 ) { domain = true; break; }
+            }
+            if( !domain ) return resultFor( true, "No project backend settings in this request." );
             validate( *settings );
             auto app = core::IApplicationManager::instancePtr();
             if( !app ) return resultFor( true, "Project backends will initialize at application startup." );
             auto editor = EditorManager::getSingletonPtr();
             const auto root = editor && editor->getProject() ? editor->getProject()->getPath() : app->getProjectPath();
-            if( root.empty() ) throw std::runtime_error( "Project backend initialization requires a project directory" );
-            std::lock_guard<std::mutex> lock( backendMutex );
-            const auto serviceRoot = ( fs::u8path( root.c_str() ) / ".workphone/services" ).u8string();
-            if( activeServiceRoot != serviceRoot.c_str() )
-            {
-                serviceProviders = makeLocalProjectServiceProviders( serviceRoot.c_str() );
-                activeServiceRoot = serviceRoot.c_str();
-            }
+            if( root.empty() ) return resultFor( true, "Project backends will initialize when a project directory is available." );
             String error;
-            if( !configureProjectServices( serviceProviders, settings->getPropertyAsBool( "services.cloudSave" ),
-                    settings->getPropertyAsBool( "services.analytics" ), settings->getPropertyAsBool( "services.crashReporting", true ), error ) )
+            if( !applyProjectServiceSettings( settings, root, error ) )
                 throw std::runtime_error( error.c_str() );
-            const auto scriptBackend = settings->getPropertyAsInt( "scripting.backend", 0 );
-            if( ( scriptBackend == 3 ) != static_cast<bool>( ownedVm ) )
-            {
-                SmartPtr<IScriptManager> next;
-                if( scriptBackend == 3 )
-                {
-                    next = app->getFactoryManager()->createObjectFromType<IScriptManager>( "ExternalProjectScriptManager" );
-                    if( !next ) throw std::runtime_error( "External script provider could not be created" );
-                    next->load( nullptr );
-                }
-                if( auto scenes = app->getGameManager() )
-                    for( auto actor : scenes->getActors() )
-                        for( auto script : actor->getComponentsByType<scene::Script>() ) script->destroyScriptData();
-                auto previous = ownedVm;
-                setProjectScriptManager( next ); ownedVm = next;
-                if( previous ) previous->unload( nullptr );
-            }
-            if( settings->getPropertyAsInt( "scripting.reflection", 1 ) >= 2 )
-            {
-                auto generated = make_ptr<Properties>();
-                if( auto scripts = getProjectScriptManager() ) generated->setProperty( "classNames", scripts->getClassNames() );
-                writeText( fs::u8path( root.c_str() ) / ".workphone/generated/ScriptReflection.settings",
-                           DataUtil::toString( generated.get(), true ) );
-            }
-            const auto backend = settings->getPropertyAsInt( "network.backend", 0 );
-            const bool multiplayer = settings->getPropertyAsBool( "network.multiplayer" );
-            if( !multiplayer || backend == 0 )
-            {
-                if( auto network = app->getNetworkManager() ) { app->setNetworkManager( nullptr ); network->unload( nullptr ); }
-                ownedNetwork = nullptr; activeNetworkBackend = -1;
-            }
-            else if( !app->getNetworkManager() || activeNetworkBackend != backend )
-            {
-                auto factory = app->getFactoryManager();
-                if( !factory ) throw std::runtime_error( "Networking requires the object factory" );
-                const String provider = backend == 1 ? "WPNetworkManager" : backend == 2 ? "BoostAsioNetworkManager" : "PlatformNetworkManager";
-                auto network = factory->createObjectFromType<INetworkManager>( provider );
-                if( !network ) throw std::runtime_error( ( "Install the network provider plugin: " + provider ).c_str() );
-                network->setServer( false ); // Opens a real client socket; scene NetworkViews select endpoints.
-                auto old = app->getNetworkManager(); app->setNetworkManager( network );
-                if( old ) old->unload( nullptr );
-                ownedNetwork = network; activeNetworkBackend = backend;
-            }
             return resultFor( true, "Project script policy, local service providers and network lifecycle applied." );
         }
         catch( const std::exception &e ) { return resultFor( false, e.what() ); }

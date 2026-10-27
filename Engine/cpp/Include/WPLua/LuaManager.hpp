@@ -479,6 +479,7 @@ namespace workphone
          * @return Array of class name strings.
          */
         Array<String> getClassNames() const override;
+        Array<String> getRuntimeClassNames() const override;
 
         /**
          * @brief Replace the internal list of script class names.

@@ -232,6 +232,8 @@ namespace workphone
          * @return An array of class names.
          */
         virtual Array<String> getClassNames() const = 0;
+        /** Live registered classes, independent of a project's reflection selection. */
+        virtual Array<String> getRuntimeClassNames() const { return getClassNames(); }
 
         /**
          * @brief Sets the list of script class names.

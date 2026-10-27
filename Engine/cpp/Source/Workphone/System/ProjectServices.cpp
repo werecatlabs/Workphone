@@ -295,6 +295,7 @@ namespace workphone
                 if( previous && previous != nextNetwork ) previous->unload( nullptr );
                 projectNetwork = nextNetwork; selectedNetworkBackend = networkBackend;
             }
+            if( app && !applyProjectScriptSettings( settings, projectDirectory, error ) ) return false;
             error.clear(); return true;
         }
         catch( const std::exception &e ) { error = e.what(); return false; }
@@ -308,7 +309,7 @@ namespace workphone
         if( app && app->getNetworkManager() == projectNetwork ) app->setNetworkManager( nullptr );
         if( projectNetwork ) projectNetwork->unload( nullptr );
         projectNetwork = nullptr; selectedNetworkBackend = -1;
-        localProviders = {}; localProviderRoot.clear(); setProjectScriptManager( nullptr );
+        localProviders = {}; localProviderRoot.clear(); releaseProjectScriptManager();
     }
 
     bool putProjectCloudSave( const String &slot, const Array<u8> &bytes, String &error )

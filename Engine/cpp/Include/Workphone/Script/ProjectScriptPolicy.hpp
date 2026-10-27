@@ -6,6 +6,9 @@ namespace workphone
 {
     WPCore_API void setProjectScriptManager( SmartPtr<IScriptManager> manager );
     WPCore_API SmartPtr<IScriptManager> getProjectScriptManager( ISharedObject *owner = nullptr );
+    WPCore_API bool applyProjectScriptSettings( SmartPtr<Properties> settings,
+                                               const String &projectDirectory, String &error );
+    WPCore_API void releaseProjectScriptManager();
     /** The Editor's own Lua windows remain active when project gameplay scripts are disabled. */
     inline bool projectScriptExecutionEnabled()
     {

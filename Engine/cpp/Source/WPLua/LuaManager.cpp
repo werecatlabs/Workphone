@@ -1084,8 +1084,7 @@ namespace workphone
 
     Array<String> LuaManager::getClassNames() const
     {
-        auto array = m_classNames.snapshot();
-        Array<String> runtime{ array.begin(), array.end() };
+        auto runtime = getRuntimeClassNames();
         auto app = core::IApplicationManager::instancePtr();
         auto settings = app ? app->getPlayerSettings() : nullptr;
         const auto reflection = settings ? settings->getPropertyAsInt( "scripting.reflection", 1 ) : 1;
@@ -1100,6 +1099,12 @@ namespace workphone
         for( const auto &name : runtime )
             if( std::find( classes.begin(), classes.end(), name ) == classes.end() ) classes.push_back( name );
         return classes;
+    }
+
+    Array<String> LuaManager::getRuntimeClassNames() const
+    {
+        auto array = m_classNames.snapshot();
+        return { array.begin(), array.end() };
     }
 
     s32 LuaManager::invokeObject( SmartPtr<ISharedObject> object, const String &functionName,
