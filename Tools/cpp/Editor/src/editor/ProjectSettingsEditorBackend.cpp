@@ -78,7 +78,8 @@ namespace workphone::editor
             auto app = core::IApplicationManager::instancePtr();
             auto factories = app ? app->getFactoryManager() : nullptr;
             const auto provider = settings->getProperty( "tasks.providerType" );
-            if( provider.empty() || !factories || !factories->getFactoryByName( provider ) )
+            const auto factory = !provider.empty() && factories ? factories->getFactoryByName( provider ) : nullptr;
+            if( !factory || !factory->isObjectDerivedFromByInfo( IThreadPool::typeInfo() ) )
             {
                 response->setProperty( "success", false );
                 response->setProperty( "status", "External jobs require a registered IThreadPool factory in tasks.providerType." );
@@ -100,7 +101,8 @@ namespace workphone::editor
         auto response = validateProjectSettingsEditorBackend( settings );
         if( !response->getPropertyAsBool( "success" ) ) return response;
         String handled;
-        for( auto key : keys ) { if( !handled.empty() ) handled += "; "; handled += key; }
+        for( auto key : keys ) if( settings->hasProperty( key ) )
+        { if( !handled.empty() ) handled += "; "; handled += key; }
         response->setProperty( "handledKeys", handled );
         response->setProperty( "appliedKeys", handled );
         auto app = core::IApplicationManager::instancePtr();
@@ -116,12 +118,18 @@ namespace workphone::editor
                 if( auto profiler = ui->getProfilerWindow() )
                     if( !settings->getPropertyAsBool( "diagnostics.profiler", true ) )
                         profiler->setWindowVisible( false );
+        String pending;
+        if( settings->hasProperty( "tasks.jobSystem" ) ) pending = "tasks.jobSystem";
         if( auto pool = app->getThreadPool() )
         {
             if( settings->getPropertyAsBool( "tasks.backgroundTasks", true ) &&
                 settings->getPropertyAsInt( "tasks.threadCount", 4 ) > static_cast<s32>( pool->getNumThreads() ) )
-                response->setProperty( "pendingKeys", "tasks.threadCount; tasks.jobSystem" );
+            {
+                if( !pending.empty() ) pending += "; ";
+                pending += "tasks.threadCount";
+            }
         }
+        response->setProperty( "pendingKeys", pending );
         response->setProperty( "status", "Editor policies applied. Worker pool growth and pool provider changes apply on next launch." );
         return response;
     }

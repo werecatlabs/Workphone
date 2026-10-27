@@ -62,6 +62,8 @@ namespace workphone
          */
         void update() override;
 
+        SmartPtr<Properties> getProperties() const override;
+
         /**
          * @brief Load a mapping of sound names to file paths.
          *
@@ -211,6 +213,12 @@ namespace workphone
 
         /// Global mute state
         bool m_mute = false;
+
+        // These describe the endpoint that was actually opened, independently
+        // of the profile staged for the next audio startup.
+        s32 m_activeSampleRate = -1;
+        s32 m_activeOutputDevice = -1;
+        s32 m_activeBackend = -1;
     };
 }  // namespace workphone
 

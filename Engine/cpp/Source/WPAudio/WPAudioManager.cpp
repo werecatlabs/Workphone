@@ -173,7 +173,9 @@ namespace workphone
                                     const bool match = m_outputDevice == 1 ?
                                         label.find( L"head" ) != std::wstring::npos : m_outputDevice == 2 ?
                                         label.find( L"speaker" ) != std::wstring::npos : m_outputDevice == 3 ?
-                                        label.find( L"controller" ) != std::wstring::npos : false;
+                                        label.find( L"controller" ) != std::wstring::npos :
+                                        label.find( L"mobile" ) != std::wstring::npos ||
+                                            label.find( L"phone" ) != std::wstring::npos;
                                     if( match ) device->GetId( &selectedDevice );
                                 }
                                 PropVariantClear( &name );
@@ -304,8 +306,20 @@ namespace workphone
         return false;
 #endif
 
+        m_activeSampleRate = m_playbackSampleRate;
+        m_activeOutputDevice = m_outputDevice;
+        m_activeBackend = m_audioBackend;
         setVolume( m_volume );
         return true;
+    }
+
+    SmartPtr<Properties> WPAudioManager::getProperties() const
+    {
+        auto properties = SoundManager::getProperties();
+        properties->setProperty( "active.sound.sampleRate", m_activeSampleRate );
+        properties->setProperty( "active.sound.outputDevice", m_activeOutputDevice );
+        properties->setProperty( "active.sound.backend", m_activeBackend );
+        return properties;
     }
 
     void WPAudioManager::cleanupPlatformAudio()

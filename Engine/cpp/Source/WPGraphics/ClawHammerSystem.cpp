@@ -2,6 +2,7 @@
 #include <WPGraphics/ClawMaterial.hpp>
 #include <WPGraphics/MaterialProgramReloadDX11.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
+#include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <stdexcept>
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_transform_job.h"
@@ -930,8 +931,14 @@ namespace workphone
             std::vector<FramePassContext> nextFramePasses;
             auto renderer = getRenderer();
             if(auto dx11 = dynamic_pointer_cast<ClawRendererDX11>(renderer))
+            {
                 wp_renderer_dx11_set_gpu_profiling( wp_renderer_get_dx11(dx11->getNativeRenderer()),
                                                    m_gpuProfilerEnabled.load(std::memory_order_relaxed) );
+                const auto probes=getProjectIrradianceProbes();
+                if(!wp_renderer_dx11_set_irradiance_probes(wp_renderer_get_dx11(dx11->getNativeRenderer()),
+                    probes.empty() ? nullptr : probes.data(),static_cast<wp_u32>(probes.size()),getProjectIrradianceMode()))
+                    WP_LOG_WARNING("Project irradiance upload failed; retaining the previous GPU probe set.");
+            }
             if( !renderer )
             {
                 if( !wp_graphics_system_set_render_passes( m_sys, nullptr, 0 ) )

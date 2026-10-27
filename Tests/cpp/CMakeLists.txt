@@ -1,5 +1,5 @@
 if(WP_BUILD_TESTS AND TARGET WorkphoneAudio)
-    #add_subdirectory(./AudioProduction AudioProduction)
+    add_subdirectory(./AudioProduction AudioProduction)
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
@@ -786,3 +786,19 @@ target_compile_features(WPHierarchicalDepthOcclusionTests PRIVATE cxx_std_17)
 target_include_directories(WPHierarchicalDepthOcclusionTests PRIVATE "${WP_ROOT}/Engine/cpp/Include")
 set_target_properties(WPHierarchicalDepthOcclusionTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME WPGraphics.hierarchical_depth_occlusion COMMAND WPHierarchicalDepthOcclusionTests)
+if(WIN32)
+    add_executable(WPDepthReadbackDX11Tests GraphicsProduction/DepthReadbackDX11Tests.cpp)
+    target_compile_features(WPDepthReadbackDX11Tests PRIVATE cxx_std_17)
+    target_compile_definitions(WPDepthReadbackDX11Tests PRIVATE _WP_STATIC_LIB_
+        WP_BUILD_RENDERER_DX11=1)
+    target_include_directories(WPDepthReadbackDX11Tests PRIVATE "${WP_ROOT}/Engine/cpp/Include"
+        "${WP_ROOT}/Engine/c/Include" "${WP_ROOT}/Engine/c/Include/WorkphoneCore"
+        "${WP_ROOT}/Engine/c/Include/WorkphoneGraphics")
+    target_link_libraries(WPDepthReadbackDX11Tests PRIVATE d3d11 d3dcompiler)
+    set_target_properties(WPDepthReadbackDX11Tests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.occlusion_depth_gpu COMMAND WPDepthReadbackDX11Tests)
+    add_test(NAME WPGraphics.occlusion_depth_warp COMMAND WPDepthReadbackDX11Tests)
+    set_tests_properties(WPGraphics.occlusion_depth_gpu WPGraphics.occlusion_depth_warp
+        PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+    set_tests_properties(WPGraphics.occlusion_depth_warp PROPERTIES ENVIRONMENT "WP_DEPTH_TEST_WARP=1")
+endif()

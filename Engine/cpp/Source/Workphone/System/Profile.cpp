@@ -30,16 +30,16 @@ namespace workphone
 
     void Profile::start()
     {
-        if( !projectProfilingEnabled() ) return;
         ScopedLock lock( this );
+        if( !projectProfilingEnabled() ) { m_start = 0; return; }
 
         m_start = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     }
 
     void Profile::end()
     {
-        if( !projectProfilingEnabled() ) return;
         ScopedLock lock( this );
+        if( !projectProfilingEnabled() || m_start == 0 ) { m_start = 0; return; }
 
         auto applicationManager = core::IApplicationManager::instance();
         auto timer = applicationManager->getTimer();
@@ -47,6 +47,7 @@ namespace workphone
         m_end = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
         auto interval = m_end - m_start;
+        m_start = 0;
         m_timeTaken =
             static_cast<float>( static_cast<f64>( interval ) / static_cast<f64>( 1000000000LL ) );
 

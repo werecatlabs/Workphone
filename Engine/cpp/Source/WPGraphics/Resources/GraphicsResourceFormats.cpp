@@ -748,7 +748,10 @@ namespace workphone::render
             validateResource( value, "texres" );
             require( value.header.installDependencies.empty() && value.dependencies.empty(),
                      "Cooked textures cannot contain install dependencies" );
-            const auto decodedPayload = decompressProjectAssetPayload( value.payload, graphicsTextureByteLimit + 4096u );
+            Array<u8> decodedStorage;
+            const bool compressed = value.payload.size() >= 4 && std::memcmp( value.payload.data(), "WPZ1", 4 ) == 0;
+            if( compressed ) decodedStorage = decompressProjectAssetPayload( value.payload, graphicsTextureByteLimit + 4096u );
+            const auto &decodedPayload = compressed ? decodedStorage : value.payload;
             Reader reader( decodedPayload );
             CookedTextureData data;
             require( decodedPayload.size() >= 4, "Truncated texture prefix" );
@@ -811,7 +814,10 @@ namespace workphone::render
         {
             require( value.payload.size() <= graphicsMaterialShaderByteLimit+65536u, "Cooked material payload exceeds its size limit" );
             validateResource( value, "matres" );
-            const auto decodedPayload = decompressProjectAssetPayload( value.payload, graphicsMaterialShaderByteLimit + 65536u );
+            Array<u8> decodedStorage;
+            const bool compressed = value.payload.size() >= 4 && std::memcmp( value.payload.data(), "WPZ1", 4 ) == 0;
+            if( compressed ) decodedStorage = decompressProjectAssetPayload( value.payload, graphicsMaterialShaderByteLimit + 65536u );
+            const auto &decodedPayload = compressed ? decodedStorage : value.payload;
             Reader reader( decodedPayload );
             CookedMaterialData data;
             const auto version = readPrefix( reader, materialMagic, data.target, data.packagedBuild, 3 );

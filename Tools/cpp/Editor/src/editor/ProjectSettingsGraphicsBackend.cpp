@@ -2,6 +2,7 @@
 #include <editor/ProjectSettingsGraphicsBackend.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <cmath>
 
 namespace workphone::editor
@@ -37,12 +38,6 @@ namespace workphone::editor
             const auto add = [&]( const String &message ) { if( !result.empty() ) result += " "; result += message; };
             if( settings.getPropertyAsInt( "graphics.renderPipeline" ) == 2 )
                 add( "Deferred shading requires a geometry G-buffer renderer; the current scene renderer is forward." );
-            if( settings.getPropertyAsInt( "graphics.gi" ) != 0 )
-                add( "Baked/realtime GI requires a lightmap baker or irradiance provider for this project." );
-            if( settings.getPropertyAsBool( "performance.gpuParticles" ) )
-                add( "The particle renderer currently simulates on the CPU; GPU simulation requires a compute backend." );
-            if( settings.getPropertyAsBool( "performance.occlusionCulling" ) )
-                add( "Frustum culling is active; hierarchical depth occlusion requires a depth-pyramid provider." );
             return result;
         }
 
@@ -130,6 +125,8 @@ namespace workphone::editor
         if( !result->getPropertyAsBool("success") ) return result;
         const auto app = core::IApplicationManager::instancePtr();
         String error;
+        if(!applyProjectIrradianceSettings(settings,app ? app->getProjectPath() : String(),error))
+        { result->setProperty("success",false);result->setProperty("status",error);return result; }
         const struct { const char *key; StreamMemoryClass category; } budgets[] = {
             {"quality.streamingBudgetMb",StreamMemoryClass::WorkingCpu},
             {"performance.memoryBudgetMb",StreamMemoryClass::SourceCpu},

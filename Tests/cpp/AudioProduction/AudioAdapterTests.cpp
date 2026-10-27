@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <limits>
+#include <cmath>
 using namespace workphone;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (0)
 class FixtureManager : public WPAudioManager {

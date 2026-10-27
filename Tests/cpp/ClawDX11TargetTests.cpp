@@ -2,6 +2,7 @@
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawCamera.hpp>
+#include <WPGraphics/ClawDepthReadback.hpp>
 #if defined WP_TEST_IMGUI
 #include <WPGraphics/ClawImguiManager.hpp>
 #include <WPImGui/ImGuiManager.hpp>
@@ -83,6 +84,46 @@ namespace
         WP_CHECK_COUNTER( present_failures );
         WP_CHECK_COUNTER( last_present_hresult );
 #undef WP_CHECK_COUNTER
+        return ok;
+    }
+
+    bool testOcclusionDepthReadback( workphone::render::ClawRendererDX11 &wrapper )
+    {
+        auto native = wp_renderer_get_dx11( wrapper.getNativeRenderer() );
+        auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+        workphone::render::ClawDepthReadback reader;
+        bool ok = true;
+        const auto supported = wp_renderer_dx11_supported_scene_samples( native );
+        for( int samples : { 1, 4 } )
+        {
+            if( !( supported & static_cast<unsigned>( samples ) ) ) continue;
+            wp_renderer_dx11_set_scene_sampling( native, samples, .5f );
+            ok &= check( wp_renderer_dx11_begin_hdr_scene( native, 1.f ),
+                         "occlusion depth fixture must begin a native scene" );
+            ID3D11RenderTargetView *beforeTarget = nullptr;
+            ID3D11DepthStencilView *beforeDepth = nullptr;
+            context->OMGetRenderTargets( 1, &beforeTarget, &beforeDepth );
+            ok &= check( beforeDepth != nullptr, "native scene must bind sampleable depth" );
+            if( beforeDepth ) context->ClearDepthStencilView( beforeDepth, D3D11_CLEAR_DEPTH, .375f, 0 );
+            std::vector<float> depth;
+            unsigned width = 0, height = 0;
+            ok &= check( reader.read( wrapper.getNativeRenderer(), depth, width, height ),
+                         "single and multisample scene depth must execute GPU resolve and staging readback" );
+            ok &= check( width > 0 && width <= 256 && height > 0 && height <= 256 &&
+                         depth.size() == size_t( width ) * height &&
+                         std::all_of( depth.begin(), depth.end(), []( float z ) { return std::abs( z - .375f ) < .00001f; } ),
+                         "bounded depth snapshots must retain conventional Z values" );
+            ID3D11RenderTargetView *afterTarget = nullptr;
+            ID3D11DepthStencilView *afterDepth = nullptr;
+            context->OMGetRenderTargets( 1, &afterTarget, &afterDepth );
+            ok &= check( beforeTarget == afterTarget && beforeDepth == afterDepth,
+                         "occlusion readback must restore renderer output bindings" );
+            if( beforeTarget ) beforeTarget->Release(); if( beforeDepth ) beforeDepth->Release();
+            if( afterTarget ) afterTarget->Release(); if( afterDepth ) afterDepth->Release();
+            wp_renderer_dx11_end_hdr_scene( native );
+            std::printf( "Occlusion GPU depth: %d samples, %ux%u snapshot\n", samples, width, height );
+        }
+        wp_renderer_dx11_set_scene_sampling( native, 1, 1.f );
         return ok;
     }
 
@@ -845,6 +886,7 @@ int main()
                          wp_renderer_dx11_get_device( native ) ) ),
                      "DX11 device evidence must be available" );
         auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+        ok &= testOcclusionDepthReadback( renderer );
         try { ok &= claw_rtt_contracts::native(native); ok &= claw_scene_job_contracts::pixelsMatch(renderer); }
         catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.setRenderTarget( window );

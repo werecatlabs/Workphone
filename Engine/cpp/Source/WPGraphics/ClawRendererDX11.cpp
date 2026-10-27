@@ -1123,6 +1123,8 @@ namespace workphone::render
                 if(auto settings = app->getPlayerSettings())
                 {
                     settings->getPropertyValue("graphics.reflectionProbes",reflectionProbes);
+                    s32 lighting=2;
+                    if(settings->getPropertyValue("graphics.lightingMode",lighting)) nativeMaterial.projection.z=static_cast<f32>(lighting);
                     if(settings->hasProperty("graphics.lightingMode") && settings->getPropertyAsInt("graphics.lightingMode") == 0)
                         nativeMaterial.uv_transform.z = 0.0f;
                 }

@@ -3182,6 +3182,52 @@ static void ordered_views( void )
     puts( "Immutable ordered views: permutation validation, sharing and retirement passed." );
 }
 
+static wp_s32 occlude_bounded_fixture( const wp_aabb3f *bounds, const wp_mat4f *world, void *context )
+{
+    int *tested = (int *)context;
+    ++*tested;
+    CHECK( world != NULL );
+    return bounds->max.z < -1.0f;
+}
+
+static void private_occlusion_view( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_cull_result *main, *shadow, *derived;
+    wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } };
+    int i, tested = 0;
+    CHECK( scene && mesh );
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    for( i = 0; i < 2; ++i )
+    {
+        wp_graphics_object *object = wp_graphics_scene_create_object( scene );
+        wp_scenenode *node = wp_graphics_scene_create_node( scene );
+        wp_graphics_object_set_mesh( object, mesh );
+        wp_scenenode_attach_object( node, object );
+    }
+    main = capture( scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+    shadow = wp_graphics_cull_result_create_view( main, NULL, WP_GRAPHICS_CULL_PASS_SHADOW );
+    CHECK( main && shadow && wp_graphics_cull_result_get_visible_count( main ) == 2 );
+    CHECK( wp_graphics_cull_result_apply_occlusion( main, occlude_bounded_fixture, &tested ) == 2 );
+    CHECK( tested == 2 && wp_graphics_cull_result_get_visible_count( main ) == 0 );
+    CHECK( wp_graphics_cull_result_apply_occlusion( shadow, occlude_bounded_fixture, &tested ) == 0 );
+    CHECK( tested == 2 && wp_graphics_cull_result_get_visible_count( shadow ) == 2 );
+    draws = 0;
+    CHECK( wp_graphics_scene_render_cull_result( scene, (wp_renderer *)scene, main, NULL, NULL ) == WP_GRAPHICS_CULL_OK );
+    CHECK( draws == 0 );
+    derived = wp_graphics_cull_result_create_view( main, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( derived && wp_graphics_cull_result_get_visible_count( derived ) == 2 );
+    bounds.max.z += .1f;
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    CHECK( wp_graphics_cull_result_validate( main, scene,
+        wp_graphics_cull_result_get_scene_generation( main ) ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( derived ); wp_graphics_cull_result_destroy( shadow );
+    wp_graphics_cull_result_destroy( main ); wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    puts( "Occlusion private main-view filtering, shadow preservation, draw removal and stale geometry: passed." );
+}
+
 int main( int argc, char **argv )
 {
     if( argc > 1 )
@@ -3194,6 +3240,7 @@ int main( int argc, char **argv )
         return 2;
     }
     matrix_cache();
+    private_occlusion_view();
     ordered_views();
     cull_phase_timing();
     cull_ancestor_arena();

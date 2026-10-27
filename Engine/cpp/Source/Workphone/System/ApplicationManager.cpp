@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/ProjectServices.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Core/DebugTrace.hpp>
 #include <Workphone/Core/Path.hpp>
@@ -265,6 +266,7 @@ namespace workphone::core
                 // Release those references while their factories and managers are alive;
                 // closing the VM after UI factory teardown accesses freed pool storage.
                 releaseProjectServiceSettings();
+                releaseProjectLocalization();
                 if( auto scriptManager = getScriptManager() )
                 {
                     scriptManager->unload( nullptr );

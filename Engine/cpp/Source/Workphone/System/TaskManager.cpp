@@ -225,7 +225,8 @@ namespace workphone
         if( auto threadPool = applicationManager->getThreadPoolPtr() )
         {
             auto taskCount = 0;
-            const auto numThreads = projectWorkerCount( threadPool->getNumThreads() );
+            const auto numThreads = std::min( threadPool->getNumThreads(),
+                                               projectWorkerCount( threadPool->getNumThreads() ) );
             const auto numTasks = static_cast<u32>( TaskId::Count );
 
             for( u32 i = 0; i < numTasks; ++i )
@@ -301,7 +302,8 @@ namespace workphone
             calculateTaskAffinity();
 
             auto threadId = Thread::getCurrentThreadId();
-            const auto workerCount = threadPool ? projectWorkerCount( threadPool->getNumThreads() ) : 0;
+            const auto workerCount = threadPool ? std::min( threadPool->getNumThreads(),
+                projectWorkerCount( threadPool->getNumThreads() ) ) : 0;
             if( threadId != Thread::ThreadId::Primary &&
                 ( !projectRunsBackgroundTasks() || static_cast<u32>( threadId ) >= workerCount ) )
                 return;

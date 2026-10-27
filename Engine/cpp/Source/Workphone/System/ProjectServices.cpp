@@ -7,6 +7,7 @@
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Script/ProjectScriptPolicy.hpp>
+#include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -321,7 +322,7 @@ namespace workphone
         if( app && app->getNetworkManager() == projectNetwork ) app->setNetworkManager( nullptr );
         if( projectNetwork ) projectNetwork->unload( nullptr );
         projectNetwork = nullptr; selectedNetworkBackend = -1;
-        localProviders = {}; localProviderRoot.clear(); releaseProjectScriptManager();
+        localProviders = {}; localProviderRoot.clear(); releaseProjectScriptManager(); releaseProjectIrradiance();
     }
 
     bool putProjectCloudSave( const String &slot, const Array<u8> &bytes, String &error )

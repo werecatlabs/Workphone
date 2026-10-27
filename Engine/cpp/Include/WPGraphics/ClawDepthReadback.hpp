@@ -1,5 +1,6 @@
 #ifndef WP_CLAW_DEPTH_READBACK_HPP
 #define WP_CLAW_DEPTH_READBACK_HPP
+#include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <array>
 #include <memory>
 #include <vector>
@@ -8,7 +9,7 @@ namespace workphone::render
 {
     /** Render-owner, bounded 256x256 conventional-Z snapshot. GPU multisampling
      * resolves the farthest sample before conservative pixel-block reduction. */
-    class ClawDepthReadback
+    class WPGraphics_API ClawDepthReadback
     {
     public:
         using Surface = std::array<unsigned, 7>;

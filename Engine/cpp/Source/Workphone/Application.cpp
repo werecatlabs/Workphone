@@ -2,7 +2,9 @@
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Application.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <Workphone/System/InteractionBackendProviders.hpp>
 #include <Workphone/System/ProjectServices.hpp>
+#include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
@@ -324,6 +326,15 @@ namespace workphone::core
             createAiManager();
 
             createScene();
+            if( auto profile = applicationManager->getPlayerSettings() )
+            {
+                if( profile->hasProperty( "graphics.gi" ) && !applicationManager->getProjectPath().empty() )
+                {
+                    String error;
+                    if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(), error ) )
+                        WP_LOG_ERROR( error );
+                }
+            }
         }
         catch( std::exception &e )
         {
@@ -495,6 +506,7 @@ namespace workphone::core
             {
                 network->poll();
             }
+            updateProjectIrradiance();
         }
 
         stateManager->preUpdate();
@@ -907,7 +919,7 @@ namespace workphone::core
             auto graphicsSystem = applicationManager->getGraphicsSystem();
             if( graphicsSystem )
             {
-                if( auto inputManager = factoryManager->make_object<IInputDeviceManager>() )
+                if( auto inputManager = createProjectInputBackend( factoryManager, applicationManager->getPlayerSettings() ) )
                 {
                     applicationManager->setInputDeviceManager( inputManager );
 
@@ -2189,10 +2201,10 @@ namespace workphone::core
         auto factoryManager = applicationManager->getFactoryManagerPtr();
         WP_ASSERT( factoryManager );
 
-        if( auto soundManager = factoryManager->make_object<ISoundManager>() )
+        if( auto soundManager = createProjectSoundBackend( factoryManager, applicationManager->getPlayerSettings() ) )
         {
-            soundManager->load( nullptr );
             applicationManager->setSoundManager( soundManager );
+            soundManager->load( nullptr );
         }
 
         return true;

@@ -135,7 +135,10 @@ namespace workphone
                             applyProjectWorkerPolicy( policy, static_cast<u32>( getThreadId() ) );
                             previousPolicy = policy;
                         }
-                        if( !projectRunsBackgroundTasks() )
+                        auto pool = applicationManager->getThreadPool();
+                        const auto activeWorkers = pool ? std::min( pool->getNumThreads(),
+                            projectWorkerCount( pool->getNumThreads() ) ) : 0;
+                        if( !projectRunsBackgroundTasks() || static_cast<u32>( getThreadId() ) >= activeWorkers )
                         {
                             Thread::sleep( 0.01 );
                             continue;

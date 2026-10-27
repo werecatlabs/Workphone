@@ -2,6 +2,7 @@
 #include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/DataUtil.hpp>
+#include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/System/ResourceID.hpp>
 #include <filesystem>
 #include <fstream>
@@ -54,7 +55,8 @@ namespace workphone
         {
             if(root.empty() || !settings) throw std::invalid_argument("Asset policy requires a project directory/profile");
             const auto path=fs::u8path(root.c_str())/".workphone/ProjectAssetPolicy.settings";
-            fs::create_directories(path.parent_path()); temporary=path; temporary+=".tmp";
+            fs::create_directories(path.parent_path()); temporary=path;
+            temporary+=std::string(("."+StringUtil::getUUID()+".tmp").c_str());
             auto policy=make_ptr<Properties>(); policy->setProperty("policyVersion",s32(1));
             for(const char *key:{"assets.compression","assets.textureCompression.pc","assets.textureCompression.mac",
                 "assets.textureCompression.ios","assets.textureCompression.android","platform.active","quality.texture","quality.maxTextureSize"})
@@ -75,8 +77,10 @@ namespace workphone
     {
         try
         {
-            if(!std::filesystem::is_regular_file(std::filesystem::u8path(path.c_str()))) {policy={};error.clear();return true;}
-            std::ifstream stream(std::filesystem::u8path(path.c_str()),std::ios::binary);std::ostringstream text;text<<stream.rdbuf();
+            const auto file=std::filesystem::u8path(path.c_str());
+            if(!std::filesystem::is_regular_file(file)) {policy={};error.clear();return true;}
+            if(std::filesystem::file_size(file)>65536) throw std::runtime_error("Project asset policy exceeds its byte limit");
+            std::ifstream stream(file,std::ios::binary);std::ostringstream text;text<<stream.rdbuf();
             if(!stream || text.str().size()>65536) throw std::runtime_error("Invalid project asset policy file");
             auto data=make_ptr<Properties>();DataUtil::parse(text.str().c_str(),data.get());
             if(data->getPropertyAsInt("policyVersion")!=1) throw std::runtime_error("Unsupported project asset policy version");

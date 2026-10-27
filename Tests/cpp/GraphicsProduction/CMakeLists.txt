@@ -1,7 +1,8 @@
 set(WP_GRAPHICS_CONTRACT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 add_library(WPGraphicsProductionReference STATIC
     ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_skinning.c
-    ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_particle_simulation.c)
+    ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_particle_simulation.c
+    ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_irradiance.c)
 target_include_directories(WPGraphicsProductionReference PUBLIC
     ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneCore
     ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneGraphics)
@@ -10,7 +11,7 @@ if(NOT MSVC)
     target_link_libraries(WPGraphicsProductionReference PUBLIC m)
     target_compile_options(WPGraphicsProductionReference PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
-foreach(contract IN ITEMS Skinning ParticleSimulation)
+foreach(contract IN ITEMS Skinning ParticleSimulation Irradiance)
     add_executable(WPGraphics${contract}C89Tests ${contract}Tests.c)
     target_link_libraries(WPGraphics${contract}C89Tests PRIVATE WPGraphicsProductionReference)
     set_target_properties(WPGraphics${contract}C89Tests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)

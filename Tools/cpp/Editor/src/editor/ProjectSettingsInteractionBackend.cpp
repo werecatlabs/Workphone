@@ -1,6 +1,7 @@
 #include <EditorPCH.hpp>
 #include <editor/ProjectSettingsInteractionBackend.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/InteractionBackendProviders.hpp>
 #include <cstdlib>
 #include <cerrno>
 #include <cmath>
@@ -57,12 +58,14 @@ namespace workphone::editor
                 if( !validNumber( settings, range.key, range.minimum, range.maximum, range.integral, error ) )
                     return false;
             const auto audioBackend = settings.getPropertyAsInt( "sound.backend", 0 );
+            auto app = core::IApplicationManager::instancePtr();
+            auto factories = app ? app->getFactoryManager() : nullptr;
             if( audioBackend == 1 || audioBackend == 2 )
             {
-                error = "FMOD/OpenAL require their audio plugin. Select Default or Platform Native for the built-in audio backend.";
-                return false;
+                if( !hasProjectSoundBackend( factories, audioBackend ) )
+                { error = "The selected FMOD/OpenAL sound provider is not registered. Install its backend plugin."; return false; }
             }
-            if( settings.getPropertyAsInt( "input.system", 0 ) == 1 )
+            if( settings.getPropertyAsInt( "input.system", 0 ) == 1 && !hasProjectInputBackend( factories, 1 ) )
             {
                 error = "The SDL input plugin is not included in this build. Engine Input and Platform Native are implemented.";
                 return false;
@@ -150,19 +153,28 @@ namespace workphone::editor
             physics->setEnableDebugDraw( settings->getPropertyAsBool( "physics.debugDraw" ) );
         for( const auto key : physicsKeys ) record( key, scene != nullptr );
         auto audio = app ? app->getSoundManager() : nullptr;
-        auto previousAudio = audio ? audio->getProperties() : nullptr;
         if( audio ) audio->setProperties( settings );
+        auto actualAudio = audio ? audio->getProperties() : nullptr;
+        auto factories = app ? app->getFactoryManager() : nullptr;
+        const bool audioBackendActive = matchesProjectSoundBackend( factories, audio,
+            settings->getPropertyAsInt( "sound.backend", 0 ) );
         for( const auto key : audioKeys )
         {
-            bool active = audio && audio->isLoaded();
-            if( String( key ) == "sound.sampleRate" || String( key ) == "sound.outputDevice" ||
-                String( key ) == "sound.backend" || String( key ) == "sound.bufferSize" || String( key ) == "sound.streaming" )
-                active = active && previousAudio && previousAudio->getProperty( key ) == settings->getProperty( key );
+            bool active = audio && audio->isLoaded() && audioBackendActive;
+            const String name( key );
+            if( name == "sound.sampleRate" || name == "sound.outputDevice" )
+                active = active && actualAudio && actualAudio->hasProperty( "active." + name ) &&
+                    actualAudio->getProperty( "active." + name ) == settings->getProperty( key );
+            // Existing source voices retain their transport buffers. The new
+            // policy is consumed when a source voice is created or reloaded.
+            if( name == "sound.bufferSize" || name == "sound.streaming" ) active = false;
             record( key, active );
         }
         auto input = app ? app->getInputDeviceManager() : nullptr;
         if( input ) input->setProperties( settings );
-        for( const auto key : inputKeys ) record( key, input && input->isLoaded() );
+        const bool inputBackendActive = matchesProjectInputBackend( factories, input,
+            settings->getPropertyAsInt( "input.system", 0 ) );
+        for( const auto key : inputKeys ) record( key, input && input->isLoaded() && inputBackendActive );
         result->setProperty( "handledKeys", handled );
         result->setProperty( "appliedKeys", applied );
         result->setProperty( "pendingKeys", pending );

@@ -49,6 +49,10 @@ void wp_renderer_dx11_set_output_options( wp_renderer_dx11 *renderer, wp_s32 hdr
 void wp_renderer_dx11_set_scene_sampling( wp_renderer_dx11 *renderer, wp_s32 samples, wp_f32 scale );
 void wp_renderer_dx11_set_post_options( wp_renderer_dx11 *renderer, wp_s32 anti_aliasing,
                                        wp_s32 bloom, wp_s32 motion_blur, wp_u64 temporal_key );
+/* Up to four view-local SH9 probes: each is position float4 followed by nine
+ * convolved irradiance RGB float4 coefficients (40 floats per probe). */
+wp_s32 wp_renderer_dx11_set_irradiance_probes( wp_renderer_dx11 *renderer,
+                                             const void *probes, wp_u32 count, wp_s32 mode );
 /* Applies to subsequent device creation and built-in shader compilation. */
 void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
                                           wp_s32 validation, wp_s32 allow_fallback );

@@ -13,6 +13,7 @@
 #include <set>
 #include <cmath>
 #include <Workphone/System/ResourceID.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/System/PackageManager.hpp>
@@ -549,6 +550,9 @@ namespace workphone
         using namespace core;
         using namespace editor;
         using namespace luabind;
+
+        module( L )[def( "localize", &localizeProjectString ),
+                    def( "getProjectLanguageTag", &getProjectLanguageTag )];
 
         module( L )[class_<FileInfo>( "FileInfo" )
                         .def_readwrite( "filePath", &FileInfo::filePath )

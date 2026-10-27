@@ -1,7 +1,9 @@
 #include <EditorPCH.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <Workphone/System/InteractionBackendProviders.hpp>
 #include <editor/ProjectSettingsEditorBackend.hpp>
 #include <editor/ProjectSettingsProjectBackend.hpp>
+#include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <boost/json.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -985,6 +987,7 @@ namespace workphone::editor
             {
                 updateProjectSettingsEditorBackend( t );
                 updateProjectSettingsProjectBackend();
+                updateProjectIrradiance();
                 // Scripts can request a return to edit mode through the shared
                 // application interface. Complete the same snapshot restoration
                 // used by the toolbar before accepting another Play request.
@@ -2080,7 +2083,7 @@ namespace workphone::editor
             {
                 if( auto window = graphicsSystem->getDefaultWindow() )
                 {
-                    auto inputManager = factoryManager->make_object<IInputDeviceManager>();
+                    auto inputManager = createProjectInputBackend( factoryManager, applicationManager->getPlayerSettings() );
                     if( inputManager )
                     {
                         applicationManager->setInputDeviceManager( inputManager );

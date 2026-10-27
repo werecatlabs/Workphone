@@ -51,7 +51,7 @@ namespace workphone::render
                     for(uint y=begin.y;y<min(end.y,sourceHeight);++y)
                     for(uint x=begin.x;x<min(end.x,sourceWidth);++x) {
                         #if MULTISAMPLE
-                        for(uint sample=0;sample<samples;++sample) farthest=max(farthest,source.Load(int2(x,y),sample));
+                        for(uint sampleIndex=0;sampleIndex<samples;++sampleIndex) farthest=max(farthest,source.Load(int2(x,y),sampleIndex));
                         #else
                         farthest=max(farthest,source.Load(int3(x,y,0)));
                         #endif

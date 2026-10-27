@@ -5,17 +5,76 @@
 #include <Workphone/Input/InputEvent.hpp>
 #include <Workphone/Interface/Input/IGameInputMap.hpp>
 #include <Workphone/Interface/Input/IGameInputState.hpp>
+#include <Workphone/Sound/SoundManager.hpp>
+#include <Workphone/System/InteractionBackendProviders.hpp>
+#include <Workphone/Memory/FactoryUtil.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/System/WindowMessageData.hpp>
 #include <boost/test/unit_test.hpp>
 #include <atomic>
 #include <functional>
 #include <thread>
+#include <stdexcept>
 
 #if defined WP_PLATFORM_WIN32
 #    include <Windows.h>
 
+namespace workphone
+{
+    class SettingsProviderSound : public SoundManager
+    {
+    public:
+        SmartPtr<Properties> received;
+        void setProperties( SmartPtr<Properties> profile ) override { received = profile; }
+        WP_CLASS_REGISTER_DECL;
+    };
+    class SettingsProviderInput : public InputDeviceManager
+    {
+    public:
+        SmartPtr<Properties> received;
+        void setProperties( SmartPtr<Properties> profile ) override { received = profile; }
+        WP_CLASS_REGISTER_DECL;
+    };
+    WP_CLASS_REGISTER_DERIVED( workphone, SettingsProviderSound, SoundManager );
+    WP_CLASS_REGISTER_DERIVED( workphone, SettingsProviderInput, InputDeviceManager );
+}
+
 using namespace workphone;
+
+BOOST_AUTO_TEST_CASE( project_backend_providers_dispatch_registered_types_with_full_profile )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.factoryManager );
+    FactoryUtil::addFactory<SettingsProviderSound>( guard.factoryManager );
+    FactoryUtil::addFactory<SettingsProviderInput>( guard.factoryManager );
+    registerProjectSoundBackend( 1, "workphone::SettingsProviderSound" );
+    registerProjectInputBackend( 1, "workphone::SettingsProviderInput" );
+    guard.addCleanup( [] { registerProjectSoundBackend( 1, "" ); registerProjectInputBackend( 1, "" ); } );
+    auto profile = make_ptr<Properties>();
+    profile->setProperty( "sound.backend", 1 );
+    profile->setProperty( "input.system", 1 );
+    profile->setProperty( "sound.sampleRate", 44100 );
+    profile->setProperty( "input.touch", true );
+    BOOST_CHECK( hasProjectSoundBackend( guard.factoryManager, 1 ) );
+    BOOST_CHECK( hasProjectInputBackend( guard.factoryManager, 1 ) );
+    auto sound = createProjectSoundBackend( guard.factoryManager, profile );
+    auto input = createProjectInputBackend( guard.factoryManager, profile );
+    auto soundProvider = dynamic_pointer_cast<SettingsProviderSound>( sound );
+    auto inputProvider = dynamic_pointer_cast<SettingsProviderInput>( input );
+    BOOST_REQUIRE( soundProvider ); BOOST_REQUIRE( inputProvider );
+    BOOST_CHECK( soundProvider->received == profile );
+    BOOST_CHECK( inputProvider->received == profile );
+    BOOST_CHECK_EQUAL( soundProvider->received->getPropertyAsInt( "sound.sampleRate" ), 44100 );
+    BOOST_CHECK( inputProvider->received->getPropertyAsBool( "input.touch" ) );
+    BOOST_CHECK( matchesProjectSoundBackend( guard.factoryManager, sound, 1 ) );
+    BOOST_CHECK( matchesProjectInputBackend( guard.factoryManager, input, 1 ) );
+    BOOST_CHECK( !matchesProjectSoundBackend( guard.factoryManager, sound, 2 ) );
+    registerProjectSoundBackend( 2, "workphone::SettingsProviderInput" );
+    guard.addCleanup( [] { registerProjectSoundBackend( 2, "" ); } );
+    BOOST_CHECK( !hasProjectSoundBackend( guard.factoryManager, 2 ) );
+    profile->setProperty( "sound.backend", 2 );
+    BOOST_CHECK_THROW( createProjectSoundBackend( guard.factoryManager, profile ), std::runtime_error );
+}
 
 namespace
 {

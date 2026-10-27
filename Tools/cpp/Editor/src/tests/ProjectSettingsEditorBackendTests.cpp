@@ -5,6 +5,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <Workphone/System/Profile.hpp>
 #include <Workphone/Core/LogManagerDefault.hpp>
 #include <filesystem>
@@ -35,6 +36,7 @@ BOOST_AUTO_TEST_CASE( project_settings_editor_policy_recovery_test )
         }
         ~Guard()
         {
+            releaseProjectLocalization();
             editor->setProject( nullptr );
             core::IApplicationManager::setInstance( previousApp );
             EditorManager::setSingletonPtr( previousEditor );
@@ -64,6 +66,23 @@ BOOST_AUTO_TEST_CASE( project_settings_editor_policy_recovery_test )
     loadProjectRuntimeSettings( guard.directory.u8string() );
     auto active = guard.app->getPlayerSettings();
     BOOST_REQUIRE( active );
+    std::filesystem::create_directories( guard.directory / "Localization" );
+    std::ofstream( guard.directory / "Localization/en.json", std::ios::binary )
+        << R"({"menu.play":"Play","menu.exit":"Exit"})";
+    std::ofstream( guard.directory / "Localization/fr.json", std::ios::binary )
+        << R"({"menu.play":"Jouer"})";
+    BOOST_CHECK_EQUAL( getProjectLanguageTag(), "en" );
+    BOOST_CHECK_EQUAL( localizeProjectText( "@{menu.play}" ), "Play" );
+    auto french = project->getProperties();
+    french->setProperty( "project.defaultLanguage", 1 );
+    guard.app->setPlayerSettings( french );
+    BOOST_CHECK_EQUAL( getProjectLanguageTag(), "fr" );
+    BOOST_CHECK_EQUAL( localizeProjectText( "@{menu.play}" ), "Jouer" );
+    BOOST_CHECK_EQUAL( localizeProjectText( "@{menu.exit}" ), "Exit" );
+    BOOST_CHECK_EQUAL( localizeProjectText( "Literal caption" ), "Literal caption" );
+    BOOST_CHECK_EQUAL( localizeProjectString( "absent", "Default" ), "Default" );
+    BOOST_CHECK_EQUAL( localizeProjectText( "@{absent}" ), "absent" );
+    guard.app->setPlayerSettings( active );
     BOOST_CHECK_EQUAL( projectWorkerCount( 8 ), 3u );
     BOOST_CHECK_EQUAL( projectWorkerCount( 0 ), 0u );
     BOOST_CHECK( projectRunsBackgroundTasks() );

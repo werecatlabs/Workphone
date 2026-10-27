@@ -17,6 +17,7 @@
 #include <memory>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -219,7 +220,9 @@ namespace workphone::render
                 require( std::floor( maximum ) == maximum, "Texture maxTextureSize must be an integer" );
                 recipe.maximumTextureSize = static_cast<u32>( maximum );
             }
-            const auto gpuFormat = ddsFormatForTarget( context.target );
+            const auto gpuFormat = recipe.compression.empty() ? ddsFormatForTarget( context.target ) :
+                                   recipe.compression == "none" ? 87u : recipe.compression == "bc1" ? 71u :
+                                   recipe.compression == "bc3" ? 77u : 0u;
             const bool srgb = gpuFormat == 72 || gpuFormat == 78 || gpuFormat == 91;
             require( !srgb || recipe.settings.filter == TextureMipFilter::Colour ||
                          recipe.settings.filter == TextureMipFilter::Cutout ||

@@ -118,6 +118,27 @@ BOOST_AUTO_TEST_CASE(project_graphics_dx11_msaa_scale_resolve_test)
             ++frames;
         }
         BOOST_CHECK_EQUAL(wp_renderer_dx11_get_hdr_completed_frames(renderer),frames);
+        std::array<unsigned char,32*16*4> plain{},smooth{};
+        for(int aa:{0,1})
+        {
+            wp_renderer_dx11_begin_frame(renderer);
+            wp_renderer_dx11_set_scene_sampling(renderer,1,1);
+            wp_renderer_dx11_set_post_options(renderer,aa,0,0,1);
+            wp_renderer_dx11_set_output_options(renderer,0,0,0);
+            BOOST_REQUIRE(wp_renderer_dx11_begin_hdr_scene(renderer,1));
+            wp_renderer_dx11_set_clear_color(renderer,0,0,0,1);
+            wp_renderer_dx11_clear(renderer,WORKPHONE_CLEAR_FLAG_ALL);
+            wp_renderer_dx11_set_cull_mode(renderer,WORKPHONE_CULL_MODE_NONE);
+            const wp_vertex_pc vertices[]={{{-1,-1,0},0xffffffff},{{-1,1,0},0xffffffff},{{1,-1,0},0xffffffff}};
+            wp_renderer_dx11_draw_triangles_pc(renderer,vertices,3);
+            wp_renderer_dx11_end_hdr_scene(renderer);
+            auto &out=aa ? smooth : plain;
+            BOOST_REQUIRE(wp_renderer_dx11_copy_back_buffer_rgba8(renderer,window.window,out.data(),out.size()));
+            wp_renderer_dx11_end_frame(renderer);
+        }
+        unsigned changed=0;
+        for(size_t i=0;i<plain.size();i+=4) if(plain[i]!=smooth[i]) ++changed;
+        BOOST_CHECK_GT(changed,0u);
         wp_renderer_dx11_destroy(renderer);
     }
     wp_renderer_dx11_set_startup_options(0,0,0,1);

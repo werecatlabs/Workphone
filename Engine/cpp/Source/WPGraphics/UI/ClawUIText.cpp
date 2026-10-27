@@ -2,6 +2,7 @@
 #include <WPGraphics/UI/ClawUIText.hpp>
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <WorkphoneCore/workphone.h>
 
 namespace workphone::ui
@@ -136,7 +137,7 @@ namespace workphone::ui
             return;
         }
 
-        const auto text = getText();
+        const auto text = localizeProjectText( getText() );
         if( text.empty() )
         {
             wp_spacing( ctx, 1 );

@@ -1,6 +1,7 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiText.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <imgui.h>
 #include "imgui_internal.h"
 
@@ -126,8 +127,9 @@ namespace workphone::ui
         return !m_longText.empty() ? m_longText.c_str() : m_text.c_str();
     }
 
-    void ImGuiText::renderTextWithAlignment( const String &text )
+    void ImGuiText::renderTextWithAlignment( const String &sourceText )
     {
+        const auto text = localizeProjectText( sourceText );
         if( m_horizontalAlignment == static_cast<u8>( HorizontalAlignment::LEFT ) &&
             m_verticalAlignment == static_cast<u8>( VerticalAlignment::TOP ) )
         {

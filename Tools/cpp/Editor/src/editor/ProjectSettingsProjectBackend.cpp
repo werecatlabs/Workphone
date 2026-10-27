@@ -115,6 +115,33 @@ namespace workphone::editor
                 throw std::invalid_argument( "Packaged file escapes the project root" );
             return resolved;
         }
+        Array<fs::path> stageRuntimeSupportFiles( const fs::path &root, const fs::path &output )
+        {
+            Array<fs::path> staged;
+            u64 total = 0;
+            for( const char *folder : { "Localization", ".workphone/lighting", ".workphone/generated" } )
+            {
+                const auto source = root / folder;
+                if( !fs::exists( source ) ) continue;
+                if( fs::is_symlink( fs::symlink_status( source ) ) )
+                    throw std::runtime_error( "Runtime data staging refuses redirected folders" );
+                for( const auto &entry : fs::recursive_directory_iterator( source ) )
+                {
+                    if( entry.is_symlink() ) throw std::runtime_error( "Runtime data staging refuses redirected files" );
+                    if( !entry.is_regular_file() ) continue;
+                    const auto bytes = entry.file_size(); total += bytes;
+                    if( bytes > 8 * 1024 * 1024 || total > 64 * 1024 * 1024 || staged.size() >= 4096 )
+                        throw std::runtime_error( "Runtime dictionary/probe data exceeds staging limits" );
+                    const auto relative = fs::relative( entry.path(), root );
+                    const auto checked = checkedMember( root, relative.generic_u8string().c_str() );
+                    const auto destination = output / relative;
+                    fs::create_directories( destination.parent_path() );
+                    fs::copy_file( checked, destination, fs::copy_options::overwrite_existing );
+                    staged.push_back( destination );
+                }
+            }
+            return staged;
+        }
         SmartPtr<Properties> resultFor( bool success, const String &message )
         {
             auto result = make_ptr<Properties>(); result->setProperty( "success", success );
@@ -148,6 +175,14 @@ namespace workphone::editor
             }
             if( s.getPropertyAsInt( "build.android.minSdk", 26 ) > s.getPropertyAsInt( "build.android.targetSdk", 35 ) )
                 throw std::invalid_argument( "Minimum Android SDK exceeds target SDK" );
+            for( const char *key : { "assets.compression", "assets.textureCompression.pc", "assets.textureCompression.mac",
+                                     "assets.textureCompression.ios", "assets.textureCompression.android" } )
+            {
+                if( !s.hasProperty( key ) ) continue;
+                const auto maximum = String( key ) == "assets.textureCompression.android" ? 4 : 3;
+                const auto value = s.getPropertyAsInt( key );
+                if( value < 0 || value > maximum ) throw std::invalid_argument( ( String( "Invalid asset policy: " ) + key ).c_str() );
+            }
         }
     }
 
@@ -174,6 +209,9 @@ namespace workphone::editor
             response->setProperty( String( "availability." ) + key,
                 "Project build/runtime adapter. Cloud and analytics use local development providers unless replaced by a plugin." );
         }
+        response->setProperty("availability.assets.compression","Bounded deflate storage for checked texture/material/shader artifacts; None/Fast/Balanced/Maximum select raw/level1/level6/level9.");
+        for( const char *key : { "assets.textureCompression.pc", "assets.textureCompression.mac", "assets.textureCompression.ios", "assets.textureCompression.android" } )
+            response->setProperty(String("availability.")+key,"Platform texture cook default. Explicit asset recipes win. BGRA/BC1/BC3 are built in; BC7/ASTC/PVRTC/ETC2 dispatch to registered encoder providers and require their platform runtime installer.");
     }
 
     SmartPtr<Properties> applyProjectSettingsProjectBackend( SmartPtr<Properties> settings )
@@ -235,6 +273,7 @@ namespace workphone::editor
         manifest->setProperty( "sceneList", scenePaths( *settings ) );
         writeText( output / "ProjectPackage.json", DataUtil::toString( manifest.get(), true ) );
         writeText( output / "ProjectRuntime.settings", DataUtil::toString( settings.get(), true ) );
+        stageRuntimeSupportFiles( root, output );
 
         String script = "function(workphone_apply_project_profile)\n if(NOT TARGET Plugin)\n  message(FATAL_ERROR \"Project has no Plugin target\")\n endif()\n";
         script += " target_compile_definitions(Plugin PRIVATE WP_PROJECT_LUA_ENABLED=" + StringUtil::toString( settings->getPropertyAsBool( "scripting.lua", true ) ? 1 : 0 ) +
@@ -365,6 +404,7 @@ namespace workphone::editor
                 if( entry.is_regular_file() && entry.path().extension() != ".zip" &&
                     ( settings->getPropertyAsBool( "build.debugSymbols", true ) || entry.path().extension() != ".pdb" ) )
                     files.push_back( entry.path().wstring().c_str() );
+            for( const auto &file : stageRuntimeSupportFiles( root, output ) ) files.push_back( file.wstring().c_str() );
             for( const auto &scene : scenePaths( *settings ) )
             {
                 const auto source = checkedMember( root, scene );
