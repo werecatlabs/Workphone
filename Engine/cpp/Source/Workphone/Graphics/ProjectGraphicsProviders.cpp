@@ -13,11 +13,17 @@ namespace workphone
         std::map<std::pair<s32,s32>,std::shared_ptr<IProjectShaderCompilerProvider>> compilers;
     }
     void registerProjectRendererProvider(const String &api,std::shared_ptr<IProjectRendererProvider> provider)
-    { std::lock_guard<std::mutex> lock(providerMutex); if(provider) renderers[api]=std::move(provider); else renderers.erase(api); }
+    {
+        std::shared_ptr<IProjectRendererProvider> retired;
+        {std::lock_guard<std::mutex> lock(providerMutex);auto i=renderers.find(api);if(i!=renderers.end()) {retired=std::move(i->second);renderers.erase(i);}if(provider) renderers.emplace(api,std::move(provider));}
+    }
     std::shared_ptr<IProjectRendererProvider> getProjectRendererProvider(const String &api)
     { std::lock_guard<std::mutex> lock(providerMutex);const auto i=renderers.find(api);return i==renderers.end()?nullptr:i->second; }
     void registerProjectShaderCompilerProvider(s32 language,s32 model,std::shared_ptr<IProjectShaderCompilerProvider> provider)
-    { std::lock_guard<std::mutex> lock(providerMutex);const auto key=std::make_pair(language,model);if(provider) compilers[key]=std::move(provider);else compilers.erase(key); }
+    {
+        std::shared_ptr<IProjectShaderCompilerProvider> retired;const auto key=std::make_pair(language,model);
+        {std::lock_guard<std::mutex> lock(providerMutex);auto i=compilers.find(key);if(i!=compilers.end()) {retired=std::move(i->second);compilers.erase(i);}if(provider) compilers.emplace(key,std::move(provider));}
+    }
     std::shared_ptr<IProjectShaderCompilerProvider> getProjectShaderCompilerProvider(s32 language,s32 model)
     { std::lock_guard<std::mutex> lock(providerMutex);const auto i=compilers.find({language,model});return i==compilers.end()?nullptr:i->second; }
     void releaseProjectGraphicsProviders()

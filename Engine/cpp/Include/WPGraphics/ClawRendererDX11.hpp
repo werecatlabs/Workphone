@@ -45,6 +45,7 @@ namespace workphone
              * @brief Default constructor. Initializes internal state.
              */
             ClawRendererDX11();
+            explicit ClawRendererDX11( bool executeD3D12 );
 
             /**
              * @brief Destructor. Ensures the native renderer is properly
@@ -295,6 +296,7 @@ namespace workphone
             u32 m_windowHeight = 720;
             u32 m_primitiveCount = 0;
             bool m_inFrame = false;
+            bool m_executeD3D12 = false;
             u64 m_terrainFrame = 0;
             bool m_shadowPass = false;
             bool m_shadowsEnabled = false;

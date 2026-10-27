@@ -173,7 +173,7 @@ foreach(_source IN ITEMS ${SOURCE_FILES})
 endforeach()
 
 include_directories( ${WP_ROOT}/Dependencies/boost)
-include_directories( ${WP_ROOT}/Dependencies/tinyxml/include)
+include_directories( ${WP_ROOT}/Dependencies/tinyxml)
 
 if (WP_USE_ONETBB)
     include_directories( ${CMAKE_SOURCE_DIR}/Dependencies/onetbb/include )
@@ -1100,6 +1100,7 @@ if (WP_EDITOR_TESTS)
         project_graphics_output_curves_test
         project_graphics_backend_pipeline_profile_test
         project_graphics_dx11_msaa_scale_resolve_test
+        project_graphics_provider_preflight_test
         project_settings_runtime_subsystem_contract_test
         project_settings_runtime_graphics_director_test
         project_settings_runtime_validation_and_capabilities_test

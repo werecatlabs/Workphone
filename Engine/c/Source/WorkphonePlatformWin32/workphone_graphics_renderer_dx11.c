@@ -159,10 +159,10 @@ static const wp_c8 s_vs_pntc_src[] =
 /* View-local light lists use typed buffers, available in SM4 as well as SM5. */
 #define WP_LOCAL_LIGHTING_HLSL \
     "Buffer<float4> local_lights:register(t24); Buffer<uint> light_cells:register(t25); Buffer<uint> light_indices:register(t26);\n" \
-    "cbuffer LocalLights:register(b10) { float4 light_grid;float4 light_depth;float4 light_camera_forward;float4 light_screen; };\n" \
+    "cbuffer LocalLights:register(b10) { float4 light_grid;float4 light_depth;float4 light_camera_forward;float4 light_screen;float4 light_viewport; };\n" \
     "float3 evaluateLocalLights(float3 position,float3 n,float3 v,float3 albedo,float3 f0,float roughness,float metalness,float2 pixel) {\n" \
     " if(light_grid.w<.5) return 0;uint gx=max((uint)light_grid.x,1),gy=max((uint)light_grid.y,1),gz=max((uint)light_grid.z,1);\n" \
-    " uint x=min((uint)(saturate(pixel.x/max(light_screen.x,1))*gx),gx-1),y=min((uint)(saturate(pixel.y/max(light_screen.y,1))*gy),gy-1);\n" \
+    " uint x=min((uint)(saturate((pixel.x-light_viewport.x)/max(light_screen.x,1))*gx),gx-1),y=min((uint)(saturate((pixel.y-light_viewport.y)/max(light_screen.y,1))*gy),gy-1);\n" \
     " float depth=dot(position-light_depth.xyz,light_camera_forward.xyz);uint z=min((uint)(saturate((depth-light_camera_forward.w)/max(light_screen.z-light_camera_forward.w,.001))*gz),gz-1);\n" \
     " uint cell=(z*gy+y)*gx+x,offset=light_cells[cell*2],count=min(light_cells[cell*2+1],32u); if(light_screen.w>2.5) count=min(count,4u);float3 result=0;\n" \
     " [loop] for(uint j=0;j<count;++j) {uint index=light_indices[offset+j];if(index>=(uint)light_grid.w) continue;float4 sphere=local_lights[index*2];float3 delta=sphere.xyz-position;float distance2=dot(delta,delta);\n" \
@@ -591,7 +591,7 @@ struct wp_renderer_dx11
     ID3D11RenderTargetView *hdr_target;
     ID3D11ShaderResourceView *hdr_view;
     ID3D11VertexShader *hdr_vs;
-    ID3D11PixelShader *hdr_ps, *hdr_msaa_ps;
+    ID3D11PixelShader *hdr_ps, *hdr_msaa_ps[3];
     ID3D11ShaderResourceView *scene_depth_srv;
     ID3D11Buffer *hdr_output_cb;
     ID3D11RasterizerState *hdr_raster;
@@ -619,7 +619,7 @@ struct wp_renderer_dx11
     wp_u64 scene_temporal_key;
     ID3D11Buffer *local_light_cb, *local_light_buffers[3];
     ID3D11ShaderResourceView *local_light_views[3];
-    wp_vec4f local_light_constants[4];
+    wp_vec4f local_light_constants[5];
     ID3D11Texture2D *gbuffer_textures[5], *gbuffer_resolved[5];
     ID3D11RenderTargetView *gbuffer_targets[5];
     ID3D11ShaderResourceView *gbuffer_views[5];
@@ -2253,7 +2253,7 @@ static const char wp_hdr_composite_ps[] =
     "cbuffer ProjectOutput:register(b6) { float4 project_output; float4 project_dimensions; float4 project_effects;float4 project_geometry;row_major float4x4 scene_projection; };"
     "Texture2D history:register(t1);\n"
     "#ifdef WP_SCENE_MSAA\n"
-    "Texture2DMS<float> scene_depth:register(t2);float loadDepth(int2 q) {return scene_depth.Load(q,0);}\n"
+    "Texture2DMS<float,WP_SCENE_SAMPLES> scene_depth:register(t2);float loadDepth(int2 q) {return scene_depth.Load(q,0);}\n"
     "#else\n"
     "Texture2D<float> scene_depth:register(t2);float loadDepth(int2 q) {return scene_depth.Load(int3(q,0));}\n"
     "#endif\n"
@@ -2332,12 +2332,15 @@ static wp_s32 wp_renderer_dx11_prepare_hdr( wp_renderer_dx11 *r, UINT width, UIN
         if(FAILED(ID3D11Device_CreateTexture2D(r->device,&td,NULL,&history_texture)) ||
            FAILED(ID3D11Device_CreateShaderResourceView(r->device,(ID3D11Resource*)history_texture,NULL,&history_view))) goto fail;
     }
-    if(!r->hdr_msaa_ps)
     {
-        D3D_SHADER_MACRO defines[]={{"WP_SCENE_MSAA","1"},{NULL,NULL}};
-        if(FAILED(wp_renderer_dx11_compile_shader_options(wp_hdr_composite_ps,"main","ps_4_0",defines,&blob))) goto fail;
-        if(FAILED(ID3D11Device_CreatePixelShader(r->device,ID3D10Blob_GetBufferPointer(blob),ID3D10Blob_GetBufferSize(blob),NULL,&r->hdr_msaa_ps))) goto fail;
-        ID3D10Blob_Release(blob);blob=NULL;
+        wp_s32 sample_index;const char *sample_names[]={"2","4","8"};
+        for(sample_index=0;sample_index<3;++sample_index) if(!r->hdr_msaa_ps[sample_index])
+        {
+            D3D_SHADER_MACRO defines[]={{"WP_SCENE_MSAA","1"},{"WP_SCENE_SAMPLES",sample_names[sample_index]},{NULL,NULL}};
+            if(FAILED(wp_renderer_dx11_compile_shader_options(wp_hdr_composite_ps,"main","ps_4_0",defines,&blob))) goto fail;
+            if(FAILED(ID3D11Device_CreatePixelShader(r->device,ID3D10Blob_GetBufferPointer(blob),ID3D10Blob_GetBufferSize(blob),NULL,&r->hdr_msaa_ps[sample_index]))) goto fail;
+            ID3D10Blob_Release(blob);blob=NULL;
+        }
     }
     if( !r->hdr_vs )
     {
@@ -2577,7 +2580,7 @@ static wp_s32 wp_renderer_dx11_prepare_deferred(wp_renderer_dx11 *r)
 }
 static void wp_renderer_dx11_bind_local_lights(wp_renderer_dx11 *r)
 {
-    if(r->local_light_cb) {r->local_light_constants[1]=r->material.camera_position;r->local_light_constants[3].x=(wp_f32)r->hdr_width;r->local_light_constants[3].y=(wp_f32)r->hdr_height;r->local_light_constants[3].w=(wp_f32)r->project_pipeline;ID3D11DeviceContext_UpdateSubresource(r->context,(ID3D11Resource*)r->local_light_cb,0,NULL,r->local_light_constants,0,0);}
+    if(r->local_light_cb) {r->local_light_constants[1]=r->material.camera_position;r->local_light_constants[4].x=(wp_f32)r->viewport.x;r->local_light_constants[4].y=(wp_f32)r->viewport.y;r->local_light_constants[3].x=(wp_f32)r->viewport.width;r->local_light_constants[3].y=(wp_f32)r->viewport.height;r->local_light_constants[3].w=(wp_f32)r->project_pipeline;ID3D11DeviceContext_UpdateSubresource(r->context,(ID3D11Resource*)r->local_light_cb,0,NULL,r->local_light_constants,0,0);}
     ID3D11DeviceContext_PSSetConstantBuffers(r->context,10,1,&r->local_light_cb);ID3D11DeviceContext_PSSetShaderResources(r->context,24,3,r->local_light_views);
 }
 static void wp_renderer_dx11_flush_deferred(wp_renderer_dx11 *r)
@@ -2823,7 +2826,7 @@ void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *r )
     ID3D11DeviceContext_IASetInputLayout( r->context, NULL );
     ID3D11DeviceContext_IASetPrimitiveTopology( r->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
     ID3D11DeviceContext_VSSetShader( r->context, r->hdr_vs, NULL, 0 );
-    ID3D11DeviceContext_PSSetShader( r->context, r->scene_samples>1?r->hdr_msaa_ps:r->hdr_ps, NULL, 0 );
+    ID3D11DeviceContext_PSSetShader( r->context, r->scene_samples>1?r->hdr_msaa_ps[r->scene_samples==2?0:r->scene_samples==4?1:2]:r->hdr_ps, NULL, 0 );
     ID3D11DeviceContext_Draw( r->context, 3, 0 );
     ++r->statistics.draws; ++r->statistics.triangles;
     ++r->hdr_completed_frames;
@@ -2911,7 +2914,7 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
     if(r->local_light_cb) ID3D11Buffer_Release(r->local_light_cb);
     for(i=0;i<3;++i) {if(r->local_light_views[i]) ID3D11ShaderResourceView_Release(r->local_light_views[i]);if(r->local_light_buffers[i]) ID3D11Buffer_Release(r->local_light_buffers[i]);}
     if( r->hdr_ps ) ID3D11PixelShader_Release( r->hdr_ps );
-    if(r->hdr_msaa_ps) ID3D11PixelShader_Release(r->hdr_msaa_ps);
+    for(i=0;i<3;++i) if(r->hdr_msaa_ps[i]) ID3D11PixelShader_Release(r->hdr_msaa_ps[i]);
     if(r->scene_depth_srv) ID3D11ShaderResourceView_Release(r->scene_depth_srv);
     if( r->hdr_output_cb ) ID3D11Buffer_Release( r->hdr_output_cb );
     if( r->project_output_cb ) ID3D11Buffer_Release( r->project_output_cb );

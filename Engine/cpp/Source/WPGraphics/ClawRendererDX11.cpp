@@ -89,6 +89,7 @@ namespace workphone::render
     }  // namespace
 
     ClawRendererDX11::ClawRendererDX11() = default;
+    ClawRendererDX11::ClawRendererDX11(bool executeD3D12):m_executeD3D12(executeD3D12) {}
 
     ClawRendererDX11::~ClawRendererDX11()
     {
@@ -142,10 +143,10 @@ namespace workphone::render
                     !settings->hasProperty("graphics.allowRendererFallback") || settings->getPropertyAsBool("graphics.allowRendererFallback"));
         if(auto app=core::IApplicationManager::instancePtr())
         {
-            wp_renderer_dx11_set_d3d12_execution(app->getPlayerSettings()&&projectRendererApi(app->getPlayerSettings())=="DX12");
+            wp_renderer_dx11_set_d3d12_execution(m_executeD3D12||(app->getPlayerSettings()&&projectRendererApi(app->getPlayerSettings())=="DX12"));
             wp_renderer_dx11_set_present_mode(nullptr,app->getPlayerSettings()?app->getPlayerSettings()->getPropertyAsInt("graphics.presentMode"):0);
         }
-        else wp_renderer_dx11_set_d3d12_execution(0);
+        else wp_renderer_dx11_set_d3d12_execution(m_executeD3D12);
         wp_renderer_dx11_set_shader_compiler(compileProjectShader,nullptr);
         m_renderer = wp_renderer_create_dx11( nativeWindow, static_cast<wp_s32>( m_rtWidth ),
                                               static_cast<wp_s32>( m_rtHeight ) );
@@ -1124,6 +1125,7 @@ namespace workphone::render
                     if( settings->getPropertyValue("graphics.textureFiltering",value) ) projectFilter = static_cast<u32>(std::clamp(value,0,2));
                     if( settings->getPropertyValue("graphics.anisotropy",value) ) projectAnisotropy = static_cast<u32>(std::clamp(value,1,16));
                 }
+            if(projectFilter==2&&projectAnisotropy>1) projectFilter=3;
             wp_renderer_dx11_set_material_sampler(
                 dx11, prepared ? prepared->wrapU : 0u, prepared ? prepared->wrapV : 0u,
                 projectFilter, projectAnisotropy );

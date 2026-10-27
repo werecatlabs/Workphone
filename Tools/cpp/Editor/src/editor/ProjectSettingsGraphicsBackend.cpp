@@ -93,6 +93,7 @@ namespace workphone::editor
         response->setProperty("availability.graphics.fullscreen", "Win32 borderless fullscreen preserves and restores the window position and style.");
         response->setProperty("availability.graphics.tonemapping", "Native software and DX11 output resolve consume the selected tone curve.");
         response->setProperty("availability.quality.texture", "Texture mip upload limits affect new and refreshed GPU views.");
+        response->setProperty("availability.graphics.anisotropy","Trilinear filtering uses the selected anisotropy; Point and Bilinear retain their standard mip filters.");
         response->setProperty("availability.performance.memoryBudgetMb", "Admission budget for participating CPU asset storage; cannot be reduced below live allocations.");
         response->setProperty("availability.performance.gpuMemoryBudgetMb", "Admission budget for participating GPU resource ownership.");
         response->setProperty("availability.diagnostics.gpuProfiler", "DX11 GPU timestamps are collected separately from CPU timing when supported by the device.");
@@ -163,15 +164,19 @@ namespace workphone::editor
             }
         }
         String applied,pending;
+        const auto outputWindow=graphics?graphics->getDefaultWindow():nullptr;
+        const bool displaySize=outputWindow&&outputWindow->isFullScreen();
         const auto append=[](String &list,const char *key){if(!list.empty()) list+="; ";list+=key;};
         for(auto key:keys) if(settings->hasProperty(key))
         {
             const bool budget=String(key)=="quality.streamingBudgetMb"||String(key)=="performance.memoryBudgetMb"||String(key)=="performance.gpuMemoryBudgetMb";
-            if(startupKey(key)||(!graphics&&!budget)) append(pending,key);else append(applied,key);
+            const bool windowedSize=String(key)=="graphics.resolution"||String(key)=="graphics.customWidth"||String(key)=="graphics.customHeight";
+            if(startupKey(key)||(!graphics&&!budget)||(displaySize&&windowedSize)) append(pending,key);else append(applied,key);
         }
         result->setProperty("appliedKeys",applied);result->setProperty("pendingKeys",pending);
         String status=graphics?"Graphics settings applied; device, compiler and presentation choices take effect at the next renderer startup.":"Graphics policies stored; the renderer applies them when started.";
-        const auto notes=result->getPropertyAsString("startupNotes");if(!notes.empty()) status+=" "+notes;
+        if(displaySize) status+=" Fullscreen uses the display dimensions; the selected windowed size is retained.";
+        const auto notes=result->getProperty("startupNotes");if(!notes.empty()) status+=" "+notes;
         result->setProperty("status",status);
         return result;
     }

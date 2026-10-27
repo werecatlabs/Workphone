@@ -167,6 +167,7 @@ namespace workphone::render
 
     bool ClawGraphicsPipeline::captureSoftwareFrame( wp_renderer *renderer )
     {
+        const auto profile=GraphicsPipeline::getProperties();
         auto software = renderer ? wp_renderer_get_software( renderer ) : nullptr;
         if( !software || !isInitialized() )
         {
@@ -194,7 +195,6 @@ namespace workphone::render
         m_depthInput.resize( pixelCount );
         m_velocityInput.resize( pixelCount * 2u, 0.0f );
 
-        const auto profile=GraphicsPipeline::getProperties();
         for( size_t i = 0; i < pixelCount; ++i )
         {
             const bool bgra =

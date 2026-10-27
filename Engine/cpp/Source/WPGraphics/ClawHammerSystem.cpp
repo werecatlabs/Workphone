@@ -1636,7 +1636,7 @@ namespace workphone
                     {
                         String error;
                         if(auto provider=getProjectRendererProvider("DX12")) renderer=provider->create(projectProfile,error);
-                        else renderer = workphone::make_ptr<ClawRendererDX11>();
+                        else renderer = workphone::make_ptr<ClawRendererDX11>(true);
                         WP_LOG_INFO("WPGraphics: Direct3D 12 executes the shared scene pipeline through D3D11On12.");
                         break;
                     }
@@ -1840,7 +1840,7 @@ namespace workphone
                 // Prefer DX12 if configured and available, otherwise DX11
                 if( targetApi == RenderApi::DX12 )
                 {
-                    newRenderer = workphone::make_ptr<ClawRendererDX11>();
+                    newRenderer = workphone::make_ptr<ClawRendererDX11>(true);
                 }
                 else
 #    if defined WP_BUILD_RENDERER_DX11

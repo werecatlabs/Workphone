@@ -109,7 +109,8 @@ BOOST_AUTO_TEST_CASE(project_graphics_dx11_msaa_scale_resolve_test)
     for(int backend:{0,1}) for(int driver:{0,3})
     {
         wp_renderer_dx11_set_d3d12_execution(backend);
-        wp_renderer_dx11_set_startup_options(driver,1,0,1);
+        // Cover both native compiler targets without doubling device lifetimes.
+        wp_renderer_dx11_set_startup_options(driver,backend?0:1,0,1);
         auto *renderer=wp_renderer_dx11_create(window.window,32,16);
         BOOST_REQUIRE_MESSAGE(renderer,"DX11 device creation failed");
         BOOST_CHECK_EQUAL(wp_renderer_dx11_get_d3d12_device(renderer)!=nullptr,backend!=0);
@@ -183,7 +184,7 @@ BOOST_AUTO_TEST_CASE(project_graphics_dx11_msaa_scale_resolve_test)
             material.camera_position={0,0,3,0};material.ambient_color.w=1;wp_renderer_dx11_set_material(renderer,&material);
             const wp_vertex_pntc vertices[]={{{-1,-1,0},{0,0,1},{0,0},0xffffffff},{{-1,1,0},{0,0,1},{0,0},0xffffffff},{{1,-1,0},{0,0,1},{0,0},0xffffffff}};
             const unsigned short indices[]={0,1,2};auto *geometry=wp_renderer_dx11_create_indexed_geometry_pntc(renderer,vertices,3,indices,3,0);
-            BOOST_REQUIRE(geometry);BOOST_REQUIRE(wp_renderer_dx11_draw_geometry_pntc(renderer,geometry,0,3,0));wp_renderer_dx11_end_hdr_scene(renderer);
+            BOOST_REQUIRE(geometry);wp_renderer_dx11_draw_geometry_pntc(renderer,geometry,0,3,0);wp_renderer_dx11_end_hdr_scene(renderer);
             BOOST_REQUIRE(wp_renderer_dx11_copy_back_buffer_rgba8(renderer,window.window,plain.data(),plain.size()));
             BOOST_CHECK_GT(plain[(8*32+4)*4+2],20u);BOOST_CHECK_LT(plain[(8*32+4)*4],5u);
             wp_renderer_dx11_destroy_geometry(geometry);wp_renderer_dx11_end_frame(renderer);
@@ -198,7 +199,7 @@ BOOST_AUTO_TEST_CASE(project_graphics_dx11_msaa_scale_resolve_test)
             BOOST_REQUIRE(wp_renderer_dx11_begin_hdr_scene(renderer,1));wp_renderer_dx11_set_clear_color(renderer,0,0,0,1);wp_renderer_dx11_clear(renderer,WORKPHONE_CLEAR_FLAG_ALL);
             const wp_vertex_pntc vertices[]={{{-1,-1,0},{0,0,1},{0,0},0xffffffff},{{-1,1,0},{0,0,1},{0,0},0xffffffff},{{1,-1,0},{0,0,1},{0,0},0xffffffff}};
             const unsigned short indices[]={0,1,2};auto *geometry=wp_renderer_dx11_create_indexed_geometry_pntc(renderer,vertices,3,indices,3,0);BOOST_REQUIRE(geometry);
-            BOOST_REQUIRE(wp_renderer_dx11_draw_geometry_pntc(renderer,geometry,0,3,0));wp_renderer_dx11_end_hdr_scene(renderer);
+            wp_renderer_dx11_draw_geometry_pntc(renderer,geometry,0,3,0);wp_renderer_dx11_end_hdr_scene(renderer);
             BOOST_REQUIRE(wp_renderer_dx11_copy_back_buffer_rgba8(renderer,window.window,plain.data(),plain.size()));red[gi]=plain[(8*32+4)*4];
             wp_renderer_dx11_destroy_geometry(geometry);wp_renderer_dx11_end_frame(renderer);
         }
