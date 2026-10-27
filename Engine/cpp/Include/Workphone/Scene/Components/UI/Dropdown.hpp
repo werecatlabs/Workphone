@@ -312,11 +312,11 @@ namespace workphone
              */
             IGameActor *getContentPtr() const;
 
-            /// Scroll view used to display options (non-owning raw pointer).
-            ScrollView *m_scrollView = nullptr;
+            /// Scroll view used to display options (non-owning pointer).
+            AtomicWeakPtr<ScrollView> m_scrollView;
 
-            /// Trigger button (non-owning raw pointer cached for performance).
-            Button *m_button = nullptr;
+            /// Trigger button (non-owning pointer cached for performance).
+            AtomicWeakPtr<Button> m_button;
 
             /// Actor used to display the currently selected option.
             SmartPtr<IGameActor> m_panel;

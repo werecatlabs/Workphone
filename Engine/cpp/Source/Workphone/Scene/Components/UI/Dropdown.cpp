@@ -106,7 +106,7 @@ namespace workphone::scene
     {
         auto objects = UIComponent::getChildObjects();
 
-        objects.push_back( m_button );
+        objects.push_back( getButton() );
         objects.push_back( m_panel );
         return objects;
     }
@@ -120,7 +120,10 @@ namespace workphone::scene
         WP_ASSERT( factoryManager );
 
         auto properties = UIComponent::getProperties();
-        properties->setPropertyAsType<Button>( dropdownButtonStr, m_button );
+
+        auto button = getButton();
+        properties->setPropertyAsType<Button>( dropdownButtonStr, button );
+
         properties->setPropertyAsType( dropdownPanelStr, m_panel );
         properties->setProperty( isOpenStr, m_isOpen );
 
@@ -307,7 +310,9 @@ namespace workphone::scene
     void Dropdown::setOpen( bool open )
     {
         m_isOpen = open;
-        if( m_button || m_content )
+
+        auto button = getButton();
+        if( button || m_content )
         {
             updateOptionsPanelVisibility();
         }
@@ -357,17 +362,18 @@ namespace workphone::scene
     {
         auto pButton = button.get();
 
-        if( m_button != pButton )
+        if( m_button.load() != pButton )
         {
             m_button = pButton;
 
-            if( m_button )
+            auto button = getButton();
+            if( button )
             {
                 auto owner = WeakPtr<Dropdown>( this );
                 auto func = [owner, pButton]( hash_type value ) {
                     if( auto dropdown = owner.lock() )
                     {
-                        if( dropdown->m_button != pButton )
+                        if( dropdown->getButton() != pButton )
                         {
                             return;
                         }
@@ -379,14 +385,15 @@ namespace workphone::scene
                     }
                 };
 
-                m_button->setCallbackFunction( func );
+                button->setCallbackFunction( func );
             }
         }
     }
 
     SmartPtr<Button> Dropdown::getButton() const
     {
-        return m_button;
+        auto p = m_button.load();
+        return p.lock();
     }
 
     FSMReturnType Dropdown::handleComponentEvent( u32 state, FSMEvent eventType )
@@ -460,7 +467,8 @@ namespace workphone::scene
             return;
         }
 
-        if( !m_button || !m_button->getActor() )
+        auto button = getButton();
+        if( !button || !button->getActor() )
         {
             return;
         }
@@ -827,15 +835,17 @@ namespace workphone::scene
             }
             updateVisibility();
         }
-        if( m_button )
+
+        if( auto button = getButton() )
         {
-            if( auto actor = m_button->getActor() )
+            if( auto actor = button->getActor() )
             {
                 actor->setEnabled( !native );
-                m_button->updateVisibility();
-                m_button->updateTransform();
+                button->updateVisibility();
+                button->updateTransform();
             }
         }
+
         if( native && m_content )
         {
             m_content->setEnabled( false );
@@ -866,14 +876,16 @@ namespace workphone::scene
                         options.push_back( option->text.str() );
                     }
                 }
+
                 auto selected =
                     arguments.empty() ? dropdown->getSelectedOption() : arguments[0].getU32();
                 if( selected < options.size() )
                 {
                     setLabel( options[selected] );
-                    if( m_button )
+                    
+                    if( auto button = getButton() )
                     {
-                        m_button->setTextStr( options[selected] );
+                        button->setTextStr( options[selected] );
                     }
                 }
             }
