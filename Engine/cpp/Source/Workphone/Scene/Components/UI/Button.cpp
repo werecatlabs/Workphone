@@ -532,6 +532,13 @@ namespace workphone::scene
             auto button = workphone::static_pointer_cast<ui::IUIButton>( element );
             updateVisibility();
             button->setTextSize( static_cast<f32>( m_textSize ) );
+            button->setColour( getColour() );
+            auto appearance = workphone::make_ptr<Properties>();
+            appearance->setProperty( ui::IUIButton::normalColourStr, m_normalColour.load() );
+            appearance->setProperty( ui::IUIButton::hoverColourStr, m_highlightedColour.load() );
+            appearance->setProperty( ui::IUIButton::activeColourStr, m_pressedColour.load() );
+            appearance->setProperty( disabledColourStr, m_disabledColour.load() );
+            button->setProperties( appearance );
 
             auto label = getLabel();
             button->setLabel( label );
@@ -542,6 +549,21 @@ namespace workphone::scene
             if( auto image = getImage() )
             {
                 image->setColour( m_normalColour );
+            }
+        }
+    }
+
+    void Button::updateVisibility()
+    {
+        if( auto actor = getActor() )
+        {
+            const auto application = core::IApplicationManager::instance();
+            const auto actorVisible = actor->isEnabledInScene() &&
+                ( application->isPlaying() || actor->isVisible() ) && getUseNativeUI();
+            if( auto element = getElement() )
+            {
+                element->setEnabled( isEnabled() && actorVisible, false );
+                element->setVisible( actorVisible, false );
             }
         }
     }
@@ -596,6 +618,7 @@ namespace workphone::scene
     void Button::setDisabledColour( const ColourF &disabledColour )
     {
         m_disabledColour = disabledColour;
+        updateElementState();
     }
 
     ColourF Button::getDisabledColour() const
@@ -606,6 +629,7 @@ namespace workphone::scene
     void Button::setPressedColour( const ColourF &pressedColour )
     {
         m_pressedColour = pressedColour;
+        updateElementState();
     }
 
     ColourF Button::getPressedColour() const
@@ -616,6 +640,7 @@ namespace workphone::scene
     void Button::setHighlightedColour( const ColourF &highlightedColour )
     {
         m_highlightedColour = highlightedColour;
+        updateElementState();
     }
 
     ColourF Button::getHighlightedColour() const
@@ -626,6 +651,7 @@ namespace workphone::scene
     void Button::setNormalColour( const ColourF &normalColour )
     {
         m_normalColour = normalColour;
+        updateElementState();
     }
 
     ColourF Button::getNormalColour() const
@@ -636,6 +662,7 @@ namespace workphone::scene
     void Button::setTextSize( u32 textSize )
     {
         m_textSize = textSize;
+        updateElementState();
     }
 
     u32 Button::getTextSize() const

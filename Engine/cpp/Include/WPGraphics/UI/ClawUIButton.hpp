@@ -4,8 +4,10 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/UI/IUIButton.hpp>
 #include <WPGraphics/UI/ClawUIElement.hpp>
+#include <memory>
 
 struct wp_context;
+struct wp_user_font;
 
 namespace workphone
 {
@@ -43,6 +45,9 @@ namespace workphone
 
             bool handleStateChanged( SmartPtr<IState> &state ) override;
 
+            SmartPtr<Properties> getProperties() const override;
+            void setProperties( SmartPtr<Properties> properties ) override;
+
             /** @copydoc GuiElement::draw */
             void draw( struct wp_context *ctx ) override;
 
@@ -53,6 +58,12 @@ namespace workphone
             String m_hoverMaterial;
             f32 m_textSize = 12.0f;
             bool m_isSimpleButton = true;
+            bool m_hasLocalStyle = false;
+            ColourF m_normalColour = ColourF::White;
+            ColourF m_hoverColour = ColourF::White;
+            ColourF m_activeColour = ColourF::White;
+            ColourF m_disabledColour = ColourF::White;
+            std::unique_ptr<wp_user_font> m_drawFont;
         };
     }  // end namespace ui
 }  // namespace workphone
