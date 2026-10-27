@@ -45,7 +45,22 @@ struct wp_broadphase
     wp_s32 pair_count, pair_capacity, pair_failed;
     wp_u32 next_order;
     void *native, *user_data;
+    wp_broadphase_provider_proxy *provider_proxies;
+    wp_broadphase_provider_pair *provider_pairs;
+    wp_u32 provider_proxy_capacity, provider_pair_capacity;
+    wp_s32 provider_status;
 };
+
+static wp_broadphase_provider registered_provider;
+static void *registered_provider_context;
+void wp_broadphase_register_provider( wp_broadphase_provider provider, void *context )
+{
+    registered_provider = provider;
+    registered_provider_context = provider ? context : NULL;
+}
+wp_s32 wp_broadphase_has_provider( void ) { return registered_provider != NULL; }
+wp_s32 wp_broadphase_get_provider_status( const wp_broadphase *bp )
+{ return bp ? bp->provider_status : 0; }
 
 static wp_vec3f zero3( void )
 {
@@ -392,6 +407,8 @@ void wp_broadphase_destroy( wp_broadphase *bp )
     free( bp->hits );
     free( bp->stack );
     free( bp->pairs );
+    free( bp->provider_proxies );
+    free( bp->provider_pairs );
     free( bp );
 }
 
@@ -650,12 +667,81 @@ static wp_s32 collect_simd_query( wp_broadphase *bp, const wp_bp_node *a, wp_s32
 }
 #endif
 
+static int compare_provider_pairs( const void *left, const void *right )
+{
+    const wp_broadphase_provider_pair *a = (const wp_broadphase_provider_pair *)left;
+    const wp_broadphase_provider_pair *b = (const wp_broadphase_provider_pair *)right;
+    if( a->a != b->a ) return a->a < b->a ? -1 : 1;
+    return a->b < b->b ? -1 : a->b > b->b ? 1 : 0;
+}
+
+static wp_s32 visit_provider_pairs( wp_broadphase *bp, wp_broadphase_pair_callback callback, void *context )
+{
+    wp_u32 i, count = (wp_u32)bp->ordered_count, capacity, written = 0;
+    wp_u64 maximum_pairs;
+    wp_broadphase_provider_proxy *proxies;
+    wp_broadphase_provider_pair *pairs;
+    if( !registered_provider ) { bp->provider_status = -1; return 0; }
+    if( count > 65536u ) { bp->provider_status = -2; return 0; }
+    maximum_pairs = count > 1 ? (wp_u64)count * ( count - 1 ) / 2 : 0;
+    capacity = (wp_u32)( maximum_pairs > 262144u ? 262144u : maximum_pairs );
+    if( count > bp->provider_proxy_capacity )
+    {
+        proxies = (wp_broadphase_provider_proxy *)realloc( bp->provider_proxies, count * sizeof( *proxies ) );
+        if( !proxies ) { bp->provider_status = -2; return 0; }
+        bp->provider_proxies = proxies; bp->provider_proxy_capacity = count;
+    }
+    if( capacity > bp->provider_pair_capacity )
+    {
+        pairs = (wp_broadphase_provider_pair *)realloc( bp->provider_pairs, capacity * sizeof( *pairs ) );
+        if( !pairs ) { bp->provider_status = -2; return 0; }
+        bp->provider_pairs = pairs; bp->provider_pair_capacity = capacity;
+    }
+    for( i = 0; i < count; ++i )
+    {
+        const wp_bp_node *node = &bp->nodes[bp->ordered[i].proxy];
+        bp->provider_proxies[i].minimum = node->exact.min;
+        bp->provider_proxies[i].maximum = node->exact.max;
+        bp->provider_proxies[i].body = node->body;
+        bp->provider_proxies[i].order = node->order;
+        bp->provider_proxies[i].movable = node->movable;
+    }
+    if( !registered_provider( registered_provider_context, bp->provider_proxies, count,
+                             bp->provider_pairs, capacity, &written ) )
+    { bp->provider_status = -3; return 0; }
+    if( written > capacity ) { bp->provider_status = -4; return 0; }
+    for( i = 0; i < written; ++i )
+    {
+        wp_broadphase_provider_pair *pair = &bp->provider_pairs[i];
+        wp_u32 swap;
+        if( pair->a >= count || pair->b >= count || pair->a == pair->b )
+        { bp->provider_status = -4; return 0; }
+        if( pair->a > pair->b ) { swap = pair->a; pair->a = pair->b; pair->b = swap; }
+    }
+    if( written > 1 ) qsort( bp->provider_pairs, written, sizeof( *bp->provider_pairs ), compare_provider_pairs );
+    bp->provider_status = 1;
+    for( i = 0; i < written; ++i )
+    {
+        const wp_broadphase_provider_pair *indices = &bp->provider_pairs[i];
+        const wp_bp_node *a, *b;
+        wp_broadphase_pair pair;
+        if( i && indices->a == bp->provider_pairs[i-1].a && indices->b == bp->provider_pairs[i-1].b ) continue;
+        a = &bp->nodes[bp->ordered[indices->a].proxy];
+        b = &bp->nodes[bp->ordered[indices->b].proxy];
+        if( !( a->movable || b->movable ) || !overlaps( a->exact, b->exact ) ) continue;
+        pair.body_a = a->body; pair.body_b = b->body;
+        callback( &pair, context );
+    }
+    return 1;
+}
+
 void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback callback, void *context )
 {
     wp_s32 i, count = 0;
 #if WP_BP_SSE2
     wp_s32 previous_hits = 0;
 #endif
+    if( bp ) bp->provider_status = 0;
     if( !bp || !callback || bp->root == -1 || !bp->nodes[bp->root].movable )
     {
         return;
@@ -679,6 +765,8 @@ void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback c
         bp->order_dirty = 0;
     }
     count = bp->ordered_count;
+    bp->provider_status = 0;
+    if( bp->type == WORKPHONE_BROADPHASE_PROVIDER && visit_provider_pairs( bp, callback, context ) ) return;
     if( bp->type == WORKPHONE_BROADPHASE_SAP ||
         ( bp->type == WORKPHONE_BROADPHASE_ABP && count < 64 ) )
     {
@@ -758,7 +846,7 @@ void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback c
 
 void wp_broadphase_set_type( wp_broadphase *bp, wp_broadphase_type type )
 {
-    if( bp && type >= WORKPHONE_BROADPHASE_SAP && type <= WORKPHONE_BROADPHASE_ABP )
+    if( bp && type >= WORKPHONE_BROADPHASE_SAP && type <= WORKPHONE_BROADPHASE_PROVIDER )
         bp->type = type;
 }
 

@@ -1622,13 +1622,22 @@ namespace workphone
 #endif
                     }
 
-                    // Create the selected renderer
-                    switch( selectedApi )
+                    // A registered API provider owns the complete selected profile.
+                    const auto selectedName=projectProfile?projectRendererApi(projectProfile):String(renderApiName(selectedApi));
+                    if(auto provider=getProjectRendererProvider(selectedName))
+                    {
+                        String error;renderer=provider->create(projectProfile,error);
+                        if(!renderer) {WP_LOG_ERROR("WPGraphics provider: "+error);return false;}
+                    }
+                    if(!renderer) switch( selectedApi )
                     {
 #if defined WP_PLATFORM_WIN32
                     case RenderApi::DX12:
                     {
-                        renderer = workphone::make_ptr<ClawRendererDX12>();
+                        String error;
+                        if(auto provider=getProjectRendererProvider("DX12")) renderer=provider->create(projectProfile,error);
+                        else renderer = workphone::make_ptr<ClawRendererDX11>();
+                        WP_LOG_INFO("WPGraphics: Direct3D 12 executes the shared scene pipeline through D3D11On12.");
                         break;
                     }
 #endif
@@ -1829,13 +1838,11 @@ namespace workphone
                                           : RenderApi::DX11;
 
                 // Prefer DX12 if configured and available, otherwise DX11
-#    if defined WP_BUILD_RENDERER_DX12
                 if( targetApi == RenderApi::DX12 )
                 {
-                    newRenderer = workphone::make_ptr<ClawRendererDX12>();
+                    newRenderer = workphone::make_ptr<ClawRendererDX11>();
                 }
                 else
-#    endif
 #    if defined WP_BUILD_RENDERER_DX11
                 {
                     newRenderer = workphone::make_ptr<ClawRendererDX11>();
@@ -1862,7 +1869,7 @@ namespace workphone
                                     dynamic_pointer_cast<ClawRendererDX11>( newRenderer ) )
                         {
                             nativeRenderer = dx11Renderer->getNativeRenderer();
-                            m_renderApi = RenderApi::DX11;
+                            m_renderApi = targetApi==RenderApi::DX12?RenderApi::DX12:RenderApi::DX11;
                         }
 #    endif
 

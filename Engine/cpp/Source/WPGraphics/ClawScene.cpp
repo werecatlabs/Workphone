@@ -964,52 +964,48 @@ namespace workphone
                     wp_graphics_cull_result_get_scene_generation( jobs->main ) ) != WP_GRAPHICS_CULL_OK ) return;
             try
             {
-            // Terrain/foliage/particle callbacks can deform geometry without
-            // native candidate revisions. Until those producers publish depth
-            // revisions, this frame conservatively supplies no occlusion.
-            const auto foliage = getFoliageBatches();
-            if( ( m_foliageWorlds && ( !m_foliageWorlds->terrains.empty() || !m_foliageWorlds->standalone.empty() ) ) ||
-                ( foliage && !foliage->empty() ) ) return;
-            size_t nativeMeshes = 0;
-            for( const auto &object : m_graphicsObjects.snapshot() )
-            {
-                if( !object || !object->isVisible() ) continue;
-                if( dynamic_cast<ClawTerrain *>( object.get() ) || dynamic_cast<CParticleSystem *>( object.get() ) ||
-                    dynamic_cast<ClawBillboard *>( object.get() ) || dynamic_cast<ClawBillboardSet *>( object.get() ) ) return;
-                auto mesh = dynamic_pointer_cast<ClawMesh>( object );
-                if( !mesh || !mesh->getNativeRenderObject() ) continue;
-                ++nativeMeshes;
-                const auto native = mesh->getNativeMesh();
-                const auto sections = native ? std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) ) : 1;
-                for( s32 section = 0; section < sections; ++section )
+                // Terrain/foliage/particle callbacks can deform geometry without
+                // native candidate revisions. Until those producers publish depth
+                // revisions, this frame conservatively supplies no occlusion.
+                const auto foliage = getFoliageBatches();
+                if( ( m_foliageWorlds && ( !m_foliageWorlds->terrains.empty() || !m_foliageWorlds->standalone.empty() ) ) ||
+                    ( foliage && !foliage->empty() ) ) return;
+                size_t nativeMeshes = 0;
+                for( const auto &object : m_graphicsObjects.snapshot() )
                 {
-                    auto source = mesh->getMaterial( section );
-                    if( !source ) source = mesh->getMaterial();
-                    auto material = dynamic_pointer_cast<Material>( source );
-                    if( source && !material ) return;
-                    if( !material ) { history.materials.push_back( { mesh, section, nullptr, {} } ); continue; }
-                    auto state = material->getRenderState();
-                    if( !state || state->getFlag( IMaterial::cutoutFlag ) || state->getFlag( IMaterial::transparentFlag ) ||
-                        state->blendMode != 0 || ( dynamic_cast<ClawMaterial *>( material.get() ) &&
-                        static_cast<ClawMaterial *>( material.get() )->hasRuntimeProgram() ) ) return;
-                    history.materials.push_back( { mesh, section, material, state } );
+                    if( !object || !object->isVisible() ) continue;
+                    if( dynamic_cast<ClawTerrain *>( object.get() ) || dynamic_cast<CParticleSystem *>( object.get() ) ||
+                        dynamic_cast<ClawBillboard *>( object.get() ) || dynamic_cast<ClawBillboardSet *>( object.get() ) ) return;
+                    auto mesh = dynamic_pointer_cast<ClawMesh>( object );
+                    if( !mesh || !mesh->getNativeRenderObject() ) continue;
+                    ++nativeMeshes;
+                    const auto native = mesh->getNativeMesh();
+                    const auto sections = native ? std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) ) : 1;
+                    for( s32 section = 0; section < sections; ++section )
+                    {
+                        auto source = mesh->getMaterial( section );
+                        if( !source ) source = mesh->getMaterial();
+                        auto material = dynamic_pointer_cast<Material>( source );
+                        if( source && !material ) return;
+                        if( !material ) { history.materials.push_back( { mesh, section, nullptr, {} } ); continue; }
+                        auto state = material->getRenderState();
+                        if( !state || state->getFlag( IMaterial::cutoutFlag ) || state->getFlag( IMaterial::transparentFlag ) ||
+                            state->blendMode != 0 || ( dynamic_cast<ClawMaterial *>( material.get() ) &&
+                            static_cast<ClawMaterial *>( material.get() )->hasRuntimeProgram() ) ) return;
+                        history.materials.push_back( { mesh, section, material, state } );
+                    }
                 }
-            }
-            if( nativeMeshes != static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->main ) ) ) return;
-            wp_mat4f view, projection, matrix;
-            if( !wp_graphics_cull_result_get_camera_matrices( jobs->main, &view, &projection ) ) return;
-            wp_mat4f_mul( &matrix, &projection, &view );
-            std::vector<float> depth;
-            unsigned width = 0, height = 0;
-            try
-            {
+                if( nativeMeshes != static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->main ) ) ) return;
+                wp_mat4f view, projection, matrix;
+                if( !wp_graphics_cull_result_get_camera_matrices( jobs->main, &view, &projection ) ) return;
+                wp_mat4f_mul( &matrix, &projection, &view );
+                std::vector<float> depth;
+                unsigned width = 0, height = 0;
                 if( !history.readback.read( renderer, depth, width, height ) ) return;
                 history.matrix = occlusionMatrix( matrix );
                 if( !history.hierarchy.publish( depth.data(), width, height, history.matrix ) ) return;
-            }
-            catch( const std::bad_alloc & ) { history.hierarchy.clear(); return; }
-            history.surface = history.readback.surface( renderer );
-            history.camera = camera; history.capturedJobs = jobs; history.capturedFrame = m_occlusionFrame;
+                history.surface = history.readback.surface( renderer );
+                history.camera = camera; history.capturedJobs = jobs; history.capturedFrame = m_occlusionFrame;
             }
             catch( const std::bad_alloc & )
             {

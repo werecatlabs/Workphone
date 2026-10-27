@@ -15,6 +15,7 @@
 #include <mutex>
 #include <set>
 #include <cstdlib>
+#include <tinyxml.h>
 
 namespace workphone::editor
 {
@@ -76,22 +77,6 @@ namespace workphone::editor
             }
             return result + "\"";
         }
-        String quotedXml( const String &value )
-        {
-            String text;
-            for( const auto c : value )
-            {
-                switch( c )
-                {
-                case '&': text += "&amp;"; break;
-                case '<': text += "&lt;"; break;
-                case '>': text += "&gt;"; break;
-                case '"': text += "&quot;"; break;
-                default: text += c; break;
-                }
-            }
-            return text;
-        }
         String groovyQuote( const String &value )
         {
             String result = "'";
@@ -128,6 +113,25 @@ namespace workphone::editor
             if( local.empty() || *local.begin() == ".." )
                 throw std::invalid_argument( "Packaged file escapes the project root" );
             return resolved;
+        }
+        void stageAndroidManifest( const fs::path &root, const fs::path &output, const Properties &settings )
+        {
+            const auto source = checkedMember( root, "Android/app/src/main/AndroidManifest.xml" );
+            if( !fs::is_regular_file( source ) || fs::file_size( source ) > 4 * 1024 * 1024 )
+                throw std::runtime_error( "Android packaging requires Android/app/src/main/AndroidManifest.xml" );
+            std::ifstream stream( source, std::ios::binary );
+            std::ostringstream contents; contents << stream.rdbuf();
+            if( !stream || stream.bad() ) throw std::runtime_error( "Cannot read the Android manifest" );
+            TiXmlDocument document;
+            document.Parse( contents.str().c_str(), nullptr, TIXML_ENCODING_UTF8 );
+            const auto manifest = document.RootElement();
+            auto application = manifest ? manifest->FirstChildElement( "application" ) : nullptr;
+            if( document.Error() || !manifest || String( manifest->Value() ) != "manifest" || !application )
+                throw std::runtime_error( "The Android application manifest is invalid" );
+            application->SetAttribute( "android:label", settings.getProperty( "project.productName", "Workphone Game" ).c_str() );
+            TiXmlPrinter printer;
+            document.Accept( &printer );
+            writeText( output / "AndroidManifest.xml", String( printer.CStr(), printer.Size() ) );
         }
         Array<fs::path> stageRuntimeSupportFiles( const fs::path &root, const fs::path &output )
         {
@@ -355,6 +359,8 @@ namespace workphone::editor
             gradleProfile += universal ? "['armeabi-v7a','arm64-v8a','x86','x86_64']" : "[" + groovyQuote( architecture( *settings ) ) + "]";
             gradleProfile += ")\n p.android.splits.abi.enable = false\n";
             gradleProfile += " p.android.sourceSets.main.jniLibs.srcDirs += [new File(" + groovyQuote( ( output / "native" ).generic_u8string().c_str() ) + ")]\n";
+            stageAndroidManifest( root, output, *settings );
+            gradleProfile += " p.android.sourceSets.main.manifest.srcFile(new File(" + groovyQuote( ( output / "AndroidManifest.xml" ).generic_u8string().c_str() ) + "))\n";
             const auto signing = settings->getProperty( "build.signingProfile", "Default" );
             if( !signing.empty() && signing != "Default" )
             {
@@ -364,10 +370,6 @@ namespace workphone::editor
             }
             gradleProfile += "} } }\n";
             writeText( init, gradleProfile );
-            writeText( output / "AndroidManifest.xml", "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"" + id +
-                "\"><uses-sdk android:minSdkVersion=\"" + StringUtil::toString( settings->getPropertyAsInt( "build.android.minSdk", 26 ) ) +
-                "\" android:targetSdkVersion=\"" + StringUtil::toString( settings->getPropertyAsInt( "build.android.targetSdk", 35 ) ) +
-                "\"/><application android:label=\"" + quotedXml( settings->getProperty( "project.productName" ) ) + "\"/></manifest>" );
             if( !settings->getPropertyAsBool( "build.android.stageOnly" ) )
                 script += " add_custom_command(TARGET Plugin POST_BUILD COMMAND " + cmakeQuote( gradle.generic_u8string().c_str() ) +
                 " --project-dir " + cmakeQuote( androidProject.generic_u8string().c_str() ) + " --init-script " +

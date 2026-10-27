@@ -446,6 +446,89 @@ static void test_solver_corrections_invalidate_bounds( void )
     wp_collision_shape_destroy( sb );
 }
 
+typedef struct provider_fixture { int mode, calls; } provider_fixture;
+static wp_s32 forced_candidates( void *context, const wp_broadphase_provider_proxy *proxies,
+    wp_u32 count, wp_broadphase_provider_pair *pairs, wp_u32 capacity, wp_u32 *written )
+{
+    provider_fixture *fixture = (provider_fixture *)context;
+    wp_u32 i;
+    ++fixture->calls;
+    for( i = 0; i < count; ++i )
+        CHECK( proxies[i].body && proxies[i].minimum.x <= proxies[i].maximum.x );
+    *written = 0;
+    if( fixture->mode == 2 ) return 0;
+    if( fixture->mode == 3 || count < 2 ) return 1;
+    CHECK( capacity > 0 );
+    pairs[0].a = fixture->mode == 1 ? count : count - 1;
+    pairs[0].b = 0;
+    *written = 1;
+    if( capacity > 1 && fixture->mode == 0 )
+    {
+        pairs[1].a = 0; pairs[1].b = count - 1; *written = 2;
+    }
+    return 1;
+}
+static void test_registered_provider( void )
+{
+    provider_fixture fixture = { 0, 0 };
+    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_PROVIDER );
+    wp_vec3f minimum = { 0, 0, 0 }, maximum = { 1, 1, 1 };
+    wp_physics_scene *scene;
+    wp_rigidbody *a, *b;
+    wp_collision_shape *sa, *sb;
+    wp_scene_simulation_options options;
+    int i, calls;
+    CHECK( bp && !wp_broadphase_has_provider() );
+    for( i = 0; i < 3; ++i ) CHECK( wp_broadphase_add_proxy( bp, identity( i ), minimum, maximum ) );
+    wp_broadphase_register_provider( forced_candidates, &fixture );
+    CHECK( wp_broadphase_has_provider() );
+    CHECK( wp_broadphase_calculate_overlapping_pairs_checked( bp ) );
+    CHECK( fixture.calls == 1 && wp_broadphase_get_provider_status( bp ) == 1 );
+    CHECK( wp_broadphase_get_pair_count( bp ) == 1 );
+    CHECK( wp_broadphase_get_pair_cache( bp )[0].body_a == identity( 0 ) &&
+           wp_broadphase_get_pair_cache( bp )[0].body_b == identity( 2 ) );
+    fixture.mode = 1;
+    CHECK( wp_broadphase_calculate_overlapping_pairs_checked( bp ) );
+    CHECK( wp_broadphase_get_provider_status( bp ) == -4 && wp_broadphase_get_pair_count( bp ) == 3 );
+    fixture.mode = 2;
+    CHECK( wp_broadphase_calculate_overlapping_pairs_checked( bp ) );
+    CHECK( wp_broadphase_get_provider_status( bp ) == -3 && wp_broadphase_get_pair_count( bp ) == 3 );
+    wp_broadphase_register_provider( NULL, NULL );
+    CHECK( wp_broadphase_calculate_overlapping_pairs_checked( bp ) );
+    CHECK( wp_broadphase_get_provider_status( bp ) == -1 && wp_broadphase_get_pair_count( bp ) == 3 );
+    wp_broadphase_destroy( bp );
+
+    scene = wp_physics_scene_create();
+    a = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    b = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    sa = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    sb = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    CHECK( scene && a && b && sa && sb );
+    options = wp_physics_scene_get_simulation_options( scene ); options.broadphase = 3;
+    wp_physics_scene_set_simulation_options( scene, &options );
+    CHECK( wp_physics_scene_get_simulation_options( scene ).broadphase != 3 );
+    fixture.mode = 3;
+    wp_broadphase_register_provider( forced_candidates, &fixture );
+    wp_physics_scene_set_simulation_options( scene, &options );
+    CHECK( wp_physics_scene_get_simulation_options( scene ).broadphase == 3 );
+    wp_physics_scene_set_gravity( scene, (wp_vec3f){ 0, 0, 0 } );
+    CHECK( wp_rigidbody_add_shape( a, sa ) >= 0 && wp_rigidbody_add_shape( b, sb ) >= 0 );
+    wp_rigidbody_set_position( b, (wp_vec3f){ .5f, 0, 0 } );
+    CHECK( wp_physics_scene_add_actor( scene, a ) && wp_physics_scene_add_actor( scene, b ) );
+    calls = fixture.calls;
+    wp_physics_scene_simulate( scene, 1.f / 60.f );
+    CHECK( fixture.calls > calls && wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs == 0 );
+    CHECK( wp_physics_scene_get_broadphase_provider_status( scene ) == 1 );
+    CHECK( wp_rigidbody_get_position( a ).x == 0 );
+    fixture.mode = 0;
+    wp_physics_scene_simulate( scene, 1.f / 60.f );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs == 1 );
+    CHECK( wp_rigidbody_get_position( a ).x < -.1f );
+    wp_physics_scene_destroy( scene ); wp_rigidbody_destroy( a ); wp_rigidbody_destroy( b );
+    wp_collision_shape_destroy( sa ); wp_collision_shape_destroy( sb );
+    wp_broadphase_register_provider( NULL, NULL );
+}
+
 int main( void )
 {
     for( algorithm_mode = WORKPHONE_BROADPHASE_SAP; algorithm_mode <= WORKPHONE_BROADPHASE_ABP;
@@ -462,6 +545,7 @@ int main( void )
         test_solver_corrections_invalidate_bounds();
     }
     simd_mode = 0;
+    test_registered_provider();
     puts(
         "Broadphase scalar/SIMD oracle, growth, dense pairs, touching, plane bounds, removal, "
         "scene selections, bounds caching and solver corrections: passed." );

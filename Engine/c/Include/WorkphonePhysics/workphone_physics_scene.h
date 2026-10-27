@@ -123,12 +123,14 @@ typedef struct wp_scene_simulation_options
 {
     wp_u32 solver_iterations, minimum_substeps, simulation_rate, workers;
     wp_s32 continuous_collision, deterministic;
-    /* 0: sweep and prune; 1: dynamic AABB tree; 2: automatic. */
+    /* 0: sweep and prune; 1: dynamic AABB tree; 2: automatic; 3: registered provider. */
     wp_u32 broadphase;
 } wp_scene_simulation_options;
 void wp_physics_scene_set_simulation_options( wp_physics_scene *scene,
                                              const wp_scene_simulation_options *options );
 wp_scene_simulation_options wp_physics_scene_get_simulation_options( const wp_physics_scene *scene );
+/* Last GPU/plugin provider traversal status; see wp_broadphase_get_provider_status. */
+wp_s32 wp_physics_scene_get_broadphase_provider_status( const wp_physics_scene *scene );
 /* The executor must join all tasks before returning. Contacts remain ordered
  * on the simulation owner; integration ranges touch disjoint bodies. */
 void wp_physics_scene_set_executor( wp_physics_scene *scene, wp_physics_parallel_for executor,

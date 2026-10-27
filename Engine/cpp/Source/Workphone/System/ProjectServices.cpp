@@ -9,6 +9,8 @@
 #include <Workphone/Interface/System/IFactory.hpp>
 #include <Workphone/Script/ProjectScriptPolicy.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
+#include <Workphone/Graphics/ProjectAssetPolicy.hpp>
+#include <Workphone/Graphics/ProjectGraphicsProviders.hpp>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -278,15 +280,24 @@ namespace workphone
     {
         if( !settings || projectDirectory.empty() ) { error = "Project service profile or directory is missing"; return false; }
         std::lock_guard<std::mutex> lock( lifecycleMutex );
+        struct PendingNetwork
+        {
+            SmartPtr<INetworkManager> instance;
+            ~PendingNetwork()
+            {
+                if( instance ) try { instance->unload( nullptr ); } catch( ... ) {}
+            }
+        } pendingNetwork;
         try
         {
             auto app = core::IApplicationManager::instancePtr();
-            const auto networkBackend = settings->getPropertyAsInt( "network.backend", 0 );
-            const bool multiplayer = settings->getPropertyAsBool( "network.multiplayer" );
+            const bool configureNetwork = settings->hasProperty( "network.multiplayer" ) || settings->hasProperty( "network.backend" );
+            const auto networkBackend = settings->getPropertyAsInt( "network.backend", std::max( 0, selectedNetworkBackend ) );
+            const bool multiplayer = settings->getPropertyAsBool( "network.multiplayer", projectNetwork != nullptr );
             if( multiplayer && ( networkBackend < 1 || networkBackend > 3 ) )
                 throw std::invalid_argument( "Multiplayer requires a network backend" );
-            SmartPtr<INetworkManager> nextNetwork;
-            if( multiplayer && app && ( !projectNetwork || selectedNetworkBackend != networkBackend ) )
+            auto &nextNetwork = pendingNetwork.instance;
+            if( configureNetwork && multiplayer && app && ( !projectNetwork || selectedNetworkBackend != networkBackend ) )
             {
                 auto factory = app->getFactoryManager();
                 const String provider = networkBackend == 1 ? "WPNetworkManager" :
@@ -310,22 +321,33 @@ namespace workphone
             if( providerOverrides.cloud ) providers.cloud = providerOverrides.cloud;
             if( providerOverrides.analytics ) providers.analytics = providerOverrides.analytics;
             if( providerOverrides.crash ) providers.crash = providerOverrides.crash;
-            if( !configureProjectServices( std::move( providers ), settings->getPropertyAsBool( "services.cloudSave" ),
-                    settings->getPropertyAsBool( "services.analytics" ),
-                    settings->getPropertyAsBool( "services.crashReporting", true ), error ) ) return false;
-            if( app && !multiplayer )
+            const auto previousServices = std::atomic_load( &state );
+            if( !configureProjectServices( std::move( providers ), settings->getPropertyAsBool( "services.cloudSave", previousServices->cloud ),
+                    settings->getPropertyAsBool( "services.analytics", previousServices->analytics ),
+                    settings->getPropertyAsBool( "services.crashReporting", previousServices->crash ), error ) ) return false;
+            const bool configureScripts = settings->hasProperty( "scripting.backend" ) || settings->hasProperty( "scripting.lua" ) ||
+                settings->hasProperty( "scripting.hotReload" ) || settings->hasProperty( "scripting.reflection" );
+            if( app && configureScripts && !applyProjectScriptSettings( settings, projectDirectory, error ) )
+            {
+                String rollbackError;
+                if( !configureProjectServices( previousServices->providers, previousServices->cloud,
+                                               previousServices->analytics, previousServices->crash, rollbackError ) )
+                    error += "; unable to restore previous service state: " + rollbackError;
+                return false;
+            }
+            if( configureNetwork && app && !multiplayer )
             {
                 auto previous = app->getNetworkManager(); app->setNetworkManager( nullptr );
-                if( previous ) previous->unload( nullptr );
                 projectNetwork = nullptr; selectedNetworkBackend = -1;
+                if( previous ) try { previous->unload( nullptr ); } catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
             }
             else if( app && nextNetwork )
             {
                 auto previous = app->getNetworkManager(); app->setNetworkManager( nextNetwork );
-                if( previous && previous != nextNetwork ) previous->unload( nullptr );
                 projectNetwork = nextNetwork; selectedNetworkBackend = networkBackend;
+                pendingNetwork.instance = nullptr;
+                if( previous && previous != projectNetwork ) try { previous->unload( nullptr ); } catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
             }
-            if( app && !applyProjectScriptSettings( settings, projectDirectory, error ) ) return false;
             error.clear(); return true;
         }
         catch( const std::exception &e ) { error = e.what(); return false; }
@@ -340,7 +362,8 @@ namespace workphone
         if( projectNetwork ) projectNetwork->unload( nullptr );
         projectNetwork = nullptr; selectedNetworkBackend = -1;
         localProviders = {}; providerOverrides = {}; localProviderRoot.clear();
-        releaseProjectScriptManager(); releaseProjectIrradiance();
+        releaseProjectScriptManager(); releaseProjectIrradiance(); releaseProjectAssetEncoders();
+        releaseProjectGraphicsProviders();
     }
 
     bool putProjectCloudSave( const String &slot, const Array<u8> &bytes, String &error )

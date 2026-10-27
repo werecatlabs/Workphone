@@ -35,8 +35,14 @@ namespace workphone
         void setProperties( SmartPtr<Properties> profile ) override { received = profile; }
         WP_CLASS_REGISTER_DECL;
     };
+    class SettingsProviderHybrid : public SettingsProviderInput
+    {
+    public:
+        WP_CLASS_REGISTER_DECL;
+    };
     WP_CLASS_REGISTER_DERIVED( workphone, SettingsProviderSound, SoundManager );
     WP_CLASS_REGISTER_DERIVED( workphone, SettingsProviderInput, InputDeviceManager );
+    WP_CLASS_REGISTER_DERIVED( workphone, SettingsProviderHybrid, SettingsProviderInput );
 }
 
 using namespace workphone;
@@ -47,9 +53,12 @@ BOOST_AUTO_TEST_CASE( project_backend_providers_dispatch_registered_types_with_f
     BOOST_REQUIRE( guard.factoryManager );
     FactoryUtil::addFactory<SettingsProviderSound>( guard.factoryManager );
     FactoryUtil::addFactory<SettingsProviderInput>( guard.factoryManager );
+    FactoryUtil::addFactory<SettingsProviderHybrid>( guard.factoryManager );
     registerProjectSoundBackend( 1, "workphone::SettingsProviderSound" );
     registerProjectInputBackend( 1, "workphone::SettingsProviderInput" );
-    guard.addCleanup( [] { registerProjectSoundBackend( 1, "" ); registerProjectInputBackend( 1, "" ); } );
+    registerProjectInputBackend( 3, "workphone::SettingsProviderHybrid" );
+    guard.addCleanup( [] { registerProjectSoundBackend( 1, "" ); registerProjectInputBackend( 1, "" );
+        registerProjectInputBackend( 3, "" ); } );
     auto profile = make_ptr<Properties>();
     profile->setProperty( "sound.backend", 1 );
     profile->setProperty( "input.system", 1 );
@@ -68,6 +77,11 @@ BOOST_AUTO_TEST_CASE( project_backend_providers_dispatch_registered_types_with_f
     BOOST_CHECK( inputProvider->received->getPropertyAsBool( "input.touch" ) );
     BOOST_CHECK( matchesProjectSoundBackend( guard.factoryManager, sound, 1 ) );
     BOOST_CHECK( matchesProjectInputBackend( guard.factoryManager, input, 1 ) );
+    profile->setProperty( "input.system", 3 );
+    auto hybrid = createProjectInputBackend( guard.factoryManager, profile );
+    BOOST_CHECK( hybrid->isExactly<SettingsProviderHybrid>() );
+    BOOST_CHECK( matchesProjectInputBackend( guard.factoryManager, hybrid, 3 ) );
+    BOOST_CHECK( !matchesProjectInputBackend( guard.factoryManager, input, 3 ) );
     BOOST_CHECK( !matchesProjectSoundBackend( guard.factoryManager, sound, 2 ) );
     registerProjectSoundBackend( 2, "workphone::SettingsProviderInput" );
     guard.addCleanup( [] { registerProjectSoundBackend( 2, "" ); } );

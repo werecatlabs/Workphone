@@ -22,7 +22,8 @@ namespace workphone
             if( auto found = providers.find( selection ); found != providers.end() ) return found->second;
             if( audio ) return selection == 1 ? String( "FMODSoundManager" ) :
                 selection == 2 ? String( "OpenALSoundManager" ) : String( "WPAudioManager" );
-            return selection == 1 ? String( "SDLInputDeviceManager" ) : String( "InputDeviceManager" );
+            return selection == 1 ? String( "SDLInputDeviceManager" ) : selection == 3 ?
+                String( "HybridInputDeviceManager" ) : String( "InputDeviceManager" );
         }
         SmartPtr<IFactory> providerFactory( SmartPtr<IFactoryManager> factories, bool audio, s32 selection )
         {
@@ -53,13 +54,13 @@ namespace workphone
                                     SmartPtr<ISoundManager> instance, s32 selection )
     {
         auto factory = providerFactory( factories, true, selection );
-        return instance && factory && instance->derived( factory->getObjectTypeId() );
+        return instance && ( factory ? instance->derived( factory->getObjectTypeId() ) : selection == 0 );
     }
     bool matchesProjectInputBackend( SmartPtr<IFactoryManager> factories,
                                     SmartPtr<IInputDeviceManager> instance, s32 selection )
     {
         auto factory = providerFactory( factories, false, selection );
-        return instance && factory && instance->derived( factory->getObjectTypeId() );
+        return instance && ( factory ? instance->derived( factory->getObjectTypeId() ) : selection == 0 );
     }
     SmartPtr<ISoundManager> createProjectSoundBackend( SmartPtr<IFactoryManager> factories,
                                                      SmartPtr<Properties> profile )

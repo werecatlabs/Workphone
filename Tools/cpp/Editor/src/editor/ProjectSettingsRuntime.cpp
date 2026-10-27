@@ -127,11 +127,18 @@ namespace workphone::editor
 
     SmartPtr<Properties> applyProjectSettingsRuntime( SmartPtr<Properties> settings )
     {
-        auto result = validateProjectSettingsRuntime( settings );
-        if( !result->getPropertyAsBool( "success" ) ) return result;
+        if( !settings ) return validateProjectSettingsRuntime( settings );
         auto app = core::IApplicationManager::instancePtr();
-        auto immutable = snapshot( *settings );
         auto previous = app ? app->getPlayerSettings() : nullptr;
+        auto immutable = previous ? snapshot( *previous ) : make_ptr<Properties>();
+        for( const auto &property : settings->getPropertiesAsArray() ) immutable->addProperty( property );
+        for( auto child : settings->getChildren() ) if( child )
+        {
+            immutable->removeChild( child->getName() );
+            immutable->addChild( snapshot( *child ) );
+        }
+        auto result = validateProjectSettingsRuntime( immutable );
+        if( !result->getPropertyAsBool( "success" ) ) return result;
         if( app ) app->setPlayerSettings( immutable );
         String applied, pending, requirements;
         try

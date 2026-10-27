@@ -8,6 +8,10 @@
 
 namespace workphone::physics
 {
+    void registerBroadphaseProvider( wp_broadphase_provider provider, void *context )
+    { wp_broadphase_register_provider( provider, context ); }
+    bool hasBroadphaseProvider() { return wp_broadphase_has_provider() != 0; }
+
     namespace
     {
         void executePhysicsRanges( void *, wp_u32 count, wp_u32 workers,
@@ -39,8 +43,16 @@ namespace workphone::physics
             throw std::runtime_error( "Failed to create a WPPhysics scene." );
         }
         wp_physics_scene_set_executor( m_scene, executePhysicsRanges, nullptr );
-        if( auto application = core::IApplicationManager::instancePtr() )
-            setProperties( application->getPlayerSettings() );
+        try
+        {
+            if( auto application = core::IApplicationManager::instancePtr() )
+                setProperties( application->getPlayerSettings() );
+        }
+        catch( ... )
+        {
+            wp_physics_scene_destroy( m_scene ); m_scene = nullptr;
+            throw;
+        }
     }
 
     WPPhysicsScene3::~WPPhysicsScene3()
@@ -62,6 +74,8 @@ namespace workphone::physics
         properties->setProperty( "physics.continuousCollision", options.continuous_collision != 0 );
         properties->setProperty( "physics.deterministic", options.deterministic != 0 );
         properties->setProperty( "physics.broadphase", options.broadphase );
+        properties->setProperty( "physics.broadphaseProviderStatus",
+            wp_physics_scene_get_broadphase_provider_status( m_scene ) );
         properties->setProperty( "physics.collisionLayers", m_collisionLayerNames );
         const auto layers = StringUtil::split( m_collisionLayerNames, "," );
         for( size_t i = 0; i < layers.size() && i < 32; ++i )
@@ -84,6 +98,8 @@ namespace workphone::physics
         properties->getPropertyValue( "physics.deterministic", deterministic );
         options.continuous_collision = continuous;
         options.deterministic = deterministic;
+        if( options.broadphase == 3 && !hasBroadphaseProvider() )
+            throw std::runtime_error( "GPU Broadphase requires a registered physics::registerBroadphaseProvider plugin." );
         wp_physics_scene_set_simulation_options( m_scene, &options );
         properties->getPropertyValue( "physics.collisionLayers", m_collisionLayerNames );
     }

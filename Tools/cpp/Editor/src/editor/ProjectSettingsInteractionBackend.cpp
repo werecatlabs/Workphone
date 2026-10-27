@@ -2,6 +2,9 @@
 #include <editor/ProjectSettingsInteractionBackend.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
+#if WP_BUILD_PHYSICS3
+#include <WPPhysics/WPPhysicsUtil.hpp>
+#endif
 #include <cstdlib>
 #include <cerrno>
 #include <cmath>
@@ -23,6 +26,15 @@ namespace workphone::editor
         String appendKey( const String &list, const String &key )
         {
             return list.empty() ? key : list + "; " + key;
+        }
+
+        bool hasPhysicsBroadphaseProvider()
+        {
+#if WP_BUILD_PHYSICS3
+            return physics::hasBroadphaseProvider();
+#else
+            return false;
+#endif
         }
 
         bool validNumber( const Properties &settings, const char *key, double minimum, double maximum,
@@ -47,7 +59,7 @@ namespace workphone::editor
             const struct { const char *key; double minimum, maximum; bool integral; } ranges[] = {
                 { "physics.gravity", -100, 100, false }, { "physics.simulationRate", 15, 240, true },
                 { "physics.solverIterations", 1, 64, true }, { "physics.substeps", 1, 8, true },
-                { "physics.threads", 1, 16, true }, { "physics.broadphase", 0, 2, true },
+                { "physics.threads", 1, 16, true }, { "physics.broadphase", 0, 3, true },
                 { "sound.masterVolume", 0, 100, true }, { "sound.musicVolume", 0, 100, true },
                 { "sound.sfxVolume", 0, 100, true }, { "sound.voiceVolume", 0, 100, true },
                 { "sound.sampleRate", 22050, 96000, true }, { "sound.bufferSize", 128, 4096, true },
@@ -58,6 +70,11 @@ namespace workphone::editor
                 if( !validNumber( settings, range.key, range.minimum, range.maximum, range.integral, error ) )
                     return false;
             const auto audioBackend = settings.getPropertyAsInt( "sound.backend", 0 );
+            if( settings.getPropertyAsInt( "physics.broadphase", 0 ) == 3 && !hasPhysicsBroadphaseProvider() )
+            {
+                error = "GPU Broadphase requires a physics plugin registered with workphone::physics::registerBroadphaseProvider.";
+                return false;
+            }
             auto app = core::IApplicationManager::instancePtr();
             auto factories = app ? app->getFactoryManager() : nullptr;
             if( audioBackend == 1 || audioBackend == 2 )
@@ -65,9 +82,11 @@ namespace workphone::editor
                 if( !hasProjectSoundBackend( factories, audioBackend ) )
                 { error = "The selected FMOD/OpenAL sound provider is not registered. Install its backend plugin."; return false; }
             }
-            if( settings.getPropertyAsInt( "input.system", 0 ) == 1 && !hasProjectInputBackend( factories, 1 ) )
+            const auto inputBackend = settings.getPropertyAsInt( "input.system", 0 );
+            if( ( inputBackend == 1 || inputBackend == 3 ) && !hasProjectInputBackend( factories, inputBackend ) )
             {
-                error = "The SDL input plugin is not included in this build. Engine Input and Platform Native are implemented.";
+                error = inputBackend == 1 ? "SDL Input requires a registered SDLInputDeviceManager plugin." :
+                    "Hybrid Input requires a registered HybridInputDeviceManager plugin that merges its device sources.";
                 return false;
             }
             for( const auto *key : { "physics.continuousCollision", "physics.deterministic", "physics.debugDraw",

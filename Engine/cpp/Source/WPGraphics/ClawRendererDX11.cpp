@@ -46,7 +46,7 @@ namespace workphone::render
             auto provider=getProjectShaderCompilerProvider(settings->getPropertyAsInt("graphics.shaderLanguage"),settings->getPropertyAsInt("graphics.shaderModel"));
             if(!provider) return 0;
             Array<u8> bytes;String error;
-            if(!provider->compile(settings,"DX11",String(source),String(entry),String(target),bytes,error)||bytes.empty())
+            if(!provider->compile(settings,projectRendererApi(settings),String(reinterpret_cast<const char*>(source)),String(reinterpret_cast<const char*>(entry)),String(reinterpret_cast<const char*>(target)),bytes,error)||bytes.empty())
             {WP_LOG_ERROR("Project shader compiler: "+error);return -1;}
             ID3DBlob *blob=nullptr;
             if(FAILED(D3DCreateBlob(bytes.size(),&blob))) return -1;
@@ -140,6 +140,12 @@ namespace workphone::render
                 wp_renderer_dx11_set_startup_options(settings->getPropertyAsInt("graphics.renderer.mode"),
                     settings->getPropertyAsInt("graphics.shaderModel"),settings->getPropertyAsBool("graphics.validationLayers"),
                     !settings->hasProperty("graphics.allowRendererFallback") || settings->getPropertyAsBool("graphics.allowRendererFallback"));
+        if(auto app=core::IApplicationManager::instancePtr())
+        {
+            wp_renderer_dx11_set_d3d12_execution(app->getPlayerSettings()&&projectRendererApi(app->getPlayerSettings())=="DX12");
+            wp_renderer_dx11_set_present_mode(nullptr,app->getPlayerSettings()?app->getPlayerSettings()->getPropertyAsInt("graphics.presentMode"):0);
+        }
+        else wp_renderer_dx11_set_d3d12_execution(0);
         wp_renderer_dx11_set_shader_compiler(compileProjectShader,nullptr);
         m_renderer = wp_renderer_create_dx11( nativeWindow, static_cast<wp_s32>( m_rtWidth ),
                                               static_cast<wp_s32>( m_rtHeight ) );
@@ -257,6 +263,8 @@ namespace workphone::render
                                           app->getGraphicsSystemPtr() ) : nullptr;
                 void *handle = nullptr;
                 window->getWindowHandle( &handle );
+                if(auto settings=app?app->getPlayerSettings():nullptr)
+                    wp_renderer_dx11_set_present_mode(dx11,settings->getPropertyAsInt("graphics.presentMode"));
                 const auto result = wp_renderer_dx11_try_present(
                     dx11, handle, graphics && graphics->getVSync() ? 1 : 0 );
                 if( result < 0 )

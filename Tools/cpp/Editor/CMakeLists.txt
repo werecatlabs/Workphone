@@ -1095,6 +1095,7 @@ if (WP_EDITOR_TESTS)
         project_settings_actions_test
         project_services_local_providers_test
         project_settings_build_profile_test
+        project_irradiance_provider_lifecycle_test
         project_settings_editor_policy_recovery_test
         project_graphics_output_curves_test
         project_graphics_backend_pipeline_profile_test

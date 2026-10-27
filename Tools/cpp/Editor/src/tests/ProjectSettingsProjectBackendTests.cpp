@@ -6,7 +6,11 @@
 #include <editor/Project.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ProjectServices.hpp>
+#include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Graphics/ProjectAssetPolicy.hpp>
+#include <Workphone/Graphics/ProjectIrradiance.hpp>
+#include <Workphone/IO/ZipUtil.hpp>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -85,12 +89,30 @@ BOOST_AUTO_TEST_CASE( project_services_local_providers_test )
     BOOST_REQUIRE_MESSAGE( applyProjectServiceSettings( settings, temporary.root.u8string().c_str(), error ), error );
     BOOST_REQUIRE( putProjectCloudSave( "injected-slot", original, error ) );
     BOOST_CHECK( std::filesystem::is_regular_file( injectedRoot / "cloud-saves/slot-injected-slot.save" ) );
+    struct ApplicationGuard
+    {
+        SmartPtr<core::IApplicationManager> previous = core::IApplicationManager::instance();
+        SmartPtr<core::ApplicationManager> app = make_ptr<core::ApplicationManager>();
+        ApplicationGuard() { core::IApplicationManager::setInstance( app ); }
+        ~ApplicationGuard() { core::IApplicationManager::setInstance( previous ); }
+    } application;
+    settings->setProperty( "services.cloudSave", false );
+    settings->setProperty( "scripting.backend", 3 );
+    BOOST_CHECK( !applyProjectServiceSettings( settings, temporary.root.u8string().c_str(), error ) );
+    restored.clear();
+    BOOST_REQUIRE_MESSAGE( getProjectCloudSave( "injected-slot", restored, error ), error );
+    BOOST_CHECK_EQUAL_COLLECTIONS( original.begin(), original.end(), restored.begin(), restored.end() );
 }
 
 BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
 {
     ProjectBackendTemporary temporary;
     auto project = make_ptr<Project>(); project->create( ( temporary.root / "Project" ).u8string().c_str() );
+    const auto dictionary=temporary.root/"Project/Localization/en.settings";
+    const auto probes=temporary.root/"Project/.workphone/lighting/fixture.settings";
+    std::filesystem::create_directories(dictionary.parent_path());std::filesystem::create_directories(probes.parent_path());
+    {std::ofstream stream(dictionary,std::ios::binary);stream<<std::string(8192,'L');}
+    {std::ofstream stream(probes,std::ios::binary);stream<<"deterministic baked probe fixture";}
     auto settings = make_ptr<Properties>();
     settings->setProperty( "build.config", s32( 2 ) );
     settings->setProperty( "build.assetBundles", false );
@@ -102,6 +124,13 @@ BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
     BOOST_CHECK( !arguments.empty() );
     const auto output = temporary.root / "Project/Build/PC/x64/Release";
     BOOST_CHECK( std::filesystem::is_regular_file( output / "WorkphoneProjectProfile.cmake" ) );
+    BOOST_CHECK(std::filesystem::is_regular_file(output/"Localization/en.settings"));
+    BOOST_CHECK(std::filesystem::is_regular_file(output/".workphone/lighting/fixture.settings"));
+    Array<StringW> zipFiles{dictionary.wstring().c_str()};
+    const auto rawZip=temporary.root/"raw.zip",compressedZip=temporary.root/"compressed.zip";
+    BOOST_REQUIRE_EQUAL(ZipUtil::createZipFileFromPath(rawZip.wstring().c_str(),zipFiles,(temporary.root/"Project").wstring().c_str(),true,0),0);
+    BOOST_REQUIRE_EQUAL(ZipUtil::createZipFileFromPath(compressedZip.wstring().c_str(),zipFiles,(temporary.root/"Project").wstring().c_str(),true,9),0);
+    BOOST_CHECK(std::filesystem::file_size(rawZip)>std::filesystem::file_size(compressedZip)*4);
     auto manifest = make_ptr<Properties>();
     std::ifstream stream( output / "ProjectPackage.json" ); std::ostringstream text; text << stream.rdbuf();
     DataUtil::parse( text.str().c_str(), manifest.get() );
@@ -150,7 +179,11 @@ BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
         std::filesystem::create_directories( ndk / "build/cmake" );
         std::ofstream( ndk / "build/cmake/android.toolchain.cmake" ) << "# Profile-generation fixture\n";
         NdkEnvironment::set( ndk.u8string() );
+        const auto manifestTemplate = temporary.root / "Project/Android/app/src/main/AndroidManifest.xml";
+        std::filesystem::create_directories( manifestTemplate.parent_path() );
+        std::ofstream( manifestTemplate ) << R"(<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:label="Old"><activity android:name=".MainActivity"/></application></manifest>)";
         auto android = make_ptr<Properties>();
+        android->setProperty( "project.productName", "Fixture Android" );
         android->setProperty( "platform.active", 3 );
         android->setProperty( "build.config", 0 );
         android->setProperty( "build.architecture.android", 2 );
@@ -168,6 +201,10 @@ BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
         const auto gradle = read( directory / "WorkphoneAndroidProfile.gradle" );
         BOOST_CHECK( gradle.find( "['armeabi-v7a','arm64-v8a','x86','x86_64']" ) != std::string::npos );
         BOOST_CHECK( gradle.find( "projectReleaseKey" ) != std::string::npos );
+        BOOST_CHECK( gradle.find( "main.manifest.srcFile" ) != std::string::npos );
+        const auto manifest = read( directory / "AndroidManifest.xml" );
+        BOOST_CHECK( manifest.find( "Fixture Android" ) != std::string::npos );
+        BOOST_CHECK( manifest.find( ".MainActivity" ) != std::string::npos );
         BOOST_CHECK( read( directory / "WorkphoneProjectProfile.cmake" ).find( "assembleDebug" ) == std::string::npos );
         android->setProperty( "build.android.stageOnly", false );
         prepareProjectSettingsBuild( project, android );
@@ -176,5 +213,44 @@ BOOST_AUTO_TEST_CASE( project_settings_build_profile_test )
     settings->setProperty( "network.multiplayer", true );
     settings->setProperty( "network.backend", s32( 0 ) );
     BOOST_CHECK( !validateProjectSettingsProjectBackend( settings )->getPropertyAsBool( "success" ) );
+}
+
+BOOST_AUTO_TEST_CASE( project_irradiance_provider_lifecycle_test )
+{
+    ProjectBackendTemporary temporary;
+    struct Provider final : IProjectIrradianceProvider
+    {
+        u32 calls=0;bool invalid=false;
+        bool sample(const float position[3],u32 rays,s32 selection,bool sky,wp_irradiance_probe &probe,String &error) override
+        {
+            (void)rays;(void)sky;++calls;wp_irradiance_probe candidate{};
+            std::copy(position,position+3,candidate.position);
+            candidate.sh[0][0]=selection==2?0.f:1.f;candidate.sh[0][2]=selection==1?0.f:2.f;
+            if(invalid)candidate.sh[0][0]=std::numeric_limits<float>::quiet_NaN();
+            probe=candidate;error.clear();return true;
+        }
+    };
+    struct Cleanup {~Cleanup(){releaseProjectIrradiance();}} cleanup;
+    auto provider=std::make_shared<Provider>();setProjectIrradianceProvider(provider);
+    auto settings=make_ptr<Properties>();settings->setProperty("graphics.gi",s32(1));
+    settings->setProperty("project.startupScene","Fixture.fbscene");String error;
+    BOOST_REQUIRE_MESSAGE(applyProjectIrradianceSettings(settings,temporary.root.u8string().c_str(),error),error);
+    BOOST_CHECK_EQUAL(provider->calls,4u);const auto baked=getProjectIrradianceProbes();BOOST_REQUIRE_EQUAL(baked.size(),4u);
+    BOOST_REQUIRE(applyProjectIrradianceSettings(settings,temporary.root.u8string().c_str(),error));
+    BOOST_CHECK_EQUAL(provider->calls,4u); // The deterministic local bake is read from disk.
+    settings->setProperty("graphics.gi",s32(3));
+    BOOST_REQUIRE(applyProjectIrradianceSettings(settings,temporary.root.u8string().c_str(),error));
+    auto hybrid=getProjectIrradianceProbes();BOOST_REQUIRE_EQUAL(hybrid.size(),4u);
+    BOOST_CHECK_EQUAL(hybrid[0].sh[0][0],1.f);BOOST_CHECK_EQUAL(hybrid[0].sh[0][2],2.f);
+    BOOST_CHECK_EQUAL(hybrid[1].sh[0][2],0.f);
+    updateProjectIrradiance();updateProjectIrradiance();hybrid=getProjectIrradianceProbes();
+    BOOST_CHECK_EQUAL(hybrid[1].sh[0][2],2.f);
+    provider->invalid=true;settings->setProperty("graphics.gi",s32(2));
+    BOOST_CHECK(!applyProjectIrradianceSettings(settings,temporary.root.u8string().c_str(),error));
+    BOOST_CHECK_EQUAL(getProjectIrradianceMode(),3);
+    const auto retained=getProjectIrradianceProbes();BOOST_CHECK_EQUAL(retained[1].sh[0][2],2.f);
+    updateProjectIrradiance();BOOST_CHECK_EQUAL(getProjectIrradianceProbes()[1].sh[0][2],2.f);
+    settings->setProperty("graphics.gi",s32(0));BOOST_REQUIRE(applyProjectIrradianceSettings(settings,temporary.root.u8string().c_str(),error));
+    BOOST_CHECK(getProjectIrradianceProbes().empty());
 }
 #endif

@@ -2107,12 +2107,14 @@ void wp_physics_scene_set_simulation_options( wp_physics_scene *scene,
     if( !scene || !options || options->solver_iterations < 1 || options->solver_iterations > 64 ||
         options->minimum_substeps < 1 || options->minimum_substeps > 64 ||
         options->simulation_rate < 15 || options->simulation_rate > 1000 ||
-        options->workers < 1 || options->workers > 64 || options->broadphase > 2 ) return;
+        options->workers < 1 || options->workers > 64 || options->broadphase > 3 ||
+        ( options->broadphase == 3 && !wp_broadphase_has_provider() ) ) return;
     scene->simulation_options = *options;
     scene->max_threads = options->workers;
     scene->min_threads = options->workers;
     wp_broadphase_set_type( scene->broadphase, options->broadphase == 0 ? WORKPHONE_BROADPHASE_SAP :
-        options->broadphase == 1 ? WORKPHONE_BROADPHASE_DBVT : WORKPHONE_BROADPHASE_ABP );
+        options->broadphase == 1 ? WORKPHONE_BROADPHASE_DBVT :
+        options->broadphase == 2 ? WORKPHONE_BROADPHASE_ABP : WORKPHONE_BROADPHASE_PROVIDER );
     scene->fixed_accumulator = 0.0f;
 }
 
@@ -2121,6 +2123,9 @@ wp_scene_simulation_options wp_physics_scene_get_simulation_options( const wp_ph
     wp_scene_simulation_options options = { 0 };
     return scene ? scene->simulation_options : options;
 }
+
+wp_s32 wp_physics_scene_get_broadphase_provider_status( const wp_physics_scene *scene )
+{ return scene ? wp_broadphase_get_provider_status( scene->broadphase ) : 0; }
 
 void wp_physics_scene_set_executor( wp_physics_scene *scene, wp_physics_parallel_for executor,
                                    void *context )

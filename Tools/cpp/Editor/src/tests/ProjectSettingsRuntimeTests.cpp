@@ -128,6 +128,14 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_subsystem_contract_test )
     BOOST_CHECK( physics->getEnableDebugDraw() );
     BOOST_CHECK( result->getProperty( "unavailableKeys" ).empty() );
 
+    auto patch = workphone::make_ptr<Properties>();
+    patch->setProperty( "physics.gravity", -11.0f );
+    auto patchResult = applyProjectSettingsRuntime( patch );
+    BOOST_REQUIRE_MESSAGE( patchResult->getPropertyAsBool( "success" ), patchResult->getProperty( "status" ) );
+    BOOST_CHECK_EQUAL( guard.app->getPlayerSettings()->getPropertyAsInt( "graphics.frameRateLimit" ), 144 );
+    BOOST_CHECK_CLOSE( sound->volume, 0.25f, 0.001f );
+    BOOST_CHECK_CLOSE( scene->gravity.Y(), -11.0f, 0.001f );
+
     // A bad renderer choice must reject the complete draft before any subsystem changes.
     settings->setProperty( "graphics.renderer.pc", 99 );
     settings->setProperty( "sound.masterVolume", 80 );
@@ -136,7 +144,7 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_subsystem_contract_test )
     result = applyProjectSettingsRuntime( settings );
     BOOST_CHECK( !result->getPropertyAsBool( "success" ) );
     BOOST_CHECK_CLOSE( sound->volume, 0.25f, 0.001f );
-    BOOST_CHECK_CLOSE( scene->gravity.Y(), -12.5f, 0.001f );
+    BOOST_CHECK_CLOSE( scene->gravity.Y(), -11.0f, 0.001f );
     BOOST_CHECK_EQUAL( tasks->primary->rate, 144 );
 }
 

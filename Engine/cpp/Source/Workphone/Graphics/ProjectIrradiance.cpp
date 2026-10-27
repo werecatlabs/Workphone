@@ -115,6 +115,13 @@ namespace workphone
         size_t nextProbe=0;
         String activeRoot;
         String lastRefreshError;
+        bool validProbe( const wp_irradiance_probe &probe, String &error )
+        {
+            const auto values=reinterpret_cast<const float *>(&probe);
+            for(size_t i=0;i<sizeof(probe)/sizeof(float);++i)if(!std::isfinite(values[i]))
+            {error="Irradiance provider returned a nonfinite probe";return false;}
+            return true;
+        }
 
         Array<wp_irradiance_probe> initialLocations()
         {
@@ -168,7 +175,10 @@ namespace workphone
         }
     }
     void setProjectIrradianceProvider( std::shared_ptr<IProjectIrradianceProvider> value )
-    { std::lock_guard<std::mutex> lock(providerMutex);provider=std::move(value); }
+    {
+        std::shared_ptr<IProjectIrradianceProvider> retired;
+        {std::lock_guard<std::mutex> lock(providerMutex);retired.swap(provider);provider=std::move(value);}
+    }
     bool applyProjectIrradianceSettings( SmartPtr<Properties> settings, const String &root, String &error )
     {
         try
@@ -195,7 +205,7 @@ namespace workphone
             {
                 if(!loadBake(path,staticData))
                 {
-                    for(auto &probe:staticData)if(!provider->sample(probe.position,256,mode==3?1:0,true,probe,error))return false;
+                    for(auto &probe:staticData)if(!provider->sample(probe.position,256,mode==3?1:0,true,probe,error) || !validProbe(probe,error))return false;
                     saveBake(path,staticData);
                 }
                 locations=staticData;
@@ -205,7 +215,7 @@ namespace workphone
             if(mode==2 || mode==3)
             {
                 auto initial=locations[0];
-                if(!provider->sample(initial.position,32,mode==3?2:0,mode==2,initial,error))return false;
+                if(!provider->sample(initial.position,32,mode==3?2:0,mode==2,initial,error) || !validProbe(initial,error))return false;
                 locations[0]=initial;
                 if(mode==3)wp_irradiance_combine(&staticData[0],&initial,&visible[0]);else visible[0]=initial;
             }
@@ -219,7 +229,7 @@ namespace workphone
         std::lock_guard<std::mutex> lock(providerMutex);
         if((activeMode!=2 && activeMode!=3) || live.empty() || !provider)return;
         auto probe=live[nextProbe];String error;bool sampled=false;
-        try{sampled=provider->sample(probe.position,32,activeMode==3?2:0,activeMode==2,probe,error);}
+        try{sampled=provider->sample(probe.position,32,activeMode==3?2:0,activeMode==2,probe,error) && validProbe(probe,error);}
         catch(const std::exception &e){error=e.what();}
         if(sampled)
         {
@@ -238,5 +248,8 @@ namespace workphone
     {std::lock_guard<std::mutex> lock(providerMutex);return published;}
     s32 getProjectIrradianceMode(){std::lock_guard<std::mutex> lock(providerMutex);return activeMode;}
     void releaseProjectIrradiance()
-    {std::lock_guard<std::mutex> lock(providerMutex);activeMode=0;provider.reset();baked.clear();live.clear();published.clear();activeRoot.clear();lastRefreshError.clear();}
+    {
+        std::shared_ptr<IProjectIrradianceProvider> retired;
+        {std::lock_guard<std::mutex> lock(providerMutex);activeMode=0;retired.swap(provider);baked.clear();live.clear();published.clear();activeRoot.clear();lastRefreshError.clear();}
+    }
 }

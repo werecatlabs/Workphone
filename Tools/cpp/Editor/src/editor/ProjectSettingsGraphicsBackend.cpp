@@ -33,14 +33,10 @@ namespace workphone::editor
             return list;
         }
 
-        String requirements( const Properties &settings )
+        bool startupKey(const String &key)
         {
-            String result;
-            const auto add = [&]( const String &message ) { if( !result.empty() ) result += " "; result += message; };
-            String error,notes;
-            auto profile=workphone::make_ptr<Properties>(settings);
-            if(validateProjectGraphicsProviders(profile,error,notes)&&!notes.empty()) add(notes);
-            return result;
+            return key.find("graphics.renderer.")==0 || key=="graphics.shaderModel" || key=="graphics.shaderLanguage" ||
+                key=="graphics.validationLayers" || key=="graphics.allowRendererFallback" || key=="graphics.presentMode";
         }
 
         bool budgetFits( const Properties &settings, const char *key, StreamMemoryClass category, String &error )
@@ -64,7 +60,7 @@ namespace workphone::editor
         if( settings )
         {
             String startupNotes;
-            validateProjectGraphicsProviders(settings,error,startupNotes);
+            if(!validateProjectGraphicsProviders(settings,error,startupNotes)&&error.empty()) error="The selected graphics provider rejected this project profile.";
             result->setProperty("startupNotes",startupNotes);
             const auto app=core::IApplicationManager::instancePtr();
             const auto graphics=app ? app->getGraphicsSystem() : nullptr;
@@ -86,7 +82,7 @@ namespace workphone::editor
         }
         result->setProperty( "success", error.empty() );
         result->setProperty( "status", error.empty() ? String("Graphics settings validated.") : error );
-        if( settings ) { result->setProperty( "handledKeys", listKeys(*settings) ); result->setProperty("externalRequirements", requirements(*settings)); }
+        if( settings ) result->setProperty( "handledKeys", listKeys(*settings) );
         return result;
     }
 
@@ -100,6 +96,9 @@ namespace workphone::editor
         response->setProperty("availability.performance.memoryBudgetMb", "Admission budget for participating CPU asset storage; cannot be reduced below live allocations.");
         response->setProperty("availability.performance.gpuMemoryBudgetMb", "Admission budget for participating GPU resource ownership.");
         response->setProperty("availability.diagnostics.gpuProfiler", "DX11 GPU timestamps are collected separately from CPU timing when supported by the device.");
+        for(auto key:keys) if(startupKey(key)) response->setProperty(String("availability.")+key,
+            "Device and compiler selection takes effect at the next renderer startup; unavailable API/language choices require a registered provider.");
+        response->setProperty("availability.graphics.renderer.pc","DX11 and DX12 share the full scene pipeline. DX12 executes on a D3D12 queue through D3D11On12. Vulkan/OpenGL dispatch registered providers.");
     }
 
     SmartPtr<Properties> projectGraphicsBackendProperties( SmartPtr<Properties> settings )
@@ -109,8 +108,8 @@ namespace workphone::editor
         for( auto key : keys ) if( settings->hasProperty(key) ) result->addProperty(settings->getPropertyObject(key));
         s32 value;
         if( settings->getPropertyValue("quality.preset", value) && value < 4 ) result->setProperty("Quality",value);
-        if( settings->getPropertyValue("graphics.renderer.pc",value) && (value == 1 || value == 2 || value == 5) )
-            result->setProperty("Render API", value == 5 ? 0 : value);
+        if( settings->getPropertyValue("graphics.renderer.pc",value) && (value == 0 || value == 1 || value == 2 || value == 5) )
+            result->setProperty("Render API", value == 5 ? 0 : value == 0 ? 1 : value);
         if( settings->getPropertyValue("graphics.antiAliasing",value) ) result->setProperty("Temporal anti-aliasing",value == 2);
         if( settings->getPropertyValue("graphics.shadowQuality",value) ) result->setProperty("Cascaded shadows",value > 0);
         if( settings->getPropertyValue("graphics.shadowResolution",value) && value >= 0 && value <= 3 )
@@ -163,8 +162,17 @@ namespace workphone::editor
                 }
             }
         }
-        result->setProperty("appliedKeys",listKeys(*settings));
-        result->setProperty("status",graphics ? "Graphics settings applied to the active renderer and resource policies." : "Graphics policies stored; the renderer applies them when started.");
+        String applied,pending;
+        const auto append=[](String &list,const char *key){if(!list.empty()) list+="; ";list+=key;};
+        for(auto key:keys) if(settings->hasProperty(key))
+        {
+            const bool budget=String(key)=="quality.streamingBudgetMb"||String(key)=="performance.memoryBudgetMb"||String(key)=="performance.gpuMemoryBudgetMb";
+            if(startupKey(key)||(!graphics&&!budget)) append(pending,key);else append(applied,key);
+        }
+        result->setProperty("appliedKeys",applied);result->setProperty("pendingKeys",pending);
+        String status=graphics?"Graphics settings applied; device, compiler and presentation choices take effect at the next renderer startup.":"Graphics policies stored; the renderer applies them when started.";
+        const auto notes=result->getPropertyAsString("startupNotes");if(!notes.empty()) status+=" "+notes;
+        result->setProperty("status",status);
         return result;
     }
 }

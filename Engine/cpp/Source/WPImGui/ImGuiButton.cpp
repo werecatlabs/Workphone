@@ -1,6 +1,7 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiButton.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <imgui.h>
 
 namespace workphone::ui
@@ -24,7 +25,10 @@ namespace workphone::ui
 
     void ImGuiButton::update()
     {
-        auto label = m_label.load();
+        const auto sourceLabel = getLabel();
+        auto label = localizeProjectText( sourceLabel );
+        if( sourceLabel.size() >= 4 && sourceLabel[0] == '@' && sourceLabel[1] == '{' && sourceLabel.back() == '}' )
+            label += "###" + sourceLabel;
         if( StringUtil::isNullOrEmpty( label ) )
         {
             label = "Untitled";

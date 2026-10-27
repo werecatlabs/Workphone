@@ -29,13 +29,20 @@ namespace workphone
     {
         if( format != "bc7" && format != "astc" && format != "pvrtc" && format != "etc2" )
             throw std::invalid_argument( "Unknown texture compression provider format" );
-        std::lock_guard<std::mutex> lock( encoderMutex );
-        if( encoder ) encoders[format]=std::move(encoder); else encoders.erase(format);
+        TextureCompressionEncoder retired;
+        {std::lock_guard<std::mutex> lock(encoderMutex);
+         const auto found=encoders.find(format);if(found!=encoders.end()){retired=std::move(found->second);encoders.erase(found);}
+         if(encoder)encoders.emplace(format,std::move(encoder));}
     }
     bool hasTextureCompressionEncoder( const String &format )
     {
         if( format=="none" || format=="bc1" || format=="bc3" ) return true;
         std::lock_guard<std::mutex> lock( encoderMutex ); return encoders.find(format)!=encoders.end();
+    }
+    void releaseProjectAssetEncoders()
+    {
+        std::map<String,TextureCompressionEncoder> retired;
+        {std::lock_guard<std::mutex> lock(encoderMutex);retired.swap(encoders);}
     }
     bool encodeTextureCompression( const TextureCompressionRequest &request, TextureCompressionOutput &output, String &error )
     {

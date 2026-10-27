@@ -57,6 +57,12 @@ wp_s32 wp_renderer_dx11_set_local_lights(wp_renderer_dx11 *renderer,const wp_f32
     wp_u32 count,const wp_u32 *cells,const wp_u32 *indices,wp_u32 index_count,
     wp_u32 grid_x,wp_u32 grid_y,wp_u32 grid_z,wp_f32 z_near,wp_f32 z_far,const wp_f32 *camera_forward);
 void wp_renderer_dx11_set_pipeline_mode(wp_renderer_dx11 *renderer,wp_s32 pipeline,wp_s32 ambient_occlusion);
+void wp_renderer_dx11_set_present_mode(wp_renderer_dx11 *renderer,wp_s32 mode);
+/* Execute the shared scene pipeline on a real D3D12 device/queue through the
+ * Windows D3D11On12 interop layer. Applies to subsequent renderer creation. */
+void wp_renderer_dx11_set_d3d12_execution(wp_s32 enabled);
+/* Borrowed actual D3D12 device, or NULL for native D3D11 execution. */
+void *wp_renderer_dx11_get_d3d12_device(wp_renderer_dx11 *renderer);
 /* Applies to subsequent device creation and built-in shader compilation. */
 void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
                                           wp_s32 validation, wp_s32 allow_fallback );

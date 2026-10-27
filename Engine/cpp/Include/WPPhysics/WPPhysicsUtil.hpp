@@ -15,6 +15,7 @@ extern "C" {
 #include <WorkphonePhysics/workphone_physics_collisionshape.h>
 #include <WorkphonePhysics/workphone_physics_rigidbody.h>
 #include <WorkphonePhysics/workphone_physics_scene.h>
+#include <WorkphonePhysics/workphone_physics_broadphase.h>
 }
 
 #include <Workphone/Math/AABB3.hpp>
@@ -22,6 +23,11 @@ extern "C" {
 
 namespace workphone::physics
 {
+    // Register in the WPPhysics module that owns simulation so dynamically
+    // linked plugins do not accidentally install into a separate C registry.
+    WPPhysics_API void registerBroadphaseProvider( wp_broadphase_provider provider, void *context );
+    WPPhysics_API bool hasBroadphaseProvider();
+
     class WPPhysicsUtil
     {
     public:

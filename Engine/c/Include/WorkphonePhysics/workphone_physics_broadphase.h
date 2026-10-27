@@ -36,7 +36,8 @@ typedef enum wp_broadphase_type
     WORKPHONE_BROADPHASE_SAP = 0,  /**< Sweep-and-prune */
     WORKPHONE_BROADPHASE_DBVT = 1, /**< Dynamic AABB tree */
     WORKPHONE_BROADPHASE_MBP = 2,  /**< Legacy selection; currently uses the shared AABB tree. */
-    WORKPHONE_BROADPHASE_ABP = 3   /**< Legacy automatic-pruning selection. */
+    WORKPHONE_BROADPHASE_ABP = 3,  /**< Automatic SAP/tree selection. */
+    WORKPHONE_BROADPHASE_PROVIDER = 4 /**< Registered GPU/plugin candidate provider. */
 } wp_broadphase_type;
 
 /* -------------------------------------------------------------------------
@@ -48,6 +49,30 @@ typedef struct wp_broadphase_pair
     wp_rigidbody *body_a;
     wp_rigidbody *body_b;
 } wp_broadphase_pair;
+
+typedef struct wp_broadphase_provider_proxy
+{
+    wp_vec3f minimum, maximum;
+    wp_rigidbody *body;
+    wp_u32 order;
+    wp_s32 movable;
+} wp_broadphase_provider_proxy;
+typedef struct wp_broadphase_provider_pair { wp_u32 a, b; } wp_broadphase_provider_pair;
+/* Return nonzero only for a complete conservative candidate list. Indices refer
+ * to this immutable ordered proxy snapshot. False positives and duplicates are
+ * filtered by the engine before narrowphase. Never write beyond capacity.
+ * Register/unregister on the physics owner while all scenes are idle; the caller
+ * owns context and retains it until unregistering after scene work joins.
+ * Null unregisters. Failure, overflow or invalid indices use the conservative
+ * native tree for that traversal; get_provider_status reports this fallback. */
+typedef wp_s32 ( *wp_broadphase_provider )( void *context,
+    const wp_broadphase_provider_proxy *proxies, wp_u32 count,
+    wp_broadphase_provider_pair *pairs, wp_u32 capacity, wp_u32 *written );
+void wp_broadphase_register_provider( wp_broadphase_provider provider, void *context );
+wp_s32 wp_broadphase_has_provider( void );
+/* 1=provider completed, 0=not requested, -1=missing, -2=capacity/allocation,
+ * -3=provider failure, -4=invalid candidate output. */
+wp_s32 wp_broadphase_get_provider_status( const wp_broadphase *bp );
 
 /* =========================================================================
  * Lifecycle
@@ -92,8 +117,8 @@ void wp_broadphase_update_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f
                                  wp_vec3f aabb_max );
 
 /* Stable index handles avoid body searches during scene synchronization. Handles
- * become invalid on removal/clear. All selections currently use a dynamic AABB
- * tree. Bounds must be finite, ordered, and conservative for the whole body. */
+ * become invalid on removal/clear. Bounds must be finite, ordered, and
+ * conservative for the whole body. */
 #define WP_BROADPHASE_INVALID_PROXY ( -1 )
 wp_s32 wp_broadphase_create_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f aabb_min,
                                    wp_vec3f aabb_max );

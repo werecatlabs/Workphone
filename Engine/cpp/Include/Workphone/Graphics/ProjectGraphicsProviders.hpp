@@ -35,4 +35,5 @@ namespace workphone
     WPCore_API String projectRendererApi( SmartPtr<Properties> profile );
     WPCore_API bool validateProjectGraphicsProviders( SmartPtr<Properties> profile,
                                                      String &error, String &startupNotes );
+    WPCore_API void releaseProjectGraphicsProviders();
 }

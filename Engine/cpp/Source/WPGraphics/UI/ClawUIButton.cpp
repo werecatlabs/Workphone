@@ -3,6 +3,7 @@
 #include <WPGraphics/UI/ClawUILayout.hpp>
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/ProjectLocalization.hpp>
 #include <WorkphoneCore/workphone.h>
 
 namespace workphone::ui
@@ -189,7 +190,7 @@ namespace workphone::ui
         // owns its descriptor instead of borrowing a stack or shared style font.
         if( !m_drawFont ) m_drawFont = std::make_unique<wp_user_font>();
         *m_drawFont = *ctx->style.font;
-        const auto label = getLabel();
+        const auto label = localizeProjectText( getLabel() );
         const auto nativeLabel = reinterpret_cast<const wp_c8 *>( label.c_str() );
         auto textHeight = MathF::min( MathF::max( getTextSize(), 1.0f ),
                                       MathF::max( bounds.h - style.padding.y * 2.0f, 1.0f ) );
