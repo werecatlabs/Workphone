@@ -9,6 +9,11 @@ namespace workphone
         CProceduralTerrain::CProceduralTerrain() = default;
 
         CProceduralTerrain::~CProceduralTerrain() = default;
+        void CProceduralTerrain::unload( SmartPtr<ISharedObject> data )
+        {
+            auto height = std::move( m_heightData );
+            CProceduralObject<IProceduralTerrain>::unload( data );
+        }
 
         Vector3F CProceduralTerrain::getSize() const
         {
@@ -67,7 +72,8 @@ namespace workphone
 
         void CProceduralTerrain::setHeightData( const Array<f32> &heightData )
         {
-            m_heightData = heightData;
+            auto candidate = makeSourceBudgetSnapshot( heightData );
+            m_heightData.swap( candidate );
         }
     }  // namespace procedural
 }  // namespace workphone

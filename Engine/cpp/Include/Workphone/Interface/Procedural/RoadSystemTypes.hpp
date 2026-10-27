@@ -34,7 +34,7 @@ namespace workphone
             RoadSurface surface = RoadSurface::Asphalt;
             IntersectionType type = IntersectionType::Cross;
             u32 seed = 0;
-            Array<Vector3<real_Num>> approaches;  ///< Direction vectors of approaching roads
+            Array<Vector3<real_Num>> approaches{ Allocator<Vector3<real_Num>>( sourceBudget ) };  ///< Direction vectors of approaching roads
         };
 
     }  // namespace procedural

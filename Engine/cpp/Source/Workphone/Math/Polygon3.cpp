@@ -1,5 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Math/Polygon3.hpp>
+#include <limits>
+#include <stdexcept>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone
 {
@@ -16,7 +19,8 @@ namespace workphone
     template <class T>
     Polygon3<T>::Polygon3( const Array<Vector3<T>> &points )
     {
-        m_points = points;
+        auto candidate = makeSourceBudgetSnapshot( points );
+        m_points.swap( candidate );
     }
 
     template <class T>
@@ -34,16 +38,18 @@ namespace workphone
     template <class T>
     void Polygon3<T>::addPoints( const Array<Vector3<T>> &points )
     {
-        for( u32 i = 0; i < points.size(); ++i )
-        {
-            m_points.push_back( points[i] );
-        }
+        const auto count = points.size();
+        if( count > std::numeric_limits<size_t>::max() - m_points.size() )
+            throw std::length_error( "Polygon point count overflow" );
+        m_points.reserve( m_points.size() + count );
+        for( size_t i = 0; i < count; ++i ) m_points.push_back( points[i] );
     }
 
     template <class T>
     void Polygon3<T>::setPoints( const Array<Vector3<T>> &points )
     {
-        m_points = points;
+        auto candidate = makeSourceBudgetSnapshot( points );
+        m_points.swap( candidate );
     }
 
     template <class T>
@@ -85,7 +91,7 @@ namespace workphone
         tangent.normalise();
         binormal.normalise();
 
-        Array<Vector2<T>> contour;
+        Array<Vector2<T>> contour{ Allocator<Vector2<T>>( sourceBudget ) };
 
         // project point on a 2d plane
         for( u32 pointIdx = 0; pointIdx < m_points.size(); ++pointIdx )
@@ -104,7 +110,9 @@ namespace workphone
             return false;
         }
 
-        int *V = new int[n]; /* we want a counter-clockwise polygon in V */
+        auto storage = makeSourceBudgetArray<s32>( n );
+        auto V = storage.get();
+        auto candidate = makeSourceBudgetSnapshot( triangles ); /* we want a counter-clockwise polygon in V */
         if( 0.0f < area( contour ) )
         {
             for( size_t v = 0; v < n; v++ )
@@ -158,7 +166,7 @@ namespace workphone
                 c = V[w]; /* output Triangle */
 
                 Triangle3<T> triangle( m_points[a], m_points[b], m_points[c] );
-                triangles.push_back( triangle );
+                candidate.push_back( triangle );
                 m++; /* remove v from remaining polygon */
 
                 for( s = v, t = v + 1; t < nv; s++, t++ )
@@ -172,7 +180,7 @@ namespace workphone
             }
         }
 
-        delete[] V;
+        triangles.swap( candidate );
         return true;
     }
 

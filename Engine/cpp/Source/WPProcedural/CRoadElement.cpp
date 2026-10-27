@@ -140,18 +140,20 @@ namespace workphone
         {
             try
             {
-                for( auto &node : m_sidewalks )
+                auto retired_sidewalks = std::move( m_sidewalks );
+                auto owner = std::exchange( m_parentSection, nullptr );
+
+                CProceduralObject<IRoadElement>::unload( data );
+                for( auto &node : retired_sidewalks )
                 {
                     if( node )
                     {
-                        node->unload( nullptr );
+                        try { node->unload( nullptr ); }
+                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
                     }
                 }
 
-                m_sidewalks.clear();
-                m_parentSection = nullptr;
 
-                CProceduralObject<IRoadElement>::unload( data );
             }
             catch( std::exception &e )
             {
@@ -241,7 +243,7 @@ namespace workphone
         {
             auto nodes = getNodes();
 
-            auto roadNodes = Array<SmartPtr<IRoadNode>>();
+            auto roadNodes = Array<SmartPtr<IRoadNode>>( typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
             roadNodes.reserve( nodes.size() );
 
             for( auto &node : nodes )
@@ -272,8 +274,8 @@ namespace workphone
 
         void CRoadElement::setSidewalks( Array<SmartPtr<IRoadNode>> value )
         {
-            m_sidewalks.clear();
-            m_sidewalks.reserve( value.size() );
+            Array<SmartPtr<IRoadNode>> candidate{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
+            candidate.reserve( value.capacity() );
 
             for( auto &node : value )
             {
@@ -283,8 +285,9 @@ namespace workphone
                     continue;
                 }
 
-                m_sidewalks.push_back( node );
+                candidate.push_back( node );
             }
+            m_sidewalks.swap( candidate );
         }
 
         // ---------------------------------------------------------------

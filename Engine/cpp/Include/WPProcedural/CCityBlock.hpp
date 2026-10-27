@@ -42,7 +42,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            Array<SmartPtr<ILot>> m_lots;
+            Array<SmartPtr<ILot>> m_lots{ Allocator<SmartPtr<ILot>>( sourceBudget ) };
         };
     }  // namespace procedural
 }  // namespace workphone

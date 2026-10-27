@@ -37,7 +37,7 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
-    add_executable(WPMaterialSceneCpuAttributionTests MaterialSceneCpuAttributionTests.cpp)
+    add_executable(WPMaterialSceneCpuAttributionTests MaterialSceneCpuAttributionTests.cpp MaterialSceneCpuNativeFixture.c)
     target_compile_features(WPMaterialSceneCpuAttributionTests PRIVATE cxx_std_17)
     set_target_properties(WPMaterialSceneCpuAttributionTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPGraphics.material_scene_cpu_attribution_contract COMMAND WPMaterialSceneCpuAttributionTests)
@@ -50,6 +50,18 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
     set_tests_properties(WPGraphics.material_cpu_attribution_contract PROPERTIES
         LABELS "graphics;material;cpu;headless" TIMEOUT 30)
     if(WP_BUILD_RENDERER_DX11)
+        add_executable(WPMaterialProgramCaptureBenchmark MaterialProgramCaptureBenchmark.cpp)
+        target_compile_features(WPMaterialProgramCaptureBenchmark PRIVATE cxx_std_17)
+        target_include_directories(WPMaterialProgramCaptureBenchmark PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+            ${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+            ${WP_ROOT}/Dependencies/boost)
+        target_compile_definitions(WPMaterialProgramCaptureBenchmark PRIVATE BOOST_ALL_NO_LIB)
+        target_link_libraries(WPMaterialProgramCaptureBenchmark PRIVATE
+            WPGraphics Workphone WorkphoneGraphics WorkphoneCore d3d11 d3dcompiler dxguid)
+        target_link_directories(WPMaterialProgramCaptureBenchmark PRIVATE
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        set_target_properties(WPMaterialProgramCaptureBenchmark PROPERTIES FOLDER Tests/Cpp)
         add_executable(WPMaterialProgramBindingTests MaterialProgramBindingTests.cpp)
         target_include_directories(WPMaterialProgramBindingTests PRIVATE
             ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include

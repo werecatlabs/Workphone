@@ -3,6 +3,8 @@
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -57,16 +59,18 @@ namespace workphone
         {
             try
             {
-                m_parentSection = nullptr;
+                auto retired_vertices = std::move( m_vertices );
+                auto retired_indices = std::move( m_indices );
+                auto retired_polygons = std::move( m_polygons );
+                auto retiredPoints = std::move( Points );
+                auto owner = std::exchange( m_parentSection, nullptr );
 
-                m_vertices.clear();
-                m_indices.clear();
-                m_polygons.clear();
+                CProceduralObject<IRoadMeshElement>::unload( data );
+
 
                 TangentA = Vector3F( 0.0f, 0.0f, 0.0f );
                 TangentB = Vector3F( 0.0f, 0.0f, 0.0f );
                 CenterLine = Line3F();
-                Points.clear();
                 Box = AABB3F();
                 Width = kDefaultWidth;
                 WidthA = kDefaultWidth;
@@ -75,7 +79,6 @@ namespace workphone
 
                 m_isBuilt = false;
 
-                CProceduralObject<IRoadMeshElement>::unload( data );
             }
             catch( std::exception &e )
             {
@@ -118,7 +121,8 @@ namespace workphone
                     return;
                 }
 
-                m_vertices = vertices;
+                auto candidate = makeSourceBudgetSnapshot( vertices );
+                m_vertices.swap( candidate );
                 invalidateMesh();
             }
             catch( std::exception &e )
@@ -214,7 +218,8 @@ namespace workphone
                     }
                 }
 
-                m_indices = indices;
+                auto candidate = makeSourceBudgetSnapshot( indices );
+                m_indices.swap( candidate );
             }
             catch( std::exception &e )
             {
@@ -287,7 +292,8 @@ namespace workphone
                     }
                 }
 
-                m_polygons = polygons;
+                auto candidate = makeSourceBudgetSnapshot( polygons );
+                m_polygons.swap( candidate );
             }
             catch( std::exception &e )
             {
@@ -404,7 +410,8 @@ namespace workphone
                     WP_LOG_WARNING( "CRoadMeshElement::setPoints - insufficient points for road mesh." );
                 }
 
-                Points = points;
+                auto candidate = makeSourceBudgetSnapshot( points );
+                Points.swap( candidate );
                 invalidateMesh();
             }
             catch( std::exception &e )
@@ -478,6 +485,10 @@ namespace workphone
                     return;
                 }
 
+                if( Points.size() > std::numeric_limits<u32>::max() / 6 )
+                    throw std::length_error( "Road mesh exceeds index range" );
+                m_vertices.reserve( Points.size() * 2 );
+                m_indices.reserve( ( Points.size() - 1 ) * 6 );
                 updateCenterLine();
                 updateTangents();
                 generateVertices();
@@ -571,6 +582,9 @@ namespace workphone
 
         void CRoadMeshElement::generateVertices()
         {
+            if( Points.size() > std::numeric_limits<u32>::max() / 2 )
+                throw std::length_error( "Road mesh exceeds vertex range" );
+            m_vertices.reserve( Points.size() * 2 );
             m_vertices.clear();
 
             if( Points.size() < kMinPointsForBuild )
@@ -650,6 +664,8 @@ namespace workphone
 
         void CRoadMeshElement::generateIndices()
         {
+            if( Points.size() >= kMinPointsForBuild )
+                m_indices.reserve( ( Points.size() - 1 ) * 6 );
             m_indices.clear();
 
             const auto vertexPairCount = Points.size();

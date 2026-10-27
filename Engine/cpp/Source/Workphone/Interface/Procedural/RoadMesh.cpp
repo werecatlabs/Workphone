@@ -2,6 +2,8 @@
 #include "Workphone/Interface/Procedural/RoadMesh.hpp"
 #include <cmath>
 #include <algorithm>
+#include <limits>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -12,21 +14,64 @@ namespace workphone
 
         RoadMesh::~RoadMesh() = default;
 
+        RoadMesh::RoadMesh( const RoadMesh &other ) :
+            vertices( makeSourceBudgetSnapshot( other.vertices ) ),
+            indices( makeSourceBudgetSnapshot( other.indices ) )
+        {
+        }
+
+        RoadMesh &RoadMesh::operator=( const RoadMesh &other )
+        {
+            if( this != &other )
+            {
+                RoadMesh candidate( other );
+                swap( candidate );
+            }
+            return *this;
+        }
+
+        void RoadMesh::swap( RoadMesh &other ) noexcept
+        {
+            vertices.swap( other.vertices );
+            indices.swap( other.indices );
+        }
+
         // ===================================================================
         // RoadMesh helpers
         // ===================================================================
         void RoadMesh::append( const RoadMesh &other, const Vector3<real_Num> &offset )
         {
-            u32 base = static_cast<u32>( vertices.size() );
-            for( const auto &v : other.vertices )
+            const auto vertexCount = other.vertices.size();
+            const auto indexCount = other.indices.size();
+            if( vertices.size() > std::numeric_limits<u32>::max() ||
+                indices.size() > std::numeric_limits<u32>::max() ||
+                vertexCount > std::numeric_limits<u32>::max() - vertices.size() ||
+                indexCount > std::numeric_limits<u32>::max() - indices.size() )
             {
-                RoadVertex nv = v;
+                throw std::length_error( "Road mesh append exceeds index range" );
+            }
+            const u32 base = static_cast<u32>( vertices.size() );
+            // Admit both buffers before publishing geometry. Bounded indexed reads
+            // also permit self-append after reserve relocates the source storage.
+            if( vertices.capacity() < vertices.size() + vertexCount )
+            {
+                vertices.reserve( std::max( vertices.size() + vertexCount,
+                    vertices.capacity() + vertices.capacity() / 2 ) );
+            }
+            if( indices.capacity() < indices.size() + indexCount )
+            {
+                indices.reserve( std::max( indices.size() + indexCount,
+                    indices.capacity() + indices.capacity() / 2 ) );
+            }
+            for( size_t i = 0; i < vertexCount; ++i )
+            {
+                RoadVertex nv = other.vertices[i];
                 nv.position = nv.position + offset;
                 vertices.push_back( nv );
             }
-            for( u32 idx : other.indices )
+            for( size_t i = 0; i < indexCount; ++i )
             {
-                indices.push_back( base + idx );
+                indices.push_back( base + other.indices[i] );
             }
         }
 
@@ -93,6 +138,15 @@ namespace workphone
 
         void RoadMesh::addTriangle( u32 a, u32 b, u32 c )
         {
+            if( indices.size() > std::numeric_limits<u32>::max() - 3 )
+            {
+                throw std::length_error( "Road triangle exceeds index range" );
+            }
+            if( indices.capacity() - indices.size() < 3 )
+            {
+                indices.reserve( std::max( indices.size() + 3,
+                    indices.capacity() + indices.capacity() / 2 ) );
+            }
             indices.push_back( a );
             indices.push_back( b );
             indices.push_back( c );

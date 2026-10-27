@@ -77,6 +77,9 @@ namespace workphone::advanced
             m_forcedTreeLod = forcedTreeLod; m_forcedVehicleLod = forcedVehicleLod;
         }
         void setWorkload( const Workload &workload ) { m_workload = workload; }
+        bool isMeasuring() const { return m_measuring; }
+        MaterialSceneCpuProfile &materialCpu() { return m_materialCpu; }
+        void setMaterialEditEvidence(std::string value) { m_materialEditEvidence=std::move(value); }
         static void hashBytes( uint64_t &digest, const void *data, size_t count )
         {
             const auto bytes = static_cast<const unsigned char *>( data );
@@ -282,6 +285,7 @@ namespace workphone::advanced
                 << ",\"orderedCircuitFnv1a64\":" << m_workload.circuitDigest << "}";
             writeTelemetry( out );
             m_materialCpu.write( out );
+            out << ",\n\"materialEdits\":" << (m_materialEditEvidence.empty()?"null":m_materialEditEvidence);
             out << ",\n\"memorySamples\":[";
             for( size_t i = 0; i < m_sampleCount; ++i )
             {
@@ -467,6 +471,7 @@ namespace workphone::advanced
         std::array<uint64_t, FrameCapacity> m_frameIntervals{};
         size_t m_sampleCount = 0;
         uint64_t m_droppedSamples = 0, m_frames = 0, m_frequency = 0;
+        std::string m_materialEditEvidence;
         MaterialSceneCpuProfile m_materialCpu;
         uint64_t m_beginQpc = 0, m_endQpc = 0, m_lastFrameQpc = 0, m_nextMemoryQpc = 0;
         uint64_t m_cpuKernelBegin = 0, m_cpuKernelEnd = 0, m_cpuUserBegin = 0, m_cpuUserEnd = 0;

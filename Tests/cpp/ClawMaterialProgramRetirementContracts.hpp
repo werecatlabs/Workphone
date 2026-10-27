@@ -83,6 +83,7 @@ namespace claw_material_program_retirement_contracts
             context->Unmap(staging.Get(),0);
             require(valid, "Escaped native constants preserve the last submitted packed values after program retirement");
         };
+        bool captureAdmissionTested = false;
         const auto cycle = [&] {
             const auto before=scheduler->stats();
             ClawMaterialRenderCache cache; ClawMaterialDrawRecords redRecords, greenRecords;
@@ -108,6 +109,42 @@ namespace claw_material_program_retirement_contracts
                 require(vertexConstants && pixelConstants && sampler && shader,
                         "Program fixture escapes both native constant blocks, sampler and shader");
                 sampler->GetDesc(&samplerDescription); old->Unbind(native);
+                if(!captureAdmissionTested)
+                {
+                    // Constrain before constructing each cold publication.
+                    // Test both the shared owner and packed-payload allocations;
+                    // denied captures must leave the old publication usable.
+                    require(values.SetColour(values.FindParameter("Tint"),ColourF(0,1,0,1)),
+                            "Capture admission authors a new immutable payload");
+                    const auto resident=scheduler->stats();
+                    struct RestoreSourceLimit
+                    {
+                        std::shared_ptr<WorldStreamingScheduler> scheduler; u64 limit;
+                        ~RestoreSourceLimit() { String ignored; scheduler->setBudget(StreamMemoryClass::SourceCpu,limit,ignored); }
+                    } restoreSource{scheduler,resident.limits[source]};
+                    size_t denials=0; MaterialProgramDX11::PublicationPtr replacement;
+                    for(u64 allowance=0;allowance<=4096 && !replacement;allowance+=16)
+                    {
+                        String quotaError;
+                        require(scheduler->setBudget(StreamMemoryClass::SourceCpu,resident.used[source]+allowance,quotaError),quotaError);
+                        try { replacement=red->material()->getRuntimePublication(); }
+                        catch(const std::bad_alloc &) { ++denials; }
+                        if(!replacement)
+                            require(scheduler->stats().used[source]==resident.used[source],
+                                    "Every denied publication capture rolls back its complete SourceCpu allocation");
+                    }
+                    String quotaError;
+                    require(scheduler->setBudget(StreamMemoryClass::SourceCpu,resident.limits[source],quotaError),quotaError);
+                    require(replacement && denials>1 && replacement!=old && old->Bind(native,false),
+                            "Incremental capture admission retries without corrupting an escaped old publication");
+                    old->Unbind(native);
+                    require(replacement->Bind(native,false),"Replacement packed bytes/resources bind after admission retry");
+                    replacement->Unbind(native);
+                    draw(redRecords,false); // GPU readback still sees old red values.
+                    require(values.SetColour(values.FindParameter("Tint"),ColourF(1,0,0,1)) &&
+                            red->material()->getRuntimePublication(),"Normal publication capture remains retryable");
+                    captureAdmissionTested=true;
+                }
                 auto green=publisher.stageRuntime(payload,error); require(green && publisher.publish(green,error),error);
                 greenCandidate=green;
                 greenContext=green->material()->getTechnique(0)->getPass(0)->getStateContext().get();

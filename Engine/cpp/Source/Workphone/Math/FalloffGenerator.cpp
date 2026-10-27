@@ -12,11 +12,12 @@ namespace workphone
     template <class T>
     auto FalloffGenerator<T>::generate() -> Array<Array<T>>
     {
-        Array<Array<T>> map;
+        Array<Array<T>> map{ Allocator<Array<T>>( sourceBudget ) };
         map.resize( m_size );
 
         for( s32 i = 0; i < m_size; i++ )
         {
+            map[i] = Array<T>{ Allocator<T>( sourceBudget ) };
             map[i].resize( m_size );
         }
 

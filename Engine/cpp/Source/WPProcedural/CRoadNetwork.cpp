@@ -169,7 +169,7 @@ namespace workphone
                     m_roads.erase( it );
 
                     // Clean up cached data
-                    m_cachedSegmentResults.erase( road.get() );
+                    if( m_cachedSegmentResults ) m_cachedSegmentResults->erase( road.get() );
                 }
             }
             catch( std::exception &e )
@@ -261,7 +261,7 @@ namespace workphone
                     m_roadConnections.erase( it );
 
                     // Clean up cached data
-                    m_cachedIntersectionResults.erase( roadConnection.get() );
+                    if( m_cachedIntersectionResults ) m_cachedIntersectionResults->erase( roadConnection.get() );
                 }
             }
             catch( std::exception &e )
@@ -536,19 +536,26 @@ namespace workphone
                     return nullptr;
                 }
 
-                auto it = m_cachedSegmentResults.find( road.get() );
-                if( it != m_cachedSegmentResults.end() && it->second.has_value() )
+                if( m_cachedSegmentResults )
                 {
-                    return &it->second.value();
+                    auto it = m_cachedSegmentResults->find( road.get() );
+                    if( it != m_cachedSegmentResults->end() ) return &it->second;
                 }
 
                 // Try to get from user data
                 auto userData = road->getUserData( StringUtil::getHash( "WPRoadSegmentResult" ) );
                 if( userData )
                 {
-                    // Cache it for future use
-                    m_cachedSegmentResults[road.get()] = *static_cast<RoadSegmentResult *>( userData );
-                    return &m_cachedSegmentResults[road.get()].value();
+                    if( !m_cachedSegmentResults )
+                    {
+                        auto candidate = makeSourceBudgetUnique<SegmentCache>();
+                        auto entry = candidate->try_emplace(
+                            road.get(), *static_cast<RoadSegmentResult *>( userData ) ).first;
+                        m_cachedSegmentResults = std::move( candidate );
+                        return &entry->second;
+                    }
+                    return &m_cachedSegmentResults->try_emplace(
+                        road.get(), *static_cast<RoadSegmentResult *>( userData ) ).first->second;
                 }
 
                 return nullptr;
@@ -575,20 +582,26 @@ namespace workphone
                     return nullptr;
                 }
 
-                auto it = m_cachedIntersectionResults.find( connection.get() );
-                if( it != m_cachedIntersectionResults.end() && it->second.has_value() )
+                if( m_cachedIntersectionResults )
                 {
-                    return &it->second.value();
+                    auto it = m_cachedIntersectionResults->find( connection.get() );
+                    if( it != m_cachedIntersectionResults->end() ) return &it->second;
                 }
 
                 // Try to get from user data
                 auto userData = connection->getUserData( StringUtil::getHash( "WPIntersectionResult" ) );
                 if( userData )
                 {
-                    // Cache it for future use
-                    m_cachedIntersectionResults[connection.get()] =
-                        *static_cast<IntersectionResult *>( userData );
-                    return &m_cachedIntersectionResults[connection.get()].value();
+                    if( !m_cachedIntersectionResults )
+                    {
+                        auto candidate = makeSourceBudgetUnique<IntersectionCache>();
+                        auto entry = candidate->try_emplace(
+                            connection.get(), *static_cast<IntersectionResult *>( userData ) ).first;
+                        m_cachedIntersectionResults = std::move( candidate );
+                        return &entry->second;
+                    }
+                    return &m_cachedIntersectionResults->try_emplace(
+                        connection.get(), *static_cast<IntersectionResult *>( userData ) ).first->second;
                 }
 
                 return nullptr;
@@ -615,12 +628,30 @@ namespace workphone
                     return;
                 }
 
-                // Store in user data for the road
-                road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                   new RoadSegmentResult( result ) );
-
-                // Also cache it
-                m_cachedSegmentResults[road.get()] = result;
+                auto owned = std::make_unique<RoadSegmentResult>( result );
+                RoadSegmentResult candidate( result );
+                auto pendingCache = m_cachedSegmentResults ? SourceBudgetUnique<SegmentCache>{} :
+                    makeSourceBudgetUnique<SegmentCache>();
+                auto &cache = m_cachedSegmentResults ? *m_cachedSegmentResults : *pendingCache;
+                auto entry = cache.find( road.get() );
+                const bool inserted = entry == cache.end();
+                if( inserted )
+                {
+                    entry = cache.try_emplace( road.get(), std::move( candidate ) ).first;
+                }
+                try
+                {
+                    // Ownership transfers only after successful metadata publication.
+                    road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), owned.get() );
+                    owned.release();
+                }
+                catch( ... )
+                {
+                    if( inserted ) cache.erase( entry );
+                    throw;
+                }
+                if( !inserted ) entry->second.swap( candidate );
+                if( pendingCache ) m_cachedSegmentResults = std::move( pendingCache );
             }
             catch( std::exception &e )
             {
@@ -645,12 +676,30 @@ namespace workphone
                     return;
                 }
 
-                // Store in user data for the connection
-                connection->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
-                                         new IntersectionResult( result ) );
-
-                // Also cache it
-                m_cachedIntersectionResults[connection.get()] = result;
+                auto owned = std::make_unique<IntersectionResult>( result );
+                IntersectionResult candidate( result );
+                auto pendingCache = m_cachedIntersectionResults ? SourceBudgetUnique<IntersectionCache>{} :
+                    makeSourceBudgetUnique<IntersectionCache>();
+                auto &cache = m_cachedIntersectionResults ? *m_cachedIntersectionResults : *pendingCache;
+                auto entry = cache.find( connection.get() );
+                const bool inserted = entry == cache.end();
+                if( inserted )
+                {
+                    entry = cache.try_emplace( connection.get(), std::move( candidate ) ).first;
+                }
+                try
+                {
+                    // Ownership transfers only after successful metadata publication.
+                    connection->setUserData( StringUtil::getHash( "WPIntersectionResult" ), owned.get() );
+                    owned.release();
+                }
+                catch( ... )
+                {
+                    if( inserted ) cache.erase( entry );
+                    throw;
+                }
+                if( !inserted ) entry->second.swap( candidate );
+                if( pendingCache ) m_cachedIntersectionResults = std::move( pendingCache );
             }
             catch( std::exception &e )
             {

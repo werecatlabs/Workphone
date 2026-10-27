@@ -2,6 +2,8 @@
 #include <WPProcedural/CBlockGenerator.hpp>
 #include <WPProcedural/CCityBlock.hpp>
 #include <WPProcedural/PlanarGraph.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
+#include <Workphone/System/SourceBudgetVector.hpp>
 #include <Workphone/Interface/Procedural/IProceduralCity.hpp>
 #include <Workphone/Interface/Procedural/IRoadNetwork.hpp>
 #include <Workphone/Interface/Procedural/IRoadNode.hpp>
@@ -28,8 +30,8 @@ namespace workphone
             struct RoadGraph
             {
                 Graph graph;
-                std::vector<Vector3<real_Num>> positions;
-                std::set<Edge> edges;
+                SourceBudgetVector<Vector3<real_Num>> positions;
+                SourceBudgetSet<Edge> edges;
             };
 
             Edge edgeKey( u32 a, u32 b )
@@ -41,7 +43,7 @@ namespace workphone
             {
                 RoadGraph result;
                 // Include ordinary nodes: merged lists can contain only junctions.
-                Array<SmartPtr<IProceduralNode>> nodes;
+                Array<SmartPtr<IProceduralNode>> nodes{ typename Array<SmartPtr<IProceduralNode>>::allocator_type( sourceBudget ) };
                 for( auto node : network->getMergedNodes() )
                 {
                     nodes.push_back( node );
@@ -50,9 +52,9 @@ namespace workphone
                 {
                     nodes.push_back( node );
                 }
-                std::map<IProceduralNode *, u32> ids;
-                std::map<std::pair<real_Num, real_Num>, u32> coordinates;
-                std::vector<SmartPtr<IProceduralNode>> representatives;
+                SourceBudgetMap<IProceduralNode *, u32> ids;
+                SourceBudgetMap<std::pair<real_Num, real_Num>, u32> coordinates;
+                SourceBudgetVector<SmartPtr<IProceduralNode>> representatives;
                 for( auto node : nodes )
                 {
                     if( !node )
@@ -60,7 +62,7 @@ namespace workphone
                         continue;
                     }
                     auto representative = node;
-                    std::set<IProceduralNode *> seen;
+                    SourceBudgetSet<IProceduralNode *> seen;
                     while( auto merged = representative->getMergedNode() )
                     {
                         if( !seen.insert( representative.get() ).second )
@@ -126,7 +128,7 @@ namespace workphone
                         }
                         auto to = ids.find( neighbor.get() );
                         // Resolve connections to source nodes omitted from the network's node lists.
-                        std::set<IProceduralNode *> seen;
+                        SourceBudgetSet<IProceduralNode *> seen;
                         while( to == ids.end() && neighbor )
                         {
                             if( !seen.insert( neighbor.get() ).second )
@@ -205,7 +207,7 @@ namespace workphone
             {
                 auto input = buildRoadGraph( network );
                 validateEmbedding( input );
-                Array<Graph::Primitive *> primitives;
+                Array<Graph::Primitive *> primitives{ typename Array<Graph::Primitive *>::allocator_type( sourceBudget ) };
 
                 struct Cleanup
                 {
@@ -221,7 +223,7 @@ namespace workphone
                 } cleanup{ primitives };
 
                 input.graph.ExtractPrimitives( primitives );
-                Array<SmartPtr<ICityBlock>> blocks;
+                Array<SmartPtr<ICityBlock>> blocks{ typename Array<SmartPtr<ICityBlock>>::allocator_type( sourceBudget ) };
                 for( const auto primitive : primitives )
                 {
                     const auto &sequence = primitive->Sequence;
@@ -230,7 +232,7 @@ namespace workphone
                     {
                         continue;  // Isolated vertices and bridge chains are not city blocks.
                     }
-                    std::set<u32> vertices;
+                    SourceBudgetSet<u32> vertices;
                     for( const auto &point : sequence )
                     {
                         vertices.insert( point.second );
@@ -260,7 +262,7 @@ namespace workphone
 
         void CBlockGenerator::unload( SmartPtr<ISharedObject> object )
         {
-            m_generatedBlocks.clear();
+            auto blocks = std::move( m_generatedBlocks );
             m_city = nullptr;
             m_input = nullptr;
             m_output = nullptr;
@@ -281,24 +283,25 @@ namespace workphone
             }
             // Build and validate first so malformed input preserves the previous result.
             auto blocks = buildBlocks( network );
-            auto previous = std::find_if( m_generatedBlocks.begin(), m_generatedBlocks.end(),
-                                          [&]( const auto &entry ) { return entry.city == m_city; } );
-            if( previous == m_generatedBlocks.end() )
+            auto entries = makeSourceBudgetSnapshot( m_generatedBlocks );
+            auto previous = std::find_if( entries.begin(), entries.end(),
+                [&]( const auto &entry ) { return entry.city == m_city; } );
+            if( previous == entries.end() )
             {
-                m_generatedBlocks.push_back( CityBlocks{ m_city, {} } );
-                previous = m_generatedBlocks.end() - 1;
+                entries.push_back( CityBlocks{ m_city } );
+                previous = entries.end() - 1;
             }
-            previous->blocks.reserve( blocks.size() );
-            for( auto block : previous->blocks )
+            auto combined = m_city->getBlocks();
+            for( const auto &block : previous->blocks )
             {
-                m_city->removeBlock( block );
+                auto found = std::find( combined.begin(), combined.end(), block );
+                if( found != combined.end() ) combined.erase( found );
             }
-            previous->blocks.clear();
-            for( auto block : blocks )
-            {
-                m_city->addBlock( block );
-                previous->blocks.push_back( block );
-            }
+            combined.reserve( combined.size() + blocks.size() );
+            for( const auto &block : blocks ) combined.push_back( block );
+            previous->blocks = std::move( blocks );
+            m_city->setBlocks( combined );
+            m_generatedBlocks.swap( entries );
         }
 
         SmartPtr<IProceduralCity> CBlockGenerator::getCity() const

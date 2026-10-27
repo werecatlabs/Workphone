@@ -3,6 +3,8 @@
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
+#include <Workphone/System/SourceBudgetVector.hpp>
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -22,9 +24,9 @@ namespace workphone
         class PlanarGraph
         {
         public:
-            struct Primitive
+            struct Primitive : SourceBudgetObject
             {
-                Array<std::pair<T, u32>> Sequence;
+                Array<std::pair<T, u32>> Sequence{ Allocator<std::pair<T, u32>>( sourceBudget ) };
             };
 
             /// IDs need not be contiguous. Repeating an ID is an error.
@@ -47,7 +49,7 @@ namespace workphone
                     }
                 }
                 const auto index = m_vertices.size();
-                m_vertices.push_back( Vertex{ position, id, {} } );
+                m_vertices.push_back( Vertex{ position, id } );
                 try
                 {
                     m_indices.emplace( id, index );
@@ -94,7 +96,7 @@ namespace workphone
                 using Index = size_t;
                 const Index count = m_vertices.size();
                 const Index none = count;
-                std::vector<std::vector<Index>> adjacency( count );
+                SourceBudgetVector<SourceBudgetVector<Index>> adjacency( count );
                 for( Index i = 0; i < count; ++i )
                 {
                     adjacency[i].assign( m_vertices[i].ConnectedVertices.begin(),
@@ -102,9 +104,9 @@ namespace workphone
                 }
 
                 // Iterative low-link traversal identifies bridges without recursion depth limits.
-                std::vector<Index> discovery( count, none ), low( count ), parent( count, none );
-                std::vector<Index> next( count, 0 ), stack;
-                std::map<std::pair<Index, Index>, bool> bridges;
+                SourceBudgetVector<Index> discovery( count, none ), low( count ), parent( count, none );
+                SourceBudgetVector<Index> next( count, 0 ), stack;
+                SourceBudgetMap<std::pair<Index, Index>, bool> bridges;
                 auto edgeKey = []( Index a, Index b ) { return std::make_pair( std::min( a, b ), std::max( a, b ) ); };
                 Index time = 0;
                 for( Index root = 0; root < count; ++root )
@@ -148,8 +150,8 @@ namespace workphone
                     }
                 }
 
-                std::vector<std::unique_ptr<Primitive>> results;
-                auto emit = [&]( const std::vector<Index> &sequence ) {
+                SourceBudgetVector<std::unique_ptr<Primitive>> results;
+                auto emit = [&]( const SourceBudgetVector<Index> &sequence ) {
                     auto primitive = std::make_unique<Primitive>();
                     for( auto index : sequence )
                     {
@@ -177,7 +179,7 @@ namespace workphone
                         {
                             continue;
                         }
-                        std::vector<Index> sequence{ v };
+                        SourceBudgetVector<Index> sequence{ v };
                         auto previous = v;
                         auto current = w;
                         for( ;; )
@@ -215,7 +217,7 @@ namespace workphone
                         return aa == ab ? a < b : aa < ab;
                     } );
                 }
-                std::map<std::pair<Index, Index>, bool> visited;
+                SourceBudgetMap<std::pair<Index, Index>, bool> visited;
                 for( Index v = 0; v < count; ++v )
                 {
                     for( auto w : adjacency[v] )
@@ -224,7 +226,7 @@ namespace workphone
                         {
                             continue;
                         }
-                        std::vector<Index> sequence;
+                        SourceBudgetVector<Index> sequence;
                         auto a = v, b = w;
                         long double area = 0;
                         do
@@ -251,12 +253,11 @@ namespace workphone
                         }
                     }
                 }
-                primitives.reserve( primitives.size() + results.size() );
-                for( auto &result : results )
-                {
-                    primitives.push_back( result.get() );
-                    result.release();
-                }
+                auto output = makeSourceBudgetSnapshot( primitives );
+                output.reserve( output.size() + results.size() );
+                for( auto &result : results ) output.push_back( result.get() );
+                primitives.swap( output );
+                for( auto &result : results ) result.release();
             }
 
         private:
@@ -264,11 +265,11 @@ namespace workphone
             {
                 T Position;
                 u32 Id;
-                Array<size_t> ConnectedVertices;
+                Array<size_t> ConnectedVertices{ Allocator<size_t>( sourceBudget ) };
             };
 
-            Array<Vertex> m_vertices;
-            std::map<u32, size_t> m_indices;
+            Array<Vertex> m_vertices{ Allocator<Vertex>( sourceBudget ) };
+            SourceBudgetMap<u32, size_t> m_indices;
         };
     }  // namespace procedural
 }  // namespace workphone

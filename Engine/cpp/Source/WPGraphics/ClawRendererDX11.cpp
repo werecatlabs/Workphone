@@ -3,6 +3,7 @@
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawMesh.hpp>
+#include <WPGraphics/ClawTexture.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawTerrain.hpp>
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <typeinfo>
 #include <unordered_map>
 
 namespace workphone::render
@@ -1007,6 +1009,18 @@ namespace workphone::render
                 return fallbackTexture.get();
             };
 
+            // Resolve against this draw's renderer. The explicit path avoids
+            // rediscovering the application/graphics backend for every map.
+            // Render targets, derived overrides and external adapters keep their path;
+            // no native view survives this section's submission.
+            const auto resolveTexture = [&]( ITexture *texture ) -> void * {
+                if( typeid( *texture ) == typeid( ClawTexture ) )
+                    if( auto view = static_cast<ClawTexture *>( texture )->getNativeTextureView( dx11 ) ) return view;
+                void *view = nullptr;
+                texture->getTextureFinal( &view );
+                return view;
+            };
+
             if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
                 continue;
 
@@ -1017,7 +1031,7 @@ namespace workphone::render
             {
                 if( auto texture = getTexture( 0 ) )
                 {
-                    texture->getTextureFinal( &nativeTexture );
+                    nativeTexture = resolveTexture( texture );
                 }
             }
 
@@ -1037,7 +1051,7 @@ namespace workphone::render
                 {
                     if( auto texture = getTexture( prepared ? prepared->textureSlots[i] : defaultTextureSlots[i] ) )
                     {
-                        texture->getTextureFinal( &textureViews[i] );
+                        textureViews[i] = resolveTexture( texture );
                     }
                 }
             }
@@ -1069,8 +1083,7 @@ namespace workphone::render
                 if( auto reflection =
                         getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
                 {
-                    void *view = nullptr;
-                    reflection->getTextureFinal( &view );
+                    void *view = resolveTexture( reflection );
                     if( view )
                     {
                         D3D11_SHADER_RESOURCE_VIEW_DESC desc{};

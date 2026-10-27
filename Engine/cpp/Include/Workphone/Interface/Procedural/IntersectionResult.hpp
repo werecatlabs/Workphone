@@ -22,8 +22,30 @@ namespace workphone
         /// markings:     stop lines, zebra stripes, arrows
         /// kerbs:        junction kerb geometry
         /// dressing:     junction debris / grit detail
-        struct IntersectionResult
+        struct IntersectionResult : SourceBudgetObject
         {
+            IntersectionResult() = default;
+            IntersectionResult( const IntersectionResult & ) = default;
+            IntersectionResult( IntersectionResult && ) noexcept = default;
+            IntersectionResult &operator=( IntersectionResult && ) noexcept = default;
+            IntersectionResult &operator=( const IntersectionResult &other )
+            {
+                if( this != &other )
+                {
+                    IntersectionResult candidate( other );
+                    swap( candidate );
+                }
+                return *this;
+            }
+            void swap( IntersectionResult &other ) noexcept
+            {
+                surface.swap( other.surface );
+                centerIsland.swap( other.centerIsland );
+                markings.swap( other.markings );
+                kerbs.swap( other.kerbs );
+                dressing.swap( other.dressing );
+            }
+
             RoadMesh surface;
             RoadMesh centerIsland;
             RoadMesh markings;

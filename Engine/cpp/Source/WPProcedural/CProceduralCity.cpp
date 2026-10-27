@@ -155,6 +155,14 @@ namespace workphone
             m_blocks.push_back( block );
         }
 
+        void CProceduralCity::setBlocks( const Array<SmartPtr<ICityBlock>> &blocks )
+        {
+            if( blocks.size() > m_options.maxBlocks )
+                throw std::length_error( "Procedural city block limit exceeded" );
+            auto candidate = makeSourceBudgetSnapshot( blocks );
+            m_blocks.swap( candidate );
+        }
+
         void CProceduralCity::removeBlock( SmartPtr<ICityBlock> block )
         {
             if( !block )

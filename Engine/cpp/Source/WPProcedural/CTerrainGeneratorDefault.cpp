@@ -3,7 +3,6 @@
 #include <WPProcedural/CProceduralTerrain.hpp>
 #include <Workphone/Interface/Procedural/IProceduralScene.hpp>
 #include <Workphone/Math/PerlinNoiseGenerator.hpp>
-#include <Workphone/Math/LinearSpline1.hpp>
 #include <Workphone/Math/FalloffGenerator.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
@@ -40,8 +39,8 @@ namespace workphone
 
         void CTerrainGeneratorDefault::generate()
         {
+            const auto wasFinished = m_finished;
             m_finished = false;
-            m_terrain = nullptr;
 
             validate();
 
@@ -66,6 +65,7 @@ namespace workphone
             catch( ... )
             {
                 m_isGenerating = false;
+                m_finished = wasFinished;
                 throw;
             }
             m_isGenerating = false;
@@ -148,7 +148,6 @@ namespace workphone
             const auto depth = m_options.depth;
 
             auto terrainData = workphone::make_ptr<CProceduralTerrain>();
-            m_terrain = terrainData;
 
             terrainData->setHeightmapResolution( Vector2I( width + 1, height + 1 ) );
             terrainData->setAlphamapResolution( Vector2I( width, height ) );
@@ -157,7 +156,7 @@ namespace workphone
             terrainData->setSize( Vector3F( static_cast<f32>( width ), static_cast<f32>( depth ),
                                             static_cast<f32>( height ) ) );
 
-            Array<Array<real_Num>> falloff;
+            Array<Array<real_Num>> falloff{ typename Array<Array<real_Num>>::allocator_type( sourceBudget ) };
             if( m_options.useFalloffMap )
             {
                 FalloffGenerator<real_Num> falloffGenerator;
@@ -170,7 +169,7 @@ namespace workphone
 
             auto noiseMap = generateNoise( falloff );
 
-            Array<f32> heightData;
+            Array<f32> heightData{ typename Array<f32>::allocator_type( sourceBudget ) };
             heightData.reserve( width * height );
 
             for( auto x = 0; x < noiseMap.size(); ++x )
@@ -183,6 +182,7 @@ namespace workphone
 
             terrainData->setHeightData( heightData );
             scene->addTerrain( terrainData );
+            m_terrain = terrainData;
         }
 
         Array<Array<real_Num>> CTerrainGeneratorDefault::generateNoise(
@@ -192,9 +192,6 @@ namespace workphone
             const auto height = m_options.height;
             const auto size = std::max( width, height );
 
-            LinearSpline1<real_Num> heightCurve;
-            auto points = Array<real_Num>( { 0.0, 1.0 } );
-            heightCurve.setPoints( points );
 
             real_Num maxLocalNoiseHeight = 1000.0f;
             real_Num minLocalNoiseHeight = 0.0f;

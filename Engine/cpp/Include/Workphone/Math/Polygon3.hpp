@@ -41,6 +41,18 @@ namespace workphone
          * @brief Destructor.
          */
         ~Polygon3();
+        Polygon3( Polygon3 && ) noexcept = default;
+        Polygon3 &operator=( Polygon3 && ) noexcept = default;
+        Polygon3 &operator=( const Polygon3 &other )
+        {
+            if( this != &other )
+            {
+                auto candidate = makeSourceBudgetSnapshot( other.m_points );
+                m_points.swap( candidate );
+            }
+            return *this;
+        }
+        void swap( Polygon3 &other ) noexcept { m_points.swap( other.m_points ); }
 
         /**
          * @brief Adds a 3D point to the polygon.
@@ -154,7 +166,7 @@ namespace workphone
         /**
          * @brief The points in the polygon.
          */
-        Array<Vector3<T>> m_points;
+        Array<Vector3<T>> m_points{ Allocator<Vector3<T>>( sourceBudget ) };
     };
 
     /**

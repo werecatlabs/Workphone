@@ -16,6 +16,14 @@ namespace workphone::advanced
     // geometry, visibility, LOD and material ownership. Compilation is pre-warm.
     inline void installMaterialCpuPrograms(SceneAssets &assets, render::ClawRendererDX11 &renderer)
     {
+        auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());
+        if(const auto mode=std::getenv("WP_MATERIAL_SCENE_UPLOAD_MODE"))
+        {
+            if(std::strcmp(mode,"combined") && std::strcmp(mode,"split"))
+                throw std::runtime_error("Unknown material scene upload mode");
+            if(!wp_renderer_dx11_set_material_upload_mode(native,std::strcmp(mode,"split")==0))
+                throw std::runtime_error("Material scene upload mode unavailable");
+        }
         if(!std::getenv("WP_MATERIAL_SCENE_CUSTOM")) return;
         using namespace render;
         using Microsoft::WRL::ComPtr;
@@ -26,7 +34,6 @@ namespace workphone::advanced
         if(FAILED(D3DCompile(source,std::strlen(source),"MaterialSceneCpu",nullptr,nullptr,"main","ps_5_0",
                             D3DCOMPILE_ENABLE_STRICTNESS,0,&code,&diagnostic)))
             throw std::runtime_error("Material CPU scene shader compilation failed");
-        auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());
         auto device=static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(native));
         D3D11_SAMPLER_DESC desc{};desc.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;
         desc.AddressU=desc.AddressV=desc.AddressW=D3D11_TEXTURE_ADDRESS_WRAP;desc.MaxLOD=D3D11_FLOAT32_MAX;

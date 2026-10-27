@@ -14,6 +14,7 @@ namespace workphone
         public:
             CProceduralTerrain();
             ~CProceduralTerrain() override;
+            void unload( SmartPtr<ISharedObject> data ) override;
 
             Vector3F getSize() const override;
             void setSize( const Vector3F &size ) override;
@@ -39,7 +40,7 @@ namespace workphone
             Vector2I m_alphamapResolution = Vector2I::zero();
             Vector2I m_detailResolution = Vector2I::zero();
             s32 m_detailResolutionPerPatch = 0;
-            Array<f32> m_heightData;
+            Array<f32> m_heightData{ Allocator<f32>( sourceBudget ) };
         };
     }  // end namespace procedural
 }  // namespace workphone

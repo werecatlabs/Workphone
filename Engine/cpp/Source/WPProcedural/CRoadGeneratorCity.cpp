@@ -200,8 +200,9 @@ namespace workphone
                     road->addNode( endNode );
                 }
 
-                road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
-                                   new RoadSegmentResult( segResult ) );
+                auto payload = std::make_unique<RoadSegmentResult>( segResult );
+                road->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                payload.release();
 
                 roads.push_back( road );
 
@@ -221,7 +222,7 @@ namespace workphone
                 Vector3<real_Num> center;
                 IntersectionType type;
                 RoadClass roadClass;
-                Array<Vector3<real_Num>> approaches;
+                Array<Vector3<real_Num>> approaches{ typename Array<Vector3<real_Num>>::allocator_type( sourceBudget ) };
             };
 
             IntersectionInfo planIntersection( const WPNoise &noise, s32 col, s32 row, s32 gridX,
@@ -402,8 +403,9 @@ namespace workphone
                                          : ii.type == IntersectionType::DeadEnd    ? "Dead end"
                                                                                    : "Intersection" );
                 conn->setPosition( ii.center );
-                conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
-                                   new IntersectionResult( intResult ) );
+                auto payload = std::make_unique<IntersectionResult>( intResult );
+                conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ), payload.get() );
+                payload.release();
 
                 connections.push_back( conn );
                 return conn;
@@ -426,6 +428,19 @@ namespace workphone
         // ===================================================================
         // generate() - entry point
         // ===================================================================
+
+        void CRoadGeneratorCity::clear()
+        {
+            auto cities = std::move( m_cities );
+            auto city = std::exchange( m_city, nullptr );
+            auto network = std::exchange( m_roadNetwork, nullptr );
+            auto generator = std::exchange( m_cityGenerator, nullptr );
+            auto layer = std::exchange( m_selectedLayer, nullptr );
+            auto input = std::exchange( m_input, nullptr );
+            auto output = std::exchange( m_output, nullptr );
+            auto parent = std::exchange( m_parent, nullptr );
+            CRoadGenerator::clear();
+        }
 
         void CRoadGeneratorCity::generate()
         {
@@ -467,7 +482,8 @@ namespace workphone
             // Pre-compute non-uniform column and row offsets so the grid
             // is not perfectly rectangular. This is the single most
             // effective trick for making a procedural city feel hand-placed.
-            Array<real_Num> colOffsets, rowOffsets;
+            Array<real_Num> colOffsets{ Allocator<real_Num>( sourceBudget ) };
+            Array<real_Num> rowOffsets{ Allocator<real_Num>( sourceBudget ) };
             colOffsets.resize( kGridSizeX );
             rowOffsets.resize( kGridSizeY );
             for( s32 c = 0; c < kGridSizeX; ++c )
@@ -484,10 +500,11 @@ namespace workphone
             // ---------------------------------------------------------------
             // Pre-compute intersection centres.
             // intersections[col][row]
-            Array<Array<Vector3<real_Num>>> intersections;
+            Array<Array<Vector3<real_Num>>> intersections{ typename Array<Array<Vector3<real_Num>>>::allocator_type( sourceBudget ) };
             intersections.resize( kGridSizeX );
             for( auto &col : intersections )
             {
+                col = Array<Vector3<real_Num>>{ Allocator<Vector3<real_Num>>( sourceBudget ) };
                 col.resize( kGridSizeY );
             }
 
@@ -501,7 +518,8 @@ namespace workphone
             }
 
             // Road classes per row (horizontal) and per column (vertical).
-            Array<RoadClass> hClasses, vClasses;
+            Array<RoadClass> hClasses{ Allocator<RoadClass>( sourceBudget ) };
+            Array<RoadClass> vClasses{ Allocator<RoadClass>( sourceBudget ) };
             hClasses.resize( kGridSizeY );
             vClasses.resize( kGridSizeX );
             for( s32 r = 0; r < kGridSizeY; ++r )
@@ -517,8 +535,8 @@ namespace workphone
             // Build the AAA road system.
             WPRoadSystem roadSystem( kBaseSeed );
 
-            Array<SmartPtr<IRoad>> roads;
-            Array<SmartPtr<IRoadConnection>> connections;
+            Array<SmartPtr<IRoad>> roads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
+            Array<SmartPtr<IRoadConnection>> connections{ typename Array<SmartPtr<IRoadConnection>>::allocator_type( sourceBudget ) };
 
             // ---------------------------------------------------------------
             // Build horizontal roads (running along X, at each row).

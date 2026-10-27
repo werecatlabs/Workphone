@@ -79,7 +79,7 @@ namespace workphone
             Vector3F TangentA;
             Vector3F TangentB;
             Line3F CenterLine;
-            Array<Vector3F> Points;
+            Array<Vector3F> Points{ Allocator<Vector3F>( sourceBudget ) };
             AABB3F Box;
             f32 Width;
             f32 WidthA;
@@ -91,9 +91,9 @@ namespace workphone
         private:
             // Internal state
             SmartPtr<IRoadSection> m_parentSection;
-            Array<Vector3<real_Num>> m_vertices;
-            Array<u32> m_indices;
-            Array<Polygon3<real_Num>> m_polygons;
+            Array<Vector3<real_Num>> m_vertices{ Allocator<Vector3<real_Num>>( sourceBudget ) };
+            Array<u32> m_indices{ Allocator<u32>( sourceBudget ) };
+            Array<Polygon3<real_Num>> m_polygons{ Allocator<Polygon3<real_Num>>( sourceBudget ) };
             bool m_isBuilt;
 
             // Width validation

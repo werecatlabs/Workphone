@@ -81,10 +81,9 @@ namespace workphone
 
             SmartPtr<IRoad>
                 m_parentRoad;  ///< Parent road that owns this section (may be null during construction).
-            Array<SmartPtr<ISidewalk>> m_sidewalks;  ///< Sidewalk objects flanking this section.
-            Array<Array<SmartPtr<IRoadElement>>>
-                m_roadElements;  ///< 2-D grouping used during road splitting (columns = connection spans).
-            Array<SmartPtr<IRoadElement>> m_elements;  ///< Final flat list of road element segments.
+            Array<SmartPtr<ISidewalk>> m_sidewalks{ Allocator<SmartPtr<ISidewalk>>( sourceBudget ) };  ///< Sidewalk objects flanking this section.
+            Array<Array<SmartPtr<IRoadElement>>> m_roadElements{ Allocator<Array<SmartPtr<IRoadElement>>>( sourceBudget ) };  ///< 2-D grouping used during road splitting (columns = connection spans).
+            Array<SmartPtr<IRoadElement>> m_elements{ Allocator<SmartPtr<IRoadElement>>( sourceBudget ) };  ///< Final flat list of road element segments.
         };
     }  // namespace procedural
 }  // namespace workphone

@@ -1,5 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Math/Polygon2.hpp>
+#include <limits>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -669,7 +671,7 @@ namespace workphone
     template <class T>
     void Polygon2<T>::changePointOrdering()
     {
-        Array<Vector2<T>> tempPoints;
+        Array<Vector2<T>> tempPoints{ Allocator<Vector2<T>>( sourceBudget ) };
         auto numPoints = m_points.size();
         WP_ASSERT( MathI::isFinite( static_cast<s32>( numPoints ) ) );
         tempPoints.reserve( numPoints );
@@ -681,7 +683,7 @@ namespace workphone
             tempPoints.push_back( p );
         }
 
-        m_points = tempPoints;
+        m_points.swap( tempPoints );
     }
 
     template <class T>
@@ -761,7 +763,7 @@ namespace workphone
 #else
 #    include "FBMath/line2.h"
 
-        Array<Line2<T>> lines;
+        Array<Line2<T>> lines{ Allocator<Line2<T>>( sourceBudget ) };
         u32 numPolygonPoints = Points.size();
         for( u32 pointIdx = 0; pointIdx < numPolygonPoints; ++pointIdx )
         {
@@ -904,18 +906,18 @@ namespace workphone
     template <class T>
     void Polygon2<T>::setPoints( const Array<Vector2<T>> &points )
     {
-        m_points = points;
+        auto candidate = makeSourceBudgetSnapshot( points );
+        m_points.swap( candidate );
     }
 
     template <class T>
     void Polygon2<T>::addPoints( const Array<Vector2<T>> &points )
     {
-        for( size_t i = 0; i < points.size(); ++i )
-        {
-            auto p = points[i];
-            WP_ASSERT( p.isValid() );
-            m_points.push_back( p );
-        }
+        const auto count = points.size();
+        if( count > std::numeric_limits<size_t>::max() - m_points.size() )
+            throw std::length_error( "Polygon point count overflow" );
+        m_points.reserve( m_points.size() + count );
+        for( size_t i = 0; i < count; ++i ) m_points.push_back( points[i] );
     }
 
     template <class T>
@@ -976,7 +978,8 @@ namespace workphone
     template <class T>
     Polygon2<T>::Polygon2( const Array<Vector2<T>> &points )
     {
-        m_points = points;
+        auto candidate = makeSourceBudgetSnapshot( points );
+        m_points.swap( candidate );
     }
 
     template <class T>

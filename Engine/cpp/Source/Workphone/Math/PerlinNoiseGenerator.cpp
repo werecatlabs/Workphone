@@ -28,15 +28,16 @@ namespace workphone
     auto PerlinNoiseGenerator<T>::generateNoise( T &maxLocalNoiseHeight, T &minLocalNoiseHeight )
         -> Array<Array<T>>
     {
-        Array<Array<T>> noiseMap;
+        Array<Array<T>> noiseMap{ Allocator<Array<T>>( sourceBudget ) };
         noiseMap.resize( m_size );
 
         for( auto &a : noiseMap )
         {
+            a = Array<T>{ Allocator<T>( sourceBudget ) };
             a.resize( m_size );
         }
 
-        Array<Vector2<T>> octaveOffsets;
+        Array<Vector2<T>> octaveOffsets{ Allocator<Vector2<T>>( sourceBudget ) };
         octaveOffsets.resize( m_octaves );
 
         T maxPossibleHeight = 0;

@@ -17,6 +17,7 @@ namespace workphone
             ~CRoadGeneratorGrid() override;
 
             void generate() override;
+            void clear() override;
 
             String getPatternData() const override;
             void setPatternData( const String &value ) override;
@@ -44,7 +45,7 @@ namespace workphone
             real_Num roadDistance = static_cast<real_Num>( 20.0 );
             real_Num roadLength = static_cast<real_Num>( 200.0 );
 
-            Array<SmartPtr<IProceduralCity>> m_cities;
+            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
         };
     }  // end namespace procedural
 }  // namespace workphone

@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cstring>
+#include <limits>
+#include <type_traits>
 
 namespace workphone::render
 {
@@ -31,10 +33,20 @@ namespace workphone::render
             std::array<ComPtr<ID3D11Buffer>, D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT> buffers;
             std::array<D3D_SRV_DIMENSION,128> dimensions{};
         };
+        template<class T> struct PackedView
+        {
+            T *values = nullptr;
+            size_t count = 0;
+            T *data() const { return values; }
+            size_t size() const { return count; }
+            T &operator[](size_t index) const { return values[index]; }
+            T *begin() const { return values; }
+            T *end() const { return count ? values + count : values; }
+        };
         struct Packed
         {
-            Storage<u8> bytes;
-            Storage<MaterialProgramResourceValue> resources;
+            PackedView<u8> bytes;
+            PackedView<MaterialProgramResourceValue> resources;
         };
     }
     struct MaterialProgramResourceTableDX11::Data
@@ -109,17 +121,24 @@ namespace workphone::render
     };
     struct MaterialProgramDX11::Publication::Data
     {
-        StreamBudget cpu = admit(StreamMemoryClass::SourceCpu, sizeof(Data) + sizeof(Publication));
+        // One admitted shared allocation owns the publication view and data.
+        Publication publication{this};
         std::shared_ptr<const MaterialProgramDX11> program;
         std::shared_ptr<MaterialProgramResourcesDX11> resolver;
+        // A single aligned allocation holds both stages' bytes and resources.
+        void *packed = nullptr;
         Packed stages[2];
+        ~Data()
+        {
+            if(packed) freeSourceBudgetStorage(packed, alignof(MaterialProgramResourceValue));
+        }
     };
     MaterialProgramDX11::MaterialProgramDX11() : m_data(new Data) {}
     MaterialProgramDX11::~MaterialProgramDX11() = default;
     void MaterialProgramDX11::retainDefinitionOwner(std::shared_ptr<const void> owner)
     { m_data->definitionOwner = std::move(owner); }
     bool MaterialProgramDX11::matchesDevice(void *device) const { return m_data->device.Get()==device; }
-    MaterialProgramDX11::Publication::Publication() : m_data(new Data) {}
+    MaterialProgramDX11::Publication::Publication(Data *data) : m_data(data) {}
     MaterialProgramDX11::Publication::~Publication() = default;
 
     MaterialProgramDX11::Ptr MaterialProgramDX11::Create(void *device,
@@ -223,18 +242,38 @@ namespace workphone::render
     {
         if(!IsCurrent(values.GetLayout()))
             throw std::runtime_error("Stale runtime material shader/schema");
-        std::shared_ptr<Publication> result(new Publication);
-        result->m_data->program = shared_from_this();
-        result->m_data->resolver = std::move(resolver);
+        auto result = std::allocate_shared<Publication::Data>(SourceBudgetAllocator<Publication::Data>{});
+        result->program = shared_from_this();
+        result->resolver = std::move(resolver);
+        static_assert(alignof(MaterialProgramResourceValue) <= alignof(u64) &&
+                      std::is_trivially_destructible_v<MaterialProgramResourceValue>);
+        size_t byteOffsets[2]{}, resourceOffsets[2]{}, total = 0;
+        const auto append = [&](size_t count, size_t size) {
+            const auto limit = std::numeric_limits<size_t>::max();
+            if(count > (limit - total) / size) throw std::length_error("Material packed payload overflow");
+            total += count * size;
+        };
         for(size_t i = 0; i < 2; ++i) if(const auto &map = m_data->stages[i].map)
         {
-            auto &out = result->m_data->stages[i];
-            out.bytes.resize(map->GetPackedSize()); out.resources.resize(map->GetResourceCount());
+            byteOffsets[i] = total; append(map->GetPackedSize(), 1);
+            append((alignof(u64) - total % alignof(u64)) % alignof(u64), 1);
+            resourceOffsets[i] = total; append(map->GetResourceCount(), sizeof(MaterialProgramResourceValue));
+        }
+        if(total) result->packed = allocateSourceBudgetStorage(total, alignof(MaterialProgramResourceValue));
+        auto storage = static_cast<u8 *>(result->packed);
+        for(size_t i = 0; i < 2; ++i) if(const auto &map = m_data->stages[i].map)
+        {
+            auto &out = result->stages[i];
+            out.bytes = {map->GetPackedSize() ? storage + byteOffsets[i] : nullptr, map->GetPackedSize()};
+            out.resources = {map->GetResourceCount() ? reinterpret_cast<MaterialProgramResourceValue *>(storage + resourceOffsets[i]) : nullptr,
+                             map->GetResourceCount()};
+            if(out.resources.size())
+                std::uninitialized_value_construct_n(out.resources.data(), out.resources.size());
             if(!map->Pack(values, m_data->generation, out.bytes.data(), out.bytes.size(),
                           out.resources.data(), out.resources.size()))
                 throw std::runtime_error("Runtime material packing failed");
         }
-        return result;
+        return PublicationPtr(result, &result->publication);
     }
     bool MaterialProgramDX11::Publication::Bind(wp_renderer_dx11 *renderer, bool instanced) const
     {
