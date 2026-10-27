@@ -120,9 +120,30 @@ int main()
                 release( restored );
             }
             ok = drawDepthPattern( native, desc.Width, desc.Height ) && ok;
+            if( samples == 1 )
+            {
+                auto copyDesc = desc; copyDesc.BindFlags = 0; copyDesc.Usage = D3D11_USAGE_STAGING;
+                copyDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+                ID3D11Texture2D *copy = nullptr;
+                if( SUCCEEDED( native.device->CreateTexture2D( &copyDesc, nullptr, &copy ) ) )
+                {
+                    native.context->CopyResource( copy, native.depth );
+                    D3D11_MAPPED_SUBRESOURCE mapped{};
+                    if( SUCCEEDED( native.context->Map( copy, 0, D3D11_MAP_READ, 0, &mapped ) ) )
+                    {
+                        auto pixels = static_cast<unsigned *>( mapped.pData );
+                        std::printf( "Raw row: %.3f %.3f %.3f\n", ( pixels[0]&0xffffff )/16777215.f,
+                            ( pixels[256]&0xffffff )/16777215.f, ( pixels[512]&0xffffff )/16777215.f );
+                        native.context->Unmap( copy, 0 );
+                    }
+                    release( copy );
+                }
+            }
             std::vector<float> patterned;
             unsigned width = 0, height = 0;
             ok = reader.read( &renderer, patterned, width, height ) && ok;
+            std::printf( "Pattern row: x126=%.3f x127=%.3f x128=%.3f x129=%.3f\n",
+                patterned[126], patterned[127], patterned[128], patterned[129] );
             if( width != 256 || height != 256 ) ok = false;
             else for( unsigned y = 0; y < height; ++y ) for( unsigned x = 0; x < width; ++x )
             {

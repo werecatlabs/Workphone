@@ -84,6 +84,9 @@ namespace workphone
          */
         static int createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
                                           const StringW &rootDir, bool useRelativePaths );
+        /** Per-call compression (0-9), independent of legacy global defaults. */
+        static int createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
+                                          const StringW &rootDir, bool useRelativePaths, int compressionLevel );
 
         /**
          * @brief Create an obfuscated ZIP archive from a list of files.

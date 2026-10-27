@@ -442,15 +442,11 @@ namespace workphone::editor
                 fs::create_directories( destination.parent_path() ); fs::copy_file( fs::u8path( project->getFilePath().c_str() ), destination, fs::copy_options::overwrite_existing );
                 files.push_back( destination.wstring().c_str() );
             }
-            static std::mutex zipMutex; std::lock_guard<std::mutex> zipLock( zipMutex );
-            const auto oldCompression = ZipUtil::m_compressionLevel;
             const auto compression = settings->getPropertyAsInt( "build.compression", 1 );
             constexpr int levels[] = { 0, 1, 6, 9 };
             if( compression < 0 || compression > 3 ) throw std::invalid_argument( "Invalid build compression" );
-            ZipUtil::m_compressionLevel = levels[compression];
             const auto archive = output / "Project.zip";
-            const auto code = ZipUtil::createZipFileFromPath( archive.wstring().c_str(), files, output.wstring().c_str(), true );
-            ZipUtil::m_compressionLevel = oldCompression;
+            const auto code = ZipUtil::createZipFileFromPath( archive.wstring().c_str(), files, output.wstring().c_str(), true, levels[compression] );
             if( code != 0 || !fs::is_regular_file( archive ) ) throw std::runtime_error( "Unable to produce project archive" );
             auto result = resultFor( true, "Project build and selected scene archive completed." );
             result->setProperty( "path", archive.u8string().c_str() ); return result;

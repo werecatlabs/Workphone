@@ -815,11 +815,39 @@ static void wp_renderer_dx11_update_mvp( wp_renderer_dx11 *r )
  * Internal helpers -- shader compilation
  * ====================================================================== */
 
+static volatile LONG wp_project_renderer_mode, wp_project_shader_model, wp_project_validation, wp_project_no_fallback;
+static wp_dx11_shader_compiler_callback wp_project_shader_compiler;
+static void *wp_project_shader_compiler_user;
+void wp_renderer_dx11_set_shader_compiler(wp_dx11_shader_compiler_callback callback,void *user)
+{ wp_project_shader_compiler=callback;wp_project_shader_compiler_user=user; }
+
 static HRESULT wp_renderer_dx11_compile_shader_options( const wp_c8 *source, const wp_c8 *entry,
     const wp_c8 *target, const D3D_SHADER_MACRO *defines, ID3DBlob **blob )
 {
     ID3DBlob *errors = NULL;
     HRESULT hr;
+
+    if(wp_project_shader_model>0)
+    {
+        if(!strcmp((const char*)target,"vs_4_0")) target=(const wp_c8*)"vs_5_0";
+        if(!strcmp((const char*)target,"ps_4_0")) target=(const wp_c8*)"ps_5_0";
+    }
+    if(wp_project_shader_compiler)
+    {
+        char *expanded=NULL;const wp_c8 *provider_source=source;wp_s32 status;
+        if(defines)
+        {
+            size_t bytes=strlen(source)+1;const D3D_SHADER_MACRO *d;
+            for(d=defines;d->Name;++d) bytes+=strlen(d->Name)+(d->Definition?strlen(d->Definition):1)+10;
+            expanded=(char*)malloc(bytes);if(!expanded) return E_OUTOFMEMORY;
+            expanded[0]=0;
+            for(d=defines;d->Name;++d) {strcat(expanded,"#define ");strcat(expanded,d->Name);strcat(expanded," ");strcat(expanded,d->Definition?d->Definition:"1");strcat(expanded,"\n");}
+            strcat(expanded,source);provider_source=(const wp_c8*)expanded;
+        }
+        status=wp_project_shader_compiler(wp_project_shader_compiler_user,provider_source,entry,target,(void**)blob);
+        if(expanded) free(expanded);
+        if(status) return status>0&&*blob?S_OK:E_FAIL;
+    }
 
     hr = D3DCompile( source, strlen( source ), NULL, defines, NULL, entry, target, 0, 0, blob, &errors );
 
@@ -828,8 +856,6 @@ static HRESULT wp_renderer_dx11_compile_shader_options( const wp_c8 *source, con
 
     return hr;
 }
-
-static volatile LONG wp_project_renderer_mode, wp_project_shader_model, wp_project_validation, wp_project_no_fallback;
 
 void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
                                           wp_s32 validation, wp_s32 allow_fallback )

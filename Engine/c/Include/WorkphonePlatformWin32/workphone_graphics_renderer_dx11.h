@@ -56,6 +56,12 @@ wp_s32 wp_renderer_dx11_set_irradiance_probes( wp_renderer_dx11 *renderer,
 /* Applies to subsequent device creation and built-in shader compilation. */
 void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
                                           wp_s32 validation, wp_s32 allow_fallback );
+/* Optional compiler returns 1 and an owned ID3DBlob, 0 for the built-in HLSL
+ * compiler, or -1 on an actionable provider error. Feature defines are already
+ * prepended to source. The bridge retains the full project profile itself. */
+typedef wp_s32 (*wp_dx11_shader_compiler_callback)(void *user, const wp_c8 *source,
+    const wp_c8 *entry, const wp_c8 *target, void **native_blob);
+void wp_renderer_dx11_set_shader_compiler( wp_dx11_shader_compiler_callback callback, void *user );
 wp_u32 wp_renderer_dx11_supported_scene_samples( wp_renderer_dx11 *renderer );
 /* Borrowed scene depth, valid until the next scene-target allocation. The
  * resource is R24G8_TYPELESS and supports R24_UNORM_X8_TYPELESS SRV reads. */

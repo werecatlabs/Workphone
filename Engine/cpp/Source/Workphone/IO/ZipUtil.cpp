@@ -276,6 +276,13 @@ namespace workphone
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
                                          const StringW &rootDir, bool useRelativePaths ) -> int
     {
+        return createZipFileFromPath(destinationPath,paths,rootDir,useRelativePaths,m_compressionLevel);
+    }
+
+    auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
+                                         const StringW &rootDir, bool useRelativePaths, int compressionLevel ) -> int
+    {
+        if(compressionLevel < -1 || compressionLevel > 9)return 5;
 #        if defined WP_PLATFORM_WIN32
         auto sDestinationPath = StringUtil::toStringC( destinationPath );
         zipFile zf = zipOpen( sDestinationPath.c_str(), APPEND_STATUS_CREATE );
@@ -314,7 +321,7 @@ namespace workphone
 
                     auto sFileName = StringUtil::toUTF16to8( fileName );
                     if( S_OK == zipOpenNewFileInZip( zf, sFileName.c_str(), &zfi, nullptr, 0, nullptr, 0,
-                                                     nullptr, Z_DEFLATED, m_compressionLevel ) )
+                                                     nullptr, Z_DEFLATED, compressionLevel ) )
                     {
                         auto pBuf = size == 0 ? "" : &buffer[0];
                         if( zipWriteInFileInZip( zf, pBuf, (u32)size ) )

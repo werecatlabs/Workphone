@@ -3,6 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
+#include <Workphone/Graphics/ProjectGraphicsProviders.hpp>
 #include <cmath>
 
 namespace workphone::editor
@@ -61,9 +62,9 @@ namespace workphone::editor
         if( !settings ) error = "Project graphics settings are missing.";
         if( settings )
         {
-            s32 renderer = 0;
-            if( settings->getPropertyValue( "graphics.renderer.pc", renderer ) && renderer >= 3 && renderer <= 4 )
-                error = "The requested PC API is not compiled into this Editor. Install/build its renderer plugin or choose Auto, DirectX 11, DirectX 12 or Software.";
+            String startupNotes;
+            validateProjectGraphicsProviders(settings,error,startupNotes);
+            result->setProperty("startupNotes",startupNotes);
             const auto app=core::IApplicationManager::instancePtr();
             const auto graphics=app ? app->getGraphicsSystem() : nullptr;
             const s32 aa=settings->getPropertyAsInt("graphics.antiAliasing");
@@ -136,7 +137,7 @@ namespace workphone::editor
             if( !WorldStreamingScheduler::shared()->setBudget(budget.category,
                   static_cast<u64>(settings->getPropertyAsInt(budget.key)) * (1ull << 20),error) )
             { result->setProperty("success",false); result->setProperty("status",error); return result; }
-        const auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
         if( graphics )
         {
             auto properties = projectGraphicsBackendProperties(settings);

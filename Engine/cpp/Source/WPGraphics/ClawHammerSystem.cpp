@@ -3,6 +3,7 @@
 #include <WPGraphics/MaterialProgramReloadDX11.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
+#include <Workphone/Graphics/ProjectGraphicsProviders.hpp>
 #include <stdexcept>
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_transform_job.h"
@@ -1583,6 +1584,22 @@ namespace workphone
                     // Use configured renderer type, or auto-detect if not set
                     SmartPtr<IRenderer> renderer;
                     RenderApi selectedApi = m_configuredRendererType;
+                    SmartPtr<Properties> projectProfile;
+                    if(auto app=core::IApplicationManager::instancePtr()) projectProfile=app->getPlayerSettings();
+                    if(projectProfile)
+                    {
+                        String error,notes;
+                        if(!validateProjectGraphicsProviders(projectProfile,error,notes))
+                        {WP_LOG_ERROR("WPGraphics: "+error);return false;}
+                        if(!notes.empty()) WP_LOG_INFO("WPGraphics: "+notes);
+                        const auto api=projectRendererApi(projectProfile);
+                        if(api=="Vulkan") selectedApi=RenderApi::Vulkan;
+                        else if(api=="OpenGL") selectedApi=RenderApi::GL;
+                        else if(api=="OpenGLES") selectedApi=RenderApi::GL;
+                        else if(api=="Metal") selectedApi=RenderApi::Metal;
+                        else if(projectProfile->hasProperty("graphics.renderer.pc")&&projectProfile->getPropertyAsInt("graphics.renderer.pc")!=0)
+                            selectedApi=api=="DX12"?RenderApi::DX12:api=="Software"?RenderApi::Software:RenderApi::DX11;
+                    }
 
                     // Auto-detect if no specific renderer was configured
                     if( selectedApi == RenderApi::None )
@@ -1627,11 +1644,11 @@ namespace workphone
                     }
                     default:
                     {
-                        WP_LOG_WARNING( "WPGraphics: requested API " +
-                                        String( renderApiName( selectedApi ) ) +
-                                        " is unavailable in this build; using Software." );
-                        selectedApi = RenderApi::Software;
-                        renderer = workphone::make_ptr<ClawRendererSoftware>();
+                        String error;
+                        const auto api=projectProfile?projectRendererApi(projectProfile):String(renderApiName(selectedApi));
+                        if(auto provider=getProjectRendererProvider(api)) renderer=provider->create(projectProfile,error);
+                        if(!renderer)
+                        {WP_LOG_ERROR("WPGraphics: renderer provider failed for "+api+": "+error);return false;}
                         break;
                     }
                     }

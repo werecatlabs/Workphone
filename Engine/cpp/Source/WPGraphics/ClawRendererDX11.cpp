@@ -13,12 +13,14 @@
 #include <Workphone/Graphics/FoliageData.hpp>
 #include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Graphics/ProjectGraphicsProviders.hpp>
 #include "ClawMeshMaterial.hpp"
 #include "ClawAssetBudget.hpp"
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
 #include <workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
+#include <d3dcompiler.h>
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -36,6 +38,20 @@ namespace workphone::render
 
     namespace
     {
+        wp_s32 compileProjectShader(void *,const wp_c8 *source,const wp_c8 *entry,const wp_c8 *target,void **nativeBlob)
+        {
+            auto app=core::IApplicationManager::instancePtr();
+            auto settings=app?app->getPlayerSettings():nullptr;
+            if(!settings) return 0;
+            auto provider=getProjectShaderCompilerProvider(settings->getPropertyAsInt("graphics.shaderLanguage"),settings->getPropertyAsInt("graphics.shaderModel"));
+            if(!provider) return 0;
+            Array<u8> bytes;String error;
+            if(!provider->compile(settings,"DX11",String(source),String(entry),String(target),bytes,error)||bytes.empty())
+            {WP_LOG_ERROR("Project shader compiler: "+error);return -1;}
+            ID3DBlob *blob=nullptr;
+            if(FAILED(D3DCreateBlob(bytes.size(),&blob))) return -1;
+            std::memcpy(blob->GetBufferPointer(),bytes.data(),bytes.size());*nativeBlob=blob;return 1;
+        }
         constexpr u16 k_quadIndices[] = { 0, 1, 2, 0, 2, 3 };
 
         struct SkyEnvironmentEntry
@@ -124,6 +140,7 @@ namespace workphone::render
                 wp_renderer_dx11_set_startup_options(settings->getPropertyAsInt("graphics.renderer.mode"),
                     settings->getPropertyAsInt("graphics.shaderModel"),settings->getPropertyAsBool("graphics.validationLayers"),
                     !settings->hasProperty("graphics.allowRendererFallback") || settings->getPropertyAsBool("graphics.allowRendererFallback"));
+        wp_renderer_dx11_set_shader_compiler(compileProjectShader,nullptr);
         m_renderer = wp_renderer_create_dx11( nativeWindow, static_cast<wp_s32>( m_rtWidth ),
                                               static_cast<wp_s32>( m_rtHeight ) );
 
