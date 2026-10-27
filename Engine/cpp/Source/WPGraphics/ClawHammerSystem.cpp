@@ -1420,6 +1420,10 @@ namespace workphone
                 }
                 else m_adaptiveSceneScale=1.0f;
                 wp_renderer_dx11_set_scene_sampling(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),samples,scale*m_adaptiveSceneScale);
+                const bool post=!options->hasProperty("graphics.postProcessing") || options->getPropertyAsBool("graphics.postProcessing");
+                wp_renderer_dx11_set_post_options(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),aa,
+                    post && options->getPropertyAsBool("graphics.bloom"),post && options->getPropertyAsBool("graphics.motionBlur"),
+                    static_cast<wp_u64>(reinterpret_cast<uintptr_t>(renderer->getCamera().get())));
                 wp_renderer_dx11_set_output_options( wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
                 if(!m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping) return false;
                 return wp_renderer_dx11_begin_hdr_scene(

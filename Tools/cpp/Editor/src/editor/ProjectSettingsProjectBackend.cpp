@@ -4,6 +4,7 @@
 #include <editor/Project.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ProjectServices.hpp>
+#include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 #include <Workphone/IO/ZipUtil.hpp>
 #include <Workphone/System/ResourcePackageProfile.hpp>
 #include <Workphone/Script/ProjectScriptPolicy.hpp>
@@ -164,7 +165,9 @@ namespace workphone::editor
             "build.android.minSdk", "build.android.targetSdk", "build.android.appBundle", "build.signingProfile",
             "build.stripSymbols", "build.debugSymbols", "build.includeEditorData", "build.assetBundles", "build.compression",
             "scripting.backend", "scripting.lua", "scripting.hotReload", "scripting.reflection", "network.backend",
-            "network.multiplayer", "services.cloudSave", "services.analytics", "services.crashReporting" };
+            "network.multiplayer", "services.cloudSave", "services.analytics", "services.crashReporting",
+            "assets.compression", "assets.textureCompression.pc", "assets.textureCompression.mac",
+            "assets.textureCompression.ios", "assets.textureCompression.android" };
         for( const auto key : keys )
         {
             response->setProperty( String( "capability." ) + key, true );
@@ -183,7 +186,7 @@ namespace workphone::editor
             {
                 const auto key = property.getName();
                 if( key.find( "services." ) == 0 || key.find( "scripting." ) == 0 || key.find( "network." ) == 0 ||
-                    key.find( "build." ) == 0 || key.find( "project." ) == 0 ) { domain = true; break; }
+                    key.find( "build." ) == 0 || key.find( "project." ) == 0 || key.find( "assets." ) == 0 ) { domain = true; break; }
             }
             if( !domain ) return resultFor( true, "No project backend settings in this request." );
             validate( *settings );
@@ -193,6 +196,7 @@ namespace workphone::editor
             const auto root = editor && editor->getProject() ? editor->getProject()->getPath() : app->getProjectPath();
             if( root.empty() ) return resultFor( true, "Project backends will initialize when a project directory is available." );
             String error;
+            if( !writeProjectAssetPolicy( root, settings, error ) ) throw std::runtime_error( error.c_str() );
             if( !applyProjectServiceSettings( settings, root, error ) )
                 throw std::runtime_error( error.c_str() );
             return resultFor( true, "Project script policy, local service providers and network lifecycle applied." );
@@ -215,6 +219,9 @@ namespace workphone::editor
         if( !project || !settings ) throw std::invalid_argument( "A project and profile are required" );
         validate( *settings );
         const auto root = fs::canonical( fs::u8path( project->getPath().c_str() ) );
+        String policyError;
+        if( !writeProjectAssetPolicy( root.u8string().c_str(), settings, policyError ) )
+            throw std::runtime_error( policyError.c_str() );
         const auto output = outputDirectory( project, *settings );
         const auto profile = output / "WorkphoneProjectProfile.cmake";
         fs::create_directories( output );

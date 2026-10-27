@@ -134,7 +134,10 @@ namespace workphone::render
                 const auto xEnd = ( ( x + 1 ) * dimensions[4] + width - 1 ) / width;
                 for( auto sy = y * dimensions[5] / height; sy < yEnd; ++sy )
                     for( auto sx = x * dimensions[4] / width; sx < xEnd; ++sx )
-                        farthest = std::max( farthest, source[size_t( sy + dimensions[3] ) * dimensions[0] + sx + dimensions[2]] );
+                    {
+                        const auto sample = source[size_t( sy + dimensions[3] ) * dimensions[0] + sx + dimensions[2]];
+                        farthest = std::max( farthest, std::isfinite( sample ) && sample >= 0 && sample <= 1 ? sample : 1.0f );
+                    }
                 depth[size_t( y ) * width + x] = farthest;
             }
             return true;

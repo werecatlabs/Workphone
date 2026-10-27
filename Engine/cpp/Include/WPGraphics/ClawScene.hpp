@@ -151,6 +151,10 @@ namespace workphone
             /** Copied scene material publication counts; false/zero after retirement. */
             bool getPreparedMaterialStatistics( MaterialPreparationStatistics & ) const;
             void discardRenderJobs();
+            /** Capture completed scene depth on the render owner. Missing depth,
+             * camera/target changes and mutable occluders retain visible draws. */
+            void captureOcclusionDepth( wp_renderer *renderer, SmartPtr<IGraphicsCamera> camera );
+            u32 getOcclusionCulledObjects() const;
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;
             /** Fixed-LOD batches; mutation/retirement uses the render owner thread.
@@ -241,6 +245,9 @@ namespace workphone
             double m_drawSortBucketSize = 10.0;
             struct FoliageWorldState;
             std::unique_ptr<FoliageWorldState> m_foliageWorlds;
+            struct OcclusionHistory;
+            std::unique_ptr<OcclusionHistory> m_occlusionHistory;
+            u64 m_occlusionFrame = 0;
         };
     }  // namespace render
 }  // namespace workphone

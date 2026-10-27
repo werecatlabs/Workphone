@@ -848,7 +848,6 @@ namespace workphone::render
             projectAssetPolicy( context );
             auto policyDependency = resource::CompileDependency::data( projectPolicyInput );
             policyDependency.optional = true;
-            dependencies.compileDependencies.push_back( policyDependency );
             if( context.resourceId.type() == resource::ResourceTypeID( "texres" ) )
             {
                 const auto recipe = readTextureRecipe( context );
@@ -878,6 +877,7 @@ namespace workphone::render
             {
                 throw std::runtime_error( "Unsupported graphics resource type" );
             }
+            dependencies.compileDependencies.push_back( policyDependency );
             return true;
         }
         catch( const std::exception &exception )

@@ -119,7 +119,8 @@ namespace workphone
         const auto size=get64(payload,4);if(!size || size>maximumBytes || size>256ull*1024*1024)
             throw std::runtime_error("Compressed asset exceeds its decode limit");
         Array<u8> output(static_cast<size_t>(size));uLongf bytes=static_cast<uLongf>(size);
-        if(uncompress(output.data(),&bytes,payload.data()+20,static_cast<uLong>(payload.size()-20))!=Z_OK || bytes!=size ||
+        uLong sourceBytes=static_cast<uLong>(payload.size()-20);
+        if(uncompress2(output.data(),&bytes,payload.data()+20,&sourceBytes)!=Z_OK || bytes!=size || sourceBytes!=payload.size()-20 ||
            resource::hashBytes(output.data(),output.size())!=get64(payload,12))throw std::runtime_error("Compressed asset integrity failure");
         return output;
     }

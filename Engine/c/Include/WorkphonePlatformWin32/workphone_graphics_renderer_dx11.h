@@ -47,6 +47,8 @@ wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *renderer, wp_f32 expo
 void wp_renderer_dx11_set_output_options( wp_renderer_dx11 *renderer, wp_s32 hdr_enabled,
                                          wp_s32 linear_workflow, wp_s32 tonemapping );
 void wp_renderer_dx11_set_scene_sampling( wp_renderer_dx11 *renderer, wp_s32 samples, wp_f32 scale );
+void wp_renderer_dx11_set_post_options( wp_renderer_dx11 *renderer, wp_s32 anti_aliasing,
+                                       wp_s32 bloom, wp_s32 motion_blur, wp_u64 temporal_key );
 /* Applies to subsequent device creation and built-in shader compilation. */
 void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
                                           wp_s32 validation, wp_s32 allow_fallback );

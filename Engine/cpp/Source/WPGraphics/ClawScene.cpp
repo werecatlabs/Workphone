@@ -15,6 +15,10 @@
 #include <WPGraphics/ClawTerrain.hpp>
 #include <WPGraphics/ClawSceneNode.hpp>
 #include <WPGraphics/ClawDynamicMesh.hpp>
+#include <WPGraphics/ClawMaterial.hpp>
+#include <WPGraphics/ClawDepthReadback.hpp>
+#include <Workphone/Graphics/HierarchicalDepthOcclusion.hpp>
+#include <Workphone/Graphics/Material.hpp>
 #include <WPGraphics/ClawBillboard.hpp>
 #include <WPGraphics/ClawBillboardSet.hpp>
 #include <WPGraphics/ClawTerrain.hpp>
@@ -52,6 +56,43 @@ namespace workphone
             f32 seconds = 0;
             String error;
         };
+
+        struct ClawScene::OcclusionHistory
+        {
+            ClawDepthReadback readback;
+            ClawDepthReadback::Surface surface{};
+            HierarchicalDepthOcclusion hierarchy;
+            HierarchicalDepthOcclusion::Matrix matrix{};
+            std::shared_ptr<NativeRenderJobs> capturedJobs, renderedJobs;
+            struct MaterialSnapshot
+            {
+                SmartPtr<ClawMesh> mesh;
+                s32 section;
+                SmartPtr<Material> material;
+                MaterialRenderState::Ptr state;
+            };
+            std::vector<MaterialSnapshot> materials;
+            SmartPtr<IGraphicsCamera> camera;
+            u64 capturedFrame = 0;
+            u32 culled = 0;
+        };
+
+        namespace
+        {
+            bool projectOcclusionEnabled()
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                auto settings = app ? app->getPlayerSettings() : nullptr;
+                return settings && settings->getPropertyAsBool( "performance.occlusionCulling", false );
+            }
+
+            HierarchicalDepthOcclusion::Matrix occlusionMatrix( const wp_mat4f &matrix )
+            {
+                HierarchicalDepthOcclusion::Matrix result;
+                std::copy( &matrix.m[0][0], &matrix.m[0][0] + 16, result.begin() );
+                return result;
+            }
+        }
 
         bool ClawScene::addFoliageWorld( std::shared_ptr<ClawFoliageWorld> world, String &error )
         {
@@ -174,6 +215,7 @@ namespace workphone
 
         ClawScene::~ClawScene()
         {
+            m_occlusionHistory.reset();
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
@@ -905,6 +947,69 @@ namespace workphone
             }
         };
 
+        u32 ClawScene::getOcclusionCulledObjects() const
+        {
+            return m_occlusionHistory ? m_occlusionHistory->culled : 0;
+        }
+
+        void ClawScene::captureOcclusionDepth( wp_renderer *renderer, SmartPtr<IGraphicsCamera> camera )
+        {
+            if( !projectOcclusionEnabled() ) { m_occlusionHistory.reset(); return; }
+            if( !m_occlusionHistory || !m_occlusionHistory->renderedJobs ) return;
+            auto &history = *m_occlusionHistory;
+            const auto jobs = history.renderedJobs;
+            history.hierarchy.clear(); history.capturedJobs.reset(); history.materials.clear();
+            if( !camera || jobs->camera != camera ||
+                wp_graphics_cull_result_validate( jobs->main, m_scene,
+                    wp_graphics_cull_result_get_scene_generation( jobs->main ) ) != WP_GRAPHICS_CULL_OK ) return;
+            // Terrain/foliage/particle callbacks can deform geometry without
+            // native candidate revisions. Until those producers publish depth
+            // revisions, this frame conservatively supplies no occlusion.
+            const auto foliage = getFoliageBatches();
+            if( ( m_foliageWorlds && ( !m_foliageWorlds->terrains.empty() || !m_foliageWorlds->standalone.empty() ) ) ||
+                ( foliage && !foliage->empty() ) ) return;
+            size_t nativeMeshes = 0;
+            for( const auto &object : m_graphicsObjects.snapshot() )
+            {
+                if( !object || !object->isVisible() ) continue;
+                if( dynamic_cast<ClawTerrain *>( object.get() ) || dynamic_cast<CParticleSystem *>( object.get() ) ||
+                    dynamic_cast<ClawBillboard *>( object.get() ) || dynamic_cast<ClawBillboardSet *>( object.get() ) ) return;
+                auto mesh = dynamic_pointer_cast<ClawMesh>( object );
+                if( !mesh || !mesh->getNativeRenderObject() ) continue;
+                ++nativeMeshes;
+                const auto native = mesh->getNativeMesh();
+                const auto sections = native ? std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) ) : 1;
+                for( s32 section = 0; section < sections; ++section )
+                {
+                    auto source = mesh->getMaterial( section );
+                    if( !source ) source = mesh->getMaterial();
+                    auto material = dynamic_pointer_cast<Material>( source );
+                    if( source && !material ) return;
+                    if( !material ) { history.materials.push_back( { mesh, section, nullptr, {} } ); continue; }
+                    auto state = material->getRenderState();
+                    if( !state || state->getFlag( IMaterial::cutoutFlag ) || state->getFlag( IMaterial::transparentFlag ) ||
+                        state->blendMode != 0 || ( dynamic_cast<ClawMaterial *>( material.get() ) &&
+                        static_cast<ClawMaterial *>( material.get() )->hasRuntimeProgram() ) ) return;
+                    history.materials.push_back( { mesh, section, material, state } );
+                }
+            }
+            if( nativeMeshes != static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->main ) ) ) return;
+            wp_mat4f view, projection, matrix;
+            if( !wp_graphics_cull_result_get_camera_matrices( jobs->main, &view, &projection ) ) return;
+            wp_mat4f_mul( &matrix, &projection, &view );
+            std::vector<float> depth;
+            unsigned width = 0, height = 0;
+            try
+            {
+                if( !history.readback.read( renderer, depth, width, height ) ) return;
+                history.matrix = occlusionMatrix( matrix );
+                if( !history.hierarchy.publish( depth.data(), width, height, history.matrix ) ) return;
+            }
+            catch( const std::bad_alloc & ) { history.hierarchy.clear(); return; }
+            history.surface = history.readback.surface( renderer );
+            history.camera = camera; history.capturedJobs = jobs; history.capturedFrame = m_occlusionFrame;
+        }
+
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera )
         {
             return prepareRenderJobs( camera, false );
@@ -1132,6 +1237,45 @@ namespace workphone
                 {
                     throw std::runtime_error( "Stale native scene jobs." );
                 }
+
+                ++m_occlusionFrame;
+                if( projectOcclusionEnabled() )
+                {
+                    if( !m_occlusionHistory ) m_occlusionHistory = std::make_unique<OcclusionHistory>();
+                    auto &history = *m_occlusionHistory;
+                    history.culled = 0;
+                    bool valid = history.capturedJobs && history.camera == rawRenderer->getCamera() &&
+                        history.capturedFrame + 1 == m_occlusionFrame &&
+                        history.surface == history.readback.surface( nativeRenderer ) &&
+                        wp_graphics_cull_result_validate( history.capturedJobs->main, m_scene,
+                            wp_graphics_cull_result_get_scene_generation( history.capturedJobs->main ) ) == WP_GRAPHICS_CULL_OK;
+                    for( const auto &material : history.materials )
+                    {
+                        auto current = material.mesh->getMaterial( material.section );
+                        if( !current ) current = material.mesh->getMaterial();
+                        if( current != material.material ||
+                            ( material.material && material.material->getRenderState() != material.state ) ) valid = false;
+                    }
+                    if( valid )
+                    {
+                        wp_mat4f view, projection, matrix;
+                        if( wp_graphics_cull_result_get_camera_matrices( jobs->main, &view, &projection ) )
+                        {
+                            wp_mat4f_mul( &matrix, &projection, &view );
+                            const auto current = occlusionMatrix( matrix );
+                            if( current == history.matrix )
+                                history.culled = static_cast<u32>( wp_graphics_cull_result_apply_occlusion(
+                                    jobs->main, []( const wp_aabb3f *bounds, const wp_mat4f *world, void *context ) {
+                                        const auto &previous = *static_cast<const OcclusionHistory *>( context );
+                                        const float minimum[] = { bounds->min.x, bounds->min.y, bounds->min.z };
+                                        const float maximum[] = { bounds->max.x, bounds->max.y, bounds->max.z };
+                                        return previous.hierarchy.occluded( minimum, maximum, occlusionMatrix( *world ), previous.matrix ) ? 1 : 0;
+                                    }, &history ) );
+                        }
+                    }
+                    history.renderedJobs = jobs;
+                }
+                else m_occlusionHistory.reset();
 
                 // Skies and terrains are C++ renderer objects and are not members of the native C
                 // scene's object list. Submit them explicitly before the native mesh scene pass.
