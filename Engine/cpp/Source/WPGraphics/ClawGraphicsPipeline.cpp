@@ -21,6 +21,12 @@ namespace workphone::render
         shutdown();
     }
 
+    void ClawGraphicsPipeline::setProperties( SmartPtr<Properties> properties )
+    {
+        GraphicsPipeline::setProperties( properties );
+        applyNativeSettings();
+    }
+
     bool ClawGraphicsPipeline::initialize( s32 width, s32 height )
     {
         if( width <= 0 || height <= 0 )
@@ -166,6 +172,8 @@ namespace workphone::render
         {
             return false;
         }
+        if( m_projectSettings && m_projectSettings->getPropertyAsInt( "graphics.antiAliasing" ) == 1 )
+            wp_renderer_software_render( software, WORKPHONE_ANTI_ALIASING_ON );
 
         const auto width = wp_renderer_software_get_width( software );
         const auto height = wp_renderer_software_get_height( software );
@@ -193,9 +201,11 @@ namespace workphone::render
             const auto r = pixels[i * stride + ( bgra ? 2u : 0u )] / 255.0f;
             const auto g = pixels[i * stride + 1u] / 255.0f;
             const auto b = pixels[i * stride + ( bgra ? 0u : 2u )] / 255.0f;
-            m_hdrInput[i * 3u + 0u] = wp_hdr_srgb_to_linear( r );
-            m_hdrInput[i * 3u + 1u] = wp_hdr_srgb_to_linear( g );
-            m_hdrInput[i * 3u + 2u] = wp_hdr_srgb_to_linear( b );
+            const bool linear = !m_projectSettings || !m_projectSettings->hasProperty( "graphics.colorSpace" ) ||
+                                m_projectSettings->getPropertyAsInt( "graphics.colorSpace" ) == 1;
+            m_hdrInput[i * 3u + 0u] = linear ? wp_hdr_srgb_to_linear( r ) : r;
+            m_hdrInput[i * 3u + 1u] = linear ? wp_hdr_srgb_to_linear( g ) : g;
+            m_hdrInput[i * 3u + 2u] = linear ? wp_hdr_srgb_to_linear( b ) : b;
             m_normalInput[i * 4u + 0u] = 0.5f;
             m_normalInput[i * 4u + 1u] = 0.5f;
             m_normalInput[i * 4u + 2u] = 0.0f;  // No normal/coverage attachment is available.
@@ -360,6 +370,16 @@ namespace workphone::render
         setTaoaSettings( getTaoaSettings() );
         setHdrSettings( getHdrSettings() );
         setCsmSettings( getCsmSettings() );
+        if( m_projectSettings )
+        {
+            const bool hdr = !m_projectSettings->hasProperty( "graphics.hdr" ) ||
+                             m_projectSettings->getPropertyAsBool( "graphics.hdr" );
+            const s32 colorSpace = m_projectSettings->hasProperty( "graphics.colorSpace" ) ?
+                                  m_projectSettings->getPropertyAsInt( "graphics.colorSpace" ) : 1;
+            const s32 tonemapping = m_projectSettings->hasProperty( "graphics.tonemapping" ) ?
+                                   m_projectSettings->getPropertyAsInt( "graphics.tonemapping" ) : 3;
+            wp_pipeline_set_output_options( m_nativePipeline, hdr, colorSpace, tonemapping );
+        }
         setDebugView( getDebugView() );
     }
 

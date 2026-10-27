@@ -40,6 +40,9 @@ namespace workphone
             void setTitle( const String &title ) override;
             void destroy() override;
             void resize( u32 width, u32 height ) override;
+            void setFullscreen( bool fullscreen ) override;
+            void setFullscreen( bool fullscreen, u32 width, u32 height ) override;
+            bool isFullScreen() const override;
             void maximize() override;
             bool isVisible() const override;
             void setVisible( bool visible ) override;
@@ -77,6 +80,10 @@ namespace workphone
 
 #if defined WP_PLATFORM_WIN32
             wp_platform_window_win32 *m_platformWindow = nullptr;
+            intptr_t m_windowedStyle = 0;
+            Vector2I m_windowedPosition;
+            Vector2I m_windowedSize;
+            bool m_nativeFullscreen = false;
 #endif
         };
     }  // namespace render

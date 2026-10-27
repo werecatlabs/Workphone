@@ -25,6 +25,7 @@ namespace workphone
             void endFrame() override;
             void render() override;
             void setFrameDeltaTime( wp_f32 deltaTime );
+            void setProperties( SmartPtr<Properties> properties ) override;
 
             /** Capture/present the CPU software renderer. GPU backends stay on their native path. */
             bool captureSoftwareFrame( wp_renderer *renderer );

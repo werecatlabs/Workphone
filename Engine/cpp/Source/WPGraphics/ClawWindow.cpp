@@ -248,6 +248,55 @@ namespace workphone
             unload( nullptr );
         }
 
+        void ClawWindow::setFullscreen( bool fullscreen, u32 width, u32 height )
+        {
+            setFullscreen( fullscreen );
+            if( !fullscreen && width && height ) resize( width, height );
+        }
+
+        bool ClawWindow::isFullScreen() const
+        {
+#if defined WP_PLATFORM_WIN32
+            return m_nativeFullscreen;
+#else
+            return GraphicsWindow::isFullScreen();
+#endif
+        }
+
+        void ClawWindow::setFullscreen( bool fullscreen )
+        {
+#if defined WP_PLATFORM_WIN32
+            void *native = nullptr;
+            getWindowHandle( &native );
+            auto handle = static_cast<HWND>( native );
+            if( !handle || fullscreen == m_nativeFullscreen ) return;
+            if( fullscreen )
+            {
+                RECT rectangle{};
+                GetWindowRect( handle, &rectangle );
+                m_windowedPosition = Vector2I( rectangle.left, rectangle.top );
+                m_windowedSize = Vector2I( rectangle.right - rectangle.left, rectangle.bottom - rectangle.top );
+                m_windowedStyle = GetWindowLongPtr( handle, GWL_STYLE );
+                MONITORINFO monitor{};
+                monitor.cbSize = sizeof( monitor );
+                if( !GetMonitorInfo( MonitorFromWindow( handle, MONITOR_DEFAULTTONEAREST ), &monitor ) ) return;
+                SetWindowLongPtr( handle, GWL_STYLE, m_windowedStyle & ~WS_OVERLAPPEDWINDOW );
+                SetWindowPos( handle, HWND_TOP, monitor.rcMonitor.left, monitor.rcMonitor.top,
+                    monitor.rcMonitor.right - monitor.rcMonitor.left,
+                    monitor.rcMonitor.bottom - monitor.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER );
+            }
+            else
+            {
+                SetWindowLongPtr( handle, GWL_STYLE, m_windowedStyle );
+                SetWindowPos( handle, nullptr, m_windowedPosition.x, m_windowedPosition.y,
+                              m_windowedSize.x, m_windowedSize.y, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER );
+            }
+            m_nativeFullscreen = fullscreen;
+            windowMovedOrResized();
+#endif
+            GraphicsWindow::setFullscreen( fullscreen );
+        }
+
         void ClawWindow::resize( u32 width, u32 height )
         {
             if( m_window )

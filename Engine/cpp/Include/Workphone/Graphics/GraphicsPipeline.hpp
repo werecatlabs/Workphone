@@ -445,6 +445,7 @@ namespace workphone
             // ========================================================================
 
             mutable RecursiveMutex m_mutex;  ///< Thread safety mutex.
+            SmartPtr<Properties> m_projectSettings;
 
             // Initialization state
             bool m_initialized = false;  ///< True if pipeline is initialized.

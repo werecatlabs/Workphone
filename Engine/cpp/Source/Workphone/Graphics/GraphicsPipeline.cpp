@@ -69,6 +69,9 @@ namespace workphone::render
     SmartPtr<Properties> GraphicsPipeline::getProperties() const
     {
         auto properties = workphone::make_ptr<Properties>();
+        if( m_projectSettings )
+            for( const auto &property : m_projectSettings->getPropertiesAsArray() )
+                properties->addProperty( property );
         properties->setProperty( "Applies to", "Software renderer main window", true );
         properties->setProperty( "Pipeline support", "Software main window only", true );
         properties->setProperty( "Quality presets", "Changing quality resets effect options", true );
@@ -93,6 +96,11 @@ namespace workphone::render
         {
             return;
         }
+        if( !m_projectSettings ) m_projectSettings = workphone::make_ptr<Properties>();
+        for( const auto &property : properties->getPropertiesAsArray() )
+            if( property.getName().find( "graphics." ) == 0 || property.getName().find( "quality." ) == 0 ||
+                property.getName().find( "performance." ) == 0 )
+                m_projectSettings->addProperty( property );
         s32 quality = static_cast<s32>( getQualityLevel() );
         if( readPipelineValue( *properties, "Quality", quality, 0, 4 ) )
         {
