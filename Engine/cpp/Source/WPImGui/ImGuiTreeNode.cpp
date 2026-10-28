@@ -137,6 +137,8 @@ namespace workphone::ui
                 return;
             }
 
+            auto applicationManager = core::IApplicationManager::instancePtr();
+
             c8 *label = nullptr;
 
             auto pTreeNode = (ImGuiTreeNode *)treeNode.get();
@@ -200,12 +202,12 @@ namespace workphone::ui
                 ImGui::SetNextItemOpen( pTreeNode->isExpanded(), ImGuiCond_Always );
             }
 
-            auto opened = ImGui::TreeNodeEx( (void *)static_cast<intptr_t>( id ), node_flags, "%s",
-                                             label );
+            auto opened =
+                ImGui::TreeNodeEx( (void *)static_cast<intptr_t>( id ), node_flags, "%s", label );
 
             const auto dragPayload = ImGui::GetDragDropPayload();
-            const bool treeDropReleased = ImGui::IsMouseReleased( 0 ) && dragPayload &&
-                                          dragPayload->IsDataType( "_TREENODE" );
+            const bool treeDropReleased =
+                ImGui::IsMouseReleased( 0 ) && dragPayload && dragPayload->IsDataType( "_TREENODE" );
             if( ImGui::IsMouseDragging( 0 ) || treeDropReleased )
             {
                 auto siblingIndex = treeNode->getSiblingIndexByType<IUITreeNode>();
@@ -225,8 +227,8 @@ namespace workphone::ui
                 if( ImGui::IsMouseHoveringRect( rectMin, rectMax, true ) )
                 {
                     auto highlightColor = ImGui::GetColorU32( ImGuiCol_DragDropTarget );
-                    ImGui::GetWindowDrawList()->AddRect( rectMin, rectMax, highlightColor, 2.0f,
-                                                         0, 2.0f );
+                    ImGui::GetWindowDrawList()->AddRect( rectMin, rectMax, highlightColor, 2.0f, 0,
+                                                         2.0f );
 
                     tree->setSelectedSiblingIndex( -1 );
 
@@ -238,8 +240,7 @@ namespace workphone::ui
                     auto startPos = ImGui::GetCursorScreenPos();
                     startPos.y = lineRectMin.y;
 
-                    auto endPos = ImVec2( ImGui::GetWindowPos().x +
-                                              ImGui::GetWindowContentRegionMax().x,
+                    auto endPos = ImVec2( ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x,
                                           startPos.y );
 
                     // Draw a line
@@ -255,8 +256,7 @@ namespace workphone::ui
                 {
                     // Get the position of the hovered node
                     auto startPos = ImGui::GetCursorScreenPos();
-                    auto endPos = ImVec2( ImGui::GetWindowPos().x +
-                                              ImGui::GetWindowContentRegionMax().x,
+                    auto endPos = ImVec2( ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x,
                                           startPos.y );
 
                     // Draw a line
@@ -404,36 +404,28 @@ namespace workphone::ui
                 auto ownerTree = treeNode->getOwnerTree();
                 if( ownerTree )
                 {
-                    auto listeners = ownerTree->getObjectListeners();
-                    for( auto &listener : listeners )
-                    {
-                        auto args = Array<Parameter>();
-                        args.resize( 2 );
+                    auto args = Array<Parameter>();
+                    args.resize( 2 );
 
-                        args[0].object = treeNode;
+                    args[0].object = treeNode;
 
-                        listener->handleEvent( EventType::Object,
-                                               IEvent::handleTreeSelectionActivated, args, tree,
-                                               treeNode, nullptr );
-                    }
+                    applicationManager->triggerEvent(
+                        EventType::UI, IEvent::handleTreeSelectionActivated, args, tree, treeNode,
+                        nullptr, false, Thread::Application_Flag );
                 }
 
                 if( ImGui::IsMouseDoubleClicked( 0 ) )
                 {
                     if( ownerTree )
                     {
-                        auto listeners = ownerTree->getObjectListeners();
-                        for( auto &listener : listeners )
-                        {
-                            auto args = Array<Parameter>();
-                            args.resize( 2 );
+                        auto args = Array<Parameter>();
+                        args.resize( 2 );
 
-                            args[0].object = treeNode;
+                        args[0].object = treeNode;
 
-                            listener->handleEvent( EventType::Object,
-                                                   IEvent::handleTreeNodeDoubleClicked, args, tree,
-                                                   treeNode, nullptr );
-                        }
+                        applicationManager->triggerEvent(
+                            EventType::UI, IEvent::handleTreeNodeDoubleClicked, args, tree, treeNode,
+                            nullptr, false, Thread::Application_Flag );
                     }
                 }
             }
@@ -443,17 +435,14 @@ namespace workphone::ui
                 auto ownerTree = treeNode->getOwnerTree();
                 if( ownerTree )
                 {
-                    auto listeners = ownerTree->getObjectListeners();
-                    for( auto &listener : listeners )
-                    {
-                        auto args = Array<Parameter>();
-                        args.resize( 2 );
+                    auto args = Array<Parameter>();
+                    args.resize( 2 );
 
-                        args[0].object = treeNode;
+                    args[0].object = treeNode;
 
-                        listener->handleEvent( EventType::Object, IEvent::handleTreeSelectionRelease,
-                                               args, tree, treeNode, nullptr );
-                    }
+                    applicationManager->triggerEvent( EventType::UI, IEvent::handleTreeSelectionRelease,
+                                                      args, tree, treeNode, nullptr, false,
+                                                      Thread::Application_Flag );
                 }
             }
 
@@ -503,18 +492,15 @@ namespace workphone::ui
                         auto ownerTree = treeNode->getOwnerTree();
                         if( ownerTree )
                         {
-                            auto listeners = ownerTree->getObjectListeners();
-                            for( auto listener : listeners )
-                            {
-                                auto args = Array<Parameter>();
-                                args.resize( 2 );
+                            auto args = Array<Parameter>();
+                            args.resize( 2 );
 
-                                args[0].object = treeNode;
-                                args[1].object = childToggle;
+                            args[0].object = treeNode;
+                            args[1].object = childToggle;
 
-                                listener->handleEvent( EventType::Object, IEvent::handleToggle, args,
-                                                       tree, treeNode, nullptr );
-                            }
+                            applicationManager->triggerEvent( EventType::UI, IEvent::handleToggle, args,
+                                                              tree, treeNode, nullptr, false,
+                                                              Thread::Application_Flag );
                         }
                     }
                 }
