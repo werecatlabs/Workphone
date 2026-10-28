@@ -270,6 +270,20 @@ namespace workphone::ui
         {
             return;
         }
+        // Axis monitors keep their normal appearance and programmatic value
+        // updates while rejecting pointer input. Restore the shared layout's
+        // input flags even when a clipped vertical widget returns early.
+        struct InputScope
+        {
+            wp_panel *panel;
+            wp_flags flags;
+            InputScope( wp_context *context, bool interactive )
+                : panel( context->current->layout ), flags( panel->flags )
+            {
+                if( !interactive ) panel->flags |= WORKPHONE_WINDOW_ROM;
+            }
+            ~InputScope() { panel->flags = flags; }
+        } inputScope( ctx, getHandleInputEvents() );
         auto previous = m_value;
         if( m_direction == Direction::Horizontal )
         {

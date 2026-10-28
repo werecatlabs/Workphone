@@ -296,6 +296,12 @@ namespace workphone
 
             /** @brief Sets all normalized aircraft controls in one call. */
             void setAircraftControls( f32 throttle, f32 pitch, f32 roll, f32 yaw );
+            /** Opt in to plane/helicopter/drone mapping; manual setAircraftControls disables it. */
+            void useAircraftPlayerControls( const String &profile );
+            bool getAircraftPlayerControls() const;
+            void setAircraftPlayerControls( bool enabled );
+            String getAircraftControlProfile() const;
+            void setAircraftControlProfile( const String &profile );
 
             f32 getAircraftThrottle() const;
             void setAircraftThrottle( f32 throttle );
@@ -345,6 +351,8 @@ namespace workphone
             f32 m_aircraftPitch = 0.0f;
             f32 m_aircraftRoll = 0.0f;
             f32 m_aircraftYaw = 0.0f;
+            atomic_bool m_aircraftPlayerControls = false;
+            atomic_s32 m_aircraftControlProfile = 0;
 
             real_Num m_airDensity = static_cast<real_Num>( 1.225 );
             real_Num m_sectionMultiplier = static_cast<real_Num>( 16.0 );

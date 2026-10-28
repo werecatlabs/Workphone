@@ -535,6 +535,7 @@ namespace workphone::scene
         if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( getElement() ) )
         {
             updateVisibility();
+            slider->setHandleInputEvents( getCascadeInput() );
             slider->setMinValue( m_minValue );
             slider->setMaxValue( m_maxValue );
             slider->setValue( m_sliderValue );

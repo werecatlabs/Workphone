@@ -1,6 +1,7 @@
 #include <WPLua/LuaManager.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/VehicleController.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <WPLuabind/Helpers/GraphicsSystemHelper.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
@@ -279,6 +280,7 @@ int main( int argc, char **argv )
         auto runtimeGraphics=make_ptr<SettingsGraphics>();
         luabind::globals(state)["runtimeGraphics"]=static_pointer_cast<render::IGraphicsSystem>(runtimeGraphics);
         auto race = make_ptr<scene::ProceduralRaceScene>();
+        luabind::globals( state )["flightController"] = make_ptr<scene::VehicleController>();
         luabind::globals( state )["raceScene"] = race;
         auto controller = syntheticPad();
         controller->setDeadZone( 0.9f ); controller->setSensitivity( 4 ); controller->setInvertX( true );
@@ -305,6 +307,18 @@ int main( int argc, char **argv )
             if ( luaL_dofile( state, ( core / file ).string().c_str() ) != LUA_OK )
                 throw std::runtime_error( lua_tostring( state, -1 ) );
         const char* test = R"(
+            assert(not flightController:getAircraftPlayerControls())
+            assert(flightController:getAircraftControlProfile() == 'plane')
+            flightController:useAircraftPlayerControls('helicopter')
+            assert(flightController:getAircraftPlayerControls())
+            assert(flightController:getAircraftControlProfile() == 'helicopter')
+            flightController:setAircraftControls(0.7, 0.2, -0.3, 0.4)
+            assert(not flightController:getAircraftPlayerControls())
+            assert(math.abs(flightController:getAircraftThrottle() - 0.7) < 0.00001)
+            flightController:setAircraftControlProfile('drone')
+            flightController:setAircraftPlayerControls(true)
+            assert(flightController:getAircraftControlProfile() == 'drone' and flightController:getAircraftPlayerControls())
+            assert(not pcall(function() flightController:useAircraftPlayerControls('invalid') end))
             -- Exercise the real runtime graphics bindings and Properties return
             -- conversion without creating a graphics device or native window.
             local graphics = runtimeGraphics:getRuntimeSettings()

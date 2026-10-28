@@ -16,10 +16,12 @@
 #include <Workphone/Interface/UI/IUITextEntry.hpp>
 #include <Workphone/Interface/UI/IUICheckbox.hpp>
 #include <Workphone/Interface/UI/IUIToggle.hpp>
+#include <Workphone/Interface/UI/IUISlider.hpp>
 #include <Workphone/Interface/UI/IUILayoutWindow.hpp>
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>
 #include <Workphone/Scene/Components/UI/Text.hpp>
 #include <Workphone/Scene/Components/UI/Button.hpp>
+#include <Workphone/Scene/Components/UI/Slider.hpp>
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
 #include <Workphone/Scene/Systems/UI/LayoutTransformSystem.hpp>
 #include <Workphone/Scene/UiUtil.hpp>
@@ -603,6 +605,165 @@ namespace
         return ok;
     }
 
+    bool testReadonlySlider( Direction direction )
+    {
+        ui::ClawUIManager manager;
+        auto element = manager.addElement( ui::IUISlider::typeInfo() );
+        auto slider = dynamic_pointer_cast<ui::IUISlider>( element );
+        auto widget = dynamic_cast<ui::IWorkphoneWidget *>( element.get() );
+        auto ctx = manager.getContext();
+        if( !slider || !widget || !ctx ) return check( false, "readonly slider needs a real native widget" );
+        const auto vertical = direction == Direction::Vertical;
+        slider->setDirection( direction );
+        slider->setMinValue( -100 );
+        slider->setMaxValue( 100 );
+        slider->setPosition( { 20, 20 } );
+        slider->setSize( vertical ? Vector2F( 44, 240 ) : Vector2F( 300, 44 ) );
+        slider->setHandleInputEvents( false );
+        const auto cursorColour = wp_rgb( 193, 37, 173 );
+        ctx->style.slider.cursor_normal = ctx->style.slider.cursor_hover = ctx->style.slider.cursor_active =
+            wp_style_item_color( cursorColour );
+        ctx->style.slider.color_factor = 1;
+        const auto sharedStyle = ctx->style.slider;
+        const auto sharedFont = ctx->style.font;
+        struct Snapshot { float x = 0, y = 0; bool cursor = false, restored = true; };
+        const auto frame = [&]( int x, int y, bool down, bool inheritedReadonly = false ) {
+            Snapshot result;
+            wp_input_begin( ctx );
+            wp_input_motion( ctx, x, y );
+            wp_input_button( ctx, WORKPHONE_BUTTON_LEFT, x, y, down );
+            wp_input_end( ctx );
+            if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "Readonly axis slider" ),
+                          wp_make_rect( 0, 0, 500, 300 ),
+                          WORKPHONE_WINDOW_NO_SCROLLBAR | WORKPHONE_WINDOW_BACKGROUND ) )
+            {
+                wp_layout_space_begin( ctx, WORKPHONE_STATIC, 280, 1 );
+                auto panel = ctx->current->layout;
+                const auto originalFlags = panel->flags;
+                if( inheritedReadonly ) panel->flags |= WORKPHONE_WINDOW_ROM;
+                const auto incomingFlags = panel->flags;
+                widget->draw( ctx );
+                result.restored = panel->flags == incomingFlags && ctx->style.font == sharedFont &&
+                                 std::memcmp( &sharedStyle, &ctx->style.slider, sizeof sharedStyle ) == 0;
+                panel->flags = originalFlags;
+                wp_layout_space_end( ctx );
+            }
+            wp_end( ctx );
+            const wp_command *command;
+            wp_foreach( command, ctx )
+            {
+                wp_color colour{};
+                float x = 0, y = 0;
+                if( vertical && command->type == WORKPHONE_COMMAND_RECT_FILLED )
+                {
+                    const auto cursor = reinterpret_cast<const wp_command_rect_filled *>( command );
+                    colour = cursor->color; x = cursor->x + cursor->w * 0.5f; y = cursor->y + cursor->h * 0.5f;
+                }
+                else if( !vertical && command->type == WORKPHONE_COMMAND_CIRCLE_FILLED )
+                {
+                    const auto cursor = reinterpret_cast<const wp_command_circle_filled *>( command );
+                    colour = cursor->color; x = cursor->x + cursor->w * 0.5f; y = cursor->y + cursor->h * 0.5f;
+                }
+                if( colour.r == cursorColour.r && colour.g == cursorColour.g && colour.b == cursorColour.b && colour.a == 255 )
+                {
+                    result.cursor = true; result.x = x; result.y = y;
+                }
+            }
+            wp_clear( ctx );
+            return result;
+        };
+        bool ok = true;
+        float previousPosition = -1;
+        for( const auto value : { -100.0f, -50.0f, 0.0f, 50.0f, 100.0f } )
+        {
+            slider->setValue( value );
+            const auto visible = frame( 450, 290, false );
+            const auto position = vertical ? visible.y : visible.x;
+            ok &= check( visible.cursor && visible.restored && slider->isEnabled() && slider->getValue() == value &&
+                         position > previousPosition,
+                         "readonly axis sliders must visibly track negative, centered and positive programmatic values" );
+            previousPosition = position;
+        }
+        slider->setValue( -150 );
+        ok &= check( slider->getValue() == -100, "axis slider must clamp updates below -100 percent" );
+        slider->setValue( 150 );
+        ok &= check( slider->getValue() == 100, "axis slider must clamp updates above +100 percent" );
+        slider->setValue( 0 );
+        auto center = frame( 450, 290, false );
+        const auto x = static_cast<int>( center.x ), y = static_cast<int>( center.y );
+        frame( x, y, true );
+        auto dragged = frame( x + ( vertical ? 0 : 80 ), y + ( vertical ? 60 : 0 ), true );
+        frame( x, y, false );
+        ok &= check( dragged.restored && slider->getValue() == 0 && !slider->isDragging(),
+                     "readonly axis slider must ignore pointer dragging without leaking shared flags" );
+        slider->setHandleInputEvents( true );
+        frame( x, y, true );
+        auto interactive = frame( x + ( vertical ? 0 : 80 ), y + ( vertical ? 60 : 0 ), true );
+        frame( x, y, false );
+        ok &= check( interactive.restored && slider->getValue() > 20,
+                     "reenabling input must restore ordinary native slider interaction" );
+        slider->setValue( 0 );
+        frame( x, y, true, true );
+        const auto inherited = frame( x + ( vertical ? 0 : 80 ), y + ( vertical ? 60 : 0 ), true, true );
+        frame( x, y, false );
+        ok &= check( inherited.restored && slider->getValue() == 0,
+                     "an interactive slider must preserve and obey inherited readonly window flags" );
+        if( vertical )
+        {
+            slider->setHandleInputEvents( false );
+            slider->setPosition( { 900, 900 } );
+            const auto clipped = frame( x, y, true );
+            ok &= check( !clipped.cursor && clipped.restored && !slider->isDragging(),
+                         "a clipped vertical readonly slider must restore flags on its early return" );
+        }
+        manager.clear();
+        return ok;
+    }
+
+    bool testSceneReadonlySlider()
+    {
+        class Actor : public scene::GameActor
+        {
+        public:
+            bool isEnabledInScene() const override { return true; }
+            bool isVisible() const override { return true; }
+        };
+        class Slider : public scene::Slider
+        {
+        public:
+            using scene::Slider::updateElementState;
+        };
+        ui::ClawUIManager manager;
+        auto element = manager.addElement( ui::IUISlider::typeInfo() );
+        auto native = dynamic_pointer_cast<ui::IUISlider>( element );
+        if( !native ) return check( false, "scene readonly slider needs a native renderer element" );
+        auto actor = make_ptr<Actor>();
+        auto slider = make_ptr<Slider>();
+        slider->setActor( actor );
+        slider->setElement( element );
+        slider->setEnabled( true );
+        slider->setMinValue( -100 );
+        slider->setMaxValue( 100 );
+        slider->setCascadeInput( false );
+        slider->setValue( -75 );
+        bool ok = check( !native->getHandleInputEvents() && native->isEnabled() && native->getValue() == -75 &&
+                         native->getMinValue() == -100 && native->getMaxValue() == 100,
+                         "scene cascadeInput=false must publish a readonly signed slider while keeping it enabled" );
+        slider->setValue( 75 );
+        slider->setDirection( Direction::Vertical );
+        ok &= check( native->getValue() == 75 && native->getDirection() == Direction::Vertical && !native->getHandleInputEvents(),
+                     "scene programmatic axis updates and direction must reach the readonly native slider" );
+        slider->setCascadeInput( true );
+        slider->updateElementState();
+        ok &= check( native->getHandleInputEvents(), "scene slider must restore native interaction when cascade input is enabled" );
+        slider->setElement( nullptr );
+        slider->setActor( nullptr );
+        element->setOwner( nullptr );
+        slider = nullptr;
+        manager.clear();
+        return ok;
+    }
+
     bool testDropdownTextStyleIsolation()
     {
         ui::ClawUIManager manager;
@@ -1100,10 +1261,21 @@ int main( int argc, char **argv )
                      ok ? "passed" : "failed" );
         return ok ? 0 : 1;
     }
+    if( argc > 1 && std::strcmp( argv[1], "--readonly-sliders-only" ) == 0 )
+    {
+        bool ok = testReadonlySlider( Direction::Horizontal );
+        ok &= testReadonlySlider( Direction::Vertical );
+        ok &= testSceneReadonlySlider();
+        std::printf( "Readonly slider contracts: 3 cases, %u assertions, %s.\n", assertions, ok ? "passed" : "failed" );
+        return ok ? 0 : 1;
+    }
     bool ok = testRemoveEachElement();
     ok &= testSceneTextAppearance();
     ok &= testSceneButtonAppearance();
     ok &= testButtonDrawStyleIsolation();
+    ok &= testReadonlySlider( Direction::Horizontal );
+    ok &= testReadonlySlider( Direction::Vertical );
+    ok &= testSceneReadonlySlider();
     ok &= testDropdownTextStyleIsolation();
     ok &= testDropdownFrameFontLifetime( fixture );
     ok &= testDropdownFrameFontLifetime( fixture, true );
@@ -1125,6 +1297,6 @@ int main( int argc, char **argv )
     ok &= testSortCapturesEachOrderOnce();
     ok &= testDrawPinsItsFrameMembers( fixture );
     if( ok )
-        std::printf( "Claw UI destruction tests: 25 cases, %u assertions passed.\n", assertions );
+        std::printf( "Claw UI destruction tests: 28 cases, %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }
