@@ -19,11 +19,11 @@ namespace workphone::vehicle
      * pitch commands. Values are held in simple POD members to keep the
      * class lightweight for use in simulation loops.
      */
-    class TLinkage
+    class Linkage
     {
     public:
         /// Default constructor
-        TLinkage();
+        Linkage();
 
         /// Attitude of the swashplate expressed in the ground (body) frame
         FrameOfRef m_swashFrame;

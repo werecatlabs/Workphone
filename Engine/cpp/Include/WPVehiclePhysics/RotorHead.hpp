@@ -42,7 +42,7 @@ namespace workphone::vehicle
         Rotor m_flyBar;
 
         /// Linkage geometry and kinematic data connecting rotor to swashplate
-        TLinkage m_linkage;
+        Linkage m_linkage;
 
         /// Torques transmitted to the body from the rotor head (teeter + shaft)
         physics_Vec m_torques = physics_Vec::zero();

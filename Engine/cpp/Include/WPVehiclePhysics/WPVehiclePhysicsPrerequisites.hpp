@@ -58,7 +58,7 @@ namespace workphone::vehicle
     class TFoilData;
     class TFoilLookup;
     class GearTrain;
-    class TLinkage;
+    class Linkage;
     class Lookup;
     class VehicleParam;
     class Rotor;
