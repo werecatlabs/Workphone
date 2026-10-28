@@ -23,6 +23,7 @@
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Math/Vector3.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include "WPProcedural/WPNoise.hpp"
 #include "WPProcedural/WPTextureForge.hpp"
 #include "WPProcedural/WPGeometryKit.hpp"
@@ -36,7 +37,9 @@ namespace workphone
         /**
          * @brief Aggregates all procedural systems and orchestrates them.
          */
-        class WPProcedural_API WPProceduralPipeline
+        // The heap body includes every embedded subsystem; their value
+        // construction does not reserve separate bodies.
+        class WPProcedural_API WPProceduralPipeline : public SourceBudgetObject
         {
         public:
             explicit WPProceduralPipeline( u32 seed = 0xc0de );

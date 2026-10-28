@@ -6,6 +6,7 @@
 #define WPVehicleAppearance_h__
 
 #include "WPProcedural/WPProceduralPrerequisites.hpp"
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include "WPProcedural/WPProceduralTextureData.hpp"
 #include "WPProcedural/WPVehicleGeometry.hpp"
 #include <Workphone/Interface/Procedural/VehicleAppearanceTypes.hpp>
@@ -17,7 +18,7 @@ namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API WPVehicleAppearance
+        class WPProcedural_API WPVehicleAppearance : public SourceBudgetObject
         {
         public:
             explicit WPVehicleAppearance( u32 seed = 0x7f4a7c15u );

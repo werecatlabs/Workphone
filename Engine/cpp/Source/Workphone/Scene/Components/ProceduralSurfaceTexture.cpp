@@ -4,6 +4,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <algorithm>
 
 namespace workphone::scene
@@ -41,27 +42,42 @@ namespace workphone::scene
     bool ProceduralSurfaceTexture::regenerate()
     {
         m_dirty = false;
-        auto app = core::IApplicationManager::instancePtr();
-        if( !m_service && app && app->getFactoryManager() )
-        {
-            m_service = app->getFactoryManager()->createObjectFromType<procedural::ITextureForge>(
-                "ITextureForge" );
-        }
-        if( !m_service )
-        {
-            m_error = "Load the WPProcedural plugin to bake surface textures";
-            return false;
-        }
         try
         {
+            const auto denials = sourceBudgetDenialCount();
+            auto app = core::IApplicationManager::instancePtr();
+            if( !m_service && app && app->getFactoryManager() )
+            {
+                m_service = app->getFactoryManager()->createObjectFromType<procedural::ITextureForge>(
+                    "ITextureForge" );
+            }
+            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            if( !m_service )
+            {
+                m_error = "Load the WPProcedural plugin to bake surface textures";
+                return false;
+            }
             m_service->setSeed( m_seed );
-            m_result = m_service->bakeSurface( m_surface, m_params );
+            auto candidate = m_service->bakeSurface( m_surface, m_params );
+            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            m_result = std::move( candidate );
             m_error.clear();
             return true;
         }
+        catch( const std::bad_alloc & )
+        {
+            m_dirty = true;
+            m_error = "Out of memory";
+            return false;
+        }
         catch( const std::exception &e )
         {
-            m_error = e.what();
+            try { m_error = e.what(); }
+            catch( const std::bad_alloc & )
+            {
+                m_dirty = true;
+                m_error = "Out of memory";
+            }
             return false;
         }
     }

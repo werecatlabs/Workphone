@@ -57,19 +57,19 @@ namespace workphone::scene
     bool ProceduralSky::regenerate()
     {
         m_dirty = false;
-        auto app = core::IApplicationManager::instancePtr();
-        if( !m_service && app && app->getFactoryManager() )
-        {
-            m_service = app->getFactoryManager()->createObjectFromType<procedural::ISkyAtmosphere>(
-                "ISkyAtmosphere" );
-        }
-        if( !m_service )
-        {
-            m_error = "Load the WPProcedural plugin to generate sky parameters";
-            return false;
-        }
         try
         {
+            auto app = core::IApplicationManager::instancePtr();
+            if( !m_service && app && app->getFactoryManager() )
+            {
+                m_service = app->getFactoryManager()->createObjectFromType<procedural::ISkyAtmosphere>(
+                    "ISkyAtmosphere" );
+            }
+            if( !m_service )
+            {
+                m_error = "Load the WPProcedural plugin to generate sky parameters";
+                return false;
+            }
             m_service->setState( m_state );
             m_service->update();
             m_results = m_service->getResults();
@@ -114,6 +114,12 @@ namespace workphone::scene
             }
             m_error.clear();
             return true;
+        }
+        catch( const std::bad_alloc & )
+        {
+            m_dirty = true;
+            m_error = "Out of memory";
+            return false;
         }
         catch( const std::exception &e )
         {

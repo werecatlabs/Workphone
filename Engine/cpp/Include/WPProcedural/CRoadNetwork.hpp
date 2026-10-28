@@ -48,9 +48,12 @@ namespace workphone
          *   - Manhole covers and gully gratings
          *   - Proper collision geometry
          */
-        class WPProcedural_API CRoadNetwork : public IRoadNetwork
+        class WPProcedural_API CRoadNetwork : public IRoadNetwork, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             /** @brief Virtual destructor. */
             ~CRoadNetwork() override;
 

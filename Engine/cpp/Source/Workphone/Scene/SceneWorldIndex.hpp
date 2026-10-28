@@ -2,7 +2,7 @@
 #include <Workphone/Scene/SceneWorld.hpp>
 #include <algorithm>
 #include <numeric>
-#include <map>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone::scene
 {
@@ -15,8 +15,8 @@ namespace workphone::scene
             Vector3F minimum, maximum;
             u32 begin = 0, end = 0, left = 0, right = 0;
         };
-        Array<Node> m_nodes;
-        Array<u32> m_order;
+        Array<Node> m_nodes{ Allocator<Node>( sourceBudget ) };
+        Array<u32> m_order{ Allocator<u32>( sourceBudget ) };
         u32 buildNode( const Array<WorldCell> &cells, u32 begin, u32 end )
         {
             Node node; node.begin = begin; node.end = end;
@@ -68,11 +68,18 @@ namespace workphone::scene
             }
         }
     public:
-        std::map<u64, u32> byKey;
+        SourceBudgetMap<u64, u32> byKey;
         u32 persistent = ~u32( 0 );
+        void clear()
+        {
+            byKey.clear();
+            m_nodes = Array<Node>{ Allocator<Node>( sourceBudget ) };
+            m_order = Array<u32>{ Allocator<u32>( sourceBudget ) };
+            persistent = ~u32( 0 );
+        }
         void build( const WorldManifest &manifest )
         {
-            *this = {};
+            clear();
             for( u32 i = 0; i < manifest.cells.size(); ++i )
             {
                 byKey.emplace( manifest.cells[i].key, i );

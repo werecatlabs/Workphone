@@ -2,15 +2,19 @@
 #define CProceduralWorld_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IProceduralWorld.hpp>
 
 namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API CProceduralWorld : public IProceduralWorld
+        class WPProcedural_API CProceduralWorld : public IProceduralWorld, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralWorld();
             ~CProceduralWorld() override;
             void unload( SmartPtr<ISharedObject> data ) override;

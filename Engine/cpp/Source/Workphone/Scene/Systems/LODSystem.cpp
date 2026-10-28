@@ -90,7 +90,9 @@ namespace workphone::scene
             m_pendingBatch.reset();
         }
 
-        auto batch = buildBatch();
+        SharedPtr<LODBatch> batch;
+        try { batch = buildBatch(); }
+        catch( const std::bad_alloc & ) { return; } // Keep the last applied visibility; retry next frame.
         if( !batch || batch->slots.empty() )
         {
             return;
@@ -122,9 +124,14 @@ namespace workphone::scene
             return existing->second;
         }
 
-        const auto slot = ComponentSystem::addComponent( component );
+        // Admit the lookup node before base storage can publish a component.
+        auto entry = m_groupSlots.emplace( group.get(), 0 );
+        u32 slot;
+        try { slot = ComponentSystem::addComponent( component ); }
+        catch( ... ) { m_groupSlots.erase( entry.first ); throw; }
         if( slot == std::numeric_limits<u32>::max() )
         {
+            m_groupSlots.erase( entry.first );
             return slot;
         }
 
@@ -137,7 +144,7 @@ namespace workphone::scene
         m_generations[slot] = m_nextGeneration++;
         m_currentLODs[slot] = -1;
         m_appliedRevisions[slot] = 0;
-        m_groupSlots[group.get()] = slot;
+        entry.first->second = slot;
 
         group->setComponentSystem( this );
         return slot;
@@ -252,10 +259,18 @@ namespace workphone::scene
 
     void LODSystem::reserveData( size_t size )
     {
-        m_groups.resize( size, nullptr );
-        m_generations.resize( size, 0 );
-        m_currentLODs.resize( size, -1 );
-        m_appliedRevisions.resize( size, 0 );
+        auto groups = m_groups;
+        auto generations = m_generations;
+        auto current = m_currentLODs;
+        auto revisions = m_appliedRevisions;
+        groups.resize( size, nullptr );
+        generations.resize( size, 0 );
+        current.resize( size, -1 );
+        revisions.resize( size, 0 );
+        m_groups.swap( groups );
+        m_generations.swap( generations );
+        m_currentLODs.swap( current );
+        m_appliedRevisions.swap( revisions );
     }
 
     SharedPtr<LODSystem::LODBatch> LODSystem::buildBatch() const
@@ -449,10 +464,12 @@ namespace workphone::scene
         for( size_t begin = 0; begin < itemCount; begin += grainSize )
         {
             const auto end = std::min( begin + grainSize, itemCount );
-            auto job = jobQueue->startJob( [batch, begin, end]() {
+            SmartPtr<IJob> job;
+            try { job = jobQueue->startJob( [batch, begin, end]() {
                 calculateRange( batch, begin, end );
                 batch->remainingJobs.fetch_sub( 1, memory_semantics::release );
-            } );
+            } ); }
+            catch( const std::bad_alloc & ) { /* Calculate rejected ranges locally. */ }
 
             if( !job )
             {

@@ -5,6 +5,7 @@
 #include <Workphone/WorkphoneHeaders.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Jobs/CameraManagerReset.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -13,10 +14,17 @@ namespace workphone::scene
 {
     namespace
     {
+        template <class V>
+        using StringLookup = std::unordered_map<
+            String, V, std::hash<String>, std::equal_to<String>,
+            SourceBudgetAllocator<std::pair<const String, V>>>;
+        using ComponentData = Pair<SmartPtr<IComponent>, SmartPtr<Properties>>;
+
         struct LoadBatch
         {
-            std::unordered_map<String, SmartPtr<ISharedObject>> objects;
-            Array<Pair<SmartPtr<IComponent>, SmartPtr<Properties>>> components;
+            StringLookup<SmartPtr<ISharedObject>> objects;
+            Array<ComponentData> components{ Allocator<ComponentData>( sourceBudget ) };
+            Array<SmartPtr<IGameActor>> createdActors{ Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
         };
 
         thread_local LoadBatch *activeBatch = nullptr;
@@ -420,8 +428,8 @@ namespace workphone::scene
         {
             return nullptr;
         }
-        std::unordered_map<String, String> identities;
-        std::function<void( SmartPtr<Properties> )> index = [&]( SmartPtr<Properties> object ) {
+        StringLookup<String> identities;
+        auto index = [&]( auto &&self, SmartPtr<Properties> object ) -> void {
             String uuid;
             if( getDirectStringProperty( object.get(), uuidStr, uuid ) && !uuid.empty() )
             {
@@ -430,8 +438,8 @@ namespace workphone::scene
                     throw std::runtime_error( "Duplicate prefab UUID: " + uuid );
                 }
             }
-            Array<SmartPtr<Properties>> components;
-            Array<SmartPtr<Properties>> children;
+            Array<SmartPtr<Properties>> components{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
+            Array<SmartPtr<Properties>> children{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
             for( auto child : object->getChildren() )
             {
                 if( child->getName() == componentStr || child->getName() == componentsStr )
@@ -455,50 +463,49 @@ namespace workphone::scene
             }
             for( auto child : children )
             {
-                index( child );
+                self( self, child );
             }
         };
-        index( data );
-        std::function<SmartPtr<Properties>( SmartPtr<Properties> )> copy =
-            [&]( SmartPtr<Properties> source ) {
-                auto result = workphone::make_ptr<Properties>();
-                result->setName( source->getName() );
-                for( auto property : source->getPropertiesAsArray() )
+        index( index, data );
+        auto copy = [&]( auto &&self, SmartPtr<Properties> source ) -> SmartPtr<Properties> {
+            auto result = workphone::make_ptr<Properties>();
+            result->setName( source->getName() );
+            for( auto property : source->getPropertiesAsArray() )
+            {
+                auto found = identities.find( property.getValue() );
+                if( found != identities.end() )
                 {
-                    auto found = identities.find( property.getValue() );
-                    if( found != identities.end() )
+                    property.setValue( found->second );
+                }
+                // Serialized reference arrays may arrive as plain semicolon-separated strings.
+                else if( property.getValue().find( ';' ) != String::npos )
+                {
+                    Array<String> values{ Allocator<String>( sourceBudget ) };
+                    StringUtil::parseArray( property.getValue(), values );
+                    bool changed = false;
+                    for( auto &value : values )
                     {
-                        property.setValue( found->second );
-                    }
-                    // Serialized reference arrays may arrive as plain semicolon-separated strings.
-                    else if( property.getValue().find( ';' ) != String::npos )
-                    {
-                        Array<String> values;
-                        StringUtil::parseArray( property.getValue(), values );
-                        bool changed = false;
-                        for( auto &value : values )
+                        auto entry = identities.find( value );
+                        if( entry != identities.end() )
                         {
-                            auto entry = identities.find( value );
-                            if( entry != identities.end() )
-                            {
-                                value = entry->second;
-                                changed = true;
-                            }
-                        }
-                        if( changed )
-                        {
-                            property.setValue( StringUtil::toString( values ) );
+                            value = entry->second;
+                            changed = true;
                         }
                     }
-                    result->setProperty( property );
+                    if( changed )
+                    {
+                        property.setValue( StringUtil::toString( values ) );
+                    }
                 }
-                for( auto child : source->getChildren() )
-                {
-                    result->addChild( copy( child ) );
-                }
-                return result;
-            };
-        return copy( data );
+                result->setProperty( property );
+            }
+            for( auto child : source->getChildren() )
+            {
+                result->addChild( self( self, child ) );
+            }
+            return result;
+        };
+        return copy( copy, data );
     }
 
     Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors( const Array<SmartPtr<Properties>> &data,
@@ -510,7 +517,12 @@ namespace workphone::scene
         }
         auto concrete = workphone::dynamic_pointer_cast<GameScene>( target );
         const auto generation = concrete ? concrete->getLoadGeneration() : 0;
+        const auto admissionEpoch = sourceBudgetDenialCount();
         auto checkCurrent = [&] {
+            if( sourceBudgetDenialCount() != admissionEpoch )
+            {
+                throw std::bad_alloc();
+            }
             if( target &&
                 ( !target->isLoaded() || ( concrete && concrete->getLoadGeneration() != generation ) ) )
             {
@@ -519,7 +531,7 @@ namespace workphone::scene
         };
         LoadBatch batch;
         // Include the pinned destination's existing graph, never the global current scene.
-        std::function<void( SmartPtr<IGameActor> )> indexActor = [&]( SmartPtr<IGameActor> actor ) {
+        auto indexActor = [&]( auto &&self, SmartPtr<IGameActor> actor ) -> void {
             if( !actor )
             {
                 return;
@@ -531,17 +543,17 @@ namespace workphone::scene
             }
             for( const auto &child : actor->getChildren() )
             {
-                indexActor( child );
+                self( self, child );
             }
         };
         if( target )
         {
             for( const auto &actor : target->getActors() )
             {
-                indexActor( actor );
+                indexActor( indexActor, actor );
             }
         }
-        std::unordered_set<String> identities;
+        std::unordered_set<String, std::hash<String>, std::equal_to<String>, SourceBudgetAllocator<String>> identities;
         for( const auto &entry : batch.objects )
         {
             identities.insert( entry.first );
@@ -557,41 +569,41 @@ namespace workphone::scene
                 }
             }
         };
-        size_t actorCount = 0;
-        std::function<void( const SmartPtr<Properties> & )> validateActor =
-            [&]( const SmartPtr<Properties> &properties ) {
-                if( !properties )
+        size_t actorCount = 0, componentCount = 0;
+        auto validateActor = [&]( auto &&self, const SmartPtr<Properties> &properties ) -> void {
+            if( !properties )
+            {
+                throw std::invalid_argument( "Missing actor properties" );
+            }
+            ++actorCount;
+            validateIdentity( properties );
+            Array<SmartPtr<Properties>> components{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
+            Array<SmartPtr<Properties>> children{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
+            for( const auto &child : properties->getChildren() )
+            {
+                const auto name = child->getName();
+                if( name == componentStr || name == componentsStr )
                 {
-                    throw std::invalid_argument( "Missing actor properties" );
+                    addComponentData( components, child );
                 }
-                ++actorCount;
-                validateIdentity( properties );
-                Array<SmartPtr<Properties>> components;
-                Array<SmartPtr<Properties>> children;
-                for( const auto &child : properties->getChildren() )
+                else if( name == childStr || name == childrenStr )
                 {
-                    const auto name = child->getName();
-                    if( name == componentStr || name == componentsStr )
-                    {
-                        addComponentData( components, child );
-                    }
-                    else if( name == childStr || name == childrenStr )
-                    {
-                        addActorData( children, child );
-                    }
+                    addActorData( children, child );
                 }
-                for( const auto &component : components )
-                {
-                    validateIdentity( component );
-                }
-                for( const auto &child : children )
-                {
-                    validateActor( child );
-                }
-            };
+            }
+            for( const auto &component : components )
+            {
+                validateIdentity( component );
+                ++componentCount;
+            }
+            for( const auto &child : children )
+            {
+                self( self, child );
+            }
+        };
         for( const auto &properties : data )
         {
-            validateActor( properties );
+            validateActor( validateActor, properties );
         }
         auto manager = core::IApplicationManager::instancePtr()->getGameManager();
         const auto capacity = manager->getActors().size();
@@ -609,15 +621,21 @@ namespace workphone::scene
             }
         }
 
+        // Admit return, rollback and deferred-load inventories before creating actors.
+        Array<SmartPtr<IGameActor>> roots{ Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
+        roots.reserve( data.size() );
+        batch.createdActors.reserve( actorCount );
+        batch.components.reserve( componentCount );
+
         // Keep one render pause for the entire graph. Resource loads take nested
         // task locks, which would otherwise restart and stop rendering per mesh.
-        std::unique_ptr<TaskLock> renderTaskLock;
+        SourceBudgetUnique<TaskLock> renderTaskLock;
         if( auto tasks = core::IApplicationManager::instancePtr()->getTaskManager() )
         {
             if( auto renderTask = tasks->getTask( TaskId::Render );
                 renderTask && renderTask->isLoaded() )
             {
-                renderTaskLock = std::make_unique<TaskLock>( renderTask );
+                renderTaskLock = makeSourceBudgetUnique<TaskLock>( renderTask );
             }
         }
 
@@ -637,7 +655,6 @@ namespace workphone::scene
             } ) };
 
         activeBatch = &batch;
-        Array<SmartPtr<IGameActor>> roots;
         try
         {
             for( const auto &properties : data )
@@ -648,6 +665,7 @@ namespace workphone::scene
                 {
                     throw std::runtime_error( "Actor capacity exhausted" );
                 }
+                batch.createdActors.push_back( actor );
                 roots.push_back( actor );
                 actor->setScene( target );
                 loadFromData( actor, properties, true );
@@ -666,9 +684,18 @@ namespace workphone::scene
         }
         catch( ... )
         {
-            for( auto &actor : roots )
+            const bool admissionFailed = sourceBudgetDenialCount() != admissionEpoch;
+            // Release lookup pins before retirement and destroy children first.
+            // The flat admitted inventory also owns actors whose hierarchy attach failed.
+            batch.components.clear();
+            batch.objects.clear();
+            for( auto it = batch.createdActors.rbegin(); it != batch.createdActors.rend(); ++it )
             {
-                manager->destroyActor( actor );
+                manager->destroyActor( *it, false );
+            }
+            if( admissionFailed )
+            {
+                throw std::bad_alloc();
             }
             throw;
         }
@@ -692,7 +719,7 @@ namespace workphone::scene
             return false;
         }
 
-        Array<SmartPtr<Properties>> componentsData;
+        Array<SmartPtr<Properties>> componentsData{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
         for( const auto &child : actorData->getChildren() )
         {
             if( child->getName() == componentStr || child->getName() == componentsStr )
@@ -725,7 +752,7 @@ namespace workphone::scene
         {
             actorProperties->setProperty( property );
         }
-        Array<SmartPtr<Properties>> componentsData;
+        Array<SmartPtr<Properties>> componentsData{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
         for( const auto &child : actorData->getChildren() )
         {
             const auto name = child->getName();
@@ -822,7 +849,7 @@ namespace workphone::scene
             auto bSmoothMotion = false;
             auto collisionMask = u32( 0 );
             auto layer = String();
-            auto tags = Array<String>();
+            Array<String> tags{ Allocator<String>( sourceBudget ) };
 
             if( !getDirectStringProperty( properties, labelStr, label ) )
             {
@@ -885,7 +912,7 @@ namespace workphone::scene
                 }
             }
 
-            auto componentsData = Array<SmartPtr<Properties>>();
+            Array<SmartPtr<Properties>> componentsData{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
 
             const auto componentsDataContainers = properties->getChildrenByName( componentsStr );
             for( const auto &componentData : componentsDataContainers )
@@ -899,7 +926,7 @@ namespace workphone::scene
                 addComponentData( componentsData, componentData );
             }
 
-            auto components = Array<Pair<SmartPtr<IComponent>, SmartPtr<Properties>>>();
+            Array<ComponentData> components{ Allocator<ComponentData>( sourceBudget ) };
             components.reserve( componentsData.size() );
 
             for( auto &componentData : componentsData )
@@ -1022,7 +1049,7 @@ namespace workphone::scene
 
             if( cascade )
             {
-                auto childrenData = Array<SmartPtr<Properties>>();
+                Array<SmartPtr<Properties>> childrenData{ Allocator<SmartPtr<Properties>>( sourceBudget ) };
 
                 for( const auto &childData : properties->getChildren() )
                 {
@@ -1041,6 +1068,10 @@ namespace workphone::scene
                     }
                     if( childActor )
                     {
+                        if( activeBatch )
+                        {
+                            activeBatch->createdActors.push_back( childActor );
+                        }
                         pActor->addChild( childActor );
                         GameActorUtil::loadFromData( childActor, childData, cascade );
                     }

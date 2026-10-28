@@ -31,11 +31,12 @@
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/Thread/TryLockGuard.hpp>
 #include <Workphone/ApplicationUtil.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 
 namespace workphone::scene
 {
 
-    class SpatialPartitioner
+    class SpatialPartitioner : public SourceBudgetObject
     {
     public:
         virtual ~SpatialPartitioner() = default;
@@ -66,7 +67,18 @@ namespace workphone::scene
             int x = static_cast<int>( std::floor( pos.x / m_cellSize ) );
             int y = static_cast<int>( std::floor( pos.y / m_cellSize ) );
             int z = static_cast<int>( std::floor( pos.z / m_cellSize ) );
-            m_grid[{ x, y, z }].push_back( actor );
+            const GridKey key{ x, y, z };
+            auto entry = m_grid.try_emplace( key );
+            try
+            {
+                m_cellUpdates.try_emplace( key, 0.0f );
+                entry.first->second.push_back( actor );
+            }
+            catch( ... )
+            {
+                if( entry.second ) { m_grid.erase( entry.first ); m_cellUpdates.erase( key ); }
+                throw;
+            }
         }
 
         void removeActor( SmartPtr<IGameActor> actor ) override
@@ -181,8 +193,8 @@ namespace workphone::scene
         };
 
         real_Num m_cellSize;
-        std::map<GridKey, std::vector<SmartPtr<IGameActor>>> m_grid;
-        std::map<GridKey, float> m_cellUpdates;
+        SourceBudgetMap<GridKey, std::vector<SmartPtr<IGameActor>, SourceBudgetAllocator<SmartPtr<IGameActor>>>> m_grid;
+        SourceBudgetMap<GridKey, float> m_cellUpdates;
     };
 
     class OctreePartitioner : public SpatialPartitioner
@@ -222,7 +234,7 @@ namespace workphone::scene
 
         void clear() override
         {
-            m_root = std::make_unique<OctreeNode>( Vector3F( 0, 0, 0 ), 1000.0f );
+            m_root->clear();
         }
 
         void update( const Vector3F &referencePoint, float deltaTime,
@@ -232,11 +244,11 @@ namespace workphone::scene
         }
 
     private:
-        struct OctreeNode
+        struct OctreeNode : SourceBudgetObject
         {
             Vector3F center;
             real_Num halfSize;
-            std::vector<SmartPtr<IGameActor>> actors;
+            std::vector<SmartPtr<IGameActor>, SourceBudgetAllocator<SmartPtr<IGameActor>>> actors;
             std::unique_ptr<OctreeNode> children[8];
             bool isLeaf = true;
             float updateAccumulator = 0.0f;
@@ -247,7 +259,7 @@ namespace workphone::scene
 
             void insert( SmartPtr<IGameActor> actor )
             {
-                if( isLeaf && actors.size() < 8 )
+                if( isLeaf && ( actors.size() < 8 || halfSize < 0.001f ) )
                 {
                     actors.push_back( actor );
                     return;
@@ -374,9 +386,17 @@ namespace workphone::scene
                 return index;
             }
 
+            void clear()
+            {
+                actors.clear();
+                for( auto &child : children ) child.reset();
+                isLeaf = true;
+                updateAccumulator = 0.0f;
+            }
+
             void subdivide()
             {
-                isLeaf = false;
+                std::unique_ptr<OctreeNode> staged[8];
                 real_Num nextHalf = halfSize * 0.5f;
                 for( int i = 0; i < 8; ++i )
                 {
@@ -384,12 +404,14 @@ namespace workphone::scene
                     nextCenter.x += ( i & 1 ) ? nextHalf : -nextHalf;
                     nextCenter.y += ( i & 2 ) ? nextHalf : -nextHalf;
                     nextCenter.z += ( i & 4 ) ? nextHalf : -nextHalf;
-                    children[i] = std::make_unique<OctreeNode>( nextCenter, nextHalf );
+                    staged[i] = std::make_unique<OctreeNode>( nextCenter, nextHalf );
                 }
                 for( auto &actor : actors )
                 {
-                    children[getChildIndex( actor->getWorldTransform().getPosition() )]->insert( actor );
+                    staged[getChildIndex( actor->getWorldTransform().getPosition() )]->insert( actor );
                 }
+                for( int i = 0; i < 8; ++i ) children[i] = std::move( staged[i] );
+                isLeaf = false;
                 actors.clear();
             }
         };
@@ -873,13 +895,13 @@ namespace workphone::scene
                     WP_ASSERT( StringUtil::isNullOrEmpty( handle->getUUIDAsString() ) == false );
 #endif
 
-                    actor->setScene( this );
-
                     if( m_actors.size() >= m_actors.capacity() )
                     {
                         throw std::length_error( "Scene actor capacity exhausted" );
                     }
 
+                    if( m_partitioner ) m_partitioner->addActor( actor );
+                    actor->setScene( this );
                     m_actors.push_back( actor );
 
                     // A cancelled load leaves an empty scene available for manual editing.
@@ -887,10 +909,6 @@ namespace workphone::scene
                     if( getSceneLoadingState() == SceneLoadingState::Cancelled )
                     {
                         m_sceneLoadingState = SceneLoadingState::Loaded;
-                    }
-                    if( m_partitioner )
-                    {
-                        m_partitioner->addActor( actor );
                     }
 
                     // Scene ownership includes update ownership.  In particular, loaded
@@ -1012,7 +1030,7 @@ namespace workphone::scene
     Array<SmartPtr<IGameActor>> GameScene::getActors() const
     {
         auto actors = m_actors.readLocked();
-        return { actors.begin(), actors.end() };
+        return Array<SmartPtr<IGameActor>>( actors.begin(), actors.end(), Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
     }
 
     void GameScene::setActors( const Array<SmartPtr<IGameActor>> &actors )
@@ -1681,28 +1699,30 @@ namespace workphone::scene
     void GameScene::setSpatialPartitioningMethod( SpatialPartitioningMethod method )
     {
         ScopedLock lock( this );
-        m_partitioningMethod = method;
+        std::unique_ptr<SpatialPartitioner> candidate;
 
         switch( method )
         {
         case SpatialPartitioningMethod::UniformGrid:
-            m_partitioner = std::make_unique<UniformGridPartitioner>();
+            candidate = std::make_unique<UniformGridPartitioner>();
             break;
         case SpatialPartitioningMethod::Octree:
-            m_partitioner = std::make_unique<OctreePartitioner>();
+            candidate = std::make_unique<OctreePartitioner>();
             break;
         default:
-            m_partitioner = nullptr;
+            candidate = nullptr;
             break;
         }
 
-        if( m_partitioner )
+        if( candidate )
         {
             for( auto actor : m_actors )
             {
-                m_partitioner->addActor( actor );
+                candidate->addActor( actor );
             }
         }
+        m_partitioner = std::move( candidate );
+        m_partitioningMethod = method;
     }
 
     IGameScene::SpatialPartitioningMethod GameScene::getSpatialPartitioningMethod() const

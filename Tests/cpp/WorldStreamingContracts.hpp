@@ -2,8 +2,10 @@
 #define WPWorldStreamingContracts_h__
 
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <future>
 #include <mutex>
 #include <stdexcept>
@@ -63,6 +65,274 @@ namespace world_streaming_contracts
             return result;
         };
         return request;
+    }
+    struct SharedSourceLimit
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
+        u64 original = scheduler->stats().limits[size_t( StreamMemoryClass::SourceCpu )];
+        String error;
+
+        SharedSourceLimit()
+        {
+            // Diagnostics must not create a new character slab during a denial sweep.
+            error.reserve( 512 );
+        }
+        u64 used() const
+        {
+            return scheduler->stats().used[size_t( StreamMemoryClass::SourceCpu )];
+        }
+        void set( u64 bytes )
+        {
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, bytes, error ),
+                     "Shared SourceCpu test limit changes only above live storage." );
+        }
+        ~SharedSourceLimit()
+        {
+            scheduler->setBudget( StreamMemoryClass::SourceCpu, original, error );
+        }
+    };
+
+    inline void sourceMetadataContracts()
+    {
+        SharedSourceLimit source;
+        String error;
+        error.reserve( 512 );
+        const auto baseline = source.used();
+        const auto storageBytes = sourceBudgetStorageBytes( 73, 64 );
+        source.set( baseline + storageBytes );
+        const auto releaseStorage = []( void *p ) { freeSourceBudgetStorage( p, 64 ); };
+        std::unique_ptr<void, decltype( releaseStorage )> storage(
+            allocateSourceBudgetStorage( 73, 64 ), releaseStorage );
+        require( reinterpret_cast<std::uintptr_t>( storage.get() ) % 64 == 0 &&
+                     source.used() == baseline + storageBytes,
+                 "Source allocation admits its exact header, payload and alignment without a recursive lease." );
+        bool denied = false;
+        try
+        {
+            auto *unexpected = allocateSourceBudgetStorage( 1, alignof( u64 ) );
+            freeSourceBudgetStorage( unexpected, alignof( u64 ) );
+        }
+        catch( const std::bad_alloc & )
+        {
+            denied = true;
+        }
+        storage.reset();
+        require( denied && source.used() == baseline,
+                 "Full-cap Source denial and physical free return the exact admitted storage." );
+
+        source.set( baseline );
+        require( !WorldStreamingScheduler::reserveSharedSource( 0 ) && source.used() == baseline,
+                 "The allocation-only lease API rejects even zero-byte control storage at a full Source cap." );
+        source.set( source.original );
+        auto sharedLease = WorldStreamingScheduler::reserveSharedSource( 64 );
+        require( sharedLease && sharedLease->bytes() == 64 && source.used() > baseline + 64,
+                 "An allocation-only Source lease charges its own body and control storage as well as its declared bytes." );
+        const auto sharedLeaseBytes = source.used() - baseline;
+        std::weak_ptr<StreamBudgetLease> weakSharedLease = sharedLease;
+        source.set( source.used() );
+        require( !WorldStreamingScheduler::reserveSharedSource( 1 ),
+                 "Allocation-only Source admission rejects a second lease without recursion or oversubscription." );
+        sharedLease.reset();
+        require( weakSharedLease.expired() && source.used() == baseline + sharedLeaseBytes - 64,
+                 "Allocation-only lease bytes retire independently of its still-live weak control allocation." );
+        weakSharedLease.reset();
+        require( source.used() == baseline,
+                 "Allocation-only Source control storage returns after the last weak owner leaves." );
+        source.set( baseline + sharedLeaseBytes );
+        sharedLease = WorldStreamingScheduler::reserveSharedSource( 64 );
+        require( sharedLease && source.used() == baseline + sharedLeaseBytes,
+                 "The allocation-only Source lease retries successfully at its exact combined payload and metadata cap." );
+        sharedLease.reset();
+        source.set( baseline );
+        denied = false;
+        try
+        {
+            auto rejected = std::make_shared<WorldStreamingScheduler>();
+        }
+        catch( const std::bad_alloc & )
+        {
+            denied = true;
+        }
+        require( denied && source.used() == baseline,
+                 "Private scheduler metadata construction fails cleanly at the shared Source cap." );
+        size_t constructorRejections = 0, constructorAdmissions = 0;
+        for( u64 headroom = 0; headroom <= 8192; headroom += 256 )
+        {
+            source.set( baseline + headroom );
+            try
+            {
+                WorldStreamLimits limits;
+                limits.workers = 1;
+                auto scheduler = std::make_shared<WorldStreamingScheduler>( limits );
+                ++constructorAdmissions;
+                source.set( source.used() );
+            }
+            catch( const std::bad_alloc & )
+            {
+                ++constructorRejections;
+            }
+            require( source.used() == baseline,
+                     "Every constructor headroom rejection unwinds partial implementation, ledger and worker storage." );
+        }
+        require( constructorRejections && constructorAdmissions,
+                 "A bounded constructor sweep covers both partial admission failures and full-cap teardown." );
+        source.set( source.original );
+        {
+            WorldStreamLimits limits;
+            limits.workers = 1;
+            auto scheduler = std::make_shared<WorldStreamingScheduler>( limits );
+            const auto schedulerBytes = source.used();
+            require( schedulerBytes > baseline,
+                     "Private scheduler implementation, ledger and worker inventory use shared SourceCpu." );
+            source.set( schedulerBytes );
+            require( !scheduler->createProducer( {}, error ) && scheduler->stats().producers == 0 &&
+                         source.used() == schedulerBytes,
+                     "Producer wrapper denial leaves the scheduler inventory unchanged." );
+            require( !scheduler->reserve( StreamMemoryClass::Gpu, 0, error ) &&
+                         scheduler->stats().used[size_t( StreamMemoryClass::Gpu )] == 0,
+                     "Even a zero-byte resource reservation must admit its SourceCpu control storage." );
+            source.set( source.original );
+            auto producer = scheduler->createProducer( {}, error );
+            require( producer != nullptr && source.used() > schedulerBytes,
+                     "Producer wrapper, cancellation token and completion slots retry after Source recovery." );
+            std::weak_ptr<WorldStreamProducer> weakProducer = producer;
+            source.set( source.used() );
+            producer.reset();
+            require( weakProducer.expired() && scheduler->stats().producers == 0 &&
+                         source.used() > schedulerBytes,
+                     "A weak producer retains admitted control storage after its live inventory retires." );
+            weakProducer.reset();
+            require( source.used() == schedulerBytes,
+                     "Last weak producer release returns its physical control storage at the cap." );
+
+            source.set( source.original );
+            auto lease = scheduler->reserve( StreamMemoryClass::Gpu, 64, error );
+            require( lease != nullptr && source.used() > schedulerBytes,
+                     "A resource lease admits its body and control block through shared SourceCpu." );
+            std::weak_ptr<StreamBudgetLease> weakLease = lease;
+            source.set( source.used() );
+            lease.reset();
+            require( weakLease.expired() &&
+                         scheduler->stats().used[size_t( StreamMemoryClass::Gpu )] == 0 &&
+                         source.used() > schedulerBytes,
+                     "Resource bytes retire with the last strong lease while its weak control remains charged." );
+            weakLease.reset();
+            require( source.used() == schedulerBytes,
+                     "Weak lease destruction retires the remaining SourceCpu control allocation." );
+            source.set( source.used() );
+        }
+        require( source.used() == baseline,
+                 "Private scheduler teardown returns its metadata without allocating at the Source cap." );
+        source.set( source.original );
+
+        {
+            WorldStreamLimits limits;
+            limits.workers = 1;
+            auto scheduler = std::make_shared<WorldStreamingScheduler>( limits );
+            auto blocker = scheduler->createProducer( {}, error );
+            auto producer = scheduler->createProducer( {}, error );
+            require( blocker && producer, "Metadata replacement fixture creates both producers." );
+            Gate gate;
+            auto started = std::make_shared<std::promise<void>>();
+            auto entered = started->get_future();
+            auto blocking = valueRequest( 300 );
+            blocking.execute = [release = gate.future, started]( const StreamCancellation & ) {
+                started->set_value();
+                release.wait();
+                return WorldStreamResult{};
+            };
+            require( blocker->replace( { blocking }, error ) &&
+                         entered.wait_for( std::chrono::seconds( 5 ) ) == std::future_status::ready,
+                     "Metadata replacement fixture blocks its sole worker." );
+            require( producer->replace( { valueRequest( 301 ) }, error ),
+                     "Original generation is queued before metadata pressure." );
+            Array<WorldStreamRequest> replacement{ valueRequest( 302 ), valueRequest( 303 ),
+                                                   valueRequest( 304 ) };
+            size_t rejections = 0, admissions = 0;
+            for( u64 headroom = 0; headroom <= 16384; headroom += 256 )
+            {
+                const auto before = source.used();
+                const auto previous = producer->stats();
+                source.set( before + headroom );
+                if( producer->replace( replacement, error ) )
+                {
+                    ++admissions;
+                }
+                else
+                {
+                    ++rejections;
+                    const auto after = producer->stats();
+                    require( !error.empty() && after.generation == previous.generation &&
+                                 after.pending == previous.pending && source.used() == before,
+                             "Every partial metadata denial unwinds without replacing the live generation or leaking SourceCpu." );
+                }
+                source.set( source.original );
+            }
+            require( rejections && admissions,
+                     "Metadata headroom sweep covers both partial rejection and successful staging." );
+            source.set( source.used() );
+            producer->cancel();
+            require( producer->stats().pending == 0 && producer->stats().ready == 0,
+                     "Cancelling admitted pending wrappers needs no SourceCpu headroom." );
+            gate.open();
+            blocker->drain();
+            source.set( source.original );
+
+            struct PreparedResult
+            {
+                std::shared_ptr<WorldStreamingScheduler> shared;
+                std::shared_ptr<const u64> value = std::make_shared<const u64>( 305 );
+                std::atomic<bool> capped{ false };
+            };
+            auto prepared = std::make_shared<PreparedResult>();
+            prepared->shared = source.scheduler;
+            auto request = valueRequest( 305 );
+            request.execute = [prepared]( const StreamCancellation & ) {
+                String error;
+                const auto used = prepared->shared->stats().used[size_t( StreamMemoryClass::SourceCpu )];
+                prepared->capped.store( prepared->shared->setBudget( StreamMemoryClass::SourceCpu,
+                                                                    used, error ) );
+                WorldStreamResult result;
+                result.payload = prepared->value;
+                result.bytes = sizeof( u64 );
+                return result;
+            };
+            require( producer->replace( { request, request }, error ) == false,
+                     "Duplicate prepared keys remain invalid before publication." );
+            auto next = request;
+            next.key = 306;
+            require( producer->replace( { request, next }, error ),
+                     "Prepared requests admit every internal result/control wrapper before execution." );
+            await( [&] { return producer->stats().ready == 2 && producer->stats().active == 0; },
+                   "Both decoded outputs publish after the callback clamps SourceCpu to live storage." );
+            require( prepared->capped.load(), "The result callback installs the exact SourceCpu cap." );
+            source.set( source.used() );
+            WorldStreamResult result, second;
+            require( producer->take( result ) && result.key == 305 && result.payload && result.error.empty() &&
+                         producer->take( second ) && second.key == 306 && second.payload && second.error.empty(),
+                     "Completion front removal and result ownership transfer succeed at the full Source cap." );
+            producer->drain();
+            std::weak_ptr<const void> weakResult = result.payload;
+            result = {};
+            second = {};
+            require( weakResult.expired() &&
+                         scheduler->stats().used[size_t( StreamMemoryClass::ResultCpu )] == 0,
+                     "Result bytes retire when the last strong result alias leaves, despite retained weak ownership." );
+            const auto weakBytes = source.used();
+            weakResult.reset();
+            require( source.used() < weakBytes,
+                     "The last weak result alias releases its admitted result-envelope control block." );
+            source.set( source.original );
+            require( producer->replace( { valueRequest( 307 ) }, error ),
+                     "The same worker accepts more work after full-cap result transfer and teardown." );
+            await( [&] { return producer->stats().ready == 1 && producer->stats().active == 0; },
+                   "Worker remains usable after SourceCpu recovery." );
+            producer->drain();
+            source.set( source.used() );
+        }
+        require( source.used() == baseline,
+                 "Queue, token, result-wrapper and weak-control ownership all retire after the scheduler closes." );
+        std::puts( "World streaming SourceCpu metadata admission, full-cap result publication and retirement: PASS" );
     }
     inline void run()
     {
@@ -318,6 +588,7 @@ namespace world_streaming_contracts
         std::puts(
             "World streaming priority/fairness, atomic rejection, cancellation and budget lifetime: "
             "PASS" );
+        sourceMetadataContracts();
     }
 }  // namespace world_streaming_contracts
 #endif

@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 #include <Workphone/System/SourceBudgetStdString.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
@@ -156,7 +157,8 @@ namespace workphone
         /**
          * @brief Generates a complete procedural building assembly.
          */
-        class WPProcedural_API WPBuildingGenerator
+        // Scalar heap bodies include the embedded noise permutation table.
+        class WPProcedural_API WPBuildingGenerator : public SourceBudgetObject
         {
         public:
             WPBuildingGenerator( u32 seed = 0xc0de );

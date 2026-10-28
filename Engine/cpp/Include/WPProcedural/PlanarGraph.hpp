@@ -2,6 +2,7 @@
 #define PlanarGraph_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
@@ -21,7 +22,7 @@ namespace workphone
         /// Positions must be finite and distinct; edges may meet only at shared vertices.
         /// Crossings and vertices in the interior of an edge must be split by the caller.
         template <typename T>
-        class PlanarGraph
+        class PlanarGraph : public SourceBudgetObject
         {
         public:
             struct Primitive : SourceBudgetObject

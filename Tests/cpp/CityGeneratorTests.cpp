@@ -32,6 +32,9 @@
 #include "MeshFaceStorageBudgetContracts.hpp"
 #include "LSystemStorageBudgetContracts.hpp"
 #include "NoiseRoadSeedBudgetContracts.hpp"
+#include "ProceduralHelperBodyBudgetContracts.hpp"
+#include "SkyBodyBudgetContracts.hpp"
+#include "ProceduralObjectBodyBudgetContracts.hpp"
 
 namespace
 {
@@ -152,6 +155,9 @@ void checkCityGeneratorContracts()
     mesh_face_storage_budget_contracts::run();
     lsystem_storage_budget_contracts::run();
     noise_road_seed_budget_contracts::run();
+    procedural_helper_body_budget_contracts::run();
+    sky_body_budget_contracts::run();
+    procedural_object_body_budget_contracts::run();
     using namespace workphone;
     using namespace workphone::procedural;
     auto coordinator = make_ptr<CityGeneratorDefault>();

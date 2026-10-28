@@ -13,8 +13,7 @@ namespace workphone
     namespace procedural
     {
 
-        class WPProcedural_API CityCenter : public CProceduralObject<IProceduralCityCenter>,
-                                           public SourceBudgetObject
+        class WPProcedural_API CityCenter : public CProceduralObject<IProceduralCityCenter>
         {
         public:
             using SourceBudgetObject::operator new;

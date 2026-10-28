@@ -2,6 +2,7 @@
 #define CProceduralObject_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Procedural/IProceduralObject.hpp>
 #include <Workphone/Interface/Procedural/IProceduralNode.hpp>
@@ -16,9 +17,12 @@ namespace workphone
     namespace procedural
     {
         template <class T>
-        class CProceduralObject : public T
+        class CProceduralObject : public T, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralObject()
             {
                 m_properties = workphone::make_ptr<Properties>();

@@ -2,6 +2,7 @@
 #define ProceduralManagerDefault_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IProceduralManager.hpp>
 #include <Workphone/Interface/Procedural/IProceduralCollision.hpp>
 
@@ -16,9 +17,12 @@ namespace workphone
          * This class coordinates the various generators (City, Terrain) and manages the
          * procedural objects, AI integration, and collision detection within the procedural system.
          */
-        class WPProcedural_API CProceduralManager : public IProceduralManager
+        class WPProcedural_API CProceduralManager : public IProceduralManager, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralManager();
             ~CProceduralManager() override;
 

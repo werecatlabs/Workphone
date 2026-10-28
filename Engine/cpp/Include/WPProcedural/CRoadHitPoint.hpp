@@ -2,6 +2,7 @@
 #define CRoadHitPoint_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IRoadHitPoint.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 
@@ -13,9 +14,12 @@ namespace workphone
          * @class CRoadHitPoint
          * @brief Represents a hit point on a road, storing position, normal, distance and related road references.
          */
-        class WPProcedural_API CRoadHitPoint : public IRoadHitPoint
+        class WPProcedural_API CRoadHitPoint : public IRoadHitPoint, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CRoadHitPoint();
             ~CRoadHitPoint() override;
 

@@ -3,6 +3,7 @@
 
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <array>
 #include <atomic>
 #include <functional>
@@ -54,6 +55,10 @@ namespace workphone
 
     private:
         friend class WorldStreamingScheduler;
+        friend class WorldStreamProducer;
+        struct Storage;
+        static std::shared_ptr<StreamBudgetLease> create( std::shared_ptr<StreamBudgetState>,
+                                                         StreamMemoryClass );
         StreamBudgetLease( std::shared_ptr<StreamBudgetState>, StreamMemoryClass, u64 );
         std::shared_ptr<StreamBudgetState> m_state;
         StreamMemoryClass m_class;
@@ -113,7 +118,8 @@ namespace workphone
      * or mutable scene objects. Consumers take immutable results on their owner thread.
      */
     class WPCore_API WorldStreamingScheduler final
-        : public std::enable_shared_from_this<WorldStreamingScheduler>
+        : public SourceBudgetObject,
+          public std::enable_shared_from_this<WorldStreamingScheduler>
     {
     public:
         explicit WorldStreamingScheduler( const WorldStreamLimits &limits = {} );
@@ -141,7 +147,7 @@ namespace workphone
         std::shared_ptr<Impl> m_impl;
     };
 
-    class WPCore_API WorldStreamProducer final
+    class WPCore_API WorldStreamProducer final : public SourceBudgetObject
     {
     public:
         ~WorldStreamProducer();

@@ -1,13 +1,17 @@
 #pragma once
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IVehicleEffects.hpp>
 
 namespace workphone::procedural
 {
-    class WPProcedural_API CVehicleEffects : public IVehicleEffects
+    class WPProcedural_API CVehicleEffects : public IVehicleEffects, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+
         VehicleEffectsState reset( std::uint64_t seed ) override;
         bool emit( const VehicleEffectConfig &config, const VehiclePhysicsConfig &physics,
                    const VehicleDynamicsState &dynamics, const VehicleDynamicsTelemetry &telemetry,

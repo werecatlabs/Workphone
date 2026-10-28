@@ -12,6 +12,19 @@
 
 namespace workphone::scene
 {
+    namespace
+    {
+        LODLevel admittedLevel( const LODLevel &input )
+        {
+            LODLevel result;
+            result.screenRelativeHeight = std::clamp( input.screenRelativeHeight, 0.0f, 1.0f );
+            result.fadeTransitionWidth = std::max( input.fadeTransitionWidth, 0.0f );
+            result.renderers.reserve( input.renderers.capacity() );
+            result.renderers.assign( input.renderers.begin(), input.renderers.end() );
+            return result;
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, LODGroup, Component );
 
     const String LODGroup::levelsStr = "lodLevels";
@@ -137,7 +150,7 @@ namespace workphone::scene
         u32 boundCount = 0;
         if( properties->getPropertyValue( "detailBoundCount", boundCount ) )
         {
-            Array<LODDetailBound> bounds;
+            Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             for( const auto &child : properties->getChildrenByName( "detailBound" ) )
             {
                 LODDetailBound bound;
@@ -151,7 +164,7 @@ namespace workphone::scene
         const auto levelProperties = properties->getChildrenByName( levelStr );
         if( !levelProperties.empty() )
         {
-            Array<LODLevel> levels;
+            Array<LODLevel> levels{ Allocator<LODLevel>( sourceBudget ) };
             levels.reserve( levelProperties.size() );
 
             for( const auto &levelData : levelProperties )
@@ -175,7 +188,8 @@ namespace workphone::scene
     void LODGroup::setDetailBounds( const Array<LODDetailBound> &bounds )
     {
         RecursiveMutex::ScopedLock lock( m_lodMutex );
-        m_detailBounds.clear();
+        Array<LODDetailBound> candidate{ Allocator<LODDetailBound>( sourceBudget ) };
+        candidate.reserve( bounds.capacity() );
         for( auto bound : bounds )
         {
             if( !std::isfinite( bound.diameter ) || bound.diameter <= 0 ||
@@ -184,8 +198,9 @@ namespace workphone::scene
             {
                 continue;
             }
-            m_detailBounds.push_back( bound );
+            candidate.push_back( bound );
         }
+        m_detailBounds.swap( candidate );
         incrementRevision();
     }
 
@@ -209,9 +224,9 @@ namespace workphone::scene
     void LODGroup::addLevel( const LODLevel &level )
     {
         RecursiveMutex::ScopedLock lock( m_lodMutex );
+        auto clampedLevel = admittedLevel( level );
+        m_levels.reserve( m_levels.size() + 1 );
         restoreAllRenderers();
-
-        auto clampedLevel = level;
         clampedLevel.screenRelativeHeight = std::clamp( clampedLevel.screenRelativeHeight, 0.0f, 1.0f );
         clampedLevel.fadeTransitionWidth = std::max( clampedLevel.fadeTransitionWidth, 0.0f );
         m_levels.push_back( std::move( clampedLevel ) );
@@ -226,7 +241,8 @@ namespace workphone::scene
     {
         LODLevel level;
         level.screenRelativeHeight = screenRelativeHeight;
-        level.renderers = renderers;
+        level.renderers.reserve( renderers.capacity() );
+        level.renderers.assign( renderers.begin(), renderers.end() );
         addLevel( level );
     }
 
@@ -238,8 +254,9 @@ namespace workphone::scene
             return;
         }
 
+        auto candidate = admittedLevel( level );
         restoreAllRenderers();
-        m_levels[index] = level;
+        m_levels[index] = std::move( candidate );
         m_levels[index].screenRelativeHeight =
             std::clamp( m_levels[index].screenRelativeHeight, 0.0f, 1.0f );
         m_levels[index].fadeTransitionWidth = std::max( m_levels[index].fadeTransitionWidth, 0.0f );
@@ -258,7 +275,9 @@ namespace workphone::scene
         }
 
         restoreAllRenderers();
-        m_levels.erase( m_levels.begin() + static_cast<ptrdiff_t>( index ) );
+        for( size_t i = index + 1; i < m_levels.size(); ++i )
+            m_levels[i - 1] = std::move( m_levels[i] );
+        m_levels.pop_back();
         incrementRevision();
     }
 
@@ -279,8 +298,11 @@ namespace workphone::scene
     void LODGroup::setLevels( const Array<LODLevel> &levels )
     {
         RecursiveMutex::ScopedLock lock( m_lodMutex );
+        Array<LODLevel> candidate{ Allocator<LODLevel>( sourceBudget ) };
+        candidate.reserve( levels.capacity() );
+        for( const auto &level : levels ) candidate.push_back( admittedLevel( level ) );
         restoreAllRenderers();
-        m_levels = levels;
+        m_levels.swap( candidate );
 
         for( auto &level : m_levels )
         {
@@ -423,7 +445,8 @@ namespace workphone::scene
         }
 
         auto previousThreshold = std::numeric_limits<f32>::max();
-        std::unordered_set<const Renderer *> assignedRenderers;
+        std::unordered_set<const Renderer *, std::hash<const Renderer *>, std::equal_to<const Renderer *>,
+            SourceBudgetAllocator<const Renderer *>> assignedRenderers;
 
         for( const auto &level : m_levels )
         {

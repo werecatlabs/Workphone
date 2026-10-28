@@ -2,6 +2,7 @@
 #define CRoadConnectionData_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IRoadConnectionData.hpp>
 #include <Workphone/Core/Handle.hpp>
 #include <Workphone/Math/Sphere3.hpp>
@@ -22,9 +23,12 @@ namespace workphone
          * world-space transform of the attachment point).  All fields are
          * accessible via the property system for game-editor inspection.
          */
-        class WPProcedural_API CRoadConnectionData : public IRoadConnectionData
+        class WPProcedural_API CRoadConnectionData : public IRoadConnectionData, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CRoadConnectionData();
             ~CRoadConnectionData() override;
 

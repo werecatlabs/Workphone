@@ -23,12 +23,13 @@
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Core/ColourF.hpp>
 #include <cstdint>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API WPSkyAtmosphere
+        class WPProcedural_API WPSkyAtmosphere : public SourceBudgetObject
         {
         public:
             WPSkyAtmosphere();

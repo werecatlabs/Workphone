@@ -2,6 +2,7 @@
 #define CProceduralScene_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Procedural/IProceduralScene.hpp>
 
@@ -9,9 +10,12 @@ namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API CProceduralScene : public IProceduralScene
+        class WPProcedural_API CProceduralScene : public IProceduralScene, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralScene();
             ~CProceduralScene() override;
             void unload( SmartPtr<ISharedObject> data ) override;

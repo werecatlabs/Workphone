@@ -24,7 +24,7 @@ namespace workphone
             f32 screenRelativeHeight = 0.0f;
 
             /** Renderers that are visible while this level is selected. */
-            Array<SmartPtr<Renderer>> renderers;
+            Array<SmartPtr<Renderer>> renderers{ Allocator<SmartPtr<Renderer>>( sourceBudget ) };
 
             /** Reserved for a future cross-fade implementation. */
             f32 fadeTransitionWidth = 0.0f;
@@ -126,8 +126,8 @@ namespace workphone
             static const String lodEnabledStr;
             static const String recalculateBoundsStr;
 
-            Array<LODLevel> m_levels;
-            Array<LODDetailBound> m_detailBounds;
+            Array<LODLevel> m_levels{ Allocator<LODLevel>( sourceBudget ) };
+            Array<LODDetailBound> m_detailBounds{ Allocator<LODDetailBound>( sourceBudget ) };
             Vector3<real_Num> m_localReferencePoint = Vector3<real_Num>::zero();
             f32 m_size = 1.0f;
             f32 m_lodBias = 1.0f;

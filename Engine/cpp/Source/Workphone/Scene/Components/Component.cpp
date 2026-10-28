@@ -570,7 +570,7 @@ namespace workphone::scene
 
     auto Component::getChildObjects() const -> Array<SmartPtr<ISharedObject>>
     {
-        Array<SmartPtr<ISharedObject>> childObjects;
+        Array<SmartPtr<ISharedObject>> childObjects{ Allocator<SmartPtr<ISharedObject>>( sourceBudget ) };
         childObjects.reserve( 12 );
 
         childObjects.emplace_back( getFsm() );
@@ -693,7 +693,10 @@ namespace workphone::scene
 
     auto Component::getEvents() const -> Array<SmartPtr<IComponentEvent>>
     {
-        return m_events;
+        Array<SmartPtr<IComponentEvent>> result{ Allocator<SmartPtr<IComponentEvent>>( sourceBudget ) };
+        result.reserve( m_events.capacity() );
+        result.assign( m_events.begin(), m_events.end() );
+        return result;
     }
 
     void Component::setEvents( Array<SmartPtr<IComponentEvent>> events )
@@ -759,7 +762,11 @@ namespace workphone::scene
 
     auto Component::getSubComponents() const -> Array<SmartPtr<ISubComponent>>
     {
-        return m_children.snapshot();
+        ScopedLock lock( &m_children, false );
+        Array<SmartPtr<ISubComponent>> result{ Allocator<SmartPtr<ISubComponent>>( sourceBudget ) };
+        result.reserve( m_children.capacity() );
+        for( const auto &value : m_children ) result.push_back( value );
+        return result;
     }
 
     void Component::setSubComponents( const Array<SmartPtr<ISubComponent>> &components )
@@ -905,7 +912,11 @@ namespace workphone::scene
 
     Array<SmartPtr<ISharedObject>> Component::getStates() const
     {
-        return m_componentStates.snapshot();
+        ScopedLock lock( &m_componentStates, false );
+        Array<SmartPtr<ISharedObject>> result{ Allocator<SmartPtr<ISharedObject>>( sourceBudget ) };
+        result.reserve( m_componentStates.capacity() );
+        for( const auto &value : m_componentStates ) result.push_back( value );
+        return result;
     }
 
     AABB3<real_Num> Component::getBoundingBox() const

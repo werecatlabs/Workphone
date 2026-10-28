@@ -2,6 +2,7 @@
 #define WPProcedural_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <WPProcedural/Area.hpp>
 #include <WPProcedural/BlockNode.hpp>
@@ -35,9 +36,12 @@ namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API WPProcedural : public ISharedObject
+        class WPProcedural_API WPProcedural : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             WPProcedural();
             ~WPProcedural() override;
 

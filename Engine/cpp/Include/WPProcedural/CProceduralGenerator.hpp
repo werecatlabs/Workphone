@@ -6,6 +6,7 @@
 #define FBENGINE_CPROCEDURALGENERATOR_H
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Memory/IData.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
@@ -15,9 +16,12 @@ namespace workphone
     namespace procedural
     {
         template <class T>
-        class CProceduralGenerator : public T
+        class CProceduralGenerator : public T, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralGenerator() = default;
             ~CProceduralGenerator() override = default;
 

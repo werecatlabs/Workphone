@@ -146,60 +146,76 @@ namespace workphone::scene
             return;
         }
         auto active = m_streamer;
-        if( m_reopen )
+        try
         {
-            m_reopen = false;
-            if( m_manifestPath.empty() )
+            if( m_reopen )
             {
-                auto retired = replaceStreamer( this, m_streamer );
-                return;
+                m_reopen = false;
+                if( m_manifestPath.empty() )
+                {
+                    auto retired = replaceStreamer( this, m_streamer );
+                    return;
+                }
+                const auto path = Path::isPathAbsolute( m_manifestPath )
+                                      ? m_manifestPath
+                                      : String( ( std::filesystem::u8path( app->getProjectPath().c_str() ) /
+                                                  std::filesystem::u8path( m_manifestPath.c_str() ) )
+                                                    .lexically_normal()
+                                                    .generic_u8string()
+                                                    .c_str() );
+                String error;
+                const auto admissionEpoch = sourceBudgetDenialCount();
+                if( active && active->isOpen() && m_openPath == path )
+                {
+                    if( !active->open( path, actor->getScene(), m_options, m_instanceWorld ? actor : nullptr,
+                                       error ) )
+                    {
+                        if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
+                        m_error = error;
+                        WP_LOG_ERROR( "WorldStreaming: " + error );
+                        return;
+                    }
+                }
+                else
+                {
+                    std::shared_ptr<SceneWorldStreamer> candidate;
+                    try
+                    {
+                        candidate = std::allocate_shared<SceneWorldStreamer>(
+                            SourceBudgetAllocator<SceneWorldStreamer>{} );
+                    }
+                    catch( const std::bad_alloc & )
+                    {
+                        throw;
+                    }
+                    catch( const std::exception &e )
+                    {
+                        m_error = e.what();
+                        WP_LOG_ERROR( "WorldStreaming: " + m_error );
+                        return;
+                    }
+                    if( !candidate->open( path, actor->getScene(), m_options,
+                                          m_instanceWorld ? actor : nullptr, error ) )
+                    {
+                        if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
+                        m_error = error;
+                        WP_LOG_ERROR( "WorldStreaming: " + error );
+                        return;
+                    }
+                    if( m_unloading )
+                    {
+                        return;
+                    }
+                    auto retired = replaceStreamer( this, m_streamer, std::move( candidate ) );
+                }
+                m_openPath = path;
             }
-            const auto path = Path::isPathAbsolute( m_manifestPath )
-                                  ? m_manifestPath
-                                  : String( ( std::filesystem::u8path( app->getProjectPath().c_str() ) /
-                                              std::filesystem::u8path( m_manifestPath.c_str() ) )
-                                                .lexically_normal()
-                                                .generic_u8string()
-                                                .c_str() );
-            String error;
-            if( active && active->isOpen() && m_openPath == path )
-            {
-                if( !active->open( path, actor->getScene(), m_options, m_instanceWorld ? actor : nullptr,
-                                   error ) )
-                {
-                    m_error = error;
-                    WP_LOG_ERROR( "WorldStreaming: " + error );
-                    return;
-                }
-            }
-            else
-            {
-                std::shared_ptr<SceneWorldStreamer> candidate;
-                try
-                {
-                    candidate = std::allocate_shared<SceneWorldStreamer>(
-                        SourceBudgetAllocator<SceneWorldStreamer>{} );
-                }
-                catch( const std::exception &e )
-                {
-                    m_error = e.what();
-                    WP_LOG_ERROR( "WorldStreaming: " + m_error );
-                    return;
-                }
-                if( !candidate->open( path, actor->getScene(), m_options,
-                                      m_instanceWorld ? actor : nullptr, error ) )
-                {
-                    m_error = error;
-                    WP_LOG_ERROR( "WorldStreaming: " + error );
-                    return;
-                }
-                if( m_unloading )
-                {
-                    return;
-                }
-                auto retired = replaceStreamer( this, m_streamer, std::move( candidate ) );
-            }
-            m_openPath = path;
+        }
+        catch( const std::bad_alloc & )
+        {
+            m_reopen = true;
+            m_error = "Out of memory";
+            return;
         }
         // Replacement retirement must finish before the new world installs
         // identities in this scene. The local only protects reentrant open().
@@ -239,7 +255,7 @@ namespace workphone::scene
         const auto p = observer->getWorldTransform().getPosition();
         String error;
         if( !streamer->update( { Vector3F( float( p.x ), float( p.y ), float( p.z ) ) }, error ) &&
-            error != m_error )
+            error != m_error && error != "World retirement pending" )
         {
             WP_LOG_ERROR( "WorldStreaming: " + error );
         }

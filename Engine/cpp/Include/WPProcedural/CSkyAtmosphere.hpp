@@ -6,9 +6,11 @@
 
 namespace workphone::procedural
 {
-    class WPProcedural_API CSkyAtmosphere : public ISkyAtmosphere
+    class WPProcedural_API CSkyAtmosphere : public ISkyAtmosphere, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
         void setState( const SkyState &state ) override;
         const SkyState &getState() const override;
         void update() override;

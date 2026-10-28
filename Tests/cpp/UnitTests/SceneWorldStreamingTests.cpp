@@ -5,6 +5,8 @@
 #include <Workphone/Scene/SceneWorldStreamer.hpp>
 #include <Workphone/Scene/Transform.hpp>
 #include <Workphone/Scene/Components/WorldStreaming.hpp>
+#include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <Workphone/Graphics/GraphicsMesh.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
@@ -15,6 +17,7 @@
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Mesh/MeshSerializer.hpp>
+#include "../../../Engine/cpp/Source/Workphone/Scene/SceneWorldIndex.hpp"
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
 #include <chrono>
@@ -84,6 +87,34 @@ namespace
             setGraphicsObject( nullptr ); Component::unload( data );
             setLoadingState( LoadingState::Unloaded );
         }
+    };
+    class CaptureDenyRendererProbe : public DeferredRendererProbe
+    {
+    public:
+        u32 getTypeInfo() const override
+        {
+            // collectObjects first filters mesh components, then renderers.
+            // Tighten on renderer filtering after close released its manifest
+            // credit, immediately before the admitted graphics capture is grown.
+            if( armed && ++queries == 2 )
+            {
+                armed = false;
+                String error;
+                if( !scheduler->setBudget( StreamMemoryClass::SourceCpu,
+                        scheduler->stats().used[size_t( StreamMemoryClass::SourceCpu )], error ) )
+                    throw std::runtime_error( "Cannot constrain retirement capture" );
+                tightened = true;
+                // Filter snapshots now release admitted temporary capacity after
+                // this callback. Inject denial while the cap is exact rather
+                // than depending on the next inventory's relative allocation size.
+                auto allocation = SourceBudgetAllocator<u8>{}.allocate( 1 );
+                SourceBudgetAllocator<u8>{}.deallocate( allocation, 1 );
+            }
+            return Renderer::getTypeInfo();
+        }
+        std::shared_ptr<WorldStreamingScheduler> scheduler;
+        mutable bool armed = false, tightened = false;
+        mutable unsigned queries = 0;
     };
     class DeferredGraphicsProbe : public render::GraphicsMesh
     {
@@ -279,6 +310,529 @@ namespace
 }
 
 BOOST_AUTO_TEST_SUITE( SceneWorldStreamingTests )
+
+namespace
+{
+    struct CoordinatorBudget
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
+        u64 original = scheduler->stats().limits[size_t(StreamMemoryClass::SourceCpu)];
+        u64 used() const { return scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)]; }
+        void set(u64 bytes)
+        {
+            String error;
+            BOOST_REQUIRE(scheduler->setBudget(StreamMemoryClass::SourceCpu, bytes, error));
+        }
+        void restore() { set(original); }
+        ~CoordinatorBudget()
+        {
+            String error;
+            scheduler->setBudget(StreamMemoryClass::SourceCpu, original, error);
+        }
+    };
+}
+
+BOOST_AUTO_TEST_CASE( actor_snapshots_reject_at_cap_and_retain_admitted_storage )
+{
+    TestGuard guard; CoordinatorBudget budget;
+    auto actor = guard.sceneManager->createActor();
+    auto component = actor->addComponent<LODGroup>();
+    auto child = guard.sceneManager->createActor(); actor->addChild( child );
+    guard.scene->addActor( actor );
+    auto components = actor->getComponents();
+    auto children = actor->getChildren();
+    auto actors = guard.scene->getActors();
+    BOOST_CHECK( actor->getComponentsByType<LODGroup>().get_allocator().isSourceBudgeted() );
+    BOOST_CHECK( component->getSubComponents().get_allocator().isSourceBudgeted() );
+    BOOST_CHECK( components.get_allocator().isSourceBudgeted() );
+    BOOST_CHECK( children.get_allocator().isSourceBudgeted() );
+    BOOST_CHECK( actors.get_allocator().isSourceBudgeted() );
+    budget.set( budget.used() );
+    BOOST_CHECK_THROW( actor->getComponents(), std::bad_alloc );
+    BOOST_CHECK_THROW( actor->getChildren(), std::bad_alloc );
+    BOOST_CHECK_THROW( guard.scene->getActors(), std::bad_alloc );
+    const auto before = budget.used();
+    components.clear(); children.clear(); actors.clear();
+    BOOST_CHECK_EQUAL( budget.used(), before );
+    components = {}; children = {}; actors = {};
+    BOOST_CHECK_LT( budget.used(), before );
+    budget.restore();
+    BOOST_CHECK_EQUAL( actor->getChildren().size(), 1u );
+    guard.scene->removeActor( actor );
+    guard.sceneManager->destroyActor( actor );
+}
+
+BOOST_AUTO_TEST_CASE( lod_inventory_denial_preserves_revision_and_foreign_nested_storage_is_admitted )
+{
+    TestGuard guard; CoordinatorBudget budget;
+    struct Probe : LODGroup { using LODGroup::getRevision; };
+    auto group = make_ptr<Probe>();
+    LODLevel level; level.screenRelativeHeight = .5f;
+    Array<SmartPtr<Renderer>> foreign; foreign.reserve( 17 ); foreign.push_back( nullptr );
+    level.renderers = foreign;
+    Array<LODLevel> input; input.push_back( level );
+    group->setLevels( input );
+    auto snapshot = group->getLevels();
+    BOOST_CHECK( snapshot.get_allocator().isSourceBudgeted() );
+    BOOST_CHECK( snapshot.front().renderers.get_allocator().isSourceBudgeted() );
+    BOOST_CHECK_EQUAL( snapshot.front().renderers.capacity(), 17u );
+    const auto revision = group->getRevision();
+    budget.set( budget.used() );
+    BOOST_CHECK_THROW( group->setLevels( input ), std::bad_alloc );
+    BOOST_CHECK_THROW( group->addLevel( level ), std::bad_alloc );
+    BOOST_CHECK_THROW( group->setDetailBounds( { LODDetailBound{} } ), std::bad_alloc );
+    BOOST_CHECK_EQUAL( group->getRevision(), revision );
+    BOOST_CHECK_EQUAL( group->getNumLevels(), 1u );
+    BOOST_CHECK_NO_THROW( group->removeLevel( 0 ) );
+    BOOST_CHECK_EQUAL( group->getNumLevels(), 0u );
+    BOOST_CHECK_EQUAL( snapshot.front().renderers.size(), 1u );
+    budget.restore();
+    group->setLevels( input );
+    BOOST_CHECK_EQUAL( group->getNumLevels(), 1u );
+}
+
+BOOST_AUTO_TEST_CASE( lod_system_inventory_and_batch_denial_retry_without_publishing_a_group )
+{
+    TestGuard guard; CoordinatorBudget budget;
+    auto system = make_ptr<LODSystem>(); system->load( nullptr );
+    auto actor = guard.sceneManager->createActor();
+    guard.scene->addActor( actor );
+    auto group = actor->addComponent<LODGroup>();
+    LODLevel level; level.screenRelativeHeight = .1f; group->addLevel( level );
+    group->load( nullptr );
+    system->addComponent( group );
+    LODSystem::View view; system->setViewOverride( view );
+    auto rejected = make_ptr<LODGroup>();
+    budget.set( budget.used() );
+    BOOST_CHECK_THROW( system->addComponent( rejected ), std::bad_alloc );
+    BOOST_CHECK( !rejected->getComponentSystem() );
+    BOOST_CHECK_NO_THROW( system->update() );
+    budget.restore();
+    BOOST_CHECK_NO_THROW( system->update() );
+    budget.set( budget.used() );
+    BOOST_CHECK_NO_THROW( system->removeComponent( SmartPtr<IComponent>( group ) ) );
+    BOOST_CHECK_NO_THROW( system->unload( nullptr ) );
+    budget.restore();
+    guard.scene->removeActor( actor ); guard.sceneManager->destroyActor( actor );
+}
+
+BOOST_AUTO_TEST_CASE( spatial_partitioner_replacement_denial_preserves_scene_and_retries )
+{
+    TestGuard guard; CoordinatorBudget budget;
+    for( unsigned i = 0; i < 9; ++i ) guard.scene->addActor( guard.sceneManager->createActor() );
+    auto scene = static_pointer_cast<GameScene>( guard.scene );
+    scene->setSpatialPartitioningMethod( IGameScene::SpatialPartitioningMethod::UniformGrid );
+    const auto baseline = budget.used();
+    for( const auto headroom : { 0u, 512u } )
+    {
+        budget.set( baseline + headroom );
+        BOOST_CHECK_THROW( scene->setSpatialPartitioningMethod( IGameScene::SpatialPartitioningMethod::Octree ), std::bad_alloc );
+        BOOST_CHECK( scene->getSpatialPartitioningMethod() == IGameScene::SpatialPartitioningMethod::UniformGrid );
+        BOOST_CHECK_EQUAL( budget.used(), baseline );
+    }
+    budget.restore();
+    scene->setSpatialPartitioningMethod( IGameScene::SpatialPartitioningMethod::Octree );
+    BOOST_CHECK_EQUAL( scene->getActors().size(), 9u );
+    scene->setSpatialPartitioningMethod( IGameScene::SpatialPartitioningMethod::UniformGrid );
+}
+
+BOOST_AUTO_TEST_CASE( coordinator_index_storage_is_admitted_and_clears_at_the_cap )
+{
+    TestGuard guard;
+    CoordinatorBudget budget;
+    WorldManifest manifest;
+    for(u64 key = 1; key <= 32; ++key)
+    {
+        WorldCell cell; cell.key = key; cell.id = "index-cell";
+        cell.minimum = {float(key),0,0}; cell.maximum = {float(key + 1),1,1};
+        manifest.cells.push_back(cell);
+    }
+    SceneWorldIndex index;
+    const auto baseline = budget.used();
+    budget.set(baseline);
+    BOOST_CHECK_THROW(index.build(manifest), std::bad_alloc);
+    BOOST_CHECK(index.byKey.empty());
+    budget.restore();
+    index.build(manifest);
+    BOOST_REQUIRE_EQUAL(index.byKey.size(), 32u);
+    BOOST_CHECK_GT(budget.used(), baseline);
+    budget.set(budget.used());
+    BOOST_CHECK_NO_THROW(index.clear());
+    BOOST_CHECK_EQUAL(budget.used(), baseline);
+    budget.restore();
+}
+
+BOOST_AUTO_TEST_CASE( coordinator_constructor_storage_denial_unwinds_and_retires_at_cap )
+{
+    TestGuard guard;
+    CoordinatorBudget budget;
+    // Initialize the service once so the sweep measures coordinator ownership,
+    // rather than shared-service startup or engine type registration.
+    { auto warm = std::make_unique<SceneWorldStreamer>(budget.scheduler); }
+    const auto baseline = budget.used();
+    unsigned rejected = 0, accepted = 0;
+    for(u64 headroom : {0ull,64ull,128ull,512ull,1024ull,2048ull,4096ull,8192ull,16384ull})
+    {
+        budget.set(baseline + headroom);
+        try
+        {
+            auto stream = std::make_unique<SceneWorldStreamer>(budget.scheduler);
+            ++accepted;
+            BOOST_CHECK_GT(budget.used(), baseline);
+            budget.set(budget.used());
+            stream.reset();
+        }
+        catch(const std::bad_alloc &) { ++rejected; }
+        budget.restore();
+        BOOST_REQUIRE_EQUAL(budget.used(), baseline);
+    }
+    BOOST_CHECK_GT(rejected, 0u);
+    BOOST_CHECK_GT(accepted, 0u);
+}
+
+BOOST_AUTO_TEST_CASE( full_cap_close_retains_dynamic_retirement_inventories_until_acknowledgement )
+{
+    TestGuard guard; guard.scene->clear(true);
+    enablePrimaryJobs(guard);
+    auto previousManager = guard.applicationManager->getMeshManager();
+    auto previousQueue = guard.applicationManager->getJobQueue();
+    guard.addCleanup([app = guard.applicationManager, previousManager, previousQueue]() mutable {
+        app->setMeshManager(previousManager); app->setJobQueue(previousQueue);
+    });
+    auto manager = make_ptr<MeshManager>();
+    auto queue = make_ptr<JobQueue>();
+    queue->load(nullptr); queue->setRunning(true);
+    guard.applicationManager->setMeshManager(manager);
+    guard.applicationManager->setJobQueue(queue);
+    const auto thread = Thread::getCurrentThreadId();
+    guard.addCleanup([thread] { Thread::setCurrentThreadId(thread); });
+    Thread::setCurrentThreadId(Thread::ThreadId::Primary);
+    const auto path = cookHlodFixture(guard, true);
+    CoordinatorBudget budget;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    auto stream = std::make_unique<SceneWorldStreamer>(scheduler);
+    SceneWorldStreamOptions options; options.loadRadius = 4; options.retainRadius = 8;
+    options.minimumResidencySeconds = 0;
+    String error;
+    BOOST_REQUIRE_MESSAGE(stream->open(path, guard.scene, options, error), error);
+    pump(*stream, Vector3F::zero(), 2);
+    auto actor = guard.scene->findActorByName("Building A");
+    BOOST_REQUIRE(actor);
+    Array<SmartPtr<DeferredGraphicsProbe>> graphics;
+    Array<std::shared_ptr<u32>> counters;
+    for(unsigned i = 0; i < 3; ++i)
+    {
+        auto resource = dynamic_pointer_cast<IMeshResource>(manager->createOrRetrieve(
+            StringUtil::getUUID(), "Cache/full-cap-retirement-" + StringUtil::toString(i) + ".fbmeshbin", "Mesh").first);
+        BOOST_REQUIRE(resource);
+        auto geometry = make_ptr<MeshRetirementProbe>();
+        counters.push_back(geometry->unloadCounter);
+        resource->setMesh(geometry); resource->setLoadingState(LoadingState::Loaded);
+        auto mesh = make_ptr<scene::Mesh>(); actor->addComponentInstance(mesh);
+        mesh->setMeshResource(resource); mesh->setLoadingState(LoadingState::Loaded);
+        auto object = make_ptr<DeferredGraphicsProbe>(); object->setLoadingState(LoadingState::Loaded);
+        auto renderer = make_ptr<DeferredRendererProbe>(); actor->addComponentInstance(renderer);
+        renderer->setGraphicsObject(object); renderer->setLoadingState(LoadingState::Loaded);
+        graphics.push_back(object);
+    }
+    actor = nullptr;
+    const auto unloaded = [&] { u32 result = 0; for(auto value : counters) result += *value; return result; };
+    budget.set(budget.used());
+    // No update refreshes cached inventories after the dynamic attachments.
+    BOOST_CHECK_NO_THROW(stream->close());
+    budget.restore();
+    stream.reset();
+    BOOST_REQUIRE(queue->hasJobs());
+    BOOST_CHECK_EQUAL(unloaded(), 0u);
+    queue->update(); queue->update();
+    BOOST_CHECK_EQUAL(unloaded(), 0u);
+    BOOST_CHECK_GT(scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)], 0u);
+    for(auto &object : graphics) object->setLoadingState(LoadingState::Unloaded);
+    for(unsigned i = 0; i < 4 && queue->hasJobs(); ++i) queue->update();
+    BOOST_CHECK_EQUAL(unloaded(), 3u);
+    BOOST_CHECK_EQUAL(scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)], 0u);
+    BOOST_CHECK(!queue->hasJobs());
+    queue->unload(nullptr); manager->unload(nullptr);
+}
+
+BOOST_AUTO_TEST_CASE( denied_retirement_capture_blocks_replacement_until_old_identities_leave )
+{
+    TestGuard guard; guard.scene->clear( true );
+    enablePrimaryJobs( guard );
+    const auto previousManager = guard.applicationManager->getMeshManager();
+    const auto previousQueue = guard.applicationManager->getJobQueue();
+    guard.addCleanup( [app = guard.applicationManager, previousManager, previousQueue]() mutable {
+        app->setMeshManager( previousManager ); app->setJobQueue( previousQueue );
+    } );
+    auto manager = make_ptr<MeshManager>();
+    auto queue = make_ptr<JobQueue>();
+    queue->load( nullptr ); queue->setRunning( true );
+    guard.applicationManager->setMeshManager( manager );
+    guard.applicationManager->setJobQueue( queue );
+    const auto thread = Thread::getCurrentThreadId();
+    guard.addCleanup( [thread] { Thread::setCurrentThreadId( thread ); } );
+    Thread::setCurrentThreadId( Thread::ThreadId::Primary );
+
+    const auto path = cookHlodFixture( guard, true );
+    CoordinatorBudget budget;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    auto original = std::make_unique<SceneWorldStreamer>( scheduler );
+    SceneWorldStreamOptions options; options.loadRadius = 4; options.retainRadius = 8;
+    options.minimumResidencySeconds = 0;
+    String error;
+    BOOST_REQUIRE_MESSAGE( original->open( path, guard.scene, options, error ), error );
+    pump( *original, Vector3F::zero(), 2 );
+    auto oldActor = guard.scene->findActorByName( "Building A" );
+    BOOST_REQUIRE( oldActor );
+
+    auto resource = dynamic_pointer_cast<IMeshResource>( manager->createOrRetrieve(
+        StringUtil::getUUID(), "Cache/forced-retirement-denial.fbmeshbin", "Mesh" ).first );
+    BOOST_REQUIRE( resource );
+    auto geometry = make_ptr<MeshRetirementProbe>();
+    auto unloads = geometry->unloadCounter;
+    resource->setMesh( geometry ); geometry = nullptr;
+    resource->setLoadingState( LoadingState::Loaded );
+    auto mesh = make_ptr<scene::Mesh>(); oldActor->addComponentInstance( mesh );
+    mesh->setMeshResource( resource ); mesh->setLoadingState( LoadingState::Loaded );
+    resource = nullptr;
+    auto graphics = make_ptr<DeferredGraphicsProbe>();
+    graphics->setLoadingState( LoadingState::Loaded );
+    auto renderer = make_ptr<CaptureDenyRendererProbe>();
+    oldActor->addComponentInstance( renderer );
+    renderer->setGraphicsObject( graphics ); renderer->setLoadingState( LoadingState::Loaded );
+    renderer->scheduler = budget.scheduler;
+    renderer->armed = true;
+    const auto denials = sourceBudgetDenialCount();
+    BOOST_CHECK_NO_THROW( original->close() );
+    budget.restore();
+    BOOST_REQUIRE( renderer->tightened );
+    BOOST_REQUIRE_GT( sourceBudgetDenialCount(), denials );
+    BOOST_REQUIRE( oldActor->isLoaded() );
+    BOOST_REQUIRE( guard.scene->findActorByName( "Building A" ) == oldActor );
+    BOOST_REQUIRE( queue->hasJobs() );
+    original.reset();
+
+    SceneWorldStreamer replacement( scheduler );
+    BOOST_REQUIRE_MESSAGE( replacement.open( path, guard.scene, options, error ), error );
+    BOOST_CHECK( !replacement.update( { Vector3F::zero() }, error ) );
+    BOOST_CHECK_EQUAL( error, "World retirement pending" );
+    BOOST_CHECK_EQUAL( replacement.statistics().cellReads, 0u );
+    BOOST_CHECK_EQUAL( replacement.statistics().failedCells, 0u );
+    BOOST_CHECK_EQUAL( *unloads, 0u );
+
+    // Primary cleanup retires the old graph, clearing its identity barrier.
+    // Native acknowledgement remains deferred and still pins its mesh lease.
+    const auto retiredBy = std::chrono::steady_clock::now() + std::chrono::seconds( 5 );
+    while( oldActor->getLoadingState() != LoadingState::Unloaded &&
+           std::chrono::steady_clock::now() < retiredBy )
+    {
+        queue->update();
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+    }
+    BOOST_REQUIRE( oldActor->getLoadingState() == LoadingState::Unloaded );
+    pump( replacement, Vector3F::zero(), 2 );
+    BOOST_CHECK_EQUAL( replacement.statistics().failedCells, 0u );
+    BOOST_CHECK( guard.scene->findActorByName( "Building A" ) != oldActor );
+    BOOST_CHECK_EQUAL( *unloads, 0u );
+    graphics->setLoadingState( LoadingState::Unloaded );
+    mesh = nullptr; renderer = nullptr; oldActor = nullptr;
+    for( unsigned i = 0; i < 6 && queue->hasJobs(); ++i ) queue->update();
+    BOOST_CHECK_EQUAL( *unloads, 1u );
+    replacement.close();
+    queue->unload( nullptr ); manager->unload( nullptr );
+}
+
+BOOST_AUTO_TEST_CASE( request_capture_admission_sweep_preserves_the_previous_neighborhood )
+{
+    TestGuard guard; guard.scene->clear(true);
+    auto data = make_ptr<Properties>();
+    data->addChild(pointActor("Capture source", 0));
+    data->addChild(pointActor("Capture replacement", 1000));
+    WorldCookOptions cook; cook.cellSize = 64; cook.maximumActorsPerCell = 1;
+    String path, error;
+    BOOST_REQUIRE(SceneWorld::cook(*data, testDirectory(guard), cook, path, error));
+    CoordinatorBudget budget;
+    std::atomic<bool> entered{false}, release{false};
+    WorldStreamLimits limits; limits.workers = 1;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>(limits);
+    auto blocker = scheduler->createProducer({}, error); BOOST_REQUIRE(blocker);
+    SceneWorldStreamer stream(scheduler);
+    SceneWorldStreamOptions options; options.loadRadius = 1; options.retainRadius = 2;
+    options.minimumResidencySeconds = 0;
+    BOOST_REQUIRE_MESSAGE(stream.open(path, guard.scene, options, error), error);
+    pump(stream, Vector3F::zero(), 1);
+    auto original = guard.scene->findActorByName("Capture source"); BOOST_REQUIRE(original);
+    struct Release { std::atomic<bool> &value; ~Release() { value = true; } } unblock{release};
+    WorldStreamRequest request; request.key = 999;
+    request.execute = [&](const StreamCancellation &cancel) {
+        entered = true;
+        while(!release && !cancel.cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return WorldStreamResult{};
+    };
+    BOOST_REQUIRE(blocker->replace({request}, error));
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while(!entered && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    BOOST_REQUIRE(entered.load());
+    Array<Vector3F> observers{{1000,0,0}};
+    unsigned denied = 0;
+    bool submitted = false;
+    for(u64 headroom = 0; headroom <= 65536; headroom += 256)
+    {
+        budget.set(budget.used() + headroom);
+        const bool completed = stream.update(observers, error);
+        budget.restore();
+        // The only worker is blocked, so pending work proves request admission
+        // has crossed the commit boundary. Do not race worker decoding with a cap.
+        if(completed || scheduler->stats().pending)
+        {
+            submitted = true;
+            break;
+        }
+        ++denied;
+        BOOST_CHECK_EQUAL(stream.statistics().cellReads, 1u);
+        BOOST_CHECK_EQUAL(stream.statistics().residentActors, 1u);
+        BOOST_CHECK(guard.scene->findActorByName("Capture source") == original);
+    }
+    BOOST_REQUIRE(submitted);
+    BOOST_CHECK_GT(denied, 0u);
+    release = true;
+    blocker->drain();
+    pump(stream, observers[0], 1);
+    BOOST_REQUIRE(guard.scene->findActorByName("Capture replacement"));
+    BOOST_CHECK(!guard.scene->findActorByName("Capture source"));
+    BOOST_CHECK_EQUAL(stream.statistics().cellReads, 2u);
+    stream.close();
+}
+
+BOOST_AUTO_TEST_CASE( coordinator_planning_denial_preserves_live_demand_and_closes_at_cap )
+{
+    TestGuard guard; guard.scene->clear(true);
+    const auto path = cookHlodFixture(guard, true);
+    CoordinatorBudget budget;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>();
+    SceneWorldStreamer stream(scheduler);
+    SceneWorldStreamOptions options; options.loadRadius = 4; options.retainRadius = 8;
+    options.minimumResidencySeconds = 0;
+    String error;
+    BOOST_REQUIRE_MESSAGE(stream.open(path, guard.scene, options, error), error);
+    Array<Vector3F> nearObservers{{0,0,0}}, farObservers{{10000,0,10000}};
+    budget.set(budget.used());
+    BOOST_CHECK(!stream.update(nearObservers, error));
+    BOOST_CHECK_EQUAL(stream.statistics().cellReads, 0u);
+    budget.restore();
+    pump(stream, nearObservers[0], 2);
+    const auto before = stream.statistics();
+    budget.set(budget.used());
+    BOOST_CHECK(!stream.update(farObservers, error));
+    BOOST_CHECK_EQUAL(stream.statistics().residentActors, before.residentActors);
+    BOOST_CHECK_EQUAL(stream.statistics().cellReads, before.cellReads);
+    BOOST_CHECK(!stream.open(path, guard.scene, options, error));
+    BOOST_CHECK(stream.isOpen());
+    budget.restore();
+    pump(stream, farObservers[0], 0);
+    pump(stream, nearObservers[0], 2);
+    budget.set(budget.used());
+    BOOST_CHECK_NO_THROW(stream.close());
+    budget.restore();
+    BOOST_CHECK(!stream.isOpen());
+    BOOST_CHECK_EQUAL(stream.statistics().residentActors, 0u);
+}
+
+BOOST_AUTO_TEST_CASE( decoded_results_survive_coordinator_admission_sweep_without_rereading )
+{
+    TestGuard guard; guard.scene->clear(true);
+    const auto path = cookHlodFixture(guard, true);
+    CoordinatorBudget budget;
+    std::atomic<bool> entered{false}, release{false};
+    WorldStreamLimits limits; limits.workers = 1;
+    auto scheduler = std::make_shared<WorldStreamingScheduler>(limits);
+    String error;
+    auto blocker = scheduler->createProducer({}, error);
+    BOOST_REQUIRE(blocker);
+    SceneWorldStreamer stream(scheduler);
+    SceneWorldStreamOptions options; options.loadRadius = 4; options.retainRadius = 8;
+    options.minimumResidencySeconds = 0;
+    BOOST_REQUIRE_MESSAGE(stream.open(path, guard.scene, options, error), error);
+    struct Release { std::atomic<bool> &value; ~Release() { value = true; } } unblock{release};
+    WorldStreamRequest request; request.key = 999;
+    request.execute = [&](const StreamCancellation &cancel) {
+        entered = true;
+        while(!release && !cancel.cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return WorldStreamResult{};
+    };
+    BOOST_REQUIRE(blocker->replace({request}, error));
+    auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while(!entered && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    BOOST_REQUIRE(entered.load());
+    Array<Vector3F> observers{{0,0,0}};
+    BOOST_REQUIRE_MESSAGE(stream.update(observers, error), error);
+    BOOST_CHECK_EQUAL(stream.statistics().cellReads, 0u);
+    release = true;
+    blocker->drain();
+    until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while(!scheduler->stats().ready && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    BOOST_REQUIRE_EQUAL(scheduler->stats().ready, 1u);
+    unsigned denied = 0;
+    for(u64 headroom = 0; headroom <= 65536 && !stream.statistics().installedCells; headroom += 256)
+    {
+        budget.set(budget.used() + headroom);
+        if(!stream.update(observers, error)) ++denied;
+        budget.restore();
+    }
+    BOOST_CHECK_GT(denied, 0u);
+    pump(stream, observers[0], 2);
+    BOOST_CHECK_EQUAL(stream.statistics().cellReads, 1u);
+    BOOST_CHECK_EQUAL(stream.statistics().failedCells, 0u);
+    stream.close();
+}
+
+BOOST_AUTO_TEST_CASE( world_component_retries_denied_cold_coordinator_without_another_edit )
+{
+    TestGuard guard; guard.scene->clear(true);
+    const auto path = cookHlodFixture(guard, true);
+    CoordinatorBudget budget;
+    auto actor = guard.sceneManager->createActor();
+    BOOST_REQUIRE(actor);
+    guard.scene->addActor(actor);
+    const auto task = Thread::getCurrentTask();
+    const auto flags = Thread::getTaskFlags(task);
+    Thread::setTaskFlags(task, flags | Thread::Application_Flag);
+    actor->setState(IGameActor::State::Edit, true);
+    Thread::setTaskFlags(task, flags);
+    auto component = actor->addComponent<WorldStreaming>();
+    BOOST_REQUIRE(component);
+    component->load(nullptr);
+    BOOST_REQUIRE(component->getActor() == actor);
+    BOOST_REQUIRE(component->isEnabled());
+    struct SceneTask
+    {
+        TaskId previous = Thread::getCurrentTask();
+        ~SceneTask() { Thread::setCurrentTask(previous); }
+    } sceneTask;
+    Thread::setCurrentTask(guard.sceneManager->getSceneTask());
+    auto properties = component->getProperties();
+    properties->setProperty("World Manifest", path);
+    properties->setProperty("Load Radius", 4.0f);
+    properties->setProperty("Retain Radius", 8.0f);
+    component->setProperties(properties);
+    const auto denials = sourceBudgetDenialCount();
+    budget.set(budget.used());
+    BOOST_CHECK_NO_THROW(component->preUpdate());
+    BOOST_CHECK_GT(sourceBudgetDenialCount(), denials);
+    BOOST_CHECK_EQUAL(component->statistics().residentActors, 0u);
+    budget.restore();
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while(component->statistics().residentActors != 2 && std::chrono::steady_clock::now() < until)
+    {
+        component->preUpdate();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    BOOST_CHECK_EQUAL(component->statistics().residentActors, 2u);
+    component->unload(nullptr);
+}
 
 BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new_loads )
 {
@@ -847,6 +1401,101 @@ BOOST_AUTO_TEST_CASE( independent_streamers_do_not_pin_each_others_retirement_ti
     queue->update(); queue->update();
     BOOST_CHECK( !queue->hasJobs() );
     queue->unload( nullptr ); manager->unload( nullptr );
+}
+
+BOOST_AUTO_TEST_CASE( cell_identity_scratch_denial_unwinds_without_changing_caller_inventories )
+{
+    TestGuard guard;
+    CoordinatorBudget budget;
+    auto scene = make_ptr<Properties>();
+    for( unsigned i = 0; i < 32; ++i )
+        scene->addChild( pointActor( "Identity budget " + StringUtil::toString( i ), 0 ) );
+    WorldCookOptions options; options.maximumActorsPerCell = 64;
+    String path, error;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::cook( *scene, testDirectory( guard ), options, path, error ), error );
+    WorldManifest manifest;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::readManifest( path, manifest, error ), error );
+    BOOST_REQUIRE_EQUAL( manifest.cells.size(), 1u );
+    auto cell = manifest.cells.front();
+    BOOST_REQUIRE_EQUAL( cell.actorIds.size(), 32u );
+    BOOST_REQUIRE_EQUAL( cell.objectIds.size(), 64u );
+    // The input is borrowed. Its spare capacity must neither be copied into
+    // scratch nor lost when admission is denied partway through validation.
+    cell.actorIds.reserve( 512 ); cell.objectIds.reserve( 1024 );
+    const auto actorIds = cell.actorIds, objectIds = cell.objectIds;
+    const auto *actorData = cell.actorIds.data(), *objectData = cell.objectIds.data();
+    const auto actorCapacity = cell.actorIds.capacity(), objectCapacity = cell.objectIds.capacity();
+    auto legacy = cell; legacy.actorIds.clear(); legacy.objectIds.clear();
+    // Stabilize the document/type/string pools before measuring transient
+    // ownership, including the optional legacy path without inventory checks.
+    { auto warm = SceneWorld::readCell( path, cell, error ); BOOST_REQUIRE_MESSAGE( warm, error ); }
+    { auto warm = SceneWorld::readCell( path, legacy, error ); BOOST_REQUIRE_MESSAGE( warm, error ); }
+    const auto baseline = budget.used();
+    const auto attempt = [&]( const WorldCell &input, u64 headroom ) {
+        budget.set( baseline + headroom );
+        SmartPtr<Properties> payload;
+        try { payload = SceneWorld::readCell( path, input, error ); }
+        catch( ... ) { budget.restore(); throw; }
+        budget.restore();
+        const bool loaded = bool( payload );
+        payload = nullptr;
+        BOOST_CHECK_EQUAL( budget.used(), baseline );
+        if( !loaded ) BOOST_CHECK_EQUAL( error, "Out of memory" );
+        return loaded;
+    };
+    BOOST_CHECK( !attempt( cell, 0 ) );
+    // Find a cap which admits the complete document and actor-count traversal.
+    // Inventory validation must still need its own admitted arrays/set nodes.
+    u64 lower = 0, upper = 1ull << 20;
+    BOOST_REQUIRE( attempt( legacy, upper ) );
+    while( lower < upper )
+    {
+        const auto middle = lower + ( upper - lower ) / 2;
+        if( attempt( legacy, middle ) ) upper = middle;
+        else lower = middle + 1;
+    }
+    BOOST_REQUIRE( attempt( legacy, lower ) );
+    BOOST_CHECK( !attempt( cell, lower ) );
+    BOOST_REQUIRE( attempt( cell, 1ull << 20 ) );
+    BOOST_CHECK( cell.actorIds == actorIds ); BOOST_CHECK( cell.objectIds == objectIds );
+    BOOST_CHECK( cell.actorIds.data() == actorData ); BOOST_CHECK( cell.objectIds.data() == objectData );
+    BOOST_CHECK_EQUAL( cell.actorIds.capacity(), actorCapacity );
+    BOOST_CHECK_EQUAL( cell.objectIds.capacity(), objectCapacity );
+}
+
+BOOST_AUTO_TEST_CASE( cell_identity_comparison_checks_complete_unordered_nested_inventories )
+{
+    TestGuard guard;
+    auto actor = pointActor( "Nested identity root", 0 );
+    auto child = pointActor( "Nested identity child", 10 ); child->setName( "child" );
+    auto children = make_ptr<Properties>(); children->setName( "children" );
+    children->addChild( child ); actor->addChild( children );
+    auto scene = make_ptr<Properties>(); scene->addChild( actor );
+    String path, error;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::cook( *scene, testDirectory( guard ), {}, path, error ), error );
+    WorldManifest manifest;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::readManifest( path, manifest, error ), error );
+    BOOST_REQUIRE_EQUAL( manifest.cells.size(), 1u );
+    auto cell = manifest.cells.front();
+    BOOST_REQUIRE_EQUAL( cell.actorIds.size(), 2u ); BOOST_REQUIRE_EQUAL( cell.objectIds.size(), 4u );
+    cell.actorIds.reserve( 64 ); cell.objectIds.reserve( 128 );
+    std::reverse( cell.actorIds.begin(), cell.actorIds.end() );
+    std::reverse( cell.objectIds.begin(), cell.objectIds.end() );
+    const auto actorIds = cell.actorIds, objectIds = cell.objectIds;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::readCell( path, cell, error ), error );
+    const auto componentId = child->getChild( "component" )->getProperty( "uuid" );
+    auto component = std::find( cell.objectIds.begin(), cell.objectIds.end(), componentId );
+    BOOST_REQUIRE( component != cell.objectIds.end() );
+    *component = "missing-component"; // Same count, wrong nested component definition.
+    BOOST_CHECK( !SceneWorld::readCell( path, cell, error ) );
+    BOOST_CHECK_EQUAL( error, "Cell object identities do not match the manifest inventories" );
+    *component = componentId;
+    const auto actorId = cell.actorIds.back(); cell.actorIds.back() = componentId;
+    BOOST_CHECK( !SceneWorld::readCell( path, cell, error ) );
+    BOOST_CHECK_EQUAL( error, "Cell object identities do not match the manifest inventories" );
+    cell.actorIds.back() = actorId;
+    BOOST_REQUIRE_MESSAGE( SceneWorld::readCell( path, cell, error ), error );
+    BOOST_CHECK( cell.actorIds == actorIds ); BOOST_CHECK( cell.objectIds == objectIds );
 }
 
 BOOST_AUTO_TEST_CASE( cooked_cells_load_independently_and_preserve_ids )

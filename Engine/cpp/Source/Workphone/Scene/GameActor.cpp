@@ -71,7 +71,7 @@ namespace workphone::scene
 
     Array<SmartPtr<IComponent>> GameActor::snapshotComponents() const
     {
-        Array<SmartPtr<IComponent>> components;
+        Array<SmartPtr<IComponent>> components{ Allocator<SmartPtr<IComponent>>( sourceBudget ) };
         ScopedLock lock( &m_componentsMutex, false );
 
         for( auto component = m_componentsHead; component != nullptr;
@@ -134,7 +134,7 @@ namespace workphone::scene
 
     Array<SmartPtr<IGameActor>> GameActor::snapshotChildren() const
     {
-        Array<SmartPtr<IGameActor>> children;
+        Array<SmartPtr<IGameActor>> children{ Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
         ScopedLock lock( &m_childrenMutex, false );
         children.reserve( m_numChildren );
 
@@ -1502,18 +1502,38 @@ namespace workphone::scene
 
             auto transform = getTransform();
 
-            auto children = getChildren();
-            for( auto &child : children )
+            // Transfer one intrusive owner at a time. Teardown cannot depend
+            // on allocating a detached caller snapshot at the SourceCpu cap.
+            for( ;; )
             {
-                if( child )
+                SmartPtr<IGameActor> child;
                 {
-                    child->unload( data );
+                    ScopedLock lock( &m_childrenMutex );
+                    auto raw = m_childrenHead;
+                    if( !raw ) break;
+                    child = raw;
+                    m_childrenHead = raw->nextChild.load();
+                    raw->nextChild = nullptr;
+                    if( !m_childrenHead ) m_childrenTail = nullptr;
+                    --m_numChildren;
+                    raw->removeReference();
                 }
+                child->unload( data );
             }
 
-            auto components = getComponents();
-            for( auto &component : components )
+            for( ;; )
             {
+                SmartPtr<IComponent> component;
+                {
+                    ScopedLock lock( &m_componentsMutex );
+                    auto raw = m_componentsHead;
+                    if( !raw ) break;
+                    component = raw;
+                    m_componentsHead = raw->m_next.load();
+                    raw->m_next = nullptr;
+                    if( !m_componentsHead ) m_componentsTail = nullptr;
+                    raw->removeReference();
+                }
                 try
                 {
                     if( component )
@@ -2014,7 +2034,7 @@ namespace workphone::scene
 
     auto GameActor::getAllChildren( SmartPtr<IGameActor> parent ) const -> Array<SmartPtr<IGameActor>>
     {
-        Array<SmartPtr<IGameActor>> allChildren;
+        Array<SmartPtr<IGameActor>> allChildren{ Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
         allChildren.reserve( 128 );
 
         auto children = parent->getChildren();

@@ -20,7 +20,7 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/System/Job.hpp>
-#include <Workphone/System/SourceBudgetAllocator.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <chrono>
 #include <filesystem>
@@ -38,9 +38,67 @@ namespace workphone::scene
         using InstanceIdentities = std::map<String, String, std::less<String>,
                                             SourceBudgetAllocator<std::pair<const String, String>>>;
 
+        // Intrusive tickets live inside admitted cleanup bodies. The registry
+        // needs no allocation when a closing graph must wait for headroom.
+        struct ClosingGraph
+        {
+            const IGameScene *scene = nullptr;
+            ClosingGraph *next = nullptr;
+        };
+        std::mutex closingGraphsMutex;
+        ClosingGraph *closingGraphs = nullptr;
+
+        bool hasClosingGraph( const IGameScene *scene )
+        {
+            std::lock_guard<std::mutex> lock( closingGraphsMutex );
+            for( auto *ticket = closingGraphs; ticket; ticket = ticket->next )
+                if( ticket->scene == scene ) return true;
+            return false;
+        }
+
         struct CellPayload
         {
             SmartPtr<Properties> data;
+        };
+
+        struct CellRequest
+        {
+            WorldCell cell;
+            String path;
+            std::function<StreamBudget( StreamMemoryClass, u64, String & )> reserve;
+            std::shared_ptr<CellPayload> payload;
+
+            static Array<String> copyIds( const Array<String> &ids )
+            {
+                Array<String> result{ Allocator<String>( sourceBudget ) };
+                result.reserve( ids.capacity() );
+                result.insert( result.end(), ids.begin(), ids.end() );
+                return result;
+            }
+
+            CellRequest( const WorldCell &source, const String &path,
+                         std::function<StreamBudget( StreamMemoryClass, u64, String & )> reserve ) :
+                cell{ source.id, source.file, source.minimum, source.maximum, source.key,
+                      source.bytes, source.decodedBytes, source.detailKey, source.proxyKey,
+                      source.actors, copyIds( source.actorIds ), copyIds( source.objectIds ) },
+                path( path ), reserve( std::move( reserve ) ),
+                payload( std::allocate_shared<CellPayload>( SourceBudgetAllocator<CellPayload>{} ) ) {}
+
+            WorldStreamResult operator()( const StreamCancellation &cancel ) const
+            {
+                WorldStreamResult result;
+                if( cancel.cancelled() ) return result;
+                String error;
+                auto source = reserve( StreamMemoryClass::SourceCpu, cell.bytes, error );
+                if( !source ) throw std::runtime_error( error.c_str() );
+                auto data = SceneWorld::readCell( path, cell, error );
+                if( !data ) throw std::runtime_error( error.c_str() );
+                if( cancel.cancelled() ) return result;
+                payload->data = data;
+                result.payload = payload;
+                result.bytes = cell.decodedBytes;
+                return result;
+            }
         };
 
         bool finite( const Vector3F &v )
@@ -126,7 +184,7 @@ namespace workphone::scene
                 }
                 else if( property.getValue().find( ';' ) != String::npos )
                 {
-                    Array<String> values;
+                    Array<String> values{ Allocator<String>( sourceBudget ) };
                     StringUtil::parseArray( property.getValue(), values );
                     bool changed = false;
                     for( auto &value : values )
@@ -152,7 +210,7 @@ namespace workphone::scene
         }
     }  // namespace
 
-    struct SceneWorldStreamer::Impl
+    struct SceneWorldStreamer::Impl : SourceBudgetObject
     {
         struct Resident
         {
@@ -165,6 +223,7 @@ namespace workphone::scene
             u32 count = 0;
             bool pinned = false;
             bool visible = true;
+            bool rollback = false;
             u64 baseline = 0;
         };
 
@@ -176,8 +235,8 @@ namespace workphone::scene
 
         struct Retired
         {
-            Array<SmartPtr<render::IGraphicsObject>> objects;
-            Array<SmartPtr<IMeshResource>> meshes;
+            Array<SmartPtr<render::IGraphicsObject>> objects{ Allocator<SmartPtr<render::IGraphicsObject>>( workphone::sourceBudget ) };
+            Array<SmartPtr<IMeshResource>> meshes{ Allocator<SmartPtr<IMeshResource>>( workphone::sourceBudget ) };
             StreamBudget sourceBudget;
         };
 
@@ -209,26 +268,35 @@ namespace workphone::scene
         };
 
         StreamBudget manifestBudget;
-        std::map<u64, Resident> residents;
-        std::map<u64, WorldStreamResult> ready;
-        std::set<u64> demand, failed;
-        std::set<u64> invalidProxies;
-        std::map<u64, u64> representationTargets;
+        SourceBudgetMap<u64, Resident> residents;
+        SourceBudgetMap<u64, WorldStreamResult> ready;
+        WorldStreamResult pendingResult;
+        bool hasPendingResult = false;
+        SourceBudgetSet<u64> demand, failed;
+        SourceBudgetSet<u64> invalidProxies;
+        SourceBudgetMap<u64, u64> representationTargets;
         String failure;
-        Array<Retired> retired;
-        std::map<u64, Overlay> overlays;
-        std::map<String, IMeshResource *> meshCandidates;
+        Array<Retired> retired{ Allocator<Retired>( sourceBudget ) };
+        SourceBudgetMap<u64, Overlay> overlays;
+        SourceBudgetMap<String, IMeshResource *> meshCandidates;
         String lastMeshCandidate;
         u64 lastGraphicsRetryCell = 0;
         WeakPtr<MeshManager> retirementManager;
         bool refreshRequests = false;
         bool updating = false, closing = false, closeRequested = false;
+        bool opening = false, reclaiming = false;
+        struct RetirementRegistration;
+        SmartPtr<RetirementRegistration> retirementRegistration;
+        std::shared_ptr<Impl> closingCleanup;
+        ClosingGraph closingGraph;
 
         // Registration runs on Primary. Coroutine registration itself is not
         // thread-safe in every queue implementation, so it never occurs directly
         // from an Application-task scene close.
-        struct RetirementRegistration : Job
+        struct RetirementRegistration : Job, SourceBudgetObject
         {
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             explicit RetirementRegistration( std::shared_ptr<Impl> state ) : state( std::move( state ) )
             {
                 setPrimary( true );
@@ -243,7 +311,7 @@ namespace workphone::scene
                         for( ;; )
                         {
                             cleanup->reclaim();
-                            if( cleanup->retired.empty() && cleanup->meshCandidates.empty() )
+                            if( !cleanup->hasRetirementWork() )
                             {
                                 return;
                             }
@@ -255,6 +323,58 @@ namespace workphone::scene
 
             std::shared_ptr<Impl> state;
         };
+
+        ~Impl()
+        {
+            // If a queue is absent, rejects work or is cancelled during shutdown,
+            // actor ownership must still leave the manager. Native/cache owners
+            // retain their own lifetimes even when capture admission is exhausted.
+            if( !residents.empty() )
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                auto manager = app ? app->getGameManager() : nullptr;
+                if( manager )
+                    for( auto &resident : residents )
+                        for( auto &actor : resident.second.actors )
+                            manager->destroyActor( actor );
+            }
+            unmarkClosingGraph();
+        }
+
+        void markClosingGraph()
+        {
+            std::lock_guard<std::mutex> lock( closingGraphsMutex );
+            if( !closingGraph.scene && !residents.empty() )
+            {
+                closingGraph.scene = scene.get();
+                closingGraph.next = closingGraphs;
+                closingGraphs = &closingGraph;
+            }
+        }
+
+        void unmarkClosingGraph()
+        {
+            std::lock_guard<std::mutex> lock( closingGraphsMutex );
+            auto **link = &closingGraphs;
+            while( *link && *link != &closingGraph ) link = &( *link )->next;
+            if( *link ) *link = closingGraph.next;
+            closingGraph = {};
+        }
+
+        void retryClosingCleanup()
+        {
+            if( auto cleanup = closingCleanup )
+            {
+                cleanup->reclaim();
+                if( closingCleanup == cleanup && !cleanup->hasRetirementWork() ) closingCleanup.reset();
+            }
+        }
+
+        bool hasRetirementWork() const
+        {
+            return !residents.empty() || !retired.empty() || !meshCandidates.empty() ||
+                   closingCleanup != nullptr;
+        }
 
         void publishStatistics()
         {
@@ -291,7 +411,8 @@ namespace workphone::scene
             {
                 auto p = producer->stats();
                 snapshot.pendingCells =
-                    p.pending + p.active + p.ready + static_cast<u32>( ready.size() );
+                    p.pending + p.active + p.ready + static_cast<u32>( ready.size() ) +
+                    ( hasPendingResult ? 1u : 0u );
             }
             // UI/render readers never inspect owner-thread containers, and this
             // short lock is never held while pausing render or running callbacks.
@@ -440,7 +561,7 @@ namespace workphone::scene
             }
             u32 allowance = 8;
             const auto now = Clock::now();
-            Array<u64> retryKeys;
+            Array<u64> retryKeys{ Allocator<u64>( sourceBudget ) };
             for( const auto &target : representationTargets )
             {
                 if( representationReady( target.second ) )
@@ -480,8 +601,8 @@ namespace workphone::scene
                 auto &resident = found->second;
                 lastGraphicsRetryCell = key;
                 resident.nextGraphicsRetry = now + std::chrono::milliseconds( 250 );
-                Array<SmartPtr<Renderer>> renderers;
-                std::function<void( const SmartPtr<IGameActor> & )> collect = [&]( const auto &actor ) {
+                Array<SmartPtr<Renderer>> renderers{ Allocator<SmartPtr<Renderer>>( sourceBudget ) };
+                auto collect = [&]( auto &&self, const SmartPtr<IGameActor> &actor ) -> void {
                     if( !actor->isEnabledInScene() )
                     {
                         return;
@@ -495,12 +616,12 @@ namespace workphone::scene
                     }
                     for( const auto &child : actor->getChildren() )
                     {
-                        collect( child );
+                        self( self, child );
                     }
                 };
                 for( const auto &actor : resident.actors )
                 {
-                    collect( actor );
+                    collect( collect, actor );
                 }
                 for( size_t n = 0; n < renderers.size() && allowance; ++n )
                 {
@@ -536,7 +657,7 @@ namespace workphone::scene
             {
                 return;
             }
-            Array<std::pair<Resident *, bool>> changes;
+            Array<std::pair<Resident *, bool>> changes{ Allocator<std::pair<Resident *, bool>>( sourceBudget ) };
             for( const auto &target : representationTargets )
             {
                 const auto &detail = manifest.cells[index.byKey.at( target.first )];
@@ -558,13 +679,13 @@ namespace workphone::scene
                 return;
             }
             auto app = core::IApplicationManager::instancePtr();
-            std::unique_ptr<TaskLock> pause;
+            SourceBudgetUnique<TaskLock> pause;
             if( auto tasks = app ? app->getTaskManager() : nullptr )
             {
                 if( auto renderTask = tasks->getTask( TaskId::Render );
                     renderTask && renderTask->isLoaded() )
                 {
-                    pause = std::make_unique<TaskLock>( renderTask );
+                    pause = makeSourceBudgetUnique<TaskLock>( renderTask );
                 }
             }
             for( const auto &change : changes )
@@ -640,18 +761,22 @@ namespace workphone::scene
         void retire( Resident &resident )
         {
             Retired retirement;
-            retirement.sourceBudget = std::move( resident.sourceBudget );
+            // Stage all inventories before detaching a live source lease or actor.
+            retired.reserve( retired.size() + 1 );
+            for( const auto &actor : resident.actors )
+                if( actor && actor->getLoadingState() != LoadingState::Unloaded )
+                    collectObjects( actor, retirement );
             auto app = core::IApplicationManager::instancePtr();
             if( !retirementManager.lock() && app )
             {
                 retirementManager = dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
             }
             auto manager = app ? app->getGameManager() : nullptr;
+            retirement.sourceBudget = std::move( resident.sourceBudget );
             for( const auto &actor : resident.actors )
             {
                 if( actor && actor->getLoadingState() != LoadingState::Unloaded )
                 {
-                    collectObjects( actor, retirement );
                     if( manager )
                     {
                         manager->destroyActor( actor );
@@ -666,24 +791,42 @@ namespace workphone::scene
 
         void reclaim()
         {
-            retired.erase( std::remove_if( retired.begin(), retired.end(),
-                                           [&]( const Retired &r ) {
-                                               for( const auto &object : r.objects )
-                                               {
-                                                   if( object && object->getLoadingState() !=
-                                                                     LoadingState::Unloaded )
-                                                   {
-                                                       return false;
-                                                   }
-                                               }
-                                               for( const auto &mesh : r.meshes )
-                                               {
-                                                   meshCandidates[mesh->getHandle()->getUUIDAsString()] =
-                                                       mesh.get();
-                                               }
-                                               return true;
-                                           } ),
-                           retired.end() );
+            if( reclaiming ) return;
+            reclaiming = true;
+            struct Reclaiming { bool &value; ~Reclaiming() { value = false; } } guard{ reclaiming };
+            retryClosingCleanup();
+            try { reclaimAdmitted(); }
+            catch( const std::bad_alloc & ) { /* Retain retirement work for retry. */ }
+        }
+
+        void reclaimAdmitted()
+        {
+            for( auto it = residents.begin(); it != residents.end(); )
+            {
+                // Only detached cleanup states retire their complete graph here.
+                if( producer ) break;
+                retire( it->second );
+                it = residents.erase( it );
+            }
+            if( !producer && residents.empty() ) unmarkClosingGraph();
+            for( auto it = retired.begin(); it != retired.end(); )
+            {
+                if( std::any_of( it->objects.begin(), it->objects.end(), []( const auto &object ) {
+                        return object && object->getLoadingState() != LoadingState::Unloaded;
+                    } ) )
+                {
+                    ++it;
+                    continue;
+                }
+                for( const auto &mesh : it->meshes )
+                    meshCandidates[mesh->getHandle()->getUUIDAsString()] = mesh.get();
+                // A denied insertion above retains this entire retirement record.
+                // Array's middle erase rebuilds storage. Compact with moves and
+                // pop the tail so acknowledged retirement needs no new buffer.
+                static_assert( std::is_nothrow_move_assignable_v<Retired> );
+                std::move( it + 1, retired.end(), it );
+                retired.pop_back();
+            }
             // Native unload acknowledgement precedes cache reclamation. The
             // existing graphics owner also sweeps on each update; this pass
             // covers owner-thread/headless close and deferred Primary cleanup.
@@ -760,14 +903,17 @@ namespace workphone::scene
     {
         error.clear();
         auto &s = *m_impl;
-        if( s.updating || s.closing )
+        if( s.updating || s.closing || s.opening )
         {
             error = "Cannot reopen a streaming world during its update or close";
             return false;
         }
         Impl::PublishOnExit publish{ s };
+        s.opening = true;
+        struct Opening { bool &value; ~Opening() { value = false; } } opening{ s.opening };
         try
         {
+            s.retryClosingCleanup();
             if( !s.scheduler || !scene || !scene->isLoaded() || !std::isfinite( options.loadRadius ) ||
                 options.loadRadius < 0 || !std::isfinite( options.retainRadius ) ||
                 options.retainRadius < options.loadRadius || !std::isfinite( options.proxyLoadRadius ) ||
@@ -874,6 +1020,10 @@ namespace workphone::scene
             }
             SceneWorldIndex index;
             index.build( manifest );
+            // Admit empty coordinator sentinels and job metadata before close
+            // ever needs to transfer pending retirement at a full SourceCpu cap.
+            auto cleanup = std::allocate_shared<Impl>( SourceBudgetAllocator<Impl>{} );
+            auto registration = make_ptr<Impl::RetirementRegistration>( cleanup );
             if( sameSession )
             {
                 // Editing radii/budgets is not a new world session. Retain live
@@ -881,6 +1031,8 @@ namespace workphone::scene
                 s.producer->drain();
                 s.producer = std::move( producer );
                 s.ready.clear();
+                s.pendingResult = {};
+                s.hasPendingResult = false;
                 s.demand.clear();
                 s.failed.clear();
                 s.failure.clear();
@@ -892,6 +1044,7 @@ namespace workphone::scene
                 s.index = std::move( index );
                 s.requestLimit = limits.maximumPending;
                 s.stats.manifestBytes = size;
+                s.retirementRegistration = registration;
                 return true;
             }
             close();
@@ -908,9 +1061,15 @@ namespace workphone::scene
             s.instanceIdentities = std::move( instanceIdentities );
             s.sceneGeneration = generation;
             s.observedSceneMode = scene->getState();
+            s.retirementRegistration = registration;
             s.stats = {};
             s.stats.manifestBytes = size;
             return true;
+        }
+        catch( const std::bad_alloc & )
+        {
+            error = "Out of memory";
+            return false;
         }
         catch( const std::exception &e )
         {
@@ -923,7 +1082,7 @@ namespace workphone::scene
     {
         error.clear();
         auto &s = *m_impl;
-        if( s.updating || s.closing )
+        if( s.updating || s.closing || s.opening )
         {
             error = "Reentrant world streaming update or close";
             return false;
@@ -968,6 +1127,12 @@ namespace workphone::scene
         }
         try
         {
+            s.retryClosingCleanup();
+            if( hasClosingGraph( s.scene.get() ) )
+            {
+                error = "World retirement pending";
+                return false;
+            }
             auto instanceOwner = s.instanceOwner.lock();
             if( !s.instanceOwnerId.empty() && ( !instanceOwner || !instanceOwner->isLoaded() ||
                                                 instanceOwner->getScene() != s.scene ) )
@@ -976,7 +1141,7 @@ namespace workphone::scene
                 error = "Streaming prefab owner was removed";
                 return false;
             }
-            Array<Vector3F> instanceObservers;
+            Array<Vector3F> instanceObservers{ Allocator<Vector3F>( sourceBudget ) };
             const auto *observations = &worldObservers;
             Vector3F placementScale = Vector3F::unit();
             double inverseMinimumScale = 1;
@@ -1000,7 +1165,9 @@ namespace workphone::scene
                 inverseMinimumScale =
                     1.0 / std::min( { double( placementScale.x ), double( placementScale.y ),
                                       double( placementScale.z ) } );
-                instanceObservers = worldObservers;
+                // Array assignment adopts its source allocator. Borrow values
+                // while retaining this bounded scratch buffer's SourceCpu policy.
+                instanceObservers.assign( worldObservers.begin(), worldObservers.end() );
                 for( auto &observer : instanceObservers )
                 {
                     const auto local = placement.inverseTransformPoint(
@@ -1019,6 +1186,15 @@ namespace workphone::scene
                 throw std::runtime_error( "Streaming world was closed during a scene mode transition" );
             }
             s.reclaim();
+            for( auto it = s.residents.begin(); it != s.residents.end(); )
+            {
+                if( it->second.rollback )
+                {
+                    s.retire( it->second );
+                    it = s.residents.erase( it );
+                }
+                else ++it;
+            }
             // Authored static content can become gameplay content at runtime.
             // Promote its ownership before distance eviction can destroy it.
             for( auto &resident : s.residents )
@@ -1043,9 +1219,9 @@ namespace workphone::scene
                 const WorldCell *fallback = nullptr;
             };
 
-            Array<Candidate> candidates;
+            Array<Candidate> candidates{ Allocator<Candidate>( sourceBudget ) };
             const auto now = Clock::now();
-            Array<u32> nearby;
+            Array<u32> nearby{ Allocator<u32>( sourceBudget ) };
             s.stats.indexNodesVisited = 0;
             s.stats.indexCellsTested = 0;
             const auto queryRadius =
@@ -1169,14 +1345,14 @@ namespace workphone::scene
                 }
                 candidates.push_back( { target, distance, pinned, fallback } );
             }
-            std::stable_sort( candidates.begin(), candidates.end(), []( const auto &a, const auto &b ) {
+            std::sort( candidates.begin(), candidates.end(), []( const auto &a, const auto &b ) {
                 return a.pinned != b.pinned       ? a.pinned > b.pinned
                        : a.distance != b.distance ? a.distance < b.distance
                                                   : a.cell->key < b.cell->key;
             } );
-            std::set<u64> desired;
-            std::map<u64, u64> targets;
-            Array<Candidate> admitted;
+            SourceBudgetSet<u64> desired;
+            SourceBudgetMap<u64, u64> targets;
+            Array<Candidate> admitted{ Allocator<Candidate>( sourceBudget ) };
             u32 actors = 0;
             for( const auto &candidate : candidates )
             {
@@ -1239,39 +1415,19 @@ namespace workphone::scene
                 }
             }
             candidates = std::move( admitted );
-            // Publish the replacement before the obsolete representation can be
-            // retired. This runs even when demand itself has not changed.
-            s.representationTargets = std::move( targets );
-            s.retryRepresentations();
-            s.publishRepresentations();
             // Compare full demand, not the set of unfinished jobs. A stationary
             // observer must not cancel/restart its reads on every update.
             if( desired != s.demand || s.refreshRequests )
             {
                 const bool changed = desired != s.demand;
-                if( changed )
-                {
-                    for( auto it = s.ready.begin(); it != s.ready.end(); )
-                    {
-                        if( !desired.count( it->first ) )
-                        {
-                            it = s.ready.erase( it );
-                        }
-                        else
-                        {
-                            ++it;
-                        }
-                    }
-                    s.failed.clear();
-                    s.failure.clear();
-                }
-                Array<WorldStreamRequest> requests;
+                Array<WorldStreamRequest> requests{ Allocator<WorldStreamRequest>( sourceBudget ) };
                 auto reserve = s.producer->budgetAllocator();
                 for( const auto &candidate : candidates )
                 {
-                    const auto cell = *candidate.cell;
+                    const auto &cell = *candidate.cell;
                     if( !desired.count( cell.key ) || s.residents.count( cell.key ) ||
-                        s.ready.count( cell.key ) || s.failed.count( cell.key ) )
+                        s.ready.count( cell.key ) || ( !changed && s.failed.count( cell.key ) ) ||
+                        ( s.hasPendingResult && s.pendingResult.key == cell.key ) )
                     {
                         continue;
                     }
@@ -1284,33 +1440,12 @@ namespace workphone::scene
                     request.priority = cell.id == "persistent" ? 100 : cell.detailKey ? 10 : 0;
                     request.workingBytes = cell.bytes;
                     request.maximumResultBytes = cell.decodedBytes;
-                    const auto path = s.path;
-                    request.execute = [cell, path, reserve]( const StreamCancellation &cancel ) {
-                        WorldStreamResult result;
-                        if( cancel.cancelled() )
-                        {
-                            return result;
-                        }
-                        String error;
-                        auto source = reserve( StreamMemoryClass::SourceCpu, cell.bytes, error );
-                        if( !source )
-                        {
-                            throw std::runtime_error( error.c_str() );
-                        }
-                        auto data = SceneWorld::readCell( path, cell, error );
-                        if( !data )
-                        {
-                            throw std::runtime_error( error.c_str() );
-                        }
-                        if( cancel.cancelled() )
-                        {
-                            return result;
-                        }
-                        auto payload = std::make_shared<CellPayload>();
-                        payload->data = data;
-                        result.payload = payload;
-                        result.bytes = cell.decodedBytes;
-                        return result;
+                    auto capture = std::allocate_shared<CellRequest>(
+                        SourceBudgetAllocator<CellRequest>{}, cell, s.path, reserve );
+                    // The owning bridge fits MSVC std::function inline storage;
+                    // heavy captured state and its control block are admitted above.
+                    request.execute = [capture]( const StreamCancellation &cancel ) {
+                        return ( *capture )( cancel );
                     };
                     requests.push_back( std::move( request ) );
                 }
@@ -1318,9 +1453,23 @@ namespace workphone::scene
                 {
                     return false;
                 }
+                if( changed )
+                {
+                    for( auto it = s.ready.begin(); it != s.ready.end(); )
+                    {
+                        if( !desired.count( it->first ) ) it = s.ready.erase( it );
+                        else ++it;
+                    }
+                    s.failed.clear();
+                    s.failure.clear();
+                }
                 s.refreshRequests = false;
                 s.demand = std::move( desired );
             }
+            // All demand/request admission precedes publication of HLOD targets.
+            s.representationTargets = std::move( targets );
+            s.retryRepresentations();
+            s.publishRepresentations();
             u32 retiredThisUpdate = 0;
             for( auto it = s.residents.begin(); it != s.residents.end(); )
             {
@@ -1341,25 +1490,33 @@ namespace workphone::scene
                     ++it;
                 }
             }
-            WorldStreamResult result;
-            while( s.producer->take( result ) )
+            while( s.hasPendingResult || s.producer->take( s.pendingResult ) )
             {
-                ++s.stats.cellReads;
+                if( !s.hasPendingResult ) ++s.stats.cellReads;
+                s.hasPendingResult = true;
+                auto &result = s.pendingResult;
                 if( !s.demand.count( result.key ) )
                 {
+                    s.pendingResult = {};
+                    s.hasPendingResult = false;
                     continue;
                 }
                 if( !result.error.empty() || !result.payload )
                 {
-                    ++s.stats.failedCells;
+                    auto failure = result.error.empty() ? String( "Cell decode returned no payload" )
+                                                        : result.error;
                     s.failed.insert( result.key );
-                    s.failure = result.error.empty() ? String( "Cell decode returned no payload" )
-                                                     : result.error;
+                    s.failure = std::move( failure );
+                    ++s.stats.failedCells;
                 }
                 else
                 {
-                    s.ready[result.key] = std::move( result );
+                    // Retain the taken payload if map-node admission fails.
+                    auto entry = s.ready.try_emplace( result.key ).first;
+                    entry->second = std::move( result );
                 }
+                s.pendingResult = {};
+                s.hasPendingResult = false;
             }
             const auto begin = Clock::now();
             u32 installed = 0;
@@ -1418,7 +1575,13 @@ namespace workphone::scene
                     continue;
                 }
                 auto payload = static_cast<const CellPayload *>( ready->second.payload.get() );
-                Impl::Resident resident;
+                // Reserve retirement slots for every live cell before creating actors.
+                s.retired.reserve( s.retired.size() + s.residents.size() + 1 );
+                // Admit both publication and failure bookkeeping before actor creation.
+                SourceBudgetMap<u64, Impl::Resident> admittedResident;
+                auto &resident = admittedResident.try_emplace( cell.key ).first->second;
+                SourceBudgetSet<u64> admittedFailure;
+                admittedFailure.insert( cell.key );
                 resident.source = overlay == s.overlays.end() ? payload->data : overlay->second.data;
                 if( instanceOwner && overlay == s.overlays.end() )
                 {
@@ -1429,16 +1592,19 @@ namespace workphone::scene
                 resident.installed = Clock::now();
                 resident.nextGraphicsRetry = resident.installed + std::chrono::milliseconds( 250 );
                 const auto installBegin = Clock::now();
+                const auto residentSlot =
+                    s.residents.insert( admittedResident.extract( cell.key ) ).position;
+                const auto admissionEpoch = sourceBudgetDenialCount();
                 try
                 {
                     // Include scene membership publication in the same render pause.
-                    std::unique_ptr<TaskLock> pause;
+                    SourceBudgetUnique<TaskLock> pause;
                     if( auto tasks = app->getTaskManager() )
                     {
                         if( auto renderTask = tasks->getTask( TaskId::Render );
                             renderTask && renderTask->isLoaded() )
                         {
-                            pause = std::make_unique<TaskLock>( renderTask );
+                            pause = makeSourceBudgetUnique<TaskLock>( renderTask );
                         }
                     }
                     resident.actors = GameActorUtil::loadSceneActors(
@@ -1512,15 +1678,23 @@ namespace workphone::scene
                         throw std::runtime_error( "Streaming world was closed during cell activation" );
                     }
                     resident.baseline = fingerprint( *s.snapshot( resident ) );
-                    s.residents.emplace( cell.key, std::move( resident ) );
+                    if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
                     ++s.stats.installedCells;
                     ++installed;
                 }
                 catch( ... )
                 {
-                    s.retire( resident );
+                    const bool denied = sourceBudgetDenialCount() != admissionEpoch;
+                    resident.rollback = true;
+                    try
+                    {
+                        s.retire( resident );
+                        s.residents.erase( residentSlot );
+                    }
+                    catch( const std::bad_alloc & ) {}
+                    if( denied ) throw std::bad_alloc();
                     s.ready.erase( ready );
-                    s.failed.insert( cell.key );
+                    s.failed.insert( admittedFailure.extract( cell.key ) );
                     ++s.stats.failedCells;
                     throw;
                 }
@@ -1557,6 +1731,11 @@ namespace workphone::scene
             }
             return error.empty();
         }
+        catch( const std::bad_alloc & )
+        {
+            error = "Out of memory";
+            return false;
+        }
         catch( const std::exception &e )
         {
             error = e.what();
@@ -1592,12 +1771,16 @@ namespace workphone::scene
             }
         } closing{ s.closing };
 
+        s.retryClosingCleanup();
+
         if( s.producer )
         {
             s.producer->drain();
         }
         s.producer.reset();
         s.ready.clear();
+        s.pendingResult = {};
+        s.hasPendingResult = false;
         s.demand.clear();
         s.failed.clear();
         s.representationTargets.clear();
@@ -1606,52 +1789,57 @@ namespace workphone::scene
         s.refreshRequests = false;
         s.failure.clear();
         s.overlays.clear();
-        for( auto &resident : s.residents )
+        // Transfer already-admitted ownership before attempting dynamic resource
+        // capture. No new Impl, map sentinels, job body or outer slots are needed.
+        auto registration = std::exchange( s.retirementRegistration, nullptr );
+        auto cleanup = registration ? registration->state : nullptr;
+        if( cleanup )
         {
-            s.retire( resident.second );
+            cleanup->residents = std::move( s.residents );
+            cleanup->retired = std::move( s.retired );
+            cleanup->meshCandidates = std::move( s.meshCandidates );
+            cleanup->lastMeshCandidate = std::move( s.lastMeshCandidate );
+            cleanup->retirementManager = s.retirementManager;
+            cleanup->scene = std::exchange( s.scene, nullptr );
+            cleanup->closingCleanup = std::move( s.closingCleanup );
+            cleanup->markClosingGraph();
         }
-        s.residents.clear();
-        s.reclaim();
-        if( !s.retired.empty() || !s.meshCandidates.empty() )
+        // Demand is closed. Release unused index/document storage before capture
+        // can need headroom; deferred residents keep their own documents/leases.
+        s.manifest = {};
+        s.index.clear();
+        s.manifestBudget.reset();
+        s.instanceIdentities.clear();
+        if( cleanup )
         {
-            auto app = core::IApplicationManager::instancePtr();
-            auto queue = app ? app->getJobQueue() : nullptr;
-            bool deferred = false;
-            if( queue && queue->isRunning() )
+            cleanup->reclaim();
+            s.stats.evictedCells += cleanup->stats.evictedCells;
+            s.stats.releasedMeshResources += cleanup->stats.releasedMeshResources;
+            s.stats.releasedMaterialResources += cleanup->stats.releasedMaterialResources;
+            s.stats.releasedTextureResources += cleanup->stats.releasedTextureResources;
+            if( cleanup->hasRetirementWork() )
             {
-                // Cleanup outlives the world/coordinator but owns no actor graph,
-                // scene, producer or manifest. Native unloads can finish later.
-                auto cleanup = std::make_shared<Impl>();
-                cleanup->retired = std::move( s.retired );
-                cleanup->meshCandidates = std::move( s.meshCandidates );
-                cleanup->lastMeshCandidate = s.lastMeshCandidate;
-                cleanup->retirementManager = s.retirementManager;
-                auto registration = make_ptr<Impl::RetirementRegistration>( cleanup );
-                queue->addJob( registration );
-                deferred = registration->getState() != IJob::State::Ready;
+                auto app = core::IApplicationManager::instancePtr();
+                auto queue = app ? app->getJobQueue() : nullptr;
+                bool deferred = false;
+                if( queue && queue->isRunning() )
+                {
+                    try { queue->addJob( registration ); }
+                    catch( const std::bad_alloc & ) {}
+                    deferred = registration->getState() != IJob::State::Ready;
+                }
                 if( !deferred )
                 {
-                    // Queue implementations may reject a paused/quitting app or
-                    // a concurrent shutdown. Do not drop work on rejection.
-                    s.retired = std::move( cleanup->retired );
-                    s.meshCandidates = std::move( cleanup->meshCandidates );
-                }
-            }
-            if( !deferred )
-            {
-                // Headless callers without an update service can still exhaust
-                // currently reclaimable CPU work. External pins remain resident.
-                const auto passes = ( s.meshCandidates.size() + 31 ) / 32;
-                for( size_t i = 0; i < passes; ++i )
-                {
-                    s.reclaim();
+                    const auto passes = ( cleanup->meshCandidates.size() + 31 ) / 32 + 1;
+                    for( size_t i = 0; i < passes; ++i ) cleanup->reclaim();
+                    if( cleanup->hasRetirementWork() ) s.closingCleanup = cleanup;
                 }
             }
         }
         s.retirementManager = nullptr;
         s.scene = nullptr;
         s.manifest = {};
-        s.index = {};
+        s.index.clear();
         s.manifestBudget.reset();
         s.path.clear();
         s.instanceOwner = nullptr;
@@ -1663,14 +1851,14 @@ namespace workphone::scene
     bool SceneWorldStreamer::pinActor( const String &uuid )
     {
         auto &s = *m_impl;
-        std::function<bool( const SmartPtr<IGameActor> & )> contains = [&]( const auto &actor ) {
+        auto contains = [&]( auto &&self, const SmartPtr<IGameActor> &actor ) -> bool {
             if( actor->getHandle()->getUUIDAsString() == uuid )
             {
                 return true;
             }
             for( const auto &child : actor->getChildren() )
             {
-                if( contains( child ) )
+                if( self( self, child ) )
                 {
                     return true;
                 }
@@ -1683,7 +1871,7 @@ namespace workphone::scene
             {
                 for( const auto &actor : resident.second.actors )
                 {
-                    if( contains( actor ) )
+                    if( contains( contains, actor ) )
                     {
                         resident.second.pinned = true;
                         return true;

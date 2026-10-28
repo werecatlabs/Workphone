@@ -202,6 +202,7 @@ namespace terrain_tile_contracts
             TerrainTileStream first, second;
             auto smallSource = std::make_shared<TerrainData>( fixture( 65, 65 ) );
             require( describeTerrainTiles( *smallSource, tiles, error ), "Small shared producer fixture" );
+            const auto idleProducers = scheduler->stats();
             require( first.request( smallSource, tiles, { { 0, 0 } }, error ) &&
                          second.request( smallSource, tiles, { { 0, 1 } }, error ),
                      "Independent terrain producers share the bounded worker service" );
@@ -232,16 +233,22 @@ namespace terrain_tile_contracts
             auto meshA = a.mesh, meshB = b.mesh;
             a = {}; b = {};
             first.drain(); second.drain();
-            require( scheduler->stats().used[sourceClass] == baseline.used[sourceClass] + 2 * terrainSourceBytes( *smallSource ) &&
-                         scheduler->stats().used[resultClass] == baseline.used[resultClass] + ( 2ull << 20 ),
-                     "Retained mesh aliases preserve source and result reservations after producer drain" );
+            const auto retainedMeshes = scheduler->stats();
+            require( retainedMeshes.used[sourceClass] >
+                         idleProducers.used[sourceClass] + 2 * terrainSourceBytes( *smallSource ) &&
+                         retainedMeshes.used[resultClass] == idleProducers.used[resultClass] + ( 2ull << 20 ),
+                     "Retained mesh aliases preserve source payloads, admitted lease/result metadata and exact result reservations after producer drain" );
             meshA.reset(); meshB.reset();
-            require( scheduler->stats().used[sourceClass] == baseline.used[sourceClass] &&
-                         scheduler->stats().used[resultClass] == baseline.used[resultClass],
-                     "Last mesh alias release returns source and result reservations" );
+            const auto retiredMeshes = scheduler->stats();
+            require( retiredMeshes.used[sourceClass] == idleProducers.used[sourceClass] &&
+                         retiredMeshes.used[resultClass] == idleProducers.used[resultClass],
+                     "Last mesh alias release returns every source payload, lease/result wrapper and result reservation to the idle producer baseline" );
         }
-        require( scheduler->stats().producers == baseline.producers,
-                 "Terrain producer destruction unregisters from the shared service" );
+        const auto retiredProducers = scheduler->stats();
+        require( retiredProducers.producers == baseline.producers &&
+                     retiredProducers.used[sourceClass] == baseline.used[sourceClass] &&
+                     retiredProducers.used[resultClass] == baseline.used[resultClass],
+                 "Terrain producer destruction unregisters and returns admitted producer metadata to the original shared baseline" );
         std::printf(
             "Terrain tiles: 1025x1025, 256 tiles, mixed-LOD seams, bounded worker and 1000 demand "
             "changes passed.\n" );

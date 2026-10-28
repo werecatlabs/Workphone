@@ -2,6 +2,7 @@
 #define CProceduralTexture_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <WPProcedural/ProceduralTexture.hpp>
 #include <Workphone/Interface/Procedural/IProceduralTexture.hpp>
 
@@ -11,9 +12,12 @@ namespace workphone
     {
         /// Admitted CPU authoring storage. Native texture upload is not provided by this owner.
         /// Use TextureBaker to sample a TextureRule, then import matching raw ColourF pixels.
-        class WPProcedural_API CProceduralTexture : public IProceduralTexture
+        class WPProcedural_API CProceduralTexture : public IProceduralTexture, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralTexture();
             ~CProceduralTexture() override;
 

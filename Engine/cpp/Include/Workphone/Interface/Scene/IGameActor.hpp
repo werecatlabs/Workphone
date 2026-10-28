@@ -1059,7 +1059,7 @@ namespace workphone
         template <class T>
         Array<SmartPtr<T>> IGameActor::getComponentsInChildren() const
         {
-            Array<SmartPtr<T>> componentsInChildren;
+            Array<SmartPtr<T>> componentsInChildren{ Allocator<SmartPtr<T>>( sourceBudget ) };
             componentsInChildren.reserve( 32 );
 
             auto children = getChildren();
@@ -1111,7 +1111,7 @@ namespace workphone
         template <class T>
         Array<SmartPtr<T>> IGameActor::getAllComponentsInChildren() const
         {
-            Array<SmartPtr<T>> componentsInChildren;
+            Array<SmartPtr<T>> componentsInChildren{ Allocator<SmartPtr<T>>( sourceBudget ) };
             componentsInChildren.reserve( 32 );
 
             auto children = getAllChildren();
@@ -1128,7 +1128,7 @@ namespace workphone
         template <class T>
         Array<T *> IGameActor::getAllComponentsInChildrenPtr() const
         {
-            Array<T *> componentsInChildren;
+            Array<T *> componentsInChildren{ Allocator<T *>( sourceBudget ) };
             componentsInChildren.reserve( 32 );
 
             auto children = getAllChildren();
@@ -1150,7 +1150,7 @@ namespace workphone
         {
             const auto components = getComponents();
 
-            Array<SmartPtr<T>> componentsInChildren;
+            Array<SmartPtr<T>> componentsInChildren{ Allocator<SmartPtr<T>>( sourceBudget ) };
             componentsInChildren.reserve( components.size() );
 
             for( auto &component : components )
@@ -1180,7 +1180,7 @@ namespace workphone
         {
             const auto components = getComponents();
 
-            Array<SmartPtr<T>> componentsInChildren;
+            Array<SmartPtr<T>> componentsInChildren{ Allocator<SmartPtr<T>>( sourceBudget ) };
             componentsInChildren.reserve( components.size() );
 
             for( const auto &component : components )
@@ -1213,7 +1213,7 @@ namespace workphone
         template <class T>
         Array<T *> IGameActor::getAllComponentsAndInChildrenPtr() const
         {
-            Array<T *> componentsInChildren;
+            Array<T *> componentsInChildren{ Allocator<T *>( sourceBudget ) };
             componentsInChildren.reserve( 32 );
 
             auto components = getComponents();
@@ -1249,7 +1249,7 @@ namespace workphone
         template <class T>
         Array<SmartPtr<T>> IGameActor::getComponentsByType() const
         {
-            Array<SmartPtr<T>> componentsByType;
+            Array<SmartPtr<T>> componentsByType{ Allocator<SmartPtr<T>>( sourceBudget ) };
             componentsByType.reserve( 12 );
 
             auto components = this->getComponents();

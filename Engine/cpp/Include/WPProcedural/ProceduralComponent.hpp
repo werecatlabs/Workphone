@@ -2,6 +2,7 @@
 #define ProceduralComponent_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <algorithm>
@@ -17,9 +18,12 @@ namespace workphone
     namespace procedural
     {
 
-        class ProceduralComponent : public scene::Component
+        class ProceduralComponent : public scene::Component, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             ProceduralComponent();
             virtual ~ProceduralComponent();
 

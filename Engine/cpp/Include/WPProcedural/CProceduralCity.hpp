@@ -2,6 +2,7 @@
 #define __CProceduralCity_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IProceduralCity.hpp>
 #include <Workphone/Math/Sphere3.hpp>
 
@@ -17,7 +18,7 @@ namespace workphone
          * All city-level tunables live here so presets can be swapped, duplicated,
          * saved, and edited by tools without touching city logic.
          */
-        struct WPProcedural_API SCityOptions
+        struct WPProcedural_API SCityOptions : SourceBudgetObject
         {
             String name;
             Vector2<real_Num> size = Vector2<real_Num>( 500, 500 );
@@ -36,9 +37,12 @@ namespace workphone
          * Manages the layout, road networks, city centers, and blocks of a procedurally generated city.
          * It handles spatial bounds using latitude/longitude and provides utilities for coordinate conversion.
          */
-        class WPProcedural_API CProceduralCity : public IProceduralCity
+        class WPProcedural_API CProceduralCity : public IProceduralCity, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
+
             CProceduralCity();
             ~CProceduralCity() override;
 

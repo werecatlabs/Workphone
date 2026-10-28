@@ -1,13 +1,17 @@
 #pragma once
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/IVehicleDynamics.hpp>
 
 namespace workphone::procedural
 {
-    class WPProcedural_API CVehicleDynamics : public IVehicleDynamics
+    class WPProcedural_API CVehicleDynamics : public IVehicleDynamics, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+
         VehicleDynamicsState reset( const VehiclePhysicsConfig &physics,
                                     const VehiclePhysicsVector3 &position, double yawRad ) override;
         bool stepFixed( const VehiclePhysicsConfig &physics, const VehicleDynamicsTuning &tuning,

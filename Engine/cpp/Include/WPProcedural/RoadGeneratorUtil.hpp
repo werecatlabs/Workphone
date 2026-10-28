@@ -2,6 +2,7 @@
 #define __RoadGeneratorUtil_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
 #include <Workphone/Math/Vector2.hpp>
@@ -12,9 +13,11 @@ namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API StraightRoadData : public ISharedObject
+        class WPProcedural_API StraightRoadData : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             StraightRoadData() = default;
             ~StraightRoadData() override = default;
 
@@ -33,9 +36,11 @@ namespace workphone
             Vector3F m_startDirection;
         };
 
-        class HighwayInfo : public ISharedObject
+        class HighwayInfo : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             HighwayInfo() = default;
 
             SmartPtr<ICityCenter> CityCenter;
@@ -45,18 +50,22 @@ namespace workphone
             Vector3F InitialDirection;
         };
 
-        class RadialPatternInfo : public ISharedObject
+        class RadialPatternInfo : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             SmartPtr<ICityCenter> CityCenter;
             SmartPtr<IRoad> ConnentedRoad;
             Vector3F StartPos;
             Vector3F StartDir;
         };
 
-        class StraightRoadInfo : public ISharedObject
+        class StraightRoadInfo : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             StraightRoadInfo() : MinRoadDistance( 50.0f )
             {
             }
@@ -70,9 +79,11 @@ namespace workphone
             f32 MinRoadDistance;
         };
 
-        class RoadFinishedInfo : public ISharedObject
+        class RoadFinishedInfo : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             RoadFinishedInfo() : IsInCityBoundaries( true ), CollidesWithTerrain( false )
             {
             }
@@ -97,9 +108,11 @@ namespace workphone
         //	Array<SmartPtr<IRoad>>	Roads;
         //};
 
-        class WPProcedural_API RoadGeneratorUtil : public ISharedObject
+        class WPProcedural_API RoadGeneratorUtil : public ISharedObject, public SourceBudgetObject
         {
         public:
+            using SourceBudgetObject::operator new;
+            using SourceBudgetObject::operator delete;
             static SmartPtr<IRoadElement> createRoadSegment( const Vector3F &posA, const Vector3F &posB,
                                                              const Vector3F &tangentA,
                                                              const Vector3F &tangentB, f32 widthA,

@@ -373,7 +373,8 @@ namespace workphone
     auto MeshUtil::createSubMesh( SmartPtr<IVertexBuffer> vertexBuffer,
                                   SmartPtr<IIndexBuffer> indexBuffer ) -> SmartPtr<ISubMesh>
     {
-        if( !vertexBuffer || !indexBuffer ) throw std::bad_alloc();
+        // Shared-vertex submeshes deliberately have no local vertex buffer.
+        if( !indexBuffer ) throw std::bad_alloc();
         auto subMesh = workphone::make_ptr<SubMesh>();
         if( !subMesh ) throw std::bad_alloc();
         subMesh->setVertexBuffer( vertexBuffer );

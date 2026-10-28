@@ -5,6 +5,8 @@
 #include <Workphone/Scene/Components/Camera/CameraFollow.hpp>
 #include <Workphone/Scene/Components/Camera/CameraTarget.hpp>
 #include <Workphone/System/TaskLock.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/FactoryTemplate.hpp>
 #include <boost/test/unit_test.hpp>
 #include <chrono>
 #include <thread>
@@ -98,6 +100,185 @@ namespace
 }  // namespace
 
 BOOST_AUTO_TEST_SUITE( GameSceneAsyncLoadingTests )
+
+namespace
+{
+    struct GraphBudget
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
+        u64 original = scheduler->stats().limits[size_t(StreamMemoryClass::SourceCpu)];
+        u64 used() const { return scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)]; }
+        void set(u64 bytes)
+        {
+            String error;
+            BOOST_REQUIRE(scheduler->setBudget(StreamMemoryClass::SourceCpu, bytes, error));
+        }
+        ~GraphBudget()
+        {
+            String error;
+            scheduler->setBudget(StreamMemoryClass::SourceCpu, original, error);
+        }
+    };
+
+    class BudgetGraphProbe : public CameraTarget
+    {
+    public:
+        inline static unsigned loads = 0;
+        inline static bool deny = true;
+        void load(SmartPtr<ISharedObject> data) override
+        {
+            CameraTarget::load(data);
+            ++loads;
+            if(deny)
+            {
+                auto scheduler = WorldStreamingScheduler::shared();
+                String error;
+                if(!scheduler->setBudget(StreamMemoryClass::SourceCpu,
+                    scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)], error))
+                    throw std::runtime_error("Probe cannot set budget");
+                // Simulate a legacy component that swallows admission failure.
+                try
+                {
+                    auto p = allocateSourceBudgetStorage(64, alignof(std::max_align_t));
+                    freeSourceBudgetStorage(p, alignof(std::max_align_t));
+                }
+                catch(const std::bad_alloc &) {}
+            }
+        }
+    };
+}
+
+BOOST_AUTO_TEST_CASE( prefab_identity_scratch_denial_preserves_source_and_retries )
+{
+    TestGuard guard;
+    BOOST_REQUIRE(guard.isAvailable);
+    GraphBudget budget;
+    auto source = actorData("BudgetPrefab");
+    auto child = actorData("BudgetChild");
+    child->setName(GameActorUtil::childStr);
+    source->addChild(child);
+    String sourceId, childId;
+    source->getPropertyValue(GameActorUtil::uuidStr, sourceId);
+    child->getPropertyValue(GameActorUtil::uuidStr, childId);
+    source->setProperty("target", childId);
+    // Warm type/string-pool metadata before constraining physical allocations.
+    { auto warm = GameActorUtil::createInstanceData(source); BOOST_REQUIRE(warm); }
+    budget.set(budget.used());
+    BOOST_CHECK_THROW(GameActorUtil::createInstanceData(source), std::bad_alloc);
+    budget.set(budget.original);
+    String after;
+    source->getPropertyValue(GameActorUtil::uuidStr, after);
+    BOOST_CHECK_EQUAL(after, sourceId);
+    child->getPropertyValue(GameActorUtil::uuidStr, after);
+    BOOST_CHECK_EQUAL(after, childId);
+    auto copy = GameActorUtil::createInstanceData(source);
+    BOOST_REQUIRE(copy);
+    String copyId, targetId;
+    copy->getPropertyValue(GameActorUtil::uuidStr, copyId);
+    BOOST_CHECK(copyId != sourceId);
+    auto copiedChild = copy->getChild(GameActorUtil::childStr);
+    BOOST_REQUIRE(copiedChild);
+    copiedChild->getPropertyValue(GameActorUtil::uuidStr, copyId);
+    copy->getPropertyValue("target", targetId);
+    BOOST_CHECK(copyId != childId);
+    BOOST_CHECK_EQUAL(targetId, copyId);
+}
+
+BOOST_AUTO_TEST_CASE( graph_load_budget_sweep_rolls_back_and_returns_admitted_roots )
+{
+    TestGuard guard;
+    BOOST_REQUIRE(guard.isAvailable);
+    GraphBudget budget;
+    Array<SmartPtr<Properties>> data;
+    for(int i = 0; i < 3; ++i)
+    {
+        auto root = actorData("BudgetRoot");
+        for(int j = 0; j < 2; ++j)
+        {
+            auto child = actorData("BudgetChild");
+            child->setName(GameActorUtil::childStr);
+            root->addChild(child);
+        }
+        data.push_back(root);
+    }
+    const auto count = guard.sceneManager->getNumActors();
+    const auto sceneRoots = guard.scene->getActors().size();
+    auto liveFsms = [&] {
+        auto fsms = guard.sceneManager->getFsmManager()->getFsms();
+        return std::count_if(fsms.begin(), fsms.end(), [](const auto &fsm) { return bool(fsm); });
+    };
+    const auto fsmCount = liveFsms();
+    unsigned denials = 0;
+    for(u64 allowance : {0ull,128ull,256ull,512ull,1024ull,2048ull,4096ull,8192ull,16384ull,32768ull,65536ull})
+    {
+        budget.set(budget.used() + allowance);
+        Array<SmartPtr<IGameActor>> roots;
+        try { roots = GameActorUtil::loadSceneActors(data, guard.scene); }
+        catch(const std::bad_alloc &) { ++denials; }
+        budget.set(budget.original);
+        for(auto &root : roots) guard.sceneManager->destroyActor(root);
+        BOOST_REQUIRE_EQUAL(guard.sceneManager->getNumActors(), count);
+        BOOST_REQUIRE_EQUAL(guard.scene->getActors().size(), sceneRoots);
+        BOOST_REQUIRE_EQUAL(liveFsms(), fsmCount);
+    }
+    BOOST_CHECK_GT(denials, 0u);
+    auto roots = GameActorUtil::loadSceneActors(data, guard.scene);
+    BOOST_REQUIRE_EQUAL(roots.size(), 3u);
+    BOOST_CHECK(roots.get_allocator().isSourceBudgeted());
+    BOOST_CHECK_EQUAL(guard.sceneManager->getNumActors(), count + 9);
+    budget.set(budget.used());
+    BOOST_CHECK_THROW(roots.reserve(roots.capacity() + 1), std::bad_alloc);
+    budget.set(budget.original);
+    for(auto &root : roots) guard.sceneManager->destroyActor(root);
+    BOOST_CHECK_EQUAL(guard.sceneManager->getNumActors(), count);
+}
+
+BOOST_AUTO_TEST_CASE( graph_load_late_swallowed_denial_retires_complete_graph_and_retries )
+{
+    TestGuard guard;
+    BOOST_REQUIRE(guard.isAvailable);
+    GraphBudget budget;
+    auto producer = make_ptr<FactoryTemplate<BudgetGraphProbe>>();
+    producer->setObjectTypeName("BudgetGraphProbe");
+    producer->setObjectTypeHash(StringUtil::getHash64("BudgetGraphProbe"));
+    guard.factoryManager->addFactory(producer);
+    producer->setPool(nullptr);
+    struct Registration
+    {
+        TestGuard &guard;
+        SmartPtr<IFactory> producer;
+        GraphBudget &budget;
+        ~Registration()
+        {
+            String error;
+            budget.scheduler->setBudget(StreamMemoryClass::SourceCpu, budget.original, error);
+            guard.factoryManager->removeFactory(producer);
+        }
+    } registration{guard, producer, budget};
+    auto root = actorData("ProbeRoot");
+    auto child = actorData("ProbeChild");
+    child->setName(GameActorUtil::childStr);
+    auto probe = make_ptr<Properties>();
+    probe->setName(GameActorUtil::componentStr);
+    probe->setProperty(GameActorUtil::componentTypeStr, "BudgetGraphProbe");
+    child->addChild(probe);
+    root->addChild(child);
+    Array<SmartPtr<Properties>> data{root};
+    const auto count = guard.sceneManager->getNumActors();
+    BudgetGraphProbe::loads = 0;
+    BudgetGraphProbe::deny = true;
+    BOOST_CHECK_THROW(GameActorUtil::loadSceneActors(data, guard.scene), std::bad_alloc);
+    budget.set(budget.original);
+    BOOST_REQUIRE_EQUAL(BudgetGraphProbe::loads, 1u);
+    BOOST_REQUIRE_EQUAL(guard.sceneManager->getNumActors(), count);
+    BudgetGraphProbe::deny = false;
+    auto roots = GameActorUtil::loadSceneActors(data, guard.scene);
+    BOOST_REQUIRE_EQUAL(roots.size(), 1u);
+    BOOST_CHECK_EQUAL(BudgetGraphProbe::loads, 2u);
+    BOOST_CHECK_EQUAL(guard.sceneManager->getNumActors(), count + 2);
+    guard.sceneManager->destroyActor(roots[0]);
+    BOOST_CHECK_EQUAL(guard.sceneManager->getNumActors(), count);
+}
 
 BOOST_AUTO_TEST_CASE( graph_load_preserves_render_pause_after_success_and_rollback )
 {

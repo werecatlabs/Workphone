@@ -6,6 +6,7 @@
 #include <Workphone/Atomics/Atomic.hpp>
 #include <Workphone/Memory/SharedPtr.hpp>
 #include <memory>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <unordered_map>
 
 namespace workphone
@@ -75,7 +76,7 @@ namespace workphone
             void reserveData( size_t size ) override;
 
         private:
-            struct LODBatch
+            struct LODBatch : SourceBudgetObject
             {
                 Vector3<real_Num> cameraPosition = Vector3<real_Num>::zero();
                 f32 verticalFovRadians = Math<f32>::DegToRad( 60.0f );
@@ -83,23 +84,23 @@ namespace workphone
                 f32 nearClipDistance = 0.1f;
                 bool orthographic = false;
 
-                Array<Vector3<real_Num>> worldReferencePoints;
-                Array<f32> worldRadii;
-                Array<u32> detailOffsets;
-                Array<u32> detailCounts;
-                Array<f32> lodBiases;
-                Array<f32> hysteresis;
-                Array<s32> previousLODs;
-                Array<s32> forcedLODs;
-                Array<u8> cullBelowLastLOD;
+                Array<Vector3<real_Num>> worldReferencePoints{ Allocator<Vector3<real_Num>>( sourceBudget ) };
+                Array<f32> worldRadii{ Allocator<f32>( sourceBudget ) };
+                Array<u32> detailOffsets{ Allocator<u32>( sourceBudget ) };
+                Array<u32> detailCounts{ Allocator<u32>( sourceBudget ) };
+                Array<f32> lodBiases{ Allocator<f32>( sourceBudget ) };
+                Array<f32> hysteresis{ Allocator<f32>( sourceBudget ) };
+                Array<s32> previousLODs{ Allocator<s32>( sourceBudget ) };
+                Array<s32> forcedLODs{ Allocator<s32>( sourceBudget ) };
+                Array<u8> cullBelowLastLOD{ Allocator<u8>( sourceBudget ) };
 
-                Array<u32> slots;
-                Array<u64> generations;
-                Array<u64> revisions;
-                Array<u32> thresholdOffsets;
-                Array<u32> thresholdCounts;
-                Array<f32> thresholds;
-                Array<s32> results;
+                Array<u32> slots{ Allocator<u32>( sourceBudget ) };
+                Array<u64> generations{ Allocator<u64>( sourceBudget ) };
+                Array<u64> revisions{ Allocator<u64>( sourceBudget ) };
+                Array<u32> thresholdOffsets{ Allocator<u32>( sourceBudget ) };
+                Array<u32> thresholdCounts{ Allocator<u32>( sourceBudget ) };
+                Array<f32> thresholds{ Allocator<f32>( sourceBudget ) };
+                Array<s32> results{ Allocator<s32>( sourceBudget ) };
 
                 Atomic<u32> remainingJobs{ 0 };
             };
@@ -113,11 +114,12 @@ namespace workphone
                                   s32 previousLOD, s32 forcedLOD, f32 hysteresis,
                                   bool cullBelowLastLOD );
 
-            Array<LODGroup *> m_groups;
-            Array<u64> m_generations;
-            Array<s32> m_currentLODs;
-            Array<u64> m_appliedRevisions;
-            std::unordered_map<LODGroup *, u32> m_groupSlots;
+            Array<LODGroup *> m_groups{ Allocator<LODGroup *>( sourceBudget ) };
+            Array<u64> m_generations{ Allocator<u64>( sourceBudget ) };
+            Array<s32> m_currentLODs{ Allocator<s32>( sourceBudget ) };
+            Array<u64> m_appliedRevisions{ Allocator<u64>( sourceBudget ) };
+            std::unordered_map<LODGroup *, u32, std::hash<LODGroup *>, std::equal_to<LODGroup *>,
+                SourceBudgetAllocator<std::pair<LODGroup * const, u32>>> m_groupSlots;
 
             SharedPtr<LODBatch> m_pendingBatch;
 

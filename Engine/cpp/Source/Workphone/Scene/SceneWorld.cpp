@@ -10,6 +10,7 @@
 #include <Workphone/Mesh/Mesh.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Mesh/MeshSerializer.hpp>
+#include <Workphone/System/SourceBudgetContainers.hpp>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <WorkphoneGraphics/workphone_graphics_mesh_reader.h>
 #include <filesystem>
@@ -135,11 +136,12 @@ namespace workphone::scene
 
         // Match GameActorUtil::createInstanceData's definition schema. Nested
         // resource data may also contain uuid fields and must never be indexed.
-        void visitDefinitions( const Properties &actor,
-                               const std::function<void( const Properties &, bool )> &fn )
+        template <class Visitor>
+        void visitDefinitions( const Properties &actor, const Visitor &fn,
+                               const Allocator<const Properties *> &scratchAllocator = {} )
         {
             fn( actor, true );
-            Array<const Properties *> components, children;
+            Array<const Properties *> components( scratchAllocator ), children( scratchAllocator );
             for( const auto &child : actor.getChildren() )
             {
                 if( child->getName() == GameActorUtil::componentStr ||
@@ -159,7 +161,7 @@ namespace workphone::scene
             }
             for( const auto *child : children )
             {
-                visitDefinitions( *child, fn );
+                visitDefinitions( *child, fn, scratchAllocator );
             }
         }
 
@@ -179,8 +181,10 @@ namespace workphone::scene
             return true;
         }
 
+        template <class Definitions>
         void collectIdentities( const Properties &root, Array<String> &actorIds,
-                                Array<String> &objectIds, std::set<String> &definitions )
+                                Array<String> &objectIds, Definitions &definitions,
+                                const Allocator<const Properties *> &scratchAllocator = {} )
         {
             visitDefinitions( root, [&]( const Properties &definition, bool actor ) {
                 const auto uuid = definition.hasProperty( GameActorUtil::uuidStr )
@@ -195,7 +199,7 @@ namespace workphone::scene
                     actorIds.push_back( uuid );
                 }
                 objectIds.push_back( uuid );
-            } );
+            }, scratchAllocator );
         }
 
         void readIdentities( const Properties &entry, const char *name, Array<String> &identities )
@@ -217,7 +221,8 @@ namespace workphone::scene
             }
         }
 
-        u32 countActors( const Properties &root )
+        u32 countActors( const Properties &root,
+                         const Allocator<const Properties *> &scratchAllocator = {} )
         {
             u32 count = 0;
             visitDefinitions( root, [&]( const Properties &, bool actor ) {
@@ -225,7 +230,7 @@ namespace workphone::scene
                 {
                     ++count;
                 }
-            } );
+            }, scratchAllocator );
             return count;
         }
 
@@ -924,6 +929,7 @@ namespace workphone::scene
                                                String &error )
     {
         error.clear();
+        const auto admissionEpoch = sourceBudgetDenialCount();
         try
         {
             if( !cellFile( cell.file ) )
@@ -940,6 +946,7 @@ namespace workphone::scene
             auto data = make_ptr<Properties>();
             if( !PropertiesBinarySerializer::deserialize( bytes, *data, &error ) )
             {
+                if( sourceBudgetDenialCount() != admissionEpoch ) error = "Out of memory";
                 return nullptr;
             }
             u32 version = 0, count = 0;
@@ -948,7 +955,7 @@ namespace workphone::scene
             data->getPropertyValue( "id", id );
             for( const auto &actor : data->getChildrenByName( ApplicationUtil::actorsStr ) )
             {
-                count += countActors( *actor );
+                count += countActors( *actor, Allocator<const Properties *>( sourceBudget ) );
             }
             if( ( version != 1 && version != WorldManifest::version ) || id != cell.id ||
                 count != cell.actors )
@@ -957,28 +964,46 @@ namespace workphone::scene
             }
             if( !cell.actorIds.empty() || !cell.objectIds.empty() )
             {
-                Array<String> actorIds, objectIds;
-                std::set<String> definitions;
+                Array<String> actorIds{ Allocator<String>( sourceBudget ) };
+                Array<String> objectIds{ Allocator<String>( sourceBudget ) };
+                SourceBudgetSet<String> definitions;
                 for( const auto &actor : data->getChildrenByName( ApplicationUtil::actorsStr ) )
                 {
-                    collectIdentities( *actor, actorIds, objectIds, definitions );
+                    collectIdentities( *actor, actorIds, objectIds, definitions,
+                                       Allocator<const Properties *>( sourceBudget ) );
                 }
                 if( actorIds.size() != cell.actorIds.size() ||
                     objectIds.size() != cell.objectIds.size() ||
-                    std::set<String>( actorIds.begin(), actorIds.end() ) !=
-                        std::set<String>( cell.actorIds.begin(), cell.actorIds.end() ) ||
-                    std::set<String>( objectIds.begin(), objectIds.end() ) !=
-                        std::set<String>( cell.objectIds.begin(), cell.objectIds.end() ) )
+                    SourceBudgetSet<String>( actorIds.begin(), actorIds.end() ) !=
+                        SourceBudgetSet<String>( cell.actorIds.begin(), cell.actorIds.end() ) ||
+                    definitions !=
+                        SourceBudgetSet<String>( cell.objectIds.begin(), cell.objectIds.end() ) )
                 {
                     throw std::runtime_error(
                         "Cell object identities do not match the manifest inventories" );
                 }
             }
+            // Legacy property adapters can return empty data after admission
+            // fails. Never publish a partially validated cell in that case.
+            if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
             return data;
+        }
+        catch( const std::bad_alloc & )
+        {
+            // Fits String's inline storage even at the exact SourceCpu cap.
+            error = "Out of memory";
+            return nullptr;
         }
         catch( const std::exception &e )
         {
-            error = e.what();
+            try
+            {
+                error = sourceBudgetDenialCount() != admissionEpoch ? "Out of memory" : e.what();
+            }
+            catch( const std::bad_alloc & )
+            {
+                error = "Out of memory";
+            }
             return nullptr;
         }
     }

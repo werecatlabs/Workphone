@@ -21,12 +21,14 @@
 #include "WPProcedural/WPProceduralTextureData.hpp"
 #include "WPProcedural/WPNoise.hpp"
 #include <Workphone/Interface/Procedural/TextureForgeTypes.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone
 {
     namespace procedural
     {
-        class WPProcedural_API WPTextureForge
+        // Scalar heap bodies include the embedded noise permutation table.
+        class WPProcedural_API WPTextureForge : public SourceBudgetObject
         {
         public:
             explicit WPTextureForge( u32 seed = 0x2a );

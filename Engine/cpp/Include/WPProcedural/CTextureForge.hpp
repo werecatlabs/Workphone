@@ -3,12 +3,16 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>
 #include <WPProcedural/WPTextureForge.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone::procedural
 {
-    class WPProcedural_API CTextureForge : public ITextureForge
+    class WPProcedural_API CTextureForge : public ITextureForge, public SourceBudgetObject
     {
     public:
+        using SourceBudgetObject::operator new;
+        using SourceBudgetObject::operator delete;
+
         void setSeed( u32 seed ) override;
         SurfaceBakeResult bakeSurface( SurfaceTag tag, const SurfaceBakeParams &params ) override;
         void bakeConcrete( SurfaceBakeResult &out, const SurfaceBakeParams &params ) override;

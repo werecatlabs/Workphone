@@ -1153,7 +1153,30 @@ namespace workphone::scene
             {
                 throw std::length_error( "Actor capacity exhausted" );
             }
+            const auto admissionEpoch = sourceBudgetDenialCount();
             auto actor = factoryManager->make_ptr<GameActor>( newId );
+            if( !actor )
+            {
+                throw std::bad_alloc();
+            }
+            struct StagedActor
+            {
+                SmartPtr<IGameActor> actor;
+                SmartPtr<IFSMManager> manager;
+                SmartPtr<IFSM> fsm, gameFSM;
+                bool published = false;
+                ~StagedActor()
+                {
+                    if( !published )
+                    {
+                        // No manager actor slot/count has been published yet.
+                        // Release each staged owner even if a legacy unload throws.
+                        try { actor->unload( nullptr ); } catch( ... ) {}
+                        try { if( fsm ) manager->destroyFSM( fsm ); } catch( ... ) {}
+                        try { if( gameFSM ) manager->destroyFSM( gameFSM ); } catch( ... ) {}
+                    }
+                }
+            } staged{ actor, fsmManager };
 
             if( auto handle = actor->getHandle() )
             {
@@ -1166,24 +1189,43 @@ namespace workphone::scene
             }
 
             actor->load( nullptr );
+            if( sourceBudgetDenialCount() != admissionEpoch )
+            {
+                throw std::bad_alloc();
+            }
+            if( !actor->isLoaded() || !actor->getTransform() )
+            {
+                throw std::runtime_error( "Actor initialization failed" );
+            }
+
+            staged.fsm = fsmManager->createFSM();
+            staged.gameFSM = fsmManager->createFSM();
+            if( !staged.fsm || !staged.gameFSM )
+            {
+                throw std::runtime_error( "Actor FSM initialization failed" );
+            }
+
+            auto actorFsmListener = factoryManager->make_ptr<GameActor::FsmListener>();
+            if( !actorFsmListener )
+            {
+                throw std::runtime_error( "Actor listener initialization failed" );
+            }
+
+            actorFsmListener->setOwner( actor );
+            staged.fsm->addListener( actorFsmListener );
+            if( sourceBudgetDenialCount() != admissionEpoch )
+            {
+                throw std::bad_alloc();
+            }
 
             WP_ASSERT( m_actors[newId] == nullptr );
             m_actors[newId] = actor;
-
-            auto fsm = fsmManager->createFSM();
-            auto gameFSM = fsmManager->createFSM();
-
-            m_fsms[newId] = fsm;
-            m_gameFSMs[newId] = gameFSM;
-
-            auto actorFsmListener = factoryManager->make_ptr<GameActor::FsmListener>();
-
+            m_fsms[newId] = staged.fsm;
+            m_gameFSMs[newId] = staged.gameFSM;
             m_fsmListeners[newId] = actorFsmListener;
 
-            actorFsmListener->setOwner( actor );
-            fsm->addListener( actorFsmListener );
-
             ++m_numActors;
+            staged.published = true;
             return actor;
         }
         catch( std::exception &e )

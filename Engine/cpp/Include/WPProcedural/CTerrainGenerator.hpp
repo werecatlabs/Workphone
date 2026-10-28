@@ -2,6 +2,7 @@
 #define __CTerrainGenerator_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Procedural/ITerrainGenerator.hpp>
 #include <WPProcedural/CProceduralGenerator.hpp>
 #include <Workphone/Math/LinearSpline1.hpp>
@@ -19,7 +20,7 @@ namespace workphone
          * presets can be swapped, duplicated, saved to disk, and edited by tools
          * without touching the generation logic.
          */
-        struct WPProcedural_API STerrainGeneratorOptions
+        struct WPProcedural_API STerrainGeneratorOptions : SourceBudgetObject
         {
             int width = 256;
             int height = 256;
