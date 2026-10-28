@@ -2,6 +2,7 @@
 #include <WPVehiclePhysics/HelicopterController.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Math/MathUtil.hpp>
+#include "HelicopterStep.hpp"
 
 namespace workphone::vehicle
 {
@@ -40,11 +41,36 @@ namespace workphone::vehicle
 
     void HelicopterController::update()
     {
-        CAerodynamicsVehicle<IAircraft>::update();
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        double time = 0, dt = 0;
+        if( !helicopter_step::frame( time, dt ) || !getVehicleCallback() ) return;
+        update( time, dt );
     }
 
+    SmartPtr<Properties> HelicopterController::getProperties() const
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        auto properties = IAircraft::getProperties();
+        const auto referenceLift = m_liftPower;
+        properties->setProperty( "Maximum Lift", referenceLift * m_thrustMultiplier );
+        return properties;
+    }
+
+    void HelicopterController::setProperties( SmartPtr<Properties> properties )
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        if( !properties || !properties->hasProperty( "Maximum Lift" ) ) return;
+        real_Num lift = 0;
+        properties->getPropertyValue( "Maximum Lift", lift );
+        if( !std::isfinite( lift ) || lift <= 0 ) return;
+        const auto referenceLift = m_liftPower;
+        if( referenceLift > 0 ) m_thrustMultiplier = Math<real_Num>::clamp( lift, static_cast<real_Num>( 1 ), static_cast<real_Num>( 10000000 ) ) / referenceLift;
+    }
     void HelicopterController::update( const double &t, const double &dt )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        if( !std::isfinite( dt ) || dt <= 0 || !std::isfinite( t ) ) return;
+        updateTransform();
         clearForces();
 
         // Derive world-space body axes from the current orientation.
@@ -55,12 +81,13 @@ namespace workphone::vehicle
         const Vector3<real_Num> worldFwd = orientation * Vector3<real_Num>::unitZ();
         const Vector3<real_Num> worldRight = orientation * Vector3<real_Num>::unitX();
 
-        const real_Num fdt = static_cast<real_Num>( dt );
+        const real_Num fdt = static_cast<real_Num>( Math<double>::min( dt, .05 ) );
 
         // Engine spool simulation — mirrors C# Update() Lerp.
         // C# reference:
         //   engineThrottle = Lerp(engineThrottle, collectiveInput, dt * spoolUpSpeed)
-        const real_Num collectiveIn = Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
+        const real_Num collectiveIn = getEnablePowerUnit() ?
+            Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 ) : 0.0;
 
         const real_Num alpha = Math<real_Num>::clamp( fdt * m_spoolUpSpeed, 0.0, 1.0 );
 
@@ -86,7 +113,7 @@ namespace workphone::vehicle
     void HelicopterController::applyLift( const Vector3<real_Num> &up )
     {
         const real_Num heightFactor = computeGroundEffect();
-        const real_Num lift = m_engineThrottle * m_liftPower * heightFactor;
+        const real_Num lift = m_engineThrottle * m_liftPower * heightFactor * m_thrustMultiplier;
 
         addForce( 0, up * lift, getPosition() );
     }
@@ -116,10 +143,8 @@ namespace workphone::vehicle
     // ===================================================================
     // TILT
     // ===================================================================
-    // C# reference:
-    //   pitch = transform.right * (-pitchInput * pitchForce)
-    //   roll  = transform.forward * (rollInput * rollForce)
-    //   AddTorque(pitch + roll)
+    // Positive cyclic pitches forward (+Z) and rolls right (+X), matching the
+    // disc-tilt convention of the other helicopter physics solutions.
     // ===================================================================
 
     void HelicopterController::applyTilt( const Vector3<real_Num> &fwd, const Vector3<real_Num> &right )
@@ -127,9 +152,8 @@ namespace workphone::vehicle
         const real_Num pitchIn = getChannel( kEleChannel );
         const real_Num rollIn = getChannel( kAilChannel );
 
-        // Negative pitch input tilts nose down (matches C# negation).
-        const Vector3<real_Num> pitchTorque = right * ( -pitchIn * m_pitchForce );
-        const Vector3<real_Num> rollTorque = fwd * ( rollIn * m_rollForce );
+        const Vector3<real_Num> pitchTorque = right * ( pitchIn * m_pitchForce );
+        const Vector3<real_Num> rollTorque = fwd * ( -rollIn * m_rollForce );
 
         addTorque( 0, pitchTorque + rollTorque );
     }
@@ -382,11 +406,13 @@ namespace workphone::vehicle
 
     SmartPtr<IAircraftCallback> HelicopterController::getCallback() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         return m_aircraftCallback;
     }
 
     void HelicopterController::setCallback( SmartPtr<IAircraftCallback> callback )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         m_aircraftCallback = callback;
     }
 

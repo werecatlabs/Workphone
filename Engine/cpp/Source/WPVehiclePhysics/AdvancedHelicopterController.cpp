@@ -2,6 +2,7 @@
 #include <WPVehiclePhysics/AdvancedHelicopterController.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Math/MathUtil.hpp>
+#include "HelicopterStep.hpp"
 
 namespace workphone::vehicle
 {
@@ -40,11 +41,40 @@ namespace workphone::vehicle
 
     void AdvancedHelicopterController::update()
     {
-        CAerodynamicsVehicle<IAircraft>::update();
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        double time = 0, dt = 0;
+        if( !helicopter_step::frame( time, dt ) || !getVehicleCallback() ) return;
+        update( time, dt );
     }
 
+    SmartPtr<Properties> AdvancedHelicopterController::getProperties() const
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        auto properties = IAircraft::getProperties();
+        const auto rpm = Math<real_Num>::min( m_maxRotorRPM, m_rotorDrag > 0 ? m_maxEngineTorque / m_rotorDrag : m_maxRotorRPM );
+        const auto rps = rpm / static_cast<real_Num>( 60 );
+        const auto referenceLift = static_cast<real_Num>( .5 ) * m_airDensity * m_rotorArea * rps * rps * m_liftCoefficient * m_maxCollectivePitch * Math<real_Num>::deg_to_rad();
+        properties->setProperty( "Maximum Lift", referenceLift * m_thrustMultiplier );
+        return properties;
+    }
+
+    void AdvancedHelicopterController::setProperties( SmartPtr<Properties> properties )
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        if( !properties || !properties->hasProperty( "Maximum Lift" ) ) return;
+        real_Num lift = 0;
+        properties->getPropertyValue( "Maximum Lift", lift );
+        if( !std::isfinite( lift ) || lift <= 0 ) return;
+        const auto rpm = Math<real_Num>::min( m_maxRotorRPM, m_rotorDrag > 0 ? m_maxEngineTorque / m_rotorDrag : m_maxRotorRPM );
+        const auto rps = rpm / static_cast<real_Num>( 60 );
+        const auto referenceLift = static_cast<real_Num>( .5 ) * m_airDensity * m_rotorArea * rps * rps * m_liftCoefficient * m_maxCollectivePitch * Math<real_Num>::deg_to_rad();
+        if( referenceLift > 0 ) m_thrustMultiplier = Math<real_Num>::clamp( lift, static_cast<real_Num>( 1 ), static_cast<real_Num>( 10000000 ) ) / referenceLift;
+    }
     void AdvancedHelicopterController::update( const double &t, const double &dt )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
+        if( !std::isfinite( dt ) || dt <= 0 || !std::isfinite( t ) ) return;
+        updateTransform();
         // Clear accumulators from previous frame.
         clearForces();
 
@@ -58,7 +88,7 @@ namespace workphone::vehicle
         const Vector3<real_Num> worldRight = orientation * Vector3<real_Num>::unitX();
 
         // Integrate rotor RPM.
-        updateRotorPhysics( static_cast<real_Num>( dt ) );
+        updateRotorPhysics( static_cast<real_Num>( Math<double>::min( dt, .05 ) ) );
 
         // Accumulate aerodynamic forces/torques.
         applyLift( worldUp, worldFwd, worldRight );
@@ -75,7 +105,8 @@ namespace workphone::vehicle
     void AdvancedHelicopterController::updateRotorPhysics( real_Num dt )
     {
         // Throttle input drives engine torque.
-        const real_Num throttle = Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
+        const real_Num throttle = getEnablePowerUnit() ?
+            Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 ) : 0.0;
 
         m_engineTorque = throttle * m_maxEngineTorque;
 
@@ -119,6 +150,7 @@ namespace workphone::vehicle
         lift = Math<real_Num>::max( lift, 0.0 );
 
         // Apply environmental modifiers.
+        lift *= m_thrustMultiplier;
         lift *= computeGroundEffect();
         lift *= computeTranslationalLift( getLinearVelocity().length() );
 
@@ -436,11 +468,13 @@ namespace workphone::vehicle
 
     SmartPtr<IAircraftCallback> AdvancedHelicopterController::getCallback() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         return m_aircraftCallback;
     }
 
     void AdvancedHelicopterController::setCallback( SmartPtr<IAircraftCallback> callback )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         m_aircraftCallback = callback;
     }
 

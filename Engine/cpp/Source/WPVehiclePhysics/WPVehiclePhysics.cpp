@@ -2,6 +2,10 @@
 #include <WPVehiclePhysics/WPVehiclePhysics.hpp>
 #include <WPVehiclePhysics/CCarController.hpp>
 #include <WPVehiclePhysics/CAircraft.hpp>
+#include <WPVehiclePhysics/HelicopterController.hpp>
+#include <WPVehiclePhysics/AdvancedHelicopterController.hpp>
+#include <WPVehiclePhysics/ExtremeHelicopterController.hpp>
+#include <WPVehiclePhysics/DCSHelicopterController.hpp>
 #include <WPVehiclePhysics/CDriveTrain.hpp>
 #include <WPVehiclePhysics/WheelControllerArcade.hpp>
 #include <WPVehiclePhysics/WheelControllerBrush.hpp>
@@ -32,6 +36,10 @@ namespace workphone
     {
         FactoryUtil::addFactory<CCarController>();
         FactoryUtil::addFactory<CAircraft>();
+        FactoryUtil::addFactory<vehicle::HelicopterController>();
+        FactoryUtil::addFactory<vehicle::AdvancedHelicopterController>();
+        FactoryUtil::addFactory<vehicle::ExtremeHelicopterController>();
+        FactoryUtil::addFactory<vehicle::DCSHelicopterController>();
         FactoryUtil::addFactory<CDriveTrain>();
         FactoryUtil::addFactory<WheelControllerArcade>();
         FactoryUtil::addFactory<WheelControllerBrush>();
@@ -42,6 +50,10 @@ namespace workphone
     {
         FactoryUtil::removeFactory<CCarController>();
         FactoryUtil::removeFactory<CAircraft>();
+        FactoryUtil::removeFactory<vehicle::HelicopterController>();
+        FactoryUtil::removeFactory<vehicle::AdvancedHelicopterController>();
+        FactoryUtil::removeFactory<vehicle::ExtremeHelicopterController>();
+        FactoryUtil::removeFactory<vehicle::DCSHelicopterController>();
         FactoryUtil::removeFactory<CDriveTrain>();
         FactoryUtil::removeFactory<WheelControllerArcade>();
         FactoryUtil::removeFactory<WheelControllerBrush>();

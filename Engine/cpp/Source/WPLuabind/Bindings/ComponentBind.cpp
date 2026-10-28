@@ -840,6 +840,21 @@ namespace workphone
                         .def( "getVehicleController", &CarController::getVehicleController )
                         .scope[def( "typeInfo", CarController::typeInfo )]];
 
+        module( L )[class_<HelicopterController, VehicleController, SmartPtr<HelicopterController>>(
+                        "HelicopterController" )
+                        .def( "getPhysicsSolution", &HelicopterController::getPhysicsSolution )
+                        .def( "setPhysicsSolution", &HelicopterController::setPhysicsSolution )
+                        .def( "getEngineThrottle", &HelicopterController::getEngineThrottle )
+                        .def( "setEngineThrottle", &HelicopterController::setEngineThrottle )
+                        .def( "getMaximumLift", &HelicopterController::getMaximumLift )
+                        .def( "setMaximumLift", &HelicopterController::setMaximumLift )
+                        .enum_( "PhysicsSolution" )[
+                            value( "Arcade", HelicopterController::PhysicsSolution::Arcade ),
+                            value( "Advanced", HelicopterController::PhysicsSolution::Advanced ),
+                            value( "Extreme", HelicopterController::PhysicsSolution::Extreme ),
+                            value( "DCS", HelicopterController::PhysicsSolution::DCS )]
+                        .scope[def( "typeInfo", HelicopterController::typeInfo )]];
+
         module( L )[class_<ProceduralRaceScene, Component, SmartPtr<ProceduralRaceScene>>(
                         "ProceduralRaceScene" )
                         .def( "regenerate", &ProceduralRaceScene::regenerate )

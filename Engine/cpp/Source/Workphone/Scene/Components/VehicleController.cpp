@@ -837,48 +837,63 @@ namespace workphone::scene
         applyAircraftConfiguration();
     }
 
-    void VehicleController::createAircraftController()
+    bool VehicleController::createAircraftController( bool replaceExisting )
     {
-        if( m_aircraftController || m_vehicleType != VehicleType::Aircraft )
-        {
-            return;
-        }
-
+        if( m_aircraftController && !replaceExisting ) return true;
+        if( m_vehicleType != VehicleType::Aircraft || !shouldCreateAircraftController() ) return false;
         auto applicationManager = core::IApplicationManager::instancePtr();
-        if( !applicationManager )
-        {
-            return;
-        }
-
-        auto factoryManager = applicationManager->getFactoryManagerPtr();
-        if( !factoryManager )
-        {
-            return;
-        }
-
-        auto aircraft = factoryManager->make_object<vehicle::IAircraft>();
-        if( !aircraft )
-        {
-            WP_LOG_ERROR(
-                "VehicleController could not create IAircraft. Ensure WPVehiclePhysics is loaded." );
-            return;
-        }
-
+        auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+        if( !factoryManager ) return false;
+        const auto implementation = getAircraftImplementationName();
+        auto factory = factoryManager->getFactoryByName( implementation );
+        // getFactoryByName has a short-name fallback: never accept a scene component
+        // or a different solver when the requested physics plugin is unavailable.
+        if( !factory || factory->getObjectTypeName() != implementation ||
+            !factory->isObjectDerivedFromByInfo( vehicle::IAircraft::typeInfo() ) ) return false;
+        auto aircraft = factory->make_object<vehicle::IAircraft>();
+        if( !aircraft ) return false;
         auto callback = workphone::make_ptr<AircraftSceneCallback>();
         callback->setOwner( this );
-
-        aircraft->load( nullptr );
-        aircraft->setVehicleCallback( callback );
-        aircraft->setCallback( callback );
-
-        m_aircraftCallback = callback;
-        m_aircraftController = aircraft;
-        applyAircraftConfiguration();
-
-        if( auto vehicleManager = applicationManager->getVehicleManager() )
+        auto previous = m_aircraftController;
+        auto previousCallback = m_aircraftCallback;
+        try
         {
-            vehicleManager->addVehicle( m_aircraftController );
+            aircraft->load( nullptr );
+            aircraft->setVehicleCallback( callback ); aircraft->setCallback( callback );
+            m_aircraftController = aircraft;
+            m_aircraftCallback = callback;
+            applyAircraftConfiguration();
+            if( auto manager = applicationManager->getVehicleManager() )
+            {
+                manager->addVehicle( aircraft );
+                if( previous ) manager->removeVehicle( previous );
+            }
         }
+        catch( const std::exception &error )
+        {
+            m_aircraftController = previous;
+            m_aircraftCallback = previousCallback;
+            aircraft->setVehicleCallback( nullptr ); aircraft->setCallback( nullptr );
+            aircraft->unload( nullptr );
+            WP_LOG_EXCEPTION( error );
+            return false;
+        }
+        if( previous )
+        {
+            ScopedLock<vehicle::IAircraft> simulationLock( previous );
+            previous->setVehicleCallback( nullptr ); previous->setCallback( nullptr );
+            previous->unload( nullptr );
+        }
+        return true;
+    }
+    String VehicleController::getAircraftImplementationName() const
+    {
+        return "workphone::vehicle::CAircraft";
+    }
+
+    bool VehicleController::shouldCreateAircraftController() const
+    {
+        return true;
     }
 
     void VehicleController::destroyAircraftController( SmartPtr<ISharedObject> data )
@@ -897,7 +912,9 @@ namespace workphone::scene
             }
         }
 
-        m_aircraftController->setVehicleCallback( nullptr );
+        auto aircraft = m_aircraftController;
+        ScopedLock<vehicle::IAircraft> simulationLock( aircraft );
+        aircraft->setVehicleCallback( nullptr );
         m_aircraftController->setCallback( nullptr );
         m_aircraftController->unload( data );
         m_aircraftController = nullptr;
@@ -911,6 +928,7 @@ namespace workphone::scene
             return;
         }
 
+        ScopedLock<vehicle::IAircraft> simulationLock( m_aircraftController );
         m_aircraftController->setMass( m_mass );
         m_aircraftController->setAirDensity( m_airDensity );
         m_aircraftController->setSectionMultiplier( m_sectionMultiplier );

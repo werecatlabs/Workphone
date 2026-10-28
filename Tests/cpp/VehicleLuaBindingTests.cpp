@@ -2,6 +2,7 @@
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/VehicleController.hpp>
+#include <Workphone/Scene/Components/HelicopterController.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <WPLuabind/Helpers/GraphicsSystemHelper.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
@@ -281,6 +282,7 @@ int main( int argc, char **argv )
         luabind::globals(state)["runtimeGraphics"]=static_pointer_cast<render::IGraphicsSystem>(runtimeGraphics);
         auto race = make_ptr<scene::ProceduralRaceScene>();
         luabind::globals( state )["flightController"] = make_ptr<scene::VehicleController>();
+        luabind::globals( state )["helicopterController"] = make_ptr<scene::HelicopterController>();
         luabind::globals( state )["raceScene"] = race;
         auto controller = syntheticPad();
         controller->setDeadZone( 0.9f ); controller->setSensitivity( 4 ); controller->setInvertX( true );
@@ -307,6 +309,20 @@ int main( int argc, char **argv )
             if ( luaL_dofile( state, ( core / file ).string().c_str() ) != LUA_OK )
                 throw std::runtime_error( lua_tostring( state, -1 ) );
         const char* test = R"(
+            assert(helicopterController:getAircraftControlProfile() == 'helicopter')
+            assert(helicopterController:getAircraftPlayerControls())
+            assert(helicopterController:getPhysicsSolution() == HelicopterController.Arcade)
+            assert(HelicopterController.Advanced == 1 and HelicopterController.Extreme == 2 and HelicopterController.DCS == 3)
+            for _, solution in ipairs({HelicopterController.Arcade, HelicopterController.Advanced,
+                                      HelicopterController.Extreme, HelicopterController.DCS}) do
+                helicopterController:setPhysicsSolution(solution)
+                assert(helicopterController:getPhysicsSolution() == solution)
+            end
+            helicopterController:setEngineThrottle(0.65)
+            assert(math.abs(helicopterController:getEngineThrottle() - 0.65) < 0.00001)
+            helicopterController:setAircraftControls(0.4, 0.2, -0.3, 0.1)
+            assert(not helicopterController:getAircraftPlayerControls())
+            assert(math.abs(helicopterController:getAircraftThrottle() - 0.4) < 0.00001)
             assert(not flightController:getAircraftPlayerControls())
             assert(flightController:getAircraftControlProfile() == 'plane')
             flightController:useAircraftPlayerControls('helicopter')

@@ -148,7 +148,10 @@ BOOST_AUTO_TEST_CASE( vehicle_factory_keeps_car_wheel_controller_selection_unamb
     }
     carController->unload( nullptr );
 
-    auto aircraft = factoryManager->make_object<vehicle::IAircraft>();
+    // Multiple rotorcraft implementations also satisfy IAircraft. Request the
+    // fixed-wing implementation explicitly rather than depending on type order.
+    auto aircraft = factoryManager->createObjectFromType<vehicle::IAircraft>(
+        "workphone::vehicle::CAircraft" );
     BOOST_REQUIRE( aircraft );
     BOOST_CHECK( workphone::dynamic_pointer_cast<vehicle::CAircraft>( aircraft ) );
 }

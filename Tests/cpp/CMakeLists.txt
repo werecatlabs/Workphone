@@ -7,6 +7,15 @@ include(cpp_defines)
 include(cpp_compiler_options)
 
 if(TARGET Workphone AND TARGET WPVehiclePhysics)
+    add_executable(HelicopterControllerTests HelicopterControllerTests.cpp)
+    target_compile_definitions(HelicopterControllerTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(HelicopterControllerTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(HelicopterControllerTests PRIVATE Workphone WPVehiclePhysics)
+    set_target_properties(HelicopterControllerTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPVehicle.helicopter_controller COMMAND HelicopterControllerTests)
+    set_tests_properties(WPVehicle.helicopter_controller PROPERTIES LABELS "vehicle;helicopter;headless" TIMEOUT 30)
+
     add_executable(VehicleFlightInputTests VehicleFlightInputTests.cpp)
     target_compile_definitions(VehicleFlightInputTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(VehicleFlightInputTests PRIVATE

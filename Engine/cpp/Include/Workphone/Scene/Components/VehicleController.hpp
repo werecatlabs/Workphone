@@ -328,9 +328,11 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            void createAircraftController();
+            virtual String getAircraftImplementationName() const;
+            virtual bool shouldCreateAircraftController() const;
+            bool createAircraftController( bool replaceExisting = false );
             void destroyAircraftController( SmartPtr<ISharedObject> data = nullptr );
-            void applyAircraftConfiguration();
+            virtual void applyAircraftConfiguration();
 
             SmartPtr<Rigidbody> m_chassis;             ///< Vehicle chassis rigidbody
             SmartPtr<Collision> m_collision;           ///< Collision detection component
