@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
+#include "../../UIHierarchyUpdate.hpp"
 #include <Workphone/Scene/Components/UI/UIComponent.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
 #include <Workphone/Scene/Transform.hpp>
@@ -22,6 +23,18 @@ namespace workphone::scene
 {
     namespace
     {
+        template<class Callback>
+        void visitChildLayoutTransforms( IGameActor *actor, const Callback &callback )
+        {
+            for( auto child : actor->getChildren() )
+            {
+                if( !child ) continue;
+                const auto transforms = child->getComponentsByType<LayoutTransform>();
+                if( transforms.empty() ) visitChildLayoutTransforms( child.get(), callback );
+                else for( auto transform : transforms ) callback( transform.get() );
+            }
+        }
+
         void markLayoutTransformDirty( LayoutTransform *layoutTransform )
         {
             if( !layoutTransform )
@@ -113,16 +126,16 @@ namespace workphone::scene
 
             if( actor )
             {
-                auto layoutTransforms = actor->getComponentsInChildrenPtr<LayoutTransform>();
-                for( auto layoutTransform : layoutTransforms )
-                {
-                    layoutTransform->updateTransform();
-                }
+                visitChildLayoutTransforms( actor, []( LayoutTransform *child ) { child->updateTransform(); } );
             }
 
             if( auto componentSystem = getComponentSystemPtr() )
             {
-                componentSystem->addDirtyComponent( this );
+                // Descendants were visited above. Avoid re-enqueuing every
+                // descendant again through LayoutTransformSystem's cascade.
+                if( auto layoutSystem = dynamic_cast<LayoutTransformSystem *>( componentSystem ) )
+                    layoutSystem->ComponentSystem::addDirtyComponent( this );
+                else componentSystem->addDirtyComponent( this );
             }
         }
         break;
@@ -381,30 +394,17 @@ namespace workphone::scene
 
             if( auto actor = getActor() )
             {
-                auto layoutTransforms = actor->getAllComponentsInChildren<LayoutTransform>();
-                for( auto layoutTransform : layoutTransforms )
-                {
-                    layoutTransform->updateAnchorFromAlignment();
-                }
+                visitChildLayoutTransforms( actor.get(), []( LayoutTransform *child ) { child->updateAnchorFromAlignment(); } );
             }
         }
     }
 
     void LayoutTransform::updateOrder()
     {
+        if( ui_hierarchy::actorOwnsOrderWalk() ) return;
         if( auto actor = getActor() )
         {
-            auto uiComponent = actor->getComponent<UIComponent>();
-            if( uiComponent )
-            {
-                uiComponent->updateOrder();
-            }
-
-            auto childUiComponents = actor->getAllComponentsInChildren<UIComponent>();
-            for( auto childUiComponent : childUiComponents )
-            {
-                childUiComponent->updateOrder();
-            }
+            actor->updateOrder();
         }
     }
 
@@ -421,11 +421,7 @@ namespace workphone::scene
         {
             if( auto actor = getActor() )
             {
-                auto childComponents = actor->getComponentsInChildren<LayoutTransform>();
-                for( auto childComponent : childComponents )
-                {
-                    childComponent->setZOrder( zOrder + 1, cascade );
-                }
+                visitChildLayoutTransforms( actor.get(), [zOrder]( LayoutTransform *child ) { child->setZOrder( zOrder + 1, true ); } );
             }
         }
     }
@@ -439,11 +435,7 @@ namespace workphone::scene
         {
             if( auto actor = getActor() )
             {
-                auto components = actor->getComponentsInChildren<LayoutTransform>();
-                for( auto &component : components )
-                {
-                    component->setAutoCalculateOrder( autoCalculateOrder, cascade );
-                }
+                visitChildLayoutTransforms( actor.get(), [autoCalculateOrder]( LayoutTransform *child ) { child->setAutoCalculateOrder( autoCalculateOrder, true ); } );
             }
         }
     }
@@ -864,21 +856,7 @@ namespace workphone::scene
         {
             if( eventValue == hierarchyChanged )
             {
-                if( auto actor = getActorPtr() )
-                {
-                    auto uiComponent = actor->getComponentPtr<UIComponent>();
-                    if( uiComponent )
-                    {
-                        uiComponent->updateOrder();
-                    }
-
-                    auto childUiComponents = actor->getAllComponentsInChildrenPtr<UIComponent>();
-                    for( auto childUiComponent : childUiComponents )
-                    {
-                        childUiComponent->updateOrder();
-                    }
-                }
-
+                updateOrder();
                 updateTransform();
             }
             else if( eventValue == IComponent::childAdded )

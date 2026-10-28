@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/GameActor.hpp>
+#include "UIHierarchyUpdate.hpp"
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/Transform.hpp>
@@ -2524,6 +2525,7 @@ namespace workphone::scene
 
     void GameActor::updateOrder( bool cascade )
     {
+        ui_hierarchy::ActorOrderWalk traversal;
         auto components = getComponents();
         for( auto &component : components )
         {

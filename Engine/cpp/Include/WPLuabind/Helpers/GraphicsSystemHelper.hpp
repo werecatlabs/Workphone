@@ -8,20 +8,13 @@ namespace workphone
     class GraphicsSystemHelper
     {
     public:
-        // static SceneManagerPtr addSceneManager( GraphicsSystemPtr graphicsSystem, const char *type,
-        //                                         const char *name );
-        // static SceneManagerPtr getSceneManager( GraphicsSystemPtr gfxSystem,
-        //                                         const char *sceneManagerName );
-
-        // static WindowPtr getRenderWindow( GraphicsSystemPtr sys );
-        // static WindowPtr getRenderWindowNamed( GraphicsSystemPtr sys, const char *name );
-
-        // static DeferredShadingSystemPtr getDeferredShadingSystem( GraphicsSystemPtr sys );
-
-        // static bool _configureDefault( IGraphicsSystem *system );
-        // static bool _configure( IGraphicsSystem *system, GraphicsSystemConfigurationPtr config );
-        // static WindowPtr _getRenderWindow( IGraphicsSystem *sys );
-        // static WindowPtr _getRenderWindowNamed( IGraphicsSystem *sys, const char *name );
+        /** Snapshot of live player graphics policy, including display capabilities. */
+        static SmartPtr<Properties> getRuntimeSettings( render::IGraphicsSystem *system );
+        /** Validate and apply a staged policy, retaining unrelated player settings. */
+        static SmartPtr<Properties> applyRuntimeSettings( render::IGraphicsSystem *system,
+                                                          SmartPtr<Properties> requested );
+        /** Flat mode.N.width/height properties avoid unregistered array bindings. */
+        static SmartPtr<Properties> getDisplayModes( render::IGraphicsSystem *system );
     };
 }  // namespace workphone
 

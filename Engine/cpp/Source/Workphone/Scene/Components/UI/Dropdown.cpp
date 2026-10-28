@@ -13,6 +13,8 @@
 #include <Workphone/Interface/UI/IUIDropdown.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
+#include <algorithm>
+#include <Workphone/Memory/ObjectObserver.hpp>
 
 namespace workphone::scene
 {
@@ -47,6 +49,7 @@ namespace workphone::scene
 
     Dropdown::~Dropdown()
     {
+        unload( nullptr );
     }
 
     void Dropdown::load( SmartPtr<ISharedObject> data )
@@ -81,6 +84,8 @@ namespace workphone::scene
     {
         try
         {
+            // Detached controls also install trigger callbacks before load().
+            setButton( nullptr );
             if( isLoaded() )
             {
                 setLoadingState( LoadingState::Unloading );
@@ -123,6 +128,7 @@ namespace workphone::scene
 
         auto button = getButton();
         properties->setPropertyAsType<Button>( dropdownButtonStr, button );
+        properties->setProperty( "textSize", static_cast<s32>( button ? button->getTextSize() : 13u ) );
 
         properties->setPropertyAsType( dropdownPanelStr, m_panel );
         properties->setProperty( isOpenStr, m_isOpen );
@@ -249,6 +255,8 @@ namespace workphone::scene
         }
 
         setButton( button );
+        if( button && properties->hasProperty( "textSize" ) )
+            button->setTextSize( static_cast<u32>( std::clamp( properties->getPropertyAsInt( "textSize", 13 ), 1, 255 ) ) );
 
         m_options.clear();
 
@@ -268,6 +276,7 @@ namespace workphone::scene
         m_isOpen = open;
         buildOptionsPanel();
         setOpen( open );
+        updateElementState();
     }
 
     bool Dropdown::isValid() const
@@ -360,31 +369,44 @@ namespace workphone::scene
 
     void Dropdown::setButton( SmartPtr<Button> button )
     {
-        if( m_button.load() != button )
+        if( m_button.get() != button.get() )
         {
+            auto previous = getButton();
             m_button = button;
+            if( previous ) previous->setCallbackFunction( {} );
 
-            auto button = getButton();
             if( button )
             {
-                auto owner = getSharedFromThis<Dropdown>();
-                auto func = [owner, button]( hash_type value ) {
-                    if( SmartPtr<Dropdown> dropdown = owner )
-                    {
-                        if( dropdown->getButton() != button )
-                        {
-                            return;
-                        }
+                struct TriggerBinding
+                {
+                    ObjectObserver<Dropdown> owner;
+                    ObjectObserver<Button> trigger;
+                    Button *identity = nullptr;
 
-                        if( auto actor = dropdown->getActorPtr();
-                            actor && dropdown->isEnabled() && actor->isEnabledInScene() )
+                    ~TriggerBinding()
+                    {
+                        if( auto dropdown = owner.lock(); dropdown && dropdown->m_button.get() == identity )
                         {
-                            dropdown->setOpen( !dropdown->isOpen() );
+                            if( auto button = trigger.lock() ) dropdown->m_button = nullptr;
+                            else dropdown->m_button.forceReset();
                         }
                     }
                 };
+                auto binding = std::make_shared<TriggerBinding>();
+                binding->owner = this;
+                binding->trigger = button;
+                binding->identity = button.get();
+                button->setCallbackFunction( [binding]( hash_type value ) {
+                    auto dropdown = binding->owner.lock();
+                    auto button = binding->trigger.lock();
+                    if( !dropdown || !button || dropdown->getButton() != button ) return;
 
-                button->setCallbackFunction( func );
+                    if( auto actor = dropdown->getActorPtr();
+                        actor && dropdown->isEnabled() && actor->isEnabledInScene() )
+                    {
+                        dropdown->setOpen( !dropdown->isOpen() );
+                    }
+                } );
             }
         }
     }
@@ -659,7 +681,7 @@ namespace workphone::scene
 
                     if( auto button = buttonActor->getComponent<Button>() )
                     {
-                        auto owner = WeakPtr<Dropdown>( this );
+                        auto owner = ObjectObserver<Dropdown>( this );
                         button->setCallbackFunction( [owner, option]( hash_type value ) {
                             auto dropdown = owner.lock();
                             if( !dropdown )
@@ -824,6 +846,12 @@ namespace workphone::scene
             }
             element->setOptions( options );
             element->setLabel( getLabel() );
+            if( auto button = getButton() )
+            {
+                auto appearance = workphone::make_ptr<Properties>();
+                appearance->setProperty( "textSize", static_cast<s32>( button->getTextSize() ) );
+                element->setProperties( appearance );
+            }
             for( u32 index = 0; index < options.size(); ++index )
             {
                 if( options[index] == getLabel() )

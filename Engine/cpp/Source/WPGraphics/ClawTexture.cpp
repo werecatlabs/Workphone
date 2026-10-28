@@ -191,26 +191,74 @@ namespace
         return true;
     }
 
-    template <class Levels>
-    void *uploadMipLevels( wp_renderer_dx11 *renderer, const Levels &levels, bool *budgetDenied = nullptr )
+    struct TextureUploadPolicy
     {
-        size_t first = 0;
-        workphone::s32 quality = 2, maximum = 0;
+        workphone::s32 quality = 2;
+        workphone::u32 maximum = 0;
+
+        workphone::u32 key() const
+        {
+            return static_cast<workphone::u32>( quality + 1 ) * 65536u + maximum;
+        }
+    };
+
+    TextureUploadPolicy textureUploadPolicy()
+    {
+        TextureUploadPolicy policy;
         if( auto app = workphone::core::IApplicationManager::instancePtr() )
-            if(auto settings = app->getPlayerSettings())
-            { settings->getPropertyValue("quality.texture",quality); settings->getPropertyValue("quality.maxTextureSize",maximum); }
-        const size_t skip = quality == 0 ? 2u : quality == 1 ? 1u : 0u;
+            if( auto settings = app->getPlayerSettings() )
+            {
+                workphone::s32 maximum = 0;
+                settings->getPropertyValue( "quality.texture", policy.quality );
+                settings->getPropertyValue( "quality.maxTextureSize", maximum );
+                policy.quality = std::clamp( policy.quality, 0, 3 );
+                policy.maximum = static_cast<workphone::u32>( std::clamp( maximum, 0, 16384 ) );
+            }
+        return policy;
+    }
+
+    template <class Levels>
+    void *uploadMipLevels( wp_renderer_dx11 *renderer, const Levels &levels,
+                           const TextureUploadPolicy &policy, bool *budgetDenied = nullptr,
+                           bool preserveSingleMip = false, workphone::u32 atlasColumns = 1 )
+    {
+        // Legacy sampled textures commonly disable authored mipmaps. They still
+        // need a smaller resident base when the player lowers texture quality.
+        // Keep the original CPU pixels and the no-mipmap sampling contract.
+        if( !preserveSingleMip && levels.size() == 1 && ( levels[0].width > 1 || levels[0].height > 1 ) &&
+            ( policy.quality < 2 || ( policy.maximum > 0 &&
+                ( levels[0].width > policy.maximum || levels[0].height > policy.maximum ) ) ) )
+        {
+            workphone::render::TextureMipSettings settings;
+            settings.filter = workphone::render::TextureMipFilter::Data;
+            settings.atlasColumns = atlasColumns;
+            workphone::String error;
+            auto working = workphone::WorldStreamingScheduler::shared()->reserve(
+                workphone::StreamMemoryClass::WorkingCpu,
+                generatedMipBytes( levels[0].width, levels[0].height, settings ), error );
+            if( !working )
+            {
+                if( budgetDenied ) *budgetDenied = true;
+                return nullptr;
+            }
+            const auto generated = workphone::render::generateTextureMips(
+                levels[0].bgra.data(), levels[0].width, levels[0].height, settings );
+            return uploadMipLevels( renderer, generated, policy, budgetDenied, true, atlasColumns );
+        }
+        size_t first = 0;
+        const size_t skip = policy.quality == 0 ? 2u : policy.quality == 1 ? 1u : 0u;
         while(first + 1 < levels.size() && (first < skip ||
-              (maximum > 0 && (levels[first].width > static_cast<workphone::u32>(maximum) || levels[first].height > static_cast<workphone::u32>(maximum))))) ++first;
+              (policy.maximum > 0 && (levels[first].width > policy.maximum || levels[first].height > policy.maximum)))) ++first;
+        const auto last = preserveSingleMip ? first + 1 : levels.size();
         workphone::u64 bytes = 0;
-        for(size_t i = first; i < levels.size(); ++i) bytes += levels[i].bgra.size();
+        for(size_t i = first; i < last; ++i) bytes += levels[i].bgra.size();
         workphone::String error;
         auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
             workphone::StreamMemoryClass::Gpu, bytes, error );
         if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
         std::vector<wp_texture_mip_dx11> nativeLevels;
-        nativeLevels.reserve( levels.size() );
-        for(size_t i = first; i < levels.size(); ++i)
+        nativeLevels.reserve( last - first );
+        for(size_t i = first; i < last; ++i)
         {
             const auto &level = levels[i];
             nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
@@ -220,17 +268,13 @@ namespace
     }
 
     void *uploadDds( wp_renderer_dx11 *renderer, const std::vector<workphone::u8> &bytes,
-                     bool *budgetDenied = nullptr )
+                     const TextureUploadPolicy &policy, bool *budgetDenied = nullptr )
     {
         const auto image = workphone::dds::inspect( bytes );
         size_t first = 0;
-        workphone::s32 quality = 2, maximum = 0;
-        if(auto app = workphone::core::IApplicationManager::instancePtr())
-            if(auto settings = app->getPlayerSettings())
-            { settings->getPropertyValue("quality.texture",quality); settings->getPropertyValue("quality.maxTextureSize",maximum); }
-        const size_t skip = quality == 0 ? 2u : quality == 1 ? 1u : 0u;
-        while(first + 1 < image.mips.size() && (first < skip || (maximum > 0 &&
-              (image.mips[first].width > static_cast<workphone::u32>(maximum) || image.mips[first].height > static_cast<workphone::u32>(maximum))))) ++first;
+        const size_t skip = policy.quality == 0 ? 2u : policy.quality == 1 ? 1u : 0u;
+        while(first + 1 < image.mips.size() && (first < skip || (policy.maximum > 0 &&
+              (image.mips[first].width > policy.maximum || image.mips[first].height > policy.maximum)))) ++first;
         workphone::u64 residentBytes = 0;
         for(size_t i=first; i<image.mips.size(); ++i) residentBytes += image.mips[i].size;
         workphone::String error;
@@ -588,6 +632,9 @@ namespace
         }
         auto device = dx11 ? wp_renderer_dx11_get_device( dx11 ) : nullptr;
 
+        // One immutable player-settings snapshot governs both invalidation and
+        // upload. Apply may publish another snapshot while this draw is running.
+        const auto policy = textureUploadPolicy();
         std::scoped_lock lock( g_textureMutex );
         auto found = g_textureData.find( texture );
         if( found == g_textureData.end() || !device )
@@ -596,13 +643,8 @@ namespace
         }
 
         auto &data = found->second;
-        u32 policy = 0;
-        if(auto app = core::IApplicationManager::instancePtr())
-            if(auto settings = app->getPlayerSettings())
-                policy = static_cast<u32>(settings->getPropertyAsInt("quality.texture") + 1) * 65536u +
-                         static_cast<u32>(settings->getPropertyAsInt("quality.maxTextureSize"));
-        if(data.projectMipPolicy != policy)
-        { data.projectMipPolicy = policy; data.uploadPending = true; }
+        if( data.projectMipPolicy != policy.key() )
+        { data.projectMipPolicy = policy.key(); data.uploadPending = true; }
         const auto previousView = data.device == device ? data.textureView : nullptr;
         if( ( data.pixels.empty() && data.floatPixels.empty() && data.cookedLevels.empty() && data.ddsBytes.empty() ) ||
             ( !data.uploadPending && data.attemptedRenderer == dx11 && data.attemptedDevice == device ) )
@@ -631,22 +673,30 @@ namespace
             }
             else if( !data.ddsBytes.empty() )
             {
-                candidate = uploadDds( dx11, data.ddsBytes, &budgetDenied );
+                candidate = uploadDds( dx11, data.ddsBytes, policy, &budgetDenied );
             }
             else if( !data.cookedLevels.empty() )
             {
-                candidate = uploadMipLevels( dx11, data.cookedLevels, &budgetDenied );
+                candidate = uploadMipLevels( dx11, data.cookedLevels, policy, &budgetDenied, false,
+                                              data.mipSettings.atlasColumns );
             }
             else
             {
                 String error;
+                auto mipSettings = data.mipSettings;
+                const bool reduceSingleMip = mipSettings.filter == TextureMipFilter::None &&
+                    ( policy.quality < 2 || ( policy.maximum > 0 &&
+                        ( static_cast<u32>( data.pixelSize.x ) > policy.maximum ||
+                          static_cast<u32>( data.pixelSize.y ) > policy.maximum ) ) );
+                if( reduceSingleMip ) mipSettings.filter = TextureMipFilter::Data;
                 auto working = WorldStreamingScheduler::shared()->reserve(
                     StreamMemoryClass::WorkingCpu,
-                    generatedMipBytes( data.pixelSize.x, data.pixelSize.y, data.mipSettings ), error );
+                    generatedMipBytes( data.pixelSize.x, data.pixelSize.y, mipSettings ), error );
                 if( !working ) { data.uploadPending = true; WP_LOG_WARNING( error ); return previousView; }
                 const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
-                                                         data.pixelSize.y, data.mipSettings );
-                candidate = uploadMipLevels( dx11, levels, &budgetDenied );
+                                                         data.pixelSize.y, mipSettings );
+                candidate = uploadMipLevels( dx11, levels, policy, &budgetDenied, reduceSingleMip,
+                                              data.mipSettings.atlasColumns );
             }
             if( !candidate )
             {
@@ -1028,10 +1078,12 @@ namespace workphone
                 auto sourceBudget = reserveTextureCpu( bytes, error );
                 if( !sourceBudget ) return false;
                 auto retainedLevels = levels;
+                const auto policy = textureUploadPolicy();
                 {
                     std::scoped_lock lock( g_textureMutex );
                     auto &data = g_textureData[this];
-                    auto *candidate = uploadMipLevels( renderer, retainedLevels );
+                    auto *candidate = uploadMipLevels( renderer, retainedLevels, policy, nullptr, false,
+                                                        settings.atlasColumns );
                     if( !candidate )
                     {
                         error = "DX11 rejected the cooked texture mip upload";
@@ -1057,6 +1109,7 @@ namespace workphone
                     data.attemptedRenderer = renderer;
                     data.attemptedDevice = device;
                     data.uploadPending = false;
+                    data.projectMipPolicy = policy.key();
                     m_size = data.pixelSize;
                 }
                 setLoadingState( LoadingState::Loaded );
@@ -1097,9 +1150,10 @@ namespace workphone
                 auto retained = input.ddsBytes;
                 SourceBudgetString profile( input.target );
                 const auto image = dds::inspect( retained );
+                const auto policy = textureUploadPolicy();
                 std::scoped_lock lock( g_textureMutex );
                 auto &data = g_textureData[texture];
-                auto view = uploadDds( renderer, retained );
+                auto view = uploadDds( renderer, retained, policy );
                 if( !view )
                 {
                     error = "DX11 rejected the DDS format or mip payload; previous texture retained";
@@ -1124,6 +1178,7 @@ namespace workphone
                 data.attemptedRenderer = renderer;
                 data.attemptedDevice = device;
                 data.uploadPending = false;
+                data.projectMipPolicy = policy.key();
                 texture->setSize( data.pixelSize );
             }
             catch( const std::exception &e )

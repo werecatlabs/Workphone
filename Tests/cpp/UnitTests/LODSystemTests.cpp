@@ -116,4 +116,61 @@ BOOST_AUTO_TEST_CASE( lod_detail_bounds_round_trip_and_reject_invalid_values )
     BOOST_CHECK( restored->getDetailBounds().empty() );
 }
 
+BOOST_AUTO_TEST_CASE( runtime_mesh_quality_changes_authored_lod_visibility )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.applicationManager );
+    BOOST_REQUIRE( guard.sceneManager );
+    const auto previous = guard.applicationManager->getPlayerSettings();
+    guard.addCleanup( [app = guard.applicationManager, previous]() mutable {
+        app->setPlayerSettings( previous );
+    } );
+    auto actor = guard.createBasicActor();
+    auto detailed = guard.createBasicActor();
+    auto reduced = guard.createBasicActor();
+    guard.scene->addActor( actor );
+    guard.scene->addActor( detailed );
+    guard.scene->addActor( reduced );
+    auto nearRenderer = detailed->addComponent<Renderer>();
+    auto farRenderer = reduced->addComponent<Renderer>();
+    auto group = actor->addComponent<LODGroup>();
+    group->addLevel( .15f, { nearRenderer } );
+    group->addLevel( 0.f, { farRenderer } );
+    group->setCullBelowLastLOD( false );
+    group->setHysteresis( 0.f );
+    group->setLocalReferencePoint( { 0, 0, 10 } );
+    group->setSize( 4.f );
+    group->load( nullptr );
+    auto system = dynamic_pointer_cast<LODSystem>( group->getComponentSystem() );
+    const bool ownsSystem = !system;
+    if( ownsSystem )
+    {
+        system = make_ptr<LODSystem>();
+        system->load( nullptr );
+        system->addComponent( group );
+    }
+    LODSystem::View view;
+    view.verticalFovRadians = Math<f32>::DegToRad( 90.f );
+    system->setViewOverride( view );
+    const auto checkQuality = [&]( s32 quality, bool detailedVisible ) {
+        auto settings = make_ptr<Properties>();
+        settings->setProperty( "quality.mesh", quality );
+        settings->setProperty( "quality.lodBias", 1.f );
+        guard.applicationManager->setPlayerSettings( settings );
+        system->update();
+        BOOST_CHECK_EQUAL( nearRenderer->isLODVisible(), detailedVisible );
+        BOOST_CHECK_EQUAL( farRenderer->isLODVisible(), !detailedVisible );
+    };
+    checkQuality( 2, true );
+    checkQuality( 0, false );
+    checkQuality( 3, true );
+    checkQuality( 0, false );
+    system->clearViewOverride();
+    if( ownsSystem )
+    {
+        system->removeComponent( static_pointer_cast<IComponent>( group ) );
+        system->unload( nullptr );
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

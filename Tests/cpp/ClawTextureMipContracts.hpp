@@ -10,6 +10,8 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
+#include <Workphone/Graphics/DdsTexture.hpp>
+#include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/WeakPtr.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
@@ -1137,6 +1139,130 @@ namespace claw_texture_mip_contracts
         }
     }
 
+    inline void runtimeQualityContracts( Fixture &fixture )
+    {
+        struct RestoreSettings
+        {
+            SmartPtr<core::ApplicationManager> application;
+            SmartPtr<Properties> previous;
+            ~RestoreSettings() { application->setPlayerSettings( previous ); }
+        } restore{ fixture.application, fixture.application->getPlayerSettings() };
+        const auto publish = [&]( s32 quality, s32 maximum = 0 ) {
+            auto settings = make_ptr<Properties>();
+            settings->setProperty( "quality.texture", quality );
+            settings->setProperty( "quality.maxTextureSize", maximum );
+            fixture.application->setPlayerSettings( settings );
+        };
+        auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+        publish( 2 );
+        Array<TextureMipLevel> levels( 4 );
+        const unsigned char colours[] = { 17, 81, 153, 229 };
+        for( size_t i = 0; i < levels.size(); ++i )
+        {
+            auto &level = levels[i];
+            level.width = level.height = 8u >> i;
+            level.bgra.resize( size_t( level.width ) * level.height * 4u );
+            for( size_t p = 0; p < level.bgra.size(); p += 4 )
+            {
+                level.bgra[p + 1] = colours[i];
+                level.bgra[p + 3] = 255;
+            }
+        }
+        ClawTexture raw, cooked, encoded, noMips;
+        raw.copyData( levels[0].bgra.data(), { 8, 8 } );
+        noMips.copyData( levels[0].bgra.data(), { 8, 8 } );
+        String error;
+        TextureMipSettings mipSettings;
+        mipSettings.filter = TextureMipFilter::Data;
+        auto rawProperties = make_ptr<Properties>();
+        rawProperties->setProperty( "mipmapFilter", static_cast<s32>( mipSettings.filter ) );
+        raw.setProperties( rawProperties );
+        require( cooked.uploadCookedMips( levels, mipSettings, native, error ),
+                 "quality fixture must upload exact cooked levels" );
+        CookedTextureData dds;
+        dds.target = "windows-dx11-dds-bgra8-v1";
+        dds.mipSettings = mipSettings;
+        dds.ddsBytes = workphone::dds::encode( levels, 87 );
+        require( uploadCookedDds( &encoded, dds, native, error ),
+                 "quality fixture must upload native DDS levels" );
+        ComPtr<ID3D11ShaderResourceView> fullResolution = view( cooked );
+        require( description( fullResolution.Get() ).Width == 8,
+                 "high texture quality must start at authored resolution" );
+        const s32 qualities[] = { 0, 1, 2, 3 };
+        const UINT widths[] = { 2, 4, 8, 8 };
+        const UINT mipCounts[] = { 2, 3, 4, 4 };
+        const unsigned colourIndex[] = { 2, 1, 0, 0 };
+        auto scheduler = WorldStreamingScheduler::shared();
+        const auto baseline = scheduler->stats();
+        const auto workingIndex = static_cast<size_t>( StreamMemoryClass::WorkingCpu );
+        struct RestoreWorkingLimit
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler;
+            u64 limit;
+            ~RestoreWorkingLimit()
+            {
+                String reason;
+                scheduler->setBudget( StreamMemoryClass::WorkingCpu, limit, reason );
+            }
+        } restoreWorking{ scheduler, baseline.limits[workingIndex] };
+        require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                     baseline.used[workingIndex] + 6000, error ),
+                 "legacy quality fixture must constrain temporary mip memory" );
+        publish( 0 );
+        require( description( view( noMips ) ).Width == 2 &&
+                     scheduler->stats().used[workingIndex] == baseline.used[workingIndex],
+                 "legacy quality resize must fit one mip pyramid and release transient storage" );
+        require( scheduler->setBudget( StreamMemoryClass::WorkingCpu,
+                     baseline.limits[workingIndex], error ),
+                 "legacy quality fixture must restore the working budget" );
+        for( unsigned i = 0; i < 4; ++i )
+        {
+            publish( qualities[i] );
+            const auto noMipDescription = description( view( noMips ) );
+            require( noMipDescription.Width == widths[i] && noMipDescription.MipLevels == 1 &&
+                         greenPixel( view( noMips ) ) == colours[0],
+                     "quality must resize legacy non-mipmapped textures without altering their authored mip mode" );
+            for( auto *texture : { &raw, &cooked, &encoded } )
+            {
+                auto current = view( *texture );
+                const auto desc = description( current );
+                require( desc.Width == widths[i] && desc.Height == widths[i] &&
+                             desc.MipLevels == mipCounts[i],
+                         "live quality change must replace actual raw, cooked and DDS GPU residency" );
+                require( view( *texture ) == current,
+                         "an unchanged quality snapshot must reuse the GPU view" );
+                require( greenPixel( current ) == ( texture == &raw ? colours[0] : colours[colourIndex[i]] ),
+                         "quality changes must select existing cooked/DDS mips without regenerating their pixels" );
+            }
+        }
+        publish( 3, 2 );
+        for( auto *texture : { &raw, &cooked, &encoded, &noMips } )
+            require( description( view( *texture ) ).Width == 2,
+                     "runtime maximum size must constrain all sampled upload formats" );
+        publish( 2 );
+        require( description( view( cooked ) ).Width == 8 &&
+                     greenPixel( view( cooked ) ) == colours[0] &&
+                     greenPixel( fullResolution.Get() ) == colours[0],
+                 "restoring quality must recover retained source mips and preserve external old views" );
+        ClawTexture atlas;
+        auto atlasProperties = make_ptr<Properties>();
+        atlasProperties->setProperty( "mipmapAtlasColumns", 2u );
+        atlas.setProperties( atlasProperties );
+        std::array<u8, 8 * 2 * 4> atlasPixels{};
+        for( unsigned y = 0; y < 2; ++y ) for( unsigned x = 0; x < 8; ++x )
+        {
+            atlasPixels[( y * 8 + x ) * 4 + 1] = x < 4 ? 0 : 255;
+            atlasPixels[( y * 8 + x ) * 4 + 3] = 255;
+        }
+        atlas.copyData( atlasPixels.data(), { 8, 2 } );
+        publish( 0, 1 );
+        const auto atlasView = view( atlas );
+        require( description( atlasView ).Width == 2 && description( atlasView ).MipLevels == 1 &&
+                     greenPixel( atlasView ) == 0,
+                 "legacy atlas reduction must stop at one pixel per tile and never merge adjacent tiles" );
+        std::puts( "Live texture quality: raw/cooked/DDS GPU dimensions, mip pixels, caching and restoration passed." );
+    }
+
     inline void run()
     {
         Fixture fixture;
@@ -1210,6 +1336,7 @@ namespace claw_texture_mip_contracts
         checkSettings( texture, TextureMipFilter::Cutout, 3, .27f );
         require( view( texture ) == nullptr, "explicit unload must release the published view" );
         cookedContracts( fixture );
+        runtimeQualityContracts( fixture );
         assetBudgetContracts( fixture );
         std::puts( "ClawTexture mip metadata, reload and last-good publication contracts passed." );
     }

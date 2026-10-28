@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
+#include "../../UIHierarchyUpdate.hpp"
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
 #include <Workphone/Scene/Components/UI/ScrollView.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
@@ -558,12 +559,6 @@ namespace workphone::scene
 
                 if( auto actor = getActor() )
                 {
-                    auto children = actor->getComponentsInChildren<UIComponent>();
-                    for( auto child : children )
-                    {
-                        child->updateOrder();
-                    }
-
                     if( auto element = getElement() )
                     {
                         element->updateZOrder();
@@ -586,12 +581,6 @@ namespace workphone::scene
 
                 if( auto actor = getActor() )
                 {
-                    auto children = actor->getComponentsInChildren<UIComponent>();
-                    for( auto child : children )
-                    {
-                        child->updateOrder();
-                    }
-
                     if( auto element = getElement() )
                     {
                         element->updateZOrder();
@@ -614,12 +603,6 @@ namespace workphone::scene
 
                 if( auto actor = getActor() )
                 {
-                    auto children = actor->getComponentsInChildren<UIComponent>();
-                    for( auto child : children )
-                    {
-                        child->updateOrder();
-                    }
-
                     if( auto element = getElement() )
                     {
                         element->updateZOrder();
@@ -791,12 +774,11 @@ namespace workphone::scene
                     }
                 }
 
-                auto children = actor->getChildren();
-                for( auto &child : children )
+                if( !ui_hierarchy::actorOwnsOrderWalk() )
                 {
-                    if( child )
+                    for( auto child : actor->getChildren() )
                     {
-                        child->updateOrder();
+                        if( child ) child->updateOrder();
                     }
                 }
             }

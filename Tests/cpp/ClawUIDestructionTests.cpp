@@ -10,6 +10,7 @@
 #include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Input/InputDeviceManager.hpp>
 #include <Workphone/Interface/UI/IUIButton.hpp>
+#include <Workphone/Interface/UI/IUIDropdown.hpp>
 #include <Workphone/Interface/UI/IUIImage.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
 #include <Workphone/Interface/UI/IUITextEntry.hpp>
@@ -26,10 +27,14 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include "UILayoutTraversalContracts.hpp"
+#include "InputListenerDispatchContracts.hpp"
+#include "SceneDropdownLifetimeContracts.hpp"
 #include <Workphone/Scene/CameraManager.hpp>
 #include <Workphone/Scene/GameActor.hpp>
 #include <Workphone/Interface/System/IFSMManager.hpp>
 #include <Workphone/Scene/GameManager.hpp>
+#include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <cstdio>
 #include <cstring>
 #include <atomic>
@@ -598,6 +603,224 @@ namespace
         return ok;
     }
 
+    bool testDropdownTextStyleIsolation()
+    {
+        ui::ClawUIManager manager;
+        auto first = manager.addElement( ui::IUIDropdown::typeInfo() );
+        auto second = manager.addElement( ui::IUIDropdown::typeInfo() );
+        auto primary = dynamic_pointer_cast<ui::IUIDropdown>( first );
+        auto secondary = dynamic_pointer_cast<ui::IUIDropdown>( second );
+        auto primaryWidget = dynamic_cast<ui::IWorkphoneWidget *>( first.get() );
+        auto secondaryWidget = dynamic_cast<ui::IWorkphoneWidget *>( second.get() );
+        auto ctx = manager.getContext();
+        if( !primary || !secondary || !primaryWidget || !secondaryWidget || !ctx )
+            return check( false, "dropdown font contracts need real native widgets" );
+        primary->setOptions( { "High", "Ultra" } );
+        secondary->setOptions( { "Low", "Medium" } );
+        primary->setSelectedOption( 0 );
+        secondary->setSelectedOption( 0 );
+        auto properties = make_ptr<Properties>();
+        properties->setProperty( "textSize", 20 );
+        primary->setProperties( properties );
+        properties->setProperty( "textSize", 16 );
+        secondary->setProperties( properties );
+        primary->setPosition( { 20, 20 } );
+        secondary->setPosition( { 20, 110 } );
+        primary->setSize( { 300, 44 } );
+        secondary->setSize( { 300, 44 } );
+        // Match the real game root: its window background is transparent, while
+        // an expanded dropdown must cover controls drawn beneath its popup.
+        const auto transparent = wp_rgba( 0, 0, 0, 0 );
+        const auto popupColour = wp_rgba( 31, 37, 43, 255 );
+        ctx->style.window.fixed_background = wp_style_item_color( transparent );
+        ctx->style.window.background = transparent;
+        ctx->style.combo.normal = wp_style_item_color( wp_rgba( 31, 37, 43, 160 ) );
+        const auto sharedFont = ctx->style.font;
+        const auto sharedStyle = ctx->style.combo;
+        const auto fixedBackground = ctx->style.window.fixed_background;
+        const auto background = ctx->style.window.background;
+        const auto backgroundRestored = [&] {
+            return std::memcmp( &fixedBackground, &ctx->style.window.fixed_background, sizeof fixedBackground ) == 0 &&
+                   std::memcmp( &background, &ctx->style.window.background, sizeof background ) == 0;
+        };
+        bool restored = true;
+        struct Snapshot { float first = 0, second = 0, option = 0; bool persistent = true;
+            unsigned secondaryCommand = 0, opaquePopupCommand = 0; };
+        const auto frame = [&]( int x, int y, bool down ) {
+            Snapshot result;
+            wp_input_begin( ctx );
+            wp_input_motion( ctx, x, y );
+            wp_input_button( ctx, WORKPHONE_BUTTON_LEFT, x, y, down );
+            wp_input_end( ctx );
+            if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "Dropdown fonts" ),
+                          wp_make_rect( 0, 0, 500, 340 ),
+                          WORKPHONE_WINDOW_NO_SCROLLBAR | WORKPHONE_WINDOW_BACKGROUND ) )
+            {
+                wp_layout_space_begin( ctx, WORKPHONE_STATIC, 320, 2 );
+                primaryWidget->draw( ctx );
+                restored &= ctx->style.font == sharedFont && backgroundRestored();
+                secondaryWidget->draw( ctx );
+                restored &= ctx->style.font == sharedFont && backgroundRestored();
+                wp_layout_space_end( ctx );
+            }
+            wp_end( ctx );
+            const wp_command *command;
+            unsigned commandIndex = 0;
+            wp_foreach( command, ctx )
+            {
+                ++commandIndex;
+                if( command->type == WORKPHONE_COMMAND_RECT_FILLED )
+                {
+                    auto rect = reinterpret_cast<const wp_command_rect_filled *>( command );
+                    // Combo panels are dynamic: Core emits opaque row fills
+                    // rather than one fixed body rectangle. This point lies in
+                    // the lower dropdown header covered by the open popup.
+                    if( rect->w >= 280 && rect->h >= 24 && rect->x <= 60 &&
+                        rect->x + rect->w >= 60 && rect->y <= 140 && rect->y + rect->h >= 140 &&
+                        rect->color.r == popupColour.r && rect->color.g == popupColour.g &&
+                        rect->color.b == popupColour.b && rect->color.a == 255 )
+                        result.opaquePopupCommand = commandIndex;
+                }
+                if( command->type != WORKPHONE_COMMAND_TEXT ) continue;
+                auto text = reinterpret_cast<const wp_command_text *>( command );
+                if( text->length == 4 && std::strncmp( text->string, "High", 4 ) == 0 )
+                    result.first = text->height;
+                if( text->length == 3 && std::strncmp( text->string, "Low", 3 ) == 0 )
+                {
+                    result.second = text->height;
+                    result.secondaryCommand = commandIndex;
+                }
+                if( text->length == 5 && std::strncmp( text->string, "Ultra", 5 ) == 0 )
+                    result.option = text->height;
+                result.persistent &= text->font && text->font->height == text->height;
+            }
+            wp_clear( ctx );
+            return result;
+        };
+        auto closed = frame( 450, 300, false );
+        bool ok = check( closed.first == 20 && closed.second == 16 && closed.persistent,
+                         "dropdown textSize properties must draw independent persistent font sizes" );
+        frame( 60, 42, true );
+        auto opened = frame( 60, 42, false );
+        ok &= check( opened.option == 20 && opened.persistent,
+                     "opened dropdown options must retain the same authored font as their header" );
+        ok &= check( !closed.opaquePopupCommand && opened.opaquePopupCommand > opened.secondaryCommand &&
+                     opened.secondaryCommand > 0,
+                     "expanded dropdown must emit an opaque popup panel after the controls underneath it" );
+        ok &= check( restored && ctx->style.font == sharedFont &&
+                     backgroundRestored() &&
+                     std::memcmp( &sharedStyle, &ctx->style.combo, sizeof sharedStyle ) == 0 &&
+                     primary->getProperties()->getPropertyAsInt( "textSize" ) == 20 &&
+                     secondary->getProperties()->getPropertyAsInt( "textSize" ) == 16,
+                     "dropdown rendering must restore both window backgrounds, shared style and each font property" );
+        manager.clear();
+        return ok;
+    }
+
+    struct FontConversionProbe
+    {
+        Array<WeakPtr<ui::IUIElement>> retired;
+        wp_user_font original{};
+        unsigned queries = 0;
+        bool aliveDuringConversion = true;
+    };
+    FontConversionProbe *activeFontConversionProbe = nullptr;
+
+    void queryRetainedFont( wp_handle, float height, wp_user_font_glyph *glyph,
+                            wp_rune codepoint, wp_rune next )
+    {
+        auto &probe = *activeFontConversionProbe;
+        ++probe.queries;
+        for( const auto &owner : probe.retired )
+            probe.aliveDuringConversion &= !owner.expired();
+        // The original atlas belongs to the UI context throughout this test.
+        probe.original.query( probe.original.userdata, height, glyph, codepoint, next );
+    }
+
+    bool testDropdownFrameFontLifetime( Fixture &fixture, bool lateOwners = false )
+    {
+        class Window : public render::GraphicsWindow
+        {
+        public:
+            Vector2I getSize() const override { return { 500, 300 }; }
+        };
+        auto previousWindow = fixture.application->getWindow();
+        fixture.application->setWindow( make_ptr<Window>() );
+        ui::ClawUIManager manager;
+        auto root = dynamic_pointer_cast<ui::IUILayoutWindow>( manager.addElement( ui::IUILayoutWindow::typeInfo() ) );
+        auto retire = make_ptr<CollectionProbe>();
+        auto ctx = manager.getContext();
+        if( !root || !ctx || !ctx->style.font || !ctx->style.font->query )
+        {
+            fixture.application->setWindow( previousWindow );
+            return check( false, "font lifetime test needs a real canvas and baked atlas" );
+        }
+        root->load( nullptr );
+        root->setSize( { 1, 1 } );
+        retire->order = 3;
+        FontConversionProbe probe;
+        Array<SmartPtr<ui::IUIElement>> elements;
+        const auto createFontOwners = [&] {
+            auto dropdown = dynamic_pointer_cast<ui::IUIDropdown>( manager.addElement( ui::IUIDropdown::typeInfo() ) );
+            auto text = dynamic_pointer_cast<ui::IUIText>( manager.addElement( ui::IUIText::typeInfo() ) );
+            auto button = dynamic_pointer_cast<ui::IUIButton>( manager.addElement( ui::IUIButton::typeInfo() ) );
+            if( !dropdown || !text || !button ) return false;
+            dropdown->setOptions( { "HIGH", "ULTRA" } );
+            dropdown->setSelectedOption( 0 );
+            text->setText( "TEXT" );
+            text->setTextSize( 20 );
+            button->setLabel( "BUTTON" );
+            button->setTextSize( 20 );
+            elements = { dropdown, text, button };
+            for( size_t i = 0; i < elements.size(); ++i )
+            {
+                auto &element = elements[i];
+                element->setPosition( { 0.04f, ( 20.0f + 60.0f * static_cast<float>( i ) ) / 300.0f } );
+                element->setSize( { 0.6f, 44.0f / 300.0f } );
+                element->setOrder( static_cast<u32>( i ) );
+                root->addChild( element );
+                probe.retired.emplace_back( element );
+            }
+            return true;
+        };
+        bool created = lateOwners || createFontOwners();
+        root->addChild( retire );
+        const auto previousFont = ctx->style.font;
+        probe.original = *previousFont;
+        auto tracingFont = probe.original;
+        tracingFont.query = queryRetainedFont;
+        ctx->style.font = &tracingFont;
+        activeFontConversionProbe = &probe;
+        retire->onDraw = [&] {
+            if( lateOwners )
+            {
+                // These widgets were absent from both the manager's inventory
+                // and the layout's child snapshot at the beginning of this draw.
+                created = createFontOwners();
+                for( auto &element : elements )
+                    dynamic_cast<ui::IWorkphoneWidget *>( element.get() )->draw( ctx );
+            }
+            for( const auto &element : elements ) manager.removeElement( element );
+            elements.clear();
+        };
+        manager.render();
+        ctx->style.font = previousFont;
+        activeFontConversionProbe = nullptr;
+        bool ok = check( created && retire->draws == 1 && probe.retired.size() == 3 && probe.queries >= 14,
+                         lateOwners ? "late-created dropdown, text and button must retire before real CPU font conversion"
+                                    : "later draw must retire dropdown, text and button before real CPU font conversion" );
+        ok &= check( probe.aliveDuringConversion,
+                     lateOwners ? "actual font emitters must retain late-created owners until conversion finishes"
+                                : "frame inventory must retain retired font owners until conversion finishes" );
+        bool released = true;
+        for( const auto &owner : probe.retired ) released &= owner.expired();
+        ok &= check( released, "frame ownership must release all retired fonts once conversion finishes" );
+        retire->onDraw = {};
+        manager.clear();
+        fixture.application->setWindow( previousWindow );
+        return ok;
+    }
+
     bool testChildRemoval()
     {
         ui::ClawUIManager manager;
@@ -839,6 +1062,21 @@ namespace
 int main( int argc, char **argv )
 {
     Fixture fixture;
+    if( argc > 1 && std::strcmp( argv[1], "--traversal-only" ) == 0 )
+    {
+        try { ui_layout_traversal_contracts::run( fixture.application ); return 0; }
+        catch( const std::exception &error ) { std::fprintf( stderr, "%s\n", error.what() ); return 1; }
+    }
+    if( argc > 1 && std::strcmp( argv[1], "--input-dispatch-only" ) == 0 )
+    {
+        try { input_listener_dispatch_contracts::run(); return 0; }
+        catch( const std::exception &error ) { std::fprintf( stderr, "%s\n", error.what() ); return 1; }
+    }
+    if( argc > 1 && std::strcmp( argv[1], "--scene-dropdown-lifetime-only" ) == 0 )
+    {
+        try { scene_dropdown_lifetime_contracts::run(); return 0; }
+        catch( const std::exception &error ) { std::fprintf( stderr, "%s\n", error.what() ); return 1; }
+    }
     if( argc >= 4 && std::strcmp( argv[1], "--project-font-only" ) == 0 )
     {
         // Optional asset diagnostics: callers supply a project with a valid
@@ -866,6 +1104,11 @@ int main( int argc, char **argv )
     ok &= testSceneTextAppearance();
     ok &= testSceneButtonAppearance();
     ok &= testButtonDrawStyleIsolation();
+    ok &= testDropdownTextStyleIsolation();
+    ok &= testDropdownFrameFontLifetime( fixture );
+    ok &= testDropdownFrameFontLifetime( fixture, true );
+    try { assertions += ui_layout_traversal_contracts::run( fixture.application ); }
+    catch( const std::exception &error ) { ok &= check( false, error.what() ); }
     ok &= testUiUtilButtonOwnInput( fixture );
     ok &= testEditorCameraDuringPlay( fixture );
     ok &= testChildRemoval();
@@ -874,10 +1117,14 @@ int main( int argc, char **argv )
     ok &= testTreeCleanup( Cleanup::Unload );
     ok &= testTreeCleanup( Cleanup::Destructor );
     ok &= testInputListenerCleanup( fixture );
+    try { assertions += input_listener_dispatch_contracts::run(); }
+    catch( const std::exception &error ) { ok &= check( false, error.what() ); }
+    try { assertions += scene_dropdown_lifetime_contracts::run(); }
+    catch( const std::exception &error ) { ok &= check( false, error.what() ); }
     ok &= testSortingExcludesOtherThreads();
     ok &= testSortCapturesEachOrderOnce();
     ok &= testDrawPinsItsFrameMembers( fixture );
     if( ok )
-        std::printf( "Claw UI destruction tests: 15 cases, %u assertions passed.\n", assertions );
+        std::printf( "Claw UI destruction tests: 25 cases, %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }

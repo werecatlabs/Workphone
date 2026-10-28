@@ -33,6 +33,7 @@
 #include <WorkphoneCore/workphone.h>
 #include <WorkphoneGraphics/workphone_graphics_system.h>
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
+#include "ClawUIFrameRetention.hpp"
 
 namespace workphone::ui
 {
@@ -362,6 +363,17 @@ namespace workphone::ui
             return;
         }
 
+        // Text commands borrow each widget's font descriptor until conversion.
+        // Scene/UI callbacks can retire a screen while this frame is drawing,
+        // so retain every frame member through conversion and wp_clear, even
+        // after its manager/layout ownership has been removed.
+        const auto frameRoot = getRoot();
+        const auto frameElements = getElements();
+        // A widget published after the inventory snapshot can still join this
+        // draw. Font emitters retain their actual owners in the same frame.
+        Array<SmartPtr<IUIElement>> drawnFontOwners;
+        frame_retention::Scope retainDrawnFonts( drawnFontOwners );
+
         if( m_inputFrameOpen )
         {
             wp_input_end( ctx );
@@ -411,17 +423,16 @@ namespace workphone::ui
         {
             wp_layout_space_begin( ctx, WORKPHONE_STATIC, rootBounds.h, 1024 );
 
-            if( auto root = getRoot() )
+            if( frameRoot )
             {
-                if( auto guiRoot = dynamic_cast<IWorkphoneWidget *>( root.get() ) )
+                if( auto guiRoot = dynamic_cast<IWorkphoneWidget *>( frameRoot.get() ) )
                 {
                     guiRoot->draw( ctx );
                 }
             }
             else
             {
-                auto elements = getElements();
-                for( auto &element : elements )
+                for( auto &element : frameElements )
                 {
                     if( element && !element->getParent() )
                     {

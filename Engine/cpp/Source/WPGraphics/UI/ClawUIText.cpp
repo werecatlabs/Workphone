@@ -4,6 +4,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ProjectLocalization.hpp>
 #include <WorkphoneCore/workphone.h>
+#include "ClawUIFrameRetention.hpp"
 
 namespace workphone::ui
 {
@@ -150,6 +151,7 @@ namespace workphone::ui
             return;
         }
 
+        frame_retention::retainFontOwner( this );
         // Commands retain their font pointer until conversion. Keep a per-element
         // font descriptor alive, sharing the atlas while honoring the requested size.
         if( !m_drawFont )

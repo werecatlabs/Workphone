@@ -5,6 +5,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ProjectLocalization.hpp>
 #include <WorkphoneCore/workphone.h>
+#include "ClawUIFrameRetention.hpp"
 
 namespace workphone::ui
 {
@@ -186,6 +187,7 @@ namespace workphone::ui
         if( !enabled ) textColour.a = static_cast<wp_byte>( textColour.a * 0.45f );
         style.text_normal = style.text_hover = style.text_active = textColour;
         style.color_factor_text = 1.0f;
+        frame_retention::retainFontOwner( this );
         // Commands retain their font pointer until conversion, so each button
         // owns its descriptor instead of borrowing a stack or shared style font.
         if( !m_drawFont ) m_drawFont = std::make_unique<wp_user_font>();
