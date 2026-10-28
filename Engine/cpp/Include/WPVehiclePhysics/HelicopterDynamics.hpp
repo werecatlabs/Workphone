@@ -223,14 +223,14 @@ namespace workphone::vehicle
      *
      * @note This class uses the Singleton pattern for global access
      */
-    class WPVehiclePhysics_API HeliAero : public ISharedObject
+    class WPVehiclePhysics_API HelicopterDynamics : public ISharedObject
     {
     public:
         /// Constructor - initializes default helicopter parameters
-        HeliAero();
+        HelicopterDynamics();
 
         /// Destructor - cleans up resources
-        ~HeliAero() override;
+        ~HelicopterDynamics() override;
 
         /// Prints debug information to console
         void debugPrint();
@@ -814,7 +814,7 @@ namespace workphone::vehicle
          * @brief Gets singleton instance of HeliAero
          * @return Shared pointer to singleton instance
          */
-        static std::shared_ptr<HeliAero> &getSingleton();
+        static std::shared_ptr<HelicopterDynamics> &getSingleton();
 
         // ===== Rotor Head Parameters =====
         VehicleParam
@@ -1083,9 +1083,9 @@ namespace workphone::vehicle
         StringW m_dataPath;       ///< Path to data files directory
     };
 
-    extern std::shared_ptr<HeliAero> gHeliAero;
+    extern std::shared_ptr<HelicopterDynamics> gHeliAero;
 
-    inline std::shared_ptr<HeliAero> &HeliAero::getSingleton()
+    inline std::shared_ptr<HelicopterDynamics> &HelicopterDynamics::getSingleton()
     {
         return gHeliAero;
     }

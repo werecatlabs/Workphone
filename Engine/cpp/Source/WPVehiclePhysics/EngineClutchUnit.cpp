@@ -1,7 +1,7 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include "WPVehiclePhysics/EngineClutchUnit.hpp"
 #include "WPVehiclePhysics/HeliVars.hpp"
-#include "WPVehiclePhysics/HeliAero.hpp"
+#include "WPVehiclePhysics/HelicopterDynamics.hpp"
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::vehicle

@@ -2,7 +2,7 @@
 #include <WPVehiclePhysics/AerodymanicsUtil.hpp>
 #include "WPVehiclePhysics/CESController.hpp"
 #include "WPVehiclePhysics/CGyroUnit.hpp"
-#include "WPVehiclePhysics/HeliAero.hpp"
+#include "WPVehiclePhysics/HelicopterDynamics.hpp"
 #include "WPVehiclePhysics/CEMotor.hpp"
 #include "WPVehiclePhysics/Rotor.hpp"
 #include "WPVehiclePhysics/RotorHead.hpp"
@@ -32,7 +32,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::adjustGyroParam( int ParamID, float ParamVal )
     {
-        auto &aero = HeliAero::getSingleton();
+        auto &aero = HelicopterDynamics::getSingleton();
         auto &gyro = aero->m_tailGyro;
 
         // Scale factor converts parameter value to throw limit in appropriate units
@@ -393,7 +393,7 @@ namespace workphone::vehicle
     physics_Num AerodymanicsUtil::getTailGyro( physics_Num InSig, physics_Num GainSig, physics_Num dt,
                                                physics_Num YawRate )
     {
-        auto &aero = HeliAero::getSingleton();
+        auto &aero = HelicopterDynamics::getSingleton();
         auto &gyro = aero->m_tailGyro;
 
         gyro.m_yawRate = YawRate;
@@ -403,7 +403,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::initTailGyro()
     {
-        auto &aero = HeliAero::getSingleton();
+        auto &aero = HelicopterDynamics::getSingleton();
         auto &gyro = aero->m_tailGyro;
 
         aero->readDefaultGyroParameters();
@@ -413,7 +413,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::initVBar( CFlybarlessUnit &vBar )
     {
-        std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
 
         // Initialize VBar to align with main rotor shaft
         vBar.m_frame = heliAero->m_rotorHead->m_shaftFrame;
@@ -431,7 +431,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::limitAndDecayVBar( physics_Num dt, CFlybarlessUnit &vBar )
     {
-        std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
         physics_Vec stabVec;
 
         // Auto-stabilization: gradually align VBar toward vertical
@@ -486,7 +486,7 @@ namespace workphone::vehicle
     void AerodymanicsUtil::controlVBar( physics_Num dt, physics_Num ailInSig, physics_Num eleInSig,
                                         CFlybarlessUnit &vBar )
     {
-        std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
 
         physics_Vec tVec;
         physics_Num rollAngle, pitchAngle;
@@ -577,7 +577,7 @@ namespace workphone::vehicle
     void AerodymanicsUtil::getVBarOutputs( physics_Num &ailOut, physics_Num &eleOut,
                                            CFlybarlessUnit &vBar )
     {
-        std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
 
         // Calculate error angles by projecting VBar onto shaft axes
         vBar.m_rollErrorAngle =
@@ -729,7 +729,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::lookupEnginePower( float Thr, EngineClutchUnit &EC )
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
 
         int LUP;  // Look-up point index
         float DeltaRPM, DeltaTh;
@@ -793,7 +793,7 @@ namespace workphone::vehicle
     {
         try
         {
-            std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+            std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
 
             auto filePath =
                 heliAero->getDataPath() + StringUtil::toUTF8to16( heliAero->m_pCurveFileName );
@@ -843,7 +843,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::getLookups()
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         readPowerLookups( *heliAero->m_theEngineClutch );
     }
 
@@ -851,7 +851,7 @@ namespace workphone::vehicle
     {
         try
         {
-            std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+            std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
             auto filePath =
                 heliAero->getDataPath() + StringUtil::toUTF8to16( heliAero->m_engineFileName );
 
@@ -895,13 +895,13 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::getEngineData()
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         readEngineDataFile( *heliAero->m_theEngineClutch );
     }
 
     void AerodymanicsUtil::startEngine()
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         EngineClutchUnit &TheEngineClutch = *heliAero->m_theEngineClutch;
 
         // Initialize engine to idle speed
@@ -912,7 +912,7 @@ namespace workphone::vehicle
 
     float AerodymanicsUtil::enginePower( float Thr )
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         EngineClutchUnit &TheEngineClutch = *heliAero->m_theEngineClutch;
 
         float result = 0.0f;
@@ -925,7 +925,7 @@ namespace workphone::vehicle
                                                  physics_Num dt, physics_Num Throttle,
                                                  EngineClutchUnit &EC )
     {
-        std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
         EngineClutchUnit &TheEngineClutch = *heliAero->m_theEngineClutch;
 
         s32 LL, Loops;
@@ -1278,7 +1278,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::initGovernor()
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         CGovernorUnit &TheGovernor = *heliAero->m_theGovernor;
 
         heliAero->readDefaultGovernorParameters();
@@ -1288,7 +1288,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::setGovernorRPM( float RPM, float Gash )
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         CGovernorUnit &TheGovernor = *heliAero->m_theGovernor;
 
         TheGovernor.m_reqRpm = RPM;
@@ -1297,7 +1297,7 @@ namespace workphone::vehicle
     physics_Num AerodymanicsUtil::getGovernor( physics_Num InSig, physics_Num SpeedSig, physics_Num dt,
                                                physics_Num RPM ) /* export */
     {
-        std::shared_ptr<HeliAero> heliAero = HeliAero::getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = HelicopterDynamics::getSingleton();
         CGovernorUnit &TheGovernor = *heliAero->m_theGovernor;
 
         doGovernor( InSig, SpeedSig, dt, RPM, TheGovernor );
@@ -1317,7 +1317,7 @@ namespace workphone::vehicle
 
     void AerodymanicsUtil::dischargePack( CBatteryPack &Pack, physics_Num I, physics_Num dt )
     {
-        auto &heliAero = HeliAero::getSingleton();
+        auto &heliAero = HelicopterDynamics::getSingleton();
 
         // PFloat PackFactor;
         physics_Num DeltaAHr;
@@ -1711,7 +1711,7 @@ namespace workphone::vehicle
                                            physics_Num LoadInertia, physics_Num LoadTorque,
                                            physics_Num dt, CEMotor &EM )
     {
-        auto &heliAero = HeliAero::getSingleton();
+        auto &heliAero = HelicopterDynamics::getSingleton();
 
         int LL, Loops;
         physics_Num MicroT;

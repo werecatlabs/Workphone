@@ -1,6 +1,6 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include "WPVehiclePhysics/CFlybarlessUnit.hpp"
-#include "WPVehiclePhysics/HeliAero.hpp"
+#include "WPVehiclePhysics/HelicopterDynamics.hpp"
 
 namespace workphone::vehicle
 {
