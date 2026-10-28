@@ -11,10 +11,6 @@ namespace workphone::vehicle
     {
     }
 
-    void DronePropeller::initialise( const std::string &objectID )
-    {
-    }
-
     void DronePropeller::calcThrust( const double &dt )
     {
     }
