@@ -10,7 +10,7 @@
 #include "WPVehiclePhysics/Servo.hpp"
 #include "WPVehiclePhysics/TailLinkage.hpp"
 #include <Workphone/Core/StringTypes.hpp>
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <memory>
 

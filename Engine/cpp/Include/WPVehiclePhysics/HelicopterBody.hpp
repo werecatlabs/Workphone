@@ -2,7 +2,7 @@
 #define Body_h__
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
-#include <WPVehiclePhysics/VecMath.hpp>
+#include <WPVehiclePhysics/VehiclePhysicsMath.hpp>
 #include "WPVehiclePhysics/FrameOfRef.hpp"
 
 namespace workphone::vehicle

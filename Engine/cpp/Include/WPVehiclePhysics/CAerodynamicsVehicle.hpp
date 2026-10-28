@@ -16,6 +16,7 @@
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/Math/MathUtil.hpp>
+#include <mutex>
 
 namespace workphone::vehicle
 {
@@ -49,6 +50,13 @@ namespace workphone::vehicle
     public:
         /** @brief Default constructor. */
         CAerodynamicsVehicle();
+
+        // The Physics task steps while the scene task publishes controls and callbacks.
+        void lock() override { m_simulationMutex.lock(); }
+        bool try_lock() override { return m_simulationMutex.try_lock(); }
+        void unlock() override { m_simulationMutex.unlock(); }
+        void lock_shared() override { lock(); }
+        void unlock_shared() override { unlock(); }
 
         /** @brief Virtual destructor. */
         ~CAerodynamicsVehicle() override;
@@ -162,11 +170,22 @@ namespace workphone::vehicle
          */
         SmartPtr<IVehicleBody> getBody() const override;
 
+        /** Borrowed pointer to the currently assigned body; getBody retains it. */
+        IVehicleBody *getBodyPtr() const override { return m_rigidbody.get(); }
+
         /**
          * @brief Set the physics body the controller should operate on.
          * @param body Smart pointer to an @c IVehicleBody.
          */
         void setBody( SmartPtr<IVehicleBody> body ) override;
+
+        /** Default rotor models represent an enabled combustion power unit. */
+        bool isElectric() const override { return m_electric.load(); }
+        void setElectric( bool electric ) override { m_electric = electric; }
+        bool getEnablePowerUnit() const override { return m_powerUnitEnabled.load(); }
+        void setEnablePowerUnit( bool enabled ) override { m_powerUnitEnabled = enabled; }
+        bool getEmulateBattery() const override { return m_batteryEmulationEnabled.load(); }
+        void setEmulateBattery( bool emulate ) override { m_batteryEmulationEnabled = emulate; }
 
         /**
          * @brief Get the computed world transform used for drawing and physics.
@@ -421,6 +440,9 @@ namespace workphone::vehicle
 
         /** @brief Physics body used by the controller (atomic smart pointer). */
         AtomicSmartPtr<IVehicleBody> m_rigidbody;
+        atomic_bool m_electric = false;
+        atomic_bool m_powerUnitEnabled = true;
+        atomic_bool m_batteryEmulationEnabled = false;
         /** @brief Callback used to forward forces, queries and debug draws. */
         SmartPtr<IVehicleCallback> m_callback;
 
@@ -438,7 +460,8 @@ namespace workphone::vehicle
         atomic_bool m_displayDebugData = false;
 
         /** @brief Array of controller input channels (size fixed to 8). */
-        FixedArray<f32, 8> m_channels;
+        FixedArray<f32, 8> m_channels{};
+        mutable std::recursive_mutex m_simulationMutex;
     };
 
     WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, CAerodynamicsVehicle, T, T );
@@ -510,12 +533,14 @@ namespace workphone::vehicle
     template <class T>
     f32 CAerodynamicsVehicle<T>::getChannel( s32 idx ) const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         return m_channels[idx];
     }
 
     template <class T>
     void CAerodynamicsVehicle<T>::setChannel( s32 idx, f32 channel )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         m_channels[idx] = channel;
     }
 
@@ -914,12 +939,14 @@ namespace workphone::vehicle
     template <class T>
     SmartPtr<IVehicleCallback> CAerodynamicsVehicle<T>::getVehicleCallback() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         return m_callback;
     }
 
     template <class T>
     void CAerodynamicsVehicle<T>::setVehicleCallback( SmartPtr<IVehicleCallback> callback )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_simulationMutex );
         m_callback = callback;
     }
 

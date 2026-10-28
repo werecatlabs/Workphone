@@ -22,6 +22,8 @@
 
 namespace workphone::vehicle
 {
+    WP_CLASS_REGISTER_DERIVED( workphone::vehicle, CAircraft, CAerodynamicsVehicle<IAircraft> );
+
     using CAircraftWingDefault = CAircraftWing;
     using CWheelControllerDefault = WheelControllerArcade;
     // typedef CWheelControllerPacejka CWheelControllerDefault;

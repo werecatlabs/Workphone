@@ -25,7 +25,7 @@ namespace workphone
 
 namespace workphone::vehicle
 {
-    class DroneProp;
+    class DronePropeller;
 
     class CAerofoil;
     class CAircraft;
@@ -58,14 +58,14 @@ namespace workphone::vehicle
     class TFoilData;
     class TFoilLookup;
     class GearTrain;
-    class TLinkage;
+    class Linkage;
     class Lookup;
     class VehicleParam;
     class Rotor;
-    class TRotorHead;
+    class RotorHead;
     class RotorSector;
     class Servo;
-    class TSurface;
+    class Surface;
     class TailLinkage;
 
     class FrameOfRef;

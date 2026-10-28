@@ -6,7 +6,7 @@
 #include "WPVehiclePhysics/FoilLookup.hpp"
 #include "WPVehiclePhysics/RotorSector.hpp"
 #include <Workphone/Core/StringTypes.hpp>
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <array>
 #include <memory>

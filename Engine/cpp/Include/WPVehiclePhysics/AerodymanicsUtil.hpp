@@ -6,7 +6,7 @@
 #include <WPVehiclePhysics/EngineClutchUnit.hpp>
 #include "WPVehiclePhysics/CBatteryPack.hpp"
 #include <WPVehiclePhysics/HeliVars.hpp>
-#include "WPVehiclePhysics/VecMath.hpp"
+#include "WPVehiclePhysics/VehiclePhysicsMath.hpp"
 #include <Workphone/Interface/Vehicle/IAerodymanicsWind.hpp>
 
 namespace workphone::vehicle

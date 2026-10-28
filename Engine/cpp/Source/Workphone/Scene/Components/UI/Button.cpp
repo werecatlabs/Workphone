@@ -114,6 +114,8 @@ namespace workphone::scene
     {
         try
         {
+            // A composed control may bind a callback while still detached.
+            m_callbackFunction = {};
             if( isLoaded() )
             {
                 setLoadingState( LoadingState::Unloading );
@@ -147,9 +149,11 @@ namespace workphone::scene
                     image->setColour( m_pressedColour );
                 }
 
-                if( m_callbackFunction )
+                // A callback may replace/unload this button while it runs.
+                auto callback = m_callbackFunction;
+                if( callback )
                 {
-                    m_callbackFunction( eventValue );
+                    callback( eventValue );
                 }
             }
 

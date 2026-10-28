@@ -190,7 +190,7 @@ transformation to aircraft frame is probably a bit more of a fiddle but may be e
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 #include <WPVehiclePhysics/CAerodymanicsWind.hpp>
-#include <WPVehiclePhysics/VecMath.hpp>
+#include <WPVehiclePhysics/VehiclePhysicsMath.hpp>
 #include <WPVehiclePhysics/HeliVars.hpp>
 #include <WPVehiclePhysics/EngineClutchUnit.hpp>
 #include <WPVehiclePhysics/CFlybarlessUnit.hpp>
@@ -223,14 +223,14 @@ namespace workphone::vehicle
      *
      * @note This class uses the Singleton pattern for global access
      */
-    class WPVehiclePhysics_API HeliAero : public ISharedObject
+    class WPVehiclePhysics_API HelicopterDynamics : public ISharedObject
     {
     public:
         /// Constructor - initializes default helicopter parameters
-        HeliAero();
+        HelicopterDynamics();
 
         /// Destructor - cleans up resources
-        ~HeliAero() override;
+        ~HelicopterDynamics() override;
 
         /// Prints debug information to console
         void debugPrint();
@@ -475,7 +475,7 @@ namespace workphone::vehicle
          * @brief Calculates angle of attack for a blade surface element
          * @param S Reference to surface element
          */
-        void calcAttack( TSurface &S );
+        void calcAttack( Surface &S );
 
         /**
          * @brief Finds maximum angle of attack across all blades
@@ -503,13 +503,13 @@ namespace workphone::vehicle
          * @param S Reference to surface element
          * @param AFoilLookup Airfoil lookup table
          */
-        void readCLandD( TSurface &S, TFoilTable &AFoilLookup );
+        void readCLandD( Surface &S, TFoilTable &AFoilLookup );
 
         /**
          * @brief Calculates lift and drag forces for a surface element
          * @param S Reference to surface element
          */
-        void calcLandD( TSurface &S );
+        void calcLandD( Surface &S );
 
         /**
          * @brief Integrates forces from all blade elements
@@ -566,7 +566,7 @@ namespace workphone::vehicle
          * @brief Calculates forces in teeter hinge
          * @param Head Reference to rotor head
          */
-        void calcTeeterForces( TRotorHead &Head );
+        void calcTeeterForces( RotorHead &Head );
 
         /**
          * @brief Initializes tail rotor control linkage
@@ -814,7 +814,7 @@ namespace workphone::vehicle
          * @brief Gets singleton instance of HeliAero
          * @return Shared pointer to singleton instance
          */
-        static std::shared_ptr<HeliAero> &getSingleton();
+        static std::shared_ptr<HelicopterDynamics> &getSingleton();
 
         // ===== Rotor Head Parameters =====
         VehicleParam
@@ -1073,7 +1073,7 @@ namespace workphone::vehicle
         std::shared_ptr<CFlybarlessUnit> m_theVBar;           ///< Flybarless controller instance
         std::shared_ptr<EngineClutchUnit> m_theEngineClutch;  ///< Engine and clutch system
         std::shared_ptr<CGovernorUnit> m_theGovernor;         ///< RPM governor instance
-        std::shared_ptr<TRotorHead> m_rotorHead;              ///< Main rotor head assembly
+        std::shared_ptr<RotorHead> m_rotorHead;              ///< Main rotor head assembly
         std::shared_ptr<Rotor> m_tailRotor;                   ///< Tail rotor assembly
 
         IAerodymanicsWind *m_windInterface = nullptr;  ///< Wind system interface
@@ -1083,9 +1083,9 @@ namespace workphone::vehicle
         StringW m_dataPath;       ///< Path to data files directory
     };
 
-    extern std::shared_ptr<HeliAero> gHeliAero;
+    extern std::shared_ptr<HelicopterDynamics> gHeliAero;
 
-    inline std::shared_ptr<HeliAero> &HeliAero::getSingleton()
+    inline std::shared_ptr<HelicopterDynamics> &HelicopterDynamics::getSingleton()
     {
         return gHeliAero;
     }

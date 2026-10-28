@@ -1,5 +1,5 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
-#include "WPVehiclePhysics/HeliAero.hpp"
+#include "WPVehiclePhysics/HelicopterDynamics.hpp"
 #include <WPVehiclePhysics/AerodymanicsUtil.hpp>
 #include <WPVehiclePhysics/CAerodymanicsWind.hpp>
 #include "WPVehiclePhysics/CESController.hpp"
@@ -81,10 +81,10 @@ WP_INTERFACE_EXPORT void SetNitroMultiplier( f32 value );
 
 namespace workphone::vehicle
 {
-    std::shared_ptr<HeliAero> gHeliAero;
+    std::shared_ptr<HelicopterDynamics> gHeliAero;
     constexpr double ThrowLimitScale = 0.015;
 
-    void HeliAero::debugPrint()
+    void HelicopterDynamics::debugPrint()
     {
         // WP_LOG ( "Col+Ele : " + FloatToStrF ( ( 180 / Math<physics_Num>::pi() ) * (
         // m_rotorHead->m_mainRotor.m_collective + m_rotorHead->m_mainRotor.m_eleCyclic ), ffFixed,
@@ -95,7 +95,7 @@ namespace workphone::vehicle
         //  m_tailRotor->m_collective ), ffFixed, 6, 1 ) );
     }
 
-    void HeliAero::cageRotor( Rotor &rotor, FrameOfRef &shaftFrame, physics_Num angleLimit )
+    void HelicopterDynamics::cageRotor( Rotor &rotor, FrameOfRef &shaftFrame, physics_Num angleLimit )
     {
         physics_Vec errorVector =
             VDif( rotor.m_frame.m_yAxis,
@@ -117,7 +117,7 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::defineFlightParameters()
+    void HelicopterDynamics::defineFlightParameters()
     {
         m_rotorHeadHubPosition.m_name = "RotorHeadHubPosition";
         m_rotorHeadHubPosition.m_vType = AVec;
@@ -343,7 +343,7 @@ namespace workphone::vehicle
         m_bearingFriction.m_vType = ASingle;
     }
 
-    void HeliAero::findAllParameterValuesIn( const String &LCPS )
+    void HelicopterDynamics::findAllParameterValuesIn( const String &LCPS )
     {
         WP_LOG( "FBHeliAero data : \n" + LCPS );
 
@@ -588,7 +588,7 @@ namespace workphone::vehicle
 
     /* export */
     // forces the dll to read in the default heli parameters
-    void HeliAero::readDefaultParameterValues()
+    void HelicopterDynamics::readDefaultParameterValues()
     {
         try
         {
@@ -616,7 +616,7 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::readCurrentHeliParameters() /* export */
+    void HelicopterDynamics::readCurrentHeliParameters() /* export */
     {
         try
         {
@@ -643,7 +643,7 @@ namespace workphone::vehicle
     }
 
     // receives the pointer to the Python "callback" routine and allocates it to Py_func
-    void HeliAero::setFunc( void *FuncPtr )
+    void HelicopterDynamics::setFunc( void *FuncPtr )
     {
         WP_DEBUG_TRACE;
 
@@ -653,7 +653,7 @@ namespace workphone::vehicle
     }  // setFunc
 
     // allows Python to trigger a test callback
-    void HeliAero::callFunc()
+    void HelicopterDynamics::callFunc()
     {
         m_cbFun = 98;    // sets the func and subfunc of the callback to unused values
         m_cbSub = 99;    //
@@ -668,7 +668,7 @@ namespace workphone::vehicle
     }  // callFunc
 
     // allows python to set the teerer stiffness, springing and the induced smoothing
-    void HeliAero::setTeeter( f32 TeeterSpring, f32 TeeterDamping, f32 IndS )
+    void HelicopterDynamics::setTeeter( f32 TeeterSpring, f32 TeeterDamping, f32 IndS )
     {
         WP_DEBUG_TRACE;
 
@@ -677,7 +677,7 @@ namespace workphone::vehicle
         m_inducedSmoothing = IndS;  // put the smoothing factor in the global var
     }  // end of SetTeeter
 
-    void HeliAero::setFlybar( f32 R1, f32 R2, f32 C1, f32 C2, f32 Weight,
+    void HelicopterDynamics::setFlybar( f32 R1, f32 R2, f32 C1, f32 C2, f32 Weight,
                               f32 IntFac ) /* export */  // allows python to set paddle weight
     {
         WP_DEBUG_TRACE;
@@ -696,7 +696,7 @@ namespace workphone::vehicle
                 m_rotorHead->m_flyBar.m_radOfGyr );  // moment of inertia of rotor about hub centre
     }
 
-    void HeliAero::setGroundEffect(
+    void HelicopterDynamics::setGroundEffect(
         f32 Max, f32 Decay ) /* export */  // allows python to set ground effect characteristics
     {
         WP_DEBUG_TRACE;
@@ -705,7 +705,7 @@ namespace workphone::vehicle
         m_geDecay = Decay;  // pass the decay rate vs height (typically 2)
     }  // SetGroundEffect
 
-    void HeliAero::setLinkageControl(
+    void HelicopterDynamics::setLinkageControl(
         bool LC ) /* export */  // allows control to be switched from Tx to linkage angles
     {
         WP_DEBUG_TRACE;
@@ -720,7 +720,7 @@ namespace workphone::vehicle
         }
     }  // SetLinkageControl
 
-    void HeliAero::gateForces(
+    void HelicopterDynamics::gateForces(
         int BF, int RF ) /* export */  // allows control to be switched from Tx to linkage angles
     {
         WP_DEBUG_TRACE;
@@ -744,7 +744,7 @@ namespace workphone::vehicle
         }
     }  // GateForces
 
-    void HeliAero::setCDMultiplier( f32 CDFactor, f32 Gash ) /* export */
+    void HelicopterDynamics::setCDMultiplier( f32 CDFactor, f32 Gash ) /* export */
     {
         WP_DEBUG_TRACE;
 
@@ -752,7 +752,7 @@ namespace workphone::vehicle
     }
 
     // use callback to get the yaw channel (channel 3)
-    void HeliAero::getYawChannel()
+    void HelicopterDynamics::getYawChannel()
     {
         m_cbFun = GET_TX_CHANNEL;            // Tx read
         m_cbSub = YAW_CHANNEL;               // channel 3
@@ -762,7 +762,7 @@ namespace workphone::vehicle
     }
 
     // note Servos for ele,ail, and col added in here
-    void HeliAero::getAllTxData()
+    void HelicopterDynamics::getAllTxData()
     {
         int Ch;
         try
@@ -780,7 +780,7 @@ namespace workphone::vehicle
         }
     }  // GetAllTxData
 
-    void HeliAero::driveTailServo( physics_Num Deviation )
+    void HelicopterDynamics::driveTailServo( physics_Num Deviation )
     {
         try
         {
@@ -794,7 +794,7 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::sendFlybarlessControlsToMixer( physics_Num AilDeflection, physics_Num EleDeflection )
+    void HelicopterDynamics::sendFlybarlessControlsToMixer( physics_Num AilDeflection, physics_Num EleDeflection )
     {
         try
         {
@@ -815,7 +815,7 @@ namespace workphone::vehicle
 
     // this provides the swashplate cyclic angles and the collective linear displacement from which
     // we get collective pitch angle
-    void HeliAero::getControlInfo()
+    void HelicopterDynamics::getControlInfo()
     {
         try
         {
@@ -847,7 +847,7 @@ namespace workphone::vehicle
     }  // GetControlInfo
 
     // uses the single callback to return all the Tx Channels
-    void HeliAero::getTxChannels()
+    void HelicopterDynamics::getTxChannels()
     {
         int Ch;
         try
@@ -867,7 +867,7 @@ namespace workphone::vehicle
 
     // uses callback to recover engine o/p from external engine dll
     // VA[0] = throttle position, VA[1] = current RPM. Returns engine output in VA[0]
-    void HeliAero::getEngineOutput()
+    void HelicopterDynamics::getEngineOutput()
     {
         try
         {
@@ -884,7 +884,7 @@ namespace workphone::vehicle
     }  // GetEngineOutput;
 
     // gets the angular velocity of the model
-    void HeliAero::getModelAngularVelocity()
+    void HelicopterDynamics::getModelAngularVelocity()
     {
         m_tp = m_va;  // ensure TP pointer points to VA array
         callback( GET_ANGULAR_VELOCITY, CB_MODEL,
@@ -895,7 +895,7 @@ namespace workphone::vehicle
     }  // GetAngularVelocity
 
     // gets the linear velocity of the model
-    void HeliAero::getModelLinearVelocity()
+    void HelicopterDynamics::getModelLinearVelocity()
     {
         m_tp = m_va;  // ensure TP pointer points to VA array
         callback( GET_LINEAR_VELOCITY, CB_MODEL, m_tp );
@@ -906,7 +906,7 @@ namespace workphone::vehicle
     }
 
     // adds a force to the body 'Bdy' at location Loc in its frame
-    void HeliAero::addLocalForce( int Bdy, const physics_Vec &Force, const physics_Vec &Loc,
+    void HelicopterDynamics::addLocalForce( int Bdy, const physics_Vec &Force, const physics_Vec &Loc,
                                   f32 ForceID )
     {
         if( Force.isFinite() && Loc.isFinite() )
@@ -924,7 +924,7 @@ namespace workphone::vehicle
     }
 
     // adds a torque to the body 'Bdy' at location Loc in its frame
-    void HeliAero::addLocalTorque( int Bdy, const physics_Vec &Torque )
+    void HelicopterDynamics::addLocalTorque( int Bdy, const physics_Vec &Torque )
     {
         m_tp = m_va;  // ensure TP pointer points to VA array
         m_va[0] = static_cast<f32>( Torque.x );
@@ -934,7 +934,7 @@ namespace workphone::vehicle
     }
 
     // displays the local vector V with origin at Org
-    void HeliAero::displayLocalVector( int Bdy, const physics_Vec &V, const physics_Vec &Org )
+    void HelicopterDynamics::displayLocalVector( int Bdy, const physics_Vec &V, const physics_Vec &Org )
     {
         try
         {
@@ -955,7 +955,7 @@ namespace workphone::vehicle
         }
     }  // DisplayLocalVector
 
-    void HeliAero::callback( int N1, int N2, TPassAPtr TP )
+    void HelicopterDynamics::callback( int N1, int N2, TPassAPtr TP )
     {
         WP_ASSERT( Math<physics_Num>::isFinite( TP[0] ) );
         WP_ASSERT( Math<physics_Num>::isFinite( TP[1] ) );
@@ -991,7 +991,7 @@ namespace workphone::vehicle
     }
 
     // gets the position of the model
-    void HeliAero::getModelPosition()
+    void HelicopterDynamics::getModelPosition()
     {
         m_tp = m_va;                                      // ensure TP pointer points to VA array
         callback( GET_GLOBAL_POSITION, CB_MODEL, m_tp );  // generate callback for  the model position
@@ -1003,7 +1003,7 @@ namespace workphone::vehicle
     }
 
     // gets the Frame of Reference of the model in world frame
-    void HeliAero::getModelFrame()
+    void HelicopterDynamics::getModelFrame()
     {
         physics_Vec XA, YA, ZA;  // temps for frame vectors
         m_tp = m_va;             // ensure TP pointer points to VA array
@@ -1034,7 +1034,7 @@ namespace workphone::vehicle
     }
 
     // gets the Frame of Reference of the visual rotor in world frame
-    void HeliAero::getVisualRotorFrame()
+    void HelicopterDynamics::getVisualRotorFrame()
     {
         physics_Vec XA, YA, ZA;  // temps for frame vectors
         m_tp = m_va;             // ensure TP pointer points to VA array
@@ -1065,7 +1065,7 @@ namespace workphone::vehicle
     }
 
     // gets the angular velocity of the model
-    void HeliAero::getVisualRotorAngularVelocity()
+    void HelicopterDynamics::getVisualRotorAngularVelocity()
     {
         m_tp = m_va;  // ensure TP pointer points to VA array
         callback( GET_ANGULAR_VELOCITY, CB_ROTOR_HEAD,
@@ -1078,7 +1078,7 @@ namespace workphone::vehicle
     }  // GetAngularVelocity
 
     // returns the distance to the ground from point in local frame "Loc" along the direction"Dir"
-    f32 HeliAero::getGroundDistance( const physics_Vec &Dir, const physics_Vec &Loc )
+    f32 HelicopterDynamics::getGroundDistance( const physics_Vec &Dir, const physics_Vec &Loc )
     {
         WP_ASSERT( Dir.isFinite() );
         WP_ASSERT( Loc.isFinite() );
@@ -1097,7 +1097,7 @@ namespace workphone::vehicle
     }
 
     // gets all the data about the model
-    void HeliAero::readModelData()
+    void HelicopterDynamics::readModelData()
     {
         getModelAngularVelocity();
         getModelLinearVelocity();
@@ -1119,7 +1119,7 @@ namespace workphone::vehicle
 
     // The following rotates the entire induced flow vector set as required when the HELI goes
     // through the given Pitch, Yaw and Roll angles
-    void HeliAero::rotateInduced( Rotor &Rotor, double PitchAng, double YawAng, double RollAng )
+    void HelicopterDynamics::rotateInduced( Rotor &Rotor, double PitchAng, double YawAng, double RollAng )
     {
         WP_ASSERT( Math<double>::isFinite( PitchAng ) );
         WP_ASSERT( Math<double>::isFinite( YawAng ) );
@@ -1151,7 +1151,7 @@ namespace workphone::vehicle
                 /*with Arc[RR] do*/
                 for( RR = 1; RR < static_cast<s32>( sector.m_arc.size() ); RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     surface.m_lInduced.x =
                         static_cast<physics_Num>( K11 * static_cast<real_dNum>( surface.m_lInduced.x ) +
@@ -1174,7 +1174,7 @@ namespace workphone::vehicle
 
     // sets the constant values for the rotors and body and sets initial conditions for variables
     // this may eventually be replaced by a file read of the data once data set settles down.
-    void HeliAero::initialize()
+    void HelicopterDynamics::initialize()
     {
         try
         {
@@ -1395,7 +1395,7 @@ namespace workphone::vehicle
 
     // set up the 'constants' for the blade elements
     // but also initialises some that are updated every timestep
-    void HeliAero::initSurfaces( Rotor &rotor )
+    void HelicopterDynamics::initSurfaces( Rotor &rotor )
     {
         WP_DEBUG_TRACE;
 
@@ -1433,7 +1433,7 @@ namespace workphone::vehicle
 
                 if( ss == 1 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = static_cast<real_dNum>( 0 );
                     arc.m_spanVec.y = static_cast<physics_Num>( rotor.m_cone );
@@ -1455,7 +1455,7 @@ namespace workphone::vehicle
 
                 if( ss == 2 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = ( 1.0 - 0.5 * Math<real_dNum>::Sqr( rotor.m_cone ) );
                     arc.m_spanVec.y = rotor.m_cone;
@@ -1477,7 +1477,7 @@ namespace workphone::vehicle
 
                 if( ss == 3 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = static_cast<physics_Num>( 0.0 );
                     arc.m_spanVec.y = rotor.m_cone;
@@ -1499,7 +1499,7 @@ namespace workphone::vehicle
 
                 if( ss == 4 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = -( 1.0 - 0.5 * Math<real_dNum>::Sqr( rotor.m_cone ) );
                     arc.m_spanVec.y = rotor.m_cone;
@@ -1522,7 +1522,7 @@ namespace workphone::vehicle
 
     // calculates the ground frame axes of the rotor and calculates the hub centre flow
     // note the Frame.m_yAxis is the TPP for the rotor and is not affected by this coordinate rotation
-    void HeliAero::calcAllRotorFrameFlows()
+    void HelicopterDynamics::calcAllRotorFrameFlows()
     {
         physics_Vec wnd;
         // holds the aircraft frame version of wind which is needed to align the cyclic controls of
@@ -1564,7 +1564,7 @@ namespace workphone::vehicle
     }
 
     // calculates the flow at each blade element of the main rotor
-    void HeliAero::calcMainArcFlows( Rotor &rotor )
+    void HelicopterDynamics::calcMainArcFlows( Rotor &rotor )
     {
         auto rotorOmega = rotor.getOmega();
 
@@ -1574,7 +1574,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[1];
@@ -1593,7 +1593,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[2];
@@ -1612,7 +1612,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[3];
@@ -1631,7 +1631,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[4];
@@ -1647,7 +1647,7 @@ namespace workphone::vehicle
 
     // in ver 15 added the Ifac to adjust the coupling of the induced flow for the main rotor
     // at radial station 7 to be as the induced flow for the FlyBar
-    void HeliAero::mainToFlyBarInterference( physics_Num IFac )
+    void HelicopterDynamics::mainToFlyBarInterference( physics_Num IFac )
     {
         int SS, RR;
         for( SS = 1; SS < 5; SS++ )
@@ -1667,13 +1667,13 @@ namespace workphone::vehicle
     // this procedure now limits the combination of collective and cyclic at any of the major
     // azimuthal angles to 22 degrees set up surface variables for current airflow, cone, rpm, etc
     // conditions
-    void HeliAero::updateSurfaces( Rotor &rotor )
+    void HelicopterDynamics::updateSurfaces( Rotor &rotor )
     {
         // Sector 1 is at azimuth = 0 (pointing rearwards)
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[1].m_arc[rr];
+                Surface &arc = rotor.m_sector[1].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective + rotor.m_ailCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1705,7 +1705,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[2].m_arc[rr];
+                Surface &arc = rotor.m_sector[2].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective - rotor.m_eleCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1737,7 +1737,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[3].m_arc[rr];
+                Surface &arc = rotor.m_sector[3].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective - rotor.m_ailCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1769,7 +1769,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[4].m_arc[rr];
+                Surface &arc = rotor.m_sector[4].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective + rotor.m_eleCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1795,7 +1795,7 @@ namespace workphone::vehicle
 
     // this factor is clearly too great in the modest descent phase of the model
     // calculate the correction factor for climb rate (passed in multiples of the induced flow speed)
-    physics_Num HeliAero::climbFactor( physics_Num ClimbRate )
+    physics_Num HelicopterDynamics::climbFactor( physics_Num ClimbRate )
     {
         physics_Num result = 0.0;
         physics_Num FullVR = 0.0;
@@ -1842,7 +1842,7 @@ namespace workphone::vehicle
     }  // ClimbFactor
 
     // take in forward flight speed/Vt and outputs induced flow correction factor
-    physics_Num HeliAero::translationFactor( physics_Num TransRate )
+    physics_Num HelicopterDynamics::translationFactor( physics_Num TransRate )
     {
         return Math<physics_Num>::Sqrt(
             ( -Math<physics_Num>::Sqr( TransRate ) +
@@ -1854,7 +1854,7 @@ namespace workphone::vehicle
     // groundFactor now has adjustable limit and rate of decay
     // takes Height/rotor radius (Ht) and calculates ground effect upflow as a fraction of induced
     // velocity
-    physics_Num HeliAero::groundFactor( physics_Num Ht )
+    physics_Num HelicopterDynamics::groundFactor( physics_Num Ht )
     {
         // note originally GEMax = 0.9 and GEDecay = 2
         return m_geMax * ( Math<physics_Num>::Exp( -m_geDecay * Ht ) );
@@ -1862,7 +1862,7 @@ namespace workphone::vehicle
 
     // New flow rotation method seems to be a big improvement!
     // calculates the induced flow for main rotor and the tail rotor.
-    void HeliAero::calcInduced()
+    void HelicopterDynamics::calcInduced()
     {
         constexpr real_dNum MainTC = 0.3;  // set the induced flow  time constant to 0.3 seconds
         constexpr real_dNum TailTC = 0.1;
@@ -2025,7 +2025,7 @@ namespace workphone::vehicle
                 // with Arc[RR] do
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     WP_ASSERT( surface.m_lInduced.isFinite() );
                     WP_ASSERT( Math<physics_Num>::isFinite( surface.m_iFactor ) );
@@ -2080,7 +2080,7 @@ namespace workphone::vehicle
                 // with Arc[RR] do
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     surface.m_lInduced =
                         VScale( surface.m_lInduced,
@@ -2107,7 +2107,7 @@ namespace workphone::vehicle
 
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     surface.m_lInduced =
                         VScale( surface.m_lInduced,
@@ -2135,7 +2135,7 @@ namespace workphone::vehicle
 
     // this procedure allows testing of a uniform inflow at each radius around the disk
     // s is the degree of smoothing (s=1 is completely smooth s=0 gives no smoothing)
-    void HeliAero::smoothInduced( Rotor &Rotor, physics_Num S )
+    void HelicopterDynamics::smoothInduced( Rotor &Rotor, physics_Num S )
     {
         physics_Vec Mn, Dif;
 
@@ -2169,7 +2169,7 @@ namespace workphone::vehicle
 
     // calculates the free stream attack at surface 'S' outputs values in range
     // -Math<physics_Num>::pi() to Math<physics_Num>::pi()
-    void HeliAero::calcAttack( TSurface &S )
+    void HelicopterDynamics::calcAttack( Surface &S )
     {
         physics_Num Nor, Par, AA;  // components of flow WRT surface and the first quadrant angle
         /*with S do*/
@@ -2223,7 +2223,7 @@ namespace workphone::vehicle
     }  ////CalcAttack
 
     // searches for the absolute maximum AlphaL (pos or neg.) in the outer 25% of the specified rotor
-    void HeliAero::calcAlphaLMax( physics_Num &Max, Rotor &Rotor )
+    void HelicopterDynamics::calcAlphaLMax( physics_Num &Max, Rotor &Rotor )
     {
         Max = static_cast<physics_Num>( 0.0 );
 
@@ -2234,7 +2234,7 @@ namespace workphone::vehicle
 
             for( int RR = 15; RR < 21; RR++ )
             {
-                TSurface &arc = sector.m_arc[RR];
+                Surface &arc = sector.m_arc[RR];
 
                 physics_Num absArcAlphaL = Math<physics_Num>::Abs( arc.m_alphaL );
                 if( absArcAlphaL > Max )
@@ -2247,7 +2247,7 @@ namespace workphone::vehicle
 
     //**REDUNDANT??
     // Get the files with the climb and translation rate correction for induced flow
-    void HeliAero::getClimbTransLookup( String FName, LookupArray &Table )
+    void HelicopterDynamics::getClimbTransLookup( String FName, LookupArray &Table )
     {
         /*
             file  ClimbTransitionData IFile;
@@ -2275,7 +2275,7 @@ namespace workphone::vehicle
 
     // note to solve issues to do with truncation around zero the lookup runs from 0=
     // -Math<physics_Num>::pi() to 400= Math<physics_Num>::pi()
-    void HeliAero::getFoilLookup( const String &IFileName, TFoilTable &AFoilLookup )
+    void HelicopterDynamics::getFoilLookup( const String &IFileName, TFoilTable &AFoilLookup )
     {
         try
         {
@@ -2371,7 +2371,7 @@ namespace workphone::vehicle
     }
 
     // takes CL and CD data from
-    void HeliAero::readCLandD( TSurface &S, TFoilTable &AFoilLookup )
+    void HelicopterDynamics::readCLandD( Surface &S, TFoilTable &AFoilLookup )
     {
         const real_dNum DA =
             200.0 / Math<real_dNum>::pi();  // this is the step size for Alpha in the lookup
@@ -2418,7 +2418,7 @@ namespace workphone::vehicle
     }
 
     // calculate the lift and drag on each surface element
-    void HeliAero::calcLandD( TSurface &S )
+    void HelicopterDynamics::calcLandD( Surface &S )
     {
         const real_dNum K1 = 0.5 * m_roair;  // half air density as a constant
 
@@ -2435,7 +2435,7 @@ namespace workphone::vehicle
         WP_ASSERT( Math<physics_Num>::isFinite( S.m_drag ) );
     }
 
-    void HeliAero::getForcesFromFlow( Rotor &Rotor )
+    void HelicopterDynamics::getForcesFromFlow( Rotor &Rotor )
     {
         for( size_t SS = 1; SS < Rotor.m_sector.size(); SS++ )
         {
@@ -2444,7 +2444,7 @@ namespace workphone::vehicle
             /*with Rotor.m_sector[SS] do*/
             for( size_t RR = 1; RR < sector.m_arc.size(); RR++ )
             {
-                TSurface &surface = sector.m_arc[RR];
+                Surface &surface = sector.m_arc[RR];
 
                 calcAttack( surface );
                 readCLandD( surface, Rotor.getAFoilLookup() );
@@ -2454,7 +2454,7 @@ namespace workphone::vehicle
     }  // GetForcesFromFlow
 
     // for flybarless we need to zero the FB forces etc regardless
-    void HeliAero::zeroForcesAndMoments( Rotor &Rotor )
+    void HelicopterDynamics::zeroForcesAndMoments( Rotor &Rotor )
     {
         /*with Rotor do*/
         {
@@ -2470,7 +2470,7 @@ namespace workphone::vehicle
     // note: Revised the scaling factor for the pitch and roll moments and in-plane forces
     // this is to take account of considered blade positions to be at the cyclic maxima
     //  calculates the total force vector at hub centre
-    void HeliAero::sumForcesandMoments( Rotor &Rotor )
+    void HelicopterDynamics::sumForcesandMoments( Rotor &Rotor )
     {
         // int SS, RR;                                               //the moment of forces about x,
         // y and z axes
@@ -2492,7 +2492,7 @@ namespace workphone::vehicle
                 /*with Arc[RR] do*/
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = rotorSector.m_arc[RR];
+                    Surface &surface = rotorSector.m_arc[RR];
 
                     //'local' force (lift and drag) on the element (allowing for tip losses losing
                     // the lift of the last 5% of blade)
@@ -2531,7 +2531,7 @@ namespace workphone::vehicle
     }
 
     // called if the DeltaT is so large the heli gets out of sync with the aerodynamic rotors
-    void HeliAero::alignFrames()
+    void HelicopterDynamics::alignFrames()
     {
         physics_Vec RotVec;
         m_tailRotor->m_frame.m_xAxis =
@@ -2561,7 +2561,7 @@ namespace workphone::vehicle
     }
 
     // calculates the FoRs of the of the mainshaft, swashplate, main rotor, and flybar
-    void HeliAero::sortFramesAndLinks()
+    void HelicopterDynamics::sortFramesAndLinks()
     {
         int ExLoc;  // exception location
 
@@ -2637,7 +2637,7 @@ namespace workphone::vehicle
 
     // this procedure corrects the teeter FC and DC for frame rate issues and for low rotor RPMs
     // AngMom is the angular momentum of the main rotor
-    void HeliAero::correctTeeterFactors( physics_Num &FC, physics_Num &DC, physics_Num FrameTime,
+    void HelicopterDynamics::correctTeeterFactors( physics_Num &FC, physics_Num &DC, physics_Num FrameTime,
                                          physics_Num RPM, physics_Num MaxRPM, physics_Num AngMom,
                                          const physics_Vec &MoI )
     {
@@ -2699,7 +2699,7 @@ namespace workphone::vehicle
 
     // combines the Precession of the flybar and the main rotor and sorts out the teeter forces and
     // kickback
-    void HeliAero::precessAndTeeter()
+    void HelicopterDynamics::precessAndTeeter()
     {
         physics_Vec RotVec;
         physics_Num TorqueLimit;  // used to give a model dependent teeter force limit
@@ -2711,7 +2711,7 @@ namespace workphone::vehicle
 
         physics_Num PrecessionLimit;  // used to set the maximum permitted precession rate
 
-        TRotorHead &rotorHead = *m_rotorHead;
+        RotorHead &rotorHead = *m_rotorHead;
         Rotor &mainRotor = rotorHead.m_mainRotor;
 
         cageRotor( rotorHead.m_mainRotor, rotorHead.m_shaftFrame, 0.3 );
@@ -2794,7 +2794,7 @@ namespace workphone::vehicle
             }  // with MainRotor
             /*with RotorHead do*/
             {
-                TRotorHead &rh = rotorHead;
+                RotorHead &rh = rotorHead;
 
                 TorqueLimit = 0.2 * rh.m_teeterForceConstant;
                 // limit the teeter force to that given by the teeter spring at an angular deflection
@@ -2870,7 +2870,7 @@ namespace workphone::vehicle
     // need to ensure the the precession at low rpm (when AngMom is low) are delt with and that
     // teeter forces are not unrealistic when aero forces are low combines the Precession of the
     // flybar and the main rotor and sorts out the teeter forces and kickback
-    void HeliAero::experimentalPrecessAndTeeter()
+    void HelicopterDynamics::experimentalPrecessAndTeeter()
     {
         // int Loop;//counter for inner calculation loop     //NOTE: KICKBACK REMOVED BECAUSE OF
         // INSTABILITY - NEEDS INVESTIGATION
@@ -2919,7 +2919,7 @@ namespace workphone::vehicle
     }
 
     // updates the Angular momentum value and calculates precession rate and angle
-    void HeliAero::doPrecession( physics_Num dt, Rotor &Rotor )
+    void HelicopterDynamics::doPrecession( physics_Num dt, Rotor &Rotor )
     {
         /*with Rotor do*/
         Rotor.m_angularMomentum =
@@ -2945,7 +2945,7 @@ namespace workphone::vehicle
 
     // this uses the angular deflection of the main rotor WRT shaft to calc the teeter forces
     // needs to add the teeter forces to the ForceMoments on the MainRotor
-    void HeliAero::calcTeeterForces( TRotorHead &Head )
+    void HelicopterDynamics::calcTeeterForces( RotorHead &Head )
     {
         // The elevator angular deflection of the head give x axis head torque
         Head.m_torques.x = Head.m_mainRotor.m_eleAngle * Head.m_teeterForceConstant -
@@ -2956,7 +2956,7 @@ namespace workphone::vehicle
                                Head.m_teeterDampingConstant;
     }
 
-    void HeliAero::initTailLinkage( TailLinkage &TailLinkage )
+    void HelicopterDynamics::initTailLinkage( TailLinkage &TailLinkage )
     {
         ///*with TailLinkage do*/
         {
@@ -2968,7 +2968,7 @@ namespace workphone::vehicle
         }  // With tail linkage
     }  // InitTailLinkage
 
-    physics_Num HeliAero::doTailLinkage( physics_Num InSig, TailLinkage &TL )
+    physics_Num HelicopterDynamics::doTailLinkage( physics_Num InSig, TailLinkage &TL )
     {
         if( InSig > 0 )
         {
@@ -2978,7 +2978,7 @@ namespace workphone::vehicle
         return TL.m_trim + TL.m_leftThrow * InSig;
     }  // TailLinkage
 
-    void HeliAero::initServo( Servo &Servo, physics_Num SecPer60 )
+    void HelicopterDynamics::initServo( Servo &Servo, physics_Num SecPer60 )
     {
         /*with Servo do*/
         {
@@ -2991,7 +2991,7 @@ namespace workphone::vehicle
     }  // initServo
 
     // in this simple version we ignore acceleration and deceleration times
-    physics_Num HeliAero::servo( physics_Num InSig, physics_Num dt, Servo &ThisServo )
+    physics_Num HelicopterDynamics::servo( physics_Num InSig, physics_Num dt, Servo &ThisServo )
     {
         physics_Num result;
         physics_Num Delta, MaxStep;
@@ -3023,7 +3023,7 @@ namespace workphone::vehicle
         return result;
     }  // Servo
 
-    void HeliAero::initGearTrain( GearTrain &Gears )
+    void HelicopterDynamics::initGearTrain( GearTrain &Gears )
     {
         Gears.setEngineMainRatio( m_mainGearTeeth.m_sVal /
                                   m_pinionGearTeeth.m_sVal );  // now calculated from the teeth ratios
@@ -3043,7 +3043,7 @@ namespace workphone::vehicle
     }
 
     // this is the new one using the clutch engine code
-    void HeliAero::doICEnergyBudget()
+    void HelicopterDynamics::doICEnergyBudget()
     {
         physics_Num effectiveFlyWheel;  // the flywheel of the rotors reflected through the gears
 
@@ -3120,7 +3120,7 @@ namespace workphone::vehicle
     }  // new DoICEnergyBudget;
 
     // electric flight EnergyBudget
-    void HeliAero::doElecEnergyBudget()
+    void HelicopterDynamics::doElecEnergyBudget()
     {
         physics_Num effectiveFlyWheel;  // the flywheel of the rotors reflected through the gears
 
@@ -3255,27 +3255,27 @@ namespace workphone::vehicle
         */
 
     // sends head RPM to python
-    f32 HeliAero::headRPMToPy() /* export */
+    f32 HelicopterDynamics::headRPMToPy() /* export */
     {
         return static_cast<f32>( m_rotorHead->m_mainRotor.getOmega() * static_cast<physics_Num>( 30.0 ) /
                                  Math<physics_Num>::pi() );  // convert Omega to RPM and sent
     }  // HeadRPMToPy
 
     // sends pack charge state to python
-    f32 HeliAero::packStateToPy() /* export */
+    f32 HelicopterDynamics::packStateToPy() /* export */
     {
         // WP_LOG('Pack state in delphi :'+ FloatToStrF(Pack.PackState, FFfixed, 6,3));
         return m_pack->m_packState;  //
     }  // PackStateToPy
 
     // sends pack charge state to python
-    f32 HeliAero::packVoltsToPy() /* export */
+    f32 HelicopterDynamics::packVoltsToPy() /* export */
     {
         return m_pack->m_packV;  //
     }  // PackVoltsToPy
 
     // sends IC engine or electric motor power to python
-    f32 HeliAero::motorPowerToPy() /* export */
+    f32 HelicopterDynamics::motorPowerToPy() /* export */
     {
         if( m_modelIsElectric )
         {
@@ -3286,7 +3286,7 @@ namespace workphone::vehicle
     }  // MotorPowerToPy
 
     // sends Engine RPM to python
-    f32 HeliAero::engineRPMToPy() /* export */
+    f32 HelicopterDynamics::engineRPMToPy() /* export */
     {
         if( m_modelIsElectric )
         {
@@ -3302,7 +3302,7 @@ namespace workphone::vehicle
         return m_engineRPM;
     }  // EngineRPMToPy
 
-    f32 HeliAero::soundRPMToPy() /* export */
+    f32 HelicopterDynamics::soundRPMToPy() /* export */
     {
         if( m_modelIsElectric )
         {
@@ -3319,13 +3319,13 @@ namespace workphone::vehicle
     }  // SoundRPMToPy
 
     // sends maximum main rotor attack angle to python
-    f32 HeliAero::maxMainAttackToPy() /* export */
+    f32 HelicopterDynamics::maxMainAttackToPy() /* export */
     {
         return m_alphaLMaxMain;
     }  // EngineRPMToPy
 
     // sends maximum main rotor attack angle to python
-    f32 HeliAero::maxTailAttackToPy() /* export */
+    f32 HelicopterDynamics::maxTailAttackToPy() /* export */
     {
         return m_alphaLMaxTail;
     }  // EngineRPMToPy
@@ -3333,7 +3333,7 @@ namespace workphone::vehicle
     // Note Smoke flow is the y axis component of hub flow +  average y axis induced flow over arcs 6
     // to 15 (i.e. excluding cuff and tip) sends the current downflow (WTR heli body frame) for smoke
     // speed
-    void HeliAero::smokeFlow( physics_Num &RootSmokeFlowX, physics_Num &RootSmokeFlowY,
+    void HelicopterDynamics::smokeFlow( physics_Num &RootSmokeFlowX, physics_Num &RootSmokeFlowY,
                               physics_Num &RootSmokeFlowZ, physics_Num &TipSmokeFlowX,
                               physics_Num &TipSmokeFlowY, physics_Num &TipSmokeFlowZ )
     {
@@ -3377,7 +3377,7 @@ namespace workphone::vehicle
         TipSmokeFlowZ = TSF.z;  // return the required value
     }  // SmokeFlow
 
-    void HeliAero::soundData( physics_Num &TipPress1, physics_Num &TipPress2, physics_Num &TipPress3,
+    void HelicopterDynamics::soundData( physics_Num &TipPress1, physics_Num &TipPress2, physics_Num &TipPress3,
                               physics_Num &TipPress4, physics_Num &TipDrg1, physics_Num &TipDrg2,
                               physics_Num &TipDrg3, physics_Num &TipDrg4 )
     {
@@ -3396,7 +3396,7 @@ namespace workphone::vehicle
     }  // SoundData
 
     // called to initialize the aerodynamics
-    void HeliAero::resetAll() /* export */
+    void HelicopterDynamics::resetAll() /* export */
     {
         physics_Vec rotVec;
         getDataPath();
@@ -3539,7 +3539,7 @@ namespace workphone::vehicle
     // a FC of 0.0079 N.m.rad and a DC of 0.00025 N.m/rad/s
 
     // these 'ficticious' forces steer the visual rotor to the attitude of the aerodynamic one
-    void HeliAero::outputVisualRotorForces()
+    void HelicopterDynamics::outputVisualRotorForces()
     {
         physics_Num rollAngleError, pitchAngleError;
         physics_Num rollSpeedError, pitchSpeedError;
@@ -3605,7 +3605,7 @@ namespace workphone::vehicle
         addLocalForce( CB_ROTOR_HEAD, f, loc, 4 );
     }  // OutputVisualRotorForces
 
-    void HeliAero::outputVisualRotorTorques()
+    void HelicopterDynamics::outputVisualRotorTorques()
     {
         physics_Num rollError, pitchError;
         physics_Vec f, loc;
@@ -3634,7 +3634,7 @@ namespace workphone::vehicle
     //*******************************************************************************************
     //******************************* OUTPUT FORCES CALL STARTS HERE ****************************
     //*******************************************************************************************
-    void HeliAero::outputForces()
+    void HelicopterDynamics::outputForces()
     {
         physics_Vec f, loc;  // temp vectors for force and location
 
@@ -3745,7 +3745,7 @@ namespace workphone::vehicle
     }  // OutputForces;
 
     // some forces to investigate the 'walk' problem on the ground
-    void HeliAero::testForces()
+    void HelicopterDynamics::testForces()
     {
         physics_Vec F, Loc;  // temp vectors for force and location
         Loc.x = static_cast<physics_Num>( 0.0 );
@@ -3759,7 +3759,7 @@ namespace workphone::vehicle
     }
 
     // to investigate the 'hop'
-    void HeliAero::specialTestFrame( f32 t, f32 dt )
+    void HelicopterDynamics::specialTestFrame( f32 t, f32 dt )
     {
         m_simTime = t;
         getAllTxData();
@@ -3785,7 +3785,7 @@ namespace workphone::vehicle
                        m_rotorHead->m_mainRotor.m_hubPosition, 0 );
     }
 
-    void HeliAero::drawVBar()
+    void HelicopterDynamics::drawVBar()
     {
         physics_Vec F, Loc;
         F = VScale( m_theVBar->m_frame.m_yAxis, 0.1 );
@@ -3799,7 +3799,7 @@ namespace workphone::vehicle
     //******************************* THE WORKBENCH CALL STARTS HERE ****************************
     //*******************************************************************************************
     // performs a single timestep calculation of specified dt
-    void HeliAero::workBenchFrame( f32 t, f32 dt, int ParamID, f32 ParamValue ) /* export */
+    void HelicopterDynamics::workBenchFrame( f32 t, f32 dt, int ParamID, f32 ParamValue ) /* export */
     {
         try
         {
@@ -4022,7 +4022,7 @@ namespace workphone::vehicle
     //******************************* THE MAINFRAME CALL STARTS HERE ****************************
     //*******************************************************************************************
     // performs a single timestep calculation of specified dt
-    void HeliAero::mainFrame( real_dNum t, real_dNum dt )
+    void HelicopterDynamics::mainFrame( real_dNum t, real_dNum dt )
     {
         try
         {
@@ -4276,7 +4276,7 @@ namespace workphone::vehicle
         }
     }  // MainFrame
 
-    void HeliAero::testDisplay() /* export */
+    void HelicopterDynamics::testDisplay() /* export */
     {
         physics_Vec Org, TstV;
         Org.x = 0;
@@ -4292,7 +4292,7 @@ namespace workphone::vehicle
     }
 
     // levitates the model for balance test etc
-    void HeliAero::levitate( f32 Time, f32 SpinTime, f32 SpinSpeed )
+    void HelicopterDynamics::levitate( f32 Time, f32 SpinTime, f32 SpinSpeed )
     {
         physics_Vec E, F, Loc, Target;
         f32 Gain = 10.0f;
@@ -4325,7 +4325,7 @@ namespace workphone::vehicle
         displayLocalVector( CB_MODEL, F, Loc );
     }  // levitate
 
-    void HeliAero::getModelMassProps( f32 &ModelMass, f32 &PMoI, f32 &RMoI, f32 &YMoI, f32 &HeadMass )
+    void HelicopterDynamics::getModelMassProps( f32 &ModelMass, f32 &PMoI, f32 &RMoI, f32 &YMoI, f32 &HeadMass )
     {
         ModelMass = m_modelWeight.m_sVal;
         PMoI = m_modelMoI.m_vVal.x;
@@ -4334,7 +4334,7 @@ namespace workphone::vehicle
         HeadMass = m_mainRotorWeight.m_sVal;
     }
 
-    void HeliAero::setDataPath( const StringW &param )
+    void HelicopterDynamics::setDataPath( const StringW &param )
     {
         m_dataPath = param;
 
@@ -4347,12 +4347,12 @@ namespace workphone::vehicle
         // #endif
     }
 
-    StringW HeliAero::getDataPath() const
+    StringW HelicopterDynamics::getDataPath() const
     {
         return m_dataPath;
     }
 
-    void HeliAero::setCurrentRPM( f32 rpm )
+    void HelicopterDynamics::setCurrentRPM( f32 rpm )
     {
         auto fFixedRPM = rpm * m_mainGearTeeth.m_sVal / m_pinionGearTeeth.m_sVal;
         m_esc->m_fixedRpm = fFixedRPM;
@@ -4373,7 +4373,7 @@ namespace workphone::vehicle
 
     FILE *pConsole = nullptr;
 
-    HeliAero::HeliAero()
+    HelicopterDynamics::HelicopterDynamics()
     {
         m_roair = 1.225;
 
@@ -4423,7 +4423,7 @@ namespace workphone::vehicle
         m_motor = std::make_shared<CEMotor>();
         m_esc = std::make_shared<CESController>();
 
-        m_rotorHead = std::make_shared<TRotorHead>();
+        m_rotorHead = std::make_shared<RotorHead>();
         m_tailRotor = std::make_shared<Rotor>();
         m_theVBar = std::make_shared<CFlybarlessUnit>();
         m_theEngineClutch = std::make_shared<EngineClutchUnit>();
@@ -4454,11 +4454,11 @@ namespace workphone::vehicle
 #endif
     }
 
-    HeliAero::~HeliAero()
+    HelicopterDynamics::~HelicopterDynamics()
     {
     }
 
-    void HeliAero::defineGyroParameters()
+    void HelicopterDynamics::defineGyroParameters()
     {
         m_gyroServoOffset.m_name = "GyroServoOffset";
         m_gyroServoOffset.m_vType = ASingle;
@@ -4500,7 +4500,7 @@ namespace workphone::vehicle
         m_gyroRightStopGain.m_vType = ASingle;
     }
 
-    void HeliAero::gyroFindAllParameterValuesIn( const String &XMLString )
+    void HelicopterDynamics::gyroFindAllParameterValuesIn( const String &XMLString )
     {
         // holds the lower case conveted version of the parameter XML string
         auto LCPS = StringUtil::make_lower( XMLString );
@@ -4548,7 +4548,7 @@ namespace workphone::vehicle
         m_tailGyro.m_throwLimit2 = ThrowLimitScale * m_gyroThrowLimit2.m_sVal + m_gyroServoOffset.m_sVal;
     }
 
-    void HeliAero::gyroUserFindAllParameterValuesIn( const String &XMLString )
+    void HelicopterDynamics::gyroUserFindAllParameterValuesIn( const String &XMLString )
     {
         // holds the lower case conveted version of the parameter XML string
         auto LCPS = StringUtil::make_lower( XMLString );
@@ -4599,7 +4599,7 @@ namespace workphone::vehicle
     }
 
     // forces the dll to read in the default heli parameters
-    void HeliAero::readDefaultGyroParameters()
+    void HelicopterDynamics::readDefaultGyroParameters()
     {
         /*
             TextFile DFile;
@@ -4629,7 +4629,7 @@ namespace workphone::vehicle
         {
             // DefineGyroParameters();
 
-            std::shared_ptr<HeliAero> heliAero = getSingleton();
+            std::shared_ptr<HelicopterDynamics> heliAero = getSingleton();
 
 #if defined WP_PLATFORM_WIN32
             StringW filePath = L"DefaultHeliParams.xml";
@@ -4646,12 +4646,12 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::readCurrentGyroParameters()
+    void HelicopterDynamics::readCurrentGyroParameters()
     {
         try
         {
             // DefineGyroParameters();
-            std::shared_ptr<HeliAero> heliAero = getSingleton();
+            std::shared_ptr<HelicopterDynamics> heliAero = getSingleton();
             StringW filePath = heliAero->getDataPath() + L"/model_data.xml";
             String xmlData = XmlUtil::getFromFile( filePath );
             gyroUserFindAllParameterValuesIn( xmlData );
@@ -4662,9 +4662,9 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::govFindAllParameterValuesIn( const String &XMLString )
+    void HelicopterDynamics::govFindAllParameterValuesIn( const String &XMLString )
     {
-        std::shared_ptr<HeliAero> heliAero = getSingleton();
+        std::shared_ptr<HelicopterDynamics> heliAero = getSingleton();
         CGovernorUnit &governor = *heliAero->m_theGovernor;
 
         auto LCPS = StringUtil::make_lower( XMLString );
@@ -4704,7 +4704,7 @@ namespace workphone::vehicle
                                  m_pinionGearTeeth.m_sVal;  // calc the highest remote engine rpm
     }
 
-    void HeliAero::defineGovernorParameters()
+    void HelicopterDynamics::defineGovernorParameters()
     {
         m_govAccelerationGain.m_name = "GovAccelerationGain";
         m_govAccelerationGain.m_vType = ASingle;
@@ -4739,13 +4739,13 @@ namespace workphone::vehicle
     }
 
     // forces the dll to read in the default heli parameters
-    void HeliAero::readDefaultGovernorParameters() /* export */
+    void HelicopterDynamics::readDefaultGovernorParameters() /* export */
     {
         try
         {
             // DefineGyroParameters();
 
-            std::shared_ptr<HeliAero> heliAero = getSingleton();
+            std::shared_ptr<HelicopterDynamics> heliAero = getSingleton();
 
 #if defined WP_PLATFORM_WIN32
             StringW filePath = L"DefaultHeliParams.xml";
@@ -4762,12 +4762,12 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::readCurrentGovernorParameters() /* export */
+    void HelicopterDynamics::readCurrentGovernorParameters() /* export */
     {
         try
         {
             // DefineGyroParameters();
-            std::shared_ptr<HeliAero> heliAero = getSingleton();
+            std::shared_ptr<HelicopterDynamics> heliAero = getSingleton();
             StringW filePath = heliAero->getDataPath() + L"/model_data.xml";
             String xmlData = XmlUtil::getFromFile( filePath );
             govFindAllParameterValuesIn( xmlData );
@@ -4778,7 +4778,7 @@ namespace workphone::vehicle
         }
     }
 
-    void HeliAero::setBailout( f32 bailGain, f32 collectiveValue, s32 bailValue )
+    void HelicopterDynamics::setBailout( f32 bailGain, f32 collectiveValue, s32 bailValue )
     {
         m_theVBar->m_bailValue = bailValue;
         m_theVBar->m_bailGain = bailGain;
@@ -4792,37 +4792,37 @@ using namespace vehicle;
 
 void GetModelMassProps( f32 &ModelMass, f32 &PMoI, f32 &RMoI, f32 &YMoI, f32 &HeadMass )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->getModelMassProps( ModelMass, PMoI, RMoI, YMoI, HeadMass );
 }
 
 void Levitate( f32 Time, f32 SpinTime, f32 SpinSpeed )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->levitate( Time, SpinTime, SpinSpeed );
 }
 
 void MainFrame( f32 t, f32 dt )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->mainFrame( t, dt );
 }
 
 void WorkBenchFrame( f32 t, f32 dt, int ParamID, f32 ParamValue )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->workBenchFrame( t, dt, ParamID, ParamValue );
 }
 
 f32 MaxMainAttackToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->maxMainAttackToPy();
 }
 
 f32 MaxTailAttackToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->maxTailAttackToPy();
 }
 
@@ -4833,13 +4833,13 @@ void PassWind()
 
 void ReadCurrentHeliParameters()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->readCurrentHeliParameters();
 }
 
 void ReadDefaultParameterValues()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->readDefaultParameterValues();
 }
 
@@ -4847,7 +4847,7 @@ void BootDLL()
 {
 #if defined SARACEN_PLATFORM_LINUX
 
-    gHeliAero = std::make_shared<workphone::HeliAero>();
+    gHeliAero = std::make_shared<workphone::HelicopterDynamics>();
 
     InitHeliVars();
     InitWeather();
@@ -4856,44 +4856,44 @@ void BootDLL()
 
 void ResetAll()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->resetAll();
 }
 
 void SetCDMultiplier( f32 CDFactor, f32 Gash )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setCDMultiplier( CDFactor, Gash );
 }
 
 void SetFlybar( f32 R1, f32 R2, f32 C1, f32 C2, f32 Weight, f32 IntFac )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setFlybar( R1, R2, C1, C2, Weight, IntFac );
 }
 
 void SetGroundEffect( f32 Max, f32 Decay )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setGroundEffect( Max, Decay );
 }
 
 void SetLinkageControl( bool LC )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setLinkageControl( LC );
 }
 
 void SetTeeter( f32 TeeterSpring, f32 TeeterDamping, f32 IndS )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setTeeter( TeeterSpring, TeeterDamping, IndS );
 }
 
 void SetWeather( f32 speed, f32 direction, f32 turbulence, f32 groundHeight, f32 directionOffset,
                  f32 fieldRoughness, f32 temperature, f32 pressure, f32 smallTurbulence )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     // SetWind( speed, direction, turbulence, groundHeight, directionOffset, fieldRoughness );
 
     //% Sim variables
@@ -4918,7 +4918,7 @@ void SetWeather( f32 speed, f32 direction, f32 turbulence, f32 groundHeight, f32
 void SmokeFlow( f32 &RootSmokeFlowX, f32 &RootSmokeFlowY, f32 &RootSmokeFlowZ, f32 &TipSmokeFlowX,
                 f32 &TipSmokeFlowY, f32 &TipSmokeFlowZ )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
 
     physics_Num fRootSmokeFlowX;
     physics_Num fRootSmokeFlowY;
@@ -4941,7 +4941,7 @@ void SmokeFlow( f32 &RootSmokeFlowX, f32 &RootSmokeFlowY, f32 &RootSmokeFlowZ, f
 void SoundData( f32 &TipPress1, f32 &TipPress2, f32 &TipPress3, f32 &TipPress4, f32 &TipDrg1,
                 f32 &TipDrg2, f32 &TipDrg3, f32 &TipDrg4 )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
 
     physics_Num fTipPress1;
     physics_Num fTipPress2;
@@ -4968,61 +4968,61 @@ void SoundData( f32 &TipPress1, f32 &TipPress2, f32 &TipPress3, f32 &TipPress4, 
 
 void TestDisplay()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->testDisplay();
 }
 
 void callFunc()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->callFunc();
 }
 
 void setFunc( void *FuncPtr )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setFunc( FuncPtr );
 }
 
 f32 HeadRPMToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->headRPMToPy();
 }
 
 f32 PackStateToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->packStateToPy();
 }
 
 f32 PackVoltsToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->packVoltsToPy();
 }
 
 f32 MotorPowerToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->motorPowerToPy();
 }
 
 f32 EngineRPMToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->engineRPMToPy();
 }
 
 f32 SoundRPMToPy()
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     return heliAero->soundRPMToPy();
 }
 
 void SetDataPath( void *str )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
 
     auto pStr = static_cast<wchar_t *>( str );
     std::cout << pStr << std::endl;
@@ -5032,31 +5032,31 @@ void SetDataPath( void *str )
 
 void SetCurrentRPM( f32 currentRPM )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setCurrentRPM( currentRPM );
 }
 
 void SetBailout( f32 bailoutValue, f32 bailoutValue2, int bailoutValue3 )
 {
-    std::shared_ptr<HeliAero> &heliAero = HeliAero::getSingleton();
+    std::shared_ptr<HelicopterDynamics> &heliAero = HelicopterDynamics::getSingleton();
     heliAero->setBailout( bailoutValue, bailoutValue2, bailoutValue3 );
 }
 
 void SetCL( f32 value )
 {
-    auto &heliAero = HeliAero::getSingleton();
+    auto &heliAero = HelicopterDynamics::getSingleton();
     heliAero->m_clFiddle = value;
 }
 
 void SetCD( f32 value )
 {
-    auto &heliAero = HeliAero::getSingleton();
+    auto &heliAero = HelicopterDynamics::getSingleton();
     heliAero->m_cdFiddle = value;
 }
 
 void SetNitroMultiplier( f32 value )
 {
-    auto &heliAero = HeliAero::getSingleton();
+    auto &heliAero = HelicopterDynamics::getSingleton();
     heliAero->m_nitroFiddle = value;
 }
 }

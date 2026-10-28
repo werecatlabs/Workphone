@@ -2,7 +2,7 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include "WPVehiclePhysics/DroneMotor.hpp"
-#include "WPVehiclePhysics/DroneProp.hpp"
+#include "WPVehiclePhysics/DronePropeller.hpp"
 
 namespace workphone::vehicle
 {
@@ -112,12 +112,12 @@ namespace workphone::vehicle
         m_propReference = propReference;
     }
 
-    void DroneMotor::setProp( SmartPtr<DroneProp> prop )
+    void DroneMotor::setProp( SmartPtr<DronePropeller> prop )
     {
         m_prop = prop;
     }
 
-    SmartPtr<DroneProp> DroneMotor::getProp() const
+    SmartPtr<DronePropeller> DroneMotor::getProp() const
     {
         return m_prop;
     }

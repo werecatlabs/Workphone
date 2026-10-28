@@ -3,7 +3,7 @@
 
 namespace workphone::vehicle
 {
-    TLinkage::TLinkage()
+    Linkage::Linkage()
     {
         m_swashToMainMix = 0.0;
         m_swashToFBMix = 0.0;

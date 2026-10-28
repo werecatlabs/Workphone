@@ -3,6 +3,7 @@
 #include <Workphone/Scene/Components/UI/Slider.hpp>
 #include <Workphone/Scene/Components/UI/Dropdown.hpp>
 #include <Workphone/Scene/Components/UI/UIComponent.hpp>
+#include "../../UIHierarchyUpdate.hpp"
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
@@ -1029,12 +1030,11 @@ namespace workphone::scene
                 }
             }
 
-            auto children = actor->getChildren();
-            for( auto &child : children )
+            if( !ui_hierarchy::actorOwnsOrderWalk() )
             {
-                if( child )
+                for( auto child : actor->getChildren() )
                 {
-                    child->updateOrder();
+                    if( child ) child->updateOrder();
                 }
             }
         }

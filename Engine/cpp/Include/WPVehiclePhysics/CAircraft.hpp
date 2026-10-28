@@ -413,6 +413,8 @@ namespace workphone::vehicle
          */
         void reset() override;
 
+        WP_CLASS_REGISTER_DECL;
+
     private:
         /**
          * @brief Supplies stable lift, thrust and control torques when a model

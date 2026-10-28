@@ -23,6 +23,8 @@
 #include <Workphone/Interface/Vehicle/IVehicleManager.hpp>
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include "AircraftControllerInput.hpp"
+#include <stdexcept>
 
 namespace workphone::scene
 {
@@ -385,6 +387,28 @@ namespace workphone::scene
 
         if( m_vehicleType == VehicleType::Aircraft )
         {
+            auto application = core::IApplicationManager::instancePtr();
+            auto manager = application ? application->getGameManager() : nullptr;
+            const auto sceneTask = manager ? manager->getSceneTask() : TaskId::Application;
+            if( m_aircraftPlayerControls.load() && Thread::getCurrentTask() == sceneTask )
+            {
+                aircraft_input::Sample input;
+                auto actor = getActor();
+                if( application && application->isPlaying() && !application->isPaused() &&
+                    isEnabled() && ( !actor || actor->isEnabledInScene() ) )
+                {
+                    const auto settings = application->getPlayerSettings();
+                    const auto profile = settings ? settings->getChild( "Vehicle Controller" ) : nullptr;
+                    if( auto devices = application->getInputDeviceManager() )
+                        input = aircraft_input::sample( profile,
+                            devices->getCreateJoysticks() ? devices->getJoysticks() : Array<SmartPtr<IJoystick>>(),
+                            getAircraftControlProfile() );
+                }
+                setAircraftThrottle( input.throttle );
+                setAircraftPitch( input.pitch );
+                setAircraftRoll( input.roll );
+                setAircraftYaw( input.yaw );
+            }
             if( !m_aircraftController )
             {
                 createAircraftController();
@@ -413,6 +437,8 @@ namespace workphone::scene
         properties->setProperty( airDensityStr, m_airDensity );
         properties->setProperty( sectionMultiplierStr, m_sectionMultiplier );
         properties->setProperty( rollwiseDampingStr, m_rollwiseDamping );
+        properties->setProperty( "Aircraft Player Controls", getAircraftPlayerControls() );
+        properties->setProperty( "Aircraft Control Profile", getAircraftControlProfile() );
 
         properties->setButtonPressed( resetStr, false );
         properties->setButtonPressed( resetTransformStr, false );
@@ -452,6 +478,12 @@ namespace workphone::scene
                                                    static_cast<real_Num>( 100.0 ) );
 
         setVehicleType( vehicleType );
+        String aircraftProfile = getAircraftControlProfile();
+        bool aircraftPlayerControls = getAircraftPlayerControls();
+        properties->getPropertyValue( "Aircraft Control Profile", aircraftProfile );
+        properties->getPropertyValue( "Aircraft Player Controls", aircraftPlayerControls );
+        setAircraftControlProfile( aircraftProfile );
+        setAircraftPlayerControls( aircraftPlayerControls );
 
         if( properties->isButtonPressed( resetStr ) )
         {
@@ -697,11 +729,36 @@ namespace workphone::scene
 
     void VehicleController::setAircraftControls( f32 throttle, f32 pitch, f32 roll, f32 yaw )
     {
+        m_aircraftPlayerControls = false;
         setAircraftThrottle( throttle );
         setAircraftPitch( pitch );
         setAircraftRoll( roll );
         setAircraftYaw( yaw );
         applyAircraftConfiguration();
+    }
+
+    void VehicleController::useAircraftPlayerControls( const String &profile )
+    {
+        setAircraftControlProfile( profile );
+        m_aircraftPlayerControls = true;
+    }
+
+    bool VehicleController::getAircraftPlayerControls() const { return m_aircraftPlayerControls.load(); }
+    void VehicleController::setAircraftPlayerControls( bool enabled ) { m_aircraftPlayerControls = enabled; }
+    String VehicleController::getAircraftControlProfile() const
+    {
+        switch( m_aircraftControlProfile.load() )
+        {
+        case 1: return "helicopter";
+        case 2: return "drone";
+        default: return "plane";
+        }
+    }
+    void VehicleController::setAircraftControlProfile( const String &profile )
+    {
+        if( !aircraft_input::profilePrefix( profile ) )
+            throw std::invalid_argument( "Aircraft Control Profile must be plane, helicopter or drone" );
+        m_aircraftControlProfile = profile == "helicopter" ? 1 : profile == "drone" ? 2 : 0;
     }
 
     f32 VehicleController::getAircraftThrottle() const
@@ -780,48 +837,63 @@ namespace workphone::scene
         applyAircraftConfiguration();
     }
 
-    void VehicleController::createAircraftController()
+    bool VehicleController::createAircraftController( bool replaceExisting )
     {
-        if( m_aircraftController || m_vehicleType != VehicleType::Aircraft )
-        {
-            return;
-        }
-
+        if( m_aircraftController && !replaceExisting ) return true;
+        if( m_vehicleType != VehicleType::Aircraft || !shouldCreateAircraftController() ) return false;
         auto applicationManager = core::IApplicationManager::instancePtr();
-        if( !applicationManager )
-        {
-            return;
-        }
-
-        auto factoryManager = applicationManager->getFactoryManagerPtr();
-        if( !factoryManager )
-        {
-            return;
-        }
-
-        auto aircraft = factoryManager->make_object<vehicle::IAircraft>();
-        if( !aircraft )
-        {
-            WP_LOG_ERROR(
-                "VehicleController could not create IAircraft. Ensure WPVehiclePhysics is loaded." );
-            return;
-        }
-
+        auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+        if( !factoryManager ) return false;
+        const auto implementation = getAircraftImplementationName();
+        auto factory = factoryManager->getFactoryByName( implementation );
+        // getFactoryByName has a short-name fallback: never accept a scene component
+        // or a different solver when the requested physics plugin is unavailable.
+        if( !factory || factory->getObjectTypeName() != implementation ||
+            !factory->isObjectDerivedFromByInfo( vehicle::IAircraft::typeInfo() ) ) return false;
+        auto aircraft = factory->make_object<vehicle::IAircraft>();
+        if( !aircraft ) return false;
         auto callback = workphone::make_ptr<AircraftSceneCallback>();
         callback->setOwner( this );
-
-        aircraft->load( nullptr );
-        aircraft->setVehicleCallback( callback );
-        aircraft->setCallback( callback );
-
-        m_aircraftCallback = callback;
-        m_aircraftController = aircraft;
-        applyAircraftConfiguration();
-
-        if( auto vehicleManager = applicationManager->getVehicleManager() )
+        auto previous = m_aircraftController;
+        auto previousCallback = m_aircraftCallback;
+        try
         {
-            vehicleManager->addVehicle( m_aircraftController );
+            aircraft->load( nullptr );
+            aircraft->setVehicleCallback( callback ); aircraft->setCallback( callback );
+            m_aircraftController = aircraft;
+            m_aircraftCallback = callback;
+            applyAircraftConfiguration();
+            if( auto manager = applicationManager->getVehicleManager() )
+            {
+                manager->addVehicle( aircraft );
+                if( previous ) manager->removeVehicle( previous );
+            }
         }
+        catch( const std::exception &error )
+        {
+            m_aircraftController = previous;
+            m_aircraftCallback = previousCallback;
+            aircraft->setVehicleCallback( nullptr ); aircraft->setCallback( nullptr );
+            aircraft->unload( nullptr );
+            WP_LOG_EXCEPTION( error );
+            return false;
+        }
+        if( previous )
+        {
+            ScopedLock<vehicle::IAircraft> simulationLock( previous );
+            previous->setVehicleCallback( nullptr ); previous->setCallback( nullptr );
+            previous->unload( nullptr );
+        }
+        return true;
+    }
+    String VehicleController::getAircraftImplementationName() const
+    {
+        return "workphone::vehicle::CAircraft";
+    }
+
+    bool VehicleController::shouldCreateAircraftController() const
+    {
+        return true;
     }
 
     void VehicleController::destroyAircraftController( SmartPtr<ISharedObject> data )
@@ -840,7 +912,9 @@ namespace workphone::scene
             }
         }
 
-        m_aircraftController->setVehicleCallback( nullptr );
+        auto aircraft = m_aircraftController;
+        ScopedLock<vehicle::IAircraft> simulationLock( aircraft );
+        aircraft->setVehicleCallback( nullptr );
         m_aircraftController->setCallback( nullptr );
         m_aircraftController->unload( data );
         m_aircraftController = nullptr;
@@ -854,6 +928,7 @@ namespace workphone::scene
             return;
         }
 
+        ScopedLock<vehicle::IAircraft> simulationLock( m_aircraftController );
         m_aircraftController->setMass( m_mass );
         m_aircraftController->setAirDensity( m_airDensity );
         m_aircraftController->setSectionMultiplier( m_sectionMultiplier );

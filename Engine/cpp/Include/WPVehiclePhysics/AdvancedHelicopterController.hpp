@@ -51,6 +51,8 @@ namespace workphone::vehicle
         void load( SmartPtr<ISharedObject> data ) override;
 
         void update() override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         /**
          * @brief Physics step — integrates rotor RPM and applies all forces.

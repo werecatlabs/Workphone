@@ -4,6 +4,9 @@
 #include <WPGraphics/UI/ClawUIElement.hpp>
 #include <Workphone/Interface/UI/IUIDropdown.hpp>
 #include <Workphone/Interface/UI/IUISlider.hpp>
+#include <memory>
+
+struct wp_user_font;
 
 namespace workphone::ui
 {
@@ -15,17 +18,25 @@ namespace workphone::ui
     class ClawUIDropdown : public ClawUIElement<IUIDropdown>
     {
     public:
+        ClawUIDropdown();
+        ~ClawUIDropdown() override;
         Array<String> getOptions() const override;
         void setOptions( const Array<String> &options ) override;
         void addOption( const String &option ) override;
         u32 getSelectedOption() const override;
         void setSelectedOption( u32 selected ) override;
+        String getLabel() const override;
+        void setLabel( const String &label ) override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
         void draw( wp_context *ctx ) override;
         WP_CLASS_REGISTER_DECL;
 
     private:
         Array<String> m_options;
         u32 m_selected = 0;
+        f32 m_textSize = 13.0f;
+        std::unique_ptr<wp_user_font> m_drawFont;
     };
 
     /** Backend slider; vertical orientation uses the same context, style and input state. */

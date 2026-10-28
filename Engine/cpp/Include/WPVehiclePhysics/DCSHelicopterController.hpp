@@ -65,6 +65,8 @@ namespace workphone::vehicle
         bool isValid() const override;
         void load( SmartPtr<ISharedObject> data ) override;
         void update() override;
+        SmartPtr<Properties> getProperties() const override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         /**
          * @brief Physics step — runs all six subsystems in order.

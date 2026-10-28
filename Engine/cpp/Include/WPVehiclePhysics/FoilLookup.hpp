@@ -2,7 +2,7 @@
 #define FoilLookup_h__
 
 #include "WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp"
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <array>
 #include <memory>

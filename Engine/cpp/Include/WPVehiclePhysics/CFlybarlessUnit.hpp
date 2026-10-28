@@ -1,7 +1,7 @@
 #ifndef Flybarless1H
 #define Flybarless1H
 
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include "HeliVars.hpp"
 #include "WPVehiclePhysics/FrameOfRef.hpp"
 

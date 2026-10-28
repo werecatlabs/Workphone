@@ -2,7 +2,7 @@
 #define Surface_h__
 
 #include "WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp"
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <array>
 #include <memory>
@@ -18,14 +18,14 @@ namespace workphone::vehicle
      * geometric properties. Many members are public for plain-old-data style
      * usage in performance-sensitive code.
      */
-    class TSurface
+    class Surface
     {
     public:
         /// Default constructor
-        TSurface();
+        Surface();
 
         /// Non-copyable: disable copy construction to avoid accidental sharing
-        TSurface( const TSurface &other ) = delete;
+        Surface( const Surface &other ) = delete;
 
         /**
          * @brief Get the computed lift force for this surface element.
@@ -105,39 +105,39 @@ namespace workphone::vehicle
         physics_Vec m_lFlow = physics_Vec::zero();  ///< Local airflow vector for this surface (non-unit)
     };
 
-    inline const real_dNum &TSurface::getLift() const
+    inline const real_dNum &Surface::getLift() const
     {
         WP_ASSERT( Math<physics_Num>::isFinite( m_lift ) );
         return m_lift;
     }
 
-    inline void TSurface::setLift( const real_dNum &liftValue )
+    inline void Surface::setLift( const real_dNum &liftValue )
     {
         WP_ASSERT( Math<physics_Num>::isFinite( liftValue ) );
         m_lift = liftValue;
     }
 
-    inline const real_dNum &TSurface::getFlowSpeed() const
+    inline const real_dNum &Surface::getFlowSpeed() const
     {
         WP_ASSERT( Math<physics_Num>::isFinite( m_flowSpeed ) );
         return m_flowSpeed;
     }
 
-    inline void TSurface::setFlowSpeed( const real_dNum &flowSpeedValue )
+    inline void Surface::setFlowSpeed( const real_dNum &flowSpeedValue )
     {
         WP_ASSERT( flowSpeedValue < 1000.0 && flowSpeedValue > -1000.0 );
         WP_ASSERT( Math<physics_Num>::isFinite( flowSpeedValue ) );
         m_flowSpeed = flowSpeedValue;
     }
 
-    inline const physics_Vec &TSurface::getLFlow() const
+    inline const physics_Vec &Surface::getLFlow() const
     {
         WP_ASSERT( Math<physics_Num>::isFinite( VMag( m_lFlow ) ) );
         WP_ASSERT( m_lFlow.isFinite() );
         return m_lFlow;
     }
 
-    inline void TSurface::setLFlow( const physics_Vec &localFlow )
+    inline void Surface::setLFlow( const physics_Vec &localFlow )
     {
         WP_ASSERT( Math<physics_Num>::isFinite( VMag( localFlow ) ) );
         WP_ASSERT( localFlow.isFinite() );

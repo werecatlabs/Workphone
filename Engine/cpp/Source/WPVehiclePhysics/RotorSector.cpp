@@ -8,7 +8,7 @@ namespace workphone::vehicle
     {
         for( auto &surface : m_arc )
         {
-            surface = TSurface();
+            surface = Surface();
         }
     }
 }  // namespace workphone::vehicle

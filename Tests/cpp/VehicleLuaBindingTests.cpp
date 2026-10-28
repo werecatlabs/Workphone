@@ -1,7 +1,14 @@
 #include <WPLua/LuaManager.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/VehicleController.hpp>
+#include <Workphone/Scene/Components/HelicopterController.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <WPLuabind/Helpers/GraphicsSystemHelper.hpp>
+#include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Graphics/GraphicsWindow.hpp>
+#include <Workphone/Graphics/GraphicsPipeline.hpp>
 #include "../../Engine/cpp/Source/Workphone/Scene/Components/CarControllerInput.hpp"
 #include <luabind/luabind.hpp>
 #include <filesystem>
@@ -18,6 +25,122 @@ extern "C"
 namespace
 {
     using namespace workphone;
+    class SettingsWindow : public render::GraphicsWindow
+    {
+    public:
+        Vector2I size{1600,900};
+        bool fullscreen=false, failResize=false;
+        unsigned displayCalls=0;
+        Vector2I getSize() const override { return size; }
+        bool isFullScreen() const override { return fullscreen; }
+        void setFullscreen(bool value) override { ++displayCalls; fullscreen=value; }
+        void resize(u32 width,u32 height) override
+        {
+            ++displayCalls;
+            if(failResize) { failResize=false; throw std::runtime_error("synthetic resize failure"); }
+            size=Vector2I(width,height);
+        }
+    };
+    class SettingsGraphics : public render::GraphicsSystem
+    {
+    public:
+        SmartPtr<render::GraphicsPipeline> pipeline=make_ptr<render::GraphicsPipeline>();
+        bool failApply=false;
+        unsigned applies=0;
+        SmartPtr<Properties> stored=make_ptr<Properties>();
+        SmartPtr<render::IGraphicsPipeline> getGraphicsPipeline() const override { return pipeline; }
+        SmartPtr<Properties> getProperties() const override
+        {
+            auto result=make_ptr<Properties>(); *result=*stored;
+            result->setProperty("msaa_supported_mask",7);
+            return result;
+        }
+        void setProperties(SmartPtr<Properties> properties) override
+        {
+            ++applies;
+            if(failApply) { failApply=false; throw std::runtime_error("synthetic pipeline failure"); }
+            stored=properties;
+        }
+    };
+    void runtimeGraphicsContracts()
+    {
+        unsigned assertions=0;
+        const auto check=[&](bool value,const char *message)
+        { ++assertions; if(!value) throw std::runtime_error(message); };
+        auto app=make_ptr<core::ApplicationManager>();
+        core::IApplicationManager::setInstance(app);
+        struct ResetApp { ~ResetApp(){ core::IApplicationManager::setInstance(nullptr); } } reset;
+        auto graphics=make_ptr<SettingsGraphics>();
+        auto window=make_ptr<SettingsWindow>();
+        graphics->setDefaultWindow(window);
+        app->setGraphicsSystem(graphics);
+        app->setEditor(true);
+        auto original=make_ptr<Properties>(); original->setName("Player");
+        original->setProperty("Unrelated",String("keep"));
+        auto controller=make_ptr<Properties>(); controller->setName("Vehicle Controller");
+        controller->setProperty("Enabled",true); original->addChild(controller);
+        app->setPlayerSettings(original);
+        auto before=GraphicsSystemHelper::getRuntimeSettings(graphics.get());
+        check(before->getPropertyAsInt("graphics.customWidth")==1600,"runtime width must start at the real output size");
+        check(before->getPropertyAsInt("graphics.customHeight")==900,"runtime height must start at the real output size");
+        check(before->getPropertyAsBool("editor") && before->getPropertyAsBool("displayPending"),"editor display policy is pending standalone");
+        check(before->getPropertyAsInt("msaa_supported_mask")==7,"MSAA capabilities must be exposed");
+        auto request=make_ptr<Properties>();
+        request->setProperty("graphics.bloom",true); request->setProperty("graphics.motionBlur",true);
+        request->setProperty("graphics.ambientOcclusion",true);
+        request->setProperty("graphics.vsync",true);
+        auto applied=GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request);
+        check(applied->getPropertyAsBool("success"),"post effect apply must succeed");
+        check(graphics->pipeline->isBloomEnabled() && graphics->pipeline->isMotionBlurEnabled() && graphics->pipeline->isGTAOEnabled(),"software effects must follow their runtime controls");
+        check(graphics->stored->getPropertyAsBool("vsync"),"vsync must reach the graphics backend");
+        check(!original->hasProperty("graphics.bloom"),"published player snapshots must remain immutable");
+        check(app->getPlayerSettings()->getProperty("Unrelated")=="keep" && app->getPlayerSettings()->getChild("Vehicle Controller")==controller,"apply must preserve unrelated data and controller profile");
+        request=make_ptr<Properties>(); request->setProperty("graphics.postProcessing",false);
+        check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && !graphics->pipeline->isBloomEnabled() && !graphics->pipeline->isMotionBlurEnabled() && !graphics->pipeline->isGTAOEnabled(),"post effect master must gate effects without discarding their individual choices");
+        request->setProperty("graphics.postProcessing",true);
+        check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && graphics->pipeline->isBloomEnabled() && graphics->pipeline->isMotionBlurEnabled() && graphics->pipeline->isGTAOEnabled(),"restoring the post effect master must restore individual effects");
+        request=make_ptr<Properties>();
+        request->setProperty("graphics.customWidth",1920); request->setProperty("graphics.customHeight",1080);
+        request->setProperty("graphics.fullscreen",true);
+        applied=GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request);
+        check(applied->getPropertyAsBool("success") && applied->getPropertyAsBool("displayPending"),"editor display changes must be retained for standalone");
+        check(window->displayCalls==0 && !window->fullscreen && window->size==Vector2I(1600,900),"game settings must never resize or fullscreen the Editor");
+        app->setEditor(false);
+        applied=GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request);
+        check(applied->getPropertyAsBool("success") && !applied->getPropertyAsBool("displayPending") && window->fullscreen,"standalone fullscreen must reach the native window");
+        request->setProperty("graphics.fullscreen",false);
+        applied=GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request);
+        check(applied->getPropertyAsBool("success") && !window->fullscreen && window->size==Vector2I(1920,1080),"leaving fullscreen must use the selected windowed size");
+        request=make_ptr<Properties>(); request->setProperty("quality.texture",0);
+        applied=GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request);
+        check(applied->getPropertyAsBool("success") && app->getPlayerSettings()->getPropertyAsInt("quality.maxTextureSize")==1024,"low texture preset must limit texture residency");
+        check(app->getPlayerSettings()->getPropertyAsInt("graphics.textureFiltering")==1 && app->getPlayerSettings()->getPropertyAsInt("graphics.anisotropy")==1,"low texture preset filtering");
+        request->setProperty("quality.maxTextureSize",777);
+        check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success"),"explicit texture cap must apply");
+        request=make_ptr<Properties>(); request->setProperty("graphics.bloom",false);
+        check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()->getPropertyAsInt("quality.maxTextureSize")==777,"unchanged texture quality must retain advanced texture policy");
+        const auto reject=[&](SmartPtr<Properties> bad)
+        {
+            auto prior=app->getPlayerSettings(); const auto calls=graphics->applies;
+            check(!GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),bad)->getPropertyAsBool("success"),"invalid graphics settings must be rejected");
+            check(app->getPlayerSettings()==prior && calls==graphics->applies,"validation failure must not publish or call the backend");
+        };
+        request=make_ptr<Properties>(); request->setProperty("quality.mesh",0.5f); reject(request);
+        request=make_ptr<Properties>(); request->setProperty("graphics.antiAliasing",5); reject(request);
+        request=make_ptr<Properties>(); request->setProperty("graphics.renderScale",std::numeric_limits<f32>::quiet_NaN()); reject(request);
+        request=make_ptr<Properties>(); request->setProperty("graphics.fullscreen",String("yes")); reject(request);
+        request=make_ptr<Properties>(); request->setProperty("graphics.customWidth",0); reject(request);
+        auto prior=app->getPlayerSettings();
+        request=make_ptr<Properties>(); request->setProperty("graphics.bloom",true); graphics->failApply=true;
+        check(!GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()==prior,"backend failure must retain the published player snapshot");
+        request=make_ptr<Properties>(); request->setProperty("graphics.customWidth",1280); window->failResize=true;
+        check(!GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()==prior && window->size==Vector2I(1920,1080),"failed display changes must restore the native window");
+        auto modes=GraphicsSystemHelper::getDisplayModes(graphics.get());
+        check(modes->getPropertyAsInt("count")>0,"display mode enumeration must return usable modes");
+        check(modes->getPropertyAsInt("mode.0.width")>=320 && modes->getPropertyAsInt("mode.0.height")>=200,"display modes use flat Lua-safe properties");
+        std::printf("Runtime graphics settings: %u assertions passed.\n",assertions);
+        app->setGraphicsSystem(nullptr);
+    }
     namespace input = scene::controller_input;
     unsigned controllerAssertions = 0;
     void checkController( bool value, const char *message )
@@ -151,10 +274,15 @@ int main( int argc, char **argv )
     try
     {
         controllerInputContracts();
+        runtimeGraphicsContracts();
         manager.load( nullptr );
         auto state = manager.getLuaState();
         if ( !state ) throw std::runtime_error( "Lua manager did not create a state" );
+        auto runtimeGraphics=make_ptr<SettingsGraphics>();
+        luabind::globals(state)["runtimeGraphics"]=static_pointer_cast<render::IGraphicsSystem>(runtimeGraphics);
         auto race = make_ptr<scene::ProceduralRaceScene>();
+        luabind::globals( state )["flightController"] = make_ptr<scene::VehicleController>();
+        luabind::globals( state )["helicopterController"] = make_ptr<scene::HelicopterController>();
         luabind::globals( state )["raceScene"] = race;
         auto controller = syntheticPad();
         controller->setDeadZone( 0.9f ); controller->setSensitivity( 4 ); controller->setInvertX( true );
@@ -181,6 +309,41 @@ int main( int argc, char **argv )
             if ( luaL_dofile( state, ( core / file ).string().c_str() ) != LUA_OK )
                 throw std::runtime_error( lua_tostring( state, -1 ) );
         const char* test = R"(
+            assert(helicopterController:getAircraftControlProfile() == 'helicopter')
+            assert(helicopterController:getAircraftPlayerControls())
+            assert(helicopterController:getPhysicsSolution() == HelicopterController.Arcade)
+            assert(HelicopterController.Advanced == 1 and HelicopterController.Extreme == 2 and HelicopterController.DCS == 3)
+            for _, solution in ipairs({HelicopterController.Arcade, HelicopterController.Advanced,
+                                      HelicopterController.Extreme, HelicopterController.DCS}) do
+                helicopterController:setPhysicsSolution(solution)
+                assert(helicopterController:getPhysicsSolution() == solution)
+            end
+            helicopterController:setEngineThrottle(0.65)
+            assert(math.abs(helicopterController:getEngineThrottle() - 0.65) < 0.00001)
+            helicopterController:setAircraftControls(0.4, 0.2, -0.3, 0.1)
+            assert(not helicopterController:getAircraftPlayerControls())
+            assert(math.abs(helicopterController:getAircraftThrottle() - 0.4) < 0.00001)
+            assert(not flightController:getAircraftPlayerControls())
+            assert(flightController:getAircraftControlProfile() == 'plane')
+            flightController:useAircraftPlayerControls('helicopter')
+            assert(flightController:getAircraftPlayerControls())
+            assert(flightController:getAircraftControlProfile() == 'helicopter')
+            flightController:setAircraftControls(0.7, 0.2, -0.3, 0.4)
+            assert(not flightController:getAircraftPlayerControls())
+            assert(math.abs(flightController:getAircraftThrottle() - 0.7) < 0.00001)
+            flightController:setAircraftControlProfile('drone')
+            flightController:setAircraftPlayerControls(true)
+            assert(flightController:getAircraftControlProfile() == 'drone' and flightController:getAircraftPlayerControls())
+            assert(not pcall(function() flightController:useAircraftPlayerControls('invalid') end))
+            -- Exercise the real runtime graphics bindings and Properties return
+            -- conversion without creating a graphics device or native window.
+            local graphics = runtimeGraphics:getRuntimeSettings()
+            assert(graphics:getPropertyAsInt('graphics.customWidth') > 0)
+            assert(graphics:getPropertyAsInt('graphics.customHeight') > 0)
+            assert(runtimeGraphics:getDisplayModes():getPropertyAsInt('count') > 0)
+            local unavailable = runtimeGraphics:applyRuntimeSettings(graphics)
+            assert(not unavailable:getPropertyAsBool('success'))
+            assert(unavailable:getPropertyAsString('status') ~= '')
             assert(controllerDevices:size() == 1)
             local device = controllerDevices:at(0)
             assert(device:getName() == 'Synthetic pad')

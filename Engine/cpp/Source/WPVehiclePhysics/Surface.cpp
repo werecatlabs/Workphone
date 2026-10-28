@@ -3,7 +3,7 @@
 
 namespace workphone::vehicle
 {
-    TSurface::TSurface()
+    Surface::Surface()
     {
         m_iFactor = 0.0;
         m_alphaG = 0.0;

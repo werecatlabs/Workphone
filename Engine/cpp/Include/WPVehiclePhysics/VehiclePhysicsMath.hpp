@@ -97,15 +97,15 @@ namespace workphone::vehicle
 
     /**
      * @brief Convert a conventional aerodynamic vector to the internal
-     * "Saracen" coordinate convention used by this simulator.
-     * @note Mapping: Saracen.x = -conv.y, Saracen.y = -conv.z, Saracen.z = conv.x
+     * coordinate convention used by this simulator.
+     * @note Mapping: v.x = -conv.y, v.y = -conv.z, v.z = conv.x
      */
-    physics_Vec VecToSaracen( const physics_Vec &CV );
+    physics_Vec VecToSim( const physics_Vec &CV );
 
     /**
-     * @brief Convert from Saracen coordinates back to the conventional system.
+     * @brief Convert from coordinates back to the conventional system.
      */
-    physics_Vec VecFromSaracen( const physics_Vec &SV );
+    physics_Vec VecFromSim( const physics_Vec &SV );
 
     // returns a vector = V x W
     physics_Vec VCross( const physics_Vec &V, const physics_Vec &W );  // VCross
@@ -134,12 +134,12 @@ namespace workphone::vehicle
     // note: Saracen.x =  - conv.y
     //       Saracen.y =  - conv.z
     //       Saracen.z =    conv.x
-    physics_Vec VecToSaracen( const physics_Vec &CV );
+    physics_Vec VecToSim( const physics_Vec &CV );
 
     // Note: Conv.x = Saracen.z
     //       Conv.y = -Saracen.x
     //       Conv.z = -Saracen.y
-    physics_Vec VecFromSaracen( const physics_Vec &SV );
+    physics_Vec VecFromSim( const physics_Vec &SV );
 
     // returns a unit vector in direction ov V
     physics_Vec VUnit( const physics_Vec &V );  // VNormalize

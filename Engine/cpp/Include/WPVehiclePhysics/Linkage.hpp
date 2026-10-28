@@ -3,7 +3,7 @@
 
 #include "WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp"
 #include "WPVehiclePhysics/FrameOfRef.hpp"
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <array>
 #include <memory>
@@ -19,11 +19,11 @@ namespace workphone::vehicle
      * pitch commands. Values are held in simple POD members to keep the
      * class lightweight for use in simulation loops.
      */
-    class TLinkage
+    class Linkage
     {
     public:
         /// Default constructor
-        TLinkage();
+        Linkage();
 
         /// Attitude of the swashplate expressed in the ground (body) frame
         FrameOfRef m_swashFrame;

@@ -49,13 +49,13 @@ namespace workphone::vehicle
         std::string getPropReference() const;
         void setPropReference( const std::string &propReference );
 
-        SmartPtr<DroneProp> getProp() const;
-        void setProp( SmartPtr<DroneProp> prop );
+        SmartPtr<DronePropeller> getProp() const;
+        void setProp( SmartPtr<DronePropeller> prop );
 
     protected:
         void setupUserData();
 
-        SmartPtr<DroneProp> m_prop;
+        SmartPtr<DronePropeller> m_prop;
         Quaternion<real_Num> m_rotation;
         Vector3<real_Num> m_localPos;
 

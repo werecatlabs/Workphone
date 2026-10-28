@@ -805,6 +805,11 @@ namespace workphone
                     .def( "isAircraftPhysicsEnabled", &VehicleController::isAircraftPhysicsEnabled )
                     .def( "getAircraftController", &VehicleController::getAircraftController )
                     .def( "setAircraftControls", &VehicleController::setAircraftControls )
+                    .def( "useAircraftPlayerControls", &VehicleController::useAircraftPlayerControls )
+                    .def( "getAircraftPlayerControls", &VehicleController::getAircraftPlayerControls )
+                    .def( "setAircraftPlayerControls", &VehicleController::setAircraftPlayerControls )
+                    .def( "getAircraftControlProfile", &VehicleController::getAircraftControlProfile )
+                    .def( "setAircraftControlProfile", &VehicleController::setAircraftControlProfile )
                     .def( "getAircraftThrottle", &VehicleController::getAircraftThrottle )
                     .def( "setAircraftThrottle", &VehicleController::setAircraftThrottle )
                     .def( "getAircraftPitch", &VehicleController::getAircraftPitch )
@@ -834,6 +839,21 @@ namespace workphone
                         .def( "usePlayerControls", &CarController::usePlayerControls )
                         .def( "getVehicleController", &CarController::getVehicleController )
                         .scope[def( "typeInfo", CarController::typeInfo )]];
+
+        module( L )[class_<HelicopterController, VehicleController, SmartPtr<HelicopterController>>(
+                        "HelicopterController" )
+                        .def( "getPhysicsSolution", &HelicopterController::getPhysicsSolution )
+                        .def( "setPhysicsSolution", &HelicopterController::setPhysicsSolution )
+                        .def( "getEngineThrottle", &HelicopterController::getEngineThrottle )
+                        .def( "setEngineThrottle", &HelicopterController::setEngineThrottle )
+                        .def( "getMaximumLift", &HelicopterController::getMaximumLift )
+                        .def( "setMaximumLift", &HelicopterController::setMaximumLift )
+                        .enum_( "PhysicsSolution" )[
+                            value( "Arcade", HelicopterController::PhysicsSolution::Arcade ),
+                            value( "Advanced", HelicopterController::PhysicsSolution::Advanced ),
+                            value( "Extreme", HelicopterController::PhysicsSolution::Extreme ),
+                            value( "DCS", HelicopterController::PhysicsSolution::DCS )]
+                        .scope[def( "typeInfo", HelicopterController::typeInfo )]];
 
         module( L )[class_<ProceduralRaceScene, Component, SmartPtr<ProceduralRaceScene>>(
                         "ProceduralRaceScene" )

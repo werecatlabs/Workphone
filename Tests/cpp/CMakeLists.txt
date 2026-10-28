@@ -6,6 +6,26 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+if(TARGET Workphone AND TARGET WPVehiclePhysics)
+    add_executable(HelicopterControllerTests HelicopterControllerTests.cpp)
+    target_compile_definitions(HelicopterControllerTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(HelicopterControllerTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(HelicopterControllerTests PRIVATE Workphone WPVehiclePhysics)
+    set_target_properties(HelicopterControllerTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPVehicle.helicopter_controller COMMAND HelicopterControllerTests)
+    set_tests_properties(WPVehicle.helicopter_controller PROPERTIES LABELS "vehicle;helicopter;headless" TIMEOUT 30)
+
+    add_executable(VehicleFlightInputTests VehicleFlightInputTests.cpp)
+    target_compile_definitions(VehicleFlightInputTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(VehicleFlightInputTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(VehicleFlightInputTests PRIVATE Workphone WPVehiclePhysics)
+    set_target_properties(VehicleFlightInputTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPVehicle.flight_input COMMAND VehicleFlightInputTests)
+    set_tests_properties(WPVehicle.flight_input PROPERTIES LABELS "vehicle;input;headless" TIMEOUT 30)
+endif()
+
 if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
     include_directories( ${WP_ROOT}/Engine/c/Include )
 endif()

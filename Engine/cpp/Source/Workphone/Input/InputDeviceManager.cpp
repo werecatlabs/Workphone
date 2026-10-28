@@ -762,7 +762,11 @@ namespace workphone
             {
                 if( event )
                 {
-                    for( auto &listener : m_listeners )
+                    // A callback or another task may unregister listeners.
+                    // Keep this event's listeners alive without holding the
+                    // inventory lock across user callbacks.
+                    auto listeners = m_listeners.snapshot();
+                    for( auto &listener : listeners )
                     {
                         if( listener )
                         {
@@ -779,7 +783,8 @@ namespace workphone
     {
         if( !inputEvent || ( !m_createJoysticks &&
             inputEvent->getEventType() == IInputEvent::EventType::Joystick ) ) return;
-        for( auto &listener : m_listeners )
+        auto listeners = m_listeners.snapshot();
+        for( auto &listener : listeners )
         {
             if( listener )
             {
@@ -946,11 +951,7 @@ namespace workphone
 
     void InputDeviceManager::removeListener( SmartPtr<IEventListener> listener )
     {
-        auto it = std::find( m_listeners.begin(), m_listeners.end(), listener );
-        if( it != m_listeners.end() )
-        {
-            m_listeners.erase( it );
-        }
+        m_listeners.erase( listener );
     }
 
     void InputDeviceManager::removeListeners()
