@@ -3,11 +3,11 @@
 
 namespace workphone::vehicle
 {
-    TRotorHead::TRotorHead()
+    RotorHead::RotorHead()
     {
     }
 
-    TRotorHead::~TRotorHead()
+    RotorHead::~RotorHead()
     {
     }
 }  // namespace workphone::vehicle

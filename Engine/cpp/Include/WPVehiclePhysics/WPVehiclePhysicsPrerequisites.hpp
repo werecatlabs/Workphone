@@ -62,10 +62,10 @@ namespace workphone::vehicle
     class Lookup;
     class VehicleParam;
     class Rotor;
-    class TRotorHead;
+    class RotorHead;
     class RotorSector;
     class Servo;
-    class TSurface;
+    class Surface;
     class TailLinkage;
 
     class FrameOfRef;

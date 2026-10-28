@@ -1151,7 +1151,7 @@ namespace workphone::vehicle
                 /*with Arc[RR] do*/
                 for( RR = 1; RR < static_cast<s32>( sector.m_arc.size() ); RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     surface.m_lInduced.x =
                         static_cast<physics_Num>( K11 * static_cast<real_dNum>( surface.m_lInduced.x ) +
@@ -1433,7 +1433,7 @@ namespace workphone::vehicle
 
                 if( ss == 1 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = static_cast<real_dNum>( 0 );
                     arc.m_spanVec.y = static_cast<physics_Num>( rotor.m_cone );
@@ -1455,7 +1455,7 @@ namespace workphone::vehicle
 
                 if( ss == 2 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = ( 1.0 - 0.5 * Math<real_dNum>::Sqr( rotor.m_cone ) );
                     arc.m_spanVec.y = rotor.m_cone;
@@ -1477,7 +1477,7 @@ namespace workphone::vehicle
 
                 if( ss == 3 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = static_cast<physics_Num>( 0.0 );
                     arc.m_spanVec.y = rotor.m_cone;
@@ -1499,7 +1499,7 @@ namespace workphone::vehicle
 
                 if( ss == 4 )
                 {
-                    TSurface &arc = sector.m_arc[rr];
+                    Surface &arc = sector.m_arc[rr];
 
                     arc.m_spanVec.x = -( 1.0 - 0.5 * Math<real_dNum>::Sqr( rotor.m_cone ) );
                     arc.m_spanVec.y = rotor.m_cone;
@@ -1574,7 +1574,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[1];
@@ -1593,7 +1593,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[2];
@@ -1612,7 +1612,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[3];
@@ -1631,7 +1631,7 @@ namespace workphone::vehicle
 
             for( size_t rr = 1; rr < sector.m_arc.size(); rr++ )
             {
-                TSurface &arc = sector.m_arc[rr];
+                Surface &arc = sector.m_arc[rr];
 
                 auto lFlow = V3Sum( rotor.m_hubFlow, arc.m_lInduced, arc.m_interference );
                 lFlow.y = lFlow.y - rotor.m_groundEffect[4];
@@ -1673,7 +1673,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[1].m_arc[rr];
+                Surface &arc = rotor.m_sector[1].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective + rotor.m_ailCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1705,7 +1705,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[2].m_arc[rr];
+                Surface &arc = rotor.m_sector[2].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective - rotor.m_eleCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1737,7 +1737,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[3].m_arc[rr];
+                Surface &arc = rotor.m_sector[3].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective - rotor.m_ailCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -1769,7 +1769,7 @@ namespace workphone::vehicle
         {
             for( int rr = 1; rr < 21; rr++ )
             {
-                TSurface &arc = rotor.m_sector[4].m_arc[rr];
+                Surface &arc = rotor.m_sector[4].m_arc[rr];
 
                 real_dNum ag = rotor.m_collective + rotor.m_eleCyclic;
                 Math<real_dNum>::Limit( ag, rotor.m_totalAngleLimit );
@@ -2025,7 +2025,7 @@ namespace workphone::vehicle
                 // with Arc[RR] do
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     WP_ASSERT( surface.m_lInduced.isFinite() );
                     WP_ASSERT( Math<physics_Num>::isFinite( surface.m_iFactor ) );
@@ -2080,7 +2080,7 @@ namespace workphone::vehicle
                 // with Arc[RR] do
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     surface.m_lInduced =
                         VScale( surface.m_lInduced,
@@ -2107,7 +2107,7 @@ namespace workphone::vehicle
 
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = sector.m_arc[RR];
+                    Surface &surface = sector.m_arc[RR];
 
                     surface.m_lInduced =
                         VScale( surface.m_lInduced,
@@ -2169,7 +2169,7 @@ namespace workphone::vehicle
 
     // calculates the free stream attack at surface 'S' outputs values in range
     // -Math<physics_Num>::pi() to Math<physics_Num>::pi()
-    void HeliAero::calcAttack( TSurface &S )
+    void HeliAero::calcAttack( Surface &S )
     {
         physics_Num Nor, Par, AA;  // components of flow WRT surface and the first quadrant angle
         /*with S do*/
@@ -2234,7 +2234,7 @@ namespace workphone::vehicle
 
             for( int RR = 15; RR < 21; RR++ )
             {
-                TSurface &arc = sector.m_arc[RR];
+                Surface &arc = sector.m_arc[RR];
 
                 physics_Num absArcAlphaL = Math<physics_Num>::Abs( arc.m_alphaL );
                 if( absArcAlphaL > Max )
@@ -2371,7 +2371,7 @@ namespace workphone::vehicle
     }
 
     // takes CL and CD data from
-    void HeliAero::readCLandD( TSurface &S, TFoilTable &AFoilLookup )
+    void HeliAero::readCLandD( Surface &S, TFoilTable &AFoilLookup )
     {
         const real_dNum DA =
             200.0 / Math<real_dNum>::pi();  // this is the step size for Alpha in the lookup
@@ -2418,7 +2418,7 @@ namespace workphone::vehicle
     }
 
     // calculate the lift and drag on each surface element
-    void HeliAero::calcLandD( TSurface &S )
+    void HeliAero::calcLandD( Surface &S )
     {
         const real_dNum K1 = 0.5 * m_roair;  // half air density as a constant
 
@@ -2444,7 +2444,7 @@ namespace workphone::vehicle
             /*with Rotor.m_sector[SS] do*/
             for( size_t RR = 1; RR < sector.m_arc.size(); RR++ )
             {
-                TSurface &surface = sector.m_arc[RR];
+                Surface &surface = sector.m_arc[RR];
 
                 calcAttack( surface );
                 readCLandD( surface, Rotor.getAFoilLookup() );
@@ -2492,7 +2492,7 @@ namespace workphone::vehicle
                 /*with Arc[RR] do*/
                 for( int RR = 1; RR < 21; RR++ )
                 {
-                    TSurface &surface = rotorSector.m_arc[RR];
+                    Surface &surface = rotorSector.m_arc[RR];
 
                     //'local' force (lift and drag) on the element (allowing for tip losses losing
                     // the lift of the last 5% of blade)
@@ -2711,7 +2711,7 @@ namespace workphone::vehicle
 
         physics_Num PrecessionLimit;  // used to set the maximum permitted precession rate
 
-        TRotorHead &rotorHead = *m_rotorHead;
+        RotorHead &rotorHead = *m_rotorHead;
         Rotor &mainRotor = rotorHead.m_mainRotor;
 
         cageRotor( rotorHead.m_mainRotor, rotorHead.m_shaftFrame, 0.3 );
@@ -2794,7 +2794,7 @@ namespace workphone::vehicle
             }  // with MainRotor
             /*with RotorHead do*/
             {
-                TRotorHead &rh = rotorHead;
+                RotorHead &rh = rotorHead;
 
                 TorqueLimit = 0.2 * rh.m_teeterForceConstant;
                 // limit the teeter force to that given by the teeter spring at an angular deflection
@@ -2945,7 +2945,7 @@ namespace workphone::vehicle
 
     // this uses the angular deflection of the main rotor WRT shaft to calc the teeter forces
     // needs to add the teeter forces to the ForceMoments on the MainRotor
-    void HeliAero::calcTeeterForces( TRotorHead &Head )
+    void HeliAero::calcTeeterForces( RotorHead &Head )
     {
         // The elevator angular deflection of the head give x axis head torque
         Head.m_torques.x = Head.m_mainRotor.m_eleAngle * Head.m_teeterForceConstant -
@@ -4423,7 +4423,7 @@ namespace workphone::vehicle
         m_motor = std::make_shared<CEMotor>();
         m_esc = std::make_shared<CESController>();
 
-        m_rotorHead = std::make_shared<TRotorHead>();
+        m_rotorHead = std::make_shared<RotorHead>();
         m_tailRotor = std::make_shared<Rotor>();
         m_theVBar = std::make_shared<CFlybarlessUnit>();
         m_theEngineClutch = std::make_shared<EngineClutchUnit>();

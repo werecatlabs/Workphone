@@ -1,5 +1,5 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
-#include "WPVehiclePhysics/VecMath.hpp"
+#include "WPVehiclePhysics/VehiclePhysicsMath.hpp"
 #include "WPVehiclePhysics/FrameOfRef.hpp"
 #include <Workphone/Workphone.hpp>
 
@@ -127,12 +127,12 @@ namespace workphone::vehicle
         return physics_Vec( V.x - W.x, V.y - W.y, V.z - W.z );
     }
 
-    physics_Vec VecToSaracen( const physics_Vec &CV )
+    physics_Vec VecToSim( const physics_Vec &CV )
     {
         return physics_Vec( -CV.y, -CV.z, CV.x );
     }
 
-    physics_Vec VecFromSaracen( const physics_Vec &SV )
+    physics_Vec VecFromSim( const physics_Vec &SV )
     {
         return physics_Vec( SV.z, -SV.x, -SV.y );
     }

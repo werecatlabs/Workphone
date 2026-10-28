@@ -4,7 +4,7 @@
 #include "WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp"
 #include "WPVehiclePhysics/Rotor.hpp"
 #include "WPVehiclePhysics/Linkage.hpp"
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <array>
 #include <memory>
@@ -21,15 +21,15 @@ namespace workphone::vehicle
      * stores configuration constants for teetering components and a simple
      * inflow buffer used by aerodynamic computations.
      */
-    class TRotorHead
+    class RotorHead
     {
     public:
         /// Default constructor
-        TRotorHead();
+        RotorHead();
         /// Non-copyable: disable copy construction to avoid accidental sharing
-        TRotorHead( const TRotorHead &other ) = delete;
+        RotorHead( const RotorHead &other ) = delete;
         /// Destructor
-        ~TRotorHead();
+        ~RotorHead();
 
         /// Frame of reference for the rotor shaft, defined by the head
         /// orientation in the model

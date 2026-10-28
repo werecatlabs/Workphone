@@ -3,7 +3,7 @@
 
 #include "WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp"
 #include "WPVehiclePhysics/FrameOfRef.hpp"
-#include "VecMath.hpp"
+#include "VehiclePhysicsMath.hpp"
 #include <string>
 #include <array>
 #include <memory>
