@@ -25,7 +25,7 @@ namespace workphone
 
 namespace workphone::vehicle
 {
-    class DroneProp;
+    class DronePropeller;
 
     class CAerofoil;
     class CAircraft;

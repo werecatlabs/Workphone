@@ -15,13 +15,13 @@ namespace workphone::vehicle
      * It is designed to be lightweight and used as a shared object by the
      * vehicle simulation.
      */
-    class WPVehiclePhysics_API DroneProp : public ISharedObject
+    class WPVehiclePhysics_API DronePropeller : public ISharedObject
     {
     public:
         /// Default constructor
-        DroneProp();
+        DronePropeller();
         /// Virtual destructor from ISharedObject
-        ~DroneProp() override;
+        ~DronePropeller() override;
 
         /**
          * @brief Initialise the prop with an identifier (e.g. for debugging
