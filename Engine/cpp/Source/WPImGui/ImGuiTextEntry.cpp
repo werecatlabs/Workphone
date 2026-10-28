@@ -13,6 +13,8 @@ namespace workphone::ui
 
     void ImGuiTextEntry::update()
     {
+        auto applicationManager = core::IApplicationManager::instancePtr();
+
         auto name = getName();
         auto label = getLabel();
         auto guiLabel = label.empty() ? name : label;
@@ -58,14 +60,13 @@ namespace workphone::ui
             String newText = buffer;
             setText( newText );
 
-            auto listeners = getObjectListeners();
-            for( auto &listener : listeners )
-            {
-                Array<Parameter> args;
-                args.emplace_back( newText );
-                listener->handleEvent( EventType::UI, IEvent::handleValueChanged, args, this, this,
-                                       nullptr );
-            }
+            auto args = Array<Parameter>();
+            args.resize( 2 );
+
+            args.emplace_back( newText );
+
+            applicationManager->triggerEvent( EventType::UI, IEvent::handleValueChanged, args, this,
+                                              this, nullptr, false, Thread::Application_Flag );
         }
 
         auto dropTarget = getDropTarget();
