@@ -31,27 +31,53 @@ namespace workphone::render
 {
     bool ClawRendererDX11::setSplitMaterialUploads( bool enabled )
     {
-        return m_renderer && wp_renderer_dx11_set_material_upload_mode(
-            wp_renderer_get_dx11( m_renderer ), enabled ? WP_DX11_MATERIAL_UPLOAD_SPLIT : WP_DX11_MATERIAL_UPLOAD_COMBINED );
+        return m_renderer &&
+               wp_renderer_dx11_set_material_upload_mode(
+                   wp_renderer_get_dx11( m_renderer ),
+                   enabled ? WP_DX11_MATERIAL_UPLOAD_SPLIT : WP_DX11_MATERIAL_UPLOAD_COMBINED );
     }
+
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawRendererDX11, IRenderer3 );
 
     namespace
     {
-        wp_s32 compileProjectShader(void *,const wp_c8 *source,const wp_c8 *entry,const wp_c8 *target,void **nativeBlob)
+        wp_s32 compileProjectShader( void *, const wp_c8 *source, const wp_c8 *entry,
+                                     const wp_c8 *target, void **nativeBlob )
         {
-            auto app=core::IApplicationManager::instancePtr();
-            auto settings=app?app->getPlayerSettings():nullptr;
-            if(!settings) return 0;
-            auto provider=getProjectShaderCompilerProvider(settings->getPropertyAsInt("graphics.shaderLanguage"),settings->getPropertyAsInt("graphics.shaderModel"));
-            if(!provider) return 0;
-            Array<u8> bytes;String error;
-            if(!provider->compile(settings,projectRendererApi(settings),String(reinterpret_cast<const char*>(source)),String(reinterpret_cast<const char*>(entry)),String(reinterpret_cast<const char*>(target)),bytes,error)||bytes.empty())
-            {WP_LOG_ERROR("Project shader compiler: "+error);return -1;}
-            ID3DBlob *blob=nullptr;
-            if(FAILED(D3DCreateBlob(bytes.size(),&blob))) return -1;
-            std::memcpy(blob->GetBufferPointer(),bytes.data(),bytes.size());*nativeBlob=blob;return 1;
+            auto app = core::IApplicationManager::instancePtr();
+            auto settings = app ? app->getPlayerSettings() : nullptr;
+            if( !settings )
+            {
+                return 0;
+            }
+            auto provider = getProjectShaderCompilerProvider(
+                settings->getPropertyAsInt( "graphics.shaderLanguage" ),
+                settings->getPropertyAsInt( "graphics.shaderModel" ) );
+            if( !provider )
+            {
+                return 0;
+            }
+            Array<u8> bytes;
+            String error;
+            if( !provider->compile( settings, projectRendererApi( settings ),
+                                    String( reinterpret_cast<const char *>( source ) ),
+                                    String( reinterpret_cast<const char *>( entry ) ),
+                                    String( reinterpret_cast<const char *>( target ) ), bytes, error ) ||
+                bytes.empty() )
+            {
+                WP_LOG_ERROR( "Project shader compiler: " + error );
+                return -1;
+            }
+            ID3DBlob *blob = nullptr;
+            if( FAILED( D3DCreateBlob( bytes.size(), &blob ) ) )
+            {
+                return -1;
+            }
+            std::memcpy( blob->GetBufferPointer(), bytes.data(), bytes.size() );
+            *nativeBlob = blob;
+            return 1;
         }
+
         constexpr u16 k_quadIndices[] = { 0, 1, 2, 0, 2, 3 };
 
         struct SkyEnvironmentEntry
@@ -76,20 +102,40 @@ namespace workphone::render
         MaterialRenderState::Ptr getPrimaryMaterialPassState( const SmartPtr<IMaterial> &material )
         {
             if( auto concrete = dynamic_pointer_cast<Material>( material ) )
+            {
                 return concrete->getRenderState();
+            }
             // Third-party material implementations retain the interface fallback.
-            if( material ) for( const auto &technique : material->getTechniques() )
-                if( technique ) for( const auto &pass : technique->getPasses() )
-                    if( auto context = pass ? pass->getStateContext() : nullptr )
-                        if( auto state = context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
-                            return state->getRenderState();
+            if( material )
+            {
+                for( const auto &technique : material->getTechniques() )
+                {
+                    if( technique )
+                    {
+                        for( const auto &pass : technique->getPasses() )
+                        {
+                            if( auto context = pass ? pass->getStateContext() : nullptr )
+                            {
+                                if( auto state = context->getStateDataById<MaterialPassStateData>(
+                                        pass->getId() ) )
+                                {
+                                    return state->getRenderState();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return {};
         }
 
     }  // namespace
 
     ClawRendererDX11::ClawRendererDX11() = default;
-    ClawRendererDX11::ClawRendererDX11(bool executeD3D12):m_executeD3D12(executeD3D12) {}
+
+    ClawRendererDX11::ClawRendererDX11( bool executeD3D12 ) : m_executeD3D12( executeD3D12 )
+    {
+    }
 
     ClawRendererDX11::~ClawRendererDX11()
     {
@@ -136,18 +182,33 @@ namespace workphone::render
             WP_LOG_WARNING(
                 "WPGraphics/DX11: no native window handle; device initialization may fail." );
         }
-        if(auto app=core::IApplicationManager::instancePtr())
-            if(auto settings=app->getPlayerSettings())
-                wp_renderer_dx11_set_startup_options(settings->getPropertyAsInt("graphics.renderer.mode"),
-                    settings->getPropertyAsInt("graphics.shaderModel"),settings->getPropertyAsBool("graphics.validationLayers"),
-                    !settings->hasProperty("graphics.allowRendererFallback") || settings->getPropertyAsBool("graphics.allowRendererFallback"));
-        if(auto app=core::IApplicationManager::instancePtr())
+        if( auto app = core::IApplicationManager::instancePtr() )
         {
-            wp_renderer_dx11_set_d3d12_execution(m_executeD3D12||(app->getPlayerSettings()&&projectRendererApi(app->getPlayerSettings())=="DX12"));
-            wp_renderer_dx11_set_present_mode(nullptr,app->getPlayerSettings()?app->getPlayerSettings()->getPropertyAsInt("graphics.presentMode"):0);
+            if( auto settings = app->getPlayerSettings() )
+            {
+                wp_renderer_dx11_set_startup_options(
+                    settings->getPropertyAsInt( "graphics.renderer.mode" ),
+                    settings->getPropertyAsInt( "graphics.shaderModel" ),
+                    settings->getPropertyAsBool( "graphics.validationLayers" ),
+                    !settings->hasProperty( "graphics.allowRendererFallback" ) ||
+                        settings->getPropertyAsBool( "graphics.allowRendererFallback" ) );
+            }
         }
-        else wp_renderer_dx11_set_d3d12_execution(m_executeD3D12);
-        wp_renderer_dx11_set_shader_compiler(compileProjectShader,nullptr);
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            wp_renderer_dx11_set_d3d12_execution(
+                m_executeD3D12 || ( app->getPlayerSettings() &&
+                                    projectRendererApi( app->getPlayerSettings() ) == "DX12" ) );
+            wp_renderer_dx11_set_present_mode(
+                nullptr, app->getPlayerSettings()
+                             ? app->getPlayerSettings()->getPropertyAsInt( "graphics.presentMode" )
+                             : 0 );
+        }
+        else
+        {
+            wp_renderer_dx11_set_d3d12_execution( m_executeD3D12 );
+        }
+        wp_renderer_dx11_set_shader_compiler( compileProjectShader, nullptr );
         m_renderer = wp_renderer_create_dx11( nativeWindow, static_cast<wp_s32>( m_rtWidth ),
                                               static_cast<wp_s32>( m_rtHeight ) );
 
@@ -217,7 +278,10 @@ namespace workphone::render
         }
 
         m_primitiveCount = 0;
-        if( m_materialRenderCache ) m_materialRenderCache->maintain();
+        if( m_materialRenderCache )
+        {
+            m_materialRenderCache->maintain();
+        }
         m_hasSkyEnvironment = false;
         if( auto found = g_skyEnvironmentCaches.find( this ); found != g_skyEnvironmentCaches.end() )
         {
@@ -260,12 +324,15 @@ namespace workphone::render
             if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
             {
                 auto app = core::IApplicationManager::instancePtr();
-                auto graphics = app ? dynamic_cast<ClawHammerSystem *>(
-                                          app->getGraphicsSystemPtr() ) : nullptr;
+                auto graphics =
+                    app ? dynamic_cast<ClawHammerSystem *>( app->getGraphicsSystemPtr() ) : nullptr;
                 void *handle = nullptr;
                 window->getWindowHandle( &handle );
-                if(auto settings=app?app->getPlayerSettings():nullptr)
-                    wp_renderer_dx11_set_present_mode(dx11,settings->getPropertyAsInt("graphics.presentMode"));
+                if( auto settings = app ? app->getPlayerSettings() : nullptr )
+                {
+                    wp_renderer_dx11_set_present_mode(
+                        dx11, settings->getPropertyAsInt( "graphics.presentMode" ) );
+                }
                 const auto result = wp_renderer_dx11_try_present(
                     dx11, handle, graphics && graphics->getVSync() ? 1 : 0 );
                 if( result < 0 )
@@ -531,13 +598,17 @@ namespace workphone::render
         Array<DrawParticle> draw;
         draw.reserve( particles.size() );
         size_t particleStride = 1;
-        if(auto app = core::IApplicationManager::instancePtr())
-            if(auto settings = app->getPlayerSettings())
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            if( auto settings = app->getPlayerSettings() )
             {
-                const auto quality = std::clamp(settings->getPropertyAsInt("quality.particles"),0,3);
+                const auto quality =
+                    std::clamp( settings->getPropertyAsInt( "quality.particles" ), 0, 3 );
                 particleStride = quality == 0 ? 4u : quality == 1 ? 2u : 1u;
             }
-        for(size_t particleIndex=0; particleIndex<particles.size(); particleIndex += particleStride)
+        }
+        for( size_t particleIndex = 0; particleIndex < particles.size();
+             particleIndex += particleStride )
         {
             const auto &particle = particles[particleIndex];
             const auto center = world.transformAffine( Vector3F( particle.position.x * scale.X(),
@@ -559,8 +630,9 @@ namespace workphone::render
         const auto oldFill = wp_renderer_get_fill_mode( m_renderer );
         // Particle geometry uses its own unlit vertex-colour shader. Borrow the
         // same immutable surface/resource version without applying PBR constants.
-        const auto particleState = getPrimaryMaterialPassState(material);
-        auto blend = material ? ClawUtil::toCBlendMode(particleState ? particleState->blendMode : material->getBlendMode())
+        const auto particleState = getPrimaryMaterialPassState( material );
+        auto blend = material ? ClawUtil::toCBlendMode( particleState ? particleState->blendMode
+                                                                      : material->getBlendMode() )
                               : WORKPHONE_BLEND_MODE_ALPHA;
         if( blend == WORKPHONE_BLEND_MODE_NONE )
         {
@@ -576,8 +648,8 @@ namespace workphone::render
         if( material )
         {
             SmartPtr<ITexture> fallback;
-            auto input = particleState ? particleState->textures[0].get() :
-                         (fallback = material->getTexture(0)).get();
+            auto input = particleState ? particleState->textures[0].get()
+                                       : ( fallback = material->getTexture( 0 ) ).get();
             if( input )
             {
                 input->getTextureFinal( &texture );
@@ -698,18 +770,23 @@ namespace workphone::render
         }
         mapSize = std::clamp( mapSize, 64, 8192 );
         f32 shadowDistance = 200.0f;
-        if(auto app = core::IApplicationManager::instancePtr())
-            if(auto settings = app->getPlayerSettings())
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            if( auto settings = app->getPlayerSettings() )
             {
                 s32 quality = 2, resolution = 2;
-                settings->getPropertyValue("graphics.shadowQuality",quality);
-                settings->getPropertyValue("graphics.shadowResolution",resolution);
-                settings->getPropertyValue("graphics.shadowDistance",shadowDistance);
-                if(quality == 0 || shadowDistance <= 0) return false;
-                wp_renderer_dx11_set_shadow_filter_quality(dx11,quality);
-                constexpr s32 sizes[] = {512,1024,2048,4096};
-                mapSize = sizes[std::clamp(resolution,0,3)];
+                settings->getPropertyValue( "graphics.shadowQuality", quality );
+                settings->getPropertyValue( "graphics.shadowResolution", resolution );
+                settings->getPropertyValue( "graphics.shadowDistance", shadowDistance );
+                if( quality == 0 || shadowDistance <= 0 )
+                {
+                    return false;
+                }
+                wp_renderer_dx11_set_shadow_filter_quality( dx11, quality );
+                constexpr s32 sizes[] = { 512, 1024, 2048, 4096 };
+                mapSize = sizes[std::clamp( resolution, 0, 3 )];
             }
+        }
         const auto direction = m_lightDirection.normaliseCopy();
         const Vector3F up =
             std::abs( direction.Y() ) > 0.95f ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 );
@@ -743,8 +820,8 @@ namespace workphone::render
         const float nearClip = camera->getNearClipDistance();
         const float farClip = camera->getFarClipDistance();
         const float fraction = std::clamp(
-            ( std::min( farClip, shadowDistance ) - nearClip ) / std::max( farClip - nearClip, 0.001f ), 0.001f,
-            1.0f );
+            ( std::min( farClip, shadowDistance ) - nearClip ) / std::max( farClip - nearClip, 0.001f ),
+            0.001f, 1.0f );
         for( int y = -1; y <= 1; y += 2 )
         {
             for( int x = -1; x <= 1; x += 2 )
@@ -881,14 +958,21 @@ namespace workphone::render
             m_renderer, source.twoSided ? WORKPHONE_CULL_MODE_NONE : WORKPHONE_CULL_MODE_BACK );
         wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
         bool batch = true;
-        if(auto app = core::IApplicationManager::instancePtr())
-            if(auto settings = app->getPlayerSettings()) settings->getPropertyValue("performance.staticBatching",batch);
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            if( auto settings = app->getPlayerSettings() )
+            {
+                settings->getPropertyValue( "performance.staticBatching", batch );
+            }
+        }
         u32 submitted = 0;
         const u32 chunk = batch ? count : 1u;
-        for(u32 offset=0; offset<count; offset += chunk)
+        for( u32 offset = 0; offset < count; offset += chunk )
+        {
             submitted += wp_renderer_dx11_draw_foliage_instances(
                 native, geometry, s32( first ), s32( indices ), instances + offset,
-                s32(std::min(chunk,count-offset)), &parameters );
+                s32( std::min( chunk, count - offset ) ), &parameters );
+        }
         m_primitiveCount =
             u32( std::min<u64>( std::numeric_limits<u32>::max(),
                                 u64( m_primitiveCount ) + u64( indices / 3 ) * submitted ) );
@@ -926,14 +1010,16 @@ namespace workphone::render
     void ClawRendererDX11::prepareMaterialRecords( ClawMaterialDrawRecords &records )
     {
         if( records.getRecordCount() && !m_materialRenderCache )
+        {
             m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
+        }
         records.seal( m_materialRenderCache.get() );
     }
 
     ClawRendererDX11::MaterialRecordStatistics ClawRendererDX11::getMaterialRecordStatistics() const
     {
         MaterialRecordStatistics result;
-        if(m_materialRenderCache)
+        if( m_materialRenderCache )
         {
             result.preparations = m_materialRenderCache->getPreparationCount();
             result.storageBytes = m_materialRenderCache->getStorageBytes();
@@ -941,18 +1027,25 @@ namespace workphone::render
             result.slots = m_materialRenderCache->getSlotCount();
             result.resident = m_materialRenderCache->getResidentCount();
         }
-        if(m_directMaterialRecords) result.directStorageAllocations = m_directMaterialRecords->getStorageAllocationCount();
+        if( m_directMaterialRecords )
+        {
+            result.directStorageAllocations = m_directMaterialRecords->getStorageAllocationCount();
+        }
         return result;
     }
 
     bool ClawRendererDX11::renderMeshRecords( ClawMesh *mesh, const Matrix4F &transform,
-        const ClawMaterialDrawRecords &records, const ClawMaterialDrawRecords::Binding &binding,
-        const wp_mat4f *view, const wp_mat4f *projection )
+                                              const ClawMaterialDrawRecords &records,
+                                              const ClawMaterialDrawRecords::Binding &binding,
+                                              const wp_mat4f *view, const wp_mat4f *projection )
     {
         const auto native = mesh ? mesh->getNativeMesh() : nullptr;
         if( !native || !records.valid( binding, mesh,
-                static_cast<u32>( std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) ) ) ) )
+                                       static_cast<u32>( std::max<s32>(
+                                           1, wp_graphics_mesh_get_submesh_count( native ) ) ) ) )
+        {
             return false;
+        }
         renderMeshBatch( mesh, transform, nullptr, 0, view, projection, &records, &binding );
         return true;
     }
@@ -981,48 +1074,80 @@ namespace workphone::render
         // Preview/UI/direct/instanced meshes use the same publication and persistent
         // records as scene jobs. Keep one idle workspace; a reentrant draw borrows
         // another without modifying the outer draw's immutable publication.
-        auto directRecords = records ? nullptr : std::move(m_directMaterialRecords);
+        auto directRecords = records ? nullptr : std::move( m_directMaterialRecords );
+
         struct RetireDirect
         {
             std::unique_ptr<ClawMaterialDrawRecords> &active, &idle;
+
             ~RetireDirect()
             {
-                if(active)
+                if( active )
                 {
-                    try { active->clear(); if(!idle) idle = std::move(active); }
-                    catch(...) {} // Do not recycle a publication whose clear failed.
+                    try
+                    {
+                        active->clear();
+                        if( !idle )
+                        {
+                            idle = std::move( active );
+                        }
+                    }
+                    catch( ... )
+                    {
+                    }  // Do not recycle a publication whose clear failed.
                 }
             }
-        } retireDirect{directRecords, m_directMaterialRecords};
-        if(!records)
+        } retireDirect{ directRecords, m_directMaterialRecords };
+
+        if( !records )
         {
             try
             {
-                if(!directRecords) directRecords = std::make_unique<ClawMaterialDrawRecords>();
-                directRecords->capture(mesh);
-                prepareMaterialRecords(*directRecords);
+                if( !directRecords )
+                {
+                    directRecords = std::make_unique<ClawMaterialDrawRecords>();
+                }
+                directRecords->capture( mesh );
+                prepareMaterialRecords( *directRecords );
             }
             catch( const std::bad_alloc & )
             {
                 WP_LOG_WARNING( "Material record CPU budget denied; deferring draw." );
                 return 0;
             }
-            records = directRecords.get(); binding = records->find(mesh);
-            if(!binding) return 0;
-        }
-        if(instances)
-            for(u32 section = 0; section < binding->count; ++section)
+            records = directRecords.get();
+            binding = records->find( mesh );
+            if( !binding )
             {
-                const auto record = records->get(*binding, section);
-                if(!record) return 0;
-                if(record->state)
-                {
-                    if(record->state->getFlag(transparentFlag) ||
-                       ClawUtil::toCBlendMode(record->state->blendMode) != WORKPHONE_BLEND_MODE_NONE) return 0;
-                }
-                else if(record->material && (record->material->isTransparent() ||
-                        ClawUtil::toCBlendMode(record->material->getBlendMode()) != WORKPHONE_BLEND_MODE_NONE)) return 0;
+                return 0;
             }
+        }
+        if( instances )
+        {
+            for( u32 section = 0; section < binding->count; ++section )
+            {
+                const auto record = records->get( *binding, section );
+                if( !record )
+                {
+                    return 0;
+                }
+                if( record->state )
+                {
+                    if( record->state->getFlag( transparentFlag ) ||
+                        ClawUtil::toCBlendMode( record->state->blendMode ) != WORKPHONE_BLEND_MODE_NONE )
+                    {
+                        return 0;
+                    }
+                }
+                else if( record->material &&
+                         ( record->material->isTransparent() ||
+                           ClawUtil::toCBlendMode( record->material->getBlendMode() ) !=
+                               WORKPHONE_BLEND_MODE_NONE ) )
+                {
+                    return 0;
+                }
+            }
+        }
 
         u64 submitted = 0;
         setTransforms( transform, snapshotView, snapshotProjection );
@@ -1039,7 +1164,8 @@ namespace workphone::render
 
         auto dx11 = wp_renderer_get_dx11( m_renderer );
         const auto geometry = topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST
-            ? asset_budget::prepareMesh( dx11, nativeMesh, 0, elementCount ) : nullptr;
+                                  ? asset_budget::prepareMesh( dx11, nativeMesh, 0, elementCount )
+                                  : nullptr;
 
         for( s32 submeshIndex = 0; submeshIndex < drawCount; ++submeshIndex )
         {
@@ -1054,8 +1180,11 @@ namespace workphone::render
                 }
             }
 
-            const auto record = records->get(*binding, submeshIndex);
-            if(!record) continue;
+            const auto record = records->get( *binding, submeshIndex );
+            if( !record )
+            {
+                continue;
+            }
             auto material = record->material;
             const auto state = record->state;
             // The snapshot retains all texture owners for this draw. Only the
@@ -1063,7 +1192,9 @@ namespace workphone::render
             SmartPtr<ITexture> fallbackTexture;
             const auto getTexture = [&]( u32 slot ) -> ITexture * {
                 if( state )
+                {
                     return slot < state->textures.size() ? state->textures[slot].get() : nullptr;
+                }
                 fallbackTexture = material ? material->getTexture( slot ) : nullptr;
                 return fallbackTexture.get();
             };
@@ -1074,14 +1205,21 @@ namespace workphone::render
             // no native view survives this section's submission.
             const auto resolveTexture = [&]( ITexture *texture ) -> void * {
                 if( typeid( *texture ) == typeid( ClawTexture ) )
-                    if( auto view = static_cast<ClawTexture *>( texture )->getNativeTextureView( dx11 ) ) return view;
+                {
+                    if( auto view = static_cast<ClawTexture *>( texture )->getNativeTextureView( dx11 ) )
+                    {
+                        return view;
+                    }
+                }
                 void *view = nullptr;
                 texture->getTextureFinal( &view );
                 return view;
             };
 
             if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
+            {
                 continue;
+            }
 
             const auto prepared = record->prepared;
 
@@ -1108,7 +1246,8 @@ namespace workphone::render
             {
                 for( size_t i = 0; i < 6; ++i )
                 {
-                    if( auto texture = getTexture( prepared ? prepared->textureSlots[i] : defaultTextureSlots[i] ) )
+                    if( auto texture =
+                            getTexture( prepared ? prepared->textureSlots[i] : defaultTextureSlots[i] ) )
                     {
                         textureViews[i] = resolveTexture( texture );
                     }
@@ -1119,22 +1258,34 @@ namespace workphone::render
             u32 projectFilter = prepared ? prepared->filter : 1u;
             u32 projectAnisotropy = prepared ? prepared->anisotropy : 1u;
             if( auto app = core::IApplicationManager::instancePtr() )
+            {
                 if( auto settings = app->getPlayerSettings() )
                 {
                     s32 value;
-                    if( settings->getPropertyValue("graphics.textureFiltering",value) ) projectFilter = static_cast<u32>(std::clamp(value,0,2));
-                    if( settings->getPropertyValue("graphics.anisotropy",value) ) projectAnisotropy = static_cast<u32>(std::clamp(value,1,16));
+                    if( settings->getPropertyValue( "graphics.textureFiltering", value ) )
+                    {
+                        projectFilter = static_cast<u32>( std::clamp( value, 0, 2 ) );
+                    }
+                    if( settings->getPropertyValue( "graphics.anisotropy", value ) )
+                    {
+                        projectAnisotropy = static_cast<u32>( std::clamp( value, 1, 16 ) );
+                    }
                 }
-            if(projectFilter==2&&projectAnisotropy>1) projectFilter=3;
-            wp_renderer_dx11_set_material_sampler(
-                dx11, prepared ? prepared->wrapU : 0u, prepared ? prepared->wrapV : 0u,
-                projectFilter, projectAnisotropy );
+            }
+            if( projectFilter == 2 && projectAnisotropy > 1 )
+            {
+                projectFilter = 3;
+            }
+            wp_renderer_dx11_set_material_sampler( dx11, prepared ? prepared->wrapU : 0u,
+                                                   prepared ? prepared->wrapV : 0u, projectFilter,
+                                                   projectAnisotropy );
 
             wp_material_dx11 nativeMaterial = prepared ? prepared->compose() : wp_material_dx11{};
             if( !prepared )
             {
                 const auto diffuse = material ? material->getDiffuse() : ColourF::White;
-                const auto specular = material ? material->getSpecular() : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
+                const auto specular =
+                    material ? material->getSpecular() : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
                 const auto emissive = material ? material->getEmissive() : ColourF::Black;
                 nativeMaterial.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
                 nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
@@ -1146,15 +1297,23 @@ namespace workphone::render
             }
             applySceneLighting( nativeMaterial );
             bool reflectionProbes = true;
-            if(auto app = core::IApplicationManager::instancePtr())
-                if(auto settings = app->getPlayerSettings())
+            if( auto app = core::IApplicationManager::instancePtr() )
+            {
+                if( auto settings = app->getPlayerSettings() )
                 {
-                    settings->getPropertyValue("graphics.reflectionProbes",reflectionProbes);
-                    s32 lighting=2;
-                    if(settings->getPropertyValue("graphics.lightingMode",lighting)) nativeMaterial.projection.z=static_cast<f32>(lighting);
-                    if(settings->hasProperty("graphics.lightingMode") && settings->getPropertyAsInt("graphics.lightingMode") == 0)
+                    settings->getPropertyValue( "graphics.reflectionProbes", reflectionProbes );
+                    s32 lighting = 2;
+                    if( settings->getPropertyValue( "graphics.lightingMode", lighting ) )
+                    {
+                        nativeMaterial.projection.z = static_cast<f32>( lighting );
+                    }
+                    if( settings->hasProperty( "graphics.lightingMode" ) &&
+                        settings->getPropertyAsInt( "graphics.lightingMode" ) == 0 )
+                    {
                         nativeMaterial.uv_transform.z = 0.0f;
+                    }
                 }
+            }
 
             // A material's reflection probe overrides the sky environment for this draw.
             if( material && reflectionProbes )
@@ -1187,24 +1346,30 @@ namespace workphone::render
                 wp_renderer_dx11_set_material( dx11, &nativeMaterial );
             }
 
-            auto blend = material ? ClawUtil::toCBlendMode( ( state ? state->blendMode : material->getBlendMode() ) )
-                                  : WORKPHONE_BLEND_MODE_NONE;
+            auto blend =
+                material
+                    ? ClawUtil::toCBlendMode( ( state ? state->blendMode : material->getBlendMode() ) )
+                    : WORKPHONE_BLEND_MODE_NONE;
 
-            if( material && ( state ? state->getFlag( transparentFlag ) : material->isTransparent() ) && blend == WORKPHONE_BLEND_MODE_NONE )
+            if( material && ( state ? state->getFlag( transparentFlag ) : material->isTransparent() ) &&
+                blend == WORKPHONE_BLEND_MODE_NONE )
             {
                 blend = WORKPHONE_BLEND_MODE_ALPHA;
             }
 
             wp_renderer_set_blend_mode( m_renderer, blend );
             wp_renderer_set_depth_write_enabled(
-                m_renderer, m_shadowPass || !material || ( state ? state->getFlag( depthWriteFlag ) : material->getDepthWrite() ) );
+                m_renderer,
+                m_shadowPass || !material ||
+                    ( state ? state->getFlag( depthWriteFlag ) : material->getDepthWrite() ) );
             // The editor's comparison list differs from the C renderer enum.
             constexpr wp_depth_func depthFunctions[] = {
                 WORKPHONE_DEPTH_FUNC_NEVER, WORKPHONE_DEPTH_FUNC_LESS,   WORKPHONE_DEPTH_FUNC_LEQUAL,
                 WORKPHONE_DEPTH_FUNC_EQUAL, WORKPHONE_DEPTH_FUNC_GEQUAL, WORKPHONE_DEPTH_FUNC_GREATER,
                 WORKPHONE_DEPTH_FUNC_ALWAYS
             };
-            const auto depthTest = material ? ( state ? state->depthTest : material->getDepthTest() ) : 2u;
+            const auto depthTest =
+                material ? ( state ? state->depthTest : material->getDepthTest() ) : 2u;
             wp_renderer_set_depth_test_enabled( m_renderer, 1 );
             wp_renderer_set_depth_func( m_renderer, m_shadowPass
                                                         ? WORKPHONE_DEPTH_FUNC_LESS
@@ -1213,47 +1378,78 @@ namespace workphone::render
                                        !m_shadowPass && state && state->getFlag( showWireframeFlag )
                                            ? WORKPHONE_FILL_MODE_WIREFRAME
                                            : WORKPHONE_FILL_MODE_SOLID );
-            wp_renderer_set_cull_mode( m_renderer,
-                                       ( state && state->getFlag( doubleSidedFlag ) ) ? WORKPHONE_CULL_MODE_NONE
-                                       : material ? ClawUtil::toCCullMode( ( state ? state->cullMode : material->getCullMode() ) )
-                                                  : WORKPHONE_CULL_MODE_BACK );
+            wp_renderer_set_cull_mode(
+                m_renderer, ( state && state->getFlag( doubleSidedFlag ) ) ? WORKPHONE_CULL_MODE_NONE
+                            : material                                     ? ClawUtil::toCCullMode(
+                                                                                 ( state ? state->cullMode : material->getCullMode() ) )
+                                                                           : WORKPHONE_CULL_MODE_BACK );
 
             // Activation occurs inside the native draw, after its built-in state
             // setup. Shadow ownership remains with the existing depth/cutout pass.
             const auto runtime = m_shadowPass ? nullptr : record->runtime;
-            if(!m_shadowPass && record->runtimeRequested && !runtime) continue;
+            if( !m_shadowPass && record->runtimeRequested && !runtime )
+            {
+                continue;
+            }
+
             struct Activation
             {
                 const MaterialProgramDX11::Publication *publication;
                 bool attempted = false;
-            } activation{runtime};
-            const wp_material_bind_dx11 activate = runtime ? +[](wp_renderer_dx11 *r, wp_s32 instanced, void *user) -> wp_s32 {
-                auto &active = *static_cast<Activation *>(user);
+            } activation{ runtime };
+
+            const wp_material_bind_dx11 activate =
+                runtime ? +[]( wp_renderer_dx11 *r, wp_s32 instanced, void *user ) -> wp_s32 {
+                auto &active = *static_cast<Activation *>( user );
                 active.attempted = true;
-                try { return active.publication->Bind(r, instanced != 0); }
-                catch(...) { return 0; } // Never unwind through the C renderer.
-            } : nullptr;
+                try
+                {
+                    return active.publication->Bind( r, instanced != 0 );
+                }
+                catch( ... )
+                {
+                    return 0;
+                }  // Never unwind through the C renderer.
+            }
+            : nullptr;
             auto activationData = &activation;
+
             struct RetireBindings
             {
                 const Activation &active;
                 wp_renderer_dx11 *renderer;
-                ~RetireBindings() { if(active.attempted) active.publication->Unbind(renderer); }
-            } retireBindings{activation, dx11};
+
+                ~RetireBindings()
+                {
+                    if( active.attempted )
+                    {
+                        active.publication->Unbind( renderer );
+                    }
+                }
+            } retireBindings{ activation, dx11 };
 
             if( instances )
             {
                 if( geometry && count > 0 && count % 3u == 0 )
                 {
                     bool batch = true;
-                    if(auto app = core::IApplicationManager::instancePtr())
-                        if(auto settings = app->getPlayerSettings()) settings->getPropertyValue("performance.dynamicBatching",batch);
+                    if( auto app = core::IApplicationManager::instancePtr() )
+                    {
+                        if( auto settings = app->getPlayerSettings() )
+                        {
+                            settings->getPropertyValue( "performance.dynamicBatching", batch );
+                        }
+                    }
                     u32 drawn = 0;
                     const u32 chunk = batch ? instanceCount : 1u;
-                    for(u32 offset=0; offset<instanceCount; offset += chunk)
+                    for( u32 offset = 0; offset < instanceCount; offset += chunk )
+                    {
                         drawn += wp_renderer_dx11_draw_geometry_pntc_instanced_bound(
-                            dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ), 0,
-                            instances + offset, static_cast<wp_s32>(std::min(chunk,instanceCount-offset)), activate, activationData );
+                            dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ),
+                            0, instances + offset,
+                            static_cast<wp_s32>( std::min( chunk, instanceCount - offset ) ), activate,
+                            activationData );
+                    }
                     if( drawn > 0 )
                     {
                         submitted += drawn;
@@ -1267,9 +1463,12 @@ namespace workphone::render
             {
                 if( auto stripGeometry = asset_budget::prepareMesh( dx11, nativeMesh, start, count ) )
                 {
-                    if(wp_renderer_dx11_draw_geometry_pntc_bound( dx11, stripGeometry, 0,
-                        static_cast<wp_s32>( ( count - 2u ) * 3u ), 0, activate, activationData ))
+                    if( wp_renderer_dx11_draw_geometry_pntc_bound(
+                            dx11, stripGeometry, 0, static_cast<wp_s32>( ( count - 2u ) * 3u ), 0,
+                            activate, activationData ) )
+                    {
                         m_primitiveCount += count - 2u;
+                    }
                 }
             }
             else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST && geometry )
@@ -1277,9 +1476,12 @@ namespace workphone::render
                 count -= count % 3u;
                 if( count > 0 )
                 {
-                    if(wp_renderer_dx11_draw_geometry_pntc_bound( dx11, geometry, static_cast<wp_s32>( start ),
-                        static_cast<wp_s32>( count ), 0, activate, activationData ))
+                    if( wp_renderer_dx11_draw_geometry_pntc_bound(
+                            dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ),
+                            0, activate, activationData ) )
+                    {
                         m_primitiveCount += count / 3u;
+                    }
                 }
             }
         }
@@ -1299,8 +1501,9 @@ namespace workphone::render
     bool ClawRendererDX11::prepareTerrainGeometry( const wp_graphics_mesh *mesh )
     {
         auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
-        return mesh && dx11 && wp_renderer_dx11_prepare_mesh_geometry( dx11, const_cast<wp_graphics_mesh *>( mesh ),
-            0, wp_graphics_mesh_get_index_count( mesh ) );
+        return mesh && dx11 &&
+               wp_renderer_dx11_prepare_mesh_geometry( dx11, const_cast<wp_graphics_mesh *>( mesh ), 0,
+                                                       wp_graphics_mesh_get_index_count( mesh ) );
     }
 
     void ClawRendererDX11::prepareTerrain( SmartPtr<ClawTerrain> terrain,
@@ -1433,7 +1636,8 @@ namespace workphone::render
         for( auto nativeMesh : tiles )
         {
             const auto indexCount = wp_graphics_mesh_get_index_count( nativeMesh );
-            const auto geometry = wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, 0, indexCount );
+            const auto geometry =
+                wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, 0, indexCount );
             if( !geometry )
             {
                 continue;
@@ -1475,9 +1679,13 @@ namespace workphone::render
             if( auto material = sky->getMaterial() )
             {
                 if( auto concrete = dynamic_pointer_cast<Material>( material ) )
+                {
                     materialTextures = concrete->getCubicTextureSnapshot();
+                }
                 else
+                {
                     ownedTextures = material->getCubicTextures();
+                }
             }
         }
         const auto &textures = materialTextures ? *materialTextures : ownedTextures;
@@ -1501,8 +1709,15 @@ namespace workphone::render
             auto &cache = g_skyEnvironmentCaches[this];
             for( auto entry = cache.skies.begin(); entry != cache.skies.end(); )
             {
-                if( !entry->second.sky.expired() ) { ++entry; continue; }
-                if( cache.active == &entry->second.cubemap ) cache.active = nullptr;
+                if( !entry->second.sky.expired() )
+                {
+                    ++entry;
+                    continue;
+                }
+                if( cache.active == &entry->second.cubemap )
+                {
+                    cache.active = nullptr;
+                }
                 entry = cache.skies.erase( entry );
             }
             auto &entry = cache.skies[sky.get()];

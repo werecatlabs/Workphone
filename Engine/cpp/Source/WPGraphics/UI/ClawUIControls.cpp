@@ -51,7 +51,9 @@ namespace workphone::ui
     {
         ScopedLock lock( &dropdownStateMutex( this ) );
         m_options = options;
-        m_selected = m_options.empty() ? 0 : Math<u32>::min( m_selected, static_cast<u32>( m_options.size() - 1 ) );
+        m_selected = m_options.empty()
+                         ? 0
+                         : Math<u32>::min( m_selected, static_cast<u32>( m_options.size() - 1 ) );
     }
 
     void ClawUIDropdown::addOption( const String &option )
@@ -102,7 +104,10 @@ namespace workphone::ui
         ScopedLock lock( &dropdownStateMutex( this ) );
         ClawUIElement<IUIDropdown>::setProperties( properties );
         if( properties && properties->hasProperty( "textSize" ) )
-            m_textSize = static_cast<f32>( std::clamp( properties->getPropertyAsInt( "textSize", 13 ), 1, 255 ) );
+        {
+            m_textSize =
+                static_cast<f32>( std::clamp( properties->getPropertyAsInt( "textSize", 13 ), 1, 255 ) );
+        }
     }
 
     void ClawUIDropdown::draw( wp_context *ctx )
@@ -111,10 +116,20 @@ namespace workphone::ui
         {
             return;
         }
-        if( !ctx->style.font ) return;
+        if( !ctx->style.font )
+        {
+            return;
+        }
         frame_retention::retainFontOwner( this );
         const auto bounds = getWorkphoneBounds();
-        struct DrawSettings { Array<String> options; String label; f32 textSize; };
+
+        struct DrawSettings
+        {
+            Array<String> options;
+            String label;
+            f32 textSize;
+        };
+
         const auto settings = [this] {
             ScopedLock lock( &dropdownStateMutex( this ), false );
             return DrawSettings{ m_options, ClawUIElement<IUIDropdown>::getLabel(), m_textSize };
@@ -123,19 +138,30 @@ namespace workphone::ui
         const auto &label = settings.label;
         // Draw commands retain this pointer until conversion. Each dropdown owns
         // its descriptor so another control cannot change its queued text size.
-        if( !m_drawFont ) m_drawFont = std::make_unique<wp_user_font>();
+        if( !m_drawFont )
+        {
+            m_drawFont = std::make_unique<wp_user_font>();
+        }
         *m_drawFont = *ctx->style.font;
-        auto height = MathF::min( settings.textSize,
-            MathF::max( bounds.h - ctx->style.combo.content_padding.y * 2.0f, 1.0f ) );
-        const auto contentWidth = MathF::max(
-            bounds.w - bounds.h - ctx->style.combo.content_padding.x * 2.0f, 1.0f );
+        auto height =
+            MathF::min( settings.textSize,
+                        MathF::max( bounds.h - ctx->style.combo.content_padding.y * 2.0f, 1.0f ) );
+        const auto contentWidth =
+            MathF::max( bounds.w - bounds.h - ctx->style.combo.content_padding.x * 2.0f, 1.0f );
         const auto fit = [&]( const String &text ) {
             const auto width = m_drawFont->width( m_drawFont->userdata, height,
-                reinterpret_cast<const wp_c8 *>( text.c_str() ), static_cast<int>( text.size() ) );
-            if( width > contentWidth ) height *= contentWidth / width;
+                                                  reinterpret_cast<const wp_c8 *>( text.c_str() ),
+                                                  static_cast<int>( text.size() ) );
+            if( width > contentWidth )
+            {
+                height *= contentWidth / width;
+            }
         };
         fit( label );
-        for( const auto &option : options ) fit( option );
+        for( const auto &option : options )
+        {
+            fit( option );
+        }
         m_drawFont->height = height;
         const auto popupHeight = MathF::max( bounds.h, 24.0f );
         wp_vec2f popupSize = { bounds.w, popupHeight * MathF::min( 8.0f, static_cast<f32>(
@@ -145,8 +171,16 @@ namespace workphone::ui
             {
                 wp_context *context;
                 bool pushed;
-                ~FontScope() { if( pushed ) wp_style_pop_font( context ); }
+
+                ~FontScope()
+                {
+                    if( pushed )
+                    {
+                        wp_style_pop_font( context );
+                    }
+                }
             } font{ ctx, wp_style_push_font( ctx, m_drawFont.get() ) != 0 };
+
             // The scene canvas is transparent, but its combo popup must cover
             // controls underneath it. Popup panels inherit the window style.
             struct PopupBackgroundScope
@@ -154,31 +188,37 @@ namespace workphone::ui
                 wp_context *context;
                 wp_style_item fixedBackground;
                 wp_color background;
+
                 ~PopupBackgroundScope()
                 {
                     context->style.window.fixed_background = fixedBackground;
                     context->style.window.background = background;
                 }
             } popupBackground{ ctx, ctx->style.window.fixed_background, ctx->style.window.background };
+
             auto popupColour = ctx->style.combo.normal.type == WORKPHONE_STYLE_ITEM_COLOR
-                ? ctx->style.combo.normal.data.color : wp_rgb( 24, 28, 34 );
+                                   ? ctx->style.combo.normal.data.color
+                                   : wp_rgb( 24, 28, 34 );
             popupColour.a = 255;
             ctx->style.window.fixed_background = wp_style_item_color( popupColour );
             ctx->style.window.background = popupColour;
-            if( wp_combo_begin_label( ctx, reinterpret_cast<const wp_c8 *>( label.c_str() ), popupSize ) )
+            if( wp_combo_begin_label( ctx, reinterpret_cast<const wp_c8 *>( label.c_str() ),
+                                      popupSize ) )
             {
                 wp_layout_row_dynamic( ctx, popupHeight, 1 );
                 for( size_t i = 0; i < options.size(); ++i )
                 {
-                    if( wp_combo_item_label( ctx, reinterpret_cast<const wp_c8 *>( options[i].c_str() ), WORKPHONE_TEXT_LEFT ) )
+                    if( wp_combo_item_label( ctx, reinterpret_cast<const wp_c8 *>( options[i].c_str() ),
+                                             WORKPHONE_TEXT_LEFT ) )
                     {
                         u32 selected = 0;
                         bool changed = false;
                         {
                             ScopedLock lock( &dropdownStateMutex( this ) );
-                            const auto current = i < m_options.size() && m_options[i] == options[i]
-                                ? m_options.begin() + i
-                                : std::find( m_options.begin(), m_options.end(), options[i] );
+                            const auto current =
+                                i < m_options.size() && m_options[i] == options[i]
+                                    ? m_options.begin() + i
+                                    : std::find( m_options.begin(), m_options.end(), options[i] );
                             if( current != m_options.end() )
                             {
                                 selected = m_selected = static_cast<u32>( current - m_options.begin() );
@@ -186,7 +226,10 @@ namespace workphone::ui
                                 changed = true;
                             }
                         }
-                        if( changed ) notifyControlChange( this, IEvent::SELECT_HASH, { Parameter( selected ) } );
+                        if( changed )
+                        {
+                            notifyControlChange( this, IEvent::SELECT_HASH, { Parameter( selected ) } );
+                        }
                     }
                 }
                 wp_combo_end( ctx );
@@ -270,6 +313,7 @@ namespace workphone::ui
         {
             return;
         }
+
         // Axis monitors keep their normal appearance and programmatic value
         // updates while rejecting pointer input. Restore the shared layout's
         // input flags even when a clipped vertical widget returns early.
@@ -277,13 +321,23 @@ namespace workphone::ui
         {
             wp_panel *panel;
             wp_flags flags;
-            InputScope( wp_context *context, bool interactive )
-                : panel( context->current->layout ), flags( panel->flags )
+
+            InputScope( wp_context *context, bool interactive ) :
+                panel( context->current->layout ),
+                flags( panel->flags )
             {
-                if( !interactive ) panel->flags |= WORKPHONE_WINDOW_ROM;
+                if( !interactive )
+                {
+                    panel->flags |= WORKPHONE_WINDOW_ROM;
+                }
             }
-            ~InputScope() { panel->flags = flags; }
+
+            ~InputScope()
+            {
+                panel->flags = flags;
+            }
         } inputScope( ctx, getHandleInputEvents() );
+
         auto previous = m_value;
         if( m_direction == Direction::Horizontal )
         {
@@ -314,11 +368,10 @@ namespace workphone::ui
                 m_dragging = false;
                 return;
             }
-            const auto interactive = state != WORKPHONE_WIDGET_INVALID &&
-                                     state != WORKPHONE_WIDGET_ROM &&
-                                     state != WORKPHONE_WIDGET_DISABLED &&
-                                     !( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM ) &&
-                                     m_maxValue > m_minValue;
+            const auto interactive =
+                state != WORKPHONE_WIDGET_INVALID && state != WORKPHONE_WIDGET_ROM &&
+                state != WORKPHONE_WIDGET_DISABLED &&
+                !( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM ) && m_maxValue > m_minValue;
             const auto down = wp_input_is_mouse_down( &ctx->input, WORKPHONE_BUTTON_LEFT );
             if( !down || !interactive )
             {

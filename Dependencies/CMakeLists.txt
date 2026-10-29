@@ -41,10 +41,13 @@ if(NOT WP_BUILD_ALL_BOOST_LIBRARIES AND NOT BOOST_INCLUDE_LIBRARIES)
         list(APPEND BOOST_INCLUDE_LIBRARIES test)
     endif()
 endif()
+
 add_subdirectory(boost)
+add_subdirectory(cJSON)
 add_subdirectory(cppsqlite)
-add_subdirectory(FreeImage)
 add_subdirectory(freetype)
+add_subdirectory(FreeImage)
+
 if(WP_LUA_BACKEND STREQUAL "LuaJIT")
     add_subdirectory(luajit)
     add_library(lua INTERFACE)
@@ -55,6 +58,7 @@ else()
         add_subdirectory(luajit)
     endif()
 endif()
+
 add_subdirectory(lua_cjson)
 add_subdirectory(luabind)
 add_subdirectory(imgui)
@@ -110,6 +114,8 @@ foreach(_wp_boost_target IN ITEMS
         set_target_properties(${_wp_boost_target} PROPERTIES FOLDER Dependencies/boost)
     endif()
 endforeach()
+
+set_target_properties (cjson PROPERTIES FOLDER Dependencies/cjson)
 
 set_target_properties (FreeImage PROPERTIES FOLDER Dependencies/FreeImage)
 set_target_properties (freetype PROPERTIES FOLDER Dependencies/freetype)

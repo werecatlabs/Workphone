@@ -48,7 +48,10 @@ namespace workphone
 #    if WP_BUILD_IMGUI
                 // Consume value-only IME updates on the native window owner;
                 // they are neither gameplay input nor ImGui backend events.
-                if( detail::handlePlatformImeMessage( hwnd, message, wParam, lParam ) ) return 1;
+                if( detail::handlePlatformImeMessage( hwnd, message, wParam, lParam ) )
+                {
+                    return 1;
+                }
 #    endif
                 auto window = static_cast<ClawWindow *>( userData );
                 auto event = workphone::make_ptr<WindowMessageData>();
@@ -152,18 +155,31 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loading );
-            bool startupFullscreen=false;
-            if(getName()=="DefaultWindow")
-                if(auto app=core::IApplicationManager::instancePtr())
-                    if(auto settings=app->getPlayerSettings())
+            bool startupFullscreen = false;
+            if( getName() == "DefaultWindow" )
+            {
+                if( auto app = core::IApplicationManager::instancePtr() )
+                {
+                    if( auto settings = app->getPlayerSettings() )
                     {
-                        const auto resolution=settings->getPropertyAsInt("graphics.resolution");
-                        constexpr s32 sizes[][2]={{1920,1080},{1280,720},{2560,1440},{3840,2160}};
-                        if(resolution>=0 && resolution<4) resize(sizes[resolution][0],sizes[resolution][1]);
-                        else if(resolution==5) resize(std::max(1,settings->getPropertyAsInt("graphics.customWidth")),
-                                                      std::max(1,settings->getPropertyAsInt("graphics.customHeight")));
-                        settings->getPropertyValue("graphics.fullscreen",startupFullscreen);
+                        const auto resolution = settings->getPropertyAsInt( "graphics.resolution" );
+                        constexpr s32 sizes[][2] = {
+                            { 1920, 1080 }, { 1280, 720 }, { 2560, 1440 }, { 3840, 2160 }
+                        };
+                        if( resolution >= 0 && resolution < 4 )
+                        {
+                            resize( sizes[resolution][0], sizes[resolution][1] );
+                        }
+                        else if( resolution == 5 )
+                        {
+                            resize(
+                                std::max( 1, settings->getPropertyAsInt( "graphics.customWidth" ) ),
+                                std::max( 1, settings->getPropertyAsInt( "graphics.customHeight" ) ) );
+                        }
+                        settings->getPropertyValue( "graphics.fullscreen", startupFullscreen );
                     }
+                }
+            }
             const auto requestedSize = getSize();
             WP_LOG_INFO( "WPGraphics/Window: loading '" + getName() + "' at " +
                          std::to_string( requestedSize.x ) + "x" + std::to_string( requestedSize.y ) );
@@ -205,7 +221,10 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loaded );
-            if(startupFullscreen) setFullscreen(true);
+            if( startupFullscreen )
+            {
+                setFullscreen( true );
+            }
             WP_LOG_INFO( "WPGraphics/Window: '" + getName() + "' initialized." );
         }
 
@@ -266,7 +285,10 @@ namespace workphone
         void ClawWindow::setFullscreen( bool fullscreen, u32 width, u32 height )
         {
             setFullscreen( fullscreen );
-            if( !fullscreen && width && height ) resize( width, height );
+            if( !fullscreen && width && height )
+            {
+                resize( width, height );
+            }
         }
 
         bool ClawWindow::isFullScreen() const
@@ -284,27 +306,36 @@ namespace workphone
             void *native = nullptr;
             getWindowHandle( &native );
             auto handle = static_cast<HWND>( native );
-            if( !handle || fullscreen == m_nativeFullscreen ) return;
+            if( !handle || fullscreen == m_nativeFullscreen )
+            {
+                return;
+            }
             if( fullscreen )
             {
                 RECT rectangle{};
                 GetWindowRect( handle, &rectangle );
                 m_windowedPosition = Vector2I( rectangle.left, rectangle.top );
-                m_windowedSize = Vector2I( rectangle.right - rectangle.left, rectangle.bottom - rectangle.top );
+                m_windowedSize =
+                    Vector2I( rectangle.right - rectangle.left, rectangle.bottom - rectangle.top );
                 m_windowedStyle = GetWindowLongPtr( handle, GWL_STYLE );
                 MONITORINFO monitor{};
                 monitor.cbSize = sizeof( monitor );
-                if( !GetMonitorInfo( MonitorFromWindow( handle, MONITOR_DEFAULTTONEAREST ), &monitor ) ) return;
+                if( !GetMonitorInfo( MonitorFromWindow( handle, MONITOR_DEFAULTTONEAREST ), &monitor ) )
+                {
+                    return;
+                }
                 SetWindowLongPtr( handle, GWL_STYLE, m_windowedStyle & ~WS_OVERLAPPEDWINDOW );
                 SetWindowPos( handle, HWND_TOP, monitor.rcMonitor.left, monitor.rcMonitor.top,
-                    monitor.rcMonitor.right - monitor.rcMonitor.left,
-                    monitor.rcMonitor.bottom - monitor.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER );
+                              monitor.rcMonitor.right - monitor.rcMonitor.left,
+                              monitor.rcMonitor.bottom - monitor.rcMonitor.top,
+                              SWP_FRAMECHANGED | SWP_NOOWNERZORDER );
             }
             else
             {
                 SetWindowLongPtr( handle, GWL_STYLE, m_windowedStyle );
                 SetWindowPos( handle, nullptr, m_windowedPosition.x, m_windowedPosition.y,
-                              m_windowedSize.x, m_windowedSize.y, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER );
+                              m_windowedSize.x, m_windowedSize.y,
+                              SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER );
             }
             m_nativeFullscreen = fullscreen;
             windowMovedOrResized();
@@ -417,12 +448,13 @@ namespace workphone
         {
             if( !tryCopyContentsToMemory( buffer, size, bufferId ) )
             {
-                WP_LOG_WARNING( "ClawWindow::copyContentsToMemory: back buffer unavailable or RGBA8 buffer too small." );
+                WP_LOG_WARNING(
+                    "ClawWindow::copyContentsToMemory: back buffer unavailable or RGBA8 buffer too "
+                    "small." );
             }
         }
 
-        bool ClawWindow::tryCopyContentsToMemory( void *buffer, u32 size,
-                                                  FrameBuffer bufferId ) const
+        bool ClawWindow::tryCopyContentsToMemory( void *buffer, u32 size, FrameBuffer bufferId ) const
         {
             if( !buffer || !size || bufferId == FrameBuffer::Front || bufferId == FrameBuffer::Count )
             {
@@ -430,8 +462,8 @@ namespace workphone
             }
             auto app = core::IApplicationManager::instancePtr();
             auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
-            auto renderer = graphics
-                ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
+            auto renderer =
+                graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
             auto *dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
             void *windowHandle = nullptr;
             const_cast<ClawWindow *>( this )->getWindowHandle( &windowHandle );

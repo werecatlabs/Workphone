@@ -6,7 +6,8 @@ param(
     [string]$Generator,
     [switch]$IncludeEditor,
     [switch]$RequireExternalAssets,
-    [switch]$CaptureCrashDumps
+    [switch]$CaptureCrashDumps,
+    [switch]$IncludeTerrainPackage
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
@@ -64,4 +65,7 @@ foreach ($config in $Configuration) {
     if ($IncludeEditor) { $buildArguments += 'Editor' }
     Invoke-BaselineCMake ($buildArguments + @('--', '/nodeReuse:false', '/verbosity:minimal')) (Join-Path $buildPath "baseline-$config-build.log")
     & (Join-Path $PSScriptRoot 'ValidateClawGraphics.ps1') -BuildDirectory $buildPath -Configuration $config -CTestExecutable $ctestExecutable -RequireExternalAssets:$RequireExternalAssets -CaptureCrashDumps:$CaptureCrashDumps
+    if ($IncludeTerrainPackage) {
+        & (Join-Path $PSScriptRoot 'ValidateTerrainPackage.ps1') -BuildDirectory $buildPath -Configuration $config
+    }
 }

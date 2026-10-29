@@ -8,7 +8,7 @@
 #include <Workphone/Workphone.hpp>
 #include <cmath>
 #if defined( _WIN32 )
-#include <WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.h>
+#    include <WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.h>
 #endif
 
 namespace workphone
@@ -37,7 +37,8 @@ namespace workphone
         {
             wp_particle_simulation_destroy( m_simulation );
 #if defined( _WIN32 )
-            wp_particle_compute_dx11_destroy( static_cast<wp_particle_compute_dx11 *>( m_particleCompute ) );
+            wp_particle_compute_dx11_destroy(
+                static_cast<wp_particle_compute_dx11 *>( m_particleCompute ) );
 #endif
         }
 

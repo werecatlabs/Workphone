@@ -167,14 +167,16 @@ namespace workphone::render
 
     bool ClawGraphicsPipeline::captureSoftwareFrame( wp_renderer *renderer )
     {
-        const auto profile=GraphicsPipeline::getProperties();
+        const auto profile = GraphicsPipeline::getProperties();
         auto software = renderer ? wp_renderer_get_software( renderer ) : nullptr;
         if( !software || !isInitialized() )
         {
             return false;
         }
         if( profile && profile->getPropertyAsInt( "graphics.antiAliasing" ) == 1 )
+        {
             wp_renderer_software_render( software, WORKPHONE_ANTI_ALIASING_ON );
+        }
 
         const auto width = wp_renderer_software_get_width( software );
         const auto height = wp_renderer_software_get_height( software );
@@ -371,15 +373,17 @@ namespace workphone::render
         setTaoaSettings( getTaoaSettings() );
         setHdrSettings( getHdrSettings() );
         setCsmSettings( getCsmSettings() );
-        const auto profile=GraphicsPipeline::getProperties();
+        const auto profile = GraphicsPipeline::getProperties();
         if( profile )
         {
-            const bool hdr = !profile->hasProperty( "graphics.hdr" ) ||
-                             profile->getPropertyAsBool( "graphics.hdr" );
-            const s32 colorSpace = profile->hasProperty( "graphics.colorSpace" ) ?
-                                  profile->getPropertyAsInt( "graphics.colorSpace" ) : 1;
-            const s32 tonemapping = profile->hasProperty( "graphics.tonemapping" ) ?
-                                   profile->getPropertyAsInt( "graphics.tonemapping" ) : 3;
+            const bool hdr =
+                !profile->hasProperty( "graphics.hdr" ) || profile->getPropertyAsBool( "graphics.hdr" );
+            const s32 colorSpace = profile->hasProperty( "graphics.colorSpace" )
+                                       ? profile->getPropertyAsInt( "graphics.colorSpace" )
+                                       : 1;
+            const s32 tonemapping = profile->hasProperty( "graphics.tonemapping" )
+                                        ? profile->getPropertyAsInt( "graphics.tonemapping" )
+                                        : 3;
             wp_pipeline_set_output_options( m_nativePipeline, hdr, colorSpace, tonemapping );
         }
         setDebugView( getDebugView() );

@@ -27,13 +27,19 @@ namespace workphone
             MaterialProgramReloadDX11::Ptr controller;
             u64 shaderIDRevision = 0;
             u64 revision = 0;
+
             RuntimeState()
             {
                 String error;
-                cpu = WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,sizeof(RuntimeState),error);
-                if(!cpu) throw std::bad_alloc();
+                cpu = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu,
+                                                                  sizeof( RuntimeState ), error );
+                if( !cpu )
+                {
+                    throw std::bad_alloc();
+                }
             }
         };
+
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMaterial, Material );
 
         const String ClawMaterial::diffuseColourStr = "diffuseColour";
@@ -58,7 +64,7 @@ namespace workphone
 
         ClawMaterial::~ClawMaterial()
         {
-            detail::forgetShaderReload(this);
+            detail::forgetShaderReload( this );
             if( m_material )
             {
                 wp_graphics_material_destroy( m_material );
@@ -66,71 +72,118 @@ namespace workphone
             }
         }
 
-        void ClawMaterial::setRuntimeProgram(MaterialProgramDX11::Ptr program,
-            std::shared_ptr<MaterialProgramResourcesDX11> resources)
+        void ClawMaterial::setRuntimeProgram( MaterialProgramDX11::Ptr program,
+                                              std::shared_ptr<MaterialProgramResourcesDX11> resources )
         {
-            if(!program) { m_runtime.reset(); detail::shaderReloadAttached(this,0); return; }
-            auto candidate = std::make_unique<RuntimeState>();
-            candidate->shaderIDRevision=getShaderIDRevision();
-            candidate->publication = program->Capture(getShaderParameters(), resources);
-            candidate->program = std::move(program); candidate->resources = std::move(resources);
-            candidate->revision = getShaderParameters().GetRevision();
-            m_runtime = std::move(candidate);
-            detail::shaderReloadAttached(this,0);
-        }
-        std::shared_ptr<MaterialProgramResourcesDX11> ClawMaterial::runtimeShaderResources() const
-        { return m_runtime?m_runtime->resources:nullptr; }
-
-        void ClawMaterial::copyRuntimeShaderTo(ClawMaterial &target) const
-        {
-            if(!m_runtime) return;
-            target.setShaderID(getShaderID());
-            target.getShaderParameters()=getShaderParameters();
-            if(m_runtime->controller)
+            if( !program )
             {
-                detail::copyShaderFiles(this,&target);
-                target.setRuntimeReload(m_runtime->controller,m_runtime->resources);
+                m_runtime.reset();
+                detail::shaderReloadAttached( this, 0 );
+                return;
             }
-            else target.setRuntimeProgram(m_runtime->program,m_runtime->resources);
+            auto candidate = std::make_unique<RuntimeState>();
+            candidate->shaderIDRevision = getShaderIDRevision();
+            candidate->publication = program->Capture( getShaderParameters(), resources );
+            candidate->program = std::move( program );
+            candidate->resources = std::move( resources );
+            candidate->revision = getShaderParameters().GetRevision();
+            m_runtime = std::move( candidate );
+            detail::shaderReloadAttached( this, 0 );
         }
 
-        bool ClawMaterial::hasRuntimeProgram() const { return bool(m_runtime); }
+        std::shared_ptr<MaterialProgramResourcesDX11> ClawMaterial::runtimeShaderResources() const
+        {
+            return m_runtime ? m_runtime->resources : nullptr;
+        }
+
+        void ClawMaterial::copyRuntimeShaderTo( ClawMaterial &target ) const
+        {
+            if( !m_runtime )
+            {
+                return;
+            }
+            target.setShaderID( getShaderID() );
+            target.getShaderParameters() = getShaderParameters();
+            if( m_runtime->controller )
+            {
+                detail::copyShaderFiles( this, &target );
+                target.setRuntimeReload( m_runtime->controller, m_runtime->resources );
+            }
+            else
+            {
+                target.setRuntimeProgram( m_runtime->program, m_runtime->resources );
+            }
+        }
+
+        bool ClawMaterial::hasRuntimeProgram() const
+        {
+            return bool( m_runtime );
+        }
+
         bool ClawMaterial::refreshRuntimeShaderSelection()
         {
-            if(!m_runtime) return false;
+            if( !m_runtime )
+            {
+                return false;
+            }
             // A logical shader switch can retain the same layout. Its numeric
             // authoring token keeps unchanged warm submissions free of strings.
-            if(m_runtime->shaderIDRevision!=getShaderIDRevision())
-            { m_runtime.reset();detail::forgetShaderReload(this);return true; }
+            if( m_runtime->shaderIDRevision != getShaderIDRevision() )
+            {
+                m_runtime.reset();
+                detail::forgetShaderReload( this );
+                return true;
+            }
             return false;
         }
 
-        void ClawMaterial::setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
-            std::shared_ptr<MaterialProgramResourcesDX11> resources)
+        void ClawMaterial::setRuntimeReload( MaterialProgramReloadDX11::Ptr reload,
+                                             std::shared_ptr<MaterialProgramResourcesDX11> resources )
         {
-            if(!reload) { m_runtime.reset();detail::shaderReloadAttached(this,0);return; }
+            if( !reload )
+            {
+                m_runtime.reset();
+                detail::shaderReloadAttached( this, 0 );
+                return;
+            }
             auto candidate = std::make_unique<RuntimeState>();
-            candidate->shaderIDRevision=getShaderIDRevision();
-            detail::prepareShaderReloadStatus(this);
-            candidate->resources=resources;candidate->controller=reload;
-            candidate->reload = reload->Attach(getShaderParameters(),std::move(resources));
-            m_runtime = std::move(candidate);
-            detail::shaderReloadAttached(this,reload->GetId());
+            candidate->shaderIDRevision = getShaderIDRevision();
+            detail::prepareShaderReloadStatus( this );
+            candidate->resources = resources;
+            candidate->controller = reload;
+            candidate->reload = reload->Attach( getShaderParameters(), std::move( resources ) );
+            m_runtime = std::move( candidate );
+            detail::shaderReloadAttached( this, reload->GetId() );
         }
 
         MaterialProgramDX11::PublicationPtr ClawMaterial::getRuntimePublication()
         {
             refreshRuntimeShaderSelection();
-            if(!m_runtime) return {};
-            if(m_runtime->reload) return m_runtime->reload->GetPublication();
+            if( !m_runtime )
+            {
+                return {};
+            }
+            if( m_runtime->reload )
+            {
+                return m_runtime->reload->GetPublication();
+            }
             const auto &values = getShaderParameters();
-            if(!m_runtime->program->IsCurrent(values.GetLayout())) return {};
-            if(m_runtime->revision != values.GetRevision())
+            if( !m_runtime->program->IsCurrent( values.GetLayout() ) )
+            {
+                return {};
+            }
+            if( m_runtime->revision != values.GetRevision() )
             {
                 MaterialProgramDX11::PublicationPtr candidate;
-                try { candidate = m_runtime->program->Capture(values, m_runtime->resources); }
-                catch(const std::runtime_error &) { return {}; } // incompatible schema: defer
-                m_runtime->publication = std::move(candidate);
+                try
+                {
+                    candidate = m_runtime->program->Capture( values, m_runtime->resources );
+                }
+                catch( const std::runtime_error & )
+                {
+                    return {};
+                }  // incompatible schema: defer
+                m_runtime->publication = std::move( candidate );
                 m_runtime->revision = values.GetRevision();
             }
             return m_runtime->publication;
@@ -186,7 +239,10 @@ namespace workphone
             {
                 setLoadingState( LoadingState::Loading );
                 loadResource( nullptr );
-                if( !m_material ) throw std::bad_alloc();
+                if( !m_material )
+                {
+                    throw std::bad_alloc();
+                }
                 createMaterialByType();
                 Material::load( data );
                 syncNativeMaterial();
@@ -196,13 +252,22 @@ namespace workphone
                     String error;
                     auto working = WorldStreamingScheduler::shared()->reserve(
                         StreamMemoryClass::SourceCpu, m_documentWorkingBytes, error );
-                    if( !working ) throw std::runtime_error( error.c_str() );
+                    if( !working )
+                    {
+                        throw std::runtime_error( error.c_str() );
+                    }
                     auto document = authoringDocument();
                     if( document.capacity() + 1 > m_documentWorkingBytes )
-                        throw std::runtime_error( "Material authoring document exceeds its preparation allowance" );
+                    {
+                        throw std::runtime_error(
+                            "Material authoring document exceeds its preparation allowance" );
+                    }
                     auto retained = WorldStreamingScheduler::shared()->reserve(
                         StreamMemoryClass::SourceCpu, document.capacity() + 1, error );
-                    if( !retained ) throw std::runtime_error( error.c_str() );
+                    if( !retained )
+                    {
+                        throw std::runtime_error( error.c_str() );
+                    }
                     m_residentDocument.swap( document );
                     m_documentBudget = std::move( retained );
                     m_fileResident = true;
@@ -224,19 +289,30 @@ namespace workphone
             // The preparation guard compares physical byte counts. Binary reads
             // preserve CRLF bytes on Windows so a stable text file is not rejected.
             auto stream = files->open( filePath, true, true, false, false, false );
-            if( !stream ) stream = files->open( filePath, true, true, false, true, true );
-            if( !stream ) return; // Procedural names are not reloadable assets.
+            if( !stream )
+            {
+                stream = files->open( filePath, true, true, false, true, true );
+            }
+            if( !stream )
+            {
+                return;  // Procedural names are not reloadable assets.
+            }
             const u64 bytes = stream->size();
             // Bound descriptor parsing independently of the city cell count.
             // This allowance covers text, parsed properties and serialization;
             // immutable render versions carry their own exact reservations.
             if( bytes > ( 1ull << 20 ) )
+            {
                 throw std::runtime_error( "Material source exceeds the 1 MiB descriptor limit" );
+            }
             const u64 preparationBytes = bytes * 32 + ( 64ull << 10 );
             String error;
-            auto preparation = WorldStreamingScheduler::shared()->reserve(
-                StreamMemoryClass::SourceCpu, preparationBytes, error );
-            if( !preparation ) throw std::runtime_error( error.c_str() );
+            auto preparation = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu,
+                                                                           preparationBytes, error );
+            if( !preparation )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
             String text;
             text.resize( static_cast<size_t>( bytes ) );
             stream->seek( 0 );
@@ -244,17 +320,25 @@ namespace workphone
             while( offset < text.size() )
             {
                 const auto read = stream->read( &text[offset], text.size() - offset );
-                if( !read ) throw std::runtime_error( "Material source changed during preparation" );
+                if( !read )
+                {
+                    throw std::runtime_error( "Material source changed during preparation" );
+                }
                 offset += read;
             }
             char extra;
             if( stream->read( &extra, 1 ) )
+            {
                 throw std::runtime_error( "Material source grew during preparation" );
+            }
             auto properties = make_ptr<Properties>();
             DataUtil::parse( text, properties.get() );
             fromData( properties );
             FileInfo fileInfo;
-            if( files->findFileInfo( filePath, fileInfo ) ) setFileSystemId( fileInfo.fileId );
+            if( files->findFileInfo( filePath, fileInfo ) )
+            {
+                setFileSystemId( fileInfo.fileId );
+            }
             setFilePath( filePath );
             m_documentWorkingBytes = Path::getFileExtension( filePath ) == ".mat" ? preparationBytes : 0;
         }
@@ -262,11 +346,17 @@ namespace workphone
         String ClawMaterial::authoringDocument() const
         {
             auto properties = static_pointer_cast<Properties>( toData() );
-            if( !properties ) throw std::runtime_error( "Material serialization failed" );
+            if( !properties )
+            {
+                throw std::runtime_error( "Material serialization failed" );
+            }
             // Include shader parameters and native/editor aliases as well as
             // the pass graph. Equality protects every serialized authoring edit.
             auto editor = getProperties();
-            if( !editor ) throw std::runtime_error( "Material properties serialization failed" );
+            if( !editor )
+            {
+                throw std::runtime_error( "Material properties serialization failed" );
+            }
             editor->removeProperty( ISharedObject::referencesStr );
             editor->removeProperty( ISharedObject::weakReferencesStr );
             editor->removeProperty( ISharedObject::loadingStateStr );
@@ -279,8 +369,16 @@ namespace workphone
                 node.removeProperty( ISharedObject::loadingStateStr );
                 node.removeProperty( ISharedObject::loadedStr );
                 if( node.getName() == "textures" && node.getProperty( "texturePath" ).empty() )
-                    node.removeProperty( "texturePath" ); // Empty lazy facade equals an empty slot.
-                for( const auto &child : node.getChildren() ) if( child ) self( self, *child );
+                {
+                    node.removeProperty( "texturePath" );  // Empty lazy facade equals an empty slot.
+                }
+                for( const auto &child : node.getChildren() )
+                {
+                    if( child )
+                    {
+                        self( self, *child );
+                    }
+                }
             };
             sanitize( sanitize, *properties );
             return DataUtil::toString( properties.get(), false );
@@ -297,7 +395,10 @@ namespace workphone
             std::atomic_store( &m_cubicTextures, CubicTextureSnapshot{} );
             m_syncedRenderState.reset();
             m_syncedNativeRevision = 0;
-            if( m_material ) wp_graphics_material_destroy( m_material );
+            if( m_material )
+            {
+                wp_graphics_material_destroy( m_material );
+            }
             m_material = nullptr;
             m_fileResident = false;
             m_documentWorkingBytes = 0;
@@ -307,87 +408,177 @@ namespace workphone
 
         bool ClawMaterial::releaseUnusedResources()
         {
-            if( !m_fileResident || !isLoaded() || isLoadLocked() || getReferences() != 2 || m_root.load() )
+            if( !m_fileResident || !isLoaded() || isLoadLocked() || getReferences() != 2 ||
+                m_root.load() )
+            {
                 return false;
+            }
             try
             {
                 auto application = core::IApplicationManager::instance();
                 auto files = application->getFileSystem();
                 // Never destroy the sole copy after its backing source disappears.
                 auto source = files->open( getFilePath(), true, false, false, false, false );
-                if( !source ) source = files->open( getFilePath(), true, false, false, true, true );
-                if( !source || !source->size() || source->size() > ( 1ull << 20 ) ) return false;
+                if( !source )
+                {
+                    source = files->open( getFilePath(), true, false, false, true, true );
+                }
+                if( !source || !source->size() || source->size() > ( 1ull << 20 ) )
+                {
+                    return false;
+                }
 
                 s32 materialWeakOwners = 0;
                 if( auto context = getStateContext() )
                 {
-                    if( context->getOwnerPtr() == this ) ++materialWeakOwners;
+                    if( context->getOwnerPtr() == this )
+                    {
+                        ++materialWeakOwners;
+                    }
                     for( const auto &listener : context->getStateListeners() )
+                    {
                         if( auto owner = dynamic_cast<MaterialStateListener *>( listener.get() ) )
-                            if( owner->getOwner().get() == this ) ++materialWeakOwners;
+                        {
+                            if( owner->getOwner().get() == this )
+                            {
+                                ++materialWeakOwners;
+                            }
+                        }
+                    }
                 }
                 const auto techniques = getTechniques();
                 for( const auto &technique : techniques )
                 {
-                    if( !technique ) continue;
+                    if( !technique )
+                    {
+                        continue;
+                    }
                     // One list owner, this bounded inspection and the optional
                     // primary cache are the only permitted strong owners.
                     const s32 techniqueOwners = 2 + ( m_technique.get() == technique.get() );
                     if( technique->isLoadLocked() || !technique->isEnabled() ||
-                        technique->getReferences() != techniqueOwners ) return false;
-                    if( technique->getMaterial().get() == this ) ++materialWeakOwners;
-                    else return false;
+                        technique->getReferences() != techniqueOwners )
+                    {
+                        return false;
+                    }
+                    if( technique->getMaterial().get() == this )
+                    {
+                        ++materialWeakOwners;
+                    }
+                    else
+                    {
+                        return false;
+                    }
                     s32 techniqueWeakOwners = 0;
                     const auto passes = technique->getPasses();
                     for( const auto &pass : passes )
                     {
-                        if( !pass ) continue;
+                        if( !pass )
+                        {
+                            continue;
+                        }
                         const s32 passOwners = 2 + ( m_pass.get() == pass.get() );
                         if( pass->isLoadLocked() || !pass->isEnabled() ||
-                            pass->getReferences() != passOwners ) return false;
-                        if( pass->getMaterial().get() == this ) ++materialWeakOwners;
-                        else return false;
-                        if( pass->getParentPtr() == technique.get() ) ++techniqueWeakOwners;
-                        else return false;
+                            pass->getReferences() != passOwners )
+                        {
+                            return false;
+                        }
+                        if( pass->getMaterial().get() == this )
+                        {
+                            ++materialWeakOwners;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                        if( pass->getParentPtr() == technique.get() )
+                        {
+                            ++techniqueWeakOwners;
+                        }
+                        else
+                        {
+                            return false;
+                        }
                         auto concretePass = dynamic_cast<MaterialPass *>( pass.get() );
-                        if( !concretePass ) return false;
+                        if( !concretePass )
+                        {
+                            return false;
+                        }
                         s32 passWeakOwners = 0;
                         if( auto context = pass->getStateContext() )
                         {
                             auto state = context->getStateById( pass->getId() );
-                            if( !state || state->getOwnerPtr() != pass.get() ) return false;
+                            if( !state || state->getOwnerPtr() != pass.get() )
+                            {
+                                return false;
+                            }
                             // The managed state and its texture binding observer
                             // each retain an intrinsic weak back-reference.
-                            if( !state->getData() || !state->getData()->isDerived<MaterialPassStateData>() )
+                            if( !state->getData() ||
+                                !state->getData()->isDerived<MaterialPassStateData>() )
+                            {
                                 return false;
+                            }
                             passWeakOwners += 2;
                         }
                         const auto units = concretePass->getMaterializedTextureUnits();
                         for( const auto &unit : units )
                         {
-                            if( !unit ) continue;
+                            if( !unit )
+                            {
+                                continue;
+                            }
                             auto concreteUnit = dynamic_cast<MaterialTexture *>( unit.get() );
                             // Scale/tint/animation facades are not fully represented
                             // by legacy .mat serialization; retain those edits.
                             if( !concreteUnit || concreteUnit->getTextureAuthoringStorageBytes() ||
                                 unit->isLoadLocked() || !unit->isEnabled() ||
                                 unit->getReferences() != 2 || unit->getWeakReferences() != 0 )
+                            {
                                 return false;
-                            if( unit->getMaterial().get() == this ) ++materialWeakOwners;
-                            else return false;
-                            if( unit->getParentPtr() == pass.get() ) ++passWeakOwners;
-                            else return false;
+                            }
+                            if( unit->getMaterial().get() == this )
+                            {
+                                ++materialWeakOwners;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                            if( unit->getParentPtr() == pass.get() )
+                            {
+                                ++passWeakOwners;
+                            }
+                            else
+                            {
+                                return false;
+                            }
                         }
-                        if( pass->getWeakReferences() != passWeakOwners ) return false;
+                        if( pass->getWeakReferences() != passWeakOwners )
+                        {
+                            return false;
+                        }
                     }
-                    if( technique->getWeakReferences() != techniqueWeakOwners ) return false;
+                    if( technique->getWeakReferences() != techniqueWeakOwners )
+                    {
+                        return false;
+                    }
                 }
-                if( getWeakReferences() != materialWeakOwners ) return false;
+                if( getWeakReferences() != materialWeakOwners )
+                {
+                    return false;
+                }
                 String error;
                 auto working = WorldStreamingScheduler::shared()->reserve(
                     StreamMemoryClass::WorkingCpu, m_documentWorkingBytes, error );
-                if( !working ) return false;
-                if( authoringDocument() != m_residentDocument ) return false;
+                if( !working )
+                {
+                    return false;
+                }
+                if( authoringDocument() != m_residentDocument )
+                {
+                    return false;
+                }
                 // All serialized authoring values still match the reload source.
                 // Independently retained draw snapshots keep their own textures
                 // and SourceCpu reservations through their final reader.
@@ -407,11 +598,20 @@ namespace workphone
 
         void ClawMaterial::syncNativeMaterial() const
         {
-            if( !m_material ) return;
+            if( !m_material )
+            {
+                return;
+            }
             const auto state = getRenderState();
-            if( !state ) return;
+            if( !state )
+            {
+                return;
+            }
             if( m_syncedRenderState == state &&
-                m_syncedNativeRevision == wp_graphics_material_get_revision( m_material ) ) return;
+                m_syncedNativeRevision == wp_graphics_material_get_revision( m_material ) )
+            {
+                return;
+            }
             wp_graphics_material_values values;
             values.struct_size = sizeof( values );
             wp_graphics_material_get_values( m_material, &values );
@@ -429,8 +629,9 @@ namespace workphone
             values.transmission = state->refractionAmount;
             values.index_of_refraction = state->refractionIor;
             values.blend_mode = ClawUtil::toCBlendMode( state->blendMode );
-            values.cull_mode = state->getFlag( doubleSidedFlag ) ? WORKPHONE_CULL_MODE_NONE :
-                                                                   ClawUtil::toCCullMode( state->cullMode );
+            values.cull_mode = state->getFlag( doubleSidedFlag )
+                                   ? WORKPHONE_CULL_MODE_NONE
+                                   : ClawUtil::toCCullMode( state->cullMode );
             const auto setFlag = [&]( wp_u32 flag, bool enabled ) {
                 values.flags = enabled ? values.flags | flag : values.flags & ~flag;
             };
@@ -662,7 +863,7 @@ namespace workphone
                     WP_LOG_WARNING(
                         "ClawMaterial::getProperties: native material is null, returning base "
                         "properties." );
-                    detail::appendShaderFiles(this,properties);
+                    detail::appendShaderFiles( this, properties );
                     return properties;
                 }
 
@@ -698,7 +899,7 @@ namespace workphone
                 }
 
                 properties->setProperty( dirtyStr, wp_graphics_material_is_dirty( m_material ) != 0 );
-                detail::appendShaderFiles(this,properties);
+                detail::appendShaderFiles( this, properties );
                 return properties;
             }
             catch( std::exception &e )
@@ -721,13 +922,20 @@ namespace workphone
 
                 MaterialPublicationScope publication;
                 Material::setProperties( properties );
-                if(detail::restoreShaderSchema(this,properties)) restoreShaderParameterProperties(properties);
-                String pixel,vertex;bool watching=true;
-                if(properties->getPropertyValue("runtimeShaderPixelFile",pixel) && !pixel.empty())
+                if( detail::restoreShaderSchema( this, properties ) )
                 {
-                    properties->getPropertyValue("runtimeShaderVertexFile",vertex);
-                    requestRuntimeShaderFiles(vertex,pixel);
-                    if(properties->getPropertyValue("runtimeShaderWatching",watching)) setRuntimeShaderWatching(watching);
+                    restoreShaderParameterProperties( properties );
+                }
+                String pixel, vertex;
+                bool watching = true;
+                if( properties->getPropertyValue( "runtimeShaderPixelFile", pixel ) && !pixel.empty() )
+                {
+                    properties->getPropertyValue( "runtimeShaderVertexFile", vertex );
+                    requestRuntimeShaderFiles( vertex, pixel );
+                    if( properties->getPropertyValue( "runtimeShaderWatching", watching ) )
+                    {
+                        setRuntimeShaderWatching( watching );
+                    }
                 }
 
                 if( !m_material )
@@ -743,26 +951,42 @@ namespace workphone
                 // present, rather than feeding those mirrors back into its owner.
                 // A partial legacy-only bag remains a material-wide editor edit.
                 const auto authored = [&]( const String &name ) {
-                    const bool active = m_shaderWorkflow == ShaderWorkflow::Pbr ||
+                    const bool active =
+                        m_shaderWorkflow == ShaderWorkflow::Pbr ||
                         ( m_shaderWorkflow == ShaderWorkflow::Unlit &&
                           ( name == shaderEmissiveParamStr || name == shaderOpacityParamStr ) ) ||
                         ( m_shaderWorkflow == ShaderWorkflow::ColorOnly &&
                           ( name == shaderColorParamStr || name == shaderOpacityParamStr ) );
-                    return active &&
-                           properties->hasProperty( shaderParamPrefixStr + name );
+                    return active && properties->hasProperty( shaderParamPrefixStr + name );
                 };
                 const auto restorePasses = [&]( const auto &update ) {
                     for( auto technique : getTechniques() )
+                    {
                         if( technique )
+                        {
                             for( auto pass : technique->getPasses() )
-                                if( pass ) update( *pass );
+                            {
+                                if( pass )
+                                {
+                                    update( *pass );
+                                }
+                            }
+                        }
+                    }
                 };
                 auto diffuseColour = getDiffuse();
                 if( properties->getPropertyValue( diffuseColourStr, diffuseColour ) )
                 {
-                    if( authored( shaderAlbedoParamStr ) || authored( shaderColorParamStr ) || authored( shaderOpacityParamStr ) )
-                        restorePasses( [&]( IMaterialPass &pass ) { pass.setDiffuse( diffuseColour ); } );
-                    else setDiffuse( diffuseColour );
+                    if( authored( shaderAlbedoParamStr ) || authored( shaderColorParamStr ) ||
+                        authored( shaderOpacityParamStr ) )
+                    {
+                        restorePasses(
+                            [&]( IMaterialPass &pass ) { pass.setDiffuse( diffuseColour ); } );
+                    }
+                    else
+                    {
+                        setDiffuse( diffuseColour );
+                    }
                 }
 
                 auto specularColour = getSpecular();
@@ -782,24 +1006,40 @@ namespace workphone
                 if( properties->getPropertyValue( emissiveColourStr, emissiveColour ) )
                 {
                     if( authored( shaderEmissiveParamStr ) || authored( shaderColorParamStr ) )
-                        restorePasses( [&]( IMaterialPass &pass ) { pass.setEmissive( emissiveColour ); } );
-                    else setEmissive( emissiveColour );
+                    {
+                        restorePasses(
+                            [&]( IMaterialPass &pass ) { pass.setEmissive( emissiveColour ); } );
+                    }
+                    else
+                    {
+                        setEmissive( emissiveColour );
+                    }
                 }
 
                 auto metalness = getMetalness();
                 if( properties->getPropertyValue( metalnessStr, metalness ) )
                 {
                     if( authored( shaderMetalnessParamStr ) )
+                    {
                         restorePasses( [&]( IMaterialPass &pass ) { pass.setMetalness( metalness ); } );
-                    else setMetalness( metalness );
+                    }
+                    else
+                    {
+                        setMetalness( metalness );
+                    }
                 }
 
                 auto roughness = getRoughness();
                 if( properties->getPropertyValue( roughnessStr, roughness ) )
                 {
                     if( authored( shaderRoughnessParamStr ) )
+                    {
                         restorePasses( [&]( IMaterialPass &pass ) { pass.setRoughness( roughness ); } );
-                    else setRoughness( roughness );
+                    }
+                    else
+                    {
+                        setRoughness( roughness );
+                    }
                 }
 
                 auto flags = wp_graphics_material_get_flags( m_material );

@@ -201,7 +201,10 @@ namespace workphone::render
         std::shared_ptr<const resource::RuntimeResource> resource, String &error )
     {
         error.clear();
-        if( !m_data->checkOwner( error ) ) return {};
+        if( !m_data->checkOwner( error ) )
+        {
+            return {};
+        }
         if( m_data->ticket == std::numeric_limits<u64>::max() )
         {
             error = "Cooked material request sequence exhausted; recreate the owner.";
@@ -252,26 +255,46 @@ namespace workphone::render
                                              SmartPtr<ClawTexture> &destination ) {
                 for( const auto &dependency : candidate->resource->dependencies )
                 {
-                    if( !dependency || dependency->header.resourceId != id ) continue;
+                    if( !dependency || dependency->header.resourceId != id )
+                    {
+                        continue;
+                    }
                     CookedTextureData texture;
-                    if( !decodeCookedTexture( *dependency, texture, error ) ) return false;
+                    if( !decodeCookedTexture( *dependency, texture, error ) )
+                    {
+                        return false;
+                    }
                     auto uploaded = make_ptr<ClawTexture>();
-                    const bool installed = texture.ddsBytes.empty()
-                        ? uploaded->uploadCookedMips( texture.levels, texture.mipSettings,
-                                                      m_data->activeRenderer(), error )
-                        : uploadCookedDds( uploaded.get(), texture, m_data->activeRenderer(), error );
-                    if( !installed ) return false;
+                    const bool installed =
+                        texture.ddsBytes.empty()
+                            ? uploaded->uploadCookedMips( texture.levels, texture.mipSettings,
+                                                          m_data->activeRenderer(), error )
+                            : uploadCookedDds( uploaded.get(), texture, m_data->activeRenderer(),
+                                               error );
+                    if( !installed )
+                    {
+                        return false;
+                    }
                     destination = uploaded;
                     return true;
                 }
                 error = "Cooked material texture dependency is unavailable.";
                 return false;
             };
-            if( !installTexture( material.textureId, candidate->texture ) ) return {};
+            if( !installTexture( material.textureId, candidate->texture ) )
+            {
+                return {};
+            }
             if( material.normalTexture.id.isValid() &&
-                !installTexture( material.normalTexture.id, candidate->normalTexture ) ) return {};
+                !installTexture( material.normalTexture.id, candidate->normalTexture ) )
+            {
+                return {};
+            }
             if( material.ormTexture.id.isValid() &&
-                !installTexture( material.ormTexture.id, candidate->ormTexture ) ) return {};
+                !installTexture( material.ormTexture.id, candidate->ormTexture ) )
+            {
+                return {};
+            }
             candidate->material = make_ptr<ClawMaterial>();
             auto technique = make_ptr<ClawMaterialTechnique>();
             technique->setMaterial( candidate->material );
@@ -284,7 +307,10 @@ namespace workphone::render
             candidate->material->setMetalness( material.metalness );
             candidate->material->setRoughness( material.roughness );
             pass->setTexture( candidate->texture, 0 );
-            if( candidate->normalTexture ) pass->setTexture( candidate->normalTexture, 1 );
+            if( candidate->normalTexture )
+            {
+                pass->setTexture( candidate->normalTexture, 1 );
+            }
             if( candidate->ormTexture )
             {
                 pass->setTexture( candidate->ormTexture, 25 );
@@ -298,66 +324,122 @@ namespace workphone::render
                 candidate->material->setEditorUInt( "roughnessSource", 5 );
                 candidate->material->setEditorUInt( "aoSource", 0 );
             }
-            if(material.shader.present())
+            if( material.shader.present() )
             {
                 struct DefinitionOwner
                 {
                     StreamBudget budget;
-                    std::unique_ptr<wp_shader_program,decltype(&wp_shader_program_destroy)> program{wp_shader_program_create(),&wp_shader_program_destroy};
+                    std::unique_ptr<wp_shader_program, decltype( &wp_shader_program_destroy )> program{
+                        wp_shader_program_create(), &wp_shader_program_destroy
+                    };
                 };
-                auto definition=std::make_shared<DefinitionOwner>();
+
+                auto definition = std::make_shared<DefinitionOwner>();
                 Array<MaterialShaderParameterInfo> info;
-                for(const auto &p:material.shader.parameters)info.emplace_back(p.type,p.name);
-                candidate->material->setShaderParameters(info,material.shader.shaderID+"@"+std::to_string(material.shader.schemaVersion).c_str());
-                auto &values=candidate->material->getShaderParameters();
-                if(!populateCookedMaterialShader(material.shader,values,definition->program.get(),error))return {};
-                definition->budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,
-                    sizeof(DefinitionOwner)+wp_shader_program_get_storage_size(definition->program.get()),error);
-                if(!definition->budget)return {};
-                auto resources=std::make_shared<MaterialProgramResourceTableDX11>();
-                Array<std::pair<resource::ResourceID,SmartPtr<ClawTexture>>> installed;
-                installed.emplace_back(material.textureId,candidate->texture);
-                if(candidate->normalTexture)installed.emplace_back(material.normalTexture.id,candidate->normalTexture);
-                if(candidate->ormTexture)installed.emplace_back(material.ormTexture.id,candidate->ormTexture);
-                for(size_t i=0;i<material.shader.parameters.size();++i)
+                for( const auto &p : material.shader.parameters )
                 {
-                    const auto &p=material.shader.parameters[i];
-                    if(p.type==MaterialShaderParameterType::Texture)
+                    info.emplace_back( p.type, p.name );
+                }
+                candidate->material->setShaderParameters(
+                    info, material.shader.shaderID + "@" +
+                              std::to_string( material.shader.schemaVersion ).c_str() );
+                auto &values = candidate->material->getShaderParameters();
+                if( !populateCookedMaterialShader( material.shader, values, definition->program.get(),
+                                                   error ) )
+                {
+                    return {};
+                }
+                definition->budget = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::SourceCpu,
+                    sizeof( DefinitionOwner ) +
+                        wp_shader_program_get_storage_size( definition->program.get() ),
+                    error );
+                if( !definition->budget )
+                {
+                    return {};
+                }
+                auto resources = std::make_shared<MaterialProgramResourceTableDX11>();
+                Array<std::pair<resource::ResourceID, SmartPtr<ClawTexture>>> installed;
+                installed.emplace_back( material.textureId, candidate->texture );
+                if( candidate->normalTexture )
+                {
+                    installed.emplace_back( material.normalTexture.id, candidate->normalTexture );
+                }
+                if( candidate->ormTexture )
+                {
+                    installed.emplace_back( material.ormTexture.id, candidate->ormTexture );
+                }
+                for( size_t i = 0; i < material.shader.parameters.size(); ++i )
+                {
+                    const auto &p = material.shader.parameters[i];
+                    if( p.type == MaterialShaderParameterType::Texture )
                     {
                         SmartPtr<ClawTexture> texture;
-                        for(const auto &entry:installed)if(entry.first==p.texture.id){texture=entry.second;break;}
-                        if(!texture)
-                        { if(!installTexture(p.texture.id,texture))return {};installed.emplace_back(p.texture.id,texture); }
-                        resources->SetTexture(i+1,texture);
+                        for( const auto &entry : installed )
+                        {
+                            if( entry.first == p.texture.id )
+                            {
+                                texture = entry.second;
+                                break;
+                            }
+                        }
+                        if( !texture )
+                        {
+                            if( !installTexture( p.texture.id, texture ) )
+                            {
+                                return {};
+                            }
+                            installed.emplace_back( p.texture.id, texture );
+                        }
+                        resources->SetTexture( i + 1, texture );
                     }
-                    else if(p.type==MaterialShaderParameterType::Sampler)
+                    else if( p.type == MaterialShaderParameterType::Sampler )
                     {
                         // Preserve the existing editor/native material sampler policy.
-                        constexpr D3D11_TEXTURE_ADDRESS_MODE addresses[]={D3D11_TEXTURE_ADDRESS_WRAP,D3D11_TEXTURE_ADDRESS_CLAMP,
-                            D3D11_TEXTURE_ADDRESS_MIRROR,D3D11_TEXTURE_ADDRESS_MIRROR_ONCE,D3D11_TEXTURE_ADDRESS_BORDER};
-                        constexpr D3D11_FILTER filters[]={D3D11_FILTER_MIN_MAG_MIP_POINT,D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
-                            D3D11_FILTER_MIN_MAG_MIP_LINEAR,D3D11_FILTER_ANISOTROPIC};
-                        D3D11_SAMPLER_DESC description{};description.AddressU=addresses[p.words[0]];
-                        description.AddressV=description.AddressW=addresses[p.words[1]];description.Filter=filters[p.words[2]];
-                        description.MaxAnisotropy=p.words[2]==3?p.words[3]:1;description.ComparisonFunc=D3D11_COMPARISON_NEVER;
-                        description.MaxLOD=D3D11_FLOAT32_MAX;Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
-                        if(FAILED(candidate->device->CreateSamplerState(&description,&sampler)))
-                        {error="Cooked shader sampler creation failed";return {};}
-                        resources->SetSampler(i+1,sampler.Get());
+                        constexpr D3D11_TEXTURE_ADDRESS_MODE addresses[] = {
+                            D3D11_TEXTURE_ADDRESS_WRAP, D3D11_TEXTURE_ADDRESS_CLAMP,
+                            D3D11_TEXTURE_ADDRESS_MIRROR, D3D11_TEXTURE_ADDRESS_MIRROR_ONCE,
+                            D3D11_TEXTURE_ADDRESS_BORDER
+                        };
+                        constexpr D3D11_FILTER filters[] = { D3D11_FILTER_MIN_MAG_MIP_POINT,
+                                                             D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
+                                                             D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                                                             D3D11_FILTER_ANISOTROPIC };
+                        D3D11_SAMPLER_DESC description{};
+                        description.AddressU = addresses[p.words[0]];
+                        description.AddressV = description.AddressW = addresses[p.words[1]];
+                        description.Filter = filters[p.words[2]];
+                        description.MaxAnisotropy = p.words[2] == 3 ? p.words[3] : 1;
+                        description.ComparisonFunc = D3D11_COMPARISON_NEVER;
+                        description.MaxLOD = D3D11_FLOAT32_MAX;
+                        Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
+                        if( FAILED( candidate->device->CreateSamplerState( &description, &sampler ) ) )
+                        {
+                            error = "Cooked shader sampler creation failed";
+                            return {};
+                        }
+                        resources->SetSampler( i + 1, sampler.Get() );
                     }
                 }
-                auto runtime=MaterialProgramDX11::Create(candidate->device.Get(),values.GetLayout(),definition->program.get(),1,
-                    {material.shader.pixelDXBC.data(),material.shader.pixelDXBC.size()},
-                    {material.shader.vertexDXBC.empty()?nullptr:material.shader.vertexDXBC.data(),material.shader.vertexDXBC.size()},error,
-                    &material.shader.pixelSelection,&material.shader.vertexSelection);
-                if(!runtime)return {};
-                runtime->retainDefinitionOwner(definition);
-                candidate->material->setRuntimeProgram(std::move(runtime),std::move(resources));
+                auto runtime = MaterialProgramDX11::Create(
+                    candidate->device.Get(), values.GetLayout(), definition->program.get(), 1,
+                    { material.shader.pixelDXBC.data(), material.shader.pixelDXBC.size() },
+                    { material.shader.vertexDXBC.empty() ? nullptr : material.shader.vertexDXBC.data(),
+                      material.shader.vertexDXBC.size() },
+                    error, &material.shader.pixelSelection, &material.shader.vertexSelection );
+                if( !runtime )
+                {
+                    return {};
+                }
+                runtime->retainDefinitionOwner( definition );
+                candidate->material->setRuntimeProgram( std::move( runtime ), std::move( resources ) );
             }
             if( !pass->getStateContext() || !candidate->material->getNativeMaterial() ||
                 candidate->material->getTexture( 0 ) != candidate->texture ||
-                ( candidate->normalTexture && candidate->material->getTexture( 1 ) != candidate->normalTexture ) ||
-                ( candidate->ormTexture && candidate->material->getTexture( 25 ) != candidate->ormTexture ) )
+                ( candidate->normalTexture &&
+                  candidate->material->getTexture( 1 ) != candidate->normalTexture ) ||
+                ( candidate->ormTexture &&
+                  candidate->material->getTexture( 25 ) != candidate->ormTexture ) )
             {
                 error = "Cooked material state/texture installation failed.";
                 return {};

@@ -1252,8 +1252,7 @@ namespace workphone::render
             for( const auto &entry : decoded->textures )
             {
                 checked( validateCookedTextureData( entry.second, error ), error );
-                cpuBytes += entry.first.capacity() +
-                            sizeof( BudgetedFoliageTexture ) + 512;
+                cpuBytes += entry.first.capacity() + sizeof( BudgetedFoliageTexture ) + 512;
             }
             auto scheduler = WorldStreamingScheduler::shared();
             // ClawTexture owns per-payload CPU and physical GPU reservations.

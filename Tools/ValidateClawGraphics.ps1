@@ -18,6 +18,7 @@ $selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation)\.|^WPR
 $requiredTests = @(
     'WPAnimation.core_contracts', 'WPAnimation.import_contracts',
     'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
+    'WPGraphics.terrain_representative_performance', 'WPGraphics.terrain_regeneration_soak',
     'WPGraphics.foliage_contracts',
     'WPGraphics.foliage_authoring', 'WPGraphics.foliage_plant_geometry',
     'WPGraphics.material_load_sequence',
@@ -184,6 +185,7 @@ $verificationPaths = @(
     'Engine/cpp/Source/WPGraphics/ClawTerrain.cpp',
     'Engine/cpp/Source/WPLuabind/Bindings/ComponentBind.cpp',
     'bin/Media/Scripts/Lua/Editor/TerrainEditor.lua',
+    'Tools/ValidateTerrainPackage.ps1', 'Tools/TerrainPackageRuntime.cmake',
     'Tests/cpp/DX11TestEvidence.hpp', 'Tools/ValidateClawGraphics.ps1',
     'Tools/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
     'Engine/cpp/Project/WPGraphics/CMakeLists.txt', 'Tests/cpp/CMakeLists.txt',

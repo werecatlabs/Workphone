@@ -1051,11 +1051,28 @@ namespace
 #include "ClawMaterialProgramRetirementContracts.hpp"
 #include "CookedMaterialShaderContracts.hpp"
 #include "ClawCookedMaterialRetirementContracts.hpp"
+#include "TerrainPackageContracts.hpp"
 
 int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 3 && std::strcmp( argv[1], "--terrain-package-export" ) == 0 )
+        {
+            // Authoring runs in its own process. Only the generated install closure
+            // is copied into the package by ValidateTerrainPackage.ps1.
+            Fixture fixture;
+            fixture.initialize();
+            cooked_terrain_contracts::createPackage( fs::u8path( argv[2] ) );
+            return 0;
+        }
+        if( argc == 3 && std::strcmp( argv[1], "--terrain-package-consume" ) == 0 )
+        {
+            // Deliberately bypass Fixture: it initializes SQLite, a catalog and
+            // compiler registries that a source-free consumer must never need.
+            terrain_package_contracts::consume( fs::u8path( argv[2] ) );
+            return 0;
+        }
         u32 retirementCycles = 0;
         bool programRetirement = false;
         if( argc > 1 )

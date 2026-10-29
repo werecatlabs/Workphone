@@ -295,6 +295,9 @@ namespace workphone
             void addMessage( SmartPtr<IStateMessage> message );
 
         protected:
+            /** Sort local membership and return its pinned draw-order snapshot. */
+            Array<SmartPtr<IUIElement>> sortChildrenByOrder();
+
             class ElementStateListener : public IStateListener
             {
             public:
@@ -530,12 +533,15 @@ namespace workphone
                 return;
             }
 
-            auto children = getChildren();
+            auto children = sortChildrenByOrder();
             for( auto &child : children )
             {
-                if( auto guiChild = dynamic_cast<IWorkphoneWidget *>( child.get() ) )
+                if( child && child->isVisible() )
                 {
-                    guiChild->draw( ctx );
+                    if( auto guiChild = dynamic_cast<IWorkphoneWidget *>( child.get() ) )
+                    {
+                        guiChild->draw( ctx );
+                    }
                 }
             }
         }
@@ -1558,27 +1564,23 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::sortZOrder()
+        Array<SmartPtr<IUIElement>> ClawUIElement<T>::sortChildrenByOrder()
         {
             Array<SmartPtr<IUIElement>> children;
             {
                 auto &storedChildren = getChildrenRef();
                 ScopedLock lock( &storedChildren );
+
                 struct OrderedChild
                 {
                     SmartPtr<IUIElement> child;
                     u32 order;
                 };
+
                 Array<OrderedChild> ordered;
-                auto members = storedChildren.snapshot();
-                ordered.reserve( members.size() );
-                for( auto &child : members )
-                {
-                    ordered.push_back( { child, child ? child->getOrder() : 0 } );
-                }
-                // Live UI state can change order while rendering. Compare fixed keys
-                // and never expose std::sort's moved-from slots in the shared inventory.
-                std::stable_sort( ordered.begin(), ordered.end(), []( const auto &a, const auto &b ) {
+                children = storedChildren.snapshot();
+                ordered.reserve( children.size() );
+                const auto less = []( const auto &a, const auto &b ) {
                     if( !a.child )
                     {
                         return false;
@@ -1588,14 +1590,38 @@ namespace workphone
                         return true;
                     }
                     return a.order < b.order;
-                } );
-                children.reserve( ordered.size() );
-                for( size_t index = 0; index < ordered.size(); ++index )
+                };
+                auto alreadyOrdered = true;
+                for( auto &child : children )
                 {
-                    storedChildren[index] = ordered[index].child;
-                    children.push_back( ordered[index].child );
+                    ordered.push_back( { child, child ? child->getOrder() : 0 } );
+                    const auto count = ordered.size();
+                    if( count > 1 && less( ordered[count - 1], ordered[count - 2] ) )
+                    {
+                        alreadyOrdered = false;
+                    }
+                }
+                // Live UI state can change order while rendering. Compare fixed keys
+                // and never expose std::sort's moved-from slots in the shared inventory.
+                // Stable screens usually arrive ordered. They still capture current
+                // keys, but need no sort allocation or shared-inventory rewrites.
+                if( !alreadyOrdered )
+                {
+                    std::stable_sort( ordered.begin(), ordered.end(), less );
+                    for( size_t index = 0; index < ordered.size(); ++index )
+                    {
+                        storedChildren[index] = ordered[index].child;
+                        children[index] = ordered[index].child;
+                    }
                 }
             }
+            return children;
+        }
+
+        template <class T>
+        void ClawUIElement<T>::sortZOrder()
+        {
+            auto children = sortChildrenByOrder();
 
             // Child callbacks may change membership; never retain live iterators here.
             for( auto child : children )
@@ -1610,9 +1636,10 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::updateZOrder()
         {
-            sortZOrder();
-
-            auto children = getChildren();
+            // sortZOrder already walks its descendants. Sort only this inventory
+            // here so each virtual child update runs once instead of re-sorting
+            // its entire subtree once for every ancestor.
+            auto children = sortChildrenByOrder();
             for( auto &child : children )
             {
                 if( child )

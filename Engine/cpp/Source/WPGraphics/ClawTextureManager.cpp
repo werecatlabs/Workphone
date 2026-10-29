@@ -12,8 +12,8 @@ namespace workphone
     namespace render
     {
         // Internal backend implementation; no additional public texture API.
-        bool replaceClawTexturePixels( ClawTexture *texture, const void *input,
-                                       const Vector2I &size, String &error );
+        bool replaceClawTexturePixels( ClawTexture *texture, const void *input, const Vector2I &size,
+                                       String &error );
 
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawTextureManager, TextureManager );
 
@@ -53,7 +53,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Unloading );
-            auto textures = std::move(m_textures);
+            auto textures = std::move( m_textures );
             for( auto &texture : textures )
             {
                 if( texture )
@@ -202,7 +202,10 @@ namespace workphone
                                                              s32 /*numMips*/, u8 /*format*/, s32 usage )
         {
             ScopedLock<TextureManager> lifecycle( this );
-            if( width > 16384 || height > 16384 ) return nullptr;
+            if( width > 16384 || height > 16384 )
+            {
+                return nullptr;
+            }
             auto texture = workphone::dynamic_pointer_cast<ClawTexture>( create( name ) );
             if( texture )
             {
@@ -215,11 +218,17 @@ namespace workphone
                     if( texture->getRenderTarget() ||
                         !replaceClawTexturePixels( texture.get(), nullptr, size, error ) )
                     {
-                        if( !error.empty() ) WP_LOG_WARNING( error );
+                        if( !error.empty() )
+                        {
+                            WP_LOG_WARNING( error );
+                        }
                         return nullptr;
                     }
                 }
-                else texture->setSize( size );
+                else
+                {
+                    texture->setSize( size );
+                }
                 texture->setUsageFlags( static_cast<u32>( usage ) );
                 texture->setTextureType( static_cast<TextureType>( texType ) );
                 texture->load( nullptr );
@@ -259,7 +268,10 @@ namespace workphone
 
         u32 ClawTextureManager::releaseUnusedResources( u32 maximumCandidates )
         {
-            if( !maximumCandidates ) return 0;
+            if( !maximumCandidates )
+            {
+                return 0;
+            }
             ScopedLock<TextureManager> lifecycle( this );
             Array<SmartPtr<ITexture>> candidates;
             {
@@ -267,7 +279,11 @@ namespace workphone
                 // or hold its array lock while destroying native graphics resources.
                 ScopedLock<decltype( m_textures )> texturesLock( &m_textures );
                 const auto size = m_textures.size();
-                if( !size ) { m_evictionCursor = 0; return 0; }
+                if( !size )
+                {
+                    m_evictionCursor = 0;
+                    return 0;
+                }
                 const auto count = std::min<size_t>( maximumCandidates, size );
                 candidates.reserve( count );
                 for( size_t i = 0; i < count; ++i )
@@ -281,10 +297,16 @@ namespace workphone
             {
                 // One manager owner and one candidate owner are expected. Weak
                 // clients may acquire a strong reference without the manager lock.
-                if( !texture || texture->getReferences() != 2 ||
-                    texture->getWeakReferences() != 0 || texture->isLoadLocked() ) continue;
+                if( !texture || texture->getReferences() != 2 || texture->getWeakReferences() != 0 ||
+                    texture->isLoadLocked() )
+                {
+                    continue;
+                }
                 auto clawTexture = dynamic_cast<ClawTexture *>( texture.get() );
-                if( clawTexture && clawTexture->releaseUnusedCacheData() ) ++released;
+                if( clawTexture && clawTexture->releaseUnusedCacheData() )
+                {
+                    ++released;
+                }
             }
             return released;
         }

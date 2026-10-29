@@ -55,37 +55,50 @@ namespace
 
     std::mutex g_textureMutex;
     using TextureCacheKey = const workphone::render::ClawTexture *;
-    using TextureCache = std::unordered_map<TextureCacheKey, ClawTextureData,
-        std::hash<TextureCacheKey>, std::equal_to<TextureCacheKey>,
+    using TextureCache = std::unordered_map<
+        TextureCacheKey, ClawTextureData, std::hash<TextureCacheKey>, std::equal_to<TextureCacheKey>,
         workphone::SourceBudgetAllocator<std::pair<const TextureCacheKey, ClawTextureData>>>;
+
     // MSVC unordered_map allocates its sentinel/buckets even when empty.
     // Construct lazily, outside DLL initialization, and retire the entire empty
     // map without creating a replacement allocation during teardown.
     class TextureCacheStorage
     {
         workphone::SourceBudgetUnique<TextureCache> m_cache;
+
     public:
         ClawTextureData &operator[]( TextureCacheKey key )
         {
             if( !m_cache )
             {
                 auto next = workphone::makeSourceBudgetUnique<TextureCache>();
-                auto &entry = (*next)[key];
-                m_cache = std::move(next);
+                auto &entry = ( *next )[key];
+                m_cache = std::move( next );
                 return entry;
             }
-            return (*m_cache)[key];
+            return ( *m_cache )[key];
         }
+
         TextureCache::iterator find( TextureCacheKey key )
-        { return m_cache ? m_cache->find(key) : TextureCache::iterator{}; }
+        {
+            return m_cache ? m_cache->find( key ) : TextureCache::iterator{};
+        }
+
         TextureCache::iterator end()
-        { return m_cache ? m_cache->end() : TextureCache::iterator{}; }
+        {
+            return m_cache ? m_cache->end() : TextureCache::iterator{};
+        }
+
         void erase( TextureCache::iterator entry )
         {
-            m_cache->erase(entry);
-            if( m_cache->empty() ) m_cache.reset();
+            m_cache->erase( entry );
+            if( m_cache->empty() )
+            {
+                m_cache.reset();
+            }
         }
     };
+
     TextureCacheStorage g_textureData;
 
     workphone::StreamBudget reserveTextureCpu( workphone::u64 bytes, workphone::String &error )
@@ -98,11 +111,16 @@ namespace
                                       const workphone::render::TextureMipSettings &settings )
     {
         workphone::u64 bytes = workphone::u64( width ) * height * 4;
-        while( settings.filter != workphone::render::TextureMipFilter::None && ( width > 1 || height > 1 ) )
+        while( settings.filter != workphone::render::TextureMipFilter::None &&
+               ( width > 1 || height > 1 ) )
         {
             width = std::max( width / 2, 1u );
             height = std::max( height / 2, 1u );
-            if( !settings.atlasColumns || width < settings.atlasColumns || width % settings.atlasColumns ) break;
+            if( !settings.atlasColumns || width < settings.atlasColumns ||
+                width % settings.atlasColumns )
+            {
+                break;
+            }
             bytes += workphone::u64( width ) * height * 4;
         }
         return bytes + 4096;
@@ -206,6 +224,7 @@ namespace
     {
         TextureUploadPolicy policy;
         if( auto app = workphone::core::IApplicationManager::instancePtr() )
+        {
             if( auto settings = app->getPlayerSettings() )
             {
                 workphone::s32 maximum = 0;
@@ -214,6 +233,7 @@ namespace
                 policy.quality = std::clamp( policy.quality, 0, 3 );
                 policy.maximum = static_cast<workphone::u32>( std::clamp( maximum, 0, 16384 ) );
             }
+        }
         return policy;
     }
 
@@ -225,9 +245,10 @@ namespace
         // Legacy sampled textures commonly disable authored mipmaps. They still
         // need a smaller resident base when the player lowers texture quality.
         // Keep the original CPU pixels and the no-mipmap sampling contract.
-        if( !preserveSingleMip && levels.size() == 1 && ( levels[0].width > 1 || levels[0].height > 1 ) &&
-            ( policy.quality < 2 || ( policy.maximum > 0 &&
-                ( levels[0].width > policy.maximum || levels[0].height > policy.maximum ) ) ) )
+        if( !preserveSingleMip && levels.size() == 1 &&
+            ( levels[0].width > 1 || levels[0].height > 1 ) &&
+            ( policy.quality < 2 || ( policy.maximum > 0 && ( levels[0].width > policy.maximum ||
+                                                              levels[0].height > policy.maximum ) ) ) )
         {
             workphone::render::TextureMipSettings settings;
             settings.filter = workphone::render::TextureMipFilter::Data;
@@ -238,7 +259,10 @@ namespace
                 generatedMipBytes( levels[0].width, levels[0].height, settings ), error );
             if( !working )
             {
-                if( budgetDenied ) *budgetDenied = true;
+                if( budgetDenied )
+                {
+                    *budgetDenied = true;
+                }
                 return nullptr;
             }
             const auto generated = workphone::render::generateTextureMips(
@@ -247,24 +271,40 @@ namespace
         }
         size_t first = 0;
         const size_t skip = policy.quality == 0 ? 2u : policy.quality == 1 ? 1u : 0u;
-        while(first + 1 < levels.size() && (first < skip ||
-              (policy.maximum > 0 && (levels[first].width > policy.maximum || levels[first].height > policy.maximum)))) ++first;
+        while( first + 1 < levels.size() &&
+               ( first < skip || ( policy.maximum > 0 && ( levels[first].width > policy.maximum ||
+                                                           levels[first].height > policy.maximum ) ) ) )
+        {
+            ++first;
+        }
         const auto last = preserveSingleMip ? first + 1 : levels.size();
         workphone::u64 bytes = 0;
-        for(size_t i = first; i < last; ++i) bytes += levels[i].bgra.size();
+        for( size_t i = first; i < last; ++i )
+        {
+            bytes += levels[i].bgra.size();
+        }
         workphone::String error;
         auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
             workphone::StreamMemoryClass::Gpu, bytes, error );
-        if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
+        if( !budget )
+        {
+            if( budgetDenied )
+            {
+                *budgetDenied = true;
+            }
+            return nullptr;
+        }
         std::vector<wp_texture_mip_dx11> nativeLevels;
         nativeLevels.reserve( last - first );
-        for(size_t i = first; i < last; ++i)
+        for( size_t i = first; i < last; ++i )
         {
             const auto &level = levels[i];
             nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
         }
-        return retainUploadedTexture( wp_renderer_dx11_create_texture_mips_native(
-            renderer, nativeLevels.data(), static_cast<wp_u32>( nativeLevels.size() ) ), std::move( budget ) );
+        return retainUploadedTexture(
+            wp_renderer_dx11_create_texture_mips_native( renderer, nativeLevels.data(),
+                                                         static_cast<wp_u32>( nativeLevels.size() ) ),
+            std::move( budget ) );
     }
 
     void *uploadDds( wp_renderer_dx11 *renderer, const std::vector<workphone::u8> &bytes,
@@ -273,22 +313,39 @@ namespace
         const auto image = workphone::dds::inspect( bytes );
         size_t first = 0;
         const size_t skip = policy.quality == 0 ? 2u : policy.quality == 1 ? 1u : 0u;
-        while(first + 1 < image.mips.size() && (first < skip || (policy.maximum > 0 &&
-              (image.mips[first].width > policy.maximum || image.mips[first].height > policy.maximum)))) ++first;
+        while(
+            first + 1 < image.mips.size() &&
+            ( first < skip || ( policy.maximum > 0 && ( image.mips[first].width > policy.maximum ||
+                                                        image.mips[first].height > policy.maximum ) ) ) )
+        {
+            ++first;
+        }
         workphone::u64 residentBytes = 0;
-        for(size_t i=first; i<image.mips.size(); ++i) residentBytes += image.mips[i].size;
+        for( size_t i = first; i < image.mips.size(); ++i )
+        {
+            residentBytes += image.mips[i].size;
+        }
         workphone::String error;
         auto budget = workphone::WorldStreamingScheduler::shared()->reserve(
             workphone::StreamMemoryClass::Gpu, residentBytes, error );
-        if( !budget ) { if( budgetDenied ) *budgetDenied = true; return nullptr; }
+        if( !budget )
+        {
+            if( budgetDenied )
+            {
+                *budgetDenied = true;
+            }
+            return nullptr;
+        }
         std::vector<wp_texture_encoded_mip_dx11> levels;
-        for(size_t i=first; i<image.mips.size(); ++i)
+        for( size_t i = first; i < image.mips.size(); ++i )
         {
             const auto &m = image.mips[i];
             levels.push_back( { bytes.data() + m.offset, m.width, m.height, m.size } );
         }
-        return retainUploadedTexture( wp_renderer_dx11_create_texture_encoded_mips_native(
-            renderer, levels.data(), static_cast<wp_u32>( levels.size() ), image.format ), std::move( budget ) );
+        return retainUploadedTexture(
+            wp_renderer_dx11_create_texture_encoded_mips_native(
+                renderer, levels.data(), static_cast<wp_u32>( levels.size() ), image.format ),
+            std::move( budget ) );
     }
 
     bool decodeTexture( workphone::render::ClawTexture *texture )
@@ -320,10 +377,16 @@ namespace
             {
                 return !data.pixels.empty();
             }
-            if( data.sourcePath != filePath ) data.sourcePath = filePath;
+            if( data.sourcePath != filePath )
+            {
+                data.sourcePath = filePath;
+            }
             data.decodeAttempted = true;
         }
-        catch( const std::bad_alloc & ) { return false; }
+        catch( const std::bad_alloc & )
+        {
+            return false;
+        }
 
         auto stream =
             fileSystem ? fileSystem->open( filePath, true, true, false, false, false ) : nullptr;
@@ -342,8 +405,8 @@ namespace
         }
 
         String budgetError;
-        auto encodedBudget = WorldStreamingScheduler::shared()->reserve(
-            StreamMemoryClass::WorkingCpu, streamSize, budgetError );
+        auto encodedBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::WorkingCpu,
+                                                                         streamSize, budgetError );
         if( !encodedBudget )
         {
             std::scoped_lock lock( g_textureMutex );
@@ -361,8 +424,8 @@ namespace
 
         // Reserve header/codec metadata before asking a plugin to inspect input.
         // Full bitmap and converted BGRA payloads are admitted after the header.
-        auto headerBudget = WorldStreamingScheduler::shared()->reserve(
-            StreamMemoryClass::WorkingCpu, 64u * 1024u, budgetError );
+        auto headerBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::WorkingCpu,
+                                                                        64u * 1024u, budgetError );
         if( !headerBudget )
         {
             std::scoped_lock lock( g_textureMutex );
@@ -392,7 +455,8 @@ namespace
         if( format == FIF_UNKNOWN || !FreeImage_FIFSupportsNoPixels( format ) )
         {
             WP_LOG_ERROR( "WPGraphics/Texture: format cannot provide a bounded header preflight for '" +
-                          filePath + "'; use a cooked texture or convert to PNG/JPEG/BMP/TGA/TIFF/WebP." );
+                          filePath +
+                          "'; use a cooked texture or convert to PNG/JPEG/BMP/TGA/TIFF/WebP." );
             return false;
         }
         FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
@@ -410,42 +474,62 @@ namespace
             // Match the Inspector's exact settings identity, but read an immutable
             // saved recipe. Cached directors contain mutable, unsaved UI fields.
             const auto folder = applicationManager ? applicationManager->getSettingsPath() : String();
-            const auto recipePath = folder + StringUtil::toString( StringUtil::getUUID( filePath ) ) +
-                                    ".resourcedata";
+            const auto recipePath =
+                folder + StringUtil::toString( StringUtil::getUUID( filePath ) ) + ".resourcedata";
             if( !folder.empty() && fileSystem && fileSystem->isExistingFile( recipePath ) )
             {
                 auto recipeStream = fileSystem->open( recipePath, true, true, false, false, false );
                 const auto bytes = recipeStream ? recipeStream->size() : 0;
                 if( !recipeStream || !bytes || bytes > ( 64u << 10 ) )
-                    throw std::runtime_error( "Saved texture recipe is unreadable, empty or exceeds 64 KiB" );
+                {
+                    throw std::runtime_error(
+                        "Saved texture recipe is unreadable, empty or exceeds 64 KiB" );
+                }
                 auto recipeBudget = WorldStreamingScheduler::shared()->reserve(
                     StreamMemoryClass::WorkingCpu, bytes + 1u, budgetError );
-                if( !recipeBudget ) throw std::runtime_error( budgetError.c_str() );
+                if( !recipeBudget )
+                {
+                    throw std::runtime_error( budgetError.c_str() );
+                }
                 auto text = std::make_unique<char[]>( static_cast<size_t>( bytes ) + 1u );
                 size_t offset = 0;
                 while( offset < bytes )
                 {
                     const auto read = recipeStream->read( text.get() + offset, bytes - offset );
-                    if( !read ) throw std::runtime_error( "Saved texture recipe changed during read" );
+                    if( !read )
+                    {
+                        throw std::runtime_error( "Saved texture recipe changed during read" );
+                    }
                     offset += read;
                 }
                 char extra;
                 if( recipeStream->read( &extra, 1 ) )
+                {
                     throw std::runtime_error( "Saved texture recipe grew during read" );
+                }
                 const auto denials = sourceBudgetDenialCount();
                 auto parsed = JsonParser( text.get(), static_cast<u32>( bytes ) ).parse();
                 const auto object = std::get_if<JsonObject>( &parsed );
-                if( !object ) throw std::runtime_error( "Saved texture recipe must be a valid JSON object" );
+                if( !object )
+                {
+                    throw std::runtime_error( "Saved texture recipe must be a valid JSON object" );
+                }
                 auto settings = make_ptr<Properties>();
                 JsonParser( text.get(), static_cast<u32>( bytes ) ).parseToProperties( settings.get() );
-                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    throw std::bad_alloc();
+                }
                 s32 size = 0;
                 // A saved TextureResourceDirector always records size. The legacy
                 // JSON parser can return an empty object after a syntax error;
                 // never turn an unreadable saved policy into an unbounded decode.
-                if( !settings->getPropertyValue( "size", size ) ||
-                    size < 32 || size > 8192 || ( size & ( size - 1 ) ) )
-                    throw std::runtime_error( "Saved texture recipe requires a power-of-two size from 32 to 8192" );
+                if( !settings->getPropertyValue( "size", size ) || size < 32 || size > 8192 ||
+                    ( size & ( size - 1 ) ) )
+                {
+                    throw std::runtime_error(
+                        "Saved texture recipe requires a power-of-two size from 32 to 8192" );
+                }
                 maximumDimension = static_cast<u32>( size );
                 if( settings->getPropertyValue( "mipmapFilter", recipeMipFilter ) &&
                     ( recipeMipFilter < 0 || recipeMipFilter > 5 ) )
@@ -467,21 +551,23 @@ namespace
         {
             if( format != FIF_JPEG )
             {
-                WP_LOG_WARNING( "Bounded raw texture resizing requires JPEG scaled decoding; cook or resize '" +
-                                filePath + "' before loading this format." );
+                WP_LOG_WARNING(
+                    "Bounded raw texture resizing requires JPEG scaled decoding; cook or resize '" +
+                    filePath + "' before loading this format." );
                 return false;
             }
             const auto longest = std::max( width, height );
             outputWidth = std::max( 1u, static_cast<u32>( u64( width ) * maximumDimension / longest ) );
-            outputHeight = std::max( 1u, static_cast<u32>( u64( height ) * maximumDimension / longest ) );
+            outputHeight =
+                std::max( 1u, static_cast<u32>( u64( height ) * maximumDimension / longest ) );
             // FreeImage's JPEG codec reads the requested size from the upper
             // sixteen flag bits and decompresses at 1/2, 1/4 or 1/8 resolution.
             // Ask the header for those exact dimensions before reserving payloads.
             decodeFlags = static_cast<int>( maximumDimension << 16 );
             header.reset();
             FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
-            header.reset( FreeImage_LoadFromMemory( format, memory.get(),
-                                                   decodeFlags | FIF_LOAD_NOPIXELS ) );
+            header.reset(
+                FreeImage_LoadFromMemory( format, memory.get(), decodeFlags | FIF_LOAD_NOPIXELS ) );
             width = header ? FreeImage_GetWidth( header.get() ) : 0u;
             height = header ? FreeImage_GetHeight( header.get() ) : 0u;
             pitch = header ? FreeImage_GetPitch( header.get() ) : 0u;
@@ -493,21 +579,23 @@ namespace
         // 64 MiB working bitmaps before its separately charged retained pixels.
         const bool reuseBitmap = header && FreeImage_GetImageType( header.get() ) == FIT_BITMAP &&
                                  FreeImage_GetBPP( header.get() ) == 32;
-        if( !width || !height || !outputWidth || !outputHeight ||
-            originalWidth > 16384 || originalHeight > 16384 ||
-            width > originalWidth || height > originalHeight || !pitch ||
+        if( !width || !height || !outputWidth || !outputHeight || originalWidth > 16384 ||
+            originalHeight > 16384 || width > originalWidth || height > originalHeight || !pitch ||
             bgraBytes > render::graphicsTextureByteLimit ||
             outputBytes > render::graphicsTextureByteLimit ||
             u64( pitch ) * height > render::graphicsTextureByteLimit * 4u )
         {
-            WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image header in '" + filePath + "'." );
+            WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image header in '" + filePath +
+                          "'." );
             return false;
         }
         auto sourceBudget = reserveTextureCpu( outputBytes, budgetError );
-        auto decoderBudget = sourceBudget ? WorldStreamingScheduler::shared()->reserve(
-            StreamMemoryClass::WorkingCpu,
-            u64( pitch ) * height + ( reuseBitmap ? 0u : bgraBytes ) + 64u * 1024u,
-            budgetError ) : StreamBudget{};
+        auto decoderBudget =
+            sourceBudget ? WorldStreamingScheduler::shared()->reserve(
+                               StreamMemoryClass::WorkingCpu,
+                               u64( pitch ) * height + ( reuseBitmap ? 0u : bgraBytes ) + 64u * 1024u,
+                               budgetError )
+                         : StreamBudget{};
         if( !sourceBudget || !decoderBudget )
         {
             std::scoped_lock lock( g_textureMutex );
@@ -517,9 +605,11 @@ namespace
         }
         header.reset();
         FreeImage_SeekMemory( memory.get(), 0, SEEK_SET );
-        BitmapOwner bitmap( FreeImage_LoadFromMemory( format, memory.get(), decodeFlags ), &FreeImage_Unload );
+        BitmapOwner bitmap( FreeImage_LoadFromMemory( format, memory.get(), decodeFlags ),
+                            &FreeImage_Unload );
         if( !bitmap || FreeImage_GetWidth( bitmap.get() ) != width ||
-            FreeImage_GetHeight( bitmap.get() ) != height || FreeImage_GetPitch( bitmap.get() ) > pitch ||
+            FreeImage_GetHeight( bitmap.get() ) != height ||
+            FreeImage_GetPitch( bitmap.get() ) > pitch ||
             ( reuseBitmap && ( FreeImage_GetImageType( bitmap.get() ) != FIT_BITMAP ||
                                FreeImage_GetBPP( bitmap.get() ) != 32 ) ) )
         {
@@ -527,12 +617,14 @@ namespace
                           filePath + "'." );
             return false;
         }
-        BitmapOwner converted( reuseBitmap ? bitmap.release() :
-                                            FreeImage_ConvertTo32Bits( bitmap.get() ), &FreeImage_Unload );
+        BitmapOwner converted(
+            reuseBitmap ? bitmap.release() : FreeImage_ConvertTo32Bits( bitmap.get() ),
+            &FreeImage_Unload );
         bitmap.reset();
         memory.reset();
         if( !converted || FreeImage_GetWidth( converted.get() ) != width ||
-            FreeImage_GetHeight( converted.get() ) != height || FreeImage_GetPitch( converted.get() ) > u64( width ) * 4u )
+            FreeImage_GetHeight( converted.get() ) != height ||
+            FreeImage_GetPitch( converted.get() ) > u64( width ) * 4u )
         {
             WP_LOG_ERROR( "WPGraphics/Texture: failed bounded BGRA conversion for '" + filePath + "'." );
             return false;
@@ -560,25 +652,31 @@ namespace
                 double sum[4]{};
                 for( u32 sy = static_cast<u32>( top ); sy < height && sy < std::ceil( bottom ); ++sy )
                 {
-                    const double wy = std::min( bottom, double( sy + 1u ) ) - std::max( top, double( sy ) );
+                    const double wy =
+                        std::min( bottom, double( sy + 1u ) ) - std::max( top, double( sy ) );
                     const auto row = FreeImage_GetScanLine( converted.get(), height - 1u - sy );
                     for( u32 sx = static_cast<u32>( left ); sx < width && sx < std::ceil( right ); ++sx )
                     {
                         const double weight = wy * ( std::min( right, double( sx + 1u ) ) -
                                                      std::max( left, double( sx ) ) );
                         for( u32 channel = 0; channel < 4; ++channel )
+                        {
                             sum[channel] += row[size_t( sx ) * 4u + channel] * weight;
+                        }
                     }
                 }
                 const auto area = ( right - left ) * ( bottom - top );
                 for( u32 channel = 0; channel < 4; ++channel )
+                {
                     pixels[size_t( y ) * rowBytes + size_t( x ) * 4u + channel] =
                         static_cast<u8>( std::min( 255.0, std::floor( sum[channel] / area + 0.5 ) ) );
+                }
             }
         }
         converted.reset();
 
-        texture->setSize( Vector2I( static_cast<s32>( outputWidth ), static_cast<s32>( outputHeight ) ) );
+        texture->setSize(
+            Vector2I( static_cast<s32>( outputWidth ), static_cast<s32>( outputHeight ) ) );
         std::scoped_lock lock( g_textureMutex );
         auto &data = g_textureData[texture];
         auto retiredBudget = std::move( data.sourceBudget );
@@ -589,7 +687,9 @@ namespace
         // Publish the shared texture's saved recipe only with its complete pixels.
         // Per-material sampling edits do not replace another user's physical mip chain.
         if( recipeMipFilter >= 0 )
+        {
             data.mipSettings.filter = static_cast<render::TextureMipFilter>( recipeMipFilter );
+        }
         data.uploadPending = true;
         return true;
     }
@@ -600,8 +700,8 @@ namespace
             std::scoped_lock lock( g_textureMutex );
             auto found = g_textureData.find( texture );
             if( found != g_textureData.end() &&
-                ( !found->second.pixels.empty() || !found->second.floatPixels.empty() || !found->second.cookedLevels.empty() ||
-                  !found->second.ddsBytes.empty() ) )
+                ( !found->second.pixels.empty() || !found->second.floatPixels.empty() ||
+                  !found->second.cookedLevels.empty() || !found->second.ddsBytes.empty() ) )
             {
                 return true;
             }
@@ -624,7 +724,8 @@ namespace
         if( !dx11 )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto graphicsSystem = applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
+            auto graphicsSystem =
+                applicationManager ? applicationManager->getGraphicsSystemPtr() : nullptr;
             renderer = graphicsSystem
                            ? dynamic_pointer_cast<ClawRendererDX11>( graphicsSystem->getRenderer() )
                            : nullptr;
@@ -644,9 +745,13 @@ namespace
 
         auto &data = found->second;
         if( data.projectMipPolicy != policy.key() )
-        { data.projectMipPolicy = policy.key(); data.uploadPending = true; }
+        {
+            data.projectMipPolicy = policy.key();
+            data.uploadPending = true;
+        }
         const auto previousView = data.device == device ? data.textureView : nullptr;
-        if( ( data.pixels.empty() && data.floatPixels.empty() && data.cookedLevels.empty() && data.ddsBytes.empty() ) ||
+        if( ( data.pixels.empty() && data.floatPixels.empty() && data.cookedLevels.empty() &&
+              data.ddsBytes.empty() ) ||
             ( !data.uploadPending && data.attemptedRenderer == dx11 && data.attemptedDevice == device ) )
         {
             return previousView;
@@ -665,11 +770,18 @@ namespace
                 String error;
                 auto budget = WorldStreamingScheduler::shared()->reserve(
                     StreamMemoryClass::Gpu, data.floatPixels.size() * sizeof( f32 ), error );
-                if( !budget ) { data.uploadPending = true; WP_LOG_WARNING( error ); return previousView; }
-                candidate = retainUploadedTexture( wp_renderer_dx11_create_texture_rgba32f_native(
-                    dx11, data.floatPixels.data(), static_cast<wp_u32>( data.pixelSize.x ),
-                    static_cast<wp_u32>( data.pixelSize.y ),
-                    static_cast<wp_u64>( data.floatPixels.size() ) ), std::move( budget ) );
+                if( !budget )
+                {
+                    data.uploadPending = true;
+                    WP_LOG_WARNING( error );
+                    return previousView;
+                }
+                candidate = retainUploadedTexture(
+                    wp_renderer_dx11_create_texture_rgba32f_native(
+                        dx11, data.floatPixels.data(), static_cast<wp_u32>( data.pixelSize.x ),
+                        static_cast<wp_u32>( data.pixelSize.y ),
+                        static_cast<wp_u64>( data.floatPixels.size() ) ),
+                    std::move( budget ) );
             }
             else if( !data.ddsBytes.empty() )
             {
@@ -678,25 +790,35 @@ namespace
             else if( !data.cookedLevels.empty() )
             {
                 candidate = uploadMipLevels( dx11, data.cookedLevels, policy, &budgetDenied, false,
-                                              data.mipSettings.atlasColumns );
+                                             data.mipSettings.atlasColumns );
             }
             else
             {
                 String error;
                 auto mipSettings = data.mipSettings;
-                const bool reduceSingleMip = mipSettings.filter == TextureMipFilter::None &&
-                    ( policy.quality < 2 || ( policy.maximum > 0 &&
+                const bool reduceSingleMip =
+                    mipSettings.filter == TextureMipFilter::None &&
+                    ( policy.quality < 2 ||
+                      ( policy.maximum > 0 &&
                         ( static_cast<u32>( data.pixelSize.x ) > policy.maximum ||
                           static_cast<u32>( data.pixelSize.y ) > policy.maximum ) ) );
-                if( reduceSingleMip ) mipSettings.filter = TextureMipFilter::Data;
+                if( reduceSingleMip )
+                {
+                    mipSettings.filter = TextureMipFilter::Data;
+                }
                 auto working = WorldStreamingScheduler::shared()->reserve(
                     StreamMemoryClass::WorkingCpu,
                     generatedMipBytes( data.pixelSize.x, data.pixelSize.y, mipSettings ), error );
-                if( !working ) { data.uploadPending = true; WP_LOG_WARNING( error ); return previousView; }
+                if( !working )
+                {
+                    data.uploadPending = true;
+                    WP_LOG_WARNING( error );
+                    return previousView;
+                }
                 const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
                                                          data.pixelSize.y, mipSettings );
                 candidate = uploadMipLevels( dx11, levels, policy, &budgetDenied, reduceSingleMip,
-                                              data.mipSettings.atlasColumns );
+                                             data.mipSettings.atlasColumns );
             }
             if( !candidate )
             {
@@ -730,8 +852,8 @@ namespace workphone
         // Backend-private observable admission path shared by copyData and
         // createManual. A null input initializes the retained candidate to zero
         // directly; it needs no second temporary image or unchecked void call.
-        bool replaceClawTexturePixels( ClawTexture *texture, const void *input,
-                                       const Vector2I &size, String &error )
+        bool replaceClawTexturePixels( ClawTexture *texture, const void *input, const Vector2I &size,
+                                       String &error )
         {
             error.clear();
             if( !texture || size.x <= 0 || size.y <= 0 || size.x > 16384 || size.y > 16384 ||
@@ -746,9 +868,15 @@ namespace workphone
                 StreamBudget retiredBudget;
                 const auto byteCount = static_cast<size_t>( size.x ) * size.y * 4u;
                 auto sourceBudget = reserveTextureCpu( byteCount, error );
-                if( !sourceBudget ) return false;
+                if( !sourceBudget )
+                {
+                    return false;
+                }
                 Array<u8> pixels( byteCount, 0 );
-                if( input ) std::memcpy( pixels.data(), input, byteCount );
+                if( input )
+                {
+                    std::memcpy( pixels.data(), input, byteCount );
+                }
                 {
                     std::scoped_lock lock( g_textureMutex );
                     auto &data = g_textureData[texture];
@@ -820,8 +948,13 @@ namespace workphone
             // on every unload; the state alone does not prove cache emptiness.
             // Notifications require fresh Source storage. Their denial cannot
             // strand physical residency that was admitted by an earlier load.
-            try { setLoadingState( LoadingState::Unloading ); }
-            catch( const std::bad_alloc & ) {}
+            try
+            {
+                setLoadingState( LoadingState::Unloading );
+            }
+            catch( const std::bad_alloc & )
+            {
+            }
             {
                 std::scoped_lock lock( g_textureMutex );
                 auto found = g_textureData.find( this );
@@ -843,7 +976,9 @@ namespace workphone
                     found->second.ddsBytes = std::move( ddsBytes );
                     if( !found->second.cookedLevels.empty() || !found->second.floatPixels.empty() ||
                         !found->second.ddsBytes.empty() )
+                    {
                         found->second.sourceBudget = std::move( sourceBudget );
+                    }
                     found->second.cookedProfile = std::move( profile );
                     if( !found->second.ddsBytes.empty() || !found->second.floatPixels.empty() )
                     {
@@ -860,8 +995,13 @@ namespace workphone
             }
 
             Texture::unload( data );
-            try { setLoadingState( LoadingState::Unloaded ); }
-            catch( const std::bad_alloc & ) {}
+            try
+            {
+                setLoadingState( LoadingState::Unloaded );
+            }
+            catch( const std::bad_alloc & )
+            {
+            }
         }
 
         void ClawTexture::copyToTexture( SmartPtr<ITexture> &target )
@@ -871,23 +1011,41 @@ namespace workphone
         bool ClawTexture::releaseUnusedCacheData()
         {
             if( isLoadLocked() || getRenderTarget() ||
-                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) ) return false;
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                return false;
+            }
             std::scoped_lock lock( g_textureMutex );
             const auto found = g_textureData.find( this );
-            if( found == g_textureData.end() ) return false;
+            if( found == g_textureData.end() )
+            {
+                return false;
+            }
             auto &data = found->second;
             // Source decoding is the only known reload recipe. Cooked/procedural
             // uploads and authoring replacements intentionally retain their data.
             auto filePath = getFilePath();
-            if( filePath.empty() ) filePath = getName();
-            if( data.sourcePath.empty() || data.sourcePath != filePath ||
-                !data.decodeAttempted || data.pixels.empty() || !data.floatPixels.empty() ||
-                !data.cookedLevels.empty() || !data.ddsBytes.empty() ) return false;
+            if( filePath.empty() )
+            {
+                filePath = getName();
+            }
+            if( data.sourcePath.empty() || data.sourcePath != filePath || !data.decodeAttempted ||
+                data.pixels.empty() || !data.floatPixels.empty() || !data.cookedLevels.empty() ||
+                !data.ddsBytes.empty() )
+            {
+                return false;
+            }
             auto application = core::IApplicationManager::instancePtr();
             auto files = application ? application->getFileSystemPtr() : nullptr;
             auto source = files ? files->open( filePath, true, true, false, false, false ) : nullptr;
-            if( !source && files ) source = files->open( filePath, true, true, false, true, true );
-            if( !source || !source->size() ) return false;
+            if( !source && files )
+            {
+                source = files->open( filePath, true, true, false, true, true );
+            }
+            if( !source || !source->size() )
+            {
+                return false;
+            }
             destroyTextureView( data );
             std::decay_t<decltype( data.pixels )>{}.swap( data.pixels );
             data.sourceBudget.reset();
@@ -904,7 +1062,10 @@ namespace workphone
             if( data )
             {
                 String error;
-                if( !replaceClawTexturePixels( this, data, size, error ) ) WP_LOG_WARNING( error );
+                if( !replaceClawTexturePixels( this, data, size, error ) )
+                {
+                    WP_LOG_WARNING( error );
+                }
                 return;
             }
             setSize( size );
@@ -917,7 +1078,9 @@ namespace workphone
                 u64( size.x ) * u64( size.y ) * 4 != bgra.size() || getRenderTarget() ||
                 ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
             {
-                error = "Byte texture staging requires a sampled texture, bounded dimensions and exact BGRA pixels.";
+                error =
+                    "Byte texture staging requires a sampled texture, bounded dimensions and exact BGRA "
+                    "pixels.";
                 return false;
             }
             return replaceClawTexturePixels( this, bgra.data(), size, error );
@@ -932,20 +1095,27 @@ namespace workphone
                 u64( size.x ) * u64( size.y ) * 4 != rgba.size() || getRenderTarget() ||
                 ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
             {
-                error = "Linear float texture requires bounded sampled RGBA dimensions and exact pixel count.";
+                error =
+                    "Linear float texture requires bounded sampled RGBA dimensions and exact pixel "
+                    "count.";
                 return false;
             }
             for( size_t i = 0; i < rgba.size(); ++i )
+            {
                 if( !std::isfinite( rgba[i] ) || rgba[i] < 0 || ( i % 4 == 3 && rgba[i] > 1 ) )
                 {
                     error = "Linear float texture requires finite nonnegative RGB and alpha in [0,1].";
                     return false;
                 }
+            }
             try
             {
                 StreamBudget retiredBudget;
                 auto sourceBudget = reserveTextureCpu( rgba.capacity() * sizeof( f32 ), error );
-                if( !sourceBudget ) return false;
+                if( !sourceBudget )
+                {
+                    return false;
+                }
                 auto candidate = rgba;
                 std::scoped_lock lock( g_textureMutex );
                 auto &data = g_textureData[this];
@@ -1074,16 +1244,22 @@ namespace workphone
             {
                 StreamBudget retiredBudget;
                 u64 bytes = levels.capacity() * sizeof( TextureMipLevel );
-                for( const auto &level : levels ) bytes += level.bgra.capacity();
+                for( const auto &level : levels )
+                {
+                    bytes += level.bgra.capacity();
+                }
                 auto sourceBudget = reserveTextureCpu( bytes, error );
-                if( !sourceBudget ) return false;
+                if( !sourceBudget )
+                {
+                    return false;
+                }
                 auto retainedLevels = levels;
                 const auto policy = textureUploadPolicy();
                 {
                     std::scoped_lock lock( g_textureMutex );
                     auto &data = g_textureData[this];
                     auto *candidate = uploadMipLevels( renderer, retainedLevels, policy, nullptr, false,
-                                                        settings.atlasColumns );
+                                                       settings.atlasColumns );
                     if( !candidate )
                     {
                         error = "DX11 rejected the cooked texture mip upload";
@@ -1146,7 +1322,10 @@ namespace workphone
             {
                 StreamBudget retiredBudget;
                 auto sourceBudget = reserveTextureCpu( input.ddsBytes.size(), error );
-                if( !sourceBudget ) return false;
+                if( !sourceBudget )
+                {
+                    return false;
+                }
                 auto retained = input.ddsBytes;
                 SourceBudgetString profile( input.target );
                 const auto image = dds::inspect( retained );
@@ -1296,7 +1475,7 @@ namespace workphone
             {
                 const auto image = dds::inspect( found->second.ddsBytes );
                 properties->setProperty( "cookedContainer", "DDS DX10" );
-                properties->setProperty( "cookedProfile", String(found->second.cookedProfile) );
+                properties->setProperty( "cookedProfile", String( found->second.cookedProfile ) );
                 properties->setProperty( "cookedDxgiFormat", image.format );
                 properties->setProperty( "cookedMipCount", static_cast<u32>( image.mips.size() ) );
                 properties->setProperty( "cookedEncodedBytes",
@@ -1368,7 +1547,11 @@ namespace workphone
                     String error;
                     auto working = WorldStreamingScheduler::shared()->reserve(
                         StreamMemoryClass::WorkingCpu, base.size(), error );
-                    if( !working ) { WP_LOG_WARNING( error ); return; }
+                    if( !working )
+                    {
+                        WP_LOG_WARNING( error );
+                        return;
+                    }
                     Array<u8> pixels( base.begin(), base.end() );
                     data.pixels = std::move( pixels );
                     std::decay_t<decltype( data.cookedLevels )>{}.swap( data.cookedLevels );

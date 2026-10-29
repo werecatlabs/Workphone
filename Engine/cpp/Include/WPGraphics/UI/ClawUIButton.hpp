@@ -13,11 +13,13 @@ namespace workphone
 {
     namespace ui
     {
+
         // Use the Prototype<IUIButton> instantiation exported from Workphone.dll
         // to avoid LNK2005 (already defined) when linking against Workphone.lib.
 #if defined( WP_PLATFORM_WIN32 ) && !defined( _WP_STATIC_LIB_ ) && !defined( WPCore_EXPORTS )
         extern template class core::Prototype<IUIButton>;
 #endif
+
         class ClawUIButton : public ClawUIElement<IUIButton>
         {
         public:

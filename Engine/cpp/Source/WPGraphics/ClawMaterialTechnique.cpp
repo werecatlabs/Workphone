@@ -45,11 +45,16 @@ namespace workphone::render
         {
             // Admit collection growth before changing a caller-owned pass.
             if( m_passes.size() == m_passes.capacity() )
-                m_passes.reserve( std::max(size_t(1), m_passes.capacity() * 2) );
+            {
+                m_passes.reserve( std::max( size_t( 1 ), m_passes.capacity() * 2 ) );
+            }
             pass->setMaterial( getMaterial() );
             pass->setParent( this );
             m_passes.push_back( pass );
-            if( auto material = getMaterial() ) material->setPass( nullptr );
+            if( auto material = getMaterial() )
+            {
+                material->setPass( nullptr );
+            }
         }
     }
 
@@ -65,7 +70,10 @@ namespace workphone::render
             if( m_passes[i] == pass )
             {
                 m_passes.erase( m_passes.begin() + i );
-                if( auto material = getMaterial() ) material->setPass( nullptr );
+                if( auto material = getMaterial() )
+                {
+                    material->setPass( nullptr );
+                }
                 break;
             }
         }
@@ -74,7 +82,10 @@ namespace workphone::render
     void ClawMaterialTechnique::removePasses()
     {
         m_passes.clear();
-        if( auto material = getMaterial() ) material->setPass( nullptr );
+        if( auto material = getMaterial() )
+        {
+            material->setPass( nullptr );
+        }
     }
 
     Array<SmartPtr<IMaterialPass>> ClawMaterialTechnique::getPasses() const
@@ -86,12 +97,18 @@ namespace workphone::render
     {
         SourceBudgetArray<SmartPtr<IMaterialPass>> next( passes.begin(), passes.end() );
         m_passes.swap( next );
-        for( auto pass : passes ) if( pass )
+        for( auto pass : passes )
         {
-            pass->setMaterial( getMaterial() );
-            pass->setParent( this );
+            if( pass )
+            {
+                pass->setMaterial( getMaterial() );
+                pass->setParent( this );
+            }
         }
-        if( auto material = getMaterial() ) material->setPass( nullptr );
+        if( auto material = getMaterial() )
+        {
+            material->setPass( nullptr );
+        }
     }
 
     SmartPtr<IMaterialPass> ClawMaterialTechnique::getPass( u32 index ) const

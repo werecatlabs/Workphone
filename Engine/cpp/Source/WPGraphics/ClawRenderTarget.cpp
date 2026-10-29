@@ -75,7 +75,7 @@ namespace workphone
 
         void ClawRenderTarget::copyContentsToMemory( void *buffer, u32 size, FrameBuffer bufferId )
         {
-            (void)bufferId; // An offscreen target has one colour surface.
+            (void)bufferId;  // An offscreen target has one colour surface.
             if( !buffer )
             {
                 WP_LOG_WARNING( "ClawRenderTarget::copyContentsToMemory: null buffer supplied." );
@@ -90,7 +90,9 @@ namespace workphone
 
             if( !wp_renderer_dx11_copy_render_texture_rgba8( m_nativeRenderTexture, buffer, size ) )
             {
-                WP_LOG_WARNING( "ClawRenderTarget::copyContentsToMemory: target unavailable or RGBA8 buffer too small." );
+                WP_LOG_WARNING(
+                    "ClawRenderTarget::copyContentsToMemory: target unavailable or RGBA8 buffer too "
+                    "small." );
             }
         }
 
@@ -278,7 +280,9 @@ namespace workphone
             auto candidate = wp_renderer_dx11_create_render_texture( dx11, m_size.x, m_size.y );
             if( !candidate )
             {
-                WP_LOG_ERROR( "ClawRenderTarget: failed to allocate the DX11 render texture; retaining previous output." );
+                WP_LOG_ERROR(
+                    "ClawRenderTarget: failed to allocate the DX11 render texture; retaining previous "
+                    "output." );
                 return nullptr;
             }
             releaseNativeRenderTexture();

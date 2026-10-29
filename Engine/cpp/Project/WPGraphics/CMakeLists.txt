@@ -48,14 +48,7 @@ foreach(_source IN ITEMS ${SOURCE_FILES})
 endforeach()
 
 include_directories( ${WP_ROOT}/Dependencies/boost )
-
-include_directories( ${WP_ROOT}/Dependencies/bgfx/bx/include/compat/msvc )
-include_directories( ${WP_ROOT}/Dependencies/bgfx )
-include_directories( ${WP_ROOT}/Dependencies/bgfx/bx/include )
-include_directories( ${WP_ROOT}/Dependencies/bgfx/bx/3rdparty )
-include_directories( ${WP_ROOT}/Dependencies/bgfx/bgfx/include )
-include_directories( ${WP_ROOT}/Dependencies/bgfx/bgfx/examples/common )
-include_directories( ${WP_ROOT}/Dependencies/bgfx/bimg/include )
+include_directories( ${WP_ROOT}/Dependencies/cJSON )
 include_directories( ${WP_ROOT}/Dependencies/imgui )
 include_directories( ${WP_ROOT}/Dependencies/FreeImage/Source )
 
@@ -94,12 +87,6 @@ else ()
     add_library(WPGraphics SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
-# Foliage cooked descriptors use the vendored parser with module-local symbols.
-target_sources(WPGraphics PRIVATE ${WP_ROOT}/Dependencies/cJSON/cJSON.c)
-target_include_directories(WPGraphics PRIVATE ${WP_ROOT}/Dependencies/cJSON)
-set_source_files_properties(${WP_ROOT}/Dependencies/cJSON/cJSON.c
-    PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS CJSON_HIDE_SYMBOLS)
-
 if (WIN32)
 target_link_options(WPGraphics PUBLIC 
 $<$<CONFIG:Release>:/LTCG>
@@ -113,6 +100,7 @@ if (NOT WP_STATIC_LIB)
         target_link_libraries(WPGraphics Workphone)
         target_link_libraries(WPGraphics WorkphoneCore.lib)
         target_link_libraries(WPGraphics WorkphonePlatformWin32)
+        target_link_libraries(WPGraphics cjson.lib)
         target_link_libraries(WPGraphics d3d11.lib)
         target_link_libraries(WPGraphics dxgi.lib)
         target_link_libraries(WPGraphics d3dcompiler.lib)
