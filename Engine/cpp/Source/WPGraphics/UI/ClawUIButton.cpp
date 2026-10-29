@@ -164,6 +164,7 @@ namespace workphone::ui
         {
             return;
         }
+
         auto style = ctx->style.button;
         const auto enabled = isEnabled();
         {
@@ -173,51 +174,73 @@ namespace workphone::ui
                 const auto normal = ClawUIWorkphoneContext::toWorkphoneColor(
                     enabled ? m_normalColour : m_disabledColour );
                 style.normal = wp_style_item_color( normal );
-                style.hover = wp_style_item_color( enabled
-                    ? ClawUIWorkphoneContext::toWorkphoneColor( m_hoverColour ) : normal );
-                style.active = wp_style_item_color( enabled
-                    ? ClawUIWorkphoneContext::toWorkphoneColor( m_activeColour ) : normal );
+                style.hover = wp_style_item_color(
+                    enabled ? ClawUIWorkphoneContext::toWorkphoneColor( m_hoverColour ) : normal );
+                style.active = wp_style_item_color(
+                    enabled ? ClawUIWorkphoneContext::toWorkphoneColor( m_activeColour ) : normal );
                 style.border = 0;
                 style.rounding = 0;
                 style.color_factor_background = 1.0f;
             }
         }
+
         auto textColour = enabled ? ClawUIWorkphoneContext::toWorkphoneColor( getColour() )
                                   : ctx->style.button.text_normal;
-        if( !enabled ) textColour.a = static_cast<wp_byte>( textColour.a * 0.45f );
+        if( !enabled )
+        {
+            textColour.a = static_cast<wp_byte>( textColour.a * 0.45f );
+        }
         style.text_normal = style.text_hover = style.text_active = textColour;
         style.color_factor_text = 1.0f;
         frame_retention::retainFontOwner( this );
         // Commands retain their font pointer until conversion, so each button
         // owns its descriptor instead of borrowing a stack or shared style font.
-        if( !m_drawFont ) m_drawFont = std::make_unique<wp_user_font>();
+        if( !m_drawFont )
+        {
+            m_drawFont = std::make_unique<wp_user_font>();
+        }
         *m_drawFont = *ctx->style.font;
         const auto label = localizeProjectText( getLabel() );
         const auto nativeLabel = reinterpret_cast<const wp_c8 *>( label.c_str() );
         auto textHeight = MathF::min( MathF::max( getTextSize(), 1.0f ),
                                       MathF::max( bounds.h - style.padding.y * 2.0f, 1.0f ) );
-        const auto width = m_drawFont->width( m_drawFont->userdata, textHeight,
-                                             nativeLabel, static_cast<int>( label.size() ) );
+        const auto width = m_drawFont->width( m_drawFont->userdata, textHeight, nativeLabel,
+                                              static_cast<int>( label.size() ) );
         const auto contentWidth = MathF::max( bounds.w - style.padding.x * 2.0f, 1.0f );
-        if( width > contentWidth ) textHeight *= contentWidth / width;
+        if( width > contentWidth )
+        {
+            textHeight *= contentWidth / width;
+        }
         m_drawFont->height = textHeight;
-        const auto *input = !enabled ||
-                            widgetState == WORKPHONE_WIDGET_ROM ||
-                            widgetState == WORKPHONE_WIDGET_DISABLED ||
-                            ( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM )
-                                ? nullptr : &ctx->input;
+        const auto *input = !enabled || widgetState == WORKPHONE_WIDGET_ROM ||
+                                    widgetState == WORKPHONE_WIDGET_DISABLED ||
+                                    ( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM )
+                                ? nullptr
+                                : &ctx->input;
         // Use a local style and explicit font without mutating the shared context.
         auto *canvas = wp_window_get_canvas( ctx );
         wp_rect content;
         const auto clicked = wp_do_button( &ctx->last_widget_state, canvas, bounds, &style, input,
-                                            ctx->button_behavior, &content );
+                                           ctx->button_behavior, &content );
         // Core input emits ACTIVE while its button drawing expects ACTIVED.
         auto drawState = ctx->last_widget_state;
-        if( drawState & WORKPHONE_WIDGET_STATE_ACTIVE ) drawState |= WORKPHONE_WIDGET_STATE_ACTIVED;
-        if( style.draw_begin ) style.draw_begin( canvas, style.userdata );
+        if( drawState & WORKPHONE_WIDGET_STATE_ACTIVE )
+        {
+            drawState |= WORKPHONE_WIDGET_STATE_ACTIVED;
+        }
+        
+        if( style.draw_begin )
+        {
+            style.draw_begin( canvas, style.userdata );
+        }
+        
         wp_draw_button_text( canvas, &bounds, &content, drawState, &style, nativeLabel,
                              static_cast<int>( label.size() ), style.text_alignment, m_drawFont.get() );
-        if( style.draw_end ) style.draw_end( canvas, style.userdata );
+        if( style.draw_end )
+        {
+            style.draw_end( canvas, style.userdata );
+        }
+
         if( clicked )
         {
             handleButtonClick();

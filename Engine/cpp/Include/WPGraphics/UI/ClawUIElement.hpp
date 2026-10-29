@@ -1570,17 +1570,25 @@ namespace workphone
             {
                 auto &storedChildren = getChildrenRef();
                 ScopedLock lock( &storedChildren );
+
                 struct OrderedChild
                 {
                     SmartPtr<IUIElement> child;
                     u32 order;
                 };
+
                 Array<OrderedChild> ordered;
                 children = storedChildren.snapshot();
                 ordered.reserve( children.size() );
                 const auto less = []( const auto &a, const auto &b ) {
-                    if( !a.child ) return false;
-                    if( !b.child ) return true;
+                    if( !a.child )
+                    {
+                        return false;
+                    }
+                    if( !b.child )
+                    {
+                        return true;
+                    }
                     return a.order < b.order;
                 };
                 auto alreadyOrdered = true;
@@ -1589,7 +1597,9 @@ namespace workphone
                     ordered.push_back( { child, child ? child->getOrder() : 0 } );
                     const auto count = ordered.size();
                     if( count > 1 && less( ordered[count - 1], ordered[count - 2] ) )
+                    {
                         alreadyOrdered = false;
+                    }
                 }
                 // Live UI state can change order while rendering. Compare fixed keys
                 // and never expose std::sort's moved-from slots in the shared inventory.
