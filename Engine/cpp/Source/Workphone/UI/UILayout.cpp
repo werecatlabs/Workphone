@@ -9,6 +9,7 @@ namespace workphone
 {
     namespace ui
     {
+
         WP_CLASS_REGISTER_DERIVED( workphone::ui, UILayout, UIElement<IUILayoutWindow> );
 
         UILayout::UILayout() : UIElement<IUILayoutWindow>( UILayout::typeInfo() )

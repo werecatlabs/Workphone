@@ -100,6 +100,7 @@ namespace workphone::scene
     void UIComponent::load( SmartPtr<ISharedObject> data )
     {
         Component::load( data );
+        createUI();
     }
 
     void UIComponent::unload( SmartPtr<ISharedObject> data )
@@ -378,6 +379,39 @@ namespace workphone::scene
                 if( ( flags ^ oldFlags ) &
                     ( IGameActor::ActorFlagEnabled | IGameActor::ActorFlagEnabledInScene ) )
                 {
+                    auto enabled = isEnabled() && actor->isEnabledInScene();
+                    if( enabled )
+                    {
+                        //if( auto element = getElementPtr() )
+                        //{
+                        //    element->invalidate();
+                        //}
+
+                        //auto components = actor->getAllComponentsInChildren<UIComponent>();
+                        //for( auto &component : components )
+                        //{
+                        //    if( auto element = component->getElementPtr() )
+                        //    {
+                        //        element->invalidate();
+                        //    }
+                        //}
+
+                        //createUI();
+                        //setupCanvas();
+                        updateElementState();
+                        //updateOrder();
+
+                        //if( auto root = actor->getSceneRoot() )
+                        //{
+                        //    root->updateTransform();
+                        //}
+
+                        //if( auto componentSystem = getComponentSystemPtr() )
+                        //{
+                        //    componentSystem->makeDirty();
+                        //}
+                    }
+
                     updateVisibility();
                 }
             }
@@ -1007,37 +1041,13 @@ namespace workphone::scene
         }
     }
 
-    //void UIComponent::setZOrder( u32 zOrder, bool cascade )
-    //{
-    //    m_zOrder = zOrder;
-
-    //    if( auto element = getElement() )
-    //    {
-    //        element->setOrder( m_zOrder );
-    //    }
-
-    //    if( cascade )
-    //    {
-    //        if( auto actor = getActor() )
-    //        {
-    //            auto childUiComponents = actor->getComponentsInChildren<UIComponent>();
-    //            for( auto childUiComponent : childUiComponents )
-    //            {
-    //                childUiComponent->setZOrder( zOrder + 1, cascade );
-    //            }
-    //        }
-    //    }
-    //}
-
     Array<SmartPtr<IGameActor>> UIComponent::getActorListeners() const
     {
-        ScopedLock lock( this, false );
         return m_actorListeners.snapshot();
     }
 
     void UIComponent::removeListener( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this, true );
         m_componentListeners.erase(
             std::remove( m_componentListeners.begin(), m_componentListeners.end(), component ),
             m_componentListeners.end() );
@@ -1045,33 +1055,27 @@ namespace workphone::scene
 
     void UIComponent::removeActorListener( SmartPtr<IGameActor> actor )
     {
-        ScopedLock lock( this, true );
         m_actorListeners.erase( std::remove( m_actorListeners.begin(), m_actorListeners.end(), actor ),
                                 m_actorListeners.end() );
     }
 
     Array<SmartPtr<IComponent>> UIComponent::getComponentListeners() const
     {
-        ScopedLock lock( this, false );
         return m_componentListeners.snapshot();
     }
 
     void UIComponent::addListener( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
         m_componentListeners.push_back( component );
     }
 
     void UIComponent::addActorListener( SmartPtr<IGameActor> actor )
     {
-        ScopedLock lock( this );
         m_actorListeners.push_back( actor );
     }
 
     void UIComponent::setupCanvas()
     {
-        ScopedLock lock( this );
-
         if( auto actor = getActor() )
         {
             for( auto ancestor = actor; ancestor; ancestor = ancestor->getParent() )
@@ -1082,6 +1086,7 @@ namespace workphone::scene
                     return;
                 }
             }
+
             setCanvas( nullptr );
         }
     }

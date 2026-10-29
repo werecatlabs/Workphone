@@ -59,7 +59,6 @@ namespace workphone::scene
             setLoadingState( LoadingState::Loading );
 
             m_options.reserve( m_initialOptionCapacity );
-            createUI();
 
             UIComponent::load( data );
 
