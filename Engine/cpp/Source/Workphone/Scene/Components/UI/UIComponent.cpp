@@ -378,39 +378,6 @@ namespace workphone::scene
                 if( ( flags ^ oldFlags ) &
                     ( IGameActor::ActorFlagEnabled | IGameActor::ActorFlagEnabledInScene ) )
                 {
-                    auto enabled = isEnabled() && actor->isEnabledInScene();
-                    if( enabled )
-                    {
-                        if( auto element = getElementPtr() )
-                        {
-                            element->invalidate();
-                        }
-
-                        auto components = actor->getAllComponentsInChildren<UIComponent>();
-                        for( auto &component : components )
-                        {
-                            if( auto element = component->getElementPtr() )
-                            {
-                                element->invalidate();
-                            }
-                        }
-
-                        createUI();
-                        setupCanvas();
-                        updateElementState();
-                        updateOrder();
-
-                        if( auto root = actor->getSceneRoot() )
-                        {
-                            root->updateTransform();
-                        }
-
-                        if( auto componentSystem = getComponentSystemPtr() )
-                        {
-                            componentSystem->makeDirty();
-                        }
-                    }
-
                     updateVisibility();
                 }
             }
@@ -1125,17 +1092,10 @@ namespace workphone::scene
 
     void UIComponent::updateVisibility()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-
         if( auto actor = getActor() )
         {
             auto enabled = isEnabled() && actor->isEnabledInScene();
-            auto visible = applicationManager->isPlaying() ? enabled : enabled && actor->isVisible();
-            if( !getUseNativeUI() )
-            {
-                enabled = false;
-                visible = false;
-            }
+            auto visible = isVisible() && actor->isEnabledInScene();
 
             if( auto element = getElement() )
             {
@@ -1462,6 +1422,16 @@ namespace workphone::scene
     bool UIComponent::getUseNativeUI() const
     {
         return m_useNativeUI;
+    }
+
+    void UIComponent::setVisible( bool visible )
+    {
+        m_visible = visible;
+    }
+
+    bool UIComponent::isVisible() const
+    {
+        return m_visible;
     }
 
     UIComponent::UIElementListener::UIElementListener() = default;

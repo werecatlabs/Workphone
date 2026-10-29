@@ -335,12 +335,13 @@ namespace workphone::scene
             return;
         }
 
-        Array<IComponent *> cleanComponents;
+        Array<SmartPtr<IComponent>> cleanComponents;
         cleanComponents.reserve( dirtyComponents.size() );
 
-        std::sort( dirtyComponents.begin(), dirtyComponents.end(), []( IComponent *a, IComponent *b ) {
-            auto componentA = (LayoutTransform *)a;
-            auto componentB = (LayoutTransform *)b;
+        std::sort( dirtyComponents.begin(), dirtyComponents.end(),
+                   []( SmartPtr<IComponent> a, SmartPtr<IComponent> b ) {
+                       auto componentA = (LayoutTransform *)a.get();
+                       auto componentB = (LayoutTransform *)b.get();
             if( componentA && componentB )
             {
                 const auto depthA = getHierarchyDepth( componentA );
@@ -391,8 +392,8 @@ namespace workphone::scene
                 continue;
             }
 
-            auto canvasTransform = (LayoutTransform *)component;
-            layoutState->owner = canvasTransform;
+            auto canvasTransform = workphone::static_pointer_cast<LayoutTransform>(component);
+            layoutState->owner = canvasTransform.get();
 
             auto actor = canvasTransform->getActorPtr();
             if( !actor )
@@ -505,7 +506,7 @@ namespace workphone::scene
             return;
         }
 
-        Array<IComponent *> dirtyComponents;
+        Array<SmartPtr<IComponent>> dirtyComponents;
         dirtyComponents.reserve( 32 );
 
         for( auto component : m_components )
@@ -520,9 +521,10 @@ namespace workphone::scene
             }
         }
 
-        std::sort( dirtyComponents.begin(), dirtyComponents.end(), []( IComponent *a, IComponent *b ) {
-            auto componentA = (LayoutTransform *)a;
-            auto componentB = (LayoutTransform *)b;
+        std::sort( dirtyComponents.begin(), dirtyComponents.end(),
+                   []( SmartPtr<IComponent> a, SmartPtr<IComponent> b ) {
+            auto componentA = (LayoutTransform *)a.get();
+            auto componentB = (LayoutTransform *)b.get();
             if( componentA && componentB )
             {
                 return componentA->getZOrder() < componentB->getZOrder();
@@ -860,37 +862,6 @@ namespace workphone::scene
         m_dirtyComponents.erase(
             std::remove( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() ),
             m_dirtyComponents.end() );
-        m_componentPointers.erase(
-            std::remove( m_componentPointers.begin(), m_componentPointers.end(), component.get() ),
-            m_componentPointers.end() );
-    }
-
-    void LayoutTransformSystem::updateDirtyList()
-    {
-        auto componentData = getComponents();
-
-        Array<IComponent *> &components = m_componentPointers;
-        components.clear();
-        components.reserve( 12 );
-
-        for( auto component : componentData )
-        {
-            if( component )
-            {
-                auto layoutState = component->getComponentStateByType<UILayoutStateData>();
-                if( layoutState )
-                {
-                    if( BitUtil::getFlagValue<u8>( layoutState->flags, UILayoutStateData::dirtyFlag ) )
-                    {
-                        components.push_back( component );
-                    }
-                }
-            }
-        }
-
-        //std::sort( components.begin(), components.end(), []( IComponent *a, IComponent *b ) {
-        //    return ( (UIComponent *)a )->getZOrder() < ( (UIComponent *)b )->getZOrder();
-        //} );
     }
 
     Parameter LayoutTransformSystem::handleEvent( EventType eventType, hash_type eventValue,

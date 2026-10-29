@@ -114,7 +114,7 @@ namespace workphone
              *
              * The returned array contains raw pointers to currently stored components.
              */
-            Array<IComponent *> getComponents() const;
+            Array<SmartPtr<IComponent>> getComponents() const;
 
             /**
              * @brief Replace the internal component pointer array.
@@ -124,7 +124,7 @@ namespace workphone
              * must ensure pointers are valid for the lifetime of the system or until
              * they are replaced again.
              */
-            void setComponents( const Array<IComponent *> &components );
+            void setComponents( const Array<SmartPtr<IComponent>> &components );
 
             /**
              * @copydoc IComponentSystem::isDirty
@@ -167,13 +167,13 @@ namespace workphone
              * @brief Get the list of components currently marked dirty.
              * @return Array of component pointers that need processing.
              */
-            Array<IComponent *> getDirtyComponents() const;
+            Array<SmartPtr<IComponent>> getDirtyComponents() const;
 
             /**
              * @brief Replace the current dirty list with a new list.
              * @param dirtyComponents New list of components to mark as dirty.
              */
-            void setDirtyComponents( const Array<IComponent *> &dirtyComponents );
+            void setDirtyComponents( const Array<SmartPtr<IComponent>> &dirtyComponents );
 
             /**
              * @brief Handle events dispatched to this component system.
@@ -278,12 +278,12 @@ namespace workphone
              * @brief List of component pointers that have been marked dirty and need
              * processing.
              */
-            ConcurrentArray<IComponent *> m_dirtyComponents;
+            ConcurrentArray<SmartPtr<IComponent>> m_dirtyComponents;
 
             /**
              * @brief Primary storage array of component pointers indexed by slot.
              */
-            ConcurrentArray<IComponent *> m_components;
+            ConcurrentArray<SmartPtr<IComponent>> m_components;
 
             /**
              * @brief Per-slot loading state flags used during asynchronous load/unload
