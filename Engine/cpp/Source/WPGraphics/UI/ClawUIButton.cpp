@@ -228,12 +228,12 @@ namespace workphone::ui
         {
             drawState |= WORKPHONE_WIDGET_STATE_ACTIVED;
         }
-        
+
         if( style.draw_begin )
         {
             style.draw_begin( canvas, style.userdata );
         }
-        
+
         wp_draw_button_text( canvas, &bounds, &content, drawState, &style, nativeLabel,
                              static_cast<int>( label.size() ), style.text_alignment, m_drawFont.get() );
         if( style.draw_end )

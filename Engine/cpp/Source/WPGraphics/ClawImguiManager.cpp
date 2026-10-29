@@ -34,7 +34,10 @@ namespace workphone
             {
                 auto hwnd = static_cast<HWND>( viewport->PlatformHandleRaw );
 #    ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-                if( !hwnd ) hwnd = static_cast<HWND>( ImGui::GetIO().ImeWindowHandle );
+                if( !hwnd )
+                {
+                    hwnd = static_cast<HWND>( ImGui::GetIO().ImeWindowHandle );
+                }
 #    endif
                 detail::postPlatformImeUpdate(
                     hwnd, data->WantVisible,
@@ -423,10 +426,10 @@ namespace workphone
         {
             const float safeW = safeDimension( width, 1.0f );
             const float safeH = safeDimension( height, 1.0f );
-            m_vpWidth = static_cast<s32>( std::min( static_cast<double>( safeW ),
-                          static_cast<double>( std::numeric_limits<s32>::max() ) ) );
-            m_vpHeight = static_cast<s32>( std::min( static_cast<double>( safeH ),
-                          static_cast<double>( std::numeric_limits<s32>::max() ) ) );
+            m_vpWidth = static_cast<s32>( std::min(
+                static_cast<double>( safeW ), static_cast<double>( std::numeric_limits<s32>::max() ) ) );
+            m_vpHeight = static_cast<s32>( std::min(
+                static_cast<double>( safeH ), static_cast<double>( std::numeric_limits<s32>::max() ) ) );
 
             if( ImGui::GetCurrentContext() )
             {
@@ -619,14 +622,17 @@ namespace workphone
                     }
 
                     if( cmd->VtxOffset >= vertexCount ||
-                        cmd->ElemCount > static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
+                        cmd->ElemCount >
+                            static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
                     {
                         continue;
                     }
 
                     const unsigned int availableVertices = vertexCount - cmd->VtxOffset;
                     if( std::any_of( idxBuf + indexOffset, idxBuf + indexOffset + cmd->ElemCount,
-                                    [availableVertices]( ImDrawIdx index ) { return index >= availableVertices; } ) )
+                                     [availableVertices]( ImDrawIdx index ) {
+                                         return index >= availableVertices;
+                                     } ) )
                     {
                         continue;
                     }
@@ -661,8 +667,7 @@ namespace workphone
                     }
 
                     const int clipL = clampClip( std::floor( double( clipMinX ) ), vpWidth );
-                    const int clipT =
-                        clampClip( std::floor( double( clipMinY ) ), vpHeight );
+                    const int clipT = clampClip( std::floor( double( clipMinY ) ), vpHeight );
                     const int clipR = clampClip( std::ceil( double( clipMaxX ) ), vpWidth );
                     const int clipB = clampClip( std::ceil( double( clipMaxY ) ), vpHeight );
 
@@ -736,7 +741,9 @@ namespace workphone
             ImGuiIO &io = ImGui::GetIO();
             if( !io.Fonts || io.Fonts->Locked )
             {
-                WP_LOG_ERROR( "ClawImguiManager::createFontTexture: font atlas is null or locked by an active frame." );
+                WP_LOG_ERROR(
+                    "ClawImguiManager::createFontTexture: font atlas is null or locked by an active "
+                    "frame." );
                 return;
             }
 

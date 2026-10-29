@@ -13,7 +13,8 @@ namespace workphone::render
             auto app = core::IApplicationManager::instancePtr();
             return app ? app->getGraphicsSystem() : nullptr;
         }
-    }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMaterialManager, MaterialManager );
 
     ClawMaterialManager::ClawMaterialManager()
@@ -96,7 +97,10 @@ namespace workphone::render
             clonedMaterial->fromData( material->toData() );
             clonedMaterial->setName( clonedMaterialName );
             clonedMaterial->load( nullptr );
-            if(auto source=dynamic_cast<ClawMaterial *>(material.get())) source->copyRuntimeShaderTo(*clonedMaterial);
+            if( auto source = dynamic_cast<ClawMaterial *>( material.get() ) )
+            {
+                source->copyRuntimeShaderTo( *clonedMaterial );
+            }
 
             m_materials.emplace_back( clonedMaterial );
             return clonedMaterial;
@@ -126,8 +130,20 @@ namespace workphone::render
         ScopedLock graphicsOwner( materialGraphicsOwner() );
         try
         {
-            if( !uuid.empty() ) if( auto existing = getById( uuid ) ) return existing;
-            if( !name.empty() ) if( auto existing = getByName( name ) ) return existing;
+            if( !uuid.empty() )
+            {
+                if( auto existing = getById( uuid ) )
+                {
+                    return existing;
+                }
+            }
+            if( !name.empty() )
+            {
+                if( auto existing = getByName( name ) )
+                {
+                    return existing;
+                }
+            }
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
@@ -174,18 +190,26 @@ namespace workphone::render
         {
             ScopedLock<decltype( m_materials )> lock( &m_materials );
             for( const auto &entry : m_materials )
+            {
                 if( entry && entry->getFilePath() == filePath )
                 {
                     material = entry;
                     break;
                 }
+            }
         }
         if( !material )
         {
             material = dynamic_pointer_cast<IMaterial>( create( filePath ) );
-            if( material ) material->setName( Path::getFileNameWithoutExtension( filePath ) );
+            if( material )
+            {
+                material->setName( Path::getFileNameWithoutExtension( filePath ) );
+            }
         }
-        if( material && !material->isLoaded() ) material->load( nullptr );
+        if( material && !material->isLoaded() )
+        {
+            material->load( nullptr );
+        }
         return material;
     }
 
@@ -193,7 +217,10 @@ namespace workphone::render
     {
         auto application = core::IApplicationManager::instancePtr();
         auto graphics = application ? application->getGraphicsSystem() : nullptr;
-        if( !graphics || !maximumCandidates ) return 0;
+        if( !graphics || !maximumCandidates )
+        {
+            return 0;
+        }
         ScopedLock graphicsLock( graphics );
         const auto count = m_materials.size();
         const auto candidates = std::min<size_t>( maximumCandidates, count );
@@ -203,12 +230,20 @@ namespace workphone::render
             SmartPtr<IMaterial> candidate;
             {
                 ScopedLock<decltype( m_materials )> lock( &m_materials );
-                if( m_materials.empty() ) break;
+                if( m_materials.empty() )
+                {
+                    break;
+                }
                 m_evictionCursor %= m_materials.size();
                 candidate = m_materials[m_evictionCursor++];
             }
             if( auto material = dynamic_cast<ClawMaterial *>( candidate.get() ) )
-                if( material->releaseUnusedResources() ) ++released;
+            {
+                if( material->releaseUnusedResources() )
+                {
+                    ++released;
+                }
+            }
         }
         return released;
     }

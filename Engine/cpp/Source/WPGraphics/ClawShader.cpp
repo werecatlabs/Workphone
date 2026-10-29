@@ -6,14 +6,14 @@
 #include <cstring>
 #include <limits>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
-#include <d3d11.h>
-#include <d3d11shader.h>
-#include <d3dcompiler.h>
-#include <wrl/client.h>
-#include <array>
-#include <atomic>
-#include <new>
+#if defined( WP_PLATFORM_WIN32 ) && WP_BUILD_RENDERER_DX11
+#    include <d3d11.h>
+#    include <d3d11shader.h>
+#    include <d3dcompiler.h>
+#    include <wrl/client.h>
+#    include <array>
+#    include <atomic>
+#    include <new>
 #endif
 
 namespace workphone
@@ -93,124 +93,251 @@ namespace workphone
                 return static_cast<IShader::Status>( static_cast<u8>( status ) );
             }
 
-#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
+#if defined( WP_PLATFORM_WIN32 ) && WP_BUILD_RENDERER_DX11
             class ShaderBlob final : public ID3DBlob
             {
-                std::atomic<ULONG> m_references{1};
+                std::atomic<ULONG> m_references{ 1 };
                 StreamBudget m_budget;
                 Microsoft::WRL::ComPtr<ID3DBlob> m_bytes;
+
             public:
-                ShaderBlob(Microsoft::WRL::ComPtr<ID3DBlob> bytes,StreamBudget budget) :
-                    m_budget(std::move(budget)),m_bytes(std::move(bytes)) {}
-                HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void **result) override
+                ShaderBlob( Microsoft::WRL::ComPtr<ID3DBlob> bytes, StreamBudget budget ) :
+                    m_budget( std::move( budget ) ),
+                    m_bytes( std::move( bytes ) )
                 {
-                    if(!result) return E_POINTER;
-                    *result=nullptr;
-                    if(id!=__uuidof(IUnknown) && id!=__uuidof(ID3DBlob)) return E_NOINTERFACE;
-                    *result=static_cast<ID3DBlob *>(this); AddRef(); return S_OK;
                 }
-                ULONG STDMETHODCALLTYPE AddRef() override { return ++m_references; }
+
+                HRESULT STDMETHODCALLTYPE QueryInterface( REFIID id, void **result ) override
+                {
+                    if( !result )
+                    {
+                        return E_POINTER;
+                    }
+                    *result = nullptr;
+                    if( id != __uuidof( IUnknown ) && id != __uuidof( ID3DBlob ) )
+                    {
+                        return E_NOINTERFACE;
+                    }
+                    *result = static_cast<ID3DBlob *>( this );
+                    AddRef();
+                    return S_OK;
+                }
+
+                ULONG STDMETHODCALLTYPE AddRef() override
+                {
+                    return ++m_references;
+                }
+
                 ULONG STDMETHODCALLTYPE Release() override
                 {
-                    const auto references=--m_references;
-                    if(!references) delete this;
+                    const auto references = --m_references;
+                    if( !references )
+                    {
+                        delete this;
+                    }
                     return references;
                 }
-                LPVOID STDMETHODCALLTYPE GetBufferPointer() override { return m_bytes->GetBufferPointer(); }
-                SIZE_T STDMETHODCALLTYPE GetBufferSize() override { return m_bytes->GetBufferSize(); }
+
+                LPVOID STDMETHODCALLTYPE GetBufferPointer() override
+                {
+                    return m_bytes->GetBufferPointer();
+                }
+
+                SIZE_T STDMETHODCALLTYPE GetBufferSize() override
+                {
+                    return m_bytes->GetBufferSize();
+                }
             };
 
-            void releaseClawShader(void *native,void *)
-            { if(native) static_cast<ID3DBlob *>(native)->Release(); }
-
-            wp_s32 compileClawShader(wp_shader *shader,void **candidate,void *)
+            void releaseClawShader( void *native, void * )
             {
-                if(!shader || !candidate) return 0;
-                *candidate=nullptr;
+                if( native )
+                {
+                    static_cast<ID3DBlob *>( native )->Release();
+                }
+            }
+
+            wp_s32 compileClawShader( wp_shader *shader, void **candidate, void * )
+            {
+                if( !shader || !candidate )
+                {
+                    return 0;
+                }
+                *candidate = nullptr;
                 try
                 {
                     using Microsoft::WRL::ComPtr;
-                    const auto stage=wp_shader_get_type(shader);
-                    const char *profiles[]={"vs_5_0","ps_5_0","gs_5_0","hs_5_0","ds_5_0","cs_5_0"};
-                    if(static_cast<unsigned>(stage)>=6)
-                    { wp_shader_set_last_error(shader,toCText("This shader stage is unsupported by DirectX 11."));return 0; }
-                    const auto language=wp_shader_get_language(shader);
-                    if(language!=WORKPHONE_SHADER_LANGUAGE_HLSL && language!=WORKPHONE_SHADER_LANGUAGE_DXBC)
-                    { wp_shader_set_last_error(shader,toCText("DirectX 11 shader compilation supports HLSL and DXBC only."));return 0; }
-                    if(wp_shader_get_specialization_count(shader))
-                    { wp_shader_set_last_error(shader,toCText("DirectX 11 specialization constants require an explicit compiler policy; use HLSL defines."));return 0; }
-                    StreamBudget budget;
-                    ComPtr<ID3DBlob> blob,diagnostic;
-                    if(language==WORKPHONE_SHADER_LANGUAGE_DXBC)
+                    const auto stage = wp_shader_get_type( shader );
+                    const char *profiles[] = {
+                        "vs_5_0", "ps_5_0", "gs_5_0", "hs_5_0", "ds_5_0", "cs_5_0"
+                    };
+                    if( static_cast<unsigned>( stage ) >= 6 )
                     {
-                        wp_u32 size=0;
-                        const auto bytes=wp_shader_get_binary(shader,&size);
-                        if(!bytes || !size)
-                        { wp_shader_set_last_error(shader,toCText("DXBC shader has no bytecode."));return 0; }
-                        if(size>std::numeric_limits<size_t>::max()-sizeof(ShaderBlob)) throw std::bad_alloc();
-                        budget=WorldStreamingScheduler::reserveSharedSource(sizeof(ShaderBlob)+size);
-                        if(!budget) throw std::bad_alloc();
-                        if(FAILED(D3DCreateBlob(size,&blob))) throw std::bad_alloc();
-                        std::memcpy(blob->GetBufferPointer(),bytes,size);
+                        wp_shader_set_last_error(
+                            shader, toCText( "This shader stage is unsupported by DirectX 11." ) );
+                        return 0;
+                    }
+                    const auto language = wp_shader_get_language( shader );
+                    if( language != WORKPHONE_SHADER_LANGUAGE_HLSL &&
+                        language != WORKPHONE_SHADER_LANGUAGE_DXBC )
+                    {
+                        wp_shader_set_last_error(
+                            shader,
+                            toCText( "DirectX 11 shader compilation supports HLSL and DXBC only." ) );
+                        return 0;
+                    }
+                    if( wp_shader_get_specialization_count( shader ) )
+                    {
+                        wp_shader_set_last_error(
+                            shader, toCText( "DirectX 11 specialization constants require an explicit "
+                                             "compiler policy; use HLSL defines." ) );
+                        return 0;
+                    }
+                    StreamBudget budget;
+                    ComPtr<ID3DBlob> blob, diagnostic;
+                    if( language == WORKPHONE_SHADER_LANGUAGE_DXBC )
+                    {
+                        wp_u32 size = 0;
+                        const auto bytes = wp_shader_get_binary( shader, &size );
+                        if( !bytes || !size )
+                        {
+                            wp_shader_set_last_error( shader,
+                                                      toCText( "DXBC shader has no bytecode." ) );
+                            return 0;
+                        }
+                        if( size > std::numeric_limits<size_t>::max() - sizeof( ShaderBlob ) )
+                        {
+                            throw std::bad_alloc();
+                        }
+                        budget =
+                            WorldStreamingScheduler::reserveSharedSource( sizeof( ShaderBlob ) + size );
+                        if( !budget )
+                        {
+                            throw std::bad_alloc();
+                        }
+                        if( FAILED( D3DCreateBlob( size, &blob ) ) )
+                        {
+                            throw std::bad_alloc();
+                        }
+                        std::memcpy( blob->GetBufferPointer(), bytes, size );
                     }
                     else
                     {
-                        const auto source=fromCText(wp_shader_get_source(shader));
-                        if(!source || !*source)
-                        { wp_shader_set_last_error(shader,toCText("HLSL source is empty. Precompiled shader bytes require the DXBC language."));return 0; }
-                        std::array<D3D_SHADER_MACRO,WP_SHADER_MAX_DEFINES+1> macros{};
-                        for(wp_s32 i=0;i<wp_shader_get_define_count(shader);++i)
+                        const auto source = fromCText( wp_shader_get_source( shader ) );
+                        if( !source || !*source )
                         {
-                            const auto define=wp_shader_get_define_at(shader,i);
-                            macros[i]={fromCText(define->name),fromCText(define->value)};
+                            wp_shader_set_last_error(
+                                shader, toCText( "HLSL source is empty. Precompiled shader bytes "
+                                                 "require the DXBC language." ) );
+                            return 0;
                         }
-                        const auto entry=fromCText(wp_shader_get_entry_point(shader));
-                        const auto authoredProfile=fromCText(wp_shader_get_profile(shader));
-                        const auto profile=*authoredProfile?authoredProfile:profiles[static_cast<unsigned>(stage)];
-                        const auto result=D3DCompile(source,std::strlen(source),"ClawShader",macros.data(),nullptr,
-                            entry,profile,D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&blob,&diagnostic);
-                        if(result==E_OUTOFMEMORY) throw std::bad_alloc();
-                        if(FAILED(result))
+                        std::array<D3D_SHADER_MACRO, WP_SHADER_MAX_DEFINES + 1> macros{};
+                        for( wp_s32 i = 0; i < wp_shader_get_define_count( shader ); ++i )
                         {
-                            wp_shader_set_last_error(shader,toCText(diagnostic ? static_cast<const char *>(diagnostic->GetBufferPointer()) : "HLSL compilation failed."));
+                            const auto define = wp_shader_get_define_at( shader, i );
+                            macros[i] = { fromCText( define->name ), fromCText( define->value ) };
+                        }
+                        const auto entry = fromCText( wp_shader_get_entry_point( shader ) );
+                        const auto authoredProfile = fromCText( wp_shader_get_profile( shader ) );
+                        const auto profile = *authoredProfile ? authoredProfile
+                                                              : profiles[static_cast<unsigned>( stage )];
+                        const auto result = D3DCompile(
+                            source, std::strlen( source ), "ClawShader", macros.data(), nullptr, entry,
+                            profile, D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
+                            &blob, &diagnostic );
+                        if( result == E_OUTOFMEMORY )
+                        {
+                            throw std::bad_alloc();
+                        }
+                        if( FAILED( result ) )
+                        {
+                            wp_shader_set_last_error(
+                                shader, toCText( diagnostic ? static_cast<const char *>(
+                                                                  diagnostic->GetBufferPointer() )
+                                                            : "HLSL compilation failed." ) );
                             return 0;
                         }
                     }
                     ComPtr<ID3D11ShaderReflection> reflection;
-                    if(FAILED(D3DReflect(blob->GetBufferPointer(),blob->GetBufferSize(),__uuidof(ID3D11ShaderReflection),
-                        reinterpret_cast<void **>(reflection.GetAddressOf()))))
-                    { wp_shader_set_last_error(shader,toCText("Shader bytecode is not valid DXBC."));return 0; }
-                    D3D11_SHADER_DESC description{};
-                    if(FAILED(reflection->GetDesc(&description)))
-                    { wp_shader_set_last_error(shader,toCText("DXBC shader reflection failed."));return 0; }
-                    const unsigned kinds[]={D3D11_SHVER_VERTEX_SHADER,D3D11_SHVER_PIXEL_SHADER,D3D11_SHVER_GEOMETRY_SHADER,
-                        D3D11_SHVER_HULL_SHADER,D3D11_SHVER_DOMAIN_SHADER,D3D11_SHVER_COMPUTE_SHADER};
-                    if(D3D11_SHVER_GET_TYPE(description.Version)!=kinds[static_cast<unsigned>(stage)])
-                    { wp_shader_set_last_error(shader,toCText("DXBC stage does not match the shader descriptor."));return 0; }
-                    if(blob->GetBufferSize()>std::numeric_limits<size_t>::max()-sizeof(ShaderBlob)) throw std::bad_alloc();
-                    if(!budget)
+                    if( FAILED( D3DReflect( blob->GetBufferPointer(), blob->GetBufferSize(),
+                                            __uuidof( ID3D11ShaderReflection ),
+                                            reinterpret_cast<void **>( reflection.GetAddressOf() ) ) ) )
                     {
-                        budget=WorldStreamingScheduler::reserveSharedSource(sizeof(ShaderBlob)+blob->GetBufferSize());
-                        if(!budget) throw std::bad_alloc();
+                        wp_shader_set_last_error( shader,
+                                                  toCText( "Shader bytecode is not valid DXBC." ) );
+                        return 0;
                     }
-                    auto retained=new(std::nothrow) ShaderBlob(std::move(blob),std::move(budget));
-                    if(!retained) throw std::bad_alloc();
-                    *candidate=static_cast<ID3DBlob *>(retained); return 1;
+                    D3D11_SHADER_DESC description{};
+                    if( FAILED( reflection->GetDesc( &description ) ) )
+                    {
+                        wp_shader_set_last_error( shader, toCText( "DXBC shader reflection failed." ) );
+                        return 0;
+                    }
+                    const unsigned kinds[] = { D3D11_SHVER_VERTEX_SHADER,   D3D11_SHVER_PIXEL_SHADER,
+                                               D3D11_SHVER_GEOMETRY_SHADER, D3D11_SHVER_HULL_SHADER,
+                                               D3D11_SHVER_DOMAIN_SHADER,   D3D11_SHVER_COMPUTE_SHADER };
+                    if( D3D11_SHVER_GET_TYPE( description.Version ) !=
+                        kinds[static_cast<unsigned>( stage )] )
+                    {
+                        wp_shader_set_last_error(
+                            shader, toCText( "DXBC stage does not match the shader descriptor." ) );
+                        return 0;
+                    }
+                    if( blob->GetBufferSize() >
+                        std::numeric_limits<size_t>::max() - sizeof( ShaderBlob ) )
+                    {
+                        throw std::bad_alloc();
+                    }
+                    if( !budget )
+                    {
+                        budget = WorldStreamingScheduler::reserveSharedSource( sizeof( ShaderBlob ) +
+                                                                               blob->GetBufferSize() );
+                        if( !budget )
+                        {
+                            throw std::bad_alloc();
+                        }
+                    }
+                    auto retained =
+                        new( std::nothrow ) ShaderBlob( std::move( blob ), std::move( budget ) );
+                    if( !retained )
+                    {
+                        throw std::bad_alloc();
+                    }
+                    *candidate = static_cast<ID3DBlob *>( retained );
+                    return 1;
                 }
-                catch(const std::bad_alloc &)
-                { wp_shader_set_last_error(shader,toCText("Shader bytecode CPU admission denied; the previous compiled shader is retained.")); }
-                catch(const std::exception &error) { wp_shader_set_last_error(shader,toCText(error.what())); }
-                catch(...) { wp_shader_set_last_error(shader,toCText("DirectX 11 shader compiler failed.")); }
+                catch( const std::bad_alloc & )
+                {
+                    wp_shader_set_last_error( shader,
+                                              toCText( "Shader bytecode CPU admission denied; the "
+                                                       "previous compiled shader is retained." ) );
+                }
+                catch( const std::exception &error )
+                {
+                    wp_shader_set_last_error( shader, toCText( error.what() ) );
+                }
+                catch( ... )
+                {
+                    wp_shader_set_last_error( shader, toCText( "DirectX 11 shader compiler failed." ) );
+                }
                 return 0;
             }
 #else
-            wp_s32 compileClawShader(wp_shader *shader,void **candidate,void *)
+            wp_s32 compileClawShader( wp_shader *shader, void **candidate, void * )
             {
-                if(candidate) *candidate=nullptr;
-                wp_shader_set_last_error(shader,toCText("HLSL/DXBC shader compilation requires the Claw DirectX 11 build."));
+                if( candidate )
+                {
+                    *candidate = nullptr;
+                }
+                wp_shader_set_last_error(
+                    shader,
+                    toCText( "HLSL/DXBC shader compilation requires the Claw DirectX 11 build." ) );
                 return 0;
             }
-            void releaseClawShader(void *,void *) {}
+
+            void releaseClawShader( void *, void * )
+            {
+            }
 #endif
         }  // namespace
 
@@ -224,17 +351,20 @@ namespace workphone
             }
             else
             {
-                wp_shader_set_compile_func(m_shader,compileClawShader,nullptr);
-                wp_shader_set_release_func(m_shader,releaseClawShader,nullptr);
+                wp_shader_set_compile_func( m_shader, compileClawShader, nullptr );
+                wp_shader_set_release_func( m_shader, releaseClawShader, nullptr );
             }
         }
 
         ClawShader::~ClawShader()
         {
-#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
-            if(m_compiledBlob) static_cast<ID3DBlob *>(m_compiledBlob)->Release();
+#if defined( WP_PLATFORM_WIN32 ) && WP_BUILD_RENDERER_DX11
+            if( m_compiledBlob )
+            {
+                static_cast<ID3DBlob *>( m_compiledBlob )->Release();
+            }
 #endif
-            m_compiledBlob=nullptr;
+            m_compiledBlob = nullptr;
             if( m_shader )
             {
                 wp_shader_destroy( m_shader );
@@ -422,77 +552,99 @@ namespace workphone
 
         bool ClawShader::compile()
         {
-            if(!m_shader)
+            if( !m_shader )
             {
-                WP_LOG_ERROR("ClawShader::compile: native shader is unavailable.");
+                WP_LOG_ERROR( "ClawShader::compile: native shader is unavailable." );
                 return false;
             }
-            const bool defaultCompiler=wp_shader_get_compile_func(m_shader)==compileClawShader;
-            const auto cacheNative=[&] {
-#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
-                if(defaultCompiler)
+            const bool defaultCompiler = wp_shader_get_compile_func( m_shader ) == compileClawShader;
+            const auto cacheNative = [&] {
+#if defined( WP_PLATFORM_WIN32 ) && WP_BUILD_RENDERER_DX11
+                if( defaultCompiler )
                 {
-                    auto blob=static_cast<ID3DBlob *>(wp_shader_get_native(m_shader));
-                    if(blob!=m_compiledBlob)
+                    auto blob = static_cast<ID3DBlob *>( wp_shader_get_native( m_shader ) );
+                    if( blob != m_compiledBlob )
                     {
-                        if(blob) blob->AddRef();
-                        if(m_compiledBlob) static_cast<ID3DBlob *>(m_compiledBlob)->Release();
-                        m_compiledBlob=blob;
+                        if( blob )
+                            blob->AddRef();
+                        if( m_compiledBlob )
+                            static_cast<ID3DBlob *>( m_compiledBlob )->Release();
+                        m_compiledBlob = blob;
                     }
                     m_binary.clear();
                 }
                 else
                 {
-                    if(m_compiledBlob) static_cast<ID3DBlob *>(m_compiledBlob)->Release();
-                    m_compiledBlob=nullptr;
+                    if( m_compiledBlob )
+                        static_cast<ID3DBlob *>( m_compiledBlob )->Release();
+                    m_compiledBlob = nullptr;
                 }
 #endif
             };
-            if(wp_shader_get_status(m_shader)==WORKPHONE_SHADER_STATUS_COMPILED &&
-               !wp_shader_is_dirty(m_shader) && wp_shader_get_native(m_shader))
+            if( wp_shader_get_status( m_shader ) == WORKPHONE_SHADER_STATUS_COMPILED &&
+                !wp_shader_is_dirty( m_shader ) && wp_shader_get_native( m_shader ) )
             {
-                cacheNative(); m_status=Status::Compiled; return true;
+                cacheNative();
+                m_status = Status::Compiled;
+                return true;
             }
-            m_stage=static_cast<Stage>(wp_shader_get_type(m_shader));
-            m_language=fromCLanguage(wp_shader_get_language(m_shader));
-            m_source=String(fromCText(wp_shader_get_source(m_shader)));
-            m_entryPoint=String(fromCText(wp_shader_get_entry_point(m_shader)));
-            m_profile=String(fromCText(wp_shader_get_profile(m_shader)));
-            Shader::setDefines(getDefines());
+            m_stage = static_cast<Stage>( wp_shader_get_type( m_shader ) );
+            m_language = fromCLanguage( wp_shader_get_language( m_shader ) );
+            m_source = String( fromCText( wp_shader_get_source( m_shader ) ) );
+            m_entryPoint = String( fromCText( wp_shader_get_entry_point( m_shader ) ) );
+            m_profile = String( fromCText( wp_shader_get_profile( m_shader ) ) );
+            Shader::setDefines( getDefines() );
             Shader::clearDiagnostics();
             m_specializationValues.clear();
-            for(wp_s32 i=0;i<wp_shader_get_specialization_count(m_shader);++i)
+            for( wp_s32 i = 0; i < wp_shader_get_specialization_count( m_shader ); ++i )
             {
-                const auto entry=wp_shader_get_specialization_at(m_shader,i);
-                if(entry) m_specializationValues.push_back({String(fromCText(entry->name)),entry->value});
-            }
-            Array<u8> customBinary;
-            if(!defaultCompiler)
-            {
-                wp_u32 size=0; const auto bytes=wp_shader_get_binary(m_shader,&size);
-                if(bytes && size)
+                const auto entry = wp_shader_get_specialization_at( m_shader, i );
+                if( entry )
                 {
-                    customBinary.resize(size); std::memcpy(customBinary.data(),bytes,size);
+                    m_specializationValues.push_back(
+                        { String( fromCText( entry->name ) ), entry->value } );
                 }
             }
-            else wp_shader_set_release_func(m_shader,releaseClawShader,nullptr);
+            Array<u8> customBinary;
+            if( !defaultCompiler )
+            {
+                wp_u32 size = 0;
+                const auto bytes = wp_shader_get_binary( m_shader, &size );
+                if( bytes && size )
+                {
+                    customBinary.resize( size );
+                    std::memcpy( customBinary.data(), bytes, size );
+                }
+            }
+            else
+            {
+                wp_shader_set_release_func( m_shader, releaseClawShader, nullptr );
+            }
             // The C object validates authoring input and owns transactional native
             // replacement. A failed attempt never replaces this wrapper's last
             // successful output reference or exposes the new input as bytecode.
-            if(!wp_shader_compile(m_shader))
+            if( !wp_shader_compile( m_shader ) )
             {
-                m_status=Status::Failed;
-                WP_LOG_ERROR("ClawShader::compile: "+String(fromCText(wp_shader_get_last_error(m_shader))));
+                m_status = Status::Failed;
+                WP_LOG_ERROR( "ClawShader::compile: " +
+                              String( fromCText( wp_shader_get_last_error( m_shader ) ) ) );
                 return false;
             }
             cacheNative();
-            if(!defaultCompiler) m_binary=std::move(customBinary);
-            m_status=Status::Compiled; return true;
+            if( !defaultCompiler )
+            {
+                m_binary = std::move( customBinary );
+            }
+            m_status = Status::Compiled;
+            return true;
         }
 
         bool ClawShader::reload()
         {
-            if(m_shader) wp_shader_mark_dirty(m_shader);
+            if( m_shader )
+            {
+                wp_shader_mark_dirty( m_shader );
+            }
             return compile();
         }
 
@@ -516,13 +668,19 @@ namespace workphone
 
         IShader::Status ClawShader::getStatus() const
         {
-            if(!m_shader) return Shader::getStatus();
-            const auto status=wp_shader_get_status(m_shader);
+            if( !m_shader )
+            {
+                return Shader::getStatus();
+            }
+            const auto status = wp_shader_get_status( m_shader );
             // set_binary is a raw C input operation and marks bytes compiled for
             // legacy callers. The default C++ backend must still validate them.
-            if(status==WORKPHONE_SHADER_STATUS_COMPILED && wp_shader_is_dirty(m_shader) &&
-               wp_shader_get_compile_func(m_shader)==compileClawShader) return Status::SourceReady;
-            return fromCStatus(status);
+            if( status == WORKPHONE_SHADER_STATUS_COMPILED && wp_shader_is_dirty( m_shader ) &&
+                wp_shader_get_compile_func( m_shader ) == compileClawShader )
+            {
+                return Status::SourceReady;
+            }
+            return fromCStatus( status );
         }
 
         bool ClawShader::isCompiled() const
@@ -565,18 +723,23 @@ namespace workphone
 
         Array<u8> ClawShader::getBinary() const
         {
-#if defined(WP_PLATFORM_WIN32) && WP_BUILD_RENDERER_DX11
-            auto compiled=m_compiledBlob;
+#if defined( WP_PLATFORM_WIN32 ) && WP_BUILD_RENDERER_DX11
+            auto compiled = m_compiledBlob;
             // Native C callers can compile a new generation while this wrapper
             // remains alive. Its transactional native owner is authoritative;
             // only the default callback guarantees an ID3DBlob handle.
-            if(m_shader && wp_shader_get_compile_func(m_shader)==compileClawShader)
-                compiled=wp_shader_get_native(m_shader);
-            if(compiled)
+            if( m_shader && wp_shader_get_compile_func( m_shader ) == compileClawShader )
             {
-                auto blob=static_cast<ID3DBlob *>(compiled);
-                Array<u8> result(blob->GetBufferSize());
-                if(!result.empty()) std::memcpy(result.data(),blob->GetBufferPointer(),result.size());
+                compiled = wp_shader_get_native( m_shader );
+            }
+            if( compiled )
+            {
+                auto blob = static_cast<ID3DBlob *>( compiled );
+                Array<u8> result( blob->GetBufferSize() );
+                if( !result.empty() )
+                {
+                    std::memcpy( result.data(), blob->GetBufferPointer(), result.size() );
+                }
                 return result;
             }
 #endif

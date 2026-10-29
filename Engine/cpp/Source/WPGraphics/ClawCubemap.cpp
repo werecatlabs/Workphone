@@ -111,24 +111,36 @@ namespace workphone::render
         {
             wp_texture_face_readback_dx11 readback{};
             if( !wp_dx11_read_texture_face_native( device, context, view, &readback ) )
+            {
                 return false;
+            }
+
             struct ReadbackGuard
             {
                 wp_texture_face_readback_dx11 &data;
-                ~ReadbackGuard() { wp_dx11_release_texture_face_readback_native( &data ); }
+
+                ~ReadbackGuard()
+                {
+                    wp_dx11_release_texture_face_readback_native( &data );
+                }
             } guard{ readback };
+
             face.width = readback.width;
             face.height = readback.height;
             face.pixels.resize( size_t( readback.width ) * readback.height );
             const bool bgra = readback.format == WP_DX11_FACE_BGRA8;
             const bool floats = readback.format == WP_DX11_FACE_RGBA32F;
             const bool halves = readback.format == WP_DX11_FACE_RGBA16F;
-            const auto decode = []( float c ) { return c <= .04045f ? c / 12.92f : std::pow( ( c + .055f ) / 1.055f, 2.4f ); };
+            const auto decode = []( float c ) {
+                return c <= .04045f ? c / 12.92f : std::pow( ( c + .055f ) / 1.055f, 2.4f );
+            };
             const auto half = []( unsigned short bits ) {
                 const unsigned exponent = ( bits >> 10 ) & 31, fraction = bits & 1023;
-                const float magnitude = exponent == 0 ? std::ldexp( float( fraction ), -24 )
-                    : exponent == 31 ? ( fraction ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity() )
-                    : std::ldexp( 1.f + fraction / 1024.f, int( exponent ) - 15 );
+                const float magnitude =
+                    exponent == 0    ? std::ldexp( float( fraction ), -24 )
+                    : exponent == 31 ? ( fraction ? std::numeric_limits<float>::quiet_NaN()
+                                                  : std::numeric_limits<float>::infinity() )
+                                     : std::ldexp( 1.f + fraction / 1024.f, int( exponent ) - 15 );
                 return bits & 32768 ? -magnitude : magnitude;
             };
             bool valid = true;
@@ -136,8 +148,8 @@ namespace workphone::render
             {
                 for( unsigned x = 0; x < readback.width; ++x )
                 {
-                    const auto row = static_cast<const unsigned char *>( readback.pixels ) +
-                                     y * readback.row_pitch;
+                    const auto row =
+                        static_cast<const unsigned char *>( readback.pixels ) + y * readback.row_pitch;
                     V value;
                     if( floats )
                     {
@@ -152,10 +164,11 @@ namespace workphone::render
                     else
                     {
                         const auto p = row + x * 4;
-                        value = { decode( p[bgra ? 2 : 0] / 255.f ), decode( p[1] / 255.f ), decode( p[bgra ? 0 : 2] / 255.f ) };
+                        value = { decode( p[bgra ? 2 : 0] / 255.f ), decode( p[1] / 255.f ),
+                                  decode( p[bgra ? 0 : 2] / 255.f ) };
                     }
-                    valid = valid && std::isfinite( value.x ) && std::isfinite( value.y ) && std::isfinite( value.z ) &&
-                        value.x >= 0 && value.y >= 0 && value.z >= 0;
+                    valid = valid && std::isfinite( value.x ) && std::isfinite( value.y ) &&
+                            std::isfinite( value.z ) && value.x >= 0 && value.y >= 0 && value.z >= 0;
                     face.pixels[y * readback.width + x] = value;
                 }
             }
@@ -176,8 +189,7 @@ namespace workphone::render
 
     ID3D11ShaderResourceView *ClawCubemap::getView() const
     {
-        return static_cast<ID3D11ShaderResourceView *>(
-            wp_dx11_cubemap_owner_get_view( m_owner ) );
+        return static_cast<ID3D11ShaderResourceView *>( wp_dx11_cubemap_owner_get_view( m_owner ) );
     }
 
     ID3D11ShaderResourceView *ClawCubemap::getViewForDevice( ID3D11Device *device ) const
@@ -194,8 +206,14 @@ namespace workphone::render
             return false;
         }
         std::array<void *, 6> nativeViews{};
-        for( size_t i = 0; i < views.size(); ++i ) nativeViews[i] = views[i];
-        if( wp_dx11_cubemap_owner_matches( m_owner, device, nativeViews.data() ) ) return true;
+        for( size_t i = 0; i < views.size(); ++i )
+        {
+            nativeViews[i] = views[i];
+        }
+        if( wp_dx11_cubemap_owner_matches( m_owner, device, nativeViews.data() ) )
+        {
+            return true;
+        }
         std::array<Face, 6> faces;
         const bool hasFaces =
             std::all_of( views.begin(), views.end(), []( auto p ) { return p != nullptr; } );
@@ -278,7 +296,10 @@ namespace workphone::render
                         output[offset + 2] = sum.z / weight;
                         output[offset + 3] = 1;
                         if( !std::isfinite( output[offset] ) || !std::isfinite( output[offset + 1] ) ||
-                            !std::isfinite( output[offset + 2] ) ) return false;
+                            !std::isfinite( output[offset + 2] ) )
+                        {
+                            return false;
+                        }
                     }
                 }
                 data[index] = { output.data(), size, size, output.size() };

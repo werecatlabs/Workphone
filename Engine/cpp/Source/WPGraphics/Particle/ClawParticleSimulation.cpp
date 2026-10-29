@@ -5,10 +5,10 @@
 #include <cmath>
 #include <cstring>
 #if defined( _WIN32 )
-#include <WPGraphics/ClawRendererDX11.hpp>
-#include <WorkphoneGraphics/workphone_graphics_renderer.h>
-#include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
-#include <WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.h>
+#    include <WPGraphics/ClawRendererDX11.hpp>
+#    include <WorkphoneGraphics/workphone_graphics_renderer.h>
+#    include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
+#    include <WorkphonePlatformWin32/workphone_graphics_particle_compute_dx11.h>
 #endif
 
 namespace workphone::render
@@ -168,26 +168,34 @@ namespace workphone::render
 #if defined( _WIN32 )
         auto profile = app ? app->getPlayerSettings() : nullptr;
         const bool requested = profile && profile->getPropertyAsBool( "performance.gpuParticles" );
-        auto renderer = graphics ? dynamic_cast<ClawRendererDX11 *>( graphics->getRendererPtr() ) : nullptr;
-        auto native = requested && renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
+        auto renderer =
+            graphics ? dynamic_cast<ClawRendererDX11 *>( graphics->getRendererPtr() ) : nullptr;
+        auto native =
+            requested && renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
         auto device = native ? wp_renderer_dx11_get_device( native ) : nullptr;
         if( device != m_particleComputeDevice )
         {
-            wp_particle_compute_dx11_destroy( static_cast<wp_particle_compute_dx11 *>( m_particleCompute ) );
-            m_particleCompute = nullptr; m_particleComputeDevice = device; m_gpuUnavailableLogged = false;
+            wp_particle_compute_dx11_destroy(
+                static_cast<wp_particle_compute_dx11 *>( m_particleCompute ) );
+            m_particleCompute = nullptr;
+            m_particleComputeDevice = device;
+            m_gpuUnavailableLogged = false;
         }
         if( device && !m_particleCompute && !m_gpuUnavailableLogged )
         {
-            m_particleCompute = wp_particle_compute_dx11_create( device, wp_renderer_dx11_get_context( native ), m_poolSize );
+            m_particleCompute = wp_particle_compute_dx11_create(
+                device, wp_renderer_dx11_get_context( native ), m_poolSize );
             m_particleComputeDevice = device;
             if( !m_particleCompute && !m_gpuUnavailableLogged )
             {
-                WP_LOG_ERROR( "GPU particle compute is unavailable on this device; retaining CPU simulation." );
+                WP_LOG_ERROR(
+                    "GPU particle compute is unavailable on this device; retaining CPU simulation." );
                 m_gpuUnavailableLogged = true;
             }
         }
-        wp_particle_simulation_set_integrator( m_simulation,
-            m_particleCompute ? wp_particle_compute_dx11_integrate : nullptr, m_particleCompute );
+        wp_particle_simulation_set_integrator(
+            m_simulation, m_particleCompute ? wp_particle_compute_dx11_integrate : nullptr,
+            m_particleCompute );
 #endif
         const bool advanced = wp_particle_simulation_advance( m_simulation, seconds );
         m_state = static_cast<ParticleSystemState>( wp_particle_simulation_get_state( m_simulation ) );
@@ -232,6 +240,7 @@ namespace workphone::render
         std::lock_guard<std::mutex> lock( m_simulationMutex );
         return wp_particle_simulation_get_accelerated_steps( m_simulation );
     }
+
     u32 CParticleSystem::getGpuSimulationFailureCount() const
     {
         std::lock_guard<std::mutex> lock( m_simulationMutex );

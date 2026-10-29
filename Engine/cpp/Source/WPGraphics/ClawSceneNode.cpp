@@ -148,13 +148,19 @@ namespace workphone
                 const auto pose = parent->getWorldTransform();
                 const auto scale = pose.getScale();
                 if( scale.x == 0 || scale.y == 0 || scale.z == 0 )
+                {
                     throw std::domain_error( "Cannot set world pose below a zero-scale parent" );
+                }
                 local.setPosition( pose.convertWorldToLocalPosition( worldTransform.getPosition() ) );
-                local.setOrientation( pose.convertWorldToLocalOrientation( worldTransform.getOrientation() ) );
+                local.setOrientation(
+                    pose.convertWorldToLocalOrientation( worldTransform.getOrientation() ) );
                 local.setScale( worldTransform.getScale() / scale );
             }
             setTransform( local );
-            if( SafePtr<TransformStateData> data = m_transformStateData.load() ) data->worldTransform = worldTransform;
+            if( SafePtr<TransformStateData> data = m_transformStateData.load() )
+            {
+                data->worldTransform = worldTransform;
+            }
         }
 
         Transform3<real_Num> ClawSceneNode::getWorldTransform() const
@@ -171,22 +177,39 @@ namespace workphone
 
         void ClawSceneNode::setPosition( const Vector3<real_Num> &position )
         {
-            auto pose = getTransform(); pose.setPosition( position ); setTransform( pose );
+            auto pose = getTransform();
+            pose.setPosition( position );
+            setTransform( pose );
         }
+
         void ClawSceneNode::setOrientation( const Quaternion<real_Num> &orientation )
         {
-            auto pose = getTransform(); pose.setOrientation( orientation ); setTransform( pose );
+            auto pose = getTransform();
+            pose.setOrientation( orientation );
+            setTransform( pose );
         }
+
         void ClawSceneNode::setScale( const Vector3<real_Num> &scale )
         {
-            auto pose = getTransform(); pose.setScale( scale ); setTransform( pose );
+            auto pose = getTransform();
+            pose.setScale( scale );
+            setTransform( pose );
         }
+
         Vector3<real_Num> ClawSceneNode::getWorldPosition() const
-        { return getWorldTransform().getPosition(); }
+        {
+            return getWorldTransform().getPosition();
+        }
+
         Quaternion<real_Num> ClawSceneNode::getWorldOrientation() const
-        { return getWorldTransform().getOrientation(); }
+        {
+            return getWorldTransform().getOrientation();
+        }
+
         Vector3<real_Num> ClawSceneNode::getWorldScale() const
-        { return getWorldTransform().getScale(); }
+        {
+            return getWorldTransform().getScale();
+        }
 
         void ClawSceneNode::setParent( SmartPtr<IGraphicsSceneNode> parent )
         {

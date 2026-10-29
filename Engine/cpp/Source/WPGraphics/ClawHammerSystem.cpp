@@ -164,6 +164,7 @@ namespace workphone
                 u64 timingSamples = 0, prepareNs = 0, mainPrepareNs = 0, shadowDeriveNs = 0;
                 u64 phaseSamples = 0;
                 wp_graphics_cull_timing_stats phases{};
+
                 void addPhases( const wp_graphics_cull_timing_stats &value )
                 {
                     phases.capture_ns += value.capture_ns;
@@ -181,6 +182,7 @@ namespace workphone
                     phases.transform_submit_ns += value.transform_submit_ns;
                     phases.transform_wait_ns += value.transform_wait_ns;
                 }
+
                 u64 cullSharedBytes = 0, cullGroupBytes = 0, cullMapBytes = 0;
                 u64 cullEntryBytes = 0, ancestorBytes = 0, ancestorRefs = 0, ancestorAllocs = 0;
                 u64 cullViewBytes = 0, cullViewPeakSum = 0, cullClassScratch = 0;
@@ -210,10 +212,14 @@ namespace workphone
             {
                 props->setProperty( "native_system_active", m_sys != nullptr );
                 props->setProperty( "vsync", getVSync() );
-                props->setProperty( "diagnostics.gpuProfiler", m_gpuProfilerEnabled.load(std::memory_order_relaxed) );
-                if(auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer()))
-                    props->setProperty("msaa_supported_mask",wp_renderer_dx11_supported_scene_samples(
-                        wp_renderer_get_dx11(renderer->getNativeRenderer())));
+                props->setProperty( "diagnostics.gpuProfiler",
+                                    m_gpuProfilerEnabled.load( std::memory_order_relaxed ) );
+                if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
+                {
+                    props->setProperty( "msaa_supported_mask",
+                                        wp_renderer_dx11_supported_scene_samples(
+                                            wp_renderer_get_dx11( renderer->getNativeRenderer() ) ) );
+                }
                 std::lock_guard<std::mutex> lock( m_statisticsMutex );
                 props->setProperty( "native_update_serial", m_nativeUpdateSerial );
                 props->setProperty( "native_render_serial", m_nativeRenderSerial );
@@ -247,9 +253,12 @@ namespace workphone
                     m_statisticsSnapshotRequested = true;
                 }
                 bool enabled;
-                if(properties->getPropertyValue("diagnostics.gpuProfiler",enabled))
-                    m_gpuProfilerEnabled.store(enabled,std::memory_order_relaxed);
-                if( properties->getPropertyValue( "vsync", enabled ) || properties->getPropertyValue("graphics.vsync",enabled) )
+                if( properties->getPropertyValue( "diagnostics.gpuProfiler", enabled ) )
+                {
+                    m_gpuProfilerEnabled.store( enabled, std::memory_order_relaxed );
+                }
+                if( properties->getPropertyValue( "vsync", enabled ) ||
+                    properties->getPropertyValue( "graphics.vsync", enabled ) )
                 {
                     m_vsync.store( enabled, std::memory_order_relaxed );
                 }
@@ -368,7 +377,8 @@ namespace workphone
                 "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu "
                 "local matrices allocs=%llu reuses=%llu prefix cache allocs=%llu reuses=%llu "
                 "main sort checks=%llu passes=%llu scratch allocs=%llu bytes=%llu "
-                "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu inside=%llu candidates=%llu "
+                "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu inside=%llu "
+                "candidates=%llu "
                 "CPU prepare samples=%llu total-ns=%llu main-ns=%llu shadow-ns=%llu "
                 "cull arrays shared=%llu groups=%llu map=%llu view=%llu view-peak-sum=%llu "
                 "class-scratch=%llu spatial-views=%llu block-views=%llu mapped=%llu individual=%llu",
@@ -398,41 +408,40 @@ namespace workphone
                 (unsigned long long)work.spatialMapped, (unsigned long long)work.spatialIndividual );
             result += preparation;
             char phases[640];
-            std::snprintf( phases, sizeof( phases ),
+            std::snprintf(
+                phases, sizeof( phases ),
                 "\nCPU main phases samples=%llu capture-ns=%llu transform-ns=%llu bounds-ns=%llu "
                 "groups-ns=%llu view-ns=%llu visibility-ns=%llu sort-ns=%llu publish-ns=%llu",
-                (unsigned long long)work.phaseSamples,
-                (unsigned long long)work.phases.capture_ns,
-                (unsigned long long)work.phases.transform_ns,
-                (unsigned long long)work.phases.bounds_ns,
-                (unsigned long long)work.phases.groups_ns,
-                (unsigned long long)work.phases.view_ns,
-                (unsigned long long)work.phases.visibility_ns,
-                (unsigned long long)work.phases.sort_ns,
+                (unsigned long long)work.phaseSamples, (unsigned long long)work.phases.capture_ns,
+                (unsigned long long)work.phases.transform_ns, (unsigned long long)work.phases.bounds_ns,
+                (unsigned long long)work.phases.groups_ns, (unsigned long long)work.phases.view_ns,
+                (unsigned long long)work.phases.visibility_ns, (unsigned long long)work.phases.sort_ns,
                 (unsigned long long)work.phases.publish_ns );
             result += phases;
             char transforms[512];
             std::snprintf( transforms, sizeof( transforms ),
-                "\nCPU transform phases hierarchy-ns=%llu unique-ns=%llu locals-ns=%llu "
-                "prefixes-ns=%llu submit-ns=%llu wait-ns=%llu",
-                (unsigned long long)work.phases.transform_hierarchy_ns,
-                (unsigned long long)work.phases.transform_unique_ns,
-                (unsigned long long)work.phases.transform_locals_ns,
-                (unsigned long long)work.phases.transform_prefixes_ns,
-                (unsigned long long)work.phases.transform_submit_ns,
-                (unsigned long long)work.phases.transform_wait_ns );
+                           "\nCPU transform phases hierarchy-ns=%llu unique-ns=%llu locals-ns=%llu "
+                           "prefixes-ns=%llu submit-ns=%llu wait-ns=%llu",
+                           (unsigned long long)work.phases.transform_hierarchy_ns,
+                           (unsigned long long)work.phases.transform_unique_ns,
+                           (unsigned long long)work.phases.transform_locals_ns,
+                           (unsigned long long)work.phases.transform_prefixes_ns,
+                           (unsigned long long)work.phases.transform_submit_ns,
+                           (unsigned long long)work.phases.transform_wait_ns );
             result += transforms;
             char hash[192];
             std::snprintf( hash, sizeof( hash ),
-                "\nTransform capture hash probes=%llu collisions=%llu sort-fallbacks=%llu",
-                (unsigned long long)work.hashProbes, (unsigned long long)work.hashCollisions,
-                (unsigned long long)work.hashFallbacks );
+                           "\nTransform capture hash probes=%llu collisions=%llu sort-fallbacks=%llu",
+                           (unsigned long long)work.hashProbes, (unsigned long long)work.hashCollisions,
+                           (unsigned long long)work.hashFallbacks );
             result += hash;
             char ancestors[256];
             std::snprintf( ancestors, sizeof( ancestors ),
-                "\nCull publication entries-bytes=%llu ancestor-bytes=%llu ancestor-refs=%llu ancestor-allocs=%llu",
-                (unsigned long long)work.cullEntryBytes, (unsigned long long)work.ancestorBytes,
-                (unsigned long long)work.ancestorRefs, (unsigned long long)work.ancestorAllocs );
+                           "\nCull publication entries-bytes=%llu ancestor-bytes=%llu "
+                           "ancestor-refs=%llu ancestor-allocs=%llu",
+                           (unsigned long long)work.cullEntryBytes,
+                           (unsigned long long)work.ancestorBytes, (unsigned long long)work.ancestorRefs,
+                           (unsigned long long)work.ancestorAllocs );
             result += ancestors;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
@@ -512,7 +521,8 @@ namespace workphone
             {
                 snapshot.nativeUpdateSerial = frame.update_serial;
                 snapshot.nativeRenderSerial = frame.render_serial;
-                snapshot.completedPasses = frame.completed_pass_count > 0 ? frame.completed_pass_count : 0;
+                snapshot.completedPasses =
+                    frame.completed_pass_count > 0 ? frame.completed_pass_count : 0;
                 snapshot.skippedPasses = frame.skipped_pass_count > 0 ? frame.skipped_pass_count : 0;
             }
             for( const auto &pass : m_framePasses )
@@ -831,7 +841,8 @@ namespace workphone
                 ScopedLock lock( this );
                 beginSceneProfileFrame();
                 using ProfileClock = std::chrono::steady_clock;
-                const auto profileStart = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
+                const auto profileStart =
+                    m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 MaterialPublicationScope materialUpdates;
                 RenderPhaseProfile preparation( m_preparationProfile, "Graphics preparation" );
                 if( m_statisticsResetRequested.exchange( false ) )
@@ -878,14 +889,15 @@ namespace workphone
                     deltaTime = static_cast<wp_f32>( timer->getDeltaTime() );
                 }
 
-                materialUpdates.commit(); // Publish before immutable scene-job capture.
-                if(auto renderer=dynamic_pointer_cast<ClawRendererDX11>(getRenderer()))
+                materialUpdates.commit();  // Publish before immutable scene-job capture.
+                if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
                 {
-                    ClawMaterial::processRuntimeShaderReloads(*renderer);
-                    auto native=renderer->getNativeRenderer();
-                    auto dx=native?wp_renderer_get_dx11(native):nullptr;
-                    MaterialProgramReloadDX11::UpdateAll(dx?wp_renderer_dx11_get_device(dx):nullptr,renderer.get());
-                    ClawMaterial::processRuntimeShaderReloads(*renderer);
+                    ClawMaterial::processRuntimeShaderReloads( *renderer );
+                    auto native = renderer->getNativeRenderer();
+                    auto dx = native ? wp_renderer_get_dx11( native ) : nullptr;
+                    MaterialProgramReloadDX11::UpdateAll(
+                        dx ? wp_renderer_dx11_get_device( dx ) : nullptr, renderer.get() );
+                    ClawMaterial::processRuntimeShaderReloads( *renderer );
                 }
                 prepareFramePasses( deltaTime );
                 if( !wp_graphics_system_set_delta_time( m_sys, deltaTime ) )
@@ -893,12 +905,14 @@ namespace workphone
                     throw std::runtime_error( "Native graphics frame is already executing." );
                 }
                 preparation.end();
-                const auto nativeStart = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
+                const auto nativeStart =
+                    m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 // The C89 system owns native update and the complete ordered frame.
                 // Keep the engine's update-only scheduling contract at this boundary.
                 wp_graphics_system_update( m_sys );
                 wp_graphics_system_render( m_sys );
-                const auto nativeEnd = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
+                const auto nativeEnd =
+                    m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 publishRenderStatistics();
 
                 for( auto &scene : m_scenes.snapshot() )
@@ -912,9 +926,15 @@ namespace workphone
                 {
                     const auto finished = ProfileClock::now();
                     auto &snapshot = m_currentSceneProfile;
-                    snapshot.graphicsPrepareNs = std::chrono::duration_cast<std::chrono::nanoseconds>( nativeStart - profileStart ).count();
-                    snapshot.nativeFrameNs = std::chrono::duration_cast<std::chrono::nanoseconds>( nativeEnd - nativeStart ).count();
-                    snapshot.graphicsUpdateNs = std::chrono::duration_cast<std::chrono::nanoseconds>( finished - profileStart ).count();
+                    snapshot.graphicsPrepareNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                     nativeStart - profileStart )
+                                                     .count();
+                    snapshot.nativeFrameNs =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>( nativeEnd - nativeStart )
+                            .count();
+                    snapshot.graphicsUpdateNs =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>( finished - profileStart )
+                            .count();
                     publishSceneProfileFrame();
                 }
             }
@@ -932,45 +952,65 @@ namespace workphone
             // validation fails, the previous native descriptors still have live contexts.
             std::vector<FramePassContext> nextFramePasses;
             auto renderer = getRenderer();
-            if(auto dx11 = dynamic_pointer_cast<ClawRendererDX11>(renderer))
+            if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
             {
-                wp_renderer_dx11_set_gpu_profiling( wp_renderer_get_dx11(dx11->getNativeRenderer()),
-                                                   m_gpuProfilerEnabled.load(std::memory_order_relaxed) );
-                const auto probes=getProjectIrradianceProbes();
-                if(!wp_renderer_dx11_set_irradiance_probes(wp_renderer_get_dx11(dx11->getNativeRenderer()),
-                    probes.empty() ? nullptr : probes.data(),static_cast<wp_u32>(probes.size()),getProjectIrradianceMode()))
-                    WP_LOG_WARNING("Project irradiance upload failed; retaining the previous GPU probe set.");
+                wp_renderer_dx11_set_gpu_profiling(
+                    wp_renderer_get_dx11( dx11->getNativeRenderer() ),
+                    m_gpuProfilerEnabled.load( std::memory_order_relaxed ) );
+                const auto probes = getProjectIrradianceProbes();
+                if( !wp_renderer_dx11_set_irradiance_probes(
+                        wp_renderer_get_dx11( dx11->getNativeRenderer() ),
+                        probes.empty() ? nullptr : probes.data(), static_cast<wp_u32>( probes.size() ),
+                        getProjectIrradianceMode() ) )
+                {
+                    WP_LOG_WARNING(
+                        "Project irradiance upload failed; retaining the previous GPU probe set." );
+                }
             }
             if( !renderer )
             {
                 if( !wp_graphics_system_set_render_passes( m_sys, nullptr, 0 ) )
+                {
                     throw std::runtime_error( "Cannot clear an executing native graphics frame." );
+                }
                 m_framePasses.clear();
                 return;
             }
             if( auto pipeline = dynamic_pointer_cast<ClawGraphicsPipeline>( m_graphicsPipeline ) )
+            {
                 pipeline->setFrameDeltaTime( deltaTime );
+            }
             if( auto textures = getTextureManager() )
             {
                 for( auto &texture : textures->getTextures() )
                 {
                     if( !texture || !( texture->getUsageFlags() &
-                                       static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) ) continue;
+                                       static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+                    {
+                        continue;
+                    }
                     auto target = texture->getRenderTarget();
                     if( !target || !target->isActive() || target->getSize().x <= 0 ||
-                        target->getSize().y <= 0 ) continue;
+                        target->getSize().y <= 0 )
+                    {
+                        continue;
+                    }
                     for( auto &viewport : target->getViewports() )
                     {
                         if( viewport && viewport->isActive() && viewport->getEnableSceneRender() )
+                        {
                             nextFramePasses.push_back( { this, renderer, target, viewport, false } );
+                        }
                     }
                 }
             }
             auto window = getDefaultWindow();
-            nextFramePasses.push_back( { this, renderer, window,
-                                      window ? window->getViewport( 0 ) : nullptr, true } );
+            nextFramePasses.push_back(
+                { this, renderer, window, window ? window->getViewport( 0 ) : nullptr, true } );
             if( nextFramePasses.size() > WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES )
+            {
                 throw std::runtime_error( "Graphics frame exceeds native render pass capacity." );
+            }
             std::vector<wp_graphics_system_render_pass> passes;
             passes.reserve( nextFramePasses.size() );
             for( auto &context : nextFramePasses )
@@ -987,7 +1027,9 @@ namespace workphone
             }
             if( !wp_graphics_system_set_render_passes( m_sys, passes.data(),
                                                        static_cast<wp_s32>( passes.size() ) ) )
+            {
                 throw std::runtime_error( "Native graphics frame pass registration failed." );
+            }
             m_framePasses.swap( nextFramePasses );
         }
 
@@ -1014,23 +1056,43 @@ namespace workphone
         }
 
         void ClawHammerSystem::drawFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        { executeFramePassStage( s, dt, d, 1 ); }
-        void ClawHammerSystem::effectsFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        { executeFramePassStage( s, dt, d, 2 ); }
-        void ClawHammerSystem::uiFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        { executeFramePassStage( s, dt, d, 3 ); }
-        void ClawHammerSystem::overlayFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        { executeFramePassStage( s, dt, d, 4 ); }
-        void ClawHammerSystem::endFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        { executeFramePassStage( s, dt, d, 5 ); }
+        {
+            executeFramePassStage( s, dt, d, 1 );
+        }
 
-        void ClawHammerSystem::executeFramePassStage( wp_graphics_system *system, wp_f32,
-                                                      void *data, unsigned stage )
+        void ClawHammerSystem::effectsFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        {
+            executeFramePassStage( s, dt, d, 2 );
+        }
+
+        void ClawHammerSystem::uiFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        {
+            executeFramePassStage( s, dt, d, 3 );
+        }
+
+        void ClawHammerSystem::overlayFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        {
+            executeFramePassStage( s, dt, d, 4 );
+        }
+
+        void ClawHammerSystem::endFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        {
+            executeFramePassStage( s, dt, d, 5 );
+        }
+
+        void ClawHammerSystem::executeFramePassStage( wp_graphics_system *system, wp_f32, void *data,
+                                                      unsigned stage )
         {
             auto &pass = *static_cast<FramePassContext *>( data );
             auto owner = pass.owner;
-            if( owner->m_sys != system || ( pass.failed && stage != 5 ) ) return;
-            if( pass.nativeRtt && pass.rttCompleted && stage >= 2 && stage <= 4 ) return;
+            if( owner->m_sys != system || ( pass.failed && stage != 5 ) )
+            {
+                return;
+            }
+            if( pass.nativeRtt && pass.rttCompleted && stage >= 2 && stage <= 4 )
+            {
+                return;
+            }
             auto viewport = pass.viewport;
             auto renderer = pass.renderer;
             try
@@ -1041,13 +1103,15 @@ namespace workphone
                 case 0:
                     // Skip detached, inactive and minimized targets before entering
                     // begin/end/present. Keep virtual calls behind this exception barrier.
-                    if( !renderer || !pass.target ||
-                        ( !pass.window && !pass.target->isActive() ) ||
+                    if( !renderer || !pass.target || ( !pass.window && !pass.target->isActive() ) ||
                         pass.target->getSize().x <= 0 || pass.target->getSize().y <= 0 ||
-                        ( viewport && !viewport->isActive() ) ) return;
+                        ( viewport && !viewport->isActive() ) )
+                    {
+                        return;
+                    }
                     pass.nativeRtt = !pass.window &&
-                        dynamic_pointer_cast<ClawRendererDX11>( renderer ) &&
-                        dynamic_pointer_cast<ClawRenderTarget>( pass.target );
+                                     dynamic_pointer_cast<ClawRendererDX11>( renderer ) &&
+                                     dynamic_pointer_cast<ClawRenderTarget>( pass.target );
                     if( pass.nativeRtt )
                     {
                         pass.previousTarget = renderer->getRenderTarget();
@@ -1059,10 +1123,13 @@ namespace workphone
                     {
                         auto camera = viewport ? viewport->getCamera() : nullptr;
                         // Resolve the pass aspect before capture, without binding its target.
-                        if(camera && viewport)
+                        if( camera && viewport )
                         {
                             const auto size = viewport->getActualSize();
-                            if(size.X() > 0 && size.Y() > 0) camera->setAspectRatio(size.X() / size.Y());
+                            if( size.X() > 0 && size.Y() > 0 )
+                            {
+                                camera->setAspectRatio( size.X() / size.Y() );
+                            }
                         }
                         auto cameraScene = camera ? camera->getCreator() : nullptr;
                         for( auto &scene : owner->m_scenes.snapshot() )
@@ -1074,7 +1141,10 @@ namespace workphone
                             if( auto clawScene = dynamic_pointer_cast<ClawScene>( scene ) )
                             {
                                 pass.preparedScenes.push_back( clawScene );
-                                if( !clawScene->prepareRenderJobs( camera, owner->m_statisticsSnapshotRequested.load() || owner->m_sceneProfileFrameActive,
+                                if( !clawScene->prepareRenderJobs(
+                                        camera,
+                                        owner->m_statisticsSnapshotRequested.load() ||
+                                            owner->m_sceneProfileFrameActive,
                                         dynamic_cast<ClawRendererDX11 *>( renderer.get() ) ) )
                                 {
                                     throw std::runtime_error(
@@ -1114,7 +1184,8 @@ namespace workphone
                                     ++snapshot.shadowViews;
                                     snapshot.candidates += candidates;
                                     snapshot.mainVisible += visible;
-                                    snapshot.transformDispatches += clawScene->getPreparedTransformDispatchCount();
+                                    snapshot.transformDispatches +=
+                                        clawScene->getPreparedTransformDispatchCount();
                                     snapshot.preparationTotalNs += timing.total_ns;
                                     snapshot.mainPrepareNs += timing.main_prepare_ns;
                                     snapshot.shadowDeriveNs += timing.shadow_derive_ns;
@@ -1136,11 +1207,15 @@ namespace workphone
                                         snapshot.materialBindings += materials.bindings;
                                         snapshot.materialMeshes += materials.meshes;
                                         snapshot.materialPreparations += materials.preparations;
-                                        snapshot.materialStorageAllocations += materials.storage_allocations;
+                                        snapshot.materialStorageAllocations +=
+                                            materials.storage_allocations;
                                         snapshot.materialStorageReusedViews += materials.reused_storage;
-                                        snapshot.materialDenseCapacityBytesSum += materials.dense_capacity_bytes;
-                                        snapshot.materialRetainedBytesSum += materials.retained_storage_bytes;
-                                        if( materials.peak_storage_bytes > snapshot.materialPeakBytesMax )
+                                        snapshot.materialDenseCapacityBytesSum +=
+                                            materials.dense_capacity_bytes;
+                                        snapshot.materialRetainedBytesSum +=
+                                            materials.retained_storage_bytes;
+                                        if( materials.peak_storage_bytes >
+                                            snapshot.materialPeakBytesMax )
                                         {
                                             snapshot.materialPeakBytesMax = materials.peak_storage_bytes;
                                         }
@@ -1199,15 +1274,22 @@ namespace workphone
                     renderer->setRenderTarget( pass.target );
                     renderer->setViewport( viewport );
                     if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
+                    {
                         renderer3->setCamera( viewport ? viewport->getCamera() : nullptr );
+                    }
                     pass.begun = true;
                     renderer->beginRender();
                     if( !pass.nativeRtt )
                     {
                         if( pass.window || ( viewport && viewport->getClearEveryFrame() ) )
-                            renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
+                        {
+                            renderer->clear( viewport ? viewport->getBackgroundColour()
+                                                      : ColourF::Black );
+                        }
                         if( sceneEnabled )
+                        {
                             pass.pipelineStarted = owner->beginGraphicsPipelineFrame( renderer );
+                        }
                     }
                     break;
                 case 1:
@@ -1216,18 +1298,26 @@ namespace workphone
                         auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer );
                         auto target = dynamic_pointer_cast<ClawRenderTarget>( pass.target );
                         auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
-                        auto output = target->getNativeRenderTexture( dx11Renderer->getNativeRenderer() );
+                        auto output =
+                            target->getNativeRenderTexture( dx11Renderer->getNativeRenderer() );
                         const auto size = target->getSize();
                         const auto colour = viewport ? viewport->getBackgroundColour() : ColourF::Black;
                         wp_graphics_rtt_desc desc{};
                         desc.renderer_generation = wp_renderer_dx11_get_rtt_generation( native );
-                        desc.target_generation = wp_renderer_dx11_get_render_texture_generation( output );
-                        desc.width = size.x; desc.height = size.y;
+                        desc.target_generation =
+                            wp_renderer_dx11_get_render_texture_generation( output );
+                        desc.width = size.x;
+                        desc.height = size.y;
                         desc.viewport = wp_renderer_dx11_get_viewport( native );
-                        desc.clear_colour = desc.clear_depth = viewport && viewport->getClearEveryFrame();
-                        desc.colour[0] = colour.r; desc.colour[1] = colour.g;
-                        desc.colour[2] = colour.b; desc.colour[3] = colour.a; desc.depth = 1.0f;
-                        const auto validate = []( void *data, const wp_graphics_rtt_desc *expected ) -> wp_rtt_result {
+                        desc.clear_colour = desc.clear_depth =
+                            viewport && viewport->getClearEveryFrame();
+                        desc.colour[0] = colour.r;
+                        desc.colour[1] = colour.g;
+                        desc.colour[2] = colour.b;
+                        desc.colour[3] = colour.a;
+                        desc.depth = 1.0f;
+                        const auto validate =
+                            []( void *data, const wp_graphics_rtt_desc *expected ) -> wp_rtt_result {
                             try
                             {
                                 auto &p = *static_cast<FramePassContext *>( data );
@@ -1239,18 +1329,27 @@ namespace workphone
                                         return WP_RTT_STALE;
                                     }
                                 }
-                                return !p.failed && actual.x == expected->width && actual.y == expected->height
-                                    ? WP_RTT_OK : WP_RTT_STALE;
+                                return !p.failed && actual.x == expected->width &&
+                                               actual.y == expected->height
+                                           ? WP_RTT_OK
+                                           : WP_RTT_STALE;
                             }
-                            catch( ... ) { return WP_RTT_BACKEND_FAILED; }
+                            catch( ... )
+                            {
+                                return WP_RTT_BACKEND_FAILED;
+                            }
                         };
-                        const auto draw = []( void *data, const wp_graphics_rtt_desc * ) -> wp_rtt_result {
+                        const auto draw = []( void *data,
+                                              const wp_graphics_rtt_desc * ) -> wp_rtt_result {
                             auto &p = *static_cast<FramePassContext *>( data );
                             p.rttInside = true;
                             try
                             {
                                 if( !p.viewport || p.viewport->getEnableSceneRender() )
-                                    p.pipelineStarted = p.owner->beginGraphicsPipelineFrame( p.renderer );
+                                {
+                                    p.pipelineStarted =
+                                        p.owner->beginGraphicsPipelineFrame( p.renderer );
+                                }
                                 executeFramePassStage( p.owner->m_sys, 0.0f, data, 1 );
                                 // Close HDR even when scene submission failed; never publish it.
                                 if( p.pipelineStarted )
@@ -1263,12 +1362,24 @@ namespace workphone
                             catch( const std::exception &e )
                             {
                                 p.failed = true;
-                                try { WP_LOG_EXCEPTION( e ); } catch( ... ) {}
+                                try
+                                {
+                                    WP_LOG_EXCEPTION( e );
+                                }
+                                catch( ... )
+                                {
+                                }
                             }
                             catch( ... )
                             {
                                 p.failed = true;
-                                try { WP_LOG_ERROR( "RTT draw callback failed." ); } catch( ... ) {}
+                                try
+                                {
+                                    WP_LOG_ERROR( "RTT draw callback failed." );
+                                }
+                                catch( ... )
+                                {
+                                }
                             }
                             p.rttInside = false;
                             return p.failed ? WP_RTT_BACKEND_FAILED : WP_RTT_OK;
@@ -1310,20 +1421,32 @@ namespace workphone
                     break;
                 case 3:
                     if( sceneEnabled && ( !viewport || viewport->getEnableUI() ) )
+                    {
                         if( auto app = core::IApplicationManager::instancePtr() )
-                            if( auto ui = app->getRenderUI(); ui && ui->isLoaded() ) ui->render();
+                        {
+                            if( auto ui = app->getRenderUI(); ui && ui->isLoaded() )
+                            {
+                                ui->render();
+                            }
+                        }
+                    }
                     break;
                 case 4:
                     if( pass.window && owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
                     {
                         owner->m_imguiManager->newFrame();
                         if( auto app = core::IApplicationManager::instancePtr() )
+                        {
                             if( auto ui = app->getUI() )
+                            {
                                 if( auto application = ui->getApplication() )
                                 {
-                                    RenderPhaseProfile timing( owner->m_uiBuildProfile, "Editor UI build" );
+                                    RenderPhaseProfile timing( owner->m_uiBuildProfile,
+                                                               "Editor UI build" );
                                     application->update();
                                 }
+                            }
+                        }
                         RenderPhaseProfile timing( owner->m_uiSubmitProfile, "UI submission" );
                         owner->m_imguiManager->render();
                     }
@@ -1337,8 +1460,14 @@ namespace workphone
                     if( pass.pipelineStarted )
                     {
                         pass.pipelineStarted = false;
-                        try { owner->endGraphicsPipelineFrame( renderer ); }
-                        catch( ... ) { WP_LOG_ERROR( "Failed to close graphics pipeline frame." ); }
+                        try
+                        {
+                            owner->endGraphicsPipelineFrame( renderer );
+                        }
+                        catch( ... )
+                        {
+                            WP_LOG_ERROR( "Failed to close graphics pipeline frame." );
+                        }
                     }
                     if( pass.begun )
                     {
@@ -1351,7 +1480,9 @@ namespace workphone
                         renderer->setRenderTarget( pass.previousTarget );
                         renderer->setViewport( pass.previousViewport );
                         if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
+                        {
                             renderer3->setCamera( pass.previousCamera );
+                        }
                         pass.previousTarget = nullptr;
                         pass.previousViewport = nullptr;
                         pass.previousCamera = nullptr;
@@ -1408,54 +1539,91 @@ namespace workphone
             // in the effects stage, leaving display UI outside tone mapping.
             if( auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
             {
-                if(!renderer->getCamera()) return false;
-                m_graphicsPipeline->setCamera(renderer->getCamera().get());
-                m_graphicsPipeline->setScene(renderer->getCamera()->getCreator().get());
+                if( !renderer->getCamera() )
+                {
+                    return false;
+                }
+                m_graphicsPipeline->setCamera( renderer->getCamera().get() );
+                m_graphicsPipeline->setScene( renderer->getCamera()->getCreator().get() );
                 const auto options = m_graphicsPipeline->getProperties();
                 // Legacy scene textures were rendered directly in display space. Only
                 // opt them into the scene resolve when an output policy was selected;
                 // loading an older project must not silently change its viewport colours.
-                const char *outputKeys[] = {
-                    "graphics.hdr", "graphics.colorSpace", "graphics.tonemapping",
-                    "graphics.antiAliasing", "graphics.renderScale", "graphics.dynamicResolution",
-                    "graphics.renderPipeline", "graphics.lightingMode", "graphics.gi",
-                    "graphics.postProcessing", "graphics.bloom", "graphics.motionBlur",
-                    "graphics.ambientOcclusion"
-                };
+                const char *outputKeys[] = { "graphics.hdr",
+                                             "graphics.colorSpace",
+                                             "graphics.tonemapping",
+                                             "graphics.antiAliasing",
+                                             "graphics.renderScale",
+                                             "graphics.dynamicResolution",
+                                             "graphics.renderPipeline",
+                                             "graphics.lightingMode",
+                                             "graphics.gi",
+                                             "graphics.postProcessing",
+                                             "graphics.bloom",
+                                             "graphics.motionBlur",
+                                             "graphics.ambientOcclusion" };
                 bool explicitOutput = false;
-                for( auto key : outputKeys ) explicitOutput |= options->hasProperty( key );
-                if( !explicitOutput &&
-                    ( renderer->getRenderTarget() != getDefaultWindow() ||
-                      !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) )
-                    return false;
-                const bool hdr = !options->hasProperty( "graphics.hdr" ) || options->getPropertyAsBool( "graphics.hdr" );
-                const s32 linear = options->hasProperty( "graphics.colorSpace" ) ? options->getPropertyAsInt( "graphics.colorSpace" ) : 1;
-                const s32 tone = options->hasProperty( "graphics.tonemapping" ) ? options->getPropertyAsInt( "graphics.tonemapping" ) : 3;
-                const s32 aa=options->getPropertyAsInt("graphics.antiAliasing");
-                const s32 samples=aa==3 ? 2 : aa==4 ? 4 : aa==5 ? 8 : 1;
-                f32 scale=1.0f;options->getPropertyValue("graphics.renderScale",scale);
-                if(options->getPropertyAsBool("graphics.dynamicResolution"))
+                for( auto key : outputKeys )
                 {
-                    auto app=core::IApplicationManager::instancePtr();
-                    auto timer=app ? app->getTimer() : nullptr;
-                    const auto dt=timer ? timer->getDeltaTime() : 0;
-                    const s32 fps=std::max(15,options->getPropertyAsInt("graphics.frameRateLimit"));
-                    if(dt>1.1/fps) m_adaptiveSceneScale=std::max(0.5f,m_adaptiveSceneScale-0.0625f);
-                    else if(dt>0 && dt<0.8/fps) m_adaptiveSceneScale=std::min(1.0f,m_adaptiveSceneScale+0.0625f);
+                    explicitOutput |= options->hasProperty( key );
                 }
-                else m_adaptiveSceneScale=1.0f;
-                wp_renderer_dx11_set_scene_sampling(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),samples,scale*m_adaptiveSceneScale);
-                const bool post=!options->hasProperty("graphics.postProcessing") || options->getPropertyAsBool("graphics.postProcessing");
-                auto nativeDx11=wp_renderer_get_dx11(dx11Renderer->getNativeRenderer());
-                wp_renderer_dx11_set_pipeline_mode(nativeDx11,options->getPropertyAsInt("graphics.renderPipeline"),
-                    post && options->getPropertyAsBool("graphics.ambientOcclusion"));
-                uploadProjectSceneLights(nativeDx11,renderer->getCamera()->getCreator(),renderer->getCamera(),options);
-                wp_renderer_dx11_set_post_options(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),aa,
-                    post && options->getPropertyAsBool("graphics.bloom"),post && options->getPropertyAsBool("graphics.motionBlur"),
-                    static_cast<wp_u64>(reinterpret_cast<uintptr_t>(renderer->getCamera().get())));
-                wp_renderer_dx11_set_output_options( wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
+                if( !explicitOutput && ( renderer->getRenderTarget() != getDefaultWindow() ||
+                                         !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) )
+                {
+                    return false;
+                }
+                const bool hdr = !options->hasProperty( "graphics.hdr" ) ||
+                                 options->getPropertyAsBool( "graphics.hdr" );
+                const s32 linear = options->hasProperty( "graphics.colorSpace" )
+                                       ? options->getPropertyAsInt( "graphics.colorSpace" )
+                                       : 1;
+                const s32 tone = options->hasProperty( "graphics.tonemapping" )
+                                     ? options->getPropertyAsInt( "graphics.tonemapping" )
+                                     : 3;
+                const s32 aa = options->getPropertyAsInt( "graphics.antiAliasing" );
+                const s32 samples = aa == 3 ? 2 : aa == 4 ? 4 : aa == 5 ? 8 : 1;
+                f32 scale = 1.0f;
+                options->getPropertyValue( "graphics.renderScale", scale );
+                if( options->getPropertyAsBool( "graphics.dynamicResolution" ) )
+                {
+                    auto app = core::IApplicationManager::instancePtr();
+                    auto timer = app ? app->getTimer() : nullptr;
+                    const auto dt = timer ? timer->getDeltaTime() : 0;
+                    const s32 fps =
+                        std::max( 15, options->getPropertyAsInt( "graphics.frameRateLimit" ) );
+                    if( dt > 1.1 / fps )
+                    {
+                        m_adaptiveSceneScale = std::max( 0.5f, m_adaptiveSceneScale - 0.0625f );
+                    }
+                    else if( dt > 0 && dt < 0.8 / fps )
+                    {
+                        m_adaptiveSceneScale = std::min( 1.0f, m_adaptiveSceneScale + 0.0625f );
+                    }
+                }
+                else
+                {
+                    m_adaptiveSceneScale = 1.0f;
+                }
+                wp_renderer_dx11_set_scene_sampling(
+                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), samples,
+                    scale * m_adaptiveSceneScale );
+                const bool post = !options->hasProperty( "graphics.postProcessing" ) ||
+                                  options->getPropertyAsBool( "graphics.postProcessing" );
+                auto nativeDx11 = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
+                wp_renderer_dx11_set_pipeline_mode(
+                    nativeDx11, options->getPropertyAsInt( "graphics.renderPipeline" ),
+                    post && options->getPropertyAsBool( "graphics.ambientOcclusion" ) );
+                uploadProjectSceneLights( nativeDx11, renderer->getCamera()->getCreator(),
+                                          renderer->getCamera(), options );
+                wp_renderer_dx11_set_post_options(
+                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), aa,
+                    post && options->getPropertyAsBool( "graphics.bloom" ),
+                    post && options->getPropertyAsBool( "graphics.motionBlur" ),
+                    static_cast<wp_u64>( reinterpret_cast<uintptr_t>( renderer->getCamera().get() ) ) );
+                wp_renderer_dx11_set_output_options(
+                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
                 return wp_renderer_dx11_begin_hdr_scene(
-                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), 1.0f ) != 0;
+                           wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), 1.0f ) != 0;
             }
 
             // The CPU pipeline consumes and presents the software framebuffer.
@@ -1478,10 +1646,13 @@ namespace workphone
                                  : Vector2<real_Num>(
                                        static_cast<real_Num>( target ? target->getSize().x : 0 ),
                                        static_cast<real_Num>( target ? target->getSize().y : 0 ) );
-            const auto softwareRenderer = dynamic_pointer_cast<ClawRendererSoftware>(renderer);
-            const auto nativeRenderer = softwareRenderer ? softwareRenderer->getNativeRenderer() : nullptr;
-            const auto width = nativeRenderer ? wp_renderer_get_width(nativeRenderer) : static_cast<s32>( size.x );
-            const auto height = nativeRenderer ? wp_renderer_get_height(nativeRenderer) : static_cast<s32>( size.y );
+            const auto softwareRenderer = dynamic_pointer_cast<ClawRendererSoftware>( renderer );
+            const auto nativeRenderer =
+                softwareRenderer ? softwareRenderer->getNativeRenderer() : nullptr;
+            const auto width =
+                nativeRenderer ? wp_renderer_get_width( nativeRenderer ) : static_cast<s32>( size.x );
+            const auto height =
+                nativeRenderer ? wp_renderer_get_height( nativeRenderer ) : static_cast<s32>( size.y );
             if( width <= 0 || height <= 0 )
             {
                 return false;
@@ -1510,8 +1681,11 @@ namespace workphone
             {
                 wp_renderer_dx11_end_hdr_scene(
                     wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ) );
-                if(auto scene=dynamic_cast<ClawScene*>(m_graphicsPipeline->getScene()))
-                    scene->captureOcclusionDepth(dx11Renderer->getNativeRenderer(),renderer->getCamera());
+                if( auto scene = dynamic_cast<ClawScene *>( m_graphicsPipeline->getScene() ) )
+                {
+                    scene->captureOcclusionDepth( dx11Renderer->getNativeRenderer(),
+                                                  renderer->getCamera() );
+                }
                 return;
             }
             if( !renderer || !m_graphicsPipeline || !m_graphicsPipeline->isInitialized() )
@@ -1542,8 +1716,10 @@ namespace workphone
             }
 
             m_graphicsPipeline->endFrame();
-            if(auto scene=dynamic_cast<ClawScene*>(m_graphicsPipeline->getScene()))
-                scene->captureOcclusionDepth(softwareNativeRenderer,renderer->getCamera());
+            if( auto scene = dynamic_cast<ClawScene *>( m_graphicsPipeline->getScene() ) )
+            {
+                scene->captureOcclusionDepth( softwareNativeRenderer, renderer->getCamera() );
+            }
         }
 
         void ClawHammerSystem::messagePump()
@@ -1605,20 +1781,46 @@ namespace workphone
                     SmartPtr<IRenderer> renderer;
                     RenderApi selectedApi = m_configuredRendererType;
                     SmartPtr<Properties> projectProfile;
-                    if(auto app=core::IApplicationManager::instancePtr()) projectProfile=app->getPlayerSettings();
-                    if(projectProfile)
+                    if( auto app = core::IApplicationManager::instancePtr() )
                     {
-                        String error,notes;
-                        if(!validateProjectGraphicsProviders(projectProfile,error,notes))
-                        {WP_LOG_ERROR("WPGraphics: "+error);return false;}
-                        if(!notes.empty()) WP_LOG_INFO("WPGraphics: "+notes);
-                        const auto api=projectRendererApi(projectProfile);
-                        if(api=="Vulkan") selectedApi=RenderApi::Vulkan;
-                        else if(api=="OpenGL") selectedApi=RenderApi::GL;
-                        else if(api=="OpenGLES") selectedApi=RenderApi::GL;
-                        else if(api=="Metal") selectedApi=RenderApi::Metal;
-                        else if(projectProfile->hasProperty("graphics.renderer.pc")&&projectProfile->getPropertyAsInt("graphics.renderer.pc")!=0)
-                            selectedApi=api=="DX12"?RenderApi::DX12:api=="Software"?RenderApi::Software:RenderApi::DX11;
+                        projectProfile = app->getPlayerSettings();
+                    }
+                    if( projectProfile )
+                    {
+                        String error, notes;
+                        if( !validateProjectGraphicsProviders( projectProfile, error, notes ) )
+                        {
+                            WP_LOG_ERROR( "WPGraphics: " + error );
+                            return false;
+                        }
+                        if( !notes.empty() )
+                        {
+                            WP_LOG_INFO( "WPGraphics: " + notes );
+                        }
+                        const auto api = projectRendererApi( projectProfile );
+                        if( api == "Vulkan" )
+                        {
+                            selectedApi = RenderApi::Vulkan;
+                        }
+                        else if( api == "OpenGL" )
+                        {
+                            selectedApi = RenderApi::GL;
+                        }
+                        else if( api == "OpenGLES" )
+                        {
+                            selectedApi = RenderApi::GL;
+                        }
+                        else if( api == "Metal" )
+                        {
+                            selectedApi = RenderApi::Metal;
+                        }
+                        else if( projectProfile->hasProperty( "graphics.renderer.pc" ) &&
+                                 projectProfile->getPropertyAsInt( "graphics.renderer.pc" ) != 0 )
+                        {
+                            selectedApi = api == "DX12"       ? RenderApi::DX12
+                                          : api == "Software" ? RenderApi::Software
+                                                              : RenderApi::DX11;
+                        }
                     }
 
                     // Auto-detect if no specific renderer was configured
@@ -1638,52 +1840,85 @@ namespace workphone
 #endif
                     }
 
-                    const bool waitingForWindow=!createWindow&&!getDefaultWindow()&&selectedApi!=RenderApi::Software;
-                    if(selectedApi!=RenderApi::None) m_configuredRendererType=selectedApi;
-                    if(waitingForWindow) selectedApi=RenderApi::Software;
-
-                    // A registered API provider owns the complete selected profile.
-                    const auto selectedName=projectProfile?projectRendererApi(projectProfile):String(renderApiName(selectedApi));
-                    if(auto provider=waitingForWindow?nullptr:getProjectRendererProvider(selectedName))
+                    const bool waitingForWindow =
+                        !createWindow && !getDefaultWindow() && selectedApi != RenderApi::Software;
+                    if( selectedApi != RenderApi::None )
                     {
-                        String error;renderer=provider->create(projectProfile,error);
-                        if(!renderer) {WP_LOG_ERROR("WPGraphics provider: "+error);return false;}
+                        m_configuredRendererType = selectedApi;
                     }
-                    if(!renderer) switch( selectedApi )
-                    {
-#if defined WP_PLATFORM_WIN32
-                    case RenderApi::DX12:
-                    {
-                        String error;
-                        if(auto provider=getProjectRendererProvider("DX12")) renderer=provider->create(projectProfile,error);
-                        else renderer = workphone::make_ptr<ClawRendererDX11>(true);
-                        WP_LOG_INFO("WPGraphics: Direct3D 12 executes the shared scene pipeline through D3D11On12.");
-                        break;
-                    }
-#endif
-#if defined WP_PLATFORM_WIN32 && WP_BUILD_RENDERER_DX11
-                    case RenderApi::DX11:
-                    {
-                        renderer = workphone::make_ptr<ClawRendererDX11>();
-                        break;
-                    }
-#endif
-                    case RenderApi::None:
-                    case RenderApi::Software:
+                    if( waitingForWindow )
                     {
                         selectedApi = RenderApi::Software;
-                        renderer = workphone::make_ptr<ClawRendererSoftware>();
-                        break;
                     }
-                    default:
+
+                    // A registered API provider owns the complete selected profile.
+                    const auto selectedName = projectProfile ? projectRendererApi( projectProfile )
+                                                             : String( renderApiName( selectedApi ) );
+                    if( auto provider =
+                            waitingForWindow ? nullptr : getProjectRendererProvider( selectedName ) )
                     {
                         String error;
-                        const auto api=projectProfile?projectRendererApi(projectProfile):String(renderApiName(selectedApi));
-                        if(auto provider=getProjectRendererProvider(api)) renderer=provider->create(projectProfile,error);
-                        if(!renderer)
-                        {WP_LOG_ERROR("WPGraphics: renderer provider failed for "+api+": "+error);return false;}
-                        break;
+                        renderer = provider->create( projectProfile, error );
+                        if( !renderer )
+                        {
+                            WP_LOG_ERROR( "WPGraphics provider: " + error );
+                            return false;
+                        }
                     }
+                    if( !renderer )
+                    {
+                        switch( selectedApi )
+                        {
+#if defined WP_PLATFORM_WIN32
+                        case RenderApi::DX12:
+                        {
+                            String error;
+                            if( auto provider = getProjectRendererProvider( "DX12" ) )
+                            {
+                                renderer = provider->create( projectProfile, error );
+                            }
+                            else
+                            {
+                                renderer = workphone::make_ptr<ClawRendererDX11>( true );
+                            }
+                            WP_LOG_INFO(
+                                "WPGraphics: Direct3D 12 executes the shared scene pipeline through "
+                                "D3D11On12." );
+                            break;
+                        }
+#endif
+#if defined WP_PLATFORM_WIN32 && WP_BUILD_RENDERER_DX11
+                        case RenderApi::DX11:
+                        {
+                            renderer = workphone::make_ptr<ClawRendererDX11>();
+                            break;
+                        }
+#endif
+                        case RenderApi::None:
+                        case RenderApi::Software:
+                        {
+                            selectedApi = RenderApi::Software;
+                            renderer = workphone::make_ptr<ClawRendererSoftware>();
+                            break;
+                        }
+                        default:
+                        {
+                            String error;
+                            const auto api = projectProfile ? projectRendererApi( projectProfile )
+                                                            : String( renderApiName( selectedApi ) );
+                            if( auto provider = getProjectRendererProvider( api ) )
+                            {
+                                renderer = provider->create( projectProfile, error );
+                            }
+                            if( !renderer )
+                            {
+                                WP_LOG_ERROR( "WPGraphics: renderer provider failed for " + api + ": " +
+                                              error );
+                                return false;
+                            }
+                            break;
+                        }
+                        }
                     }
 
                     m_renderApi = selectedApi;
@@ -1774,12 +2009,14 @@ namespace workphone
 
                 // Provide a debug helper so application createScene() implementations can
                 // queue debug primitives/text without dereferencing a null interface.
-                if(auto app=core::IApplicationManager::instancePtr())
-                    if(auto settings=app->getPlayerSettings())
+                if( auto app = core::IApplicationManager::instancePtr() )
+                {
+                    if( auto settings = app->getPlayerSettings() )
                     {
-                        setProperties(settings);
-                        m_graphicsPipeline->setProperties(settings);
+                        setProperties( settings );
+                        m_graphicsPipeline->setProperties( settings );
                     }
+                }
                 if( !getDebug() )
                 {
                     auto debug = workphone::make_ptr<ClawDebug>();
@@ -1857,20 +2094,29 @@ namespace workphone
                                           ? m_configuredRendererType
                                           : RenderApi::DX11;
                 SmartPtr<Properties> projectProfile;
-                if(auto app=core::IApplicationManager::instancePtr()) projectProfile=app->getPlayerSettings();
-                const auto providerName=projectProfile?projectRendererApi(projectProfile):String(renderApiName(targetApi));
-                if(auto provider=getProjectRendererProvider(providerName))
+                if( auto app = core::IApplicationManager::instancePtr() )
                 {
-                    String error;newRenderer=provider->create(projectProfile,error);
-                    if(!newRenderer) {WP_LOG_ERROR("WPGraphics provider: "+error);return nullptr;}
+                    projectProfile = app->getPlayerSettings();
+                }
+                const auto providerName = projectProfile ? projectRendererApi( projectProfile )
+                                                         : String( renderApiName( targetApi ) );
+                if( auto provider = getProjectRendererProvider( providerName ) )
+                {
+                    String error;
+                    newRenderer = provider->create( projectProfile, error );
+                    if( !newRenderer )
+                    {
+                        WP_LOG_ERROR( "WPGraphics provider: " + error );
+                        return nullptr;
+                    }
                 }
 
                 // Prefer DX12 if configured and available, otherwise DX11
-                if(!newRenderer && targetApi == RenderApi::DX12 )
+                if( !newRenderer && targetApi == RenderApi::DX12 )
                 {
-                    newRenderer = workphone::make_ptr<ClawRendererDX11>(true);
+                    newRenderer = workphone::make_ptr<ClawRendererDX11>( true );
                 }
-                else if(!newRenderer && targetApi==RenderApi::DX11)
+                else if( !newRenderer && targetApi == RenderApi::DX11 )
 #    if defined WP_BUILD_RENDERER_DX11
                 {
                     newRenderer = workphone::make_ptr<ClawRendererDX11>();
@@ -1897,7 +2143,8 @@ namespace workphone
                                     dynamic_pointer_cast<ClawRendererDX11>( newRenderer ) )
                         {
                             nativeRenderer = dx11Renderer->getNativeRenderer();
-                            m_renderApi = targetApi==RenderApi::DX12?RenderApi::DX12:RenderApi::DX11;
+                            m_renderApi =
+                                targetApi == RenderApi::DX12 ? RenderApi::DX12 : RenderApi::DX11;
                         }
 #    endif
 

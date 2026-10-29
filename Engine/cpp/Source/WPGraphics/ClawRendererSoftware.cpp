@@ -219,24 +219,36 @@ namespace workphone::render
         }
 
         auto size = m_renderTarget->getSize();
-        if(auto app = core::IApplicationManager::instancePtr())
-            if(auto settings = app->getPlayerSettings())
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            if( auto settings = app->getPlayerSettings() )
             {
                 f32 scale = 1.0f;
-                settings->getPropertyValue("graphics.renderScale",scale);
-                if(settings->getPropertyAsBool("graphics.dynamicResolution"))
+                settings->getPropertyValue( "graphics.renderScale", scale );
+                if( settings->getPropertyAsBool( "graphics.dynamicResolution" ) )
                 {
                     const auto timer = app->getTimer();
                     const auto delta = timer ? timer->getDeltaTime() : 0.0;
-                    const auto fps = std::max(15,settings->getPropertyAsInt("graphics.frameRateLimit"));
-                    if(delta > 1.1 / fps) m_adaptiveRenderScale = std::max(0.5f,m_adaptiveRenderScale - 0.0625f);
-                    else if(delta > 0 && delta < 0.8 / fps) m_adaptiveRenderScale = std::min(1.0f,m_adaptiveRenderScale + 0.0625f);
+                    const auto fps =
+                        std::max( 15, settings->getPropertyAsInt( "graphics.frameRateLimit" ) );
+                    if( delta > 1.1 / fps )
+                    {
+                        m_adaptiveRenderScale = std::max( 0.5f, m_adaptiveRenderScale - 0.0625f );
+                    }
+                    else if( delta > 0 && delta < 0.8 / fps )
+                    {
+                        m_adaptiveRenderScale = std::min( 1.0f, m_adaptiveRenderScale + 0.0625f );
+                    }
                 }
-                else m_adaptiveRenderScale = 1.0f;
-                scale = std::clamp(scale * m_adaptiveRenderScale,0.25f,2.0f);
-                size.x = std::max(1,static_cast<s32>(size.x * scale));
-                size.y = std::max(1,static_cast<s32>(size.y * scale));
+                else
+                {
+                    m_adaptiveRenderScale = 1.0f;
+                }
+                scale = std::clamp( scale * m_adaptiveRenderScale, 0.25f, 2.0f );
+                size.x = std::max( 1, static_cast<s32>( size.x * scale ) );
+                size.y = std::max( 1, static_cast<s32>( size.y * scale ) );
             }
+        }
         if( size.x > 0 && size.y > 0 && size != m_bufferSize &&
             wp_renderer_resize( m_renderer, size.x, size.y ) )
         {
@@ -263,8 +275,8 @@ namespace workphone::render
             const auto position = m_viewport->getActualPosition();
             const auto size = m_viewport->getActualSize();
             const auto targetSize = m_renderTarget ? m_renderTarget->getSize() : m_bufferSize;
-            const auto scaleX = static_cast<f32>(m_bufferSize.x) / std::max(1,targetSize.x);
-            const auto scaleY = static_cast<f32>(m_bufferSize.y) / std::max(1,targetSize.y);
+            const auto scaleX = static_cast<f32>( m_bufferSize.x ) / std::max( 1, targetSize.x );
+            const auto scaleY = static_cast<f32>( m_bufferSize.y ) / std::max( 1, targetSize.y );
             nativeViewport.x = static_cast<wp_s32>( position.X() * scaleX );
             nativeViewport.y = static_cast<wp_s32>( position.Y() * scaleY );
             if( size.X() > 0 && size.Y() > 0 )

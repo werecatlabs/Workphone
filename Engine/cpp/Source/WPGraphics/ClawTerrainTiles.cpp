@@ -154,14 +154,19 @@ namespace workphone::render
                 p.requestedSourceBudget = std::move( sourceBudget );
             }
             auto qualityViews = views;
-            if(auto app = core::IApplicationManager::instancePtr())
-                if(auto settings = app->getPlayerSettings())
+            if( auto app = core::IApplicationManager::instancePtr() )
+            {
+                if( auto settings = app->getPlayerSettings() )
                 {
                     s32 quality = 2;
-                    settings->getPropertyValue("quality.terrain",quality);
-                    constexpr f32 tolerances[] = {4.0f,2.0f,1.0f,0.5f};
-                    for(auto &view : qualityViews) view.maximumPixelError *= tolerances[std::clamp(quality,0,3)];
+                    settings->getPropertyValue( "quality.terrain", quality );
+                    constexpr f32 tolerances[] = { 4.0f, 2.0f, 1.0f, 0.5f };
+                    for( auto &view : qualityViews )
+                    {
+                        view.maximumPixelError *= tolerances[std::clamp( quality, 0, 3 )];
+                    }
                 }
+            }
             auto demand = selectTerrainTiles( p.descriptions, qualityViews, p.demand, p.maximumTiles );
             // Distance order controls worker priority, never publication identity.
             // A camera crossing a tile centre must not restart the same demand.

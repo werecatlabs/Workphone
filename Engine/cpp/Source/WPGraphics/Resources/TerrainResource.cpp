@@ -627,9 +627,12 @@ namespace workphone::render
             }
             // ClawTexture admits and owns each retained mip copy and physical
             // GPU allocation; this lease covers only resolver bookkeeping.
-            auto cpuBudget = WorldStreamingScheduler::shared()->reserve(
-                StreamMemoryClass::SourceCpu, retainedBytes, error );
-            if( !cpuBudget ) return {};
+            auto cpuBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu,
+                                                                         retainedBytes, error );
+            if( !cpuBudget )
+            {
+                return {};
+            }
             auto textures = std::make_shared<std::map<String, SmartPtr<ITexture>>>();
             for( size_t i = 0; i < decoded->textures.size(); ++i )
             {

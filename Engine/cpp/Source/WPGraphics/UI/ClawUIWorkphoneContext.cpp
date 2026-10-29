@@ -10,14 +10,26 @@ namespace workphone::ui
     {
         std::vector<wp_byte> readTrueTypeFont( const String &path )
         {
-            if( path.empty() ) return {};
+            if( path.empty() )
+            {
+                return {};
+            }
             std::ifstream stream( path.c_str(), std::ios::binary | std::ios::ate );
-            if( !stream ) return {};
+            if( !stream )
+            {
+                return {};
+            }
             const auto length = stream.tellg();
-            if( length < 12 || length > 16 * 1024 * 1024 ) return {};
+            if( length < 12 || length > 16 * 1024 * 1024 )
+            {
+                return {};
+            }
             std::vector<wp_byte> bytes( static_cast<size_t>( length ) );
             stream.seekg( 0 );
-            if( !stream.read( reinterpret_cast<char *>( bytes.data() ), length ) ) return {};
+            if( !stream.read( reinterpret_cast<char *>( bytes.data() ), length ) )
+            {
+                return {};
+            }
             const auto u16 = [&]( size_t offset ) -> size_t {
                 return ( static_cast<size_t>( bytes[offset] ) << 8 ) | bytes[offset + 1];
             };
@@ -28,19 +40,32 @@ namespace workphone::ui
             // Reject non-TTF, truncated directories and out-of-range tables
             // before handing an optional local asset to that parser.
             const auto signature = u32( 0 );
-            if( signature != 0x00010000 && signature != 0x74727565 ) return {};
+            if( signature != 0x00010000 && signature != 0x74727565 )
+            {
+                return {};
+            }
             const auto count = u16( 4 );
-            if( count == 0 || count > ( bytes.size() - 12 ) / 16 ) return {};
+            if( count == 0 || count > ( bytes.size() - 12 ) / 16 )
+            {
+                return {};
+            }
             const auto directoryEnd = 12 + count * 16;
-            struct RequiredTable { size_t tag; size_t minimum; bool found; };
+
+            struct RequiredTable
+            {
+                size_t tag;
+                size_t minimum;
+                bool found;
+            };
+
             RequiredTable required[] = {
-                { 0x636d6170, 4, false },  // cmap
-                { 0x676c7966, 1, false },  // glyf
-                { 0x68656164, 54, false }, // head
-                { 0x68686561, 36, false }, // hhea
-                { 0x686d7478, 4, false },  // hmtx
-                { 0x6c6f6361, 4, false },  // loca
-                { 0x6d617870, 6, false }   // maxp
+                { 0x636d6170, 4, false },   // cmap
+                { 0x676c7966, 1, false },   // glyf
+                { 0x68656164, 54, false },  // head
+                { 0x68686561, 36, false },  // hhea
+                { 0x686d7478, 4, false },   // hmtx
+                { 0x6c6f6361, 4, false },   // loca
+                { 0x6d617870, 6, false }    // maxp
             };
             for( size_t index = 0; index < count; ++index )
             {
@@ -48,17 +73,29 @@ namespace workphone::ui
                 const auto tag = u32( record );
                 const auto offset = u32( record + 8 );
                 const auto size = u32( record + 12 );
-                if( offset < directoryEnd || offset > bytes.size() || size > bytes.size() - offset ) return {};
+                if( offset < directoryEnd || offset > bytes.size() || size > bytes.size() - offset )
+                {
+                    return {};
+                }
                 for( auto &table : required )
                 {
                     if( table.tag == tag )
                     {
-                        if( table.found || size < table.minimum ) return {};
+                        if( table.found || size < table.minimum )
+                        {
+                            return {};
+                        }
                         table.found = true;
                     }
                 }
             }
-            for( const auto &table : required ) if( !table.found ) return {};
+            for( const auto &table : required )
+            {
+                if( !table.found )
+                {
+                    return {};
+                }
+            }
             return bytes;
         }
 
@@ -83,12 +120,15 @@ namespace workphone::ui
                 if( !project.empty() )
                 {
                     const auto path = Path::lexically_normal( project + "/Assets/UI/Fonts/Default.ttf" );
-                    if( Path::isExistingFile( path ) ) return path;
+                    if( Path::isExistingFile( path ) )
+                    {
+                        return path;
+                    }
                 }
             }
             return {};
         }
-    }
+    }  // namespace
 
     ClawUIWorkphoneContext::ClawUIWorkphoneContext()
     {
@@ -118,7 +158,8 @@ namespace workphone::ui
             config.pixel_snap = 0;
             // The atlas copies this validated buffer, so a file replacement
             // cannot change the bytes between validation and baking.
-            defaultFont = wp_font_atlas_add_from_memory( &m_atlas, fontBytes.data(), fontBytes.size(), 64.0f, &config );
+            defaultFont = wp_font_atlas_add_from_memory( &m_atlas, fontBytes.data(), fontBytes.size(),
+                                                         64.0f, &config );
         }
         const auto hasProjectFont = defaultFont != nullptr;
         if( !defaultFont )

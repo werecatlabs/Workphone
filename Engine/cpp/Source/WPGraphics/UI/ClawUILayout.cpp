@@ -56,16 +56,12 @@ namespace workphone::ui
                 }
                 auto position = transform->getAbsolutePosition();
                 auto size = transform->getAbsoluteSize();
-                auto left = MathF::max(
-                    clip.x, rootBounds.x + static_cast<f32>( position.x ) * scaleX );
-                auto top = MathF::max(
-                    clip.y, rootBounds.y + static_cast<f32>( position.y ) * scaleY );
+                auto left = MathF::max( clip.x, rootBounds.x + static_cast<f32>( position.x ) * scaleX );
+                auto top = MathF::max( clip.y, rootBounds.y + static_cast<f32>( position.y ) * scaleY );
                 auto right = MathF::min(
-                    clip.x + clip.w,
-                    rootBounds.x + static_cast<f32>( position.x + size.x ) * scaleX );
+                    clip.x + clip.w, rootBounds.x + static_cast<f32>( position.x + size.x ) * scaleX );
                 auto bottom = MathF::min(
-                    clip.y + clip.h,
-                    rootBounds.y + static_cast<f32>( position.y + size.y ) * scaleY );
+                    clip.y + clip.h, rootBounds.y + static_cast<f32>( position.y + size.y ) * scaleY );
                 clip = { left, top, MathF::max( 0.0f, right - left ), MathF::max( 0.0f, bottom - top ) };
             }
             return clip;
@@ -241,6 +237,7 @@ namespace workphone::ui
             auto *panel = ctx->current->layout;
             auto *canvas = wp_window_get_canvas( ctx );
             const auto originalClip = panel->clip;
+
             struct RestoreClip
             {
                 wp_panel *panel;

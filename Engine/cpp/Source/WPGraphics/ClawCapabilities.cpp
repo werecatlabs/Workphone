@@ -18,16 +18,13 @@ namespace workphone::render
         result.maxParticleCapacity = native ? WP_PARTICLE_SIMULATION_MAX_CAPACITY : 0;
         using Status = ClawFeatureStatus;
         result.features = {
-            { "window-presentation",
-              native ? Status::Implemented
-                     : Status::Unavailable,
+            { "window-presentation", native ? Status::Implemented : Status::Unavailable,
               "DX11 and D3D12 via D3D11On12 share native presentation and scene passes." },
-            { "static-meshes",
-              native ? Status::Implemented
-                     : Status::Unavailable,
+            { "static-meshes", native ? Status::Implemented : Status::Unavailable,
               "Native mesh submission; GPU backends share material and geometry ownership." },
             { "pbr-materials", hardware ? Status::Implemented : Status::Unavailable,
-              "Forward, tiled Forward+, Deferred MRT and Mobile paths; local light list budgets apply." },
+              "Forward, tiled Forward+, Deferred MRT and Mobile paths; local light list budgets "
+              "apply." },
             { "cpu-skinning", native ? Status::Experimental : Status::Unavailable,
               "Imported bind weights and Animator pose publication; 4 influences, 256 joints, "
               "rigid/uniform-scale affine transforms. GPU skinning remains unavailable." },
@@ -43,7 +40,8 @@ namespace workphone::render
               "sorting yet." },
             { "water", Status::Unavailable, "Water rendering passes pending." },
             { "gpu-post-processing", hardware ? Status::Implemented : Status::Unavailable,
-              "Native MSAA resolve, scale, FXAA/temporal history, bloom, depth AO and output transfer." },
+              "Native MSAA resolve, scale, FXAA/temporal history, bloom, depth AO and output "
+              "transfer." },
             { "cpu-post-processing", software ? Status::Implemented : Status::Unavailable,
               "Default-window CPU framebuffer path; not a GPU frame pipeline." },
             { "runtime-ui", native ? Status::Implemented : Status::Unavailable,

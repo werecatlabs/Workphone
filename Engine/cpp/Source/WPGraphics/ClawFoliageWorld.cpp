@@ -168,10 +168,13 @@ namespace workphone::render
             // Resolve the existing resource first; never reload a generated texture from disk.
             auto graphics = app ? app->getGraphicsSystem() : nullptr;
             auto manager = graphics ? graphics->getTextureManager() : nullptr;
-            auto texture = manager ? dynamic_pointer_cast<ITexture>( manager->getByName( id ) ) : nullptr;
+            auto texture =
+                manager ? dynamic_pointer_cast<ITexture>( manager->getByName( id ) ) : nullptr;
             auto database = app ? app->getResourceDatabase() : nullptr;
             if( !texture && database )
+            {
                 texture = database->loadResourceByType<ITexture>( id );
+            }
             if( !texture )
             {
                 error = "Foliage texture is unavailable: " + id;
