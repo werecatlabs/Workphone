@@ -3,6 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
 #include <Workphone/Script/ScriptGenerator.hpp>
+#include <Workphone/IO/FileSystemArchive.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <WPLua/LuaScriptCompiler.hpp>
@@ -68,6 +69,24 @@ inline void runLuaAssetContracts( workphone::LuaManager &manager )
         check( manager.executeSource( application.app->getFileSystem()->readAllText( path.c_str() ),
                                       ( "@" + path ).c_str() ), "generated Lua class syntax" );
     }
+    write( "logic/SourceProbe.lua", "sourceProbeIdentity=debug.getinfo(1,'S').source" );
+    application.app->getFileSystem()->addArchive( ( source / "logic" ).generic_u8string().c_str(), IFileSystem::ArchiveType::Folder );
+    auto sourceProbe = application.app->getFileSystem()->open( "SourceProbe.lua", true, false, false, true, true );
+    check( sourceProbe != nullptr, "folder source probe lookup" );
+    check( sourceProbe->getFileInfo().absolutePath.size(), "folder stream lost its physical identity" );
+    auto directProbe = application.app->getFileSystem()->open( ( source / "end.lua" ).generic_u8string().c_str() );
+    check( directProbe && directProbe->getFileInfo().absolutePath.size(), "native stream lost its physical identity" );
+    application.app->getFileSystem()->addFile( sourceProbe->getFileInfo() );
+    manager.loadScript( "SourceProbe.lua" );
+    auto checkSourceIdentity = [&]() {
+        auto state = manager.getLuaState(); lua_getglobal( state, "sourceProbeIdentity" );
+        const auto identity = lua_tostring( state, -1 );
+        const std::string saved = identity ? identity : ""; lua_pop( state, 1 );
+        check( saved.size() > 1 && saved[0] == '@' &&
+               fs::equivalent( fs::u8path( saved.substr( 1 ) ), source / "logic/SourceProbe.lua" ),
+               "loose script source identity does not resolve to its physical file" );
+    };
+    checkSourceIdentity();
     auto catalog = make_ptr<AssetDatabaseManager>();
     check( catalog->setProjectRoot( source.string().c_str() ), "asset source root" );
     catalog->loadFromFile( ( folder / "catalog.db" ).string().c_str() );
@@ -159,6 +178,7 @@ inline void runLuaAssetContracts( workphone::LuaManager &manager )
     check( !manager.getError() && !manager.reloadPending() && manager.getLuaState() != oldState,
            "valid reload did not promote" );
     check( manager.executeSource( "assert(assetVersion==2)", "=promotion-check" ), "promoted asset source" );
+    checkSourceIdentity();
     manager.unload( nullptr );
     manager.configureScriptResources( catalog, resources, true );
     manager.load( nullptr );

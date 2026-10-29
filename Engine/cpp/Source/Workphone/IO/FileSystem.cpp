@@ -634,6 +634,15 @@ namespace workphone
             }
 
             auto f = flags;
+            auto namedStream = []( SmartPtr<FileDataStream> &stream, const String &resolved,
+                                   const FileInfo *catalogEntry = nullptr ) -> SmartPtr<IStream> {
+                auto info = catalogEntry ? *catalogEntry : FileInfo{};
+                info.absolutePath = resolved.c_str();
+                if( !info.filePath.size() ) info.filePath = resolved.c_str();
+                if( !info.fileName.size() ) info.fileName = Path::getFileName( resolved ).c_str();
+                stream->setFileInfo( info );
+                return stream;
+            };
 
             auto fileId = StringUtil::getUUID( filePath );
 
@@ -648,7 +657,7 @@ namespace workphone
                     {
                         auto pStream = factoryManager->make_ptr<FileDataStream>();
                         pStream->setFStream( stream );
-                        return pStream;
+                        return namedStream( pStream, absolutePath, &file );
                     }
 
                     delete stream;
@@ -668,7 +677,7 @@ namespace workphone
                     {
                         auto pStream = factoryManager->make_ptr<FileDataStream>();
                         pStream->setFStream( stream );
-                        return pStream;
+                        return namedStream( pStream, absolutePath, &file );
                     }
 
                     delete stream;
@@ -716,7 +725,7 @@ namespace workphone
                     {
                         auto pStream = factoryManager->make_ptr<FileDataStream>();
                         pStream->setFStream( stream );
-                        return pStream;
+                        return namedStream( pStream, filePath );
                     }
 
                     delete stream;
@@ -728,7 +737,7 @@ namespace workphone
                     {
                         auto pStream = factoryManager->make_ptr<FileDataStream>();
                         pStream->setInStream( stream );
-                        return pStream;
+                        return namedStream( pStream, filePath );
                     }
 
                     delete stream;
@@ -745,7 +754,7 @@ namespace workphone
                     {
                         auto pStream = factoryManager->make_ptr<FileDataStream>();
                         pStream->setFStream( stream );
-                        return pStream;
+                        return namedStream( pStream, absolutePath );
                     }
 
                     delete stream;
@@ -757,7 +766,7 @@ namespace workphone
                     {
                         auto pStream = factoryManager->make_ptr<FileDataStream>();
                         pStream->setInStream( stream );
-                        return pStream;
+                        return namedStream( pStream, absolutePath );
                     }
 
                     delete stream;

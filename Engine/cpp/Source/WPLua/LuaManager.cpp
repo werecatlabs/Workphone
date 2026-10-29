@@ -46,6 +46,16 @@ namespace workphone
     {
         char managerRegistryKey;
 
+        String scriptSourceIdentity( const SmartPtr<IStream> &stream, const String &requested )
+        {
+            const auto info = stream->getFileInfo();
+            if( info.absolutePath.size() ) return info.absolutePath.str();
+            if( info.filePath.size() ) return info.filePath.str();
+            // getFileName is a basename, not a source identity. In particular it
+            // must not replace an absolute name passed by the caller.
+            return requested;
+        }
+
         LuaManager *stateManager( lua_State *state )
         {
             lua_pushlightuserdata( state, &managerRegistryKey );
@@ -358,8 +368,7 @@ namespace workphone
             WP_LOG_ERROR( m_lastDiagnostic );
             return;
         }
-        const auto sourceName = stream->getFileName();
-        if( executeSource( stream->getAsString(), "@" + ( sourceName.empty() ? filename : sourceName ) ) )
+        if( executeSource( stream->getAsString(), "@" + scriptSourceIdentity( stream, filename ) ) )
             m_scripts.push_back( filename );
     }
 
@@ -1218,7 +1227,7 @@ namespace workphone
             auto stream = fs->open( filename.str(), true, false, false, false, false );
             if( !stream ) stream = fs->open( filename.str(), true, false, false, true, true );
             if( !stream || !candidate.executeSource( stream->getAsString(), "@" +
-                    ( stream->getFileName().empty() ? filename.str() : stream->getFileName() ) ) )
+                    scriptSourceIdentity( stream, filename.str() ) ) )
             {
                 m_lastDiagnostic = stream ? candidate.getLastDiagnostic() : "Reload source missing: " + filename.str();
                 setError( true );

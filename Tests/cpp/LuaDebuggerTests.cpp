@@ -131,6 +131,14 @@ int main( int argc, char **argv )
             const auto root = std::filesystem::current_path().generic_u8string();
             check( !manager.startDebugger( 0, "short", root.c_str() ), "Short authentication token accepted" );
             check( manager.startDebugger( 0, "workphone-debug-test-token", root.c_str() ), "Debugger did not listen" );
+            struct PhysicalSource
+            {
+                std::filesystem::path path = std::filesystem::temp_directory_path() /
+                    ( "workphone-debug-source-" + std::to_string( Clock::now().time_since_epoch().count() ) + ".lua" );
+                PhysicalSource() { std::ofstream output( path ); output << "diskSourceValue=42"; }
+                ~PhysicalSource() { std::error_code ignored; std::filesystem::remove( path, ignored ); }
+            } physicalSource;
+            check( manager.executeSource( "diskSourceValue=42", ( "@" + physicalSource.path.generic_u8string() ).c_str() ), "Physical source fixture" );
             check( manager.executeSource( "assert(jit == nil or not jit.status())", "=debug-backend" ), "JIT compilation stayed enabled while debugging" );
             check( manager.executeSource( "gameplayCalls=0; function gameplayCallback() gameplayCalls=gameplayCalls+1 end", "@gameplay.lua" ), "Gameplay fixture" );
             check( manager.executeSource( "editorCalls=0; function editorCallback() editorCalls=editorCalls+1 end", "@Editor/DebuggerFixture.lua" ), "Editor fixture" );
@@ -162,7 +170,18 @@ int main( int argc, char **argv )
                     connection.reply( connection.request( "setBreakpoints", {
                         { "source", j::object{ { "path", root + "/debug-coroutine.lua" } } },
                         { "breakpoints", std::move( coroutineBreakpoints ) } } ) );
-                    connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach ); ready = true;
+                    connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach );
+                    auto loaded = connection.reply( connection.request( "loadedSources" ) ).at( "sources" ).as_array();
+                    bool physical = false;
+                    for( const auto &source : loaded )
+                        if( std::string( source.as_object().at( "name" ).as_string() ) == physicalSource.path.filename().generic_u8string() )
+                        {
+                            physical = true;
+                            check( source.as_object().at( "sourceReference" ).as_int64() == 0,
+                                   "Physical source was advertised as a virtual document" );
+                        }
+                    check( physical, "Physical source disappeared from loadedSources" );
+                    ready = true;
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "debug output\t23" ) != std::string::npos, "Lua print was not forwarded intact" );
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "captured=12" ) != std::string::npos, "Logpoint did not evaluate its expression" );
                     check( connection.event( "stopped" ).at( "reason" ) == "breakpoint", "Conditional breakpoint was not hit" );

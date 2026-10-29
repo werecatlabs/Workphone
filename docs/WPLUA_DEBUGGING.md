@@ -1,6 +1,6 @@
 # Lua backends and debugging
 
-Updated 25 October 2026. See [implementation status](WPLUA_IMPLEMENTATION_STATUS.md) for the wider production gates.
+Updated 28 October 2026. See [implementation status](WPLUA_IMPLEMENTATION_STATUS.md) for the wider production gates.
 
 ## Build the engine
 
@@ -33,6 +33,16 @@ The session listens only on loopback and requires its random token. Treat the en
 Debug mode forces one real execution thread because this Luabind fork has global callbacks. Its service starts before scripts/coroutines are created. LuaJIT debugging disables and flushes JIT compilation for reliable line hooks; it remains disabled for the debug VM after disconnect. Restart without `WP_LUA_DEBUGGER` for performance measurements. Existing external Lua states/coroutines created before the service are outside the supported hook lifecycle.
 
 At a stop, the Editor pumps messages, input, debugger UI and rendering without advancing scene/physics/jobs or invoking gameplay Lua listeners. The clock excludes the wait. Keep debugging UI callbacks under the Editor script directory. Shutdown cancels a paused script at a protected boundary. This profile is intended for development, not shipping or performance profiling.
+
+## Repeat a live IDE check
+
+`Tests/powershell/LuaDebuggerVisualStudio.ps1` uses the supported DTE debugger API against an already running Visual Studio instance started with `/RootSuffix LuaQA`. It requires that exact test suffix, an explicit IDE process ID, and the installed Workphone adapter. It never selects the user's normal IDE instance automatically.
+
+With a debug-enabled Editor running, set a breakpoint using `-Action Breakpoint -Source <physical-file> -Line <line>`, then attach using `-Action Attach -Endpoint <endpoint-json> -WaitForBreak`. `StepInto`, `StepOver`, `StepOut` and `Pause` also accept `-WaitForBreak`, with a 20-second limit. `Inspect -Expression <expression>` records the result and bounded table members. `ShowLocals` opens the IDE's normal Locals window. `Continue`, `ClearBreakpoints` and `Disconnect` complete the run. `-Report <json-file>` saves a snapshot without the session token; the generated launch JSON beside the endpoint does contain credentials and should be removed after testing.
+
+If Visual Studio opens a mixed-line-ending source dialog, choose **No** to preserve the file. A modal dialog blocks DTE automation until dismissed. An inaccessible/busy automation object is reported explicitly by the fixture. `OpenToolWindow` invokes the extension's registered tool-window command, but this fixture does not click its WPF attach/launch buttons.
+
+The 28 October live run verified a physical-file breakpoint, all three step commands, F10 through the real IDE UI, Locals, table inspection, watch expressions, rejection of function evaluation, Continue/Pause and Detach against the native Editor. See the [implementation status](WPLUA_IMPLEMENTATION_STATUS.md) for exact scope and evidence. Pixel-level Editor rendering, the VSIX form buttons (pointer geometry was unavailable), gameplay Play/Stop and this run's LuaJIT matrix remain separate gates.
 
 ## Inspection semantics and limits
 

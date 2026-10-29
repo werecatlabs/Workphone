@@ -1,6 +1,6 @@
 # Lua implementation status and usage
 
-Updated 25 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
+Updated 28 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
 
 ## Script assets and runtime resources
 
@@ -56,6 +56,29 @@ Window > Lua Debugger exposes local breakpoints and conditions/logpoints, except
 The VSIX packages a .NET Framework 4.8 stdio adapter and registers Workphone Lua with Visual Studio's DebugAdapterHost. The tool window loads an endpoint or launches the Editor, then requests a standard Visual Studio debug session. Breakpoints, Call Stack, Locals, Watch, stepping and Exception Settings use that session. The old newline client is excluded from the extension build. Build/installation/interactive verification are reported separately below; source integration alone is not certification of a live debug session.
 
 ## Validation
+
+### Live Editor and Visual Studio, 28 October 2026
+
+A real Lua 5.5 RelWithDebInfo Editor running DX11 in an isolated workspace was attached to the installed adapter in Visual Studio 18 Insiders, using its separate `LuaQA` instance. This exercised an Editor Lua script, not the standalone headless debugger host.
+
+| Live check | Result |
+| --- | --- |
+| Attach and breakpoint on a physical source file | Pass: stopped in `LuaDebuggerPanel:update` at line 200; Visual Studio opened the physical file |
+| Step Into / Step Out / Step Over | Pass: entered `manager` at line 9, returned at 201, advanced to 202 |
+| Visual Studio keyboard Step Over | Pass: F10 moved the current statement from 202 to 203, confirmed through accessibility and DTE |
+| Locals and Watch | Pass: `now`, `ok`, and `state` appeared with their types; a scalar watch and `state.port > 0 and state.connected` evaluated correctly |
+| Table inspection | Pass: expanded the `state` table and inspected its members through Visual Studio's debugger API |
+| Read-only evaluation | Pass: `os.exit()` returned an invalid expression without executing it |
+| Continue / Pause / Detach | Pass; Visual Studio returned to Design mode, and the Editor's endpoint was removed during clean shutdown |
+| Pixel capture and paused Editor rendering | Unverified: Windows capture timed out. Accessibility confirmed the IDE breakpoint/current statement/Locals controls, but does not certify the rendered Editor frame |
+
+The run exposed a real source-identity defect. Folder/archive and native/indexed streams discarded their resolved file metadata, and LuaManager used `getFileName()` (a basename) as the debug source. This prevented breakpoints on physical files from binding and also lost the Editor-directory identity used during paused callback dispatch. Streams now retain their resolved metadata, initial load and reload use that identity, and existing local files are advertised with `sourceReference=0` so Visual Studio uses physical documents. Regression fixtures cover folder/native/indexed loads, reload identity and physical versus virtual DAP sources.
+
+The selected runtime, debugger, Editor panel and package-job CTest suites pass **4/4** on the final default-backend binaries. Evidence: `project_x64/lua-live-final-ctest.log`, `project_x64/lua-vs-live/result.json` and the neighboring `final-*.json` snapshots. The reproducible DTE fixture is [LuaDebuggerVisualStudio.ps1](../Tests/powershell/LuaDebuggerVisualStudio.ps1). It refuses to operate on an IDE without `/RootSuffix LuaQA` and does not log authentication tokens.
+
+The VSIX tool window was opened and its endpoint/Attach controls were confirmed through accessibility. Clicking those form buttons remained blocked by `coordinate input geometry is unavailable`; their handlers were not exercised by UI input. This run did not repeat the LuaJIT matrix, exercise a gameplay Play/Stop cycle, or click the VSIX launch/attach buttons. Attach was issued through the same registered DebugAdapterHost command/configuration used by the plugin; stepping and inspection used the real IDE APIs, with an additional F10 and Locals accessibility check. The previous backend matrix below remains dated evidence.
+
+### Earlier backend matrix, 25 October 2026
 
 Observed on Windows x64, MSVC v145, RelWithDebInfo, 25 October 2026:
 

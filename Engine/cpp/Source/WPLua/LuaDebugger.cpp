@@ -363,6 +363,9 @@ namespace workphone
             j::object value{ { "name", std::filesystem::u8path( s.path ).filename().u8string() },
                             { "sourceReference", s.id } };
             if( !s.path.empty() && s.path[0] != '=' ) value["path"] = s.path;
+            std::error_code ignored;
+            if( std::filesystem::is_regular_file( std::filesystem::u8path( s.path ), ignored ) )
+                value["sourceReference"] = 0;
             return value;
         }
         std::string display( lua_State *state, int index )
