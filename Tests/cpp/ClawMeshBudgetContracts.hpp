@@ -29,6 +29,19 @@ namespace claw_mesh_budget_contracts
         if( !condition ) throw std::runtime_error( message );
     }
 
+    class InspectableMesh final : public ClawMesh
+    {
+    public:
+        bool hasExactSkinStorage( size_t count ) const
+        {
+            return m_skinInputBudget && m_skinOutputBudget && m_skinVertices &&
+                m_skinInputBudget->bytes() == count * sizeof( wp_skin_vertex ) &&
+                m_skinOutputBudget->bytes() == count * sizeof( wp_skin_result ) &&
+                m_skinVertices->size() == count && m_skinVertices->capacity() == count &&
+                m_skinOutput.size() == count && m_skinOutput.capacity() == count;
+        }
+    };
+
     class MeshFiles final : public FileSystem
     {
     public:
@@ -63,6 +76,22 @@ namespace claw_mesh_budget_contracts
         const auto source = size_t( StreamMemoryClass::SourceCpu );
         const auto working = size_t( StreamMemoryClass::WorkingCpu );
         auto scheduler = WorldStreamingScheduler::shared();
+        // Each explicit reservation now owns an admitted lease/control block in
+        // SourceCpu, in addition to its payload. Measure that public boundary
+        // independently so the exact mesh checks include metadata without
+        // hard-coding a particular STL's allocate_shared control-block layout.
+        const auto beforeLease = scheduler->stats().used[source];
+        u64 leaseBytes = 0;
+        {
+            String error;
+            auto lease = scheduler->reserve( StreamMemoryClass::SourceCpu, 0, error );
+            require( lease && lease->bytes() == 0,
+                "CPU mesh lease calibration must admit a zero-payload reservation" );
+            leaseBytes = scheduler->stats().used[source] - beforeLease;
+            require( leaseBytes > 0, "CPU reservation control storage must remain charged" );
+        }
+        require( scheduler->stats().used[source] == beforeLease,
+            "CPU reservation control storage must retire with its last owner" );
         const auto baseline = scheduler->stats();
         auto app = core::IApplicationManager::instance();
         struct Restore
@@ -85,7 +114,7 @@ namespace claw_mesh_budget_contracts
         {
             app->setFileSystem( make_ptr<MeshFiles>() );
             {
-                ClawMesh mesh;
+                InspectableMesh mesh;
                 // Empty initialization isolates the persistent mesh object from
                 // the file/decode allocation whose rejection is under test.
                 mesh.load( nullptr );
@@ -145,8 +174,10 @@ namespace claw_mesh_budget_contracts
                     vertex.normal.z = 1;
                 }
                 require( mesh.setSkinningData( bind ), "native skin bind/output must admit shared source bytes" );
+                require( mesh.hasExactSkinStorage( bind.size() ),
+                    "skin payload leases and physical capacities must match size, not caller spare capacity" );
                 const auto skinned = scheduler->stats();
-                const auto skinBytes = 3 * ( sizeof( wp_skin_vertex ) + sizeof( wp_skin_result ) );
+                const auto skinBytes = 3 * ( sizeof( wp_skin_vertex ) + sizeof( wp_skin_result ) ) + 2 * leaseBytes;
                 require( skinned.used[source] == resident.used[source] + skinBytes,
                     "skin bind and output must reserve their actual independent arrays" );
                 require( scheduler->setBudget( StreamMemoryClass::SourceCpu, skinned.used[source], error ) &&
@@ -160,7 +191,8 @@ namespace claw_mesh_budget_contracts
                     "mesh clone must own independent native storage and share immutable skin input" );
                 const auto cloned = scheduler->stats();
                 const auto nativeRawBytes = raw.used[source] - baseline.used[source];
-                require( cloned.used[source] == skinned.used[source] + nativeRawBytes + 3 * sizeof( wp_skin_result ),
+                require( cloned.used[source] == skinned.used[source] + nativeRawBytes +
+                    3 * sizeof( wp_skin_result ) + leaseBytes,
                     "clone must charge geometry/output once while sharing the immutable bind reservation" );
                 mesh.unload( nullptr );
                 require( scheduler->stats().used[source] == baseline.used[source] + nativeRawBytes + skinBytes,

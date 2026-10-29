@@ -114,7 +114,6 @@ namespace workphone::render
                 // before admitting the new request, or a full source budget can
                 // leave every retry blocked by an obsolete pending generation.
                 // Active data and geometry remain intact throughout this path.
-                p.stream.cancel();
                 p.materialCandidate.reset();
                 p.staged.clear();
                 p.descriptions.clear();
@@ -122,6 +121,13 @@ namespace workphone::render
                 p.lastError.clear();
                 p.requested.reset();
                 p.requestedSourceBudget.reset();
+                // Cancellation also constructs source-budgeted queue bookkeeping
+                // (including the MSVC Debug container proxy). Give it the retired
+                // pending request's headroom before cancelling the worker; otherwise
+                // a completely full source ledger cannot even cancel that request.
+                // The active generation keeps its independent lease, and queued
+                // callbacks retain their own source owner until cancellation retires.
+                p.stream.cancel();
                 if( snapshot != p.cookedSource )
                 {
                     p.cookedSource.reset();
@@ -153,6 +159,17 @@ namespace workphone::render
                 p.requested = snapshot;
                 p.requestedSourceBudget = std::move( sourceBudget );
             }
+            const auto requestTiles = [&]( const Array<TerrainTileKey> &keys ) {
+                if( p.stream.request( snapshot, p.descriptions, keys, error ) )
+                {
+                    return true;
+                }
+                // A separately charged stream source can consume the last headroom
+                // needed by bounded job metadata. Retry by sharing this snapshot's
+                // already admitted renderer lease; callbacks/results keep it alive.
+                return p.stream.requestWithSourceBudget( snapshot, p.descriptions, keys,
+                                                         p.requestedSourceBudget, error );
+            };
             auto qualityViews = views;
             if( auto app = core::IApplicationManager::instancePtr() )
             {
@@ -236,12 +253,13 @@ namespace workphone::render
                         missing.push_back( key );
                     }
                 }
-                p.demand = std::move( canonicalDemand );
-                p.device = device;
-                if( !p.stream.request( snapshot, p.descriptions, missing, error ) )
+                if( !requestTiles( missing ) )
                 {
+                    p.demand.clear();
                     return false;
                 }
+                p.demand = std::move( canonicalDemand );
+                p.device = device;
             }
             // Small assets remain immediately usable by tools and existing render
             // callers. Large assets are generated only by the bounded worker.
@@ -344,8 +362,9 @@ namespace workphone::render
                 }
                 // Finish one bounded request window before queuing the next.
                 p.stream.cancel();
-                if( !p.stream.request( snapshot, p.descriptions, missing, error ) )
+                if( !requestTiles( missing ) )
                 {
+                    p.demand.clear();
                     return false;
                 }
             }

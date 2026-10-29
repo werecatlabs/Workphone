@@ -1,5 +1,6 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiApplication.hpp>
+#include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/ImGuiDropJob.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
 #include <WPImGui/ImGuiMenuItem.hpp>
@@ -2574,7 +2575,9 @@ namespace workphone::ui
                             defaultDockId = m_dockProjectId;
                         }
 
-                        if( !window->isDocked() && defaultDockId != 0 )
+                        auto nativeWindow = dynamic_pointer_cast<ImGuiWindow>( window );
+                        const bool explicitPlacement = nativeWindow && nativeWindow->applyInitialPlacement();
+                        if( !explicitPlacement && !window->isDocked() && defaultDockId != 0 )
                         {
                             ImGui::SetNextWindowDockID( defaultDockId, ImGuiCond_FirstUseEver );
                         }

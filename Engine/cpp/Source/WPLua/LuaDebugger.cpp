@@ -119,6 +119,12 @@ namespace workphone
         bool initialized = false, attached = false, configured = false, pauseRequested = false, localMode = false;
         bool breakOnException = false, suppress = false, linesAtOne = true;
         int sequence = 0, nextHandle = 1, nextSource = 1, step = 0, stepDepth = 0;
+#ifdef WP_LUA_BACKEND_LUAJIT
+        lua_State *stepState = nullptr;
+        const void *stepFunction = nullptr;
+        int stepLine = -1;
+        bool stepReturnPending = false, stepFrameExecuting = true;
+#endif
         j::object pendingAttach;
         std::map<std::string, Source> sources;
         size_t sourceBytes = 0;
@@ -256,11 +262,22 @@ namespace workphone
                 if( entry.second.registry != LUA_NOREF ) luaL_unref( stopped, LUA_REGISTRYINDEX, entry.second.registry );
             references.clear(); frames.clear();
         }
+        void clearStep()
+        {
+            step = 0;
+#ifdef WP_LUA_BACKEND_LUAJIT
+            if( main && lua_gethook( main ) == Impl::hook )
+                lua_sethook( main, Impl::hook, LUA_MASKLINE | LUA_MASKCOUNT, 1000 );
+            stepState = nullptr; stepFunction = nullptr; stepLine = -1;
+            stepReturnPending = false; stepFrameExecuting = true;
+#endif
+        }
         void reset()
         {
             releaseReferences();
             stopped = nullptr; isPaused = false; attached = initialized = configured = false;
-            pauseRequested = breakOnException = false; step = 0;
+            pauseRequested = breakOnException = false;
+            clearStep();
             localMode = false;
             abortExecution = false;
             breakpoints.clear(); breakpointIds.clear(); stopRules.clear(); pendingAttach.clear(); exceptionText.clear();
@@ -271,14 +288,68 @@ namespace workphone
             while( count < 512 && lua_getstack( state, count, &frame ) ) ++count;
             return count;
         }
+        void beginStep( int mode )
+        {
+            stepDepth = depth( stopped ); step = mode;
+#ifdef WP_LUA_BACKEND_LUAJIT
+            stepState = stopped; stepFunction = nullptr; stepLine = -1; stepReturnPending = false;
+            stepFrameExecuting = true;
+            lua_Debug origin{};
+            if( step && lua_getstack( stopped, 0, &origin ) && lua_getinfo( stopped, "fl", &origin ) )
+            {
+                stepFunction = lua_topointer( stopped, -1 ); stepLine = origin.currentline;
+                lua_pop( stopped, 1 );
+            }
+            // Instruction hooks identify the *first* instruction after return,
+            // including tail calls into C that emit no public return hook.
+            // Normal execution keeps the existing coarse polling interval.
+            lua_sethook( stopped, Impl::hook, LUA_MASKLINE | LUA_MASKCOUNT, step ? 1 : 1000 );
+#endif
+        }
+#ifdef WP_LUA_BACKEND_LUAJIT
+        bool originalStepFrame( lua_State *state, int level )
+        {
+            if( state != stepState || !stepFunction ) return false;
+            lua_Debug frame{};
+            if( !lua_getstack( state, level, &frame ) || !lua_getinfo( state, "f", &frame ) ) return false;
+            const auto function = lua_topointer( state, -1 );
+            lua_pop( state, 1 );
+            return function == stepFunction;
+        }
+#endif
         void onHook( lua_State *state, lua_Debug *frame )
         {
             poll();
             if( ( !localMode && ( !attached || !configured || !connected ) ) || stopping ) return;
             bool stop = pauseRequested;
             const char *reason = "pause";
+#ifdef WP_LUA_BACKEND_LUAJIT
+            if( step && state == stepState && frame->event == LUA_HOOKCOUNT )
+            {
+                const bool original = depth( state ) == stepDepth && originalStepFrame( state, 0 );
+                // COUNT precedes LINE for an instruction. A return candidate
+                // expires at the next instruction even if no LINE was emitted;
+                // a later same-line loop-back must remain a valid step stop.
+                stepReturnPending = original && !stepFrameExecuting;
+                stepFrameExecuting = original;
+            }
+#endif
             if( frame->event == LUA_HOOKLINE )
             {
+#ifdef WP_LUA_BACKEND_LUAJIT
+                if( step && stepReturnPending && state == stepState && depth( state ) == stepDepth )
+                {
+                    stepReturnPending = false;
+                    if( frame->currentline == stepLine && originalStepFrame( state, 0 ) )
+                    {
+                        // Consume only this return hook, before breakpoint hit
+                        // counts/logpoints too. A following same-line loop-back
+                        // has no pending return and remains a valid step stop.
+                        if( stop ) pause( state, reason );
+                        return;
+                    }
+                }
+#endif
                 lua_getinfo( state, "S", frame );
                 auto source = path( frame->source ? frame->source : "" );
                 auto entry = breakpoints.find( source );
@@ -313,6 +384,9 @@ namespace workphone
         }
         void pause( lua_State *state, const char *reason )
         {
+#ifdef WP_LUA_BACKEND_LUAJIT
+            lua_sethook( state, Impl::hook, LUA_MASKLINE | LUA_MASKCOUNT, 1000 );
+#endif
             struct PauseBoundary
             {
                 Impl &owner;
@@ -837,7 +911,7 @@ namespace workphone
                 return;
             }
             if( command == "disconnect" )
-            { response( request ); event( "terminated" ); attached = false; isPaused = false; step = 0; return; }
+            { response( request ); event( "terminated" ); attached = false; isPaused = false; clearStep(); return; }
             if( command == "threads" ) { response( request, { { "threads", j::array{ j::object{ { "id", 1 }, { "name", "Lua executor" } } } } } ); return; }
             if( command == "setBreakpoints" )
             {
@@ -923,8 +997,7 @@ namespace workphone
             StackGuard guard( stopped );
             if( command == "continue" || command == "next" || command == "stepIn" || command == "stepOut" )
             {
-                stepDepth = depth( stopped );
-                step = command == "stepIn" ? 1 : command == "next" ? 2 : command == "stepOut" ? 3 : 0;
+                beginStep( command == "stepIn" ? 1 : command == "next" ? 2 : command == "stepOut" ? 3 : 0 );
                 response( request, { { "allThreadsContinued", true } } );
                 event( "continued", { { "threadId", 1 }, { "allThreadsContinued", true } } ); isPaused = false; return;
             }
@@ -1029,7 +1102,7 @@ namespace workphone
             if( action == 1 ) { pauseRequested = true; if( !attached ) localMode = true; }
             else if( action >= 2 && isPaused )
             {
-                stepDepth = depth( stopped ); step = action - 2;
+                beginStep( action - 2 );
                 event( "continued", { { "threadId", 1 }, { "allThreadsContinued", true } } );
                 isPaused = false;
             }

@@ -248,6 +248,15 @@ if(WP_GRAPHICS_SYSTEM_CLAW)
     endif()
 endif()
 
+# The representative package author uses the existing typed compiler/database;
+# its consumer mounts cooked resources without creating either authoring service.
+if(WIN32 AND WP_GRAPHICS_SYSTEM_CLAW AND TARGET WPSQLite)
+    target_compile_definitions(SampleVehicleAdvanced PRIVATE WP_TERRAIN_GAMEPLAY_PACKAGE=1)
+    target_link_libraries(SampleVehicleAdvanced WPSQLite)
+else()
+    target_compile_definitions(SampleVehicleAdvanced PRIVATE WP_TERRAIN_GAMEPLAY_PACKAGE=0)
+endif()
+
 add_dependencies(SampleVehicleAdvanced WPProcedural)
 target_link_libraries(SampleVehicleAdvanced WPProcedural)
 

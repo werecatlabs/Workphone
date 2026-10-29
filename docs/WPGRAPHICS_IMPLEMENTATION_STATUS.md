@@ -1,5 +1,41 @@
 # WPGraphics implementation status
 
+## Terrain GT0 baseline, validation and package follow-up — 29 October 2026
+
+The [terrain GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md) reconciles
+the historical terrain findings with the connected TERR-01–10 implementation and
+tracks the remaining release gates. Focused validation now requires all seven
+terrain CPU/physics/Lua/performance/soak/production-render/cooked-resource suites.
+Source, executable and runtime-library changes invalidate candidate evidence.
+
+The validation aggregate now includes the later-declared Editor target, and
+WPGraphics links the CMake cJSON target so a clean configuration builds its actual
+dependency. Terrain package fixtures use `writeRuntimePackage` instead of copying
+the compilation directory and its database. Separate relocated and ZIP-extracted
+consumers exercise the pinned texture closure, actual DX11 pixels, replacement
+failure retention, cache lifetime and renderer recreation. Negative processes
+check missing manifests and corrupt payloads; captures remain outside installed
+assets. Package and test evidence remain distinct from release certification.
+
+The representative terrain/vehicle follow-up now passes in Debug and
+RelWithDebInfo: seven fresh terrain suites per configuration, native terrain
+render/query/collision agreement and hole rejection, all five vehicle driving
+phases, separate terrain/car captures, negative asset cases and copied plus
+ZIP-extracted gameplay consumers. `SampleVehicleAdvanced` reuses
+`ProceduralRaceScene`; its cooked terrain and configuration-specific pinned
+vehicle recipe require no author compiler or compilation database at runtime.
+The follow-up fixes Windows long-path publication/cleanup, readiness retries that
+starved render/physics tasks, inconsistent initial road grip and package UI
+persistence. The [gameplay evidence index](../artifacts/terrain/gt0-20261029/gt0-gameplay-evidence-index.json)
+rechecks source, runtime binaries, complete archives and precise negative causes.
+
+This machine currently exposes Microsoft Basic Display Adapter and the exercised
+DX11 device is Microsoft Basic Render Driver (WARP). The native Editor launched,
+but two window-capture attempts failed; no live mouse walkthrough is claimed.
+Representative hardware, live Editor interaction, independent visual acceptance,
+clean-machine deployment and the long mixed-scene soak remain
+separate gates. See the completion record for final run paths and results.
+
 ## Catalog-cooked C++ SDK content and Windows path repair - 24 October 2026
 
 The installed SDK now includes a catalog-checked material/texture sample. Its

@@ -11,10 +11,14 @@
 #include <atomic>
 #include <array>
 #include <limits>
+#include <memory>
 
 namespace workphone
 {
     namespace advanced { class ProductionSceneProfile; class MaterialSceneCpuEdits; }
+#if WP_TERRAIN_GAMEPLAY_PACKAGE
+    namespace advanced::terrain_gameplay { struct Package; }
+#endif
 
     class SampleVehicleAdvanced : public core::Application
     {
@@ -25,6 +29,7 @@ namespace workphone
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
         void update() override;
+        String getMediaPath() const override;
 
         void setGenerationOptions( u32 seed, procedural::VehicleAppearanceQuality quality )
         {
@@ -40,6 +45,10 @@ namespace workphone
         {
             return m_capturePassed;
         }
+        bool terrainGameplayPassed() const
+        {
+            return !m_terrainGameplay || m_terrainSurfacesValidated;
+        }
         void setReviewOptions( bool hud, s32 forcedLOD, s32 forcedVehicleLOD, f64 benchmarkSeconds, bool orbit, u32 width, u32 height )
         {
             m_hudEnabled = hud; m_forcedLOD = forcedLOD; m_benchmarkSeconds = benchmarkSeconds;
@@ -53,6 +62,9 @@ namespace workphone
         void setRoadAuthoringShowcase(bool enabled) { m_roadAuthoringShowcase=enabled; }
         void setCityTerrainRoads(bool enabled) { m_cityTerrainRoads=enabled; }
         void setMaterialExportDirectory( const std::string &path ) { m_materialExportDirectory = path; }
+        void setTerrainGameplayOptions( bool enabled, const std::string &packageDirectory,
+                                        bool exportOnly = false );
+        void exportTerrainGameplayPackage( const std::string &directory );
         void setEvidenceOptions( const std::string &path, const std::string &replay,
                                  std::vector<advanced::ReviewControl> controls )
         {
@@ -110,6 +122,9 @@ namespace workphone
         };
 
         void createPlugins() override;
+        void createFileSystem() override;
+        bool createScriptManager() override;
+        void createDefaultFont() override;
         bool createSoundManager() override;
 
         void createScene() override;
@@ -122,6 +137,15 @@ namespace workphone
         void updateSmokeTest();
         void updateVehicleAudio();
         void updateVehicleEffects();
+        bool validateTerrainGameplaySurfaces();
+        bool m_terrainGameplay = false, m_terrainSurfacesValidated = false,
+             m_terrainGameplayExportOnly = false;
+        std::string m_terrainGameplayPackageDirectory;
+        std::string m_terrainGameplayEphemeralDirectory;
+        render::TerrainSnapshot m_terrainGameplaySource;
+#if WP_TERRAIN_GAMEPLAY_PACKAGE
+        std::unique_ptr<advanced::terrain_gameplay::Package> m_terrainGameplayPackage;
+#endif
         bool m_effectsEnabled = true, m_effectsSmokeTest = false;
         f64 m_effectsTestTime = 0;
         u32 m_effectsTestPhase = 0;

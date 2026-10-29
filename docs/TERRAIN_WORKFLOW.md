@@ -1,5 +1,9 @@
 # Terrain authoring workflow
 
+The [29 October GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md) tracks
+baseline reconciliation, focused validation and separate-process packaging.
+Historical results below remain distinct from fresh candidate evidence.
+
 This guide describes the native terrain authoring services and the existing Lua Terrain Editor extended in this change. It is a workflow and format reference, not a claim that every release gate in [the terrain plan](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) has passed. Build, automated, GPU, interactive and packaged evidence are recorded separately in the implementation status and validation reports.
 
 ## Runtime tiles and cooked assets
@@ -42,6 +46,15 @@ different consumers may be charged conservatively more than once. Ready-byte
 counters report reserved capacity. These limits cover participating resources,
 not textures borrowed from other owners, authoring history or arbitrary caller-owned allocations.
 
+If a separate stream source reservation leaves insufficient room for job
+metadata, the renderer retries using its already-admitted reservation for that
+same immutable snapshot. Stream callbacks and retained mesh results keep that
+lease alive after caller release or cancellation. Shared leases must belong to
+the producer's scheduler ledger, cover the source byte count and use `SourceCpu`;
+standalone stream requests retain independent source admission. Superseded
+staging retires before cancellation needs bookkeeping, and failed requests do
+not commit a new demand/device state.
+
 For packaged loading, register `TerrainResourceCompiler` with the existing
 ResourceSystem registry and compile a `data://...terrain` descriptor containing
 the same version-three JSON as an editor save. Each nonempty layer map must name a
@@ -56,6 +69,18 @@ its dependencies and validated tile metadata; first render does not rescan the
 whole source to rediscover the manifest. No compiler or authoring database is
 needed by this consumer. Descriptor, dependency, target, build-mode, hash or GPU
 failures preserve the prior published asset.
+
+When a `TerrainSystem` owns the scene ground, reconcile the decoded terrain through
+`TerrainSystem::applyTerrainData()` before attaching the cooked candidate to its
+`ClawTerrain`. The equal-data application preserves the component's immutable
+snapshot identity, so query, native collision and rendering publish one generation.
+The [representative gameplay package](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md#representative-terrain-gameplay-package)
+uses this path in the existing `SampleVehicleAdvanced`/`ProceduralRaceScene`
+lifecycle. It cooks four-layer terrain and pins a versioned runtime vehicle recipe
+with a regenerated geometry/material/physics hash check; it does not export baked
+vehicle mesh assets. Run `ValidateTerrainGameplayPackage.ps1`, or add
+`-IncludeTerrainGameplayPackage` to the existing baseline builder, for its separate
+driving, capture, negative-input and ZIP-extraction checks.
 
 These bounded tiles stream generated render geometry from a resident heightfield.
 Disk paging of height/control data and collision, adoption of the shared scheduler
@@ -133,12 +158,12 @@ Native consumers can retain a `TerrainIntegrationBinding` on a `TerrainSystem`. 
 
 ## Capability and evidence matrix
 
-This maps the current implementation to TERR-01-10 in the terrain plan. The evidence column identifies executable coverage, not automatic release approval. The full graphics baseline passes in Debug and RelWithDebInfo: 19 passed and one external-media test unavailable in each configuration, with the Editor built in both. All listed terrain CPU, scheduler, physics, Lua, GPU and cooked-resource fixtures pass. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md#terrain-runtime-and-expanded-authoring--11-october-2026) and the generated validation reports for measurements and device details; interactive visual review, representative performance/soak and packaged shipping checks remain separate.
+This maps the implementation to TERR-01-10 in the terrain plan. The evidence column identifies executable coverage, not automatic release approval. The historical 11 October full graphics baseline recorded 19 passed and one external-media test unavailable per configuration. The [29 October focused follow-up](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md#final-evidence-29-october-2026) records seven mandatory terrain suites passed per configuration, two Debug Editor contracts, both Editor builds and both source-free fixture ZIPs. The [representative gameplay follow-up](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md#representative-gameplay-evidence-29-october-2026) then reconciles seven fresh suites per configuration and both terrain/vehicle gameplay ZIPs, including extracted driving and separate captures. Actual GPU execution used DX11 WARP. Live Editor interaction, independent visual acceptance, representative hardware/performance, clean-machine deployment and the broader release soak retain their own gates.
 
 | Plan row | Implemented capability and bounds | Evidence and remaining scope |
 |---|---|---|
 | TERR-01 | Version-three rectangular source, version-one/two migration, explicit metre spacing/origin/height scale, finite/overflow validation including renderer coordinates and UV tiling. At most 8193 per axis and 4,194,304 samples. | [Data contracts](../Tests/cpp/TerrainDataContracts.hpp) exercise asymmetric grids, scale policy, transforms and invalid input. Placement supports positive nonuniform actor scale and yaw; arbitrary pitch/roll and floating-origin rebasing are unsupported. |
-| TERR-02 | Shared triangle-consistent picking/height inputs, mesh normals, world bounds and full-resolution native collision. Publication retains previous active geometry/query/collision while replacement is pending. Collision is capped at 524,288 solid triangles. | [Physics contracts](../Tests/cpp/TerrainPhysicsContractsTests.cpp) use native rays, narrowphase contacts, a falling probe, holes, busy-manager and publication/lifecycle cases. Collision paging and representative vehicle/tile-edge gameplay acceptance remain outside this bounded bridge. |
+| TERR-02 | Shared triangle-consistent picking/height inputs, mesh normals, world bounds and full-resolution native collision. Publication retains previous active geometry/query/collision while replacement is pending. Collision is capped at 524,288 solid triangles. | [Physics contracts](../Tests/cpp/TerrainPhysicsContractsTests.cpp) use native rays, narrowphase contacts, a falling probe, holes, busy-manager and publication/lifecycle cases. The representative scene adds terrain-border/hill/hole probes and five-phase vehicle driving in copied/extracted packages. Collision paging, hardware and interactive acceptance remain separate. |
 | TERR-03 | Four albedo/normal/ORM layers, normalized controls, height blending, triplanar/detail normals, seeded macro tint and wetness/snow masks; common shadows/fog and staged/cooked dependencies. | [Material pixel contracts](../Tests/cpp/ClawTerrainMaterialContracts.hpp) cover layer colours, normal/ORM response, shadows, zero controls and failure retention. Appearance is opaque and limited to four layers, one detail-normal texture and two surface-mask channels; weather simulation and additional material layers remain separate work. |
 | TERR-04 | PGM/raw import, exact float-height and OBJ export, sculpt/stamp/paint, dirty rectangles, viewport picking/brush display, grouped commit/cancel/undo and persistent weights/holes. A stroke changes at most 65,536 values. | [Authoring contracts](../Tests/cpp/TerrainAuthoringContracts.hpp) and [actual Lua workflow](../Tests/cpp/TerrainLuaBindingTests.cpp) cover save/reopen, decoding, undo and cancellation. Native viewport wiring is present; interactive usability/visual sign-off remains separate. PNG/TIFF/EXR, tablet/mirror modifiers and distance-resampled strokes are unsupported. |
 | TERR-05 | 64-cell tiles, four interior resolutions, conservative errors, full-resolution shared boundary rings/normals, culling and coarsening hysteresis. Tiles containing holes retain LOD0. | [Tile contracts](../Tests/cpp/TerrainTileContracts.hpp) and [moving-camera GPU contracts](../Tests/cpp/ClawTerrainMotionContracts.hpp) cover borders, changing demand and complete replacement. The chosen border-ring policy replaces morphing; broad visual threshold and shadow-camera acceptance still requires representative scenes. |

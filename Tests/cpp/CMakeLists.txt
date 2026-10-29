@@ -757,7 +757,9 @@ if (WP_BUILD_TESTS)
     if(TARGET WPGraphicsCookedResourceTests)
         list(APPEND WP_TERRAIN_VALIDATION_TARGETS WPGraphicsCookedResourceTests)
     endif()
-    if(TARGET Editor)
+    # Tools are declared after Tests in the root project. Resolve the forward
+    # target dependency at generation time instead of silently omitting Editor.
+    if(TARGET Editor OR (WP_BUILD_TOOLS AND WP_BUILD_EDITOR))
         list(APPEND WP_TERRAIN_VALIDATION_TARGETS Editor)
     endif()
     add_custom_target(WPTerrainValidation DEPENDS ${WP_TERRAIN_VALIDATION_TARGETS})

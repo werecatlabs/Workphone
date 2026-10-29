@@ -1,5 +1,10 @@
 # WPGraphics production readiness and feature implementation plan
 
+Terrain follow-up, 29 October: use the [GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md)
+and [capability matrix](TERRAIN_WORKFLOW.md#capability-and-evidence-matrix) for current
+terrain scope. Older terrain findings and milestone summaries below are historical;
+collision, PBR layers and tiled LOD are implemented but still require release evidence.
+
 Cross-system follow-up: [WPProcedural production and racing visual quality plan](WPPROCEDURAL_PRODUCTION_PLAN.md), reviewed 12 October 2026, adds ordered procedural implementation packages, visual showcase requirements and independent comparison gates. It does not certify visual parity or replace the graphics release gates below.
 
 Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).

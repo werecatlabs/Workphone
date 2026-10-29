@@ -7,6 +7,8 @@
 #include <functional>
 #include <memory>
 
+namespace workphone { class StreamBudgetLease; }
+
 namespace workphone::render
 {
     inline constexpr u32 terrainTileCells = 64;
@@ -85,6 +87,12 @@ namespace workphone::render
         TerrainTileStream &operator=( const TerrainTileStream & ) = delete;
         bool request( TerrainSnapshot, const Array<TerrainTileInfo> &, const Array<TerrainTileKey> &,
                       String & );
+        /** Share a sufficient SourceCpu reservation for this exact immutable
+         * snapshot. Queue callbacks/results retain it independently of the caller.
+         * An empty lease uses the normal separate source admission path. */
+        bool requestWithSourceBudget( TerrainSnapshot, const Array<TerrainTileInfo> &,
+                                      const Array<TerrainTileKey> &,
+                                      std::shared_ptr<StreamBudgetLease>, String & );
         bool take( TerrainTileResult & );
         void cancel();
         void drain();

@@ -9,7 +9,7 @@ namespace terrain_package_contracts
 
     // This entry point initializes only graphics/application services. No compiler
     // registry, source mount, catalog, SQLite plugin or compilation DB is created.
-    inline void consume( const fs::path &package )
+    inline void consume( const fs::path &package, const fs::path &capture = {} )
     {
         claw_texture_mip_contracts::Fixture graphics;
         graphics.initialize();
@@ -21,12 +21,12 @@ namespace terrain_package_contracts
         mount.compiledRoot = path( package );
         mount.manifestPath = path( package / "terrain.wprs" );
         mount.target = "terrain-dx11-contract";
-        require( runtime.initializeRuntime( mount, error ), error );
+        cooked_terrain_contracts::require( runtime.initializeRuntime( mount, error ), error );
         auto loaded = runtime.load( ResourceID( "data://ground.terrain" ), error );
-        require( loaded && loaded->dependencies.size() == 13,
+        cooked_terrain_contracts::require( loaded && loaded->dependencies.size() == 13,
                  "Package must contain the pinned thirteen-texture closure: " + error );
         auto decoded = decodeCookedTerrainResource( loaded, mount.target, true, error );
-        require( decoded != nullptr, error );
+        cooked_terrain_contracts::require( decoded != nullptr, error );
         auto terrain = make_ptr<ClawTerrain>();
         auto target = make_ptr<ClawRenderTarget>();
         target->setSize( { 128, 128 } );
@@ -50,12 +50,12 @@ namespace terrain_package_contracts
             return claw_foliage_contracts::pixels( wp_renderer_get_dx11( renderer.getNativeRenderer() ) );
         };
         auto candidate = stageCookedTerrainMaterial( renderer, decoded, error );
-        require( candidate && terrain->applyCookedTerrain( candidate, error ), error );
+        cooked_terrain_contracts::require( candidate && terrain->applyCookedTerrain( candidate, error ), error );
         auto native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
-        require( recordDX11TestDevice( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) ) ),
+        cooked_terrain_contracts::require( recordDX11TestDevice( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) ) ),
                  "Package consumer must identify its actual device" );
         const auto pixels = draw();
-        require( pixels.size() == 128 * 128 * 4 && terrain->getTerrainResidency().usedCookedTileManifest,
+        cooked_terrain_contracts::require( pixels.size() == 128 * 128 * 4 && terrain->getTerrainResidency().usedCookedTileManifest,
                  "Package must render using its validated cooked tile manifest" );
         size_t colours[4]{};
         for( size_t p = 0; p < pixels.size(); p += 4 )
@@ -66,21 +66,24 @@ namespace terrain_package_contracts
             colours[2] += b > r + 35 && b > g + 35;
             colours[3] += r > 80 && g > 80 && b + 35 < std::min( r, g );
         }
-        for( auto count : colours ) require( count > 25, "All four packaged layers must reach DX11 pixels" );
+        for( auto count : colours ) cooked_terrain_contracts::require( count > 25, "All four packaged layers must reach DX11 pixels" );
         // A machine-readable colour check and retained image accompany process evidence.
-        std::ofstream imageFile( package / "terrain.ppm", std::ios::binary );
-        imageFile << "P6\n128 128\n255\n";
-        for( size_t p = 0; p < pixels.size(); p += 4 )
-            imageFile.write( reinterpret_cast<const char *>( pixels.data() + p ), 3 );
-        require( imageFile.good(), "Package capture must be writable" );
-        imageFile.close();
+        if( !capture.empty() )
+        {
+            // Captures are validation outputs, not mutable installed assets.
+            std::ofstream imageFile( capture, std::ios::binary );
+            imageFile << "P6\n128 128\n255\n";
+            for( size_t p = 0; p < pixels.size(); p += 4 )
+                imageFile.write( reinterpret_cast<const char *>( pixels.data() + p ), 3 );
+            cooked_terrain_contracts::require( imageFile.good(), "Package capture must be writable" );
+        }
         const auto revision = terrain->getTerrainRevision();
         auto corrupt = std::make_shared<RuntimeResource>( *loaded );
         corrupt->payload.back() ^= 1;
-        require( !stageCookedTerrainMaterial( renderer, corrupt, mount.target, true, error ) &&
+        cooked_terrain_contracts::require( !stageCookedTerrainMaterial( renderer, corrupt, mount.target, true, error ) &&
                      terrain->getTerrainRevision() == revision,
                  "Corrupt replacement must preserve the published package terrain" );
-        require( !stageCookedTerrainMaterial( renderer, loaded, "wrong-target", true, error ),
+        cooked_terrain_contracts::require( !stageCookedTerrainMaterial( renderer, loaded, "wrong-target", true, error ),
                  "Wrong-target terrain must reject in the standalone consumer" );
         corrupt.reset();
         candidate.reset();
@@ -93,9 +96,9 @@ namespace terrain_package_contracts
         target = nullptr;
         renderer.unload( nullptr );
         renderer.load( graphics.window );
-        require( renderer.isLoaded(), "Package consumer renderer must recreate" );
+        cooked_terrain_contracts::require( renderer.isLoaded(), "Package consumer renderer must recreate" );
         candidate = stageCookedTerrainMaterial( renderer, decoded, error );
-        require( candidate && terrain->applyCookedTerrain( candidate, error ), error );
+        cooked_terrain_contracts::require( candidate && terrain->applyCookedTerrain( candidate, error ), error );
         target = make_ptr<ClawRenderTarget>();
         target->setSize( { 128, 128 } );
         claw_foliage_contracts::equivalent( pixels, draw(), "Retained cooked data must restore package pixels after recreation" );

@@ -1,5 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawImguiManager.hpp>
+#include <WPGraphics/ClawUiSettings.hpp>
 #include <WPImGui/WPImGui.hpp>
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
@@ -13,6 +14,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -29,6 +31,8 @@ namespace workphone
     {
         namespace
         {
+            std::atomic<bool> uiSettingsPersistence{ true };
+
 #if defined WP_PLATFORM_WIN32
             void postPlatformImeData( ImGuiViewport *viewport, ImGuiPlatformImeData *data )
             {
@@ -121,6 +125,11 @@ namespace workphone
                 }
             }
         }  // namespace
+
+        void setClawUiSettingsPersistence( bool enabled )
+        {
+            uiSettingsPersistence.store( enabled, std::memory_order_relaxed );
+        }
 
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawImguiManager, ISharedObject );
 
@@ -298,8 +307,9 @@ namespace workphone
             io.BackendRendererName = "imgui_impl_claw_dx11";
             io.BackendRendererUserData = this;
             io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
-            io.IniFilename = m_iniPath.c_str();
-            io.LogFilename = m_logPath.c_str();
+            const auto persistSettings = uiSettingsPersistence.load( std::memory_order_relaxed );
+            io.IniFilename = persistSettings ? m_iniPath.c_str() : nullptr;
+            io.LogFilename = persistSettings ? m_logPath.c_str() : nullptr;
 
             m_renderer = renderer;
 
@@ -352,7 +362,8 @@ namespace workphone
                                     height > 0 ? static_cast<float>( height ) : 720.0f );
             WP_LOG_INFO(
                 "ClawImguiManager::init: context configured; viewport=" + std::to_string( width ) + "x" +
-                std::to_string( height ) + ", docking enabled, settings=" + m_iniPath );
+                std::to_string( height ) + ", docking enabled, settings=" +
+                ( persistSettings ? m_iniPath : String( "disabled" ) ) );
         }
 
         bool ClawImguiManager::isInitialised() const

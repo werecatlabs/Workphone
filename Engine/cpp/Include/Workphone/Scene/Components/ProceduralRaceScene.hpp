@@ -94,6 +94,7 @@ namespace workphone::scene::race
              cityRoadShowcase = false, cityTerrainRoads = false;
         SmartPtr<CityRoadAuthoring> roadAuthoring;
         SmartPtr<TerrainSystem> roadTerrain;
+        render::TerrainSnapshot terrainGameplaySource;
         procedural::OpenCityLayout cityLayout;
         u32 cityBuildingSupportChecks = 0, cityCulledParcels = 0;
         bool cityBuildingSupportValid = true, citySourceReused = false;
@@ -264,6 +265,12 @@ namespace workphone::scene
         void setMaterialExportDirectory( const String &directory );
         String getMaterialExportDirectory() const;
 
+        /** Select a scene-owned native terrain ground for the next regeneration.
+         * Null restores the existing circuit mode. The supplied immutable source
+         * must contain the flat, hole-free driving corridor around the origin.
+         */
+        void setTerrainGameplaySource( render::TerrainSnapshot source );
+
         /** Query whether physics has been configured for the generated scene. */
         bool isPhysicsConfigured() const;
 
@@ -350,6 +357,7 @@ namespace workphone::scene
         bool m_cityNaturalRoads = false;
         bool m_cityRoadShowcase = false;
         bool m_cityTerrainRoads = false;
+        render::TerrainSnapshot m_terrainGameplaySource;
         String m_cityRoadAuthoringUUID;
         SmartPtr<CityRoadAuthoring> m_cityRoadAuthoring;
         SmartPtr<TerrainSystem> m_cityTerrain;

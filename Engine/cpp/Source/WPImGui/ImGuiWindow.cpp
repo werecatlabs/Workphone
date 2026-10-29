@@ -7,6 +7,9 @@
 #include "Workphone/Core/LogManager.hpp"
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 #include <utility>
 
 namespace workphone::ui
@@ -17,6 +20,44 @@ namespace workphone::ui
 
     ImGuiWindow::~ImGuiWindow() = default;
 
+    SmartPtr<Properties> ImGuiWindow::getProperties() const
+    {
+        auto properties = ImGuiWindowT<IUIWindow>::getProperties();
+        properties->setProperty( "initialPlacement", String( m_initiallyFloating ? "floating" : "default" ) );
+        return properties;
+    }
+
+    void ImGuiWindow::setProperties( SmartPtr<Properties> properties )
+    {
+        if( !properties ) return;
+        String placement;
+        const bool supplied = properties->getPropertyValue( "initialPlacement", placement );
+        if( supplied && placement != "floating" && placement != "default" )
+            throw std::invalid_argument( "Unsupported window initialPlacement; use floating or default." );
+        ImGuiWindowT<IUIWindow>::setProperties( properties );
+        if( supplied ) m_initiallyFloating = placement == "floating";
+    }
+
+    bool ImGuiWindow::applyInitialPlacement() const
+    {
+        if( !m_initiallyFloating ) return false;
+        ImGui::SetNextWindowDockID( 0, ImGuiCond_FirstUseEver );
+        const auto viewport = ImGui::GetMainViewport();
+        const auto requested = getSize();
+        if( std::isfinite( requested.X() ) && std::isfinite( requested.Y() ) &&
+            requested.X() > 0 && requested.Y() > 0 &&
+            viewport->WorkSize.x > 0 && viewport->WorkSize.y > 0 )
+        {
+            ImGui::SetNextWindowSize( ImVec2( std::min( requested.X(), viewport->WorkSize.x ),
+                                             std::min( requested.Y(), viewport->WorkSize.y ) ),
+                                      ImGuiCond_FirstUseEver );
+            ImGui::SetNextWindowPos( ImVec2( viewport->WorkPos.x + viewport->WorkSize.x * .5f,
+                                           viewport->WorkPos.y + viewport->WorkSize.y * .5f ),
+                                     ImGuiCond_FirstUseEver, ImVec2( .5f, .5f ) );
+        }
+        return true;
+    }
+
     void ImGuiWindow::update()
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -26,15 +67,15 @@ namespace workphone::ui
         auto window = this;
         if( window->isVisible() )
         {
-            if( !window->isDocked() )
-            {
-                ImGui::SetNextWindowDockID( uiApplication->m_dockLeftIdRight, ImGuiCond_FirstUseEver );
-                window->setDocked( true );
-            }
-
             auto windowParent = window->getParent();
             if( windowParent == nullptr )
             {
+                if( !window->applyInitialPlacement() && !window->isDocked() )
+                {
+                    ImGui::SetNextWindowDockID( uiApplication->m_dockLeftIdRight, ImGuiCond_FirstUseEver );
+                    window->setDocked( true );
+                }
+
                 auto label = window->getLabel();
                 if( StringUtil::isNullOrEmpty( label ) )
                 {

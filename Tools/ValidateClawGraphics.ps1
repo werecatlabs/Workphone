@@ -4,10 +4,12 @@ param(
     [ValidateSet('Debug', 'Release', 'RelWithDebInfo')][string]$Configuration = 'RelWithDebInfo',
     [string]$CTestExecutable,
     [switch]$RequireExternalAssets,
-    [switch]$CaptureCrashDumps
+    [switch]$CaptureCrashDumps,
+    [switch]$TerrainOnly
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'TerrainValidationEvidence.ps1')
 $buildPath = if ([System.IO.Path]::IsPathRooted($BuildDirectory)) { [System.IO.Path]::GetFullPath($BuildDirectory) } else { [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $BuildDirectory)) }
 if (-not $CTestExecutable) {
     $installedCTest = Join-Path $env:ProgramFiles 'CMake/bin/ctest.exe'
@@ -33,14 +35,39 @@ $requiredTests = @(
     'WPGraphics.claw_text_contract', 'WPGraphics.claw_dx11_targets',
     'WPGraphics.claw_ui_destruction', 'WPResourceTests'
 )
+if ($TerrainOnly) {
+    $requiredTests = @(
+        'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
+        'WPGraphics.terrain_representative_performance', 'WPGraphics.terrain_regeneration_soak',
+        'WPGraphics.claw_production_render', 'WPGraphics.cooked_material_resource'
+    )
+    $selection = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
+}
 $inventoryText = & $CTestExecutable --test-dir $buildPath -C $Configuration -R $selection --show-only=json-v1
 if ($LASTEXITCODE -ne 0) { throw 'CTest inventory failed.' }
 $inventory = ($inventoryText -join "`n") | ConvertFrom-Json
 $missing = @($requiredTests | Where-Object { $_ -notin $inventory.tests.name })
 if ($missing.Count -gt 0) { throw "Required tests are not registered: $($missing -join ', '). Configure the wpgraphics-baseline preset." }
 
-$reportPath = Join-Path $buildPath "claw-graphics-$Configuration-results.xml"
-$evidencePath = Join-Path $buildPath "claw-graphics-$Configuration-evidence.json"
+$reportPrefix = if ($TerrainOnly) { 'terrain-gt0' } else { 'claw-graphics' }
+$reportPath = Join-Path $buildPath "$reportPrefix-$Configuration-results.xml"
+$evidencePath = Join-Path $buildPath "$reportPrefix-$Configuration-evidence.json"
+# Preserve executable identities across the run. A concurrent build must not turn
+# an old execution into evidence for a newly replaced executable.
+$binaryBefore = @{}
+$terrainSourceBefore = if ($TerrainOnly) { Get-TerrainSourceSnapshot $repositoryRoot } else { $null }
+$runtimeDirectories = @($inventory.tests | Where-Object { $_.command } | ForEach-Object { Split-Path $_.command[0] -Parent } | Sort-Object -Unique)
+$runtimeBefore = @{}
+foreach ($directory in $runtimeDirectories) {
+    foreach ($library in (Get-ChildItem -LiteralPath $directory -Filter '*.dll' -File)) {
+        $runtimeBefore[$library.FullName] = (Get-FileHash -LiteralPath $library.FullName -Algorithm SHA256).Hash
+    }
+}
+foreach ($test in $inventory.tests) {
+    if ($test.command -and (Test-Path -LiteralPath $test.command[0])) {
+        $binaryBefore[$test.command[0]] = (Get-FileHash -LiteralPath $test.command[0] -Algorithm SHA256).Hash
+    }
+}
 # Do not accidentally certify an old report if this CTest invocation fails.
 if (Test-Path -LiteralPath $reportPath) { Remove-Item -LiteralPath $reportPath }
 $crashDumpPath = $env:WP_GRAPHICS_TEST_CRASH_DUMP
@@ -186,6 +213,7 @@ $verificationPaths = @(
     'Engine/cpp/Source/WPLuabind/Bindings/ComponentBind.cpp',
     'bin/Media/Scripts/Lua/Editor/TerrainEditor.lua',
     'Tools/ValidateTerrainPackage.ps1', 'Tools/TerrainPackageRuntime.cmake',
+    'Tools/TerrainValidationEvidence.ps1',
     'Tests/cpp/DX11TestEvidence.hpp', 'Tools/ValidateClawGraphics.ps1',
     'Tools/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
     'Engine/cpp/Project/WPGraphics/CMakeLists.txt', 'Tests/cpp/CMakeLists.txt',
@@ -228,6 +256,16 @@ $binaries = @($inventory.tests | ForEach-Object {
     $executable = if ($_.command) { $_.command[0] } else { $null }
     [ordered]@{ test = $_.name; path = $executable; sha256 = if ($executable -and (Test-Path -LiteralPath $executable)) { (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash } else { $null } }
 })
+$changedBinaries = @($binaries | Where-Object { -not $_.sha256 -or $binaryBefore[$_.path] -ne $_.sha256 })
+$runtimeLibraries = @(foreach ($directory in $runtimeDirectories) {
+    foreach ($library in (Get-ChildItem -LiteralPath $directory -Filter '*.dll' -File)) {
+        [ordered]@{ path = $library.FullName; sha256 = (Get-FileHash -LiteralPath $library.FullName -Algorithm SHA256).Hash }
+    }
+})
+$changedLibraries = @($runtimeLibraries | Where-Object { $runtimeBefore[$_.path] -ne $_.sha256 } | ForEach-Object { $_.path })
+$changedLibraries += @($runtimeBefore.Keys | Where-Object { $_ -notin $runtimeLibraries.path })
+$terrainSourceAfter = if ($TerrainOnly) { Get-TerrainSourceSnapshot $repositoryRoot } else { $null }
+$changedSources = if ($TerrainOnly) { @(Compare-TerrainSourceSnapshots $terrainSourceBefore $terrainSourceAfter) } else { @() }
 $results = @($report.testsuite.testcase | ForEach-Object {
     [ordered]@{ name = $_.name; status = if ($_.skipped -or $_.status -eq 'notrun') { 'unavailable' } elseif ($_.failure) { 'failed' } else { 'passed' }; seconds = $_.time }
 })
@@ -244,7 +282,11 @@ $cmakeExecutable = Join-Path (Split-Path $CTestExecutable -Parent) 'cmake.exe'
 $evidence = [ordered]@{
     recordedAtUtc = [DateTime]::UtcNow.ToString('o'); sourceRevision = $sourceRevision
     workingTreeStatus = $sourceStatus; trackedDiffSha256 = $diffHash; configuration = $Configuration
-    buildDirectory = $buildPath; cmakeVersion = (& $cmakeExecutable --version | Select-Object -First 1)
+    buildDirectory = $buildPath; validationScope = if ($TerrainOnly) { 'terrain-gt0-automated' } else { 'graphics-baseline' }
+    changedTestBinaries = @($changedBinaries.test); cmakeVersion = (& $cmakeExecutable --version | Select-Object -First 1)
+    terrainSourceBefore = $terrainSourceBefore.sha256; terrainSourceAfter = $terrainSourceAfter.sha256
+    changedTerrainSources = @($changedSources)
+    runtimeLibraries = $runtimeLibraries; changedRuntimeLibraries = @($changedLibraries)
     ctestVersion = (& $CTestExecutable --version | Select-Object -First 1)
     generator = $cache['CMAKE_GENERATOR']; generatorInstance = $cache['CMAKE_GENERATOR_INSTANCE']
     architecture = $cache['CMAKE_GENERATOR_PLATFORM']; staticLibraries = $cache['WP_STATIC_LIB']; staticCrt = $cache['WP_STATIC_LINK_CRT']
@@ -254,12 +296,12 @@ $evidence = [ordered]@{
     testExitCode = $testExit; requiredTests = $requiredTests; requireExternalAssets = [bool]$RequireExternalAssets
     crashCaptureEnabled = [bool]$crashDumpPath; crashDumpPath = $crashDumpPath
     crashDumpAvailable = [bool]($crashDumpPath -and (Test-Path -LiteralPath $crashDumpPath))
-    coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0)
-    validationPassed = ($testExit -eq 0 -and $unexpectedSkips.Count -eq 0 -and $missingResults.Count -eq 0)
+    coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0)
+    validationPassed = ($testExit -eq 0 -and $unexpectedSkips.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0)
     releaseCertified = $false
     ciWorkflowAvailable = (Test-Path -LiteralPath (Join-Path $repositoryRoot '.github/workflows/graphics-contracts.yml'))
 }
 $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $evidencePath -Encoding utf8
-if ($testExit -ne 0 -or $unexpectedSkips.Count -gt 0 -or $missingResults.Count -gt 0) { throw "Graphics validation failed, mandatory tests were skipped, or required results are absent. See $reportPath and $evidencePath" }
+if (-not $evidence.validationPassed) { throw "Graphics validation failed, mandatory tests were skipped, required results are absent, or binaries changed during execution. See $reportPath and $evidencePath" }
 Write-Host "Graphics, catalog and resource checks passed. Report: $reportPath; evidence: $evidencePath"
 if ($skipped.Count -gt 0) { Write-Host 'External-media coverage remains unavailable; this is not a release certification.' }

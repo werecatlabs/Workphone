@@ -230,10 +230,11 @@ namespace cooked_terrain_contracts
                 error += " " + m;
         }
         require( report.succeeded(), "Terrain package compilation failed: " + error );
-        require( author.writeRuntimeManifest( path( compiled / "terrain.wprs" ), { id }, error ),
-                 error );
+        require( author.writeRuntimePackage( path( package ), { id }, {}, error ), error );
         author.shutdown();
-        fs::copy( compiled, package, fs::copy_options::recursive );
+        fs::rename( package / "runtime.wprm", package / "terrain.wprs" );
+        require( !fs::exists( package / ".resource_compilation.db" ),
+                 "Terrain install closure must exclude the authoring compilation database" );
         // Relocate the only source tree so accidental source fallback cannot pass.
         fs::rename( source, folder / "authoring-offline" );
         return authored;
@@ -538,6 +539,25 @@ namespace cooked_terrain_contracts
                  "an escaped resolver texture must retain exactly its own physical mip budget after terrain unload" );
         escapedTexture = nullptr;
         claw_texture_mip_contracts::completeGpuWork( retirementContext );
+        // Colour-transfer contracts use the suite's 128x128 target and camera.
+        colourTransfer( renderer );
+        // SourceCpu now includes retained container/object bookkeeping as well
+        // as payload leases. Unload retires runtime resources, while the terrain
+        // object may retain empty container capacity for reuse. End the actual
+        // owners' lifetimes before asserting complete source retirement.
+        renderer.setCamera( nullptr );
+        renderer.setRenderTarget( nullptr );
+        terrain = nullptr;
+        target = nullptr;
+        camera = nullptr;
+        const auto retiredBudgets = scheduler->stats();
+        std::printf( "Cooked terrain complete retirement: source=%llu->%llu result=%llu->%llu gpu=%llu->%llu\n",
+            static_cast<unsigned long long>( budgetBefore.used[size_t(StreamMemoryClass::SourceCpu)] ),
+            static_cast<unsigned long long>( retiredBudgets.used[size_t(StreamMemoryClass::SourceCpu)] ),
+            static_cast<unsigned long long>( budgetBefore.used[size_t(StreamMemoryClass::ResultCpu)] ),
+            static_cast<unsigned long long>( retiredBudgets.used[size_t(StreamMemoryClass::ResultCpu)] ),
+            static_cast<unsigned long long>( beforeUpload.used[gpuClass] ),
+            static_cast<unsigned long long>( retiredBudgets.used[gpuClass] ) );
         const auto stringPoolAfter = CharacterPoolAllocator<char>::stats();
         if(stringPoolAfter.committedBytes != stringPoolBefore.committedBytes ||
             stringPoolAfter.bucketCount != stringPoolBefore.bucketCount)
@@ -555,7 +575,6 @@ namespace cooked_terrain_contracts
                      budgetBefore.used[size_t(StreamMemoryClass::SourceCpu)] &&
                      scheduler->stats().used[gpuClass] == beforeUpload.used[gpuClass],
                  "last cooked texture/terrain destruction must release shared decode/source/GPU budgets" );
-        colourTransfer( renderer );
         runtime.shutdown();
     }
 }  // namespace cooked_terrain_contracts

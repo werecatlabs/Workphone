@@ -4,6 +4,7 @@
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
@@ -61,6 +62,7 @@ namespace workphone::scene
         clearGeneratedScene();
         m_cityRoadAuthoring = nullptr;
         m_cityTerrain = nullptr;
+        m_terrainGameplaySource.reset();
         Component::unload( data );
 
         setLoadingState( LoadingState::Unloaded );
@@ -85,6 +87,15 @@ namespace workphone::scene
         {
             m_generationError =
                 "Choose a generated terrain city or the separate road authoring showcase.";
+            return false;
+        }
+        if( m_terrainGameplaySource &&
+            ( m_openCity || m_cityRoadShowcase || m_cityTerrainRoads || m_foliageWorldEnabled ||
+              !m_materialExportDirectory.empty() ) )
+        {
+            m_generationError =
+                "Terrain gameplay requires its own ground; disable city, foliage-world and source "
+                "material export modes.";
             return false;
         }
         if( m_cityTerrainRoads && !m_materialExportDirectory.empty() )
@@ -220,7 +231,7 @@ namespace workphone::scene
             }
 
             // Admit the owner slot before publishing a new manager-owned actor.
-            if( !m_cityRoadShowcase && !m_cityTerrainRoads )
+            if( !m_cityRoadShowcase && !m_cityTerrainRoads && !m_terrainGameplaySource )
             {
                 m_assets.actors.reserve( m_assets.actors.size() + 1 );
                 auto ground = app->getGameManager()->createActor();
@@ -248,6 +259,7 @@ namespace workphone::scene
             m_assets.cityNaturalRoads = m_cityNaturalRoads;
             m_assets.cityRoadShowcase = m_cityRoadShowcase;
             m_assets.cityTerrainRoads = m_cityTerrainRoads;
+            m_assets.terrainGameplaySource = m_terrainGameplaySource;
             if( m_cityTerrainRoads )
             {
                 m_assets.roadAuthoring = m_cityRoadAuthoring;
@@ -449,6 +461,43 @@ namespace workphone::scene
             if( Thread::getTaskFlag( Thread::Application_Flag ) )
             {
                 auto app = core::IApplicationManager::instancePtr();
+                if( app && m_assets.terrainGameplaySource && m_assets.ground )
+                {
+                    const auto actorState = app->isPlaying() ? IGameActor::State::Play
+                                                            : IGameActor::State::Edit;
+                    const auto componentState = app->isPlaying() ? IComponent::State::Play
+                                                                : IComponent::State::Edit;
+                    const auto ground = m_assets.ground;
+                    const auto terrain = ground->getComponent<TerrainSystem>();
+                    const auto collision = ground->getComponent<CollisionTerrain>();
+                    const auto body = ground->getComponent<Rigidbody>();
+                    if( ground->getState() == actorState && terrain && collision && body &&
+                        terrain->getState() == componentState &&
+                        collision->getState() == componentState && body->getState() == componentState )
+                    {
+                        const auto renderer =
+                            dynamic_cast<render::Terrain *>( terrain->getTerrain().get() );
+                        const auto requested = terrain->getTerrainSnapshot();
+                        render::TerrainSnapshot active;
+                        Transform3<real_Num> placement;
+                        u64 serial = 0;
+                        bool detached = true;
+                        terrain->getTerrainIntegrationState( active, placement, serial, detached );
+                        if( !renderer || !requested || !serial || detached || active != requested ||
+                            renderer->hasPendingTerrainPublication() ||
+                            renderer->getTerrainSnapshot() != requested ||
+                            renderer->getActiveTerrainSnapshot() != requested ||
+                            collision->getTerrainSnapshot() != requested )
+                        {
+                            // Let Render/Physics advance the deferred generation.
+                            // Stopping them on every application retry resets their
+                            // task FSMs before either can execute its next frame.
+                            m_physicsConfigured = false;
+                            setControls( 0, 1, 0 );
+                            return;
+                        }
+                    }
+                }
                 auto tasks = app ? app->getTaskManager() : nullptr;
                 auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
                 auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
@@ -1075,6 +1124,17 @@ namespace workphone::scene
     String ProceduralRaceScene::getMaterialExportDirectory() const
     {
         return m_materialExportDirectory;
+    }
+
+    void ProceduralRaceScene::setTerrainGameplaySource( render::TerrainSnapshot source )
+    {
+        String error;
+        if( source && !render::validateTerrainData( *source, error ) )
+        {
+            throw std::invalid_argument( error.c_str() );
+        }
+        std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
+        m_terrainGameplaySource = std::move( source );
     }
 
     bool ProceduralRaceScene::isGenerated() const

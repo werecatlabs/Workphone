@@ -1403,14 +1403,16 @@ namespace workphone::resource
                     return fail( error );
                 }
                 // Exclusive publication prevents another process's artifact from being replaced.
-                fs::create_hard_link( fs::u8path( stagedContainer.path.c_str() ), outputPath,
+                fs::create_hard_link( fileSystemIOPath( fs::u8path( stagedContainer.path.c_str() ) ),
+                                      fileSystemIOPath( outputPath ),
                                       filesystemError );
                 if( filesystemError &&
                     ( !fs::exists( outputPath ) ||
                       !CompiledResourceIO::validate( context.outputPath, existing, error ) ||
                       !sameRuntimeHeader( existing, header ) ) )
                 {
-                    return fail( "Exclusive artifact publication failed; existing files retained" );
+                    return fail( String( "Exclusive artifact publication failed; existing files retained: " ) +
+                                 filesystemError.message().c_str() );
                 }
             }
 

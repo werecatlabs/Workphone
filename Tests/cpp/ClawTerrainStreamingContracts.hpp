@@ -27,6 +27,7 @@ namespace claw_terrain_streaming_contracts
             const auto scheduler = WorldStreamingScheduler::shared();
             constexpr auto gpuClass = size_t( StreamMemoryClass::Gpu );
             const auto initialBudget = scheduler->stats();
+            const auto initialStrings = CharacterPoolAllocator<char>::stats();
             struct RestoreBudget
             {
                 std::shared_ptr<WorldStreamingScheduler> scheduler;
@@ -234,6 +235,24 @@ namespace claw_terrain_streaming_contracts
                     std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
                 }
             }
+            if( !supersededReady )
+            {
+                const auto sourceClass = size_t( StreamMemoryClass::SourceCpu );
+                const auto state = scheduler->stats();
+                const auto residency = terrain->getTerrainResidency();
+                std::fprintf( stderr,
+                    "Terrain superseded admission: error='%s' sourceUsed=%llu sourceLimit=%llu "
+                    "sourceRejected=%llu requestedSourceBytes=%llu activeRevision=%llu "
+                    "requestedRevision=%llu staged=%u demand=%u pending=%u active=%u ready=%u\n",
+                    error.c_str(), static_cast<unsigned long long>( state.used[sourceClass] ),
+                    static_cast<unsigned long long>( state.limits[sourceClass] ),
+                    static_cast<unsigned long long>( state.rejectedReservations[sourceClass] ),
+                    static_cast<unsigned long long>( terrainSourceBytes( *terrain->getTerrainSnapshot() ) ),
+                    static_cast<unsigned long long>( residency.activeRevision ),
+                    static_cast<unsigned long long>( residency.requestedRevision ),
+                    residency.stagedTiles, residency.requestedTiles, residency.worker.pending,
+                    residency.worker.active, residency.worker.ready );
+            }
             require( supersededReady && error.empty() &&
                          terrain->getRenderedTerrainSnapshot()->heights[3] == data.heights[3],
                      "superseded pending source releases budget so the newest edit can publish" );
@@ -246,9 +265,23 @@ namespace claw_terrain_streaming_contracts
                      "unload releases GPU generations and removes their active query surface" );
             require( scheduler->stats().used[gpuClass] == initialBudget.used[gpuClass],
                      "unload releases all active and staged shared GPU reservations" );
+            // An unloaded stream still owns its admitted producer/control storage.
+            // End that owner's lifetime before comparing total physical SourceCpu
+            // usage to the baseline taken before constructing the terrain.
+            terrain = nullptr;
+            otherTerrain = nullptr;
+            if( scheduler->stats().used[size_t( StreamMemoryClass::SourceCpu )] !=
+                initialBudget.used[size_t( StreamMemoryClass::SourceCpu )] )
+            {
+                const auto strings = CharacterPoolAllocator<char>::stats();
+                std::fprintf( stderr, "Terrain source retirement: bytes=%llu->%llu stringBytes=%zu->%zu stringBuckets=%zu->%zu\n",
+                    static_cast<unsigned long long>( initialBudget.used[size_t( StreamMemoryClass::SourceCpu )] ),
+                    static_cast<unsigned long long>( scheduler->stats().used[size_t( StreamMemoryClass::SourceCpu )] ),
+                    initialStrings.committedBytes, strings.committedBytes, initialStrings.bucketCount, strings.bucketCount );
+            }
             require( scheduler->stats().used[size_t( StreamMemoryClass::SourceCpu )] ==
                          initialBudget.used[size_t( StreamMemoryClass::SourceCpu )],
-                     "unload drains jobs and releases all internal source reservations" );
+                     "terrain destruction drains jobs and retires all source and producer reservations" );
             std::puts( "Claw terrain bounded GPU residency and complete generation retention passed." );
             return true;
         }

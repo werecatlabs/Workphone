@@ -249,6 +249,49 @@ namespace terrain_tile_contracts
                      retiredProducers.used[sourceClass] == baseline.used[sourceClass] &&
                      retiredProducers.used[resultClass] == baseline.used[resultClass],
                  "Terrain producer destruction unregisters and returns admitted producer metadata to the original shared baseline" );
+        {
+            TerrainTileStream sharedLeaseStream;
+            auto leaseSource = std::make_shared<TerrainData>( fixture( 3, 3 ) );
+            Array<TerrainTileInfo> smallTiles;
+            require( describeTerrainTiles( *leaseSource, smallTiles, error ), "Shared source lease fixture" );
+            const Array<TerrainTileKey> key{ { 0, 0 } };
+            const auto bytes = terrainSourceBytes( *leaseSource );
+            auto wrongClass = scheduler->reserve( StreamMemoryClass::Gpu, bytes, error );
+            auto undersized = scheduler->reserve( StreamMemoryClass::SourceCpu, bytes - 1, error );
+            WorldStreamLimits privateLimits;
+            privateLimits.workers = 1;
+            auto privateScheduler = std::make_shared<WorldStreamingScheduler>( privateLimits );
+            auto privateLease = privateScheduler->reserve( StreamMemoryClass::SourceCpu, bytes, error );
+            require( wrongClass && undersized && privateLease &&
+                         !sharedLeaseStream.requestWithSourceBudget( leaseSource, smallTiles, key, wrongClass, error ) &&
+                         !sharedLeaseStream.requestWithSourceBudget( leaseSource, smallTiles, key, undersized, error ) &&
+                         !sharedLeaseStream.requestWithSourceBudget( leaseSource, smallTiles, key, privateLease, error ),
+                     "Shared terrain source admission rejects wrong classes, insufficient bytes and another scheduler's ledger" );
+            auto sharedLease = scheduler->reserve( StreamMemoryClass::SourceCpu, bytes, error );
+            std::weak_ptr<StreamBudgetLease> retainedLease = sharedLease;
+            require( sharedLease && sharedLeaseStream.requestWithSourceBudget(
+                         leaseSource, smallTiles, key, sharedLease, error ),
+                     "Terrain producer accepts its renderer's already admitted source lease" );
+            sharedLease.reset();
+            TerrainTileResult sharedResult;
+            bool ready = false;
+            const auto leaseDeadline = std::chrono::steady_clock::now() + std::chrono::seconds( 5 );
+            while( !ready && std::chrono::steady_clock::now() < leaseDeadline )
+            {
+                ready = sharedLeaseStream.take( sharedResult );
+                if( !ready ) std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+            }
+            require( ready && sharedResult.mesh && sharedResult.error.empty(),
+                     "Shared-lease source produces an immutable terrain result" );
+            auto retainedMesh = sharedResult.mesh;
+            sharedResult = {};
+            sharedLeaseStream.drain();
+            require( !retainedLease.expired(),
+                     "Mesh result retains the shared source lease after caller release and producer drain" );
+            retainedMesh.reset();
+            require( retainedLease.expired(),
+                     "Last result alias retires the shared source lease" );
+        }
         std::printf(
             "Terrain tiles: 1025x1025, 256 tiles, mixed-LOD seams, bounded worker and 1000 demand "
             "changes passed.\n" );

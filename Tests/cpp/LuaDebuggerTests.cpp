@@ -2,6 +2,8 @@
 #include <boost/asio.hpp>
 #include <boost/json.hpp>
 #include <WPLua/LuaManager.hpp>
+#include <WPLua/LuaDebugger.hpp>
+#include <WPLuabind/LuaCompat.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/TimerMT.hpp>
 #include <atomic>
@@ -79,6 +81,99 @@ public:
     { for( ;; ) { auto message = read(); if( message.at( "type" ) == "event" && message.at( "event" ) == name ) return message.at( "body" ).as_object(); } }
     void close() { boost::system::error_code ignored; socket.close( ignored ); }
 };
+
+#ifdef WP_LUA_BACKEND_LUAJIT
+static void retainedDisconnectContract( const std::string &root )
+{
+    workphone::LuaDebugger debugger;
+    auto state = luaL_newstate();
+    check( state != nullptr, "Cannot create retained-disconnect VM" );
+    luaL_openlibs( state );
+    struct Context
+    {
+        workphone::LuaDebugger *debugger;
+        lua_State *other;
+        Clock::time_point until;
+        std::atomic<bool> ready{ false }, failed{ false }, acknowledged{ false }, finish{ false };
+        int before = 0, after = 0, otherAfter = 0;
+        bool socketRetained = false;
+        std::string clientError;
+    } context{ &debugger, lua_newthread( state ), Clock::now() + std::chrono::seconds( 15 ) };
+    const auto source = root + "/debug-jit-retained-disconnect.lua";
+    const std::string code = "local n=0\nstepDisconnectGate()\nn=n+1\n";
+    std::thread client;
+    std::exception_ptr failure;
+    try
+    {
+        std::string error;
+        check( debugger.start( state, 0, "retained-disconnect-contract-token", root, error ), error.c_str() );
+        debugger.source( "@" + source, code );
+        debugger.setPausePump( [&]() { return Clock::now() < context.until && !context.failed; } );
+        lua_pushlightuserdata( state, &context );
+        lua_pushcclosure( state, []( lua_State *vm ) -> int {
+            auto &probe = *static_cast<Context *>( lua_touserdata( vm, lua_upvalueindex( 1 ) ) );
+            // This gate runs on the VM owner before another Lua line can stop
+            // the active step and restore its count interval incidentally.
+            probe.before = lua_gethookcount( vm );
+            while( !probe.acknowledged && !probe.failed && Clock::now() < probe.until )
+            {
+                probe.debugger->poll();
+                std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+            }
+            probe.after = lua_gethookcount( vm );
+            probe.otherAfter = lua_gethookcount( probe.other );
+            probe.socketRetained = j::parse( probe.debugger->status() ).as_object().at( "connected" ).as_bool();
+            return 0;
+        }, 1 );
+        lua_setglobal( state, "stepDisconnectGate" );
+        client = std::thread( [&]() {
+            try
+            {
+                Client connection( debugger.port() );
+                connection.reply( connection.request( "initialize" ) );
+                const auto attach = connection.request( "attach", { { "token", "retained-disconnect-contract-token" } } );
+                connection.event( "initialized" );
+                connection.reply( connection.request( "setBreakpoints", {
+                    { "source", j::object{ { "path", source } } },
+                    { "breakpoints", j::array{ j::object{ { "line", 2 } } } } } ) );
+                connection.reply( connection.request( "configurationDone" ) ); connection.reply( attach );
+                context.ready = true;
+                connection.event( "stopped" );
+                connection.reply( connection.request( "next", { { "threadId", 1 } } ) );
+                connection.reply( connection.request( "disconnect" ) );
+                context.acknowledged = true;
+                // Keep the physical connection open until the owner has read
+                // both hook intervals; network-generation cleanup cannot help.
+                while( !context.finish && Clock::now() < context.until )
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+                connection.close();
+            }
+            catch( const std::exception &error )
+            {
+                context.clientError = error.what(); context.failed = true; context.ready = true;
+            }
+        } );
+        while( !context.ready && Clock::now() < context.until )
+        {
+            debugger.poll(); std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+        }
+        check( context.ready && !context.failed, "Retained-disconnect client did not configure" );
+        check( luaL_loadbufferx( state, code.data(), code.size(), ( "@" + source ).c_str(), "t" ) == LUA_OK &&
+               lua_pcall( state, 0, 0, 0 ) == LUA_OK, "Retained-disconnect script failed" );
+        check( context.acknowledged && context.socketRetained && context.before == 1,
+               "Disconnect fixture must retain TCP while a step owns COUNT1" );
+        check( context.after == 1000 && context.otherAfter == 1000,
+               "Explicit disconnect must restore normal hook counts globally before TCP closes" );
+    }
+    catch( ... ) { failure = std::current_exception(); }
+    context.finish = true;
+    debugger.stop();
+    if( client.joinable() ) client.join();
+    lua_close( state );
+    if( failure ) std::rethrow_exception( failure );
+    check( !context.failed, context.clientError.c_str() );
+}
+#endif
 
 int main( int argc, char **argv )
 {
@@ -365,6 +460,114 @@ int main( int argc, char **argv )
             manager.debuggerCommand( "pause" );
             check( manager.executeSource( "localPaused=1\nlocalPaused=2", "@local-debug.lua" ), "Editor-only pause failed" );
             check( localStops > 0 && phase == 3, "Editor-only pause or asynchronous inspection failed" );
+#ifdef WP_LUA_BACKEND_LUAJIT
+            struct StepStop
+            {
+                int line;
+                const char *command;
+                const char *expression = nullptr, *value = nullptr;
+                size_t frames = 1;
+                bool editorAction = false;
+            };
+            const auto stepContract = [&]( const char *name, const char *code, int breakpoint,
+                                           std::initializer_list<StepStop> expected ) {
+                const auto source = root + "/" + name + ".lua";
+                const auto configured = localRequest( "setBreakpoints", {
+                    { "source", j::object{ { "path", source } } },
+                    { "breakpoints", j::array{ j::object{ { "line", breakpoint } } } } } );
+                manager.update();
+                check( localReply( configured ).at( "success" ).as_bool(), "Cannot configure LuaJIT stepping fixture" );
+                size_t at = 0;
+                int inspection = 0, beforeContinue = 0;
+                std::string problem;
+                const auto until = Clock::now() + std::chrono::seconds( 10 );
+                const auto advance = [&]() {
+                    const auto &stop = *( expected.begin() + at++ );
+                    if( at == expected.size() && std::string( stop.command ) == "continue" )
+                    {
+                        // Loop contracts deliberately keep this breakpoint
+                        // active during every Next assertion. Remove it only
+                        // for teardown so Continue can finish later iterations.
+                        beforeContinue = localRequest( "setBreakpoints", {
+                            { "source", j::object{ { "path", source } } }, { "breakpoints", j::array{} } } );
+                    }
+                    // Cover both the native Editor action path and the same
+                    // structured request handler used by the remote DAP client.
+                    if( stop.editorAction ) manager.debuggerCommand( stop.command );
+                    else localRequest( stop.command, { { "threadId", 1 } } );
+                    inspection = 0;
+                };
+                manager.setDebuggerPausePump( [&]() {
+                    try
+                    {
+                        check( Clock::now() < until, "LuaJIT stepping fixture timed out" );
+                        if( at >= expected.size() )
+                        {
+                            const auto status = j::parse( manager.getDebuggerStatus().c_str() ).as_object();
+                            const auto stack = status.at( "stop" ).as_object().at( "stack" ).as_array();
+                            const auto actual = stack.empty() ? -1 : static_cast<int>( stack.front().as_object().at( "line" ).as_int64() );
+                            throw std::runtime_error( std::string( name ) + ": extra stop at line " + std::to_string( actual ) );
+                        }
+                        const auto &stop = *( expected.begin() + at );
+                        if( !inspection )
+                        {
+                            const auto status = j::parse( manager.getDebuggerStatus().c_str() ).as_object();
+                            const auto stack = status.at( "stop" ).as_object().at( "stack" ).as_array();
+                            const auto actual = static_cast<int>( stack.front().as_object().at( "line" ).as_int64() );
+                            check( actual == stop.line && stack.size() == stop.frames,
+                                   ( std::string( name ) + ": unexpected step position " + std::to_string( actual ) ).c_str() );
+                            if( stop.expression ) inspection = localRequest( "evaluate", { { "expression", stop.expression } } );
+                            else advance();
+                        }
+                        else
+                        {
+                            const auto reply = localReply( inspection );
+                            if( reply.empty() ) return true;
+                            check( reply.at( "success" ).as_bool() &&
+                                   reply.at( "body" ).as_object().at( "result" ) == stop.value,
+                                   ( std::string( name ) + ": step did not execute exactly the expected work" ).c_str() );
+                            advance();
+                        }
+                    }
+                    catch( const std::exception &error )
+                    {
+                        problem = error.what();
+                        manager.debuggerCommand( "continue" );
+                    }
+                    return true;
+                } );
+                check( manager.executeSource( code, ( "@" + source ).c_str() ), "LuaJIT stepping fixture execution failed" );
+                check( problem.empty(), problem.c_str() );
+                check( at == expected.size(), ( std::string( name ) + ": missing step stop" ).c_str() );
+                if( beforeContinue ) check( localReply( beforeContinue ).at( "success" ).as_bool(),
+                                            "Cannot clear stepping breakpoint before Continue" );
+                const auto cleared = localRequest( "setBreakpoints", {
+                    { "source", j::object{ { "path", source } } }, { "breakpoints", j::array{} } } );
+                manager.update(); check( localReply( cleared ).at( "success" ).as_bool(), "Cannot clear stepping fixture" );
+                manager.setDebuggerPausePump( {} );
+            };
+            // The current-line breakpoint deliberately remains active: a
+            // redundant return hook must not immediately hit it again either.
+            stepContract( "debug-jit-sum", "local function f() return 3 end\nlocal value=f()+f()\nstepSumResult=value\nstepSumResult=stepSumResult+1", 2,
+                { { 2, "next" }, { 3, "continue", "value", "6" } } );
+            stepContract( "debug-jit-pcall", "local function f() local n=3; return n end\nlocal ok,value=pcall(f)\nstepCResult=value", 2,
+                { { 2, "next", nullptr, nullptr, 1, true }, { 3, "continue", "value", "3" } } );
+            stepContract( "debug-jit-tail-c", "local function f() return tostring('{}') end\nlocal ok,value=pcall(tostring,f())\nstepTailResult=value", 2,
+                { { 2, "next" }, { 3, "continue", "value", "\"{}\"" } } );
+            stepContract( "debug-jit-loop", "local n=0\nwhile n<3 do n=n+1 end\nstepLoopResult=n", 2,
+                { { 2, "next", "n", "0" }, { 2, "next", "n", "1" }, { 2, "continue", "n", "2" } } );
+            stepContract( "debug-jit-call-loop", "local function f() return 1 end\nlocal n=0\nwhile n<3 do n=n+f() end\nstepCallLoopResult=n", 3,
+                { { 3, "next", "n", "0", 1, true }, { 3, "next", "n", "1", 1, true }, { 3, "continue", "n", "2" } } );
+            stepContract( "debug-jit-tail-c-loop", "local function f() return tonumber('1') end\nlocal n=0\nwhile n<3 do n=n+f() end\nstepTailLoopResult=n", 3,
+                { { 3, "next", "n", "0" }, { 3, "next", "n", "1" }, { 3, "continue", "n", "2" } } );
+            stepContract( "debug-jit-in-out", "local function f()\n local value=3\n value=value+1\n return value\nend\nlocal result=f()+f()\nstepInResult=result", 6,
+                { { 6, "stepIn" }, { 2, "stepOut", nullptr, nullptr, 2 }, { 6, "next" }, { 7, "continue", "result", "8" } } );
+            stepContract( "debug-jit-coroutine-step", "local function f() return 2 end\nlocal co=coroutine.create(function()\n local value=f()+f()\n stepCoResult=value\nend)\nassert(coroutine.resume(co))", 3,
+                { { 3, "next" }, { 4, "continue", "value", "4" } } );
+            check( manager.executeSource( "assert(stepSumResult==7 and stepCResult==3 and stepTailResult=='{}' and stepLoopResult==3 and stepCallLoopResult==3 and stepTailLoopResult==3 and stepInResult==8 and stepCoResult==4)", "=jit-step-results" ),
+                   "LuaJIT stepping changed script results" );
+            retainedDisconnectContract( root );
+#endif
             manager.stopDebugger(); manager.unload( nullptr );
             std::puts( "Lua debugger integration: PASS" );
         }
