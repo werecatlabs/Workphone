@@ -150,13 +150,240 @@ namespace
             if( onDraw ) onDraw();
         }
 
+        void updateZOrder() override
+        {
+            ++orderUpdates;
+            ui::ClawUIElement<ui::IUIElement>::updateZOrder();
+        }
+
+        SmartPtr<ISharedObject> getOwner() const override
+        {
+            ++ownerReads;
+            return ui::ClawUIElement<ui::IUIElement>::getOwner();
+        }
+
         u32 order = 0;
-        mutable unsigned orderReads = 0;
+        mutable unsigned orderReads = 0, ownerReads = 0;
+        unsigned orderUpdates = 0;
         unsigned draws = 0;
         std::shared_ptr<unsigned> observedDraws;
         std::function<void()> onOrder;
         std::function<void()> onDraw;
     };
+
+    class CollectionTreeProbe : public CollectionProbe
+    {
+    public:
+        void draw( wp_context *ctx ) override
+        {
+            CollectionProbe::draw( ctx );
+            drawWorkphoneChildren( ctx );
+        }
+    };
+
+    bool testUpdateZOrderVisitsEachChildOnce()
+    {
+        Array<SmartPtr<CollectionProbe>> nodes;
+        constexpr unsigned depth = 24;
+        for( unsigned index = 0; index <= depth; ++index )
+        {
+            auto node = make_ptr<CollectionProbe>();
+            if( !nodes.empty() ) nodes.back()->addChild( node );
+            nodes.push_back( node );
+        }
+        const auto reset = [&] {
+            for( auto node : nodes ) node->orderReads = node->orderUpdates = 0;
+        };
+        // Execute the former traversal against the same live hierarchy to
+        // measure order captures without depending on machine timing.
+        std::function<void( SmartPtr<ui::IUIElement> )> previousUpdate;
+        previousUpdate = [&]( SmartPtr<ui::IUIElement> node ) {
+            node->sortZOrder();
+            for( auto child : node->getChildren() )
+                if( child ) previousUpdate( child );
+        };
+        reset();
+        previousUpdate( nodes.front() );
+        unsigned previousReads = 0;
+        for( auto node : nodes ) previousReads += node->orderReads;
+        reset();
+        nodes.front()->updateZOrder();
+        unsigned reads = 0;
+        bool ok = true;
+        for( size_t index = 0; index < nodes.size(); ++index )
+        {
+            reads += nodes[index]->orderReads;
+            ok &= check( nodes[index]->orderUpdates == 1,
+                         "native order updates must preserve one virtual callback per node" );
+            ok &= check( nodes[index]->orderReads == ( index == 0 ? 0u : 1u ),
+                         "native order updates must capture each descendant key exactly once" );
+        }
+        ok &= check( previousReads == depth * ( depth + 1 ) / 2 && reads == depth,
+                     "nested native order traversal must reduce quadratic key captures to a linear pass" );
+        std::printf( "Native UI order work: %u -> %u key captures at depth %u.\n",
+                     previousReads, reads, depth );
+        for( auto node : nodes ) node->removeAllChildren();
+        return ok;
+    }
+
+    bool testHiddenWidgetsSkipClipAndDraw( Fixture &fixture )
+    {
+        auto manager = make_ptr<ui::ClawUIManager>();
+        fixture.application->setRenderUI( manager );
+        auto layout = dynamic_pointer_cast<ui::ClawUILayout>( manager->addElement( ui::IUILayoutWindow::typeInfo() ) );
+        if( !layout )
+        {
+            fixture.application->setRenderUI( nullptr );
+            return check( false, "visibility work regression needs a native layout" );
+        }
+        layout->load( nullptr );
+        Array<SmartPtr<CollectionProbe>> hidden, visible;
+        constexpr unsigned hiddenCount = 128, visibleCount = 8, frames = 16;
+        for( unsigned index = 0; index < hiddenCount + visibleCount; ++index )
+        {
+            auto probe = make_ptr<CollectionProbe>();
+            probe->order = index;
+            const auto shown = index < visibleCount;
+            probe->setVisible( shown, false );
+            if( shown ) visible.push_back( probe );
+            else hidden.push_back( probe );
+            layout->addChild( probe );
+        }
+        // Disabled visible controls still draw their disabled state.
+        visible.front()->setEnabled( false, false );
+        auto ctx = manager->getContext();
+        bool ok = check( ctx != nullptr, "visibility work regression needs the native UI context" );
+        if( ctx )
+        {
+            wp_input_end( ctx );
+            const auto frame = [&] {
+                if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "HiddenWork" ),
+                              wp_make_rect( 0, 0, 320, 200 ), WORKPHONE_WINDOW_NO_SCROLLBAR ) )
+                {
+                    wp_layout_space_begin( ctx, WORKPHONE_STATIC, 200, 256 );
+                    layout->draw( ctx );
+                    wp_layout_space_end( ctx );
+                }
+                wp_end( ctx );
+                wp_clear( ctx );
+            };
+            for( unsigned index = 0; index < frames; ++index ) frame();
+            unsigned ownerReads = 0;
+            for( auto probe : hidden )
+            {
+                ownerReads += probe->ownerReads;
+                ok &= check( probe->draws == 0 && probe->ownerReads == 0,
+                             "hidden widgets must skip draw dispatch and scroll-ancestor clipping queries" );
+            }
+            for( auto probe : visible )
+            {
+                ownerReads += probe->ownerReads;
+                ok &= check( probe->draws == frames && probe->ownerReads == frames,
+                             "visible widgets including disabled controls must still draw and clip each frame" );
+            }
+            std::printf( "Native UI clipping work: %u -> %u owner queries across %u frames.\n",
+                         ( hiddenCount + visibleCount ) * frames, ownerReads, frames );
+            ok &= check( ownerReads == visibleCount * frames,
+                         "clipping queries must scale with visible canvas children" );
+            // A prior widget can reveal a later widget from its draw callback;
+            // visibility must be read when reached, rather than cached by frame.
+            visible.front()->onDraw = [&] { hidden.front()->setVisible( true, false ); };
+            frame();
+            ok &= check( hidden.front()->draws == 1 && hidden.front()->ownerReads == 1,
+                         "same-frame visibility changes must become visible without invalidation bookkeeping" );
+            visible.front()->onDraw = {};
+        }
+        layout->removeAllChildren();
+        layout->unload( nullptr );
+        manager->clear();
+        fixture.application->setRenderUI( nullptr );
+        return ok;
+    }
+
+    bool testVisibleSubtreesSortLocally( Fixture &fixture )
+    {
+        auto manager = make_ptr<ui::ClawUIManager>();
+        fixture.application->setRenderUI( manager );
+        auto layout = dynamic_pointer_cast<ui::ClawUILayout>( manager->addElement( ui::IUILayoutWindow::typeInfo() ) );
+        if( !layout )
+        {
+            fixture.application->setRenderUI( nullptr );
+            return check( false, "subtree work regression needs a native layout" );
+        }
+        layout->load( nullptr );
+        auto shown = make_ptr<CollectionTreeProbe>();
+        auto hidden = make_ptr<CollectionTreeProbe>();
+        shown->order = 0;
+        hidden->order = 1;
+        hidden->setVisible( false, false );
+        layout->addChild( shown );
+        layout->addChild( hidden );
+        Array<SmartPtr<CollectionProbe>> hiddenLeaves, shownLeaves;
+        constexpr unsigned hiddenCount = 128;
+        for( unsigned index = 0; index < hiddenCount; ++index )
+        {
+            auto leaf = make_ptr<CollectionProbe>();
+            hidden->addChild( leaf );
+            hiddenLeaves.push_back( leaf );
+        }
+        Array<u32> drawOrder;
+        for( u32 order : { 2u, 0u, 1u } )
+        {
+            auto leaf = make_ptr<CollectionProbe>();
+            leaf->order = order;
+            leaf->onDraw = [&, leafPtr = leaf.get()] { drawOrder.push_back( leafPtr->order ); };
+            shown->addChild( leaf );
+            shownLeaves.push_back( leaf );
+        }
+        for( auto leaf : hiddenLeaves ) leaf->orderReads = 0;
+        for( auto leaf : shownLeaves ) leaf->orderReads = 0;
+        auto ctx = manager->getContext();
+        bool ok = check( ctx != nullptr, "subtree work regression needs the native UI context" );
+        if( ctx )
+        {
+            wp_input_end( ctx );
+            const auto frame = [&] {
+                drawOrder.clear();
+                if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "SubtreeWork" ),
+                              wp_make_rect( 0, 0, 320, 200 ), WORKPHONE_WINDOW_NO_SCROLLBAR ) )
+                {
+                    wp_layout_space_begin( ctx, WORKPHONE_STATIC, 200, 256 );
+                    layout->draw( ctx );
+                    wp_layout_space_end( ctx );
+                }
+                wp_end( ctx );
+                wp_clear( ctx );
+            };
+            frame();
+            for( auto leaf : hiddenLeaves )
+                ok &= check( leaf->orderReads == 0 && leaf->draws == 0,
+                             "a hidden container must exclude descendants from sorting and drawing" );
+            for( auto leaf : shownLeaves )
+                ok &= check( leaf->orderReads == 1 && leaf->draws == 1,
+                             "a visible non-layout container must sort and draw each member once" );
+            ok &= check( drawOrder.size() == 3 && drawOrder[0] == 0 && drawOrder[1] == 1 && drawOrder[2] == 2,
+                         "visible non-layout children must preserve ascending draw order" );
+            // Change the live key without a setter to exercise the same
+            // render-time state path as native state-data publication.
+            shownLeaves[0]->order = 0;
+            shownLeaves[1]->order = 2;
+            frame();
+            ok &= check( drawOrder.size() == 3 && drawOrder[0] == 0 && drawOrder[1] == 1 && drawOrder[2] == 2,
+                         "local sorting must observe live order changes after an already-ordered frame" );
+            hidden->setVisible( true, false );
+            frame();
+            for( auto leaf : hiddenLeaves )
+                ok &= check( leaf->orderReads == 1 && leaf->draws == 1,
+                             "revealed subtrees must sort and draw immediately without a dirty cache" );
+        }
+        shown->removeAllChildren();
+        hidden->removeAllChildren();
+        layout->removeAllChildren();
+        layout->unload( nullptr );
+        manager->clear();
+        fixture.application->setRenderUI( nullptr );
+        return ok;
+    }
 
     bool testSortingExcludesOtherThreads()
     {
@@ -1261,6 +1488,15 @@ int main( int argc, char **argv )
                      ok ? "passed" : "failed" );
         return ok ? 0 : 1;
     }
+    if( argc > 1 && std::strcmp( argv[1], "--performance-only" ) == 0 )
+    {
+        bool ok = testUpdateZOrderVisitsEachChildOnce();
+        ok &= testHiddenWidgetsSkipClipAndDraw( fixture );
+        ok &= testVisibleSubtreesSortLocally( fixture );
+        std::printf( "Claw UI performance contracts: 3 cases, %u assertions, %s.\n", assertions,
+                     ok ? "passed" : "failed" );
+        return ok ? 0 : 1;
+    }
     if( argc > 1 && std::strcmp( argv[1], "--readonly-sliders-only" ) == 0 )
     {
         bool ok = testReadonlySlider( Direction::Horizontal );
@@ -1296,7 +1532,10 @@ int main( int argc, char **argv )
     ok &= testSortingExcludesOtherThreads();
     ok &= testSortCapturesEachOrderOnce();
     ok &= testDrawPinsItsFrameMembers( fixture );
+    ok &= testUpdateZOrderVisitsEachChildOnce();
+    ok &= testHiddenWidgetsSkipClipAndDraw( fixture );
+    ok &= testVisibleSubtreesSortLocally( fixture );
     if( ok )
-        std::printf( "Claw UI destruction tests: 28 cases, %u assertions passed.\n", assertions );
+        std::printf( "Claw UI destruction tests: 31 cases, %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }

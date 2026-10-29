@@ -229,7 +229,10 @@ namespace workphone::ui
     {
         if( ctx && ctx->current && ctx->current->layout && isLoaded() && isVisible() && isEnabled() )
         {
-            sortZOrder();
+            // Sort only members which this layout can draw. Visible child
+            // containers sort their own inventories when reached; hidden
+            // subtrees need no ordering or clipping work this frame.
+            auto children = sortChildrenByOrder();
             auto owner = workphone::dynamic_pointer_cast<scene::UIComponent>( getOwner() );
             auto layout = workphone::dynamic_pointer_cast<scene::Layout>( owner );
             auto referenceSize = layout ? layout->getReferenceSize() : Vector2I( 1920, 1080 );
@@ -253,10 +256,9 @@ namespace workphone::ui
 
             // UI callbacks can rebuild their screen while this frame is being
             // drawn. Pin this frame's members instead of traversing live slots.
-            auto children = getChildren();
             for( auto child : children )
             {
-                if( child )
+                if( child && child->isVisible() )
                 {
                     auto widget = dynamic_cast<IWorkphoneWidget *>( child.get() );
                     if( !widget )
