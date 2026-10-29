@@ -16,6 +16,7 @@
 #        include "imgui.h"
 #        include "backends/imgui_impl_win32.h"
 #        include <WPGraphics/ClawWin32Ime.hpp>
+#        include <WPGraphics/ClawWin32ImGuiMessages.hpp>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler( HWND hwnd, UINT message, WPARAM wParam,
                                                               LPARAM lParam );
@@ -67,7 +68,8 @@ namespace workphone
 #    if WP_BUILD_IMGUI
                 if( ImGui::GetCurrentContext() && ImGui::GetIO().BackendPlatformUserData )
                 {
-                    return ImGui_ImplWin32_WndProcHandler( hwnd, message, wParam, lParam ) != 0 ? 1 : 0;
+                    const auto handled = ImGui_ImplWin32_WndProcHandler( hwnd, message, wParam, lParam );
+                    return handled || detail::consumeImGuiSystemMenuMessage( message, wParam, true ) ? 1 : 0;
                 }
 #    endif
 

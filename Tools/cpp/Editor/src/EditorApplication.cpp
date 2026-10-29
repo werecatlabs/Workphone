@@ -1,6 +1,7 @@
 #include <EditorPCH.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
+#include <Workphone/Input/InputDeviceManager.hpp>
 #include <editor/ProjectSettingsEditorBackend.hpp>
 #include <editor/ProjectSettingsProjectBackend.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
@@ -8,6 +9,18 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+#    include <WPGraphics/ClawHammerSystem.hpp>
+#endif
+#if WP_EDITOR_AUDIO_PAUSE
+#    include <WPAudio/WPAudioManager.hpp>
+#endif
+#if WP_BUILD_IMGUI
+#    include <WPImGui/ImGuiButton.hpp>
+#endif
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <EditorApplication.hpp>
@@ -78,6 +91,345 @@
 
 namespace workphone::editor
 {
+    namespace
+    {
+        class DebuggerNativeSuspension
+        {
+        public:
+            ~DebuggerNativeSuspension() { resume(); }
+
+            void observe( bool paused ) noexcept
+            {
+                if( !paused ) { resume(); return; }
+                if( m_active ) return;
+                m_active = true;
+                try
+                {
+                    if( auto app = core::IApplicationManager::instancePtr() )
+                    {
+                        m_timer = dynamic_pointer_cast<TimerMT>( app->getTimer() );
+                        if( m_timer ) m_timer->beginSuspension();
+                        m_input = dynamic_pointer_cast<InputDeviceManager>( app->getInputDeviceManager() );
+                        if( m_input )
+                        {
+                            m_previousInputSuspension = m_input->getDebuggerSuspended();
+                            m_input->setDebuggerSuspended( true );
+                        }
+#if WP_EDITOR_AUDIO_PAUSE
+                        m_audio = dynamic_pointer_cast<WPAudioManager>( app->getSoundManager() );
+                        if( m_audio )
+                        {
+                            m_previousAudioSuspension = m_audio->getDebuggerSuspended();
+                            m_audioHeld = m_audio->setDebuggerSuspended( true );
+                            if( !m_audioHeld ) WP_LOG_ERROR( "Debugger cannot suspend the active audio backend." );
+                        }
+#endif
+                    }
+                }
+                catch( ... )
+                {
+                    try { WP_LOG_ERROR( "Debugger could not suspend a native subsystem." ); }
+                    catch( ... ) { }
+                }
+            }
+
+        private:
+            void resume() noexcept
+            {
+                if( !m_active ) return;
+                m_active = false;
+                try
+                {
+                    if( m_input ) m_input->setDebuggerSuspended( m_previousInputSuspension );
+                }
+                catch( ... )
+                {
+                    try { WP_LOG_ERROR( "Debugger could not restore native input dispatch." ); }
+                    catch( ... ) { }
+                }
+                m_input = nullptr;
+#if WP_EDITOR_AUDIO_PAUSE
+                try
+                {
+                    if( m_audio && m_audioHeld &&
+                        !m_audio->setDebuggerSuspended( m_previousAudioSuspension ) )
+                        WP_LOG_ERROR( "Debugger could not restore native audio processing." );
+                }
+                catch( ... ) { }
+                m_audio = nullptr;
+                m_audioHeld = false;
+#endif
+                if( m_timer ) m_timer->endSuspension();
+                m_timer = nullptr;
+            }
+
+            bool m_active = false;
+            SmartPtr<TimerMT> m_timer;
+            SmartPtr<InputDeviceManager> m_input;
+            bool m_previousInputSuspension = false;
+#if WP_EDITOR_AUDIO_PAUSE
+            SmartPtr<WPAudioManager> m_audio;
+            bool m_audioHeld = false, m_previousAudioSuspension = false;
+#endif
+        };
+
+        // Optional live-session evidence. A completed pump alone does not prove
+        // that native rendering/Present progressed, so report existing counters.
+        class PausedDebuggerActivity
+        {
+        public:
+            explicit PausedDebuggerActivity( const char *path ) :
+                m_destination( std::filesystem::absolute( std::filesystem::u8path( path ) ) )
+            {
+            }
+
+            ~PausedDebuggerActivity() { restoreProfiling(); }
+
+            void observe( bool paused ) noexcept
+            {
+                if( m_failed ) return;
+                try
+                {
+                    m_paused = paused;
+                    if( paused )
+                    {
+                        ++m_pauseSequence;
+                        m_completedPumps = 0;
+                        m_started = std::chrono::steady_clock::now();
+                        m_redrawAvailable = false;
+                        m_redrawUnavailableReason = "graphicsUnavailable";
+                        if( auto app = core::IApplicationManager::instancePtr() )
+                        {
+                            auto graphics = app->getGraphicsSystem();
+                            if( graphics )
+                            {
+                                m_redrawUnavailableReason = "pausedFrameUnavailable";
+                            }
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+                            m_graphics = dynamic_pointer_cast<render::ClawHammerSystem>( graphics );
+                            if( m_graphics )
+                            {
+                                m_redrawAvailable = Thread::getCurrentTask() != m_graphics->getRenderTask();
+                                m_redrawUnavailableReason = m_redrawAvailable ? "" : "renderCallbackSuspended";
+                                m_previousProfiling = m_graphics->getSceneProfilingEnabled();
+                                // Do not disturb the profiling generation of a frame
+                                // whose render callback is currently suspended.
+                                if( m_redrawAvailable ) m_graphics->setSceneProfilingEnabled( true );
+                            }
+#endif
+                        }
+                    }
+                    publish( true );
+                    if( !paused || m_failed ) restoreProfiling();
+                }
+                catch( const std::exception &error )
+                {
+                    disable( error.what() );
+                    restoreProfiling();
+                }
+                catch( ... )
+                {
+                    disable( "Unknown profiling error" );
+                    restoreProfiling();
+                }
+            }
+
+            void completedPump() noexcept
+            {
+                if( m_failed ) return;
+                ++m_completedPumps;
+                publish( false );
+                if( m_failed ) restoreProfiling();
+            }
+
+        private:
+            void restoreProfiling() noexcept
+            {
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+                if( m_graphics )
+                {
+                    try { m_graphics->setSceneProfilingEnabled( m_previousProfiling ); }
+                    catch( const std::exception &error ) { disable( error.what() ); }
+                    catch( ... ) { disable( "Cannot restore scene profiling" ); }
+                    m_graphics = nullptr;
+                }
+#endif
+            }
+
+            void disable( const char *reason ) noexcept
+            {
+                if( m_failed ) return;
+                m_failed = true;
+                // Diagnostics must not fail a debugger pause if logging fails too.
+                try { WP_LOG_ERROR( String( "Lua debugger activity report disabled: " ) + reason ); }
+                catch( ... ) { }
+            }
+
+            void publish( bool force ) noexcept
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if( m_failed || ( ( !force || m_publicationRetries != 0 ) &&
+                    now - m_lastPublication < std::chrono::milliseconds( 250 ) ) ) return;
+                m_lastPublication = now;
+                std::filesystem::path temporary;
+                try
+                {
+                    temporary = m_destination;
+                    temporary += ".tmp";
+                    boost::json::object report{
+                        { "paused", m_paused }, { "pauseSequence", m_pauseSequence },
+                        { "completedPumps", m_completedPumps },
+                        { "sincePauseMs", std::chrono::duration<double, std::milli>( now - m_started ).count() },
+                        { "redrawAvailable", m_redrawAvailable },
+                        { "redrawUnavailableReason", m_redrawUnavailableReason },
+                        { "profileAvailable", false }, { "dx11Available", false } };
+                    if( auto app = core::IApplicationManager::instancePtr() )
+                        if( auto pool = app->getThreadPool() )
+                            report["executorWorkerCount"] = pool->getNumThreads();
+                    if( auto app = core::IApplicationManager::instancePtr() )
+                        if( auto timer = dynamic_pointer_cast<TimerMT>( app->getTimer() ) )
+                        {
+                            report["timerSuspended"] = timer->isSuspended();
+                            report["engineNow"] = timer->now();
+                            report["engineDeltaTime"] = timer->getDeltaTime();
+                            report["engineFixedTimeNow"] = timer->getFixedTimeNow();
+                        }
+                    if( auto app = core::IApplicationManager::instancePtr() )
+                        if( auto input = dynamic_pointer_cast<InputDeviceManager>( app->getInputDeviceManager() ) )
+                            report["inputSuspended"] = input->getDebuggerSuspended();
+#if WP_EDITOR_AUDIO_PAUSE
+                    if( auto app = core::IApplicationManager::instancePtr() )
+                        if( auto audio = dynamic_pointer_cast<WPAudioManager>( app->getSoundManager() ) )
+                            report["audioSuspended"] = audio->getDebuggerSuspended();
+#endif
+                    if( auto editor = EditorManager::getSingletonPtr() )
+                        if( auto ui = editor->getUI() )
+                        {
+                            report["deferredRenderCallbackActive"] = ui->isDeferredRenderCallbackActive();
+                            report["deferredRenderCallbackCount"] = ui->getDeferredRenderCallbackCount();
+                            report["dispatchedScriptEventCount"] = ui->getDispatchedScriptEventCount();
+                            if( auto panel = ui->getLuaDebuggerWindow() )
+                            {
+                                report["debuggerPanelVisible"] = panel->isWindowVisible();
+                                if( auto parent = panel->getParentWindow() )
+                                {
+                                    for( auto child : parent->getChildren() )
+                                    {
+                                        if( auto button = dynamic_pointer_cast<workphone::ui::IUIButton>( child ) )
+                                        {
+                                            const auto label = button->getLabel();
+#if WP_BUILD_IMGUI
+                                            if( label == "Step Over" || label == "Show stack" )
+                                                if( auto native = dynamic_pointer_cast<workphone::ui::ImGuiButton>( button ) )
+                                                {
+                                                    const auto snapshot = native->getKeyboardShortcutSnapshot();
+                                                    const auto observation = []( const auto &value ) {
+                                                        return boost::json::object{
+                                                            { "frame", value.frame }, { "enabled", value.enabled },
+                                                            { "itemVisible", value.itemVisible },
+                                                            { "applicationFocused", value.applicationFocused },
+                                                            { "ctrl", value.ctrl }, { "alt", value.alt },
+                                                            { "shift", value.shift }, { "super", value.super },
+                                                            { "keyPressed", value.keyPressed } };
+                                                    };
+                                                    report[label == "Step Over" ? "debuggerStepOverShortcut" : "debuggerStackShortcut"] =
+                                                        boost::json::object{
+                                                            { "keyboardShortcut", snapshot.keyboardShortcut.c_str() },
+                                                            { "lastRendered", observation( snapshot.lastRendered ) },
+                                                            { "lastKeyPress", observation( snapshot.lastKeyPress ) },
+                                                            { "keyPressCount", snapshot.keyPressCount },
+                                                            { "activationCount", snapshot.activationCount } };
+                                                }
+#endif
+                                            if( label == "Step Over" ) report["debuggerStepOverEnabled"] = button->isEnabled();
+                                            else if( label == "Continue" ) report["debuggerContinueEnabled"] = button->isEnabled();
+                                            else if( label == "Pause" ) report["debuggerPauseEnabled"] = button->isEnabled();
+                                        }
+                                        if( auto text = dynamic_pointer_cast<workphone::ui::IUIText>( child ) )
+                                        {
+                                            const auto value = text->getText();
+                                            // Record UI state, never script text or console contents.
+                                            report["debuggerStatusStopped"] = value.find( " | Stopped" ) != String::npos;
+                                            report["debuggerSourcePreviewAvailable"] = value.find( "\n> " ) != String::npos;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+                    render::ClawHammerSystem::SceneProfileSnapshot profile;
+                    if( m_graphics && m_graphics->readSceneProfile( profile ) )
+                    {
+                        report["profileAvailable"] = true;
+                        report["profileSerial"] = profile.serial;
+                        report["nativeUpdateSerial"] = profile.nativeUpdateSerial;
+                        report["nativeRenderSerial"] = profile.nativeRenderSerial;
+                        report["nativeDeltaTime"] = profile.nativeDeltaTime;
+                        report["frameSimulationEnabled"] = profile.frameSimulationEnabled;
+                        report["dx11Available"] = profile.dx11Available;
+                        report["dx11FramesLifetime"] = profile.dx11FramesLifetime;
+                        report["dx11PresentAttemptsLifetime"] = profile.dx11PresentAttemptsLifetime;
+                        report["dx11PresentOccludedLifetime"] = profile.dx11PresentOccludedLifetime;
+                        report["dx11PresentFailuresLifetime"] = profile.dx11PresentFailuresLifetime;
+                    }
+#endif
+                    std::filesystem::create_directories( m_destination.parent_path() );
+                    std::ofstream stream( temporary, std::ios::binary | std::ios::trunc );
+                    stream.exceptions( std::ios::badbit | std::ios::failbit );
+                    stream << boost::json::serialize( report );
+                    stream.flush();
+                    stream.close();
+#ifdef _WIN32
+                    if( !MoveFileExW( temporary.c_str(), m_destination.c_str(),
+                                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                    {
+                        const auto error = GetLastError();
+                        if( error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION ||
+                            error == ERROR_ACCESS_DENIED )
+                        {
+                            // A reader without delete sharing may briefly hold
+                            // the old snapshot; Windows can report access denied
+                            // for that sharing conflict too. Retry from the next sampled pump;
+                            // never sleep inside the Editor's pause observer.
+                            std::error_code ignored;
+                            std::filesystem::remove( temporary, ignored );
+                            if( ++m_publicationRetries <= 8 ) return;
+                        }
+                        throw std::runtime_error( "Cannot publish paused Lua debugger activity (Win32 error " +
+                                                  std::to_string( error ) + ")" );
+                    }
+#else
+                    std::filesystem::rename( temporary, m_destination );
+#endif
+                    m_publicationRetries = 0;
+                }
+                catch( const std::exception &error )
+                {
+                    std::error_code ignored;
+                    if( !temporary.empty() ) std::filesystem::remove( temporary, ignored );
+                    disable( error.what() );
+                }
+                catch( ... )
+                {
+                    std::error_code ignored;
+                    if( !temporary.empty() ) std::filesystem::remove( temporary, ignored );
+                    disable( "Unknown publication error" );
+                }
+            }
+
+            std::filesystem::path m_destination;
+            std::chrono::steady_clock::time_point m_started{}, m_lastPublication{};
+            uint64_t m_pauseSequence = 0, m_completedPumps = 0;
+            unsigned int m_publicationRetries = 0;
+            bool m_paused = false, m_failed = false;
+            bool m_redrawAvailable = false;
+            const char *m_redrawUnavailableReason = "graphicsUnavailable";
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+            SmartPtr<render::ClawHammerSystem> m_graphics;
+            bool m_previousProfiling = false;
+#endif
+        };
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::editor, EditorApplication, core::Application );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, EditorApplication::ApplicationListener,
@@ -490,13 +842,19 @@ namespace workphone::editor
                 const auto token = m_luaDebuggerToken;
                 if( scripts->startDebugger( 0, token, root ) )
                 {
-                    scripts->setDebuggerPauseObserver( [started = std::chrono::steady_clock::time_point{}]( bool paused ) mutable {
-                        if( paused ) started = std::chrono::steady_clock::now();
-                        else if( auto app = core::IApplicationManager::instancePtr() )
-                            if( auto timer = dynamic_pointer_cast<TimerMT>( app->getTimer() ) )
-                                timer->excludeElapsed( std::chrono::duration<double>( std::chrono::steady_clock::now() - started ).count() );
+                    std::shared_ptr<PausedDebuggerActivity> activity;
+                    if( const auto path = std::getenv( "WP_LUA_DEBUGGER_ACTIVITY_REPORT" ); path && *path )
+                    {
+                        try { activity = std::make_shared<PausedDebuggerActivity>( path ); }
+                        catch( const std::exception &error )
+                        { WP_LOG_ERROR( String( "Cannot start Lua debugger activity report: " ) + error.what() ); }
+                    }
+                    auto suspension = std::make_shared<DebuggerNativeSuspension>();
+                    scripts->setDebuggerPauseObserver( [activity, suspension]( bool paused ) {
+                        suspension->observe( paused );
+                        if( activity ) activity->observe( paused );
                     } );
-                    scripts->setDebuggerPausePump( [this]() {
+                    scripts->setDebuggerPausePump( [this, activity]() {
                         auto app = core::IApplicationManager::instancePtr();
                         if( !app || app->getQuit() ) return false;
                         // Do not run scene, physics, jobs, Play/Stop or reload
@@ -507,27 +865,43 @@ namespace workphone::editor
                         {
                             if( auto graphics = app->getGraphicsSystem() )
                             {
+                                const bool renderCallbackSuspended = previousTask == graphics->getRenderTask();
                                 Thread::setCurrentTask( TaskId::Primary );
                                 Thread::setTaskFlags( Thread::Primary_Flag );
                                 graphics->messagePump();
-                                if( auto input = app->getInputDeviceManager() )
-                                { input->preUpdate(); input->update(); input->postUpdate(); }
-                                if( auto editor = EditorManager::getSingletonPtr() )
-                                    if( auto ui = editor->getUI() )
-                                        if( auto panel = ui->getLuaDebuggerWindow() )
+                                // ImGui receives native Win32 messages directly.
+                                // Do not broadcast OIS/native gameplay input while
+                                // its consumers and their Lua stacks are suspended.
+                                // An interrupted native render/ImGui callback owns
+                                // the active frame. Keep native events/input alive,
+                                // but resume it before rendering another frame.
+                                if( !renderCallbackSuspended )
+                                {
+                                    Thread::setCurrentTask( TaskId::Application );
+                                    Thread::setTaskFlags( Thread::Primary_Flag | Thread::Application_Flag );
+                                    if( auto editor = EditorManager::getSingletonPtr() )
+                                        if( auto ui = editor->getUI() )
                                         {
-                                            if( !panel->isWindowVisible() ) panel->setWindowVisible( true );
-                                            if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
+                                            ui->dispatchQueuedScriptEvents( true );
+                                            if( auto panel = ui->getLuaDebuggerWindow() )
+                                            {
+                                                if( !panel->isWindowVisible() ) panel->setWindowVisible( true );
+                                                if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
+                                            }
                                         }
-                                Thread::setCurrentTask( TaskId::Render );
-                                Thread::setTaskFlags( Thread::Render_Flag | Thread::Primary_Flag );
-                                if( auto states = app->getStateManager() ) states->update();
-                                graphics->update();
+                                    Thread::setCurrentTask( TaskId::Render );
+                                    Thread::setTaskFlags( Thread::Render_Flag | Thread::Primary_Flag );
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+                                    if( auto claw = dynamic_pointer_cast<render::ClawHammerSystem>( graphics ) )
+                                        claw->updatePausedFrame();
+#endif
+                                }
                             }
                         }
                         catch( ... ) { Thread::setCurrentTask( previousTask ); Thread::setTaskFlags( previousFlags ); throw; }
                         Thread::setCurrentTask( previousTask );
                         Thread::setTaskFlags( previousFlags );
+                        if( activity ) activity->completedPump();
                         return !app->getQuit();
                     } );
                     auto destination = std::filesystem::u8path( root.c_str() ) / ".workphone/lua-debug.json";
@@ -1117,6 +1491,7 @@ namespace workphone::editor
                     // run explicitly on the application task, including in edit mode.
                     if( auto editorUI = editorManager->getUI() )
                     {
+                        editorUI->dispatchQueuedScriptEvents( false );
                         if( auto actorWindow = editorUI->getActorWindow() )
                         {
                             actorWindow->updateMaterialEditorStatus();
@@ -1206,6 +1581,20 @@ namespace workphone::editor
         auto ui = applicationManager->getUI();
 
         auto editorManager = EditorManager::getSingletonPtr();
+
+        auto scripts = applicationManager->getScriptManager();
+        const bool debuggerEnabled = scripts && scripts->getDebuggerPort() != 0;
+        const bool paused = debuggerEnabled && scripts->isDebuggerPaused();
+        if( event )
+            if( auto keyboard = event->getKeyboardState() )
+            {
+                const auto key = static_cast<KeyCodes>( keyboard->getKeyCode() );
+                // These keys belong to the native debugger buttons' accelerator
+                // path, which emits the same UI event as a mouse activation.
+                if( debuggerEnabled && ( key == KeyCodes::KEY_F5 || key == KeyCodes::KEY_F8 ||
+                    key == KeyCodes::KEY_F10 || key == KeyCodes::KEY_F11 ) ) return true;
+            }
+        if( paused ) return true;
 
         if( m_application )
         {

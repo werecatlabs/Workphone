@@ -82,7 +82,7 @@ namespace workphone::editor
 
             if( invoker )
             {
-                invoker->callObjectMember( loadStr );
+                callScriptMember( loadStr );
             }
 
             if( m_changeLoadingState )
@@ -152,7 +152,7 @@ namespace workphone::editor
     {
         if( auto invoker = getInvoker() )
         {
-            invoker->callObjectMember( visible ? showStr : hideStr );
+            callScriptMember( visible ? showStr : hideStr );
         }
 
         EditorWindow::setWindowVisible( visible );
@@ -162,7 +162,7 @@ namespace workphone::editor
     {
         if( window && window->isLoaded() && window->isWindowVisible() &&
             window->getClassName() == "MaterialEditor" )
-            if( auto invoker = window->getInvoker() ) invoker->callObjectMember( "update" );
+            window->callScriptMember( "update" );
     }
 
     void ScriptWindow::setProperties( SmartPtr<Properties> properties )
@@ -177,7 +177,7 @@ namespace workphone::editor
                 param.setObject( properties );
 
                 params.push_back( param );
-                invoker->callObjectMember( setPropertiesStr, params );
+                callScriptMember( setPropertiesStr, params );
             }
         }
     }
@@ -196,7 +196,7 @@ namespace workphone::editor
                 param.setObject( properties );
 
                 params.push_back( param );
-                invoker->callObjectMember( getPropertiesStr, params );
+                const_cast<ScriptWindow *>( this )->callScriptMember( getPropertiesStr, params );
             }
 
             return properties;

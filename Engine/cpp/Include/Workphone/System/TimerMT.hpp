@@ -56,6 +56,13 @@ namespace workphone
         /// Call only while all timer users are quiescent on the owning executor.
         void excludeElapsed( f64 seconds );
 
+        /// Freeze engine clock queries and update methods while a host is suspended.
+        /// Begin/end must be paired on the owning executor with other users quiescent.
+        /// Nested suspensions retain the original frame deltas until the final end.
+        void beginSuspension();
+        void endSuspension();
+        bool isSuspended() const;
+
         /**
          * @brief Updates the timer using a fixed time step.
          *
@@ -457,6 +464,9 @@ namespace workphone
         /// The current time point for the timer.
         std::chrono::steady_clock::time_point m_currentPoint;
 
+        std::chrono::steady_clock::time_point m_suspensionPoint;
+        atomic_u32 m_suspensionDepth = 0;
+
         /// Indicates whether the timer has started.
         atomic_bool m_started = false;
 
@@ -473,6 +483,7 @@ namespace workphone
      */
     inline f64 TimerMT::getDeltaTime() const
     {
+        if( m_suspensionDepth != 0 ) return 0.0;
         auto task = static_cast<s32>( Thread::getCurrentTask() );
         WP_ASSERT( task >= 0 );
         WP_ASSERT( static_cast<size_t>( task ) < m_deltaTime.size() );
@@ -524,6 +535,7 @@ namespace workphone
      */
     inline f64 TimerMT::getDeltaTime( TaskId task ) const
     {
+        if( m_suspensionDepth != 0 ) return 0.0;
         const auto iTask = static_cast<s32>( task );
         WP_ASSERT( iTask >= 0 );
         WP_ASSERT( static_cast<size_t>( iTask ) < m_deltaTime.size() );
@@ -578,6 +590,7 @@ namespace workphone
      */
     inline f64 TimerMT::getSmoothDeltaTime( TaskId task ) const
     {
+        if( m_suspensionDepth != 0 ) return 0.0;
         const auto iTask = static_cast<s32>( task );
         WP_ASSERT( iTask >= 0 );
         WP_ASSERT( static_cast<size_t>( iTask ) < m_smoothDeltaTime.size() );

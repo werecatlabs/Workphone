@@ -113,7 +113,86 @@ namespace
         void startPublication() { beginSceneProfileFrame(); }
         void finishPublication() { publishSceneProfileFrame(); }
         void abortPublication() { invalidateSceneProfileFrame(); }
+        void attachSimulationScene( SmartPtr<IGraphicsScene> scene ) { m_scenes.push_back( scene ); }
     };
+
+    class PausedFrameObject : public ClawMesh
+    {
+    public:
+        u32 updates = 0;
+        void update() override { ++updates; }
+    };
+
+    class PausedFrameScene : public ClawScene
+    {
+    public:
+        u32 updates = 0, postUpdates = 0;
+        void update() override { ++updates; ClawScene::update(); }
+        void postUpdate() override { ++postUpdates; }
+        void attach( SmartPtr<IGraphicsObject> object, SmartPtr<IParticleSystem> particles )
+        { m_graphicsObjects.push_back( object ); m_particleSystems.push_back( particles ); }
+    };
+
+    bool testPausedSceneFrame( SmartPtr<IGraphicsWindow> window )
+    {
+        claw_foliage_scene_contracts::Fixture services;
+        auto renderer = make_ptr<claw_rtt_contracts::Renderer>();
+        renderer->load( window );
+        if( !check( renderer->isLoaded(), "paused frame renderer must initialize" ) ) return false;
+        auto target = make_ptr<ClawRenderTarget>();
+        target->setSize( { 32, 32 } ); target->setActive( true );
+        auto viewport = target->addViewport( 29, make_ptr<ClawCamera>() );
+        if( !check( viewport != nullptr, "paused frame viewport must initialize" ) ) return false;
+        viewport->setActive( true ); viewport->setEnableSceneRender( true ); viewport->setEnableUI( false );
+        viewport->setClearEveryFrame( true, WORKPHONE_CLEAR_FLAG_ALL );
+        auto texture = make_ptr<claw_rtt_contracts::Texture>(); texture->output = target;
+        auto textures = make_ptr<claw_rtt_contracts::Textures>(); textures->values.push_back( texture );
+        ProfileGraphics graphics; graphics.initialise( renderer, textures ); graphics.markLoaded();
+        auto scene = make_ptr<PausedFrameScene>();
+        auto object = make_ptr<PausedFrameObject>();
+        auto particles = make_ptr<CParticleSystem>();
+        particles->setPoolSize( 32 ); particles->setSeed( 73 );
+        wp_particle_simulation_settings settings;
+        wp_particle_simulation_default_settings( &settings );
+        settings.rate = 8; settings.lifetime_min = settings.lifetime_max = 10;
+        bool ok = check( particles->setSimulationSettings( settings ), "paused frame particle settings" );
+        particles->load( SmartPtr<ISharedObject>() );
+        particles->setState( ParticleSystemState::Started );
+        scene->attach( object, particles ); graphics.attachSimulationScene( scene );
+        services.services.timer->update( 0.25 );
+        graphics.update();
+        const auto before = particles->getRenderSnapshot();
+        const auto windTime = scene->getFoliageSimulationTime();
+        const auto sceneUpdates = scene->updates, posts = scene->postUpdates, objectUpdates = object->updates;
+        wp_graphics_system_frame_stats initial{}, paused{};
+        wp_graphics_system_get_frame_stats( graphics.getNativeSystem(), &initial );
+        ok &= check( before.size() == 2 && sceneUpdates == 1 && posts == 1 && objectUpdates == 1 &&
+                     windTime == 0.25,
+                     "ordinary owner update advances real particles and scene/object callbacks" );
+        for( u32 frame = 0; frame < 4; ++frame )
+            ok &= check( graphics.updatePausedFrame(), "paused presentation must complete a native frame" );
+        const auto retained = particles->getRenderSnapshot();
+        wp_graphics_system_get_frame_stats( graphics.getNativeSystem(), &paused );
+        ok &= check( retained.size() == before.size() && ( before.empty() ||
+                     !std::memcmp( retained.data(), before.data(), before.size() * sizeof( wp_particle_sample ) ) ) &&
+                     scene->updates == sceneUpdates && scene->postUpdates == posts && object->updates == objectUpdates &&
+                     scene->getFoliageSimulationTime() == windTime,
+                     "paused redraw keeps native particle bytes and arbitrary simulation callbacks frozen" );
+        ok &= check( paused.update_serial == initial.update_serial + 4 &&
+                     paused.render_serial == initial.render_serial + 4 && paused.delta_time == 0.0f,
+                     "paused scene presentation advances native frame serials with zero simulation delta" );
+        services.services.timer->update( 0.25 );
+        graphics.update();
+        ok &= check( particles->getNumParticles() == before.size() + 2 &&
+                     scene->updates == sceneUpdates + 1 && scene->postUpdates == posts + 1 &&
+                     object->updates == objectUpdates + 1 && scene->getFoliageSimulationTime() == windTime + 0.25,
+                     "normal owner update resumes particles and callbacks without replaying paused frames" );
+        graphics.removeScenes(); graphics.detach(); graphics.unload( nullptr );
+        scene->unload( nullptr ); particles->unload( SmartPtr<ISharedObject>() );
+        ok &= check( scene->getFoliageSimulationTime() == 0, "scene unload resets foliage animation time" );
+        renderer->unload( nullptr );
+        return ok;
+    }
 
     bool testSceneProfile( SmartPtr<IGraphicsWindow> window )
     {
@@ -1422,6 +1501,21 @@ int main( int argc, char **argv )
     TypeManager types; types.load(); TypeManager::setInstance(&types);
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance(application);
+    if( argc == 2 && !std::strcmp( argv[1], "--debugger-pause" ) )
+    {
+        auto window = make_ptr<TestWindow>();
+        window->handle = CreateWindowExW( 0, L"STATIC", L"Claw debugger pause regression", WS_OVERLAPPEDWINDOW,
+            0, 0, 128, 128, nullptr, nullptr, GetModuleHandleW( nullptr ), nullptr );
+        bool ok = check( window->handle != nullptr, "paused frame test window must initialize" );
+        try { if( ok ) ok = testPausedSceneFrame( window ); }
+        catch( const std::exception &error ) { ok = check( false, error.what() ); }
+        if( window->handle ) DestroyWindow( window->handle );
+        window = nullptr;
+        core::IApplicationManager::setInstance( nullptr ); application = nullptr;
+        TypeManager::setInstance( nullptr ); types.unload();
+        if( ok ) std::puts( "Paused native frames: particles, callbacks and foliage time frozen; resume advances normally." );
+        return ok ? 0 : 1;
+    }
     if( argc > 1 )
     {
         char *end = nullptr;
@@ -1497,6 +1591,7 @@ int main( int argc, char **argv )
             ok &= claw_animation_contracts::run(renderer);
             try {
                 ok &= testSceneProfile(window);
+                ok &= testPausedSceneFrame(window);
                 claw_foliage_scene_contracts::Fixture services;
                 ok &= claw_rtt_contracts::integration(window, true, true);
             } catch(const std::exception &e) { ok &= check(false,e.what()); }

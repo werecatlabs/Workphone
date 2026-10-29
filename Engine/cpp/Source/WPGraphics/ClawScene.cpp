@@ -51,7 +51,6 @@ namespace workphone
             std::map<ClawTerrain *, Attached> terrains;
             Array<std::shared_ptr<ClawFoliageWorld>> standalone;
             Array<ClawFoliageInteraction> interactions;
-            std::chrono::steady_clock::time_point epoch = std::chrono::steady_clock::now();
             u64 frame = 0;
             f32 seconds = 0;
             String error;
@@ -236,6 +235,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loading );
+            m_foliageSimulationSeconds = 0;
             GraphicsScene::load( data );
 
             auto sceneFactoryManager = workphone::make_ptr<FactoryManager>();
@@ -290,6 +290,7 @@ namespace workphone
 
         void ClawScene::unload( SmartPtr<ISharedObject> data )
         {
+            m_foliageSimulationSeconds = 0;
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
@@ -304,6 +305,25 @@ namespace workphone
             setLoadingState( LoadingState::Unloaded );
         }
 
+        void ClawScene::update()
+        {
+            GraphicsScene::update();
+            const auto app = core::IApplicationManager::instancePtr();
+            const auto timer = app ? app->getTimer() : nullptr;
+            const auto delta = timer ? timer->getDeltaTime() : 1.0 / 60.0;
+            // Animation belongs to the simulation update, never a render read.
+            // No timer still has a deterministic normal-update fallback; paused
+            // presentation skips this method entirely on every backend.
+            if( std::isfinite( delta ) && delta > 0 &&
+                std::isfinite( m_foliageSimulationSeconds + delta ) )
+                m_foliageSimulationSeconds += delta;
+        }
+
+        f64 ClawScene::getFoliageSimulationTime() const
+        {
+            return m_foliageSimulationSeconds;
+        }
+
         wp_graphics_scene *ClawScene::getNativeScene() const
         {
             return m_scene;
@@ -311,6 +331,7 @@ namespace workphone
 
         wp_graphics_scene *ClawScene::releaseNativeScene()
         {
+            m_foliageSimulationSeconds = 0;
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
@@ -324,6 +345,7 @@ namespace workphone
 
         void ClawScene::clear()
         {
+            m_foliageSimulationSeconds = 0;
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
@@ -1473,10 +1495,7 @@ namespace workphone
                     if( !foliageFrame || foliageFrame != foliageState.frame )
                     {
                         foliageState.frame = foliageFrame;
-                        foliageState.seconds =
-                            std::chrono::duration<f32>( std::chrono::steady_clock::now() -
-                                                        foliageState.epoch )
-                                .count();
+                        foliageState.seconds = static_cast<f32>( m_foliageSimulationSeconds );
                     }
                     for( const auto &world : foliageWorlds )
                     {

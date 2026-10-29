@@ -35,6 +35,7 @@
 #include <Workphone/Workphone.hpp>
 #include <chrono>
 #include <cstdio>
+#include <optional>
 
 #include "workphone_graphics_renderer_dx11.h"
 #include "workphone_graphics_renderer.h"
@@ -512,6 +513,8 @@ namespace workphone
             {
                 snapshot.nativeUpdateSerial = frame.update_serial;
                 snapshot.nativeRenderSerial = frame.render_serial;
+                snapshot.nativeDeltaTime = frame.delta_time;
+                snapshot.frameSimulationEnabled = m_frameSimulationEnabled;
                 snapshot.completedPasses = frame.completed_pass_count > 0 ? frame.completed_pass_count : 0;
                 snapshot.skippedPasses = frame.skipped_pass_count > 0 ? frame.skipped_pass_count : 0;
             }
@@ -817,24 +820,48 @@ namespace workphone
 
         void ClawHammerSystem::update()
         {
+            updateFrame( true );
+        }
+
+        bool ClawHammerSystem::updatePausedFrame()
+        {
+            return updateFrame( false );
+        }
+
+        bool ClawHammerSystem::updateFrame( bool simulationEnabled )
+        {
             if( !isLoaded() || !m_sys )
             {
                 if( getSceneProfilingEnabled() )
                 {
                     resetSceneProfile();
                 }
-                return;
+                return false;
             }
 
             try
             {
                 ScopedLock lock( this );
+                // The native renderer and ImGui both own in-flight frame state.
+                // Reentrant submission cannot redraw a suspended frame safely.
+                if( m_frameUpdateActive ) return false;
+                struct FrameMode
+                {
+                    ClawHammerSystem &owner;
+                    bool previousSimulation;
+                    FrameMode( ClawHammerSystem &value, bool enabled ) :
+                        owner( value ), previousSimulation( value.m_frameSimulationEnabled )
+                    { owner.m_frameUpdateActive = true; owner.m_frameSimulationEnabled = enabled; }
+                    ~FrameMode()
+                    { owner.m_frameSimulationEnabled = previousSimulation; owner.m_frameUpdateActive = false; }
+                } frameMode( *this, simulationEnabled );
                 beginSceneProfileFrame();
                 using ProfileClock = std::chrono::steady_clock;
                 const auto profileStart = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
-                MaterialPublicationScope materialUpdates;
+                std::optional<MaterialPublicationScope> materialUpdates;
+                if( simulationEnabled ) materialUpdates.emplace();
                 RenderPhaseProfile preparation( m_preparationProfile, "Graphics preparation" );
-                if( m_statisticsResetRequested.exchange( false ) )
+                if( simulationEnabled && m_statisticsResetRequested.exchange( false ) )
                 {
                     if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
                     {
@@ -844,9 +871,11 @@ namespace workphone
                         }
                     }
                 }
-                GraphicsSystem::update();
-
-                updateUnloadQueue();
+                if( simulationEnabled )
+                {
+                    GraphicsSystem::update();
+                    updateUnloadQueue();
+                }
 
                 for( auto &window : m_windows )
                 {
@@ -859,27 +888,33 @@ namespace workphone
                 auto applicationManager = core::IApplicationManager::instancePtr();
                 auto renderUI = applicationManager ? applicationManager->getRenderUI() : nullptr;
 
-                if( renderUI )
+                if( renderUI && simulationEnabled )
                 {
                     renderUI->update();
                 }
+                else if( auto nativeUI = dynamic_pointer_cast<ui::ClawUIManager>( renderUI ) )
+                {
+                    // Widget drawing/input remains available, but native UI
+                    // animation must not reuse the interrupted positive delta.
+                    if( auto context = nativeUI->getContext() ) context->delta_time_seconds = 0.0f;
+                }
 
-                if( auto debug = getDebug() )
+                if( auto debug = simulationEnabled ? getDebug() : nullptr )
                 {
                     debug->preUpdate();
                     debug->update();
                     debug->postUpdate();
                 }
 
-                wp_f32 deltaTime = 1.0f / 60.0f;
+                wp_f32 deltaTime = simulationEnabled ? 1.0f / 60.0f : 0.0f;
 
-                if( auto timer = applicationManager ? applicationManager->getTimer() : nullptr )
+                if( auto timer = simulationEnabled && applicationManager ? applicationManager->getTimer() : nullptr )
                 {
                     deltaTime = static_cast<wp_f32>( timer->getDeltaTime() );
                 }
 
-                materialUpdates.commit(); // Publish before immutable scene-job capture.
-                if(auto renderer=dynamic_pointer_cast<ClawRendererDX11>(getRenderer()))
+                if( materialUpdates ) materialUpdates->commit(); // Normal update publication boundary.
+                if(auto renderer=simulationEnabled ? dynamic_pointer_cast<ClawRendererDX11>(getRenderer()) : nullptr)
                 {
                     ClawMaterial::processRuntimeShaderReloads(*renderer);
                     auto native=renderer->getNativeRenderer();
@@ -901,7 +936,7 @@ namespace workphone
                 const auto nativeEnd = m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 publishRenderStatistics();
 
-                for( auto &scene : m_scenes.snapshot() )
+                if( simulationEnabled ) for( auto &scene : m_scenes.snapshot() )
                 {
                     if( scene )
                     {
@@ -917,12 +952,14 @@ namespace workphone
                     snapshot.graphicsUpdateNs = std::chrono::duration_cast<std::chrono::nanoseconds>( finished - profileStart ).count();
                     publishSceneProfileFrame();
                 }
+                return true;
             }
             catch( std::exception &e )
             {
                 invalidateSceneProfileFrame();
                 WP_LOG_EXCEPTION( e );
             }
+            return false;
         }
 
         void ClawHammerSystem::prepareFramePasses( wp_f32 deltaTime )
@@ -1311,7 +1348,14 @@ namespace workphone
                 case 3:
                     if( sceneEnabled && ( !viewport || viewport->getEnableUI() ) )
                         if( auto app = core::IApplicationManager::instancePtr() )
-                            if( auto ui = app->getRenderUI(); ui && ui->isLoaded() ) ui->render();
+                            if( auto renderUI = app->getRenderUI(); renderUI && renderUI->isLoaded() )
+                            {
+                                if( owner->m_frameSimulationEnabled ) renderUI->render();
+                                else if( auto nativeUI = dynamic_pointer_cast<ui::ClawUIManager>( renderUI ) )
+                                    nativeUI->renderReadOnly();
+                                // Unknown game UI backends have no read-only
+                                // input contract. Keep them dormant during pause.
+                            }
                     break;
                 case 4:
                     if( pass.window && owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
@@ -1434,7 +1478,7 @@ namespace workphone
                 const s32 aa=options->getPropertyAsInt("graphics.antiAliasing");
                 const s32 samples=aa==3 ? 2 : aa==4 ? 4 : aa==5 ? 8 : 1;
                 f32 scale=1.0f;options->getPropertyValue("graphics.renderScale",scale);
-                if(options->getPropertyAsBool("graphics.dynamicResolution"))
+                if(m_frameSimulationEnabled && options->getPropertyAsBool("graphics.dynamicResolution"))
                 {
                     auto app=core::IApplicationManager::instancePtr();
                     auto timer=app ? app->getTimer() : nullptr;
@@ -1443,7 +1487,7 @@ namespace workphone
                     if(dt>1.1/fps) m_adaptiveSceneScale=std::max(0.5f,m_adaptiveSceneScale-0.0625f);
                     else if(dt>0 && dt<0.8/fps) m_adaptiveSceneScale=std::min(1.0f,m_adaptiveSceneScale+0.0625f);
                 }
-                else m_adaptiveSceneScale=1.0f;
+                else if(m_frameSimulationEnabled) m_adaptiveSceneScale=1.0f;
                 wp_renderer_dx11_set_scene_sampling(wp_renderer_get_dx11(dx11Renderer->getNativeRenderer()),samples,scale*m_adaptiveSceneScale);
                 const bool post=!options->hasProperty("graphics.postProcessing") || options->getPropertyAsBool("graphics.postProcessing");
                 auto nativeDx11=wp_renderer_get_dx11(dx11Renderer->getNativeRenderer());

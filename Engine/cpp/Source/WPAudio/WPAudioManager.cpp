@@ -104,6 +104,7 @@ namespace workphone
 
     bool WPAudioManager::initializePlatformAudio()
     {
+        const auto requestedSuspension = m_debuggerSuspended;
         cleanupPlatformAudio();
         if( m_audioBackend != 0 && m_audioBackend != 3 )
         {
@@ -311,6 +312,11 @@ namespace workphone
         m_activeOutputDevice = m_outputDevice;
         m_activeBackend = m_audioBackend;
         setVolume( m_volume );
+        if( !setDebuggerSuspended( requestedSuspension ) )
+        {
+            cleanupPlatformAudio();
+            return false;
+        }
         return true;
     }
 
@@ -325,6 +331,7 @@ namespace workphone
 
     void WPAudioManager::cleanupPlatformAudio()
     {
+        m_debuggerSuspended = false;
         auto state = m_platformAudioState;
         if( !state )
         {
@@ -393,6 +400,7 @@ namespace workphone
 
     void WPAudioManager::update()
     {
+        if( m_debuggerSuspended ) return;
         SoundManager::update();
 
         // Update all active sounds (e.g., check playback state, handle streaming, etc.)
@@ -404,6 +412,44 @@ namespace workphone
                 sound->update();
             }
         }
+    }
+
+    bool WPAudioManager::setDebuggerSuspended( bool suspended )
+    {
+        if( m_debuggerSuspended == suspended ) return true;
+        if( !m_platformAudioState )
+        {
+            m_debuggerSuspended = suspended;
+            return true;
+        }
+#if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
+        if( !m_platformAudioState->xAudio2 )
+        {
+            // No processing engine can advance voices. Retain the policy for
+            // a later device initialization just as for an unloaded manager.
+            m_debuggerSuspended = suspended;
+            return true;
+        }
+        if( suspended )
+        {
+            // Stops the processing engine at its native boundary. Unlike mute
+            // or per-voice Stop, cursors/DSP stop and each voice keeps its state.
+            m_platformAudioState->xAudio2->StopEngine();
+        }
+        else if( FAILED( m_platformAudioState->xAudio2->StartEngine() ) )
+        {
+            return false;
+        }
+        m_debuggerSuspended = suspended;
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    bool WPAudioManager::getDebuggerSuspended() const
+    {
+        return m_debuggerSuspended;
     }
 
     void WPAudioManager::loadSoundMap( const Properties &soundMap )

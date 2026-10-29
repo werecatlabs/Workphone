@@ -18,15 +18,30 @@ namespace LuaDebuggerVsix
         private bool _disposed;
         private readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 65536 };
-        public LuaDebuggerControl() { InitializeComponent(); }
+        public LuaDebuggerControl()
+        {
+            InitializeComponent();
+            Loaded += (sender, args) =>
+            {
+                if (!_disposed) LoadEndpointButton.Focus();
+            };
+        }
         private void LoadEndpoint_Click(object sender, RoutedEventArgs args)
         {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Workphone endpoint|lua-debug.json|JSON|*.json" };
-            if (dialog.ShowDialog() != true) return;
             try
             {
-                if (new FileInfo(dialog.FileName).Length > 65536) throw new InvalidDataException("Endpoint file is too large.");
-                var endpoint = _json.Deserialize<Dictionary<string, object>>(File.ReadAllText(dialog.FileName));
+                var endpointPath = EndpointPathTextBox.Text.Trim().Trim('"');
+                if (endpointPath.Length == 0)
+                {
+                    var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Workphone endpoint|lua-debug.json|JSON|*.json", CheckFileExists = true };
+                    if (dialog.ShowDialog() != true) return;
+                    endpointPath = dialog.FileName;
+                }
+                endpointPath = Path.GetFullPath(endpointPath);
+                EndpointPathTextBox.Text = endpointPath;
+                if (!File.Exists(endpointPath)) throw new FileNotFoundException("Editor endpoint file does not exist.", endpointPath);
+                if (new FileInfo(endpointPath).Length > 65536) throw new InvalidDataException("Endpoint file is too large.");
+                var endpoint = _json.Deserialize<Dictionary<string, object>>(File.ReadAllText(endpointPath));
                 PortTextBox.Text = Convert.ToString(endpoint["port"]);
                 TokenTextBox.Password = Convert.ToString(endpoint["token"]);
                 if (endpoint.TryGetValue("sourceRoot", out object root)) WorkspaceTextBox.Text = Convert.ToString(root);
@@ -68,21 +83,33 @@ namespace LuaDebuggerVsix
         }
         private async Task LaunchEditorAsync(CancellationToken cancellationToken)
         {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Workphone Editor|Editor.exe", CheckFileExists = true };
-            if (dialog.ShowDialog() != true) return;
-            var executableFolder = Path.GetDirectoryName(dialog.FileName);
-            var installed = File.Exists(Path.Combine(Path.GetDirectoryName(executableFolder), "editor-package.cfg"));
+            var executable = EditorPathTextBox.Text.Trim().Trim('"');
+            if (executable.Length == 0)
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Workphone Editor|Editor.exe", CheckFileExists = true };
+                if (dialog.ShowDialog() != true) return;
+                executable = dialog.FileName;
+            }
+            executable = Path.GetFullPath(executable);
+            EditorPathTextBox.Text = executable;
+            if (!File.Exists(executable)) throw new FileNotFoundException("Editor executable does not exist.", executable);
+            if (!string.Equals(Path.GetFileName(executable), "Editor.exe", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Choose the Workphone Editor.exe executable.");
+            var executableFolder = Path.GetDirectoryName(executable);
+            var packageRoot = Path.GetDirectoryName(executableFolder) ?? executableFolder;
+            var installed = File.Exists(Path.Combine(packageRoot, "editor-package.cfg"));
             string arguments = "";
             if (installed)
             {
                 if (!Directory.Exists(WorkspaceTextBox.Text) || WorkspaceTextBox.Text.Contains("\""))
                     throw new ArgumentException("Enter an existing workspace folder for the packaged Editor.");
-                arguments = "--workspace \"" + Path.GetFullPath(WorkspaceTextBox.Text).Replace('\\', '/') + "\"";
+                arguments = "--package-root \"" + packageRoot.Replace('\\', '/') +
+                    "\" --workspace \"" + Path.GetFullPath(WorkspaceTextBox.Text).Replace('\\', '/') + "\"";
             }
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Workphone", "LuaDebugger");
             Directory.CreateDirectory(directory);
             var endpointPath = Path.Combine(directory, "endpoint-" + Guid.NewGuid().ToString("N") + ".json");
-            var start = new ProcessStartInfo(dialog.FileName, arguments)
+            var start = new ProcessStartInfo(executable, arguments)
             { UseShellExecute = false, WorkingDirectory = executableFolder };
             start.EnvironmentVariables["WP_LUA_DEBUGGER"] = "1";
             start.EnvironmentVariables["WP_LUA_DEBUG_ENDPOINT"] = endpointPath;
@@ -97,6 +124,7 @@ namespace LuaDebuggerVsix
                     {
                         if (new FileInfo(endpointPath).Length > 65536) throw new InvalidDataException("Endpoint file exceeds 64 KiB.");
                         var endpoint = _json.Deserialize<Dictionary<string, object>>(File.ReadAllText(endpointPath));
+                        EndpointPathTextBox.Text = endpointPath;
                         PortTextBox.Text = Convert.ToString(endpoint["port"]);
                         TokenTextBox.Password = Convert.ToString(endpoint["token"]);
                         await AttachAsync(cancellationToken); return;

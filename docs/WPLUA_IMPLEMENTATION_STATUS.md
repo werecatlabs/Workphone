@@ -1,6 +1,6 @@
 # Lua implementation status and usage
 
-Updated 28 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
+Updated 29 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
 
 ## Script assets and runtime resources
 
@@ -49,13 +49,50 @@ The compatibility adapter preserves exact integer conversion and the existing bi
 
 The engine now provides an authenticated, loopback-only Debug Adapter Protocol service with bounded Content-Length frames. It supports breakpoints, conditions, hit counts, logpoints, pause/resume, step in/over/out, stack frames, locals/upvalues/globals, paged tables, read-only watch expressions, loaded sources, print output and protected-boundary exception stops. Lua operations stay on the owning execution thread; the transport thread only handles bytes and messages. Coroutine hooks and stale inspection handles are covered by the host integration fixture.
 
-`WP_LUA_DEBUGGER=1` starts the Editor in its single-executor debugging profile before loading project scripts. LuaJIT compilation is disabled and flushed for this profile. The Editor publishes `.workphone/lua-debug.json` after its pause pump is ready. Its restricted pump keeps messages, input and rendering active while gameplay callbacks and simulation stay suspended. Suspension time is excluded from the engine clock. Stop/close releases the paused VM; VM reload transfers debugger ownership and source identities.
+`WP_LUA_DEBUGGER=1` starts the Editor in its single-executor debugging profile before loading project scripts. LuaJIT compilation is disabled and flushed for this profile. The Editor publishes `.workphone/lua-debug.json` after its pause pump is ready. Safe Application-task pauses keep native window messages, debugger controls and presentation active while simulation, gameplay input and authoring actions are suspended. Paused frames skip particles and scene/object updates, use zero native delta and frozen foliage time, and hold XAudio2 processing. Engine time stays fixed and excludes suspension on resume. Built-in Editor render callbacks defer to Application after frame retirement, allowing redraw during their breakpoints. Custom synchronous render Lua retains the explicit redraw-unavailable fallback. Stop/close releases the paused VM; VM reload transfers debugger ownership and source identities.
 
 Window > Lua Debugger exposes local breakpoints and conditions/logpoints, exception policy, stack/frame selection, scopes, table expansion, a read-only watch, source context and console output. It persists preferences atomically in `.workphone/lua-breakpoints.json`. Visual Studio owns breakpoint configuration while attached; the Editor restores local preferences after disconnect.
 
 The VSIX packages a .NET Framework 4.8 stdio adapter and registers Workphone Lua with Visual Studio's DebugAdapterHost. The tool window loads an endpoint or launches the Editor, then requests a standard Visual Studio debug session. Breakpoints, Call Stack, Locals, Watch, stepping and Exception Settings use that session. The old newline client is excluded from the extension build. Build/installation/interactive verification are reported separately below; source integration alone is not certification of a live debug session.
 
 ## Validation
+
+### Pause isolation and debugger controls, 29 October 2026 follow-up
+
+The pause path now uses a presentation-only Claw frame, a nested timer suspension and XAudio2 engine suspension. Native particles, scene/object callbacks and foliage wind remain fixed during presentation; game UI draws read-only. Native input holds discard task event queues on pause/resume, replace transient snapshots, release the Editor's own mouse capture and block paused gameplay publication, avoiding queued click/key replay. Built-in Editor Render callbacks run on Application after their native frame retires. Paused callback drains reserve space for debugger controls and retain authoring work. Terrain synchronous getters use a cached snapshot in the debug profile. Direct synchronous Lua calls made by custom native render plugins retain the explicit `redrawAvailable=false` guard.
+
+The panel now previews physical sources from the engine's registered snapshot, invalidates stale stop inspection, disables unavailable controls and prioritizes Continue/step over bounded inspection queues. Native ImGui button shortcuts use the same event path as clicks and check focus, modifiers, enablement and key edges. Native contract tests cover clipping, held keys, disabled/hidden controls, focus loss, click dispatch and queue saturation.
+
+The matching LuaJIT Editor and VSIX 0.3.1 ran again in the isolated LuaQA IDE. At an Application stop, 80 native update/render/Present serials advanced with no failures or occlusion, while engine and fixed time remained exactly constant, both deltas were zero, the executor worker count was zero, simulation was disabled and audio suspension was true. A real Editor F8 Show stack shortcut then hit its Lua `handleEvent` breakpoint at line 307. That Render-origin callback pause passed the same strict gate across another 72 frames, with `deferredRenderCallbackActive=true`. Native widget state confirmed the stopped status, source preview, enabled Continue/Step Over and disabled Pause throughout. These are native state and presentation-counter checks; pixel layout is not certified.
+
+Evidence is in `project_luajit/lua-debugger-remaining-20261029/frozen-redraw.json` and `render-origin-frozen-redraw.json`, plus the neighboring step/inspection/exit snapshots. The selected CTest gates passed 10/10 for LuaJIT and 9/9 for standard Lua; logs are `project_luajit/lua-remaining-20261029-acceptance-ctest.log` and the corresponding `project_x64` log. The packaged adapter fixture passes against the current executable in `Tools/csharp/LuaDebugAdapter/bin/Release/net48`; the old loose `project_x64/vsix/bin/WorkphoneLuaDebugAdapter.exe` predates this work and is not the adapter installed in VSIX 0.3.1.
+
+The broader `WPGraphics.claw_production_render` suite still reports the CPU skin-array budget and superseded terrain streaming checks. Its fixture and timeout remain unchanged. The added focused pause case passes; this is not a pass for the whole graphics suite. Hardware audio cursor behavior and a representative gameplay Play/Stop scene remain separate validation gates.
+
+### Live LuaJIT Editor and Visual Studio, 29 October 2026
+
+The rebuilt LuaJIT RelWithDebInfo Editor ran with DX11 in an isolated workspace, using the existing junction-based package fixture and matching `v145-luajit` DLLs. The installed VSIX 0.3.1 ran in Visual Studio 18 Insiders with `/RootSuffix LuaQA`. A live read-only watch returned `LuaJIT 2.1.1788856981`. This was the native Editor, with its debugger panel's Application-task callback suspended.
+
+| Live check | Result |
+| --- | --- |
+| VSIX Launch Editor and attach | Pass through its WPF button's Alt+U access key; started the selected LuaJIT executable with explicit package root/workspace and attached automatically |
+| VSIX Load endpoint, then Attach | Pass through Alt+L and Alt+A; loaded the running Editor's generated endpoint and established a second debug session |
+| Physical-source breakpoint | Pass at `LuaDebuggerPanel.lua:200`; IDE source and breakpoint/current-statement controls were observed |
+| Step Into / Out / Over | Pass through the real IDE debugger API, with increasing native pause sequences: entered `manager:9`, returned to caller line 200, advanced to 201 and 202 |
+| LuaJIT same-line hooks | One additional stop occurred on line 201 around its nested calls before advancing; verified as a new pause, not a stalled command |
+| Locals, tables and read-only watches | Pass: `now`, `ok`, `state`, expanded table members, `jit.version`, and `state.port > 0 and state.connected`; `os.exit()` was rejected without execution |
+| Continue / Pause / Detach | Pass; Pause created a new native pause sequence and Detach returned the IDE to Design mode |
+| Paused native redraw | Pass: after deliberately holding the report without delete sharing for 750 ms, two measured intervals each advanced 64 completed pumps, native updates/renders, DX11 frames and Present attempts; no new Present failures or occlusion |
+| Native close input while paused | Pass: Alt+F4 cancelled the suspended Lua call, Editor exited with code 0, and its endpoint was removed |
+| IDE behavior after Editor close | Pass on the rebuilt adapter: Visual Studio returned to Design mode without an unexpected-adapter-exit modal |
+
+The run fixed two defects found by the live checks. The stdio adapter previously exited on engine EOF without sending a DAP `terminated` event, causing Visual Studio to report an unexpected exit. It now preserves framed engine messages, emits termination once on clean EOF, and retains errors for truncated messages or connection failures. Its expanded Python fixture covers these paths plus fragmented UTF-8 messages and IDE-initiated EOF. Optional paused diagnostics initially disabled after a transient replacement failure; bounded retries now cover Windows sharing, lock and access-denied errors, with no blocking sleep in the pump. The deliberate lock/recovery check passed after this fix.
+
+The VSIX now accepts accessible endpoint/executable path entry, retains blank-field file pickers, and scrolls in small panes. Its launch mnemonic uses Alt+U to avoid the IDE's Edit menu. An opt-in `WP_LUA_DEBUGGER_ACTIVITY_REPORT` file records existing native counters at 4 Hz plus transitions, temporarily enabling scene profiling for redraw-capable pauses and restoring its previous flag afterward. Render-task pauses skip graphics/state/panel reentry and report `renderCallbackSuspended`.
+
+Validation: four selected LuaJIT CTest gates passed (backend, runtime, debugger integration, Editor panel); the native graphics frame contract also passed. The VSIX rebuilt/deployed with zero warnings/errors, and the packaged adapter's Python tests passed. Evidence is in `project_luajit/lua-live-20261029-final-ctest.log`, `lua-live-20261029-frame-ctest.log`, `lua-live-20261029-adapter-tests.log`, `project_x64/vsix/lua-20261029-final-build.log`, and `project_luajit/lua-debugger-live-20261029/accepted-*.json`. The latter includes the final backend, step, variable, frame-progress, exit-code and cleanup snapshots. Generated session credentials were removed during cleanup.
+
+The live scope remains narrower than full production certification. Windows pixel capture failed after a fresh target selection and retry (`window capture timed out: timed out waiting on channel`), and pointer input lacked coordinate geometry. Button handlers were exercised by keyboard access keys; pointer hit targets, rendered pixels and interactive ImGui controls were not certified. F10 injection did not establish a new pause in this run; supported IDE step APIs were used for the stepping pass. The render-callback guard compiled and the native recursion contract passed, but an actual suspended render callback was not exercised. Gameplay Play/Stop and full native simulation freeze remain separate gates. The successful redraw measurements used the fixture's small default viewport, not a representative gameplay scene or performance benchmark.
 
 ### Live Editor and Visual Studio, 28 October 2026
 

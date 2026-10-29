@@ -951,6 +951,11 @@ if (WP_BUILD_ENGINE)
         add_dependencies(Editor WPPhysics)
     endif()
 
+    if(TARGET WPAudio)
+        target_link_libraries(Editor WPAudio)
+        target_compile_definitions(Editor PRIVATE WP_EDITOR_AUDIO_PAUSE=1)
+    endif()
+
     if (WP_STATIC_LIB)
         add_dependencies(Editor WPGraphics)
         add_dependencies(Editor WPRenderUI)

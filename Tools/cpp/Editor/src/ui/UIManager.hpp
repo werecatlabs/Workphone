@@ -7,6 +7,9 @@
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/System/Job.hpp>
+#include <Workphone/Core/Parameter.hpp>
+#include "DeferredEditorScriptEvents.hpp"
+#include <atomic>
 
 namespace workphone
 {
@@ -353,6 +356,17 @@ namespace workphone
             /** @brief Default constructor. Sets up internal listeners and state. */
             UIManager();
             SmartPtr<EditorWindow> getLuaDebuggerWindow() const;
+            static bool debuggerDispatchEnabled();
+            bool deferScriptCall( EditorWindow *window, const String &member,
+                                  const Parameters &parameters, bool hasParameters,
+                                  bool discardResults = false );
+            bool deferUIEvent( IEventListener *listener, EventType type, hash_type value,
+                               const Parameters &arguments, SmartPtr<ISharedObject> sender,
+                               SmartPtr<ISharedObject> object, SmartPtr<IEvent> event );
+            void dispatchQueuedScriptEvents( bool debuggerOnly );
+            u64 getDeferredRenderCallbackCount() const;
+            u64 getDispatchedScriptEventCount() const;
+            bool isDeferredRenderCallbackActive() const;
 
             /** @brief Destructor. Cleans up UI references. */
             ~UIManager() override;
@@ -813,6 +827,13 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            bool shouldDeferScriptCall( bool debuggerControl ) const;
+            void enqueueScriptEvent( std::function<void()> call, bool debuggerControl,
+                                     std::uintptr_t owner = 0, const String &refreshKey = "" );
+            DeferredEditorScriptEvents m_scriptEvents;
+            bool m_scriptEventOverflowReported = false;
+            std::atomic<u64> m_deferredRenderCallbackCount{ 0 }, m_dispatchedScriptEventCount{ 0 };
+            std::atomic<bool> m_deferredRenderCallbackActive{ false };
             SmartPtr<IEventListener> m_eventListener;      ///< General UI event listener.
             SmartPtr<IJob> m_updateSelectionJob;           ///< Job for updating selection state.
             SmartPtr<IFrameStatistics> m_frameStatistics;  ///< Optional frame statistics for profiling.

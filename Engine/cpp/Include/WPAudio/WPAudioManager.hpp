@@ -62,6 +62,14 @@ namespace workphone
          */
         void update() override;
 
+        /** Suspend native processing without changing voice play/pause states
+         * or queued buffers. Control-owner only; never call from an audio callback.
+         * Windows XAudio2 is supported; an active unsupported backend returns false.
+         * An unloaded manager accepts the policy without requiring an output device.
+         */
+        bool setDebuggerSuspended( bool suspended );
+        bool getDebuggerSuspended() const;
+
         SmartPtr<Properties> getProperties() const override;
 
         /**
@@ -219,6 +227,7 @@ namespace workphone
         s32 m_activeSampleRate = -1;
         s32 m_activeOutputDevice = -1;
         s32 m_activeBackend = -1;
+        bool m_debuggerSuspended = false;
     };
 }  // namespace workphone
 

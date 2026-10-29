@@ -16,6 +16,12 @@ public:
     void track(SmartPtr<ISound> sound) { sound->setOwner(this); m_sounds.push_back(sound); }
     void trackListener(SmartPtr<ISoundListener3> listener) { m_listeners.push_back(listener); }
 };
+class UpdatingSound : public Sound {
+public:
+    unsigned updates=0;
+    UpdatingSound() { setLoadingState(LoadingState::Loaded); }
+    void update() override { ++updates; }
+};
 int main() {
     TypeManager types; types.load(); TypeManager::setInstance(&types);
     int result=0;
@@ -30,6 +36,23 @@ int main() {
         manager->destroyResource(sound); CHECK(!sound->getOwner() && !manager->getByName("registered.wav"));
         manager->track(sound); manager->removeAll(); CHECK(!manager->getByName("registered.wav") && !sound->getOwner());
         CHECK(!manager->isRealtime());
+        // No device is required to verify the concrete owner's suspended update
+        // boundary or that holding it never changes individual voice intent.
+        {
+            auto playing=make_ptr<UpdatingSound>(), paused=make_ptr<UpdatingSound>();
+            manager->track(playing); manager->track(paused);
+            playing->play(); paused->play(); paused->pause();
+            manager->update();
+            CHECK(playing->updates==1 && paused->updates==1);
+            CHECK(manager->setDebuggerSuspended(true) && manager->getDebuggerSuspended());
+            for(unsigned frame=0;frame<4;++frame) manager->update();
+            CHECK(playing->updates==1 && paused->updates==1 && playing->isPlaying() && !paused->isPlaying());
+            CHECK(manager->setDebuggerSuspended(true));
+            CHECK(manager->setDebuggerSuspended(false) && !manager->getDebuggerSuspended());
+            manager->update();
+            CHECK(playing->updates==2 && paused->updates==2 && playing->isPlaying() && !paused->isPlaying());
+            manager->removeAll();
+        }
         auto settings=make_ptr<Properties>();
         settings->setProperty("sound.musicVolume", s32(60));
         settings->setProperty("sound.sfxVolume", s32(20));

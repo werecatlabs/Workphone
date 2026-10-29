@@ -50,6 +50,12 @@ namespace workphone
 
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
+            void update() override;
+
+            /** Owner-task foliage animation clock. Rendering reads this value
+             * without advancing it, so repeated paused redraws retain wind phase.
+             */
+            f64 getFoliageSimulationTime() const;
 
             /** @brief Returns the underlying C graphics scene. */
             wp_graphics_scene *getNativeScene() const;
@@ -248,6 +254,9 @@ namespace workphone
             struct OcclusionHistory;
             std::unique_ptr<OcclusionHistory> m_occlusionHistory;
             u64 m_occlusionFrame = 0;
+
+        private:
+            f64 m_foliageSimulationSeconds = 0;
         };
     }  // namespace render
 }  // namespace workphone

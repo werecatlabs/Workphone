@@ -6,6 +6,16 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+if(WP_BUILD_TESTS)
+    add_executable(EditorDeferredScriptEventsTests EditorDeferredScriptEventsTests.cpp)
+    target_compile_features(EditorDeferredScriptEventsTests PRIVATE cxx_std_17)
+    target_include_directories(EditorDeferredScriptEventsTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
+    set_target_properties(EditorDeferredScriptEventsTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPLua.editor_deferred_script_events COMMAND EditorDeferredScriptEventsTests)
+    set_tests_properties(WPLua.editor_deferred_script_events PROPERTIES
+        LABELS "lua;debugger;editor;headless" TIMEOUT 30)
+endif()
+
 if(TARGET Workphone AND TARGET WPVehiclePhysics)
     add_executable(HelicopterControllerTests HelicopterControllerTests.cpp)
     target_compile_definitions(HelicopterControllerTests PRIVATE BOOST_ALL_NO_LIB)
@@ -169,6 +179,10 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             add_test(NAME ${graphics_test} COMMAND ${graphics_target})
             set_tests_properties(${graphics_test} PROPERTIES LABELS "graphics;gpu" TIMEOUT 120)
             if(graphics_contract STREQUAL "ClawProduction")
+                add_test(NAME WPGraphics.claw_debugger_pause
+                    COMMAND ${graphics_target} --debugger-pause)
+                set_tests_properties(WPGraphics.claw_debugger_pause PROPERTIES
+                    LABELS "graphics;debugger;gpu" TIMEOUT 120)
                 add_test(NAME WPGraphics.claw_lifecycle_soak
                     COMMAND ${graphics_target} --lifecycle-soak 32)
                 set_tests_properties(WPGraphics.claw_lifecycle_soak PROPERTIES
@@ -208,6 +222,8 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
     set_target_properties(WPGraphicsClawUIDestructionTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPGraphics.claw_ui_destruction COMMAND WPGraphicsClawUIDestructionTests)
     set_tests_properties(WPGraphics.claw_ui_destruction PROPERTIES LABELS "graphics;headless;lifecycle" TIMEOUT 60)
+    add_test(NAME WPGraphics.claw_paused_game_ui COMMAND WPGraphicsClawUIDestructionTests --paused-game-ui-only)
+    set_tests_properties(WPGraphics.claw_paused_game_ui PROPERTIES LABELS "graphics;headless;debugger" TIMEOUT 60)
 endif()
 
 if (WP_BUILD_TESTS)

@@ -6,6 +6,7 @@
     <AssemblyName>WorkphoneLuaDebugAdapter</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 </Project>

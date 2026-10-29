@@ -122,11 +122,51 @@ int main( int argc, char **argv )
             }
             auto timer = make_ptr<TimerMT>(); timer->load( nullptr );
             Thread::setCurrentTask( TaskId::Application ); timer->update();
-            auto pauseStart = Clock::now(); int boundaries = 0;
+            // A paused redraw can query every task's clock, but cannot advance
+            // native consumers through a retained positive frame delta.
+            const auto originalDelta = timer->getDeltaTime();
+            const auto originalTime = timer->getTime();
+            const auto originalTicks = timer->getTickCount();
+            timer->beginSuspension();
+            const auto frozenNow = timer->now();
+            const auto frozenFixedNow = timer->getFixedTimeNow();
+            timer->beginSuspension();
+            std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+            for( auto task : { TaskId::Application, TaskId::Render, TaskId::Physics } )
+            {
+                Thread::setCurrentTask( task );
+                const auto taskTime = timer->getTime();
+                const auto taskTicks = timer->getTickCount();
+                const auto taskFixed = timer->getFixedTime();
+                check( timer->getDeltaTime() == 0.0 && timer->getDeltaTime( task ) == 0.0 &&
+                       timer->getSmoothDeltaTime() == 0.0 && timer->getSmoothDeltaTime( task ) == 0.0,
+                       "Suspension exposed a native simulation delta" );
+                timer->update(); timer->update( 0.5 ); timer->updateFixed();
+                check( timer->getTime() == taskTime && timer->getTickCount() == taskTicks &&
+                       timer->getFixedTime() == taskFixed, "Suspended timer update advanced simulation" );
+            }
+            Thread::setCurrentTask( TaskId::Application );
+            check( timer->now() == frozenNow && timer->now128() == frozenNow &&
+                   timer->getFixedTimeNow() == frozenFixedNow &&
+                   timer->getFixedTimeNow( static_cast<u32>( TaskId::Application ) ) == frozenFixedNow,
+                   "Suspended engine clock advanced with wall time" );
+            timer->endSuspension();
+            check( timer->isSuspended() && timer->getDeltaTime() == 0.0,
+                   "Nested suspension resumed the timer early" );
+            const auto resumeStart = Clock::now();
+            timer->endSuspension();
+            const auto resumedNow = timer->now();
+            const auto resumeElapsed = std::chrono::duration<double>( Clock::now() - resumeStart ).count();
+            check( !timer->isSuspended() && timer->getDeltaTime() == originalDelta &&
+                   timer->getTime() == originalTime && timer->getTickCount() == originalTicks,
+                   "Suspension lost the interrupted frame clock" );
+            check( resumedNow >= frozenNow && resumedNow - frozenNow <= resumeElapsed + 0.001,
+                   "Resuming introduced paused wall time into the engine clock" );
+            int boundaries = 0;
             manager.setDebuggerPauseObserver( [&]( bool paused ) {
                 ++boundaries;
-                if( paused ) pauseStart = Clock::now();
-                else timer->excludeElapsed( std::chrono::duration<double>( Clock::now() - pauseStart ).count() );
+                if( paused ) timer->beginSuspension();
+                else timer->endSuspension();
             } );
             const auto root = std::filesystem::current_path().generic_u8string();
             check( !manager.startDebugger( 0, "short", root.c_str() ), "Short authentication token accepted" );
@@ -139,6 +179,7 @@ int main( int argc, char **argv )
                 ~PhysicalSource() { std::error_code ignored; std::filesystem::remove( path, ignored ); }
             } physicalSource;
             check( manager.executeSource( "diskSourceValue=42", ( "@" + physicalSource.path.generic_u8string() ).c_str() ), "Physical source fixture" );
+            { std::ofstream changed( physicalSource.path ); changed << "diskSourceValue=999"; }
             check( manager.executeSource( "assert(jit == nil or not jit.status())", "=debug-backend" ), "JIT compilation stayed enabled while debugging" );
             check( manager.executeSource( "gameplayCalls=0; function gameplayCallback() gameplayCalls=gameplayCalls+1 end", "@gameplay.lua" ), "Gameplay fixture" );
             check( manager.executeSource( "editorCalls=0; function editorCallback() editorCalls=editorCalls+1 end", "@Editor/DebuggerFixture.lua" ), "Editor fixture" );
@@ -181,6 +222,11 @@ int main( int argc, char **argv )
                                    "Physical source was advertised as a virtual document" );
                         }
                     check( physical, "Physical source disappeared from loadedSources" );
+                    const auto physicalText = connection.reply( connection.request( "source", {
+                        { "sourceReference", 0 }, { "source", j::object{ { "path", physicalSource.path.generic_u8string() } } } } ) );
+                    check( physicalText.at( "content" ) == "diskSourceValue=42", "Editor cannot retrieve a registered physical source snapshot" );
+                    connection.reply( connection.request( "source", { { "sourceReference", 0 },
+                        { "source", j::object{ { "path", root + "/unregistered.lua" } } } } ), false );
                     ready = true;
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "debug output\t23" ) != std::string::npos, "Lua print was not forwarded intact" );
                     check( std::string( connection.event( "output" ).at( "output" ).as_string() ).find( "captured=12" ) != std::string::npos, "Logpoint did not evaluate its expression" );

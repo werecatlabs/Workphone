@@ -1,20 +1,26 @@
 <UserControl x:Class="LuaDebuggerVsix.LuaDebuggerControl"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
  <StackPanel Margin="12">
   <TextBlock Text="Workphone Lua Debugger" FontWeight="Bold"/>
   <TextBlock Text="Start the Editor with WP_LUA_DEBUGGER=1, then load its .workphone/lua-debug.json endpoint." TextWrapping="Wrap" Margin="0,8"/>
-  <Button Content="Load Editor endpoint..." Click="LoadEndpoint_Click" HorizontalAlignment="Left"/>
+  <Label Content="Editor endpoint file" Target="{Binding ElementName=EndpointPathTextBox}" Padding="0" Margin="0,0,0,2"/>
+  <TextBox x:Name="EndpointPathTextBox" AutomationProperties.Name="Editor endpoint file" ToolTip="Paste the Editor's lua-debug.json path, or leave blank to choose a file when loading." Margin="0,0,0,4"/>
+  <Button x:Name="LoadEndpointButton" Content="_Load Editor endpoint..." Click="LoadEndpoint_Click" HorizontalAlignment="Left"/>
   <TextBlock Text="Local debugger port" Margin="0,10,0,2"/>
   <TextBox x:Name="PortTextBox" Text="9230"/>
   <TextBlock Text="Session token" Margin="0,8,0,2"/>
   <PasswordBox x:Name="TokenTextBox"/>
   <TextBlock Text="Workspace folder (for launching the Editor)" Margin="0,8,0,2"/>
   <TextBox x:Name="WorkspaceTextBox"/>
-  <Button Content="Launch Editor and attach..." Click="LaunchEditor_Click" HorizontalAlignment="Left" Margin="0,8"/>
+  <Label Content="Editor executable" Target="{Binding ElementName=EditorPathTextBox}" Padding="0" Margin="0,8,0,2"/>
+  <TextBox x:Name="EditorPathTextBox" AutomationProperties.Name="Editor executable" ToolTip="Paste an existing Editor.exe path, or leave blank to choose it when launching. Packaged Editors use the workspace folder above."/>
+  <Button Content="La_unch Editor and attach..." Click="LaunchEditor_Click" HorizontalAlignment="Left" Margin="0,8"/>
   <CheckBox x:Name="StopOnEntry" Content="Stop at the next Lua line" Margin="0,10"/>
-  <Button Content="Attach in Visual Studio" Click="Attach_Click" HorizontalAlignment="Left"/>
+  <Button Content="_Attach in Visual Studio" Click="Attach_Click" HorizontalAlignment="Left"/>
   <TextBlock Text="Use Visual Studio breakpoints, Continue, Step Into/Over/Out, Call Stack, Locals and Watch. Conditions, hit counts and logpoints are supported. Read-only expressions never call functions or change the program." TextWrapping="Wrap" Margin="0,12"/>
   <TextBlock x:Name="StatusText" TextWrapping="Wrap"/>
  </StackPanel>
+ </ScrollViewer>
 </UserControl>

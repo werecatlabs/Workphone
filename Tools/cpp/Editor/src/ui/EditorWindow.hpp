@@ -3,6 +3,7 @@
 
 #include <EditorPrerequisites.hpp>
 #include <Workphone/Scene/GameEditor.hpp>
+#include <Workphone/Core/Parameter.hpp>
 #include <Workphone/Interface/UI/IUIDragSource.hpp>
 #include <Workphone/Interface/UI/IUIDropTarget.hpp>
 
@@ -299,6 +300,15 @@ namespace workphone
              * @brief Updates the current selection in the window.
              */
             void updateSelection() override;
+
+            // Editor-only entry points defer Render-origin Lua calls while the
+            // debugger is enabled; runtime script invocation stays synchronous.
+            void callScriptMember( const String &member );
+            void callScriptMember( const String &member, const Parameters &parameters );
+            // Preserve Lua's (parameters, mutable results) ABI for event handlers
+            // whose native callers discard results. Queued results are local to dispatch.
+            void callScriptMemberWithDiscardedResults( const String &member,
+                                                       const Parameters &parameters );
 
             /**
              * @brief Gets the event listener for this window.

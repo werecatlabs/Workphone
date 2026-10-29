@@ -73,6 +73,15 @@ namespace workphone
          */
         void update() override;
 
+        /** Hold gameplay input while the debugger pumps native windows and Editor UI.
+         * Transitions discard every task queue and transient snapshots; events received
+         * while held are rejected rather than replayed on resume. Call on the owner
+         * task at a debugger pause boundary, preserving and restoring the prior flag.
+         * Direct window messages (including ImGui and close) remain independent.
+         */
+        void setDebuggerSuspended( bool suspended );
+        bool getDebuggerSuspended() const;
+
         /**
          * @brief Immediately trigger (dispatch) an input event to listeners.
          *
@@ -471,6 +480,7 @@ namespace workphone
         atomic_bool m_controlPressed = false;
         /// Cursor visibility atomic flag.
         atomic_bool m_cursorVisible = true;
+        atomic_bool m_debuggerSuspended = false;
 
         bool m_debugEnabled = false;
 

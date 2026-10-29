@@ -101,7 +101,7 @@ namespace workphone::editor
 
             if( auto invoker = getInvoker() )
             {
-                invoker->callObjectMember( "load" );
+                callScriptMember( "load" );
             }
 
             setLoadingState( LoadingState::Loaded );

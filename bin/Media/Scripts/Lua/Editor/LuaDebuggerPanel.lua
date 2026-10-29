@@ -2,26 +2,36 @@ class 'LuaDebuggerPanel' (BaseEditor)
 
 function LuaDebuggerPanel:__init(window)
     self.window, self.sequence = window, 0
-    self.pending, self.actions, self.rows, self.requests = {}, {}, {}, {}
+    self.pending, self.actions, self.rows, self.requests, self.controlButtons = {}, {}, {}, {}, {}
+    self.staticButtons={}
     self.preferences = {version=1, files={}, breakOnException=false}
     self.message = ''
 end
 function LuaDebuggerPanel:manager() return IApplicationManager.instance():getScriptManager() end
-function LuaDebuggerPanel:request(command, arguments, callback)
-    if #self.requests >= 512 then self.message='Debugger request queue is full.'; return end
+function LuaDebuggerPanel:request(command, arguments, callback, generation)
+    -- Reserve one queue slot for a run-control command, even when inspection
+    -- or breakpoint configuration has filled the ordinary bounded queue.
+    if #self.requests >= 511 then self.message='Debugger request queue is full.'; return end
     self.sequence = self.sequence+1
-    self.requests[#self.requests+1] = {message={seq=self.sequence, type='request', command=command, arguments=arguments or {}}, callback=callback or function() end}
+    self.requests[#self.requests+1] = {message={seq=self.sequence, type='request', command=command, arguments=arguments or {}}, callback=callback or function() end,generation=generation}
 end
-function LuaDebuggerPanel:button(label, action, dynamic, sameLine)
+function LuaDebuggerPanel:button(label, action, dynamic, sameLine, shortcut)
     local button = self.ui:addElement(IUIButton.typeInfo())
     button:setLabel(label)
     self.nextId = self.nextId+1
     button:setElementId(self.nextId)
     button:setSameLine(sameLine or false)
+    button:setEnabled(dynamic and self.state and self.state.ready or false,false)
+    if shortcut then
+        local properties=button:getProperties()
+        properties:setProperty('keyboardShortcut',shortcut)
+        button:setProperties(properties)
+    end
     self.actions[self.nextId] = action
     self.parent:addChild(button)
     self.window:setHandleEvents(button, true)
     if dynamic then self.rows[#self.rows+1] = button end
+    if not dynamic then self.staticButtons[#self.staticButtons+1]=button end
     return button
 end
 function LuaDebuggerPanel:field(label)
@@ -35,9 +45,10 @@ function LuaDebuggerPanel:load()
     self.parent:setLabel('Lua Debugger'); self.parent:setSize(Vector2F(850, 760))
     self.nextId = 0
     local commands, labels = {'pause','continue','stepIn','next','stepOut'}, {'Pause','Continue','Step Into','Step Over','Step Out'}
+    local shortcuts={continue='F5',stepIn='F11',next='F10',stepOut='Shift+F11'}
     for i, command in ipairs(commands) do
         local action = command
-        self:button(labels[i], function() self:manager():debuggerCommand(action) end, false, i>1)
+        self.controlButtons[action] = self:button(labels[i], function() self:control(action) end, false, i>1,shortcuts[action])
     end
     self.file = self:field('Source file')
     self.line = self:field('Line')
@@ -54,10 +65,36 @@ function LuaDebuggerPanel:load()
     self.watch = self:field('Watch expression (read only)')
     self:button('Evaluate', function() self:evaluate() end)
     self:button('Show saved breakpoints', function() self.view='breakpoints'; self.dirty=true end, false, true)
-    self:button('Show stack', function() self:refreshStack() end, false, true)
+    self:button('Show stack', function() self:refreshStack() end, false, true,'F8')
     self.status = self.ui:addElement(IUIText.typeInfo()); self.parent:addChild(self.status)
     self.staticId = self.nextId
     self:update()
+end
+function LuaDebuggerPanel:control(command)
+    if not self.state or not self.state.ready then self.message='The debugger is not ready.'; return end
+    if self.controlRequest or self.controlPending then self.message='A debugger control request is already pending.'; return end
+    if (command=='pause')==self.state.paused then
+        self.message=command=='pause' and 'Lua is already paused.' or 'Pause Lua before stepping or continuing.'
+        return
+    end
+    -- Retire queued inspection before resuming/stepping. Existing display data
+    -- stays visible until the native state changes or the command fails.
+    self.generation=(self.generation or 0)+1
+    for i=#self.requests,1,-1 do
+        if self.requests[i].generation then table.remove(self.requests,i) end
+    end
+    self.sequence=self.sequence+1
+    self.controlRequest={message={seq=self.sequence,type='request',command=command,arguments={threadId=1}},callback=function() end,control=true}
+    self.message=''
+end
+function LuaDebuggerPanel:clearInspection()
+    self.generation=(self.generation or 0)+1
+    self.frame,self.frames,self.variables,self.scopes=nil,nil,nil,nil
+    self.sourceText,self.watchResult,self.watchReference=nil,nil,nil
+    for i=#self.requests,1,-1 do
+        if self.requests[i].generation then table.remove(self.requests,i) end
+    end
+    self.dirty=true
 end
 function LuaDebuggerPanel:onDebuggerReady()
     if self.loadingPreferences or self.preferencesLoaded then return end
@@ -114,7 +151,7 @@ function LuaDebuggerPanel:refreshStack()
             if self.frames[1] then self:selectFrame(self.frames[1]) end
             self.dirty=true
         end
-    end)
+    end,self.generation)
 end
 function LuaDebuggerPanel:selectFrame(frame)
     self.frame=frame; self.variables=nil; self.scopes=nil; self.sourceText=nil
@@ -122,8 +159,8 @@ function LuaDebuggerPanel:selectFrame(frame)
     local generation=self.generation
     if frame.source then
         self.file:setValue(frame.source.path or ''); self.line:setValue(tostring(frame.line))
-        if frame.source.sourceReference and frame.source.sourceReference>0 then
-            self:request('source', {sourceReference=frame.source.sourceReference}, function(body)
+        if (frame.source.sourceReference or 0)>0 or (frame.source.path or '')~='' then
+            self:request('source', {sourceReference=frame.source.sourceReference or 0,source=frame.source}, function(body)
                 if self.generation~=generation then return end
                 local lines,number={},0
                 for text in ((body.content or '')..'\n'):gmatch('(.-)\n') do
@@ -131,14 +168,14 @@ function LuaDebuggerPanel:selectFrame(frame)
                     if number>=frame.line-4 and number<=frame.line+4 then lines[#lines+1]=(number==frame.line and '> ' or '  ')..number..'  '..text end
                 end
                 self.sourceText=table.concat(lines,'\n')
-            end)
+            end,generation)
         end
     end
     self:request('scopes', {frameId=frame.id}, function(body)
         if self.generation~=generation then return end
         self.scopes=body.scopes or {}; self.dirty=true
         if self.scopes[1] then self:inspect(self.scopes[1].variablesReference) end
-    end)
+    end,generation)
     if self.watch:getValue()~='' then self:evaluate() end
     self.dirty=true
 end
@@ -147,7 +184,7 @@ function LuaDebuggerPanel:inspect(reference)
     self:request('variables', {variablesReference=reference,count=128}, function(body)
         if self.generation~=generation then return end
         self.variables=body.variables or {}; self.dirty=true
-    end)
+    end,generation)
 end
 function LuaDebuggerPanel:evaluate()
     if not self.state or not self.state.paused or not self.frame then self.message='Pause and select a frame to inspect a watch.'; return end
@@ -155,13 +192,14 @@ function LuaDebuggerPanel:evaluate()
     self:request('evaluate', {expression=self.watch:getValue(),frameId=self.frame.id,context='watch'}, function(body)
         if self.generation~=generation then return end
         self.watchResult=body.result; self.watchReference=body.variablesReference; self.dirty=true
-    end)
+    end,generation)
 end
 function LuaDebuggerPanel:rebuildRows()
     for _, row in ipairs(self.rows) do self.window:setHandleEvents(row,false); self.parent:removeChild(row); self.ui:removeElement(row) end
     self.rows={}
     for id in pairs(self.actions) do if id>self.staticId then self.actions[id]=nil end end
-    self.nextId=self.staticId
+    -- Keep IDs monotonic: a click queued by the previous rendered frame must
+    -- not invoke a newly rebuilt row that happens to reuse the old row's ID.
     if self.view=='breakpoints' then
         for _, group in ipairs(self.preferences.files or {}) do
             for _, point in ipairs(group.breakpoints or {}) do
@@ -197,32 +235,47 @@ function LuaDebuggerPanel:update()
     local now=os.clock()
     if self.lastUpdate and now-self.lastUpdate<0.05 then return end
     self.lastUpdate=now
-    if self:manager():getDebuggerPort()==0 then self.status:setText('Start the Editor with WP_LUA_DEBUGGER=1 to enable debugging.'); return end
+    if self:manager():getDebuggerPort()==0 then
+        for _,button in ipairs(self.staticButtons) do button:setEnabled(false,false) end
+        if self.state then
+            self.state=nil; self:clearInspection(); self.pending,self.requests={},{}
+            self.controlRequest,self.controlPending=nil,nil
+            self.preferencesLoaded,self.loadingPreferences=false,false
+            self:rebuildRows()
+        end
+        self.status:setText('Start the Editor with WP_LUA_DEBUGGER=1 to enable debugging.'); return
+    end
     local ok,state=pcall(cjson.decode,self:manager():getDebuggerStatus())
     if not ok then self.status:setText('Debugger status unavailable'); return end
     local previous=self.state; self.state=state
+    local newStop=state.paused and (not previous or not previous.paused or previous.epoch~=state.epoch)
+    local resumed=not state.paused and previous and previous.paused
+    -- Invalidate before dispatching replies from the previous stop. Old scope
+    -- callbacks must not enqueue inspection against expired native handles.
+    if newStop or resumed then self:clearInspection() end
     for _, reply in ipairs(state.responses or {}) do
-        local callback=self.pending[reply.request_seq]
-        if callback then
+        local request=self.pending[reply.request_seq]
+        if request then
             self.pending[reply.request_seq]=nil
-            if reply.success then callback(reply.body or {})
-            else
-                self.message=reply.message or 'Debugger request failed.'
-                if reply.command=='loadBreakpointPreferences' then
-                    self.loadingPreferences=false; self.preferencesLoaded=true
-                    self.message=self.message..' Start new preferences by setting a breakpoint.'
+            if request.control then self.controlPending=nil end
+            if not request.generation or request.generation==self.generation then
+                if reply.success then request.callback(reply.body or {})
+                else
+                    self.message=reply.message or 'Debugger request failed.'
+                    if reply.command=='loadBreakpointPreferences' then
+                        self.loadingPreferences=false; self.preferencesLoaded=true
+                        self.message=self.message..' Start new preferences by setting a breakpoint.'
+                    end
                 end
             end
         end
     end
     if state.ready and not self.preferencesLoaded then self:onDebuggerReady() end
     if self.preferencesLoaded and previous and previous.connected and not state.connected then self:restoreBreakpoints() end
-    if state.paused and (not previous or not previous.paused or previous.epoch~=state.epoch) then self:refreshStack()
-    elseif not state.paused and previous and previous.paused then
-        self.generation=(self.generation or 0)+1
-        self.frame,self.frames,self.variables,self.scopes=nil,nil,nil,nil
-        self.sourceText,self.watchResult,self.watchReference=nil,nil,nil
-        self.dirty=true
+    if newStop then self:refreshStack() end
+    for _,button in ipairs(self.staticButtons) do button:setEnabled(state.ready==true,false) end
+    for command, button in pairs(self.controlButtons) do
+        button:setEnabled(state.ready and not self.controlRequest and not self.controlPending and (command=='pause' and not state.paused or command~='pause' and state.paused),false)
     end
     self.exceptionButton:setLabel('Break on errors: '..(self.preferences.breakOnException and 'On' or 'Off'))
     local text=(jit and (jit.version..' (JIT disabled)') or _VERSION)..' | '..(state.connected and 'Visual Studio connected' or 'Editor debugger')..' | '..(state.paused and 'Stopped' or 'Running')..'\n'..self.message
@@ -234,10 +287,18 @@ function LuaDebuggerPanel:update()
     self.status:setText(text)
     if self.dirty then self.dirty=false; self:rebuildRows() end
     local count=0
-    for _ in pairs(self.pending) do count=count+1 end
+    for _,request in pairs(self.pending) do if not request.control then count=count+1 end end
+    -- Four ordinary requests may already be awaiting native responses. Run
+    -- control has its own single in-flight allowance so it cannot be starved.
+    if self.controlRequest then
+        local request=self.controlRequest
+        self.controlRequest=nil; self.controlPending=request
+        self.pending[request.message.seq]=request
+        self:manager():debuggerCommand(cjson.encode(request.message))
+    end
     while count<4 and #self.requests>0 do
         local request=table.remove(self.requests,1)
-        self.pending[request.message.seq]=request.callback
+        self.pending[request.message.seq]=request
         self:manager():debuggerCommand(cjson.encode(request.message))
         count=count+1
     end
@@ -251,5 +312,6 @@ end
 function LuaDebuggerPanel:show() self.lastUpdate=nil; self:update() end
 function LuaDebuggerPanel:unload()
     for _, row in ipairs(self.rows) do self.window:setHandleEvents(row,false) end
-    self.status=nil; self.actions,self.rows,self.pending,self.requests={},{},{},{}
+    self.status=nil; self.actions,self.rows,self.pending,self.requests,self.controlButtons,self.staticButtons={},{},{},{},{},{}
+    self.controlRequest,self.controlPending=nil,nil
 end

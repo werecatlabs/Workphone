@@ -420,6 +420,7 @@ namespace workphone
 
     void InputDeviceManager::update()
     {
+        if( getDebuggerSuspended() ) return;
         auto inputTask = getTask();
         auto task = Thread::getCurrentTask();
 
@@ -781,7 +782,7 @@ namespace workphone
 
     void InputDeviceManager::triggerEvent( SmartPtr<IInputEvent> inputEvent )
     {
-        if( !inputEvent || ( !m_createJoysticks &&
+        if( getDebuggerSuspended() || !inputEvent || ( !m_createJoysticks &&
             inputEvent->getEventType() == IInputEvent::EventType::Joystick ) ) return;
         auto listeners = m_listeners.snapshot();
         for( auto &listener : listeners )
@@ -801,8 +802,13 @@ namespace workphone
 
     bool InputDeviceManager::postEvent( SmartPtr<IInputEvent> event )
     {
-        if( !event || ( !m_createJoysticks && event->getEventType() == IInputEvent::EventType::Joystick ) )
+        if( getDebuggerSuspended() || !event ||
+            ( !m_createJoysticks && event->getEventType() == IInputEvent::EventType::Joystick ) )
             return false;
+        // Serialize publication with the pause boundary so no producer can
+        // append an event after the transition has discarded the task queues.
+        ScopedLock lock( &m_mutex );
+        if( getDebuggerSuspended() ) return false;
         if( event->getEventType() == IInputEvent::EventType::User )
         {
             auto properties = event->getProperties();
@@ -851,6 +857,47 @@ namespace workphone
         }
 
         return true;
+    }
+
+    void InputDeviceManager::setDebuggerSuspended( bool suspended )
+    {
+        ScopedLock lock( &m_mutex );
+        if( getDebuggerSuspended() == suspended ) return;
+        // Keep producers held through both entry and resume cleanup. Explicit
+        // Editor input uses the window/ImGui path, not these gameplay queues.
+        m_debuggerSuspended.store( true );
+#ifdef WP_PLATFORM_WIN32
+        if( suspended )
+        {
+            HWND windowHandle = nullptr;
+            if( auto window = getWindow() ) window->getWindowHandle( &windowHandle );
+            if( windowHandle && GetCapture() == windowHandle ) ReleaseCapture();
+        }
+#endif
+        for( auto &queue : m_inputEventQueue ) queue.clear();
+        m_currentInputEvent = nullptr;
+        // Replace snapshots: an event stopped inside Lua may still own the old
+        // snapshot, which must remain immutable until its callback returns.
+        if( m_currentMouseState )
+        {
+            auto mouse = createMouseState();
+            mouse->setAbsolutePosition( m_mousePosition );
+            mouse->setRelativePosition( m_currentMouseState->getRelativePosition() );
+            m_currentMouseState = mouse;
+        }
+        if( m_currentKeyboardState ) m_currentKeyboardState = createKeyboardState();
+        m_mouseScroll = Vector3<real_Num>::zero();
+        m_dragStartPosition = m_mousePosition;
+        m_isDragging.store( false );
+        m_shiftPressed.store( false );
+        m_controlPressed.store( false );
+        if( m_windowListener ) m_windowListener->setOwner( this );
+        m_debuggerSuspended.store( suspended );
+    }
+
+    bool InputDeviceManager::getDebuggerSuspended() const
+    {
+        return m_debuggerSuspended.load();
     }
 
     SmartPtr<IInputEvent> InputDeviceManager::createInputEvent()
@@ -1184,6 +1231,18 @@ namespace workphone
         auto msg = windowsEvent->getMessage();
         auto wParam = windowsEvent->getWParam();
         auto lParam = windowsEvent->getLParam();
+
+        if( owner->getDebuggerSuspended() )
+        {
+            // Window dispatch still reaches ImGui and the native close path.
+            // Do not allocate/publish gameplay snapshots or capture the mouse
+            // for debugger UI input. Windows transfers ownership of these two
+            // handles to this listener even when their payload is discarded.
+            if( msg == WM_TOUCH ) CloseTouchInputHandle( reinterpret_cast<HTOUCHINPUT>( lParam ) );
+            else if( msg == WM_GESTURE ) CloseGestureInfoHandle( reinterpret_cast<HGESTUREINFO>( lParam ) );
+            m_hasLastMousePosition = false;
+            return;
+        }
 
         auto getRelativeMousePosition = [owner]( const Vector2<real_Num> &position ) {
             if( auto window = owner->getWindow() )
@@ -1573,6 +1632,7 @@ namespace workphone
     void InputDeviceManager::WindowListener::setOwner( InputDeviceManager *owner )
     {
         m_owner = owner;
+        m_hasLastMousePosition = false;
     }
 
 }  // namespace workphone

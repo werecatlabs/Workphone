@@ -82,6 +82,12 @@ namespace workphone
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
             void update() override;
+            /** Draw the current native scene and Editor UI without advancing
+             * simulation, resource queues, animation or shader reload work.
+             * Explicit UI input is still accepted. Call only between native
+             * frames, on the graphics owner task; false means no frame ran.
+             */
+            bool updatePausedFrame();
             void render() override;
             void messagePump() override;
 
@@ -152,6 +158,8 @@ namespace workphone
             {
                 u64 serial = 0, generation = 0;
                 u32 nativeUpdateSerial = 0, nativeRenderSerial = 0;
+                f32 nativeDeltaTime = 0.0f;
+                bool frameSimulationEnabled = true;
                 u64 completedPasses = 0, skippedPasses = 0, failedPasses = 0;
                 u64 registeredScenes = 0, scenePreparations = 0, mainViews = 0, shadowViews = 0;
                 // Graphics update includes native rendering/Present, not the whole
@@ -219,6 +227,11 @@ namespace workphone
             bool switchRenderer( RenderApi api );
 
             WP_CLASS_REGISTER_DECL;
+
+        private:
+            bool updateFrame( bool simulationEnabled );
+            bool m_frameUpdateActive = false;
+            bool m_frameSimulationEnabled = true;
 
         protected:
             struct FramePassContext;

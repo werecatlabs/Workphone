@@ -1,5 +1,7 @@
 #include <EditorPCH.hpp>
 #include "ui/EditorWindow.hpp"
+#include <ui/UIManager.hpp>
+#include <editor/EditorManager.hpp>
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::editor
@@ -13,6 +15,32 @@ namespace workphone::editor
     EditorWindow::EditorWindow() = default;
 
     EditorWindow::~EditorWindow() = default;
+
+    void EditorWindow::callScriptMember( const String &member )
+    {
+        if( auto editor = EditorManager::getSingletonPtr() )
+            if( auto ui = editor->getUI() )
+                if( ui->deferScriptCall( this, member, {}, false ) ) return;
+        if( auto invoker = getInvoker() ) invoker->callObjectMember( member );
+    }
+
+    void EditorWindow::callScriptMember( const String &member, const Parameters &parameters )
+    {
+        if( auto editor = EditorManager::getSingletonPtr() )
+            if( auto ui = editor->getUI() )
+                if( ui->deferScriptCall( this, member, parameters, true ) ) return;
+        if( auto invoker = getInvoker() ) invoker->callObjectMember( member, parameters );
+    }
+
+    void EditorWindow::callScriptMemberWithDiscardedResults( const String &member,
+                                                            const Parameters &parameters )
+    {
+        if( auto editor = EditorManager::getSingletonPtr() )
+            if( auto ui = editor->getUI() )
+                if( ui->deferScriptCall( this, member, parameters, true, true ) ) return;
+        if( auto invoker = getInvoker() )
+            invokeEditorScriptCall( *invoker, member, parameters, true, true );
+    }
 
     void EditorWindow::load( SmartPtr<ISharedObject> data )
     {
@@ -41,8 +69,8 @@ namespace workphone::editor
     {
         if( auto invoker = getInvoker() )
         {
-            invoker->callObjectMember( "unload" );
-            invoker->callObjectMember( "load" );
+            callScriptMember( "unload" );
+            callScriptMember( "load" );
         }
     }
 
@@ -135,7 +163,7 @@ namespace workphone::editor
 
             if( auto invoker = getInvoker() )
             {
-                invoker->callObjectMember( visible ? "show" : "hide" );
+                callScriptMember( visible ? "show" : "hide" );
             }
         }
         catch( std::exception &e )
@@ -148,7 +176,7 @@ namespace workphone::editor
     {
         if( auto invoker = getInvoker() )
         {
-            invoker->callObjectMember( "updateSelection" );
+            callScriptMember( "updateSelection" );
         }
     }
 
@@ -208,9 +236,7 @@ namespace workphone::editor
             params.emplace_back( object );
             params.emplace_back( workphone::static_pointer_cast<ISharedObject>( event ) );
 
-            Array<Parameter> results;
-
-            invoker->callObjectMember( "handleEvent", params, results );
+            callScriptMemberWithDiscardedResults( "handleEvent", params );
         }
 
         return {};

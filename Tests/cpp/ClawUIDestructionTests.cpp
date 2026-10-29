@@ -158,6 +158,85 @@ namespace
         std::function<void()> onDraw;
     };
 
+    bool testPausedGameUiInput( Fixture &fixture )
+    {
+        class Window : public render::GraphicsWindow
+        {
+        public:
+            Vector2I getSize() const override { return { 500, 300 }; }
+        };
+        class ClickCounter : public IEventListener
+        {
+        public:
+            Parameter handleEvent( EventType type, hash_type value, const Array<Parameter> &,
+                                  SmartPtr<ISharedObject>, SmartPtr<ISharedObject>, SmartPtr<IEvent> ) override
+            {
+                if( type == EventType::UI && value == IEvent::CLICK_HASH ) ++clicks;
+                return {};
+            }
+            unsigned clicks = 0;
+        };
+        const auto previousWindow = fixture.application->getWindow();
+        fixture.application->setWindow( make_ptr<Window>() );
+        ui::ClawUIManager manager;
+        auto root = dynamic_pointer_cast<ui::ClawUILayout>( manager.addElement( ui::IUILayoutWindow::typeInfo() ) );
+        auto button = dynamic_pointer_cast<ui::IUIButton>( manager.addElement( ui::IUIButton::typeInfo() ) );
+        auto toggle = dynamic_pointer_cast<ui::IUIToggle>( manager.addElement( ui::IUIToggle::typeInfo() ) );
+        auto probe = make_ptr<CollectionProbe>();
+        auto counter = make_ptr<ClickCounter>();
+        auto ctx = manager.getContext();
+        if( !root || !button || !toggle || !ctx )
+        {
+            fixture.application->setWindow( previousWindow );
+            return check( false, "paused game UI needs real native controls and context" );
+        }
+        root->load( nullptr ); root->setSize( { 1, 1 } );
+        button->setLabel( "Game action" ); button->setPosition( { .1f, .1f } ); button->setSize( { .3f, .2f } );
+        toggle->setLabel( "Game toggle" ); toggle->setPosition( { .55f, .1f } ); toggle->setSize( { .3f, .2f } );
+        toggle->setToggleType( ui::IUIToggle::ToggleType::ToggleButton );
+        root->addChild( button ); root->addChild( toggle ); root->addChild( probe );
+        button->addObjectListener( counter );
+        bool readOnlyExpected = true, readOnlyObserved = true;
+        unsigned hovers = 0;
+        probe->onDraw = [&] {
+            if( readOnlyExpected )
+                readOnlyObserved &= ( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM ) != 0 &&
+                                    ctx->delta_time_seconds == 0.0f;
+            if( ctx->input.mouse.pos.x >= 0 && ctx->input.mouse.pos.y >= 0 ) ++hovers;
+        };
+        const auto feed = [&]( int x, bool down ) {
+            wp_input_begin( ctx );
+            wp_input_motion( ctx, x, 50 );
+            wp_input_button( ctx, WORKPHONE_BUTTON_LEFT, x, 50, down );
+        };
+        ctx->delta_time_seconds = .016f;
+        bool ok = true;
+        for( int x : { 100, 320 } )
+        {
+            for( bool down : { true, false } )
+            {
+                feed( x, down );
+                const auto pendingInput = ctx->input;
+                for( int i = 0; i < 3; ++i ) manager.renderReadOnly();
+                ok &= check( std::memcmp( &pendingInput, &ctx->input, sizeof pendingInput ) == 0 &&
+                             ctx->delta_time_seconds == .016f,
+                             "paused UI must preserve pending input and caller timing" );
+            }
+        }
+        ok &= check( counter->clicks == 0 && !toggle->isToggled() && hovers == 0 && readOnlyObserved,
+                     "paused game UI must suppress native click, toggle and hover behavior" );
+        readOnlyExpected = false;
+        feed( 100, true ); manager.render(); feed( 100, false ); manager.render();
+        feed( 320, true ); manager.render(); feed( 320, false ); manager.render();
+        ok &= check( counter->clicks > 0 && toggle->isToggled() && hovers > 0,
+                     "normal game UI rendering must restore native interaction after pause" );
+        probe->onDraw = {};
+        button->removeObjectListener( counter );
+        root->removeAllChildren(); manager.clear();
+        fixture.application->setWindow( previousWindow );
+        return ok;
+    }
+
     bool testSortingExcludesOtherThreads()
     {
         auto manager = make_ptr<ui::ClawUIManager>();
@@ -1269,7 +1348,14 @@ int main( int argc, char **argv )
         std::printf( "Readonly slider contracts: 3 cases, %u assertions, %s.\n", assertions, ok ? "passed" : "failed" );
         return ok ? 0 : 1;
     }
-    bool ok = testRemoveEachElement();
+    if( argc > 1 && std::strcmp( argv[1], "--paused-game-ui-only" ) == 0 )
+    {
+        const auto ok = testPausedGameUiInput( fixture );
+        std::printf( "Paused game UI input contract: %u assertions, %s.\n", assertions, ok ? "passed" : "failed" );
+        return ok ? 0 : 1;
+    }
+    bool ok = testPausedGameUiInput( fixture );
+    ok &= testRemoveEachElement();
     ok &= testSceneTextAppearance();
     ok &= testSceneButtonAppearance();
     ok &= testButtonDrawStyleIsolation();
@@ -1297,6 +1383,6 @@ int main( int argc, char **argv )
     ok &= testSortCapturesEachOrderOnce();
     ok &= testDrawPinsItsFrameMembers( fixture );
     if( ok )
-        std::printf( "Claw UI destruction tests: 28 cases, %u assertions passed.\n", assertions );
+        std::printf( "Claw UI destruction tests: 29 cases, %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }

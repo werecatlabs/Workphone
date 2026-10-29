@@ -1,6 +1,9 @@
 #include <WPImGui/ImGuiApplication.hpp>
+#include <WPImGui/ImGuiButton.hpp>
+#include <WPImGui/ImGuiManager.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
 #include <WPImGui/ImGuiText.hpp>
+#include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <WPGraphics/UI/ClawUIManager.hpp>
@@ -11,9 +14,17 @@
 #include <Workphone/Input/MouseState.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/Memory/FactoryUtil.hpp>
+#include <Workphone/Jobs/EventJob.hpp>
+#include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Thread/Thread.hpp>
 #include <WorkphoneCore/workphone.h>
 #include <imgui.h>
+#if defined WP_PLATFORM_WIN32
+#    include <WPGraphics/ClawWin32ImGuiMessages.hpp>
+#    include <backends/imgui_impl_win32.h>
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler( HWND, UINT, WPARAM, LPARAM );
+#endif
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -34,6 +45,117 @@ namespace
 
     bool near( float actual, float expected ) { return std::abs( actual - expected ) < .001f; }
 
+#if defined WP_PLATFORM_WIN32
+    struct NativeShortcutMessages
+    {
+        unsigned menuRequests = 0, consumedMenus = 0, unhandledMenus = 0, progress = 0;
+    };
+
+    LRESULT CALLBACK nativeShortcutWindowProc( HWND hwnd, UINT message, WPARAM command, LPARAM data )
+    {
+        if( message == WM_NCCREATE )
+        {
+            const auto create = reinterpret_cast<CREATESTRUCTW *>( data );
+            SetWindowLongPtrW( hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>( create->lpCreateParams ) );
+        }
+        auto state = reinterpret_cast<NativeShortcutMessages *>( GetWindowLongPtrW( hwnd, GWLP_USERDATA ) );
+        const bool active = ImGui::GetCurrentContext() && ImGui::GetIO().BackendPlatformUserData;
+        const auto handled = active ? ImGui_ImplWin32_WndProcHandler( hwnd, message, command, data ) : 0;
+        const bool consume = render::detail::consumeImGuiSystemMenuMessage( message, command, active );
+        if( state && message == WM_SYSCOMMAND && ( command & 0xfff0 ) == SC_KEYMENU )
+        {
+            ++state->menuRequests;
+            if( consume ) ++state->consumedMenus;
+            else ++state->unhandledMenus;
+            // Failure-only safety net: record the missing production handling
+            // instead of letting a regression hang the suite in a modal menu.
+            return 0;
+        }
+        if( handled || consume ) return 0;
+        if( state && message == WM_APP + 91 ) { ++state->progress; return 0; }
+        return DefWindowProcW( hwnd, message, command, data );
+    }
+
+    void nativeSystemMenuShortcuts()
+    {
+        struct NativeWindow
+        {
+            NativeWindow()
+            {
+                previous = ImGui::GetCurrentContext();
+                context = ImGui::CreateContext();
+                ImGui::SetCurrentContext( context );
+                auto &io = ImGui::GetIO();
+                io.IniFilename = nullptr;
+                io.DisplaySize = ImVec2( 400, 300 );
+                io.DeltaTime = 1.0f / 60;
+                unsigned char *pixels; int width, height;
+                io.Fonts->GetTexDataAsRGBA32( &pixels, &width, &height );
+                WNDCLASSW windowClass{};
+                windowClass.lpfnWndProc = nativeShortcutWindowProc;
+                windowClass.hInstance = GetModuleHandleW( nullptr );
+                windowClass.lpszClassName = L"Workphone.ImGuiShortcut.Tests";
+                atom = RegisterClassW( &windowClass );
+                if( atom ) hwnd = CreateWindowExW( 0, windowClass.lpszClassName, L"", WS_OVERLAPPEDWINDOW,
+                    0, 0, 400, 300, nullptr, nullptr, windowClass.hInstance, &messages );
+                if( hwnd ) backend = ImGui_ImplWin32_Init( hwnd );
+            }
+            ~NativeWindow()
+            {
+                ImGui::SetCurrentContext( context );
+                if( hwnd && IsWindow( hwnd ) ) DestroyWindow( hwnd );
+                if( backend ) ImGui_ImplWin32_Shutdown();
+                if( atom ) UnregisterClassW( L"Workphone.ImGuiShortcut.Tests", GetModuleHandleW( nullptr ) );
+                ImGui::DestroyContext( context );
+                ImGui::SetCurrentContext( previous );
+            }
+            NativeShortcutMessages messages;
+            ImGuiContext *previous = nullptr, *context = nullptr;
+            HWND hwnd = nullptr;
+            ATOM atom = 0;
+            bool backend = false;
+        } window;
+        require( window.hwnd && window.backend, "native system-key fixture must initialize a hidden owned HWND and real ImGui backend" );
+        require( !IsWindowVisible( window.hwnd ), "native message regression must not activate or show a desktop window" );
+        const auto keyData = []( UINT key, bool released ) {
+            return static_cast<LPARAM>( 1u | ( MapVirtualKeyW( key, MAPVK_VK_TO_VSC ) << 16 ) |
+                                        ( released ? 0xc0000000u : 0u ) );
+        };
+        // DefWindowProc handles the actual F10 transition and synchronously
+        // generates SC_KEYMENU; do not substitute a direct policy-only test.
+        SendMessageW( window.hwnd, WM_SYSKEYDOWN, VK_F10, keyData( VK_F10, false ) );
+        ImGui::NewFrame();
+        require( ImGui::IsKeyPressed( ImGuiKey_F10, false ), "native F10 system-key down must reach the ImGui input queue" );
+        ImGui::EndFrame();
+        SendMessageW( window.hwnd, WM_SYSKEYUP, VK_F10, keyData( VK_F10, true ) );
+        require( window.messages.menuRequests > 0 && window.messages.consumedMenus == window.messages.menuRequests &&
+                     window.messages.unhandledMenus == 0,
+                 "Win32-generated F10 menu activation must be consumed by the production ImGui policy" );
+        require( PostMessageW( window.hwnd, WM_KEYDOWN, VK_F8, keyData( VK_F8, false ) ) &&
+                     PostMessageW( window.hwnd, WM_APP + 91, 0, 0 ), "native follow-up messages must be queued" );
+        MSG message{};
+        for( unsigned count = 0; count < 128 && PeekMessageW( &message, window.hwnd, 0, 0, PM_REMOVE ); ++count )
+        {
+            TranslateMessage( &message ); DispatchMessageW( &message );
+        }
+        require( window.messages.progress == 1, "F10 must leave the native pump able to dispatch subsequent queued work" );
+        ImGui::NewFrame();
+        require( !ImGui::IsKeyDown( ImGuiKey_F10 ) && ImGui::IsKeyPressed( ImGuiKey_F8, false ),
+                 "F10 release and subsequent F8 input must survive the native message pump" );
+        ImGui::EndFrame();
+        const auto before = window.messages.unhandledMenus;
+        ImGui::SetCurrentContext( nullptr );
+        SendMessageW( window.hwnd, WM_SYSCOMMAND, SC_KEYMENU, 0 );
+        ImGui::SetCurrentContext( window.context );
+        require( window.messages.unhandledMenus == before + 1,
+                 "a window without an active ImGui platform backend must preserve native menu handling" );
+        require( !render::detail::consumeImGuiSystemMenuMessage( WM_SYSCOMMAND, SC_CLOSE, true ),
+                 "the ImGui policy must not consume Alt+F4's native SC_CLOSE command" );
+        SendMessageW( window.hwnd, WM_SYSCOMMAND, SC_CLOSE, 0 );
+        require( !IsWindow( window.hwnd ), "the native close command must still close the owned test window" );
+    }
+#endif
+
     class Texture : public render::Texture
     {
     public:
@@ -53,6 +175,7 @@ namespace
             application = make_ptr<core::ApplicationManager>();
             core::IApplicationManager::setInstance( application );
             application->setFactoryManager( make_ptr<FactoryManager>() );
+            application->getFactoryManager()->load( nullptr );
             Thread::setCurrentTask( TaskId::Render );
             ImGui::CreateContext();
             auto &io = ImGui::GetIO();
@@ -63,12 +186,21 @@ namespace
             unsigned char *pixels;
             int width, height;
             io.Fonts->GetTexDataAsRGBA32( &pixels, &width, &height );
+            // Child attachment and event dispatch use the application's UI
+            // manager lock, just as widgets created by the Editor do.
+            auto uiManager = make_ptr<ui::ImGuiManager>();
+            application->setUI( uiManager );
+            uiManager->load( nullptr );
+            require( uiManager->isLoaded(), "native UI fixture must load the real ImGui manager" );
         }
 
         ~Fixture()
         {
+            if( auto ui = application->getUI() ) ui->unload( nullptr );
+            application->setUI( nullptr );
             ImGui::DestroyContext();
             application->setSceneRenderWindow( nullptr );
+            if( auto factories = application->getFactoryManager() ) factories->unload( nullptr );
             application->setFactoryManager( nullptr );
             core::IApplicationManager::setInstance( nullptr );
             application = nullptr;
@@ -119,6 +251,177 @@ namespace
             require(std::strcmp(widget->getTextPtr(),value.c_str())==0,"borrowed text pointer matches the displayed representation");
             render(value);
         }
+    }
+
+    void buttonKeyboardAccelerators( Fixture &fixture )
+    {
+        class Selections : public IEventListener
+        {
+        public:
+            Parameter handleEvent( EventType type, hash_type value, const Array<Parameter> &,
+                SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject>, SmartPtr<IEvent> ) override
+            {
+                if( type == EventType::UI && value == IEvent::handleSelection )
+                {
+                    ++count;
+                    renderOrigin = renderOrigin && Thread::getCurrentTask() == TaskId::Render;
+                    correctSender = correctSender && sender.get() == expected;
+                }
+                return {};
+            }
+            ISharedObject *expected = nullptr;
+            unsigned count = 0;
+            bool renderOrigin = true, correctSender = true;
+        };
+        auto factories = fixture.application->getFactoryManager();
+        FactoryUtil::addFactory<EventJob>( factories );
+        auto parent = make_ptr<ui::ImGuiWindow>();
+        auto button = make_ptr<ui::ImGuiButton>();
+        auto selections = make_ptr<Selections>();
+        selections->expected = button.get();
+        button->setLabel( "Step Over" );
+        button->setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
+        button->addObjectListener( selections );
+        parent->addChild( button );
+        auto &io = ImGui::GetIO();
+        const bool trickle = io.ConfigInputTrickleEventQueue;
+        io.ConfigInputTrickleEventQueue = false;
+        ImVec2 mouseTarget;
+        bool clipButton = false;
+        const auto render = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos( ImVec2( 20, 20 ), ImGuiCond_Always );
+            ImGui::SetNextWindowSize( ImVec2( 500, 250 ), ImGuiCond_Always );
+            ImGui::SetNextWindowFocus();
+            ImGui::Begin( "Debugger button input", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            if( clipButton ) ImGui::SetCursorScreenPos( ImVec2( 1500, 1500 ) );
+            button->update();
+            const auto minimum = ImGui::GetItemRectMin(), maximum = ImGui::GetItemRectMax();
+            mouseTarget = ImVec2( ( minimum.x + maximum.x ) * .5f, ( minimum.y + maximum.y ) * .5f );
+            ImGui::End(); ImGui::EndFrame();
+        };
+        const auto shortcut = [&]( const String &value ) {
+            auto properties = make_ptr<Properties>();
+            properties->setProperty( "keyboardShortcut", value );
+            button->setProperties( properties );
+            String published;
+            require( button->getProperties()->getPropertyValue( "keyboardShortcut", published ) && published == value,
+                     "button shortcuts must round-trip through the shared properties API" );
+        };
+        require( button->getKeyboardShortcutSnapshot().lastRendered.frame == -1 &&
+                     button->getKeyboardShortcutSnapshot().activationCount == 0,
+                 "unrendered button diagnostics must not imply a native frame or activation" );
+        shortcut( "F10" ); render();
+        auto diagnostic = button->getKeyboardShortcutSnapshot();
+        require( diagnostic.keyboardShortcut == "F10" && diagnostic.lastRendered.frame == ImGui::GetFrameCount() &&
+                     diagnostic.lastRendered.enabled && diagnostic.lastRendered.itemVisible &&
+                     diagnostic.lastRendered.applicationFocused && !diagnostic.lastRendered.keyPressed && diagnostic.keyPressCount == 0,
+                 "native diagnostics must describe the actual rendered, configured and focused button" );
+        auto partial = make_ptr<Properties>(); partial->setProperty( "unrelated", true );
+        button->setProperties( partial );
+        io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        require( selections->count == 1, "F10 must activate the actual native button event path" );
+        diagnostic = button->getKeyboardShortcutSnapshot();
+        require( diagnostic.lastRendered.keyPressed && diagnostic.lastKeyPress.frame == ImGui::GetFrameCount() &&
+                     diagnostic.keyPressCount == 1 && diagnostic.activationCount == selections->count &&
+                     !diagnostic.lastKeyPress.ctrl && !diagnostic.lastKeyPress.alt &&
+                     !diagnostic.lastKeyPress.shift && !diagnostic.lastKeyPress.super,
+                 "key-edge diagnostics must retain the actual modifiers and activation evidence" );
+        for( int frame = 0; frame < 45; ++frame ) render();
+        require( ImGui::IsKeyDown( ImGuiKey_F10 ) && 45 * io.DeltaTime > io.KeyRepeatDelay && selections->count == 1,
+                 "holding a debugger shortcut beyond native repeat delay must not trigger repeated steps" );
+        diagnostic = button->getKeyboardShortcutSnapshot();
+        require( !diagnostic.lastRendered.keyPressed && diagnostic.keyPressCount == 1 &&
+                     diagnostic.lastKeyPress.frame < diagnostic.lastRendered.frame,
+                 "diagnostics must retain a brief input edge across later frames without counting repeats" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); render();
+        button->setEnabled( false, false );
+        io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        diagnostic = button->getKeyboardShortcutSnapshot();
+        require( !diagnostic.lastKeyPress.enabled && diagnostic.lastKeyPress.keyPressed && diagnostic.activationCount == 1,
+                 "disabled input must remain observable without generating an activation" );
+        button->setEnabled( true, false ); render();
+        require( selections->count == 1, "enabling a button while its key is held must not activate it" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); render();
+        io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        require( selections->count == 2, "releasing and pressing F10 must permit the next step" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); render();
+        io.AddKeyEvent( ImGuiKey_ModCtrl, true ); io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        require( selections->count == 2, "Ctrl+F10 must not be treated as the unmodified F10 shortcut" );
+        require( button->getKeyboardShortcutSnapshot().lastKeyPress.ctrl &&
+                     button->getKeyboardShortcutSnapshot().activationCount == 2,
+                 "rejected modifier combinations must be observable without changing dispatch" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); io.AddKeyEvent( ImGuiKey_ModCtrl, false ); render();
+        shortcut( "Shift+F11" );
+        io.AddKeyEvent( ImGuiKey_F11, true ); render();
+        require( selections->count == 2, "plain F11 must not activate Shift+F11" );
+        io.AddKeyEvent( ImGuiKey_F11, false ); render();
+        io.AddKeyEvent( ImGuiKey_ModShift, true ); io.AddKeyEvent( ImGuiKey_F11, true ); render();
+        require( selections->count == 3, "Shift+F11 must reach the same native selection listener" );
+        require( button->getKeyboardShortcutSnapshot().lastKeyPress.shift &&
+                     button->getKeyboardShortcutSnapshot().keyboardShortcut == "Shift+F11",
+                 "shifted shortcut diagnostics must reflect the configured modifier and native edge" );
+        io.AddKeyEvent( ImGuiKey_ModShift, false ); render();
+        shortcut( "F11" ); render();
+        require( selections->count == 3, "a modifier or shortcut configuration change must not retrigger a held key" );
+        io.AddKeyEvent( ImGuiKey_F11, false ); render();
+        io.AddKeyEvent( ImGuiKey_F11, true ); render();
+        require( selections->count == 4, "plain F11 must activate after release" );
+        io.AddKeyEvent( ImGuiKey_F11, false ); render();
+        for( const auto key : { ImGuiKey_F5, ImGuiKey_F8 } )
+        {
+            const auto before = selections->count;
+            shortcut( key == ImGuiKey_F5 ? "F5" : "F8" );
+            io.AddKeyEvent( key, true ); render();
+            require( selections->count == before + 1, "F5/F8 must dispatch through the rendered native button" );
+            io.AddKeyEvent( key, false ); render();
+        }
+        shortcut( "F10" );
+        const auto beforeHidden = selections->count;
+        const auto frameBeforeHidden = button->getKeyboardShortcutSnapshot().lastRendered.frame;
+        button->setVisible( false, false );
+        io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        require( button->getKeyboardShortcutSnapshot().lastRendered.frame == frameBeforeHidden,
+                 "hidden widgets must not claim they were rendered in a later native frame" );
+        button->setVisible( true, false ); render();
+        require( selections->count == beforeHidden, "hidden buttons and their held keys must not activate" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); render();
+        const auto pressesBeforeFocusLoss = button->getKeyboardShortcutSnapshot().keyPressCount;
+        io.AddKeyEvent( ImGuiKey_F10, true ); io.AddFocusEvent( false ); render();
+        require( selections->count == beforeHidden, "focus loss must cancel queued shortcut input" );
+        require( !button->getKeyboardShortcutSnapshot().lastRendered.keyPressed &&
+                     button->getKeyboardShortcutSnapshot().keyPressCount == pressesBeforeFocusLoss,
+                 "focus-cleared input must not be reported as a surviving shortcut edge" );
+        io.AddFocusEvent( true ); render();
+        io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        require( selections->count == beforeHidden + 1, "a fresh key press after focus returns must work" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); render();
+        clipButton = true;
+        const auto beforeClipped = selections->count;
+        io.AddKeyEvent( ImGuiKey_F10, true ); render();
+        diagnostic = button->getKeyboardShortcutSnapshot();
+        require( !diagnostic.lastRendered.itemVisible && diagnostic.lastRendered.keyPressed &&
+                     diagnostic.lastRendered.frame == ImGui::GetFrameCount() && selections->count == beforeClipped + 1,
+                 "a clipped item must report clipping while preserving its existing keyboard activation path" );
+        io.AddKeyEvent( ImGuiKey_F10, false ); clipButton = false; render();
+        bool invalid = false;
+        try { shortcut( "Alt+F4" ); } catch( const std::invalid_argument & ) { invalid = true; }
+        require( invalid, "unsupported shortcut properties must fail explicitly" );
+        String retained;
+        require( button->getProperties()->getPropertyValue( "keyboardShortcut", retained ) && retained == "F10",
+                 "invalid shortcut properties must preserve the previous valid binding" );
+        shortcut( "" );
+        const auto beforeMouse = selections->count;
+        io.AddMousePosEvent( mouseTarget.x, mouseTarget.y ); io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( selections->count == beforeMouse + 1, "keyboard configuration must preserve ordinary pointer activation" );
+        require( button->getKeyboardShortcutSnapshot().activationCount == selections->count,
+                 "native activation diagnostics must match both keyboard and ordinary pointer dispatch" );
+        require( selections->renderOrigin && selections->correctSender,
+                 "accelerators must preserve the real render-origin event and button sender" );
+        io.ConfigInputTrickleEventQueue = trickle;
+        button->removeObjectListener( selections );
+        parent->removeChild( button );
     }
 
     void projectThemeSelection()
@@ -246,9 +549,13 @@ int main()
         Fixture fixture;
         projectThemeSelection();
         textReplacement();
+        buttonKeyboardAccelerators( fixture );
+#if defined WP_PLATFORM_WIN32
+        nativeSystemMenuShortcuts();
+#endif
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui theme/text/viewport input: 4 cases, %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/button/native-message/viewport input: %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

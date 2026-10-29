@@ -34,6 +34,8 @@
 #include <WorkphoneGraphics/workphone_graphics_system.h>
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
 #include "ClawUIFrameRetention.hpp"
+#include <limits>
+#include <optional>
 
 namespace workphone::ui
 {
@@ -352,6 +354,16 @@ namespace workphone::ui
 
     void ClawUIManager::render()
     {
+        renderFrame( false );
+    }
+
+    void ClawUIManager::renderReadOnly()
+    {
+        renderFrame( true );
+    }
+
+    void ClawUIManager::renderFrame( bool readOnly )
+    {
         if( !m_workphoneContext || !m_workphoneContext->isValid() )
         {
             return;
@@ -362,6 +374,31 @@ namespace workphone::ui
         {
             return;
         }
+
+        struct PreserveInput
+        {
+            wp_context *context;
+            wp_input input;
+            wp_f32 delta;
+            explicit PreserveInput( wp_context *value ) :
+                context( value ), input( value->input ), delta( value->delta_time_seconds )
+            {
+                // ROM flags cover the C widgets. An empty input snapshot also
+                // protects native widgets that inspect the context directly.
+                context->input = {};
+                context->input.mouse.pos = wp_make_vec2f( -std::numeric_limits<float>::max(),
+                                                          -std::numeric_limits<float>::max() );
+                context->input.mouse.prev = context->input.mouse.pos;
+                context->delta_time_seconds = 0.0f;
+            }
+            ~PreserveInput()
+            {
+                context->input = input;
+                context->delta_time_seconds = delta;
+            }
+        };
+        std::optional<PreserveInput> preservedInput;
+        if( readOnly ) preservedInput.emplace( ctx );
 
         // Text commands borrow each widget's font descriptor until conversion.
         // Scene/UI callbacks can retire a screen while this frame is drawing,
@@ -421,6 +458,22 @@ namespace workphone::ui
         if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "WPGraphicsRoot" ), rootBounds,
                       WORKPHONE_WINDOW_NO_SCROLLBAR | WORKPHONE_WINDOW_BACKGROUND ) )
         {
+            struct PreserveReadOnlyFlags
+            {
+                wp_window *window;
+                wp_panel *panel;
+                wp_flags windowFlags, panelFlags;
+                explicit PreserveReadOnlyFlags( wp_context *context ) :
+                    window( context->current ), panel( context->current->layout ),
+                    windowFlags( window->flags ), panelFlags( panel->flags )
+                {
+                    window->flags |= WORKPHONE_WINDOW_ROM;
+                    panel->flags |= WORKPHONE_WINDOW_ROM;
+                }
+                ~PreserveReadOnlyFlags() { window->flags = windowFlags; panel->flags = panelFlags; }
+            };
+            std::optional<PreserveReadOnlyFlags> preservedFlags;
+            if( readOnly ) preservedFlags.emplace( ctx );
             wp_layout_space_begin( ctx, WORKPHONE_STATIC, rootBounds.h, 1024 );
 
             if( frameRoot )

@@ -1,14 +1,39 @@
 # Use the supported Visual Studio DTE debugger API against a LuaQA instance.
 # This fixture does not use Windows UI Automation or capture screen pixels.
+# Supply the Editor's opt-in activity JSON to distinguish a new pause from the
+# old Break mode while an asynchronous DTE step is still being dispatched.
 param(
     [Parameter(Mandatory=$true)][int]$VsProcessId,
     [ValidateSet('Status','OpenToolWindow','ShowLocals','Breakpoint','ClearBreakpoints','Attach','StepOver','StepInto','StepOut','Continue','Pause','Disconnect','Inspect')]
     [string]$Action='Status',
     [string]$Endpoint,[string]$Source,[int]$Line=203,
-    [string]$Expression='state.port',[string]$Adapter,[string]$Report,
+    [string]$Expression='state.port',[string]$Adapter,[string]$Report,[string]$ActivityReport,
     [switch]$WaitForBreak
 )
 $ErrorActionPreference='Stop'
+function Read-LuaActivityReport([string]$Path) {
+ $stream=$null
+ try {
+  $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+  $bytes=New-Object byte[] 65537
+  $size=0
+  while($size -lt $bytes.Length) {
+   $count=$stream.Read($bytes,$size,$bytes.Length-$size)
+   if($count -eq 0) {break}
+   $size+=$count
+  }
+  if($size -gt 65536) {throw 'Lua debugger activity report exceeds 64 KiB'}
+  $activity=[Text.Encoding]::UTF8.GetString($bytes,0,$size) | ConvertFrom-Json
+  if($activity.paused -isnot [bool] -or
+     ($activity.pauseSequence -isnot [int] -and $activity.pauseSequence -isnot [long]) -or
+     [long]$activity.pauseSequence -lt 0) {
+   throw 'Invalid Lua debugger activity report'
+  }
+  return $activity
+ } catch [IO.FileNotFoundException] {return $null}
+   catch [IO.DirectoryNotFoundException] {return $null}
+ finally {if($stream) {$stream.Dispose()}}
+}
 $process=Get-CimInstance Win32_Process -Filter "ProcessId=$VsProcessId"
 if (!$process -or $process.Name -ne 'devenv.exe' -or $process.CommandLine -notmatch '/RootSuffix\s+"?LuaQA"?(?:\s|$)') { throw 'Only the isolated LuaQA IDE is permitted' }
 if (-not ('LuaVsRot' -as [type])) {
@@ -36,6 +61,8 @@ public static class LuaVsRot {
 $dte=[LuaVsRot]::Get($VsProcessId)
 $debugger=$dte.Debugger
 if ($null -eq $debugger -or $null -eq $debugger.CurrentMode) { throw 'Visual Studio automation is unavailable. Dismiss any modal dialog in the LuaQA instance and retry.' }
+$activityBefore=if($ActivityReport) {Read-LuaActivityReport $ActivityReport} else {$null}
+$previousPauseSequence=if($activityBefore) {[long]$activityBefore.pauseSequence} else {0L}
 switch($Action) {
  'OpenToolWindow' {$dte.Commands.Raise('{2EBFD2BD-111F-4E2D-A607-4E6D8474D40C}',256,'',0)}
  'ShowLocals' {$dte.ExecuteCommand('Debug.Locals','')}
@@ -71,13 +98,25 @@ switch($Action) {
 }
 if ($WaitForBreak) {
  $deadline=[DateTime]::UtcNow.AddSeconds(20)
- while ([int]$debugger.CurrentMode -ne 2) {
-  if ([DateTime]::UtcNow -gt $deadline) { throw 'Visual Studio did not stop within 20 seconds' }
+ $requiresNewPause=$Action -in @('Attach','StepOver','StepInto','StepOut','Continue','Pause')
+ while ($true) {
+  $activity=if($ActivityReport) {Read-LuaActivityReport $ActivityReport} else {$null}
+  $activityReady=(!$ActivityReport) -or ($activity -and $activity.paused -and
+   (!$requiresNewPause -or [long]$activity.pauseSequence -gt $previousPauseSequence))
+  if ([int]$debugger.CurrentMode -eq 2 -and $activityReady) {break}
+  if ([DateTime]::UtcNow -gt $deadline) {
+   if($ActivityReport) {throw 'Visual Studio did not reach the requested paused activity sequence within 20 seconds'}
+   throw 'Visual Studio did not stop within 20 seconds'
+  }
   Start-Sleep -Milliseconds 100
  }
 }
 $mode=[int]$debugger.CurrentMode
 $result=[ordered]@{action=$Action;mode=$mode;breakpoints=$debugger.Breakpoints.Count}
+if ($ActivityReport) {
+ $activity=Read-LuaActivityReport $ActivityReport
+ $result.activityPauseSequence=if($activity) {[long]$activity.pauseSequence} else {$null}
+}
 if ($inspection) { $result.inspection=$inspection }
 if($mode -eq 2) {
  $frame=$debugger.CurrentStackFrame

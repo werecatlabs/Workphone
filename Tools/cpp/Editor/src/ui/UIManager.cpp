@@ -53,6 +53,136 @@
 namespace workphone::editor
 {
     SmartPtr<EditorWindow> UIManager::getLuaDebuggerWindow() const { return m_luaDebuggerWindow; }
+
+    u64 UIManager::getDeferredRenderCallbackCount() const
+    {
+        return m_deferredRenderCallbackCount.load( std::memory_order_relaxed );
+    }
+
+    u64 UIManager::getDispatchedScriptEventCount() const
+    {
+        return m_dispatchedScriptEventCount.load( std::memory_order_relaxed );
+    }
+
+    bool UIManager::isDeferredRenderCallbackActive() const
+    {
+        return m_deferredRenderCallbackActive.load( std::memory_order_relaxed );
+    }
+
+    bool UIManager::debuggerDispatchEnabled()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto scripts = app ? app->getScriptManager() : nullptr;
+        return scripts && scripts->getDebuggerPort() != 0;
+    }
+
+    bool UIManager::shouldDeferScriptCall( bool debuggerControl ) const
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto scripts = app ? app->getScriptManager() : nullptr;
+        if( !scripts || scripts->getDebuggerPort() == 0 ) return false;
+        auto graphics = app->getGraphicsSystem();
+        const auto renderTask = graphics ? graphics->getRenderTask() : TaskId::Render;
+        return Thread::getCurrentTask() == renderTask ||
+               ( scripts->isDebuggerPaused() && !debuggerControl );
+    }
+
+    void UIManager::enqueueScriptEvent( std::function<void()> call, bool debuggerControl,
+                                       std::uintptr_t owner, const String &refreshKey )
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        const auto renderTask = graphics ? graphics->getRenderTask() : TaskId::Render;
+        const bool renderOrigin = Thread::getCurrentTask() == renderTask;
+        const WeakPtr<UIManager> manager( this );
+        auto isolated = [call = std::move( call ), manager, renderOrigin]() {
+            auto owner = manager.lock();
+            if( !owner || !owner->isLoaded() ) return;
+            const auto previous = owner->m_deferredRenderCallbackActive.load( std::memory_order_relaxed );
+            struct RestoreOrigin
+            {
+                std::atomic<bool> &active;
+                bool previous;
+                ~RestoreOrigin() { active.store( previous, std::memory_order_relaxed ); }
+            } restore{ owner->m_deferredRenderCallbackActive, previous };
+            // Nested debugger drains must retain an outer suspended callback's
+            // real Render origin, even if the nested action arrived elsewhere.
+            owner->m_deferredRenderCallbackActive.store( previous || renderOrigin, std::memory_order_relaxed );
+            owner->m_dispatchedScriptEventCount.fetch_add( 1, std::memory_order_relaxed );
+            try { call(); }
+            catch( const std::exception &error )
+            {
+                try { WP_LOG_EXCEPTION( error ); } catch( ... ) {}
+            }
+            catch( ... )
+            {
+                try { WP_LOG_ERROR( "Unknown exception in a deferred Editor UI action." ); } catch( ... ) {}
+            }
+        };
+        const bool accepted = m_scriptEvents.enqueue( std::move( isolated ), debuggerControl, owner, refreshKey.c_str() );
+        if( accepted && renderOrigin ) m_deferredRenderCallbackCount.fetch_add( 1, std::memory_order_relaxed );
+        if( !accepted &&
+            !m_scriptEventOverflowReported )
+        {
+            m_scriptEventOverflowReported = true;
+            WP_LOG_ERROR( "Editor script event queue is full; pending authoring actions require continuing Lua." );
+        }
+    }
+
+    bool UIManager::deferScriptCall( EditorWindow *window, const String &member,
+                                    const Parameters &parameters, bool hasParameters,
+                                    bool discardResults )
+    {
+        const bool debuggerControl = window && window == m_luaDebuggerWindow.get();
+        if( !window || !shouldDeferScriptCall( debuggerControl ) ) return false;
+        auto invoker = window->getInvoker();
+        if( !invoker ) return true;
+        const WeakPtr<EditorWindow> owner( window );
+        const WeakPtr<IScriptInvoker> expectedInvoker( invoker.get() );
+        auto key = !hasParameters && ( member == "update" || member == "updateSelection" ) ? member : String();
+        if( member == "handleViewportBrush" && !parameters.empty() && parameters.front().getStr() == "cancel" )
+            key = "viewportCancel";
+        enqueueScriptEvent( [owner, expectedInvoker, member, parameters, hasParameters, discardResults]() {
+            auto app = core::IApplicationManager::instancePtr();
+            if( !app || app->getQuit() ) return;
+            auto target = owner.lock();
+            auto expected = expectedInvoker.lock();
+            if( !target || !target->isLoaded() || !expected || target->getInvoker() != expected ) return;
+            invokeEditorScriptCall( *expected, member, parameters, hasParameters, discardResults );
+        }, debuggerControl, reinterpret_cast<std::uintptr_t>( window ), key );
+        return true;
+    }
+
+    bool UIManager::deferUIEvent( IEventListener *listener, EventType type, hash_type value,
+                                 const Parameters &arguments, SmartPtr<ISharedObject> sender,
+                                 SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    {
+        auto element = dynamic_pointer_cast<ui::IUIElement>( object );
+        if( !element ) element = dynamic_pointer_cast<ui::IUIElement>( sender );
+        const bool debuggerControl = element &&
+            element->getElementId() == static_cast<s32>( WidgetId::LuaDebuggerWindowId );
+        if( !shouldDeferScriptCall( debuggerControl ) ) return false;
+        const WeakPtr<UIManager> owner( this );
+        const WeakPtr<IEventListener> callback( listener );
+        enqueueScriptEvent( [owner, callback, type, value, arguments, sender, object, event]() {
+            auto app = core::IApplicationManager::instancePtr();
+            if( !app || app->getQuit() ) return;
+            auto manager = owner.lock();
+            auto target = callback.lock();
+            if( manager && manager->isLoaded() && target )
+                target->handleEvent( type, value, arguments, sender, object, event );
+        }, debuggerControl );
+        return true;
+    }
+
+    void UIManager::dispatchQueuedScriptEvents( bool debuggerOnly )
+    {
+        if( Thread::getCurrentTask() != TaskId::Application ) return;
+        m_scriptEvents.dispatch( debuggerOnly );
+        if( m_scriptEvents.size() == 0 ) m_scriptEventOverflowReported = false;
+        if( !debuggerOnly && debuggerDispatchEnabled() )
+            if( auto terrain = getTerrainWindow() ) terrain->refreshViewportScriptState();
+    }
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager, ISharedObject );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::UpdateSelectionJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::MenuBarListener, IEventListener );
@@ -809,6 +939,7 @@ namespace workphone::editor
 
     void UIManager::unload( SmartPtr<ISharedObject> data )
     {
+        m_scriptEvents.clear();
         if( !isLoaded() )
         {
             return;
@@ -1324,6 +1455,18 @@ namespace workphone::editor
                                                        SmartPtr<ISharedObject> object,
                                                        SmartPtr<IEvent> event )
     {
+        // ImGui reports the selected item's ID with the item as sender. Other
+        // UI backends use handleSelection and the item as object. Normalize at
+        // this native bridge before forwarding or queueing either representation.
+        if( auto item = dynamic_pointer_cast<ui::IUIElement>( sender );
+            eventType == EventType::UI && item &&
+            eventValue == static_cast<hash_type>( item->getElementId() ) )
+        {
+            eventValue = IEvent::handleSelection;
+            object = sender;
+        }
+        if( auto owner = getOwner() )
+            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) ) return {};
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto stateManager = applicationManager->getStateManagerPtr();
         auto fileSystem = applicationManager->getFileSystemPtr();
@@ -1911,7 +2054,7 @@ namespace workphone::editor
         {
         case TaskId::Application:
         {
-            if( sender->isDerived<ui::IUIElement>() )
+            if( sender && sender->isDerived<ui::IUIElement>() )
             {
                 if( auto owner = getOwner() )
                 {
@@ -2174,6 +2317,8 @@ namespace workphone::editor
                                                        SmartPtr<ISharedObject> object,
                                                        SmartPtr<IEvent> event )
     {
+        if( auto owner = getOwner() )
+            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) ) return {};
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto jobQueue = applicationManager->getJobQueuePtr();
         auto commandManager = applicationManager->getCommandManagerPtr();
@@ -2183,6 +2328,8 @@ namespace workphone::editor
         WP_ASSERT( editorManager );
 
         auto element = workphone::dynamic_pointer_cast<ui::IUIElement>( object );
+        if( !element ) element = workphone::dynamic_pointer_cast<ui::IUIElement>( sender );
+        if( !element ) return {};
         auto iElementId = element->getElementId();
 
         auto id = static_cast<WidgetId>( iElementId );
@@ -2426,6 +2573,8 @@ namespace workphone::editor
                                                      SmartPtr<ISharedObject> object,
                                                      SmartPtr<IEvent> event )
     {
+        if( auto owner = getOwner() )
+            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) ) return {};
         if( eventType == EventType::Loading )
         {
             if( eventValue == scene::IGameManager::sceneLoadedHash )

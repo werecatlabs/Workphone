@@ -155,30 +155,11 @@ namespace cooked_terrain_contracts
         std::printf( "Terrain colour transfer: mid-grey UNORM/SRGB, nonwhite tint, planar/triplanar PASS\n" );
     }
 
-    inline void run( ClawRendererDX11 &renderer, const fs::path &parent )
+    // Shared fixture authoring for in-process contracts and a separately launched package consumer.
+    // The supplied parent must be fresh; never replace caller-owned package contents.
+    inline TerrainData createPackage( const fs::path &parent )
     {
-        struct Scope
-        {
-            ClawRendererDX11 &r;
-            ~Scope()
-            {
-                r.setCamera( nullptr );
-                r.setRenderTarget( nullptr );
-            }
-        } scope{ renderer };
-        claw_terrain_contracts::MeshManagerScope meshManager;
-        // Earlier material contracts intentionally leave normal mesh/texture
-        // resources referenced by the immediate context after wrapper teardown.
-        // Establish this suite's baseline only after releasing those owners.
-        auto initialNative = wp_renderer_get_dx11( renderer.getNativeRenderer() );
-        auto initialContext = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( initialNative ) );
-        const auto incomingGpuBytes = WorldStreamingScheduler::shared()->stats().used[size_t( StreamMemoryClass::Gpu )];
-        initialContext->ClearState();
-        wp_renderer_dx11_invalidate_state( initialNative );
-        claw_texture_mip_contracts::completeGpuWork( initialContext );
-        std::printf( "Cooked terrain prior-context GPU retirement: before=%llu completed=%llu\n",
-            static_cast<unsigned long long>( incomingGpuBytes ), static_cast<unsigned long long>(
-                WorldStreamingScheduler::shared()->stats().used[size_t( StreamMemoryClass::Gpu )] ) );
+        require( !fs::exists( parent / "terrain-package" ), "Terrain fixture output already exists" );
         const auto folder = parent / "terrain-package", source = folder / "authoring",
                    compiled = folder / "compiled", package = folder / "package";
         fs::create_directories( source );
@@ -255,11 +236,43 @@ namespace cooked_terrain_contracts
         fs::copy( compiled, package, fs::copy_options::recursive );
         // Relocate the only source tree so accidental source fallback cannot pass.
         fs::rename( source, folder / "authoring-offline" );
+        return authored;
+    }
+
+    inline void run( ClawRendererDX11 &renderer, const fs::path &parent )
+    {
+        struct Scope
+        {
+            ClawRendererDX11 &r;
+            ~Scope()
+            {
+                r.setCamera( nullptr );
+                r.setRenderTarget( nullptr );
+            }
+        } scope{ renderer };
+        claw_terrain_contracts::MeshManagerScope meshManager;
+        // Earlier material contracts intentionally leave normal mesh/texture
+        // resources referenced by the immediate context after wrapper teardown.
+        // Establish this suite's baseline only after releasing those owners.
+        auto initialNative = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        auto initialContext = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( initialNative ) );
+        const auto incomingGpuBytes = WorldStreamingScheduler::shared()->stats().used[size_t( StreamMemoryClass::Gpu )];
+        initialContext->ClearState();
+        wp_renderer_dx11_invalidate_state( initialNative );
+        claw_texture_mip_contracts::completeGpuWork( initialContext );
+        std::printf( "Cooked terrain prior-context GPU retirement: before=%llu completed=%llu\n",
+            static_cast<unsigned long long>( incomingGpuBytes ), static_cast<unsigned long long>(
+                WorldStreamingScheduler::shared()->stats().used[size_t( StreamMemoryClass::Gpu )] ) );
+        const auto authored = createPackage( parent );
+        const auto package = parent / "terrain-package" / "package";
+        const String targetName = "terrain-dx11-contract";
+        const ResourceID id( "data://ground.terrain" );
+        String error;
         ResourceSystem runtime( nullptr, nullptr );
         RuntimeResourceConfig mount;
         mount.compiledRoot = path( package );
         mount.manifestPath = path( package / "terrain.wprs" );
-        mount.target = config.target;
+        mount.target = targetName;
         require( runtime.initializeRuntime( mount, error ), error );
         auto loaded = runtime.load( id, error );
         require( loaded && loaded->dependencies.size() == 13,
@@ -291,11 +304,11 @@ namespace cooked_terrain_contracts
         const auto budgetBefore = scheduler->stats();
         CookedTerrainDecodeOptions decodeOptions;
         decodeOptions.key = 71;
-        require( queueCookedTerrainDecode( *producer, loaded, config.target, true, decodeOptions, error ), error );
+        require( queueCookedTerrainDecode( *producer, loaded, targetName, true, decodeOptions, error ), error );
         const auto acceptedGeneration = producer->stats().generation;
         auto tooSmall = decodeOptions;
         tooSmall.maximumWorkingBytes = 1;
-        require( !queueCookedTerrainDecode( *producer, loaded, config.target, true, tooSmall, error ) &&
+        require( !queueCookedTerrainDecode( *producer, loaded, targetName, true, tooSmall, error ) &&
                      producer->stats().generation == acceptedGeneration,
                  "a decode outside its declared byte budget must preserve the accepted generation" );
         WorldStreamResult decodeResult;
@@ -338,7 +351,7 @@ namespace cooked_terrain_contracts
         badBounds->payload.at( manifest + 40 ) ^= 1;
         badBounds->header.payloadHash =
             hashBytes( badBounds->payload.data(), badBounds->payload.size() );
-        require( !decodeCookedTerrainResource( badBounds, config.target, true, error ),
+        require( !decodeCookedTerrainResource( badBounds, targetName, true, error ),
                  "valid-hash forged tile bounds must reject against authoritative source samples" );
         struct LegacyVersion final : IResourceCompiler
         {
@@ -374,7 +387,7 @@ namespace cooked_terrain_contracts
             const auto string = [&]( const String &value ) {
                 number( value.size(), 4 ); legacy->payload.insert( legacy->payload.end(), value.begin(), value.end() );
             };
-            number( version, 4 ); number( 1, 4 ); string( config.target ); string( json );
+            number( version, 4 ); number( 1, 4 ); string( targetName ); string( json );
             if( version == 2 ) legacy->payload.insert( legacy->payload.end(), loaded->payload.begin() + manifest,
                                                        loaded->payload.begin() + manifest + manifestBytes );
             number( legacy->dependencies.size(), 4 );
@@ -391,9 +404,9 @@ namespace cooked_terrain_contracts
             return legacy;
         };
         auto legacy = makeLegacy( 1 );
-        auto migrated = decodeCookedTerrainResource( legacy, config.target, true, error );
+        auto migrated = decodeCookedTerrainResource( legacy, targetName, true, error );
         require( migrated != nullptr, "v1 cooked terrain migration decode failed: " + error );
-        auto migratedTiles = decodeCookedTerrainResource( makeLegacy( 2 ), config.target, true, error );
+        auto migratedTiles = decodeCookedTerrainResource( makeLegacy( 2 ), targetName, true, error );
         require( migratedTiles != nullptr, "v2 cooked terrain migration decode failed: " + error );
         require( migrated && migratedTiles && migrated->data.tiles.size() == 1 &&
                      migratedTiles->data.terrain.appearance == TerrainAppearance{} &&
@@ -480,7 +493,7 @@ namespace cooked_terrain_contracts
         const auto revision = terrain->getTerrainRevision();
         auto corrupt = std::make_shared<RuntimeResource>( *loaded );
         corrupt->payload.back() ^= 1;
-        require( !stageCookedTerrainMaterial( renderer, corrupt, config.target, true, error ) &&
+        require( !stageCookedTerrainMaterial( renderer, corrupt, targetName, true, error ) &&
                      terrain->getTerrainRevision() == revision,
                  "Corrupt cooked update must preserve the complete visible terrain" );
         require( !stageCookedTerrainMaterial( renderer, loaded, "wrong-target", true, error ),
@@ -489,7 +502,7 @@ namespace cooked_terrain_contracts
         auto staleTexture = std::make_shared<RuntimeResource>( *stale->dependencies[0] );
         ++staleTexture->header.sourceHash;
         stale->dependencies[0] = staleTexture;
-        require( !stageCookedTerrainMaterial( renderer, stale, config.target, true, error ),
+        require( !stageCookedTerrainMaterial( renderer, stale, targetName, true, error ),
                  "Changed texture generation must reject despite otherwise valid terrain payload" );
         runtime.clearRuntimeCache();
         loaded.reset();

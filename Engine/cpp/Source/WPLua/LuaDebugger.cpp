@@ -907,7 +907,15 @@ namespace workphone
             { j::array result; for( auto &s : sources ) result.push_back( sourceObject( s.first ) ); response( request, { { "sources", std::move( result ) } } ); return; }
             if( command == "source" )
             {
-                for( auto &s : sources ) if( s.second.id == integer( args, "sourceReference" ) )
+                // Physical documents use sourceReference=0 for IDE file access.
+                // The Editor can still request the already registered snapshot
+                // by path; never turn this request into arbitrary disk access.
+                std::string sourcePath;
+                if( auto source = args.if_contains( "source" ); source && source->is_object() )
+                    sourcePath = path( stringValue( source->as_object(), "path" ) );
+                const auto reference = integer( args, "sourceReference" );
+                for( auto &s : sources ) if( ( reference > 0 && s.second.id == reference ) ||
+                                             ( reference == 0 && !sourcePath.empty() && s.first == sourcePath ) )
                 { if( s.second.text.size() > 48000 ) response( request, {}, "Source exceeds transfer limit; open its file" ); else response( request, { { "content", s.second.text }, { "mimeType", "text/x-lua" } } ); return; }
                 response( request, {}, "Unknown source" ); return;
             }

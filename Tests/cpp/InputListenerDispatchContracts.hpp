@@ -2,6 +2,10 @@
 
 #include <Workphone/Input/InputDeviceManager.hpp>
 #include <Workphone/Interface/Input/IInputEvent.hpp>
+#include <Workphone/Interface/Input/IMouseState.hpp>
+#include <Workphone/Interface/Input/IKeyboardState.hpp>
+#include <Workphone/Graphics/GraphicsWindow.hpp>
+#include <Workphone/System/WindowMessageData.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/WeakPtr.hpp>
@@ -15,6 +19,9 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#ifdef WP_PLATFORM_WIN32
+#    include <Windows.h>
+#endif
 
 namespace input_listener_dispatch_contracts
 {
@@ -45,6 +52,44 @@ namespace input_listener_dispatch_contracts
 
         std::shared_ptr<Observation> observed;
         std::function<void()> onInput;
+    };
+
+    class SuspendedInput final : public InputDeviceManager
+    {
+    public:
+        SuspendedInput()
+        {
+            // Exercise the real native window listener without opening a window
+            // or polling any physical input device.
+            window = make_ptr<render::GraphicsWindow>();
+            setWindow( window );
+        }
+
+        size_t queuedEvents() const
+        {
+            size_t count = 0;
+            for( const auto &queue : m_inputEventQueue ) count += queue.size();
+            return count;
+        }
+
+        void injectStaleTaskEvents( SmartPtr<IInputEvent> event )
+        {
+            for( auto &queue : m_inputEventQueue ) queue.push( event );
+        }
+
+#ifdef WP_PLATFORM_WIN32
+        void nativeMessage( u32 message, size_t wParam = 0, size_t lParam = 0 )
+        {
+            auto event = make_ptr<WindowMessageData>();
+            event->setMessage( message );
+            event->setWParam( wParam );
+            event->setLParam( lParam );
+            for( auto listener : window->getListeners() ) listener->handleEvent( event );
+        }
+#endif
+
+    private:
+        SmartPtr<render::GraphicsWindow> window;
     };
 
     inline unsigned run()
@@ -172,7 +217,83 @@ namespace input_listener_dispatch_contracts
             late = nullptr;
             input->unload( nullptr );
         }
-        std::printf( "Input listener dispatch contracts: %u assertions, direct/queued mutation and in-flight retirement passed.\n",
+        {
+            auto input = make_ptr<SuspendedInput>();
+            input->setCreateMouse( false );
+            input->setCreateKeyboard( false );
+            input->setCreateJoysticks( false );
+            input->load( nullptr );
+            auto observed = std::make_shared<Observation>();
+            auto listener = make_ptr<Listener>( observed );
+            input->addListener( listener );
+            auto event = input->createInputEvent();
+            event->setEventType( IInputEvent::EventType::User );
+            require( input->postEvent( event ) && input->queuedEvents() == static_cast<size_t>( TaskId::Count ),
+                     "pause fixture must start with one retained event in every task queue" );
+            auto oldMouse = input->getCurrentMouseState();
+            auto oldKeyboard = input->getCurrentKeyboardState();
+            oldMouse->setDragging( true );
+            oldMouse->setWheelDelta( Vector2<real_Num>( 1, 2 ) );
+            oldKeyboard->setKeyCode( 65 );
+            oldKeyboard->setPressedDown( true );
+            input->setDebuggerSuspended( true );
+            require( input->getDebuggerSuspended() && input->queuedEvents() == 0,
+                     "entering a debugger hold must discard all task queues" );
+            require( !input->getCurrentKeyboardState()->isPressedDown() &&
+                     !input->getCurrentMouseState()->isDragging() &&
+                     input->getCurrentMouseState()->getWheelDelta() == Vector2<real_Num>::zero(),
+                     "a debugger boundary must discard transient key, drag and wheel snapshots" );
+            require( oldKeyboard->isPressedDown() && oldMouse->isDragging(),
+                     "resetting input must not mutate snapshots retained by a paused callback" );
+            bool acceptedWhileHeld = false;
+            for( unsigned i = 0; i < 1024; ++i )
+            {
+                acceptedWhileHeld |= input->postEvent( event );
+                input->queueEvent( event );
+                input->triggerEvent( event );
+                input->update();
+            }
+            require( !acceptedWhileHeld && input->queuedEvents() == 0 && observed->calls == 0,
+                     "paused input must neither grow queues nor run direct or queued callbacks" );
+#ifdef WP_PLATFORM_WIN32
+            input->setCreateMouse( true );
+            input->setCreateKeyboard( true );
+            const auto heldKeyboard = input->getCurrentKeyboardState();
+            const auto heldMouse = input->getCurrentMouseState();
+            for( unsigned i = 0; i < 128; ++i )
+            {
+                input->nativeMessage( WM_KEYDOWN, 'A' );
+                input->nativeMessage( WM_MOUSEMOVE, 0, ( i << 16 ) | i );
+                input->nativeMessage( WM_LBUTTONDOWN );
+                input->nativeMessage( WM_MOUSEWHEEL, WHEEL_DELTA << 16 );
+            }
+            require( input->queuedEvents() == 0 && heldKeyboard == input->getCurrentKeyboardState() &&
+                     heldMouse == input->getCurrentMouseState(),
+                     "native debugger UI messages must not publish gameplay events or snapshots" );
+#endif
+            // A resume boundary must also retire stale task events rather than
+            // relying only on the entry drain or on producer cooperation.
+            input->injectStaleTaskEvents( event );
+            input->setDebuggerSuspended( false );
+            require( !input->getDebuggerSuspended() && input->queuedEvents() == 0,
+                     "resuming must discard stale task events before re-enabling producers" );
+            input->update();
+            require( observed->calls == 0, "resuming must never replay debugger UI input" );
+            require( input->postEvent( event ), "fresh input must be accepted after resume" );
+            input->update();
+            require( observed->calls == 1, "fresh input must dispatch normally after resume" );
+            // The Editor saves this flag rather than assuming it owns an
+            // existing hold. Reapplying that prior true state remains held.
+            input->setDebuggerSuspended( true );
+            const auto previous = input->getDebuggerSuspended();
+            input->setDebuggerSuspended( true );
+            input->setDebuggerSuspended( previous );
+            require( input->getDebuggerSuspended() && !input->postEvent( event ),
+                     "restoring a pre-existing debugger input hold must preserve it" );
+            input->setDebuggerSuspended( false );
+            input->unload( nullptr );
+        }
+        std::printf( "Input listener dispatch contracts: %u assertions, direct/queued mutation, in-flight retirement and debugger suspension passed.\n",
                      assertions );
         return assertions;
     }
