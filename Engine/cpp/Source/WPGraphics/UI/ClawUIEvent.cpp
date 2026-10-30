@@ -6,7 +6,6 @@ namespace workphone::ui
 {
     ClawUIEvent::ClawUIEvent()
     {
-        setType( "Event" );
     }
 
     ClawUIEvent::~ClawUIEvent() = default;

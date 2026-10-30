@@ -8,7 +8,6 @@ namespace workphone::ui
 {
     ClawUICursor::ClawUICursor()
     {
-        setType( "Cursor" );
         setSize( Vector2F( 0.02f, 0.03f ) );
     }
 

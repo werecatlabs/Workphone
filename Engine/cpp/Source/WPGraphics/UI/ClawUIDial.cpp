@@ -12,7 +12,6 @@ namespace workphone::ui
         m_fNeedleAngle( -WORKPHONE_HALF_PI_F ),
         m_bIsVisible( true )
     {
-        setType( "Dial" );
     }
 
     ClawUIDial::~ClawUIDial() = default;

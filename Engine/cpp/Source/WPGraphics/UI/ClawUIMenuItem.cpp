@@ -7,7 +7,6 @@ namespace workphone::ui
 {
     ClawUIMenuItem::ClawUIMenuItem()
     {
-        setType( "MenuItem" );
     }
 
     ClawUIMenuItem::~ClawUIMenuItem() = default;

@@ -12,7 +12,6 @@ namespace workphone::ui
 
     ClawUIText::ClawUIText()
     {
-        setType( "Text" );
     }
 
     ClawUIText::~ClawUIText() = default;

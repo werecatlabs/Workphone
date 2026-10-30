@@ -110,19 +110,6 @@ namespace workphone
             virtual hash_type getElementId() const;
 
             virtual void setElementId( hash_type id );
-
-            /** Gets the hash id of the gui element. */
-            u32 getHashId() const;
-
-            /** Sets the component id. */
-            void setComponentID( const String &componentId );
-
-            /** Gets the component id. */
-            const String &getComponentID() const;
-
-            /** Gets the type of the gui item. */
-            const String &getType() const;
-
             /** Sets the position of the gui item. */
             virtual void setPosition( const Vector2F &position );
 
@@ -285,9 +272,8 @@ namespace workphone
                 return nullptr;
             }
 
-            virtual void setStateContext(SmartPtr<IStateContext> stateContext)
+            virtual void setStateContext( SmartPtr<IStateContext> stateContext )
             {
-
             }
 
             virtual SmartPtr<IStateListener> getStateListener() const
@@ -295,9 +281,8 @@ namespace workphone
                 return nullptr;
             }
 
-            virtual void setStateListener(SmartPtr<IStateListener> stateListener)
+            virtual void setStateListener( SmartPtr<IStateListener> stateListener )
             {
-
             }
 
             void sortZOrder();
@@ -355,8 +340,6 @@ namespace workphone
         protected:
             /** Sort local membership and return its pinned draw-order snapshot. */
             Array<SmartPtr<IUIElement>> sortChildrenByOrder();
-
-            void setType( const String &type );
 
             /** Push this element's absolute rectangle into the active free-form layout. */
             bool beginWorkphoneWidget( struct wp_context *ctx ) const;
@@ -664,8 +647,6 @@ namespace workphone
             {
                 child->setLayout( getLayout() );
             }
-
-            updateZOrder();
         }
 
         template <class T>
@@ -963,6 +944,8 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setEnabled( bool enabled, bool cascade )
         {
+            ScopedLock lock( this );
+
             if( m_isEnabled != enabled )
             {
                 m_isEnabled = enabled;
@@ -989,6 +972,8 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setSelected( bool selected )
         {
+            ScopedLock lock( this );
+
             bool wasSelected = m_isSelected;
             m_isSelected = selected;
 
@@ -1009,18 +994,22 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setHovered( bool hovered )
         {
+            ScopedLock lock( this );
             m_isHovered = hovered;
         }
 
         template <class T>
         bool ClawUIElement<T>::isHovered() const
         {
+            ScopedLock lock( this );
             return m_isHovered;
         }
 
         template <class T>
         void ClawUIElement<T>::setVisible( bool visible, bool cascade )
         {
+            ScopedLock lock( this );
+
             m_visible = visible;
 
             if( cascade )
@@ -1039,6 +1028,8 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setFocus( bool hasFocus )
         {
+            ScopedLock lock( this );
+
             if( m_hasFocus && !hasFocus )
             {
             }
@@ -1106,6 +1097,7 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setPosition( const Vector2F &position )
         {
+            ScopedLock lock( this );
             m_position = position;
         }
 
@@ -1232,12 +1224,14 @@ namespace workphone
         template <class T>
         u32 ClawUIElement<T>::getOrder() const
         {
+            ScopedLock lock( this );
             return m_order;
         }
 
         template <class T>
         void ClawUIElement<T>::setOrder( u32 order )
         {
+            ScopedLock lock( this );
             m_order = order;
         }
 
@@ -1264,92 +1258,79 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::setComponentID( const String &componentId )
-        {
-            m_componentId = componentId;
-        }
-
-        template <class T>
-        const String &ClawUIElement<T>::getComponentID() const
-        {
-            return m_componentId;
-        }
-
-        template <class T>
-        void ClawUIElement<T>::setType( const String &type )
-        {
-            m_type = type;
-        }
-
-        template <class T>
-        const String &ClawUIElement<T>::getType() const
-        {
-            return m_type;
-        }
-
-        template <class T>
         String ClawUIElement<T>::getLabel() const
         {
+            ScopedLock lock( this );
             return m_label;
         }
 
         template <class T>
         void ClawUIElement<T>::setLabel( const String &label )
         {
+            ScopedLock lock( this );
             m_label = label;
         }
 
         template <class T>
         Vector2F ClawUIElement<T>::getPosition() const
         {
+            ScopedLock lock( this );
             return m_position;
         }
 
         template <class T>
         void ClawUIElement<T>::setSize( const Vector2F &size )
         {
+            ScopedLock lock( this );
             m_size = size;
         }
 
         template <class T>
         Vector2F ClawUIElement<T>::getSize() const
         {
+            ScopedLock lock( this );
             return m_size;
         }
 
         template <class T>
         f32 ClawUIElement<T>::getScale() const
         {
+            ScopedLock lock( this );
             return m_scale;
         }
 
         template <class T>
         void ClawUIElement<T>::setScale( f32 scale )
         {
+            ScopedLock lock( this );
             m_scale = scale;
         }
 
         template <class T>
         bool ClawUIElement<T>::isEnabled() const
         {
+            ScopedLock lock( this );
             return m_isEnabled;
         }
 
         template <class T>
         bool ClawUIElement<T>::isVisible() const
         {
+            ScopedLock lock( this );
             return m_visible;
         }
 
         template <class T>
         bool ClawUIElement<T>::isInFocus() const
         {
+            ScopedLock lock( this );
             return m_hasFocus;
         }
 
         template <class T>
         bool ClawUIElement<T>::isHighlighted() const
         {
+            ScopedLock lock( this );
             return m_isHighlighted;
         }
 
@@ -1363,12 +1344,6 @@ namespace workphone
         void ClawUIElement<T>::setParent( SmartPtr<IUIElement> parent )
         {
             m_parent = parent;
-        }
-
-        template <class T>
-        u32 ClawUIElement<T>::getHashId() const
-        {
-            return static_cast<u32>( m_hashId );
         }
 
         template <class T>
@@ -1391,12 +1366,14 @@ namespace workphone
         template <class T>
         ColourF ClawUIElement<T>::getColour() const
         {
+            ScopedLock lock( this );
             return m_colour;
         }
 
         template <class T>
         void ClawUIElement<T>::setColour( const ColourF &colour )
         {
+            ScopedLock lock( this );
             m_colour = colour;
         }
 
@@ -1494,12 +1471,14 @@ namespace workphone
         template <class T>
         bool ClawUIElement<T>::getRenderChildren() const
         {
+            ScopedLock lock( this );
             return m_renderChildren;
         }
 
         template <class T>
         void ClawUIElement<T>::setRenderChildren( bool renderChildren )
         {
+            ScopedLock lock( this );
             m_renderChildren = renderChildren;
         }
 
@@ -1563,19 +1542,21 @@ namespace workphone
         template <class T>
         bool ClawUIElement<T>::getHandleInputEvents() const
         {
-
+            ScopedLock lock( this );
             return m_handleInputEvents;
         }
 
         template <class T>
         void ClawUIElement<T>::setHandleInputEvents( bool handleInputEvents )
         {
+            ScopedLock lock( this );
             m_handleInputEvents = handleInputEvents;
         }
 
         template <class T>
         void ClawUIElement<T>::setHighlighted( bool isHighlighted, bool cascade )
         {
+            ScopedLock lock( this );
             if( m_isHighlighted != isHighlighted )
             {
                 m_isHighlighted = isHighlighted;

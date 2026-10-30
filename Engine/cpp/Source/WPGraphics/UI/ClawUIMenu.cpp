@@ -12,7 +12,6 @@ namespace workphone::ui
         m_cursorIdx( 0 ),
         m_prevCursorIdx( 0 )
     {
-        setType( "Menu" );
     }
 
     ClawUIMenu::~ClawUIMenu() = default;

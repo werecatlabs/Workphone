@@ -10,7 +10,6 @@ namespace workphone::ui
         m_uiNumListItems( 0 ),
         m_iItemIdx( 0 )
     {
-        setType( "CharacterSelectMenu" );
         m_cursorIdx.resize( 2, 0 );
         m_prevCursorIdx.resize( 2, 0 );
     }

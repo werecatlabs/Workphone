@@ -8,7 +8,6 @@ namespace workphone::ui
 {
     ClawUICheckBox::ClawUICheckBox()
     {
-        setType( "Checkbox" );
     }
 
     ClawUICheckBox::~ClawUICheckBox() = default;

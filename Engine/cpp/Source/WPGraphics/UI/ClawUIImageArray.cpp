@@ -6,7 +6,6 @@ namespace workphone::ui
 {
     ClawUIImageArray::ClawUIImageArray()
     {
-        setType( "ImageArray" );
     }
 
     ClawUIImageArray::~ClawUIImageArray() = default;
