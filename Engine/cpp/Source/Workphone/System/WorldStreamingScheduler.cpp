@@ -81,11 +81,10 @@ namespace workphone
 
         void releaseSourceStorage( const std::shared_ptr<StreamBudgetState> &state, u64 bytes ) noexcept
         {
-            {
-                std::lock_guard<std::mutex> lock( state->mutex );
-                state->used[size_t( StreamMemoryClass::SourceCpu )] -= bytes;
-            }
-            state->wake.notify_all();
+            // Source storage is admitted by callers before demand publication.
+            // Only working/result capacity can unblock worker dispatch.
+            std::lock_guard<std::mutex> lock( state->mutex );
+            state->used[size_t( StreamMemoryClass::SourceCpu )] -= bytes;
         }
 
         struct SourceStorageHeader
@@ -254,7 +253,10 @@ namespace workphone
                 std::lock_guard<std::mutex> lock( m_state->mutex );
                 m_state->used[size_t( m_class )] -= m_bytes;
             }
-            m_state->wake.notify_all();
+            if( m_class != StreamMemoryClass::SourceCpu )
+            {
+                m_state->wake.notify_all();
+            }
         }
     }
 

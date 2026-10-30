@@ -23,6 +23,7 @@
 #include <sstream>
 #include <fstream>
 #include <iostream>
+#include <utility>
 
 using namespace workphone;
 
@@ -812,6 +813,7 @@ namespace workphone
 
         JsonArray metadata;
         auto propertiesArray = properties->getPropertiesAsArray();
+        metadata.reserve( propertiesArray.size() );
         for( auto &prop : propertiesArray )
         {
             auto name = prop.getName();
@@ -829,10 +831,10 @@ namespace workphone
             {
                 attributes[attribute.first] = JsonValue( attribute.second );
             }
-            entry["attributes"] = JsonValue( attributes );
-            metadata.push_back( JsonValue( entry ) );
+            entry["attributes"] = JsonValue( std::move( attributes ) );
+            metadata.push_back( JsonValue( std::move( entry ) ) );
         }
-        j["__wp_properties_v1"] = JsonValue( metadata );
+        j["__wp_properties_v1"] = JsonValue( std::move( metadata ) );
 
         auto children = properties->getChildren();
 
@@ -844,12 +846,12 @@ namespace workphone
             if( child )
             {
                 auto childJson = convert( child.get() );
-                array.push_back( JsonValue( childJson ) );
+                array.push_back( JsonValue( std::move( childJson ) ) );
             }
         }
 
         static const String childrenStr = "children";
-        j[childrenStr] = JsonValue( array );
+        j[childrenStr] = JsonValue( std::move( array ) );
 
         return j;
     }
@@ -864,7 +866,7 @@ namespace workphone
             case DataFormat::JSON:
             {
                 auto jsonValue = convert( ptr );
-                return serializeJsonValue( JsonValue( jsonValue ), formatted );
+                return serializeJsonValue( JsonValue( std::move( jsonValue ) ), formatted );
             }
             break;
             case DataFormat::XML:

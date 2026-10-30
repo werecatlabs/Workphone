@@ -334,6 +334,108 @@ namespace world_streaming_contracts
                  "Queue, token, result-wrapper and weak-control ownership all retire after the scheduler closes." );
         std::puts( "World streaming SourceCpu metadata admission, full-cap result publication and retirement: PASS" );
     }
+    inline void budgetReleaseProgress( const std::shared_ptr<WorldStreamingScheduler> &consumer,
+                                      const std::shared_ptr<WorldStreamingScheduler> &reservationOwner,
+                                      StreamMemoryClass memoryClass )
+    {
+        String error;
+        const auto category = size_t( memoryClass );
+        const auto before = consumer->stats();
+        struct RestoreLimit
+        {
+            std::shared_ptr<WorldStreamingScheduler> scheduler;
+            StreamMemoryClass memoryClass;
+            u64 bytes;
+            ~RestoreLimit()
+            {
+                String error;
+                scheduler->setBudget( memoryClass, bytes, error );
+            }
+        } restore{ consumer, memoryClass, before.limits[category] };
+        require( consumer->setBudget( memoryClass, before.used[category] + 64, error ),
+                 "The dispatch budget permits exactly one additional reservation." );
+        auto held = reservationOwner->reserve( memoryClass, 64, error );
+        require( held && consumer->ownsBudget( held ),
+                 "The blocking reservation belongs to the consumer's budget ledger." );
+        auto producer = consumer->createProducer( {}, error );
+        require( producer != nullptr, "The budget-release consumer is admitted." );
+        auto executed = std::make_shared<std::atomic<u32>>( 0 );
+        auto request = valueRequest( 400 );
+        request.execute = [executed]( const StreamCancellation & ) {
+            ++*executed;
+            WorldStreamResult result;
+            result.payload = std::make_shared<const u64>( 400 );
+            result.bytes = sizeof( u64 );
+            return result;
+        };
+        require( producer->replace( { request }, error ), "Budget-blocked demand is published once." );
+        require( producer->stats().pending == 1 && producer->stats().active == 0 && !executed->load(),
+                 "A fully reserved dispatch budget keeps its demand pending." );
+
+        auto source = reservationOwner->reserve( StreamMemoryClass::SourceCpu, 73, error );
+        require( source != nullptr, "An unrelated source reservation is admitted." );
+        auto physical = allocateSourceBudgetStorage( 73, 64 );
+        freeSourceBudgetStorage( physical, 64 );
+        source.reset();
+        require( producer->stats().pending == 1 && !executed->load(),
+                 "Source-only physical and lease retirement cannot satisfy a dispatch budget." );
+
+        held.reset();
+        await( [&] { const auto stats = producer->stats(); return stats.ready == 1 && stats.active == 0; },
+               "Working/result release resumes published demand without another queue mutation." );
+        WorldStreamResult result;
+        require( executed->load() == 1 && producer->take( result ) && result.key == 400 && result.payload,
+                 "The previously blocked request executes exactly once after capacity returns." );
+        result = {};
+        producer->drain();
+        require( consumer->stats().used[category] == before.used[category],
+                 "The resumed request returns its complete dispatch reservation." );
+    }
+
+    inline void budgetWakeContracts()
+    {
+        WorldStreamLimits limits;
+        limits.workers = 1;
+        auto isolated = std::make_shared<WorldStreamingScheduler>( limits );
+        budgetReleaseProgress( isolated, isolated, StreamMemoryClass::WorkingCpu );
+        budgetReleaseProgress( isolated, isolated, StreamMemoryClass::ResultCpu );
+        {
+            String error;
+            auto producer = isolated->createProducer( {}, error );
+            require( producer != nullptr, "The source-only cancellation producer is admitted." );
+            auto source = isolated->reserve( StreamMemoryClass::SourceCpu, 123, error );
+            require( source != nullptr, "The cancellation callback retains a source lease." );
+            std::weak_ptr<StreamBudgetLease> retired = source;
+            auto started = std::make_shared<std::promise<void>>();
+            auto entered = started->get_future();
+            auto request = valueRequest( 401 );
+            request.workingBytes = request.maximumResultBytes = 0;
+            request.execute = [source, started]( const StreamCancellation &token ) {
+                started->set_value();
+                while( !token.cancelled() ) std::this_thread::yield();
+                return WorldStreamResult{};
+            };
+            require( producer->replace( { request }, error ), "Source-only cancellation demand is published." );
+            request.execute = {};
+            source.reset();
+            require( entered.wait_for( std::chrono::seconds( 5 ) ) == std::future_status::ready,
+                     "The source-only callback starts before cancellation." );
+            producer->drain();
+            require( retired.expired() && !producer->stats().active && !producer->stats().ready &&
+                         isolated->stats().used[size_t( StreamMemoryClass::SourceCpu )] == 0,
+                     "Drain observes callback completion and source retirement without a source-release wakeup." );
+        }
+        isolated.reset();  // Idle-worker shutdown must retain its explicit wakeup.
+
+        auto first = WorldStreamingScheduler::shared();
+        WorldStreamingScheduler::shutdownShared();
+        auto restarted = WorldStreamingScheduler::shared();
+        require( first != restarted, "The retained and restarted services have independent worker queues." );
+        budgetReleaseProgress( restarted, first, StreamMemoryClass::WorkingCpu );
+        budgetReleaseProgress( first, restarted, StreamMemoryClass::ResultCpu );
+        std::puts( "World streaming source-only retirement, dispatch-budget release and retained-generation progress: PASS" );
+    }
+
     inline void run()
     {
         WorldStreamLimits limits;
@@ -589,6 +691,7 @@ namespace world_streaming_contracts
             "World streaming priority/fairness, atomic rejection, cancellation and budget lifetime: "
             "PASS" );
         sourceMetadataContracts();
+        budgetWakeContracts();
     }
 }  // namespace world_streaming_contracts
 #endif

@@ -666,15 +666,30 @@ namespace workphone::scene
         auto children = actor->getAllChildren();
         // Offer input to the frontmost children before scroll containers can capture it.
         std::reverse( children.begin(), children.end() );
-        std::stable_sort( children.begin(), children.end(), []( const auto &left, const auto &right ) {
-            auto leftTransform = left ? left->template getComponent<LayoutTransform>() : nullptr;
-            auto rightTransform = right ? right->template getComponent<LayoutTransform>() : nullptr;
-            auto leftOrder = leftTransform ? leftTransform->getZOrder() : 0;
-            auto rightOrder = rightTransform ? rightTransform->getZOrder() : 0;
-            return leftOrder > rightOrder;
-        } );
-        for( auto &child : children )
+        struct ChildOrder
         {
+            size_t index;
+            u32 order;
+        };
+        Array<ChildOrder> orderedChildren{ Allocator<ChildOrder>( sourceBudget ) };
+        if( children.size() > 1 )
+        {
+            orderedChildren.reserve( children.size() );
+            for( size_t index = 0; index < children.size(); ++index )
+            {
+                const auto &child = children[index];
+                auto transform = child ? child->getComponent<LayoutTransform>() : nullptr;
+                orderedChildren.emplace_back( ChildOrder{ index, transform ? transform->getZOrder() : 0 } );
+            }
+            // Component lookup snapshots all attached components. Capture each key once,
+            // then compare only values while the original actor snapshot pins membership.
+            std::stable_sort( orderedChildren.begin(), orderedChildren.end(), []( const auto &left, const auto &right ) {
+                return left.order > right.order;
+            } );
+        }
+        for( size_t position = 0; position < children.size(); ++position )
+        {
+            auto &child = children[orderedChildren.empty() ? position : orderedChildren[position].index];
             if( child )
             {
                 if( child->isEnabledInScene() && child->isVisible() )

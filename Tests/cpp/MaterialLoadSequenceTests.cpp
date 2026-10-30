@@ -61,6 +61,7 @@
 #include "ReflectionStringBudgetContracts.hpp"
 #include "ReflectionPayloadBudgetContracts.hpp"
 #include "SnapshotContainerBudgetContracts.hpp"
+#include "PropertiesJsonContracts.hpp"
 
 namespace
 {
@@ -3793,6 +3794,13 @@ int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 2 && std::strcmp( argv[1], "--properties-json-contracts" ) == 0 )
+        {
+            Fixture fixture;
+            properties_json_contracts::run();
+            std::cout << "PASS: JSON property metadata, nested children and canonical formatting\n";
+            return 0;
+        }
         if( argc == 2 && std::strcmp( argv[1], "--automatic-material-residency-contracts" ) == 0 )
         {
             Fixture fixture;
@@ -3802,6 +3810,7 @@ int main( int argc, char **argv )
         if( argc == 2 && std::strcmp( argv[1], "--benchmark-material-residency" ) == 0 )
         {
             Fixture fixture;
+            properties_json_contracts::run();
             claw_material_residency_contracts::runAutomaticRetry( fixture );
             claw_material_residency_contracts::benchmark( fixture );
             return 0;
@@ -3876,6 +3885,7 @@ int main( int argc, char **argv )
                   << " draw_record_bytes=" << sizeof(render::ClawMaterialDrawRecords::Record) << '\n';
         generic_engine_catalog_budget_contracts::bootstrap();
         Fixture fixture;
+        properties_json_contracts::run();
         material_single_pass_edits::run(fixture);
         material_state_lookup_contracts::run(fixture);
         reflection_string_budget_contracts::run(fixture);

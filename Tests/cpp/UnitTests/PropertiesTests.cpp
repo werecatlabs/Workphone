@@ -1,6 +1,7 @@
 #include "UnitTests.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#include "../PropertiesJsonContracts.hpp"
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
@@ -171,6 +172,11 @@ BOOST_AUTO_TEST_CASE( properties_to_string )
 
     properties->setProperty( "actorId", 654321 );
     BOOST_CHECK( properties->getPropertyAsInt( "actorId" ) == 654321 );
+}
+
+BOOST_AUTO_TEST_CASE( properties_json_round_trip_preserves_metadata_children_and_format )
+{
+    properties_json_contracts::run();
 }
 
 BOOST_AUTO_TEST_CASE( properties_binary_round_trip_preserves_generic_metadata )

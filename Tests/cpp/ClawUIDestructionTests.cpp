@@ -31,6 +31,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include "UILayoutTraversalContracts.hpp"
 #include "InputListenerDispatchContracts.hpp"
+#include "LayoutInputSortContracts.hpp"
 #include "SceneDropdownLifetimeContracts.hpp"
 #include <Workphone/Scene/CameraManager.hpp>
 #include <Workphone/Scene/GameActor.hpp>
@@ -1302,6 +1303,11 @@ namespace
 int main( int argc, char **argv )
 {
     Fixture fixture;
+    if( argc > 1 && std::strcmp( argv[1], "--layout-input-sort-only" ) == 0 )
+    {
+        try { layout_input_sort_contracts::run( fixture.application ); return 0; }
+        catch( const std::exception &error ) { std::fprintf( stderr, "%s\n", error.what() ); return 1; }
+    }
     if( argc > 1 && std::strcmp( argv[1], "--traversal-only" ) == 0 )
     {
         try { ui_layout_traversal_contracts::run( fixture.application ); return 0; }
@@ -1376,6 +1382,8 @@ int main( int argc, char **argv )
     ok &= testTreeCleanup( Cleanup::Destructor );
     ok &= testInputListenerCleanup( fixture );
     try { assertions += input_listener_dispatch_contracts::run(); }
+    catch( const std::exception &error ) { ok &= check( false, error.what() ); }
+    try { assertions += layout_input_sort_contracts::run( fixture.application ); }
     catch( const std::exception &error ) { ok &= check( false, error.what() ); }
     try { assertions += scene_dropdown_lifetime_contracts::run(); }
     catch( const std::exception &error ) { ok &= check( false, error.what() ); }

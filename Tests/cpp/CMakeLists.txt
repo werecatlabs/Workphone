@@ -241,6 +241,8 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
     set_tests_properties(WPGraphics.claw_ui_destruction PROPERTIES LABELS "graphics;headless;lifecycle" TIMEOUT 60)
     add_test(NAME WPGraphics.claw_paused_game_ui COMMAND WPGraphicsClawUIDestructionTests --paused-game-ui-only)
     set_tests_properties(WPGraphics.claw_paused_game_ui PROPERTIES LABELS "graphics;headless;debugger" TIMEOUT 60)
+    add_test(NAME WPGraphics.layout_input_sort COMMAND WPGraphicsClawUIDestructionTests --layout-input-sort-only)
+    set_tests_properties(WPGraphics.layout_input_sort PROPERTIES LABELS "ui;input;headless" TIMEOUT 30)
 endif()
 
 if (WP_BUILD_TESTS)
@@ -400,6 +402,10 @@ if (WP_BUILD_TESTS)
                 set_target_properties(WPMaterialLoadSequenceTests PROPERTIES FOLDER Tests/Cpp)
                 add_test(NAME WPGraphics.material_load_sequence COMMAND WPMaterialLoadSequenceTests)
                 set_tests_properties(WPGraphics.material_load_sequence PROPERTIES LABELS "graphics;assets;scene;headless" TIMEOUT 30)
+                add_test(NAME WPGraphics.properties_json_contract
+                    COMMAND WPMaterialLoadSequenceTests --properties-json-contracts)
+                set_tests_properties(WPGraphics.properties_json_contract PROPERTIES
+                    LABELS "serialization;json;material;headless" TIMEOUT 30)
                 add_test(NAME WPGraphics.material_residency_retry
                     COMMAND WPMaterialLoadSequenceTests --automatic-material-residency-contracts)
                 set_tests_properties(WPGraphics.material_residency_retry PROPERTIES
