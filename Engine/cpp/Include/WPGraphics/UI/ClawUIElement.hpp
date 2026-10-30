@@ -311,30 +311,22 @@ namespace workphone
 
             void lock()
             {
-                auto applicationManager = core::IApplicationManager::instance();
-                auto ui = applicationManager->getRenderUI();
-                ui->lock();
+                m_mutex.lock();
             }
 
             void lock_shared()
             {
-                auto applicationManager = core::IApplicationManager::instance();
-                auto ui = applicationManager->getRenderUI();
-                ui->lock();
+                m_mutex.lock();
             }
 
             void unlock()
             {
-                auto applicationManager = core::IApplicationManager::instance();
-                auto ui = applicationManager->getRenderUI();
-                ui->unlock();
+                m_mutex.unlock();
             }
 
             void unlock_shared()
             {
-                auto applicationManager = core::IApplicationManager::instance();
-                auto ui = applicationManager->getRenderUI();
-                ui->unlock();
+                m_mutex.unlock();
             }
 
         protected:
@@ -419,7 +411,7 @@ namespace workphone
             /// The children of the gui element.
             ConcurrentArray<SmartPtr<IUIElement>> m_children;
 
-            RecursiveSpinMutex m_mutex;
+            mutable RecursiveSpinMutex m_mutex;
 
             /// The number of the next name extension.
             static u32 m_nextGeneratedNameExt;
