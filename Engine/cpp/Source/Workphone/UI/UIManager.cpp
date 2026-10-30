@@ -121,6 +121,34 @@ namespace workphone
         {
         }
 
+        bool UIManager::handleStateMessage( const SmartPtr<IStateMessage> &message )
+        {
+            return false;
+        }
+
+        bool UIManager::handleStateChanged( SmartPtr<IState> &state )
+        {
+            return false;
+        }
+
+        SmartPtr<IStateContext> UIManager::getStateContext() const
+        {
+            return nullptr;
+        }
+
+        void UIManager::setStateContext( SmartPtr<IStateContext> stateContext )
+        {
+        }
+
+        SmartPtr<IStateListener> UIManager::getStateListener() const
+        {
+            return nullptr;
+        }
+
+        void UIManager::setStateListener( SmartPtr<IStateListener> stateListener )
+        {
+        }
+
         void UIManager::_getObject( void **ppObject )
         {
         }

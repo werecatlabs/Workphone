@@ -182,6 +182,18 @@ namespace workphone
              */
             void invalidate() override;
 
+            bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override;
+
+            bool handleStateChanged( SmartPtr<IState> &state ) override;
+
+            SmartPtr<IStateContext> getStateContext() const override;
+
+            void setStateContext( SmartPtr<IStateContext> stateContext ) override;
+
+            SmartPtr<IStateListener> getStateListener() const override;
+
+            void setStateListener( SmartPtr<IStateListener> stateListener ) override;
+
             /**
              * @brief Internal helper to query the underlying native object pointer.
              *

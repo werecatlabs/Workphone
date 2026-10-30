@@ -72,11 +72,19 @@ namespace workphone::ui
         }
 
         m_elements.reserve( 1024 );
+
+        createStateContext();
     }
 
     ClawUIManager::~ClawUIManager()
     {
-        unload( nullptr );
+        WP_ASSERT( isLoaded() == false );
+
+        if( isLoaded() )
+        {
+            unload( nullptr );
+        }
+
         if( m_workphoneContext )
         {
             delete m_workphoneContext;
@@ -88,6 +96,8 @@ namespace workphone::ui
             delete m_workphoneRenderer;
             m_workphoneRenderer = nullptr;
         }
+
+        destroyStateContext();
     }
 
     void ClawUIManager::load( SmartPtr<ISharedObject> data )
@@ -380,8 +390,11 @@ namespace workphone::ui
             wp_context *context;
             wp_input input;
             wp_f32 delta;
+
             explicit PreserveInput( wp_context *value ) :
-                context( value ), input( value->input ), delta( value->delta_time_seconds )
+                context( value ),
+                input( value->input ),
+                delta( value->delta_time_seconds )
             {
                 // ROM flags cover the C widgets. An empty input snapshot also
                 // protects native widgets that inspect the context directly.
@@ -391,14 +404,19 @@ namespace workphone::ui
                 context->input.mouse.prev = context->input.mouse.pos;
                 context->delta_time_seconds = 0.0f;
             }
+
             ~PreserveInput()
             {
                 context->input = input;
                 context->delta_time_seconds = delta;
             }
         };
+
         std::optional<PreserveInput> preservedInput;
-        if( readOnly ) preservedInput.emplace( ctx );
+        if( readOnly )
+        {
+            preservedInput.emplace( ctx );
+        }
 
         // Text commands borrow each widget's font descriptor until conversion.
         // Scene/UI callbacks can retire a screen while this frame is drawing,
@@ -463,17 +481,29 @@ namespace workphone::ui
                 wp_window *window;
                 wp_panel *panel;
                 wp_flags windowFlags, panelFlags;
+
                 explicit PreserveReadOnlyFlags( wp_context *context ) :
-                    window( context->current ), panel( context->current->layout ),
-                    windowFlags( window->flags ), panelFlags( panel->flags )
+                    window( context->current ),
+                    panel( context->current->layout ),
+                    windowFlags( window->flags ),
+                    panelFlags( panel->flags )
                 {
                     window->flags |= WORKPHONE_WINDOW_ROM;
                     panel->flags |= WORKPHONE_WINDOW_ROM;
                 }
-                ~PreserveReadOnlyFlags() { window->flags = windowFlags; panel->flags = panelFlags; }
+
+                ~PreserveReadOnlyFlags()
+                {
+                    window->flags = windowFlags;
+                    panel->flags = panelFlags;
+                }
             };
+
             std::optional<PreserveReadOnlyFlags> preservedFlags;
-            if( readOnly ) preservedFlags.emplace( ctx );
+            if( readOnly )
+            {
+                preservedFlags.emplace( ctx );
+            }
             wp_layout_space_begin( ctx, WORKPHONE_STATIC, rootBounds.h, 1024 );
 
             if( frameRoot )
@@ -927,6 +957,73 @@ namespace workphone::ui
         return m_workphoneContext->getContext();
     }
 
+    void ClawUIManager::destroyStateContext()
+    {
+        auto applicationManager = core::IApplicationManager::instance();
+
+        auto stateManager = applicationManager->getStateManager();
+        auto graphicsSystem = applicationManager->getGraphicsSystem();
+        auto factoryManager = applicationManager->getFactoryManager();
+
+        auto stateContext = getStateContext();
+        stateManager->removeStateContext( stateContext );
+        setStateContext( nullptr );
+    }
+
+    void ClawUIManager::createStateContext()
+    {
+        auto applicationManager = core::IApplicationManager::instance();
+
+        auto stateManager = applicationManager->getStateManager();
+        auto graphicsSystem = applicationManager->getGraphicsSystem();
+        auto factoryManager = applicationManager->getFactoryManager();
+
+        auto stateContext = stateManager->addStateContext();
+        setStateContext( stateContext );
+
+        auto listener = factoryManager->make_ptr<StateListener>();
+        listener->setOwner( this );
+        stateContext->addStateListener( listener );
+    }
+
+    bool ClawUIManager::handleStateChanged( SmartPtr<IState> &state )
+    {
+        for( auto element : m_elements )
+        {
+            if( element->handleStateChanged( state ) )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool ClawUIManager::handleStateMessage( const SmartPtr<IStateMessage> &message )
+    {
+        return false;
+    }
+
+    void ClawUIManager::setStateListener( SmartPtr<IStateListener> stateListener )
+    {
+        m_stateListener = stateListener;
+    }
+
+    SmartPtr<IStateListener> ClawUIManager::getStateListener() const
+    {
+        return m_stateListener;
+    }
+
+    void ClawUIManager::setStateContext( SmartPtr<IStateContext> stateContext )
+    {
+        m_stateContext = stateContext;
+    }
+
+    SmartPtr<IStateContext> ClawUIManager::getStateContext() const
+    {
+        return m_stateContext;
+    }
+
     ClawUIManager::InputListener::InputListener( ClawUIManager *mgr ) : m_mgr( mgr )
     {
     }
@@ -944,4 +1041,40 @@ namespace workphone::ui
 
         return {};
     }
+
+    void ClawUIManager::StateListener::setOwner( SmartPtr<ClawUIManager> owner )
+    {
+        m_owner = owner;
+    }
+
+    SmartPtr<ClawUIManager> ClawUIManager::StateListener::getOwner() const
+    {
+        auto p = m_owner.load();
+        return p.lock();
+    }
+
+    bool ClawUIManager::StateListener::handleStateChanged( SmartPtr<IState> &state )
+    {
+        if( auto owner = getOwner() )
+        {
+            owner->handleStateChanged( state );
+        }
+
+        return false;
+    }
+
+    bool ClawUIManager::StateListener::handleStateMessage( const SmartPtr<IStateMessage> &message )
+    {
+        if( auto owner = getOwner() )
+        {
+            owner->handleStateMessage( message );
+        }
+
+        return false;
+    }
+
+    ClawUIManager::StateListener::StateListener() = default;
+
+    ClawUIManager::StateListener::~StateListener() = default;
+
 }  // namespace workphone::ui

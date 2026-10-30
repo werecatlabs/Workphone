@@ -54,6 +54,25 @@ namespace workphone
         class ClawUIElement : public core::Prototype<T>, public IWorkphoneWidget
         {
         public:
+            class ElementStateListener : public IStateListener
+            {
+            public:
+                ElementStateListener() = default;
+                ~ElementStateListener() override = default;
+
+                bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override;
+
+                bool handleStateChanged( SmartPtr<IState> &state ) override;
+
+                SmartPtr<ClawUIElement<T>> getOwner() const;
+
+                void setOwner( SmartPtr<ClawUIElement<T>> owner );
+
+            protected:
+                // The element owns its callback; the callback must not retain the element.
+                AtomicWeakPtr<ClawUIElement<T>> m_owner;
+            };
+
             /** Default constructor. */
             ClawUIElement();
 
@@ -284,6 +303,7 @@ namespace workphone
             void onGainFocus() override;
             void onLostFocus() override;
 
+            virtual bool handleStateMessage( const SmartPtr<IStateMessage> &message );
             virtual bool handleStateChanged( SmartPtr<IState> &state );
 
             bool getHandleInputEvents() const;
@@ -297,25 +317,6 @@ namespace workphone
         protected:
             /** Sort local membership and return its pinned draw-order snapshot. */
             Array<SmartPtr<IUIElement>> sortChildrenByOrder();
-
-            class ElementStateListener : public IStateListener
-            {
-            public:
-                ElementStateListener() = default;
-                ~ElementStateListener() override = default;
-
-                bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override;
-
-                bool handleStateChanged( SmartPtr<IState> &state ) override;
-
-                SmartPtr<ClawUIElement<T>> getOwner() const;
-
-                void setOwner( SmartPtr<ClawUIElement<T>> owner );
-
-            protected:
-                // The element owns its callback; the callback must not retain the element.
-                AtomicWeakPtr<ClawUIElement<T>> m_owner;
-            };
 
             void setType( const String &type );
 
@@ -1695,6 +1696,12 @@ namespace workphone
         void ClawUIElement<T>::onLostFocus()
         {
             m_hasFocus = false;
+        }
+
+        template <class T>
+        bool ClawUIElement<T>::handleStateMessage( const SmartPtr<IStateMessage> &message )
+        {
+            return false;
         }
 
         template <class T>
