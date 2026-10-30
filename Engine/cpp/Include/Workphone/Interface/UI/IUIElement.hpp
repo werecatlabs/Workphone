@@ -544,6 +544,9 @@ namespace workphone
             /** @brief Callback invoked when the element loses focus. */
             virtual void onLostFocus() = 0;
 
+            virtual bool handleStateMessage( const SmartPtr<IStateMessage> &message ) = 0;
+            virtual bool handleStateChanged( SmartPtr<IState> &state ) = 0;
+
             /**
              * @brief Retrieve a pointer to the underlying renderer/engine object.
              *

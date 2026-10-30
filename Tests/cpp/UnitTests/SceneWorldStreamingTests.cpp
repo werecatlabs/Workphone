@@ -138,9 +138,13 @@ namespace
     {
     public:
         u32 releaseUnusedResources( u32 maximumCandidates ) override
-        { events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
+        { ++forcedSweeps; events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
+        u32 releaseUnusedResourcesOnUpdate( u32 maximumCandidates ) override
+        { ++automaticSweeps; events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
         Array<u32> *events = nullptr;
         Array<u32> allowances;
+        u32 forcedSweeps = 0;
+        u32 automaticSweeps = 0;
     };
     class TextureSweepProbe : public render::TextureManager
     {
@@ -850,6 +854,8 @@ BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new
     for( u32 i = 0; i < 4; ++i ) BOOST_CHECK_EQUAL( events[i], i );
     BOOST_CHECK_EQUAL( graphics->materials->allowances.front(), 32u );
     BOOST_CHECK_EQUAL( graphics->textures->allowances.front(), 32u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 1u );
+    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 0u );
     events.clear();
     const auto released = graphics->releaseUnusedAssets( 7 );
     BOOST_CHECK_EQUAL( released.materials, 3u ); BOOST_CHECK_EQUAL( released.textures, 5u );
@@ -858,6 +864,25 @@ BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new
     BOOST_REQUIRE_EQUAL( events.size(), 2u );
     graphics->releaseUnusedAssets( 0 );
     BOOST_CHECK_EQUAL( events.size(), 2u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 2u );
+
+    events.clear();
+    graphics->update();
+    BOOST_REQUIRE_EQUAL( events.size(), 2u );
+    BOOST_CHECK_EQUAL( events[0], 1u ); BOOST_CHECK_EQUAL( events[1], 2u );
+    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 2u );
+
+    // Reload admission also needs an immediate retry of previously rejected assets.
+    graphics->reloadObject( newObject, true );
+    graphics->update();
+    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 3u );
+
+    graphics->unloadObject( newObject, true );
+    graphics->update();
+    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 4u );
 }
 
 BOOST_AUTO_TEST_CASE( scene_retirement_uses_the_existing_graphics_cache_sweep )

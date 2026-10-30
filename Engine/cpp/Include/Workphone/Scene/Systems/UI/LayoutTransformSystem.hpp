@@ -194,12 +194,6 @@ namespace workphone
                 const Vector2<real_Num> &anchorMax, f32 &left, f32 &right, f32 &top, f32 &bottom );
 
             /**
-             * @brief Rebuilds the internal dirty list of components that need
-             *        layout recalculation.
-             */
-            void updateDirtyList();
-
-            /**
              * @brief Internal per-component data stored by the system.
              *
              * Stores raw pointers to component and its state objects managed
@@ -225,16 +219,6 @@ namespace workphone
                 m_transformPool; /**< Pool containing UITransformState instances. */
 
             Pool<UIAnchorStateData> m_anchorPool; /**< Pool containing UIAnchorState instances. */
-
-            /**
-             * @brief A list of pointers to components that are dirty and need
-             *        layout updates.
-             *
-             * The list contains raw component pointers and is maintained by
-             * the system; entries are valid as long as their corresponding
-             * data remains allocated in the pools.
-             */
-            Array<IComponent *> m_componentPointers;
         };
     }  // namespace scene
 }  // namespace workphone

@@ -8,7 +8,6 @@ namespace workphone::ui
     ClawUIToggleGroup::ClawUIToggleGroup( const String &id ) : m_curToggledBtn( nullptr )
     {
         setName( id );
-        setType( "ToggleGroup" );
     }
 
     ClawUIToggleGroup::~ClawUIToggleGroup() = default;

@@ -237,6 +237,10 @@ namespace workphone
              * Called on the graphics owner thread. Identity metadata stays cached. */
             virtual u32 releaseUnusedResources( u32 maximumCandidates = 32 );
 
+            /** Automatic frame cleanup may defer candidates that recently failed
+             * retirement. Explicit releaseUnusedResources() remains immediate. */
+            virtual u32 releaseUnusedResourcesOnUpdate( u32 maximumCandidates = 32 );
+
             /**
              * @brief Save a resource to disk.
              *

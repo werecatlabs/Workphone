@@ -22,10 +22,6 @@ namespace workphone::ui
     void ClawUIButton::load( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Loading );
-        if( auto stateContext = getStateContext() )
-        {
-            stateContext->setDirty( true );
-        }
         setLoadingState( LoadingState::Loaded );
     }
 
@@ -51,52 +47,13 @@ namespace workphone::ui
         ClawUIElement::setPosition( position );
     }
 
-    String ClawUIButton::getLabel() const
-    {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->getStateData<UIElementStateData>() )
-            {
-                return !state->label.empty() ? state->label : state->caption;
-            }
-        }
-        return ClawUIElement::getLabel();
-    }
-
-    void ClawUIButton::setLabel( const String &label )
-    {
-        ClawUIElement::setLabel( label );
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->invalidateStateData<UIElementStateData>() )
-            {
-                state->label = label;
-                state->caption = label;
-            }
-        }
-    }
-
     void ClawUIButton::setTextSize( f32 textSize )
     {
         m_textSize = MathF::clamp( textSize, 0.0f, 255.0f );
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->invalidateStateData<UIElementStateData>() )
-            {
-                state->textSize = static_cast<u8>( m_textSize );
-            }
-        }
     }
 
     f32 ClawUIButton::getTextSize() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->getStateData<UIElementStateData>() )
-            {
-                return state->textSize;
-            }
-        }
         return m_textSize;
     }
 

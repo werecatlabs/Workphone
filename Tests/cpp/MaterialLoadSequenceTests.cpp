@@ -3793,6 +3793,19 @@ int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 2 && std::strcmp( argv[1], "--automatic-material-residency-contracts" ) == 0 )
+        {
+            Fixture fixture;
+            claw_material_residency_contracts::runAutomaticRetry( fixture );
+            return 0;
+        }
+        if( argc == 2 && std::strcmp( argv[1], "--benchmark-material-residency" ) == 0 )
+        {
+            Fixture fixture;
+            claw_material_residency_contracts::runAutomaticRetry( fixture );
+            claw_material_residency_contracts::benchmark( fixture );
+            return 0;
+        }
         if( argc > 1 && std::strcmp( argv[1], "--profile-material-cpu" ) == 0 )
         {
             require( argc == 6, "Usage: --profile-material-cpu materials parameters frames samples" );

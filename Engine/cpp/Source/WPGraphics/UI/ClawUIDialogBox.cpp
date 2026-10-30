@@ -8,7 +8,6 @@ namespace workphone::ui
 {
     ClawUIDialogBox::ClawUIDialogBox()
     {
-        setType( "DialogBox" );
     }
 
     ClawUIDialogBox::~ClawUIDialogBox() = default;

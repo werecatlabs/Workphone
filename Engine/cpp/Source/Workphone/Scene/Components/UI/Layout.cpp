@@ -312,43 +312,24 @@ namespace workphone::scene
                     }
                 }
 
-                auto children = actor->getAllComponentsInChildren<UIComponent>();
-                for( auto &child : children )
-                {
-                    child->updateOrder();
-                }
+                //auto children = actor->getAllComponentsInChildren<UIComponent>();
+                //for( auto &child : children )
+                //{
+                //    child->updateOrder();
+                //}
 
-                if( auto element = getElement() )
-                {
-                    element->updateZOrder();
-                }
+                //if( auto element = getElement() )
+                //{
+                //    element->updateZOrder();
+                //}
 
-                for( auto &child : children )
-                {
-                    if( auto element = child->getElement() )
-                    {
-                        child->updateOrder();
-                    }
-                }
-
-                if( auto element = getElement() )
-                {
-                    if( auto stateContext = element->getStateContext() )
-                    {
-                        stateContext->setDirty( true );
-                    }
-                }
-
-                for( auto &child : children )
-                {
-                    if( auto element = child->getElement() )
-                    {
-                        if( auto stateContext = element->getStateContext() )
-                        {
-                            stateContext->setDirty( true );
-                        }
-                    }
-                }
+                //for( auto &child : children )
+                //{
+                //    if( auto element = child->getElement() )
+                //    {
+                //        child->updateOrder();
+                //    }
+                //}
             }
         }
         break;

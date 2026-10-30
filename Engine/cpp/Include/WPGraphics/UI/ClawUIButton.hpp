@@ -36,9 +36,6 @@ namespace workphone
 
             void setPosition( const Vector2F &position ) override;
 
-            String getLabel() const override;
-            void setLabel( const String &label ) override;
-
             void setTextSize( f32 textSize ) override;
             f32 getTextSize() const override;
 

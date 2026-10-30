@@ -57,8 +57,6 @@ namespace workphone::scene
         try
         {
             setLoadingState( LoadingState::Loading );
-
-            // createUI();
             UIComponent::load( data );
 
             setLoadingState( LoadingState::Loaded );

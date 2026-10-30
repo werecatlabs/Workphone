@@ -416,6 +416,10 @@ namespace workphone
              * Persisted in properties. */
             void setUseNativeUI( bool useNativeUI );
 
+            bool isVisible() const;
+
+            void setVisible( bool visible );
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
@@ -518,6 +522,8 @@ namespace workphone
 
             // Whether to use native UI rendering or custom rendering.
             atomic_bool m_useNativeUI = true;
+
+            bool m_visible = true;
         };
 
         inline ui::IUIElement *UIComponent::getElementPtr() const

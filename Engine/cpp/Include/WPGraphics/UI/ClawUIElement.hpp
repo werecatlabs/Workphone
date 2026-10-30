@@ -54,6 +54,25 @@ namespace workphone
         class ClawUIElement : public core::Prototype<T>, public IWorkphoneWidget
         {
         public:
+            class ElementStateListener : public IStateListener
+            {
+            public:
+                ElementStateListener() = default;
+                ~ElementStateListener() override = default;
+
+                bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override;
+
+                bool handleStateChanged( SmartPtr<IState> &state ) override;
+
+                SmartPtr<ClawUIElement<T>> getOwner() const;
+
+                void setOwner( SmartPtr<ClawUIElement<T>> owner );
+
+            protected:
+                // The element owns its callback; the callback must not retain the element.
+                AtomicWeakPtr<ClawUIElement<T>> m_owner;
+            };
+
             /** Default constructor. */
             ClawUIElement();
 
@@ -91,19 +110,6 @@ namespace workphone
             virtual hash_type getElementId() const;
 
             virtual void setElementId( hash_type id );
-
-            /** Gets the hash id of the gui element. */
-            u32 getHashId() const;
-
-            /** Sets the component id. */
-            void setComponentID( const String &componentId );
-
-            /** Gets the component id. */
-            const String &getComponentID() const;
-
-            /** Gets the type of the gui item. */
-            const String &getType() const;
-
             /** Sets the position of the gui item. */
             virtual void setPosition( const Vector2F &position );
 
@@ -261,13 +267,23 @@ namespace workphone
 
             void invalidate();
 
-            SmartPtr<IStateContext> getStateContext() const;
+            SmartPtr<IStateContext> getStateContext() const
+            {
+                return nullptr;
+            }
 
-            void setStateContext( SmartPtr<IStateContext> stateContext );
+            virtual void setStateContext( SmartPtr<IStateContext> stateContext )
+            {
+            }
 
-            SmartPtr<IStateListener> getStateListener() const;
+            virtual SmartPtr<IStateListener> getStateListener() const
+            {
+                return nullptr;
+            }
 
-            void setStateListener( SmartPtr<IStateListener> stateListener );
+            virtual void setStateListener( SmartPtr<IStateListener> stateListener )
+            {
+            }
 
             void sortZOrder();
 
@@ -284,6 +300,7 @@ namespace workphone
             void onGainFocus() override;
             void onLostFocus() override;
 
+            virtual bool handleStateMessage( const SmartPtr<IStateMessage> &message );
             virtual bool handleStateChanged( SmartPtr<IState> &state );
 
             bool getHandleInputEvents() const;
@@ -292,34 +309,29 @@ namespace workphone
 
             bool isThreadSafe() const;
 
-            void addMessage( SmartPtr<IStateMessage> message );
+            void lock()
+            {
+                m_mutex.lock();
+            }
+
+            void lock_shared()
+            {
+                m_mutex.lock();
+            }
+
+            void unlock()
+            {
+                m_mutex.unlock();
+            }
+
+            void unlock_shared()
+            {
+                m_mutex.unlock();
+            }
 
         protected:
             /** Sort local membership and return its pinned draw-order snapshot. */
             Array<SmartPtr<IUIElement>> sortChildrenByOrder();
-
-            class ElementStateListener : public IStateListener
-            {
-            public:
-                ElementStateListener() = default;
-                ~ElementStateListener() override = default;
-
-                bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override;
-
-                bool handleStateChanged( SmartPtr<IState> &state ) override;
-
-                SmartPtr<ClawUIElement<T>> getOwner() const;
-
-                void setOwner( SmartPtr<ClawUIElement<T>> owner );
-
-            protected:
-                // The element owns its callback; the callback must not retain the element.
-                AtomicWeakPtr<ClawUIElement<T>> m_owner;
-            };
-
-            void setType( const String &type );
-
-            virtual void createStateContext();
 
             /** Push this element's absolute rectangle into the active free-form layout. */
             bool beginWorkphoneWidget( struct wp_context *ctx ) const;
@@ -348,12 +360,12 @@ namespace workphone
             /// Used to store user properties.
             mutable SmartPtr<ISharedObject> m_userProperties;
 
-            /// The attached user data.
-            void *m_userData;
-
             Vector2F m_position = Vector2F::zero();
             Vector2F m_size = Vector2F( 1.0f, 1.0f );
             ColourF m_colour = ColourF::White;
+
+            /// The attached user data.
+            void *m_userData;
 
             f32 m_scale = 1.0f;
 
@@ -399,6 +411,8 @@ namespace workphone
             /// The children of the gui element.
             ConcurrentArray<SmartPtr<IUIElement>> m_children;
 
+            mutable RecursiveSpinMutex m_mutex;
+
             /// The number of the next name extension.
             static u32 m_nextGeneratedNameExt;
         };
@@ -417,9 +431,9 @@ namespace workphone
         {
             auto name = String( "GUIElement" ) + StringUtil::toString( m_nextGeneratedNameExt++ );
             this->setName( name );
+            this->setId( m_nextGeneratedNameExt );
 
             m_layout = nullptr;
-            createStateContext();
         }
 
         template <class T>
@@ -440,24 +454,9 @@ namespace workphone
                 m_parent = nullptr;
                 m_layout = nullptr;
 
-                auto stateContext = getStateContext();
                 setStateContext( nullptr );
                 setStateListener( nullptr );
-                if( stateContext )
-                {
-                    stateContext->setOwner( nullptr );
-                    auto applicationManager = core::IApplicationManager::instance();
-                    auto stateManager =
-                        applicationManager ? applicationManager->getStateManager() : nullptr;
-                    if( stateManager )
-                    {
-                        stateManager->removeStateContext( stateContext );
-                    }
-                    else
-                    {
-                        stateContext->unload( nullptr );
-                    }
-                }
+
                 this->setLoadingState( LoadingState::Unloaded );
             }
             catch( std::exception &e )
@@ -640,12 +639,6 @@ namespace workphone
             {
                 child->setLayout( getLayout() );
             }
-
-            if( auto stateContext = child->getStateContext() )
-            {
-                stateContext->setDirty( true );
-            }
-            updateZOrder();
         }
 
         template <class T>
@@ -943,6 +936,8 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setEnabled( bool enabled, bool cascade )
         {
+            ScopedLock lock( this );
+
             if( m_isEnabled != enabled )
             {
                 m_isEnabled = enabled;
@@ -969,6 +964,8 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setSelected( bool selected )
         {
+            ScopedLock lock( this );
+
             bool wasSelected = m_isSelected;
             m_isSelected = selected;
 
@@ -989,28 +986,23 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setHovered( bool hovered )
         {
+            ScopedLock lock( this );
             m_isHovered = hovered;
         }
 
         template <class T>
         bool ClawUIElement<T>::isHovered() const
         {
+            ScopedLock lock( this );
             return m_isHovered;
         }
 
         template <class T>
         void ClawUIElement<T>::setVisible( bool visible, bool cascade )
         {
-            m_visible = visible;
+            ScopedLock lock( this );
 
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    state->flags = BitUtil::setFlagValue(
-                        state->flags, static_cast<u16>( IUIElement::visibleFlag ), visible );
-                }
-            }
+            m_visible = visible;
 
             if( cascade )
             {
@@ -1023,16 +1015,13 @@ namespace workphone
                     }
                 }
             }
-
-            // if( !visible && element->hasFocus() )
-            //{
-            //     setFocus( false );
-            // }
         }
 
         template <class T>
         void ClawUIElement<T>::setFocus( bool hasFocus )
         {
+            ScopedLock lock( this );
+
             if( m_hasFocus && !hasFocus )
             {
             }
@@ -1068,19 +1057,6 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::addMessage( SmartPtr<IStateMessage> message )
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-
-            if( auto stateContext = getStateContext() )
-            {
-                const auto stateTask = graphicsSystem->getStateTask();
-                stateContext->addMessage( stateTask, message );
-            }
-        }
-
-        template <class T>
         ConcurrentArray<SmartPtr<IUIElement>> &ClawUIElement<T>::getChildrenRef()
         {
             return m_children;
@@ -1113,15 +1089,8 @@ namespace workphone
         template <class T>
         void ClawUIElement<T>::setPosition( const Vector2F &position )
         {
+            ScopedLock lock( this );
             m_position = position;
-
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    state->position = position;
-                }
-            }
         }
 
         template <class T>
@@ -1247,28 +1216,14 @@ namespace workphone
         template <class T>
         u32 ClawUIElement<T>::getOrder() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    return state->zorder;
-                }
-            }
-
+            ScopedLock lock( this );
             return m_order;
         }
 
         template <class T>
         void ClawUIElement<T>::setOrder( u32 order )
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    state->zorder = order;
-                }
-            }
-
+            ScopedLock lock( this );
             m_order = order;
         }
 
@@ -1295,125 +1250,79 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::setComponentID( const String &componentId )
-        {
-            m_componentId = componentId;
-        }
-
-        template <class T>
-        const String &ClawUIElement<T>::getComponentID() const
-        {
-            return m_componentId;
-        }
-
-        template <class T>
-        void ClawUIElement<T>::setType( const String &type )
-        {
-            m_type = type;
-        }
-
-        template <class T>
-        const String &ClawUIElement<T>::getType() const
-        {
-            return m_type;
-        }
-
-        template <class T>
         String ClawUIElement<T>::getLabel() const
         {
+            ScopedLock lock( this );
             return m_label;
         }
 
         template <class T>
         void ClawUIElement<T>::setLabel( const String &label )
         {
+            ScopedLock lock( this );
             m_label = label;
         }
 
         template <class T>
         Vector2F ClawUIElement<T>::getPosition() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    return state->position;
-                }
-            }
-
+            ScopedLock lock( this );
             return m_position;
         }
 
         template <class T>
         void ClawUIElement<T>::setSize( const Vector2F &size )
         {
+            ScopedLock lock( this );
             m_size = size;
-
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    state->size = size;
-                }
-            }
         }
 
         template <class T>
         Vector2F ClawUIElement<T>::getSize() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    return state->size;
-                }
-            }
-
+            ScopedLock lock( this );
             return m_size;
         }
 
         template <class T>
         f32 ClawUIElement<T>::getScale() const
         {
+            ScopedLock lock( this );
             return m_scale;
         }
 
         template <class T>
         void ClawUIElement<T>::setScale( f32 scale )
         {
+            ScopedLock lock( this );
             m_scale = scale;
         }
 
         template <class T>
         bool ClawUIElement<T>::isEnabled() const
         {
+            ScopedLock lock( this );
             return m_isEnabled;
         }
 
         template <class T>
         bool ClawUIElement<T>::isVisible() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    return BitUtil::getFlagValue( state->flags,
-                                                  static_cast<u16>( IUIElement::visibleFlag ) );
-                }
-            }
-
+            ScopedLock lock( this );
             return m_visible;
         }
 
         template <class T>
         bool ClawUIElement<T>::isInFocus() const
         {
+            ScopedLock lock( this );
             return m_hasFocus;
         }
 
         template <class T>
         bool ClawUIElement<T>::isHighlighted() const
         {
+            ScopedLock lock( this );
             return m_isHighlighted;
         }
 
@@ -1427,12 +1336,6 @@ namespace workphone
         void ClawUIElement<T>::setParent( SmartPtr<IUIElement> parent )
         {
             m_parent = parent;
-        }
-
-        template <class T>
-        u32 ClawUIElement<T>::getHashId() const
-        {
-            return static_cast<u32>( m_hashId );
         }
 
         template <class T>
@@ -1453,114 +1356,22 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::createStateContext()
-        {
-            if( getStateContext() )
-            {
-                return;
-            }
-
-            auto applicationManager = core::IApplicationManager::instance();
-            if( !applicationManager )
-            {
-                return;
-            }
-
-            auto stateManager = applicationManager->getStateManager();
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-            auto factoryManager = applicationManager->getFactoryManager();
-            if( !stateManager || !graphicsSystem || !factoryManager )
-            {
-                return;
-            }
-
-            auto stateContext = stateManager->addStateContext();
-
-            auto listener = factoryManager->make_ptr<ElementStateListener>();
-            listener->setOwner( this );
-            stateContext->addStateListener( listener );
-
-            auto state = factoryManager->make_ptr<State>();
-            stateContext->addState( state );
-
-            auto stateData = factoryManager->make_ptr<UIElementStateData>();
-            stateData->colour = m_colour;
-            stateData->flags = BitUtil::setFlagValue(
-                stateData->flags, static_cast<u16>( IUIElement::visibleFlag ), m_visible );
-            state->setData( stateData );
-
-            auto transformState = factoryManager->make_ptr<State>();
-            stateContext->addState( transformState );
-
-            auto transformStateData = factoryManager->make_ptr<UITransformStateData>();
-            transformStateData->position = m_position;
-            transformStateData->size = m_size;
-            transformState->setData( transformStateData );
-
-            stateContext->setOwner( this );
-
-            setStateContext( stateContext );
-            setStateListener( listener );
-
-            auto stateTask = graphicsSystem->getStateTask();
-            stateContext->setTaskId( stateTask );
-        }
-
-        template <class T>
         ColourF ClawUIElement<T>::getColour() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    return state->colour;
-                }
-            }
-
+            ScopedLock lock( this );
             return m_colour;
         }
 
         template <class T>
         void ClawUIElement<T>::setColour( const ColourF &colour )
         {
+            ScopedLock lock( this );
             m_colour = colour;
-
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    state->colour = colour;
-                }
-            }
         }
 
         template <class T>
         void ClawUIElement<T>::invalidate()
         {
-        }
-
-        template <class T>
-        SmartPtr<IStateContext> ClawUIElement<T>::getStateContext() const
-        {
-            return m_stateContext;
-        }
-
-        template <class T>
-        void ClawUIElement<T>::setStateContext( SmartPtr<IStateContext> stateContext )
-        {
-            m_stateContext = stateContext;
-        }
-
-        template <class T>
-        SmartPtr<IStateListener> ClawUIElement<T>::getStateListener() const
-        {
-            return m_stateListener;
-        }
-
-        template <class T>
-        void ClawUIElement<T>::setStateListener( SmartPtr<IStateListener> stateListener )
-        {
-            m_stateListener = stateListener;
         }
 
         template <class T>
@@ -1652,12 +1463,14 @@ namespace workphone
         template <class T>
         bool ClawUIElement<T>::getRenderChildren() const
         {
+            ScopedLock lock( this );
             return m_renderChildren;
         }
 
         template <class T>
         void ClawUIElement<T>::setRenderChildren( bool renderChildren )
         {
+            ScopedLock lock( this );
             m_renderChildren = renderChildren;
         }
 
@@ -1698,44 +1511,44 @@ namespace workphone
         }
 
         template <class T>
+        bool ClawUIElement<T>::handleStateMessage( const SmartPtr<IStateMessage> &message )
+        {
+            return false;
+        }
+
+        template <class T>
         bool ClawUIElement<T>::handleStateChanged( SmartPtr<IState> &state )
         {
+            if( state->getOwner() == this )
+            {
+                auto stateData = state->getData();
+                if( stateData->isExactly<UIElementStateData>() )
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
         template <class T>
         bool ClawUIElement<T>::getHandleInputEvents() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    return BitUtil::getFlagValue(
-                        state->flags, static_cast<u16>( IUIElement::handleInputEventsFlag ) );
-                }
-            }
-
+            ScopedLock lock( this );
             return m_handleInputEvents;
         }
 
         template <class T>
         void ClawUIElement<T>::setHandleInputEvents( bool handleInputEvents )
         {
+            ScopedLock lock( this );
             m_handleInputEvents = handleInputEvents;
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    state->flags = BitUtil::setFlagValue(
-                        state->flags, static_cast<u16>( IUIElement::handleInputEventsFlag ),
-                        handleInputEvents );
-                }
-            }
         }
 
         template <class T>
         void ClawUIElement<T>::setHighlighted( bool isHighlighted, bool cascade )
         {
+            ScopedLock lock( this );
             if( m_isHighlighted != isHighlighted )
             {
                 m_isHighlighted = isHighlighted;

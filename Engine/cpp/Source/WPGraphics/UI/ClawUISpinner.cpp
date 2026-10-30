@@ -7,7 +7,6 @@ namespace workphone::ui
 {
     ClawUISpinner::ClawUISpinner()
     {
-        setType( "Spinner" );
         m_valueType = "int";
         m_text = StringUtil::toString( m_value );
     }

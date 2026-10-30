@@ -11,7 +11,6 @@ namespace workphone::ui
         m_cursorIdx( 0 ),
         m_prevCursorIdx( 0 )
     {
-        setType( "ScrollingText" );
     }
 
     ClawUIScrollingText::~ClawUIScrollingText() = default;

@@ -16,6 +16,7 @@ namespace workphone
 {
     namespace ui
     {
+
         /**
          * @class IUIManager
          * @brief Abstract interface for a UI manager responsible for creating,
@@ -242,6 +243,18 @@ namespace workphone
              * dirty and should be recomputed on the next update/render pass.
              */
             virtual void invalidate() = 0;
+
+            virtual bool handleStateMessage( const SmartPtr<IStateMessage> &message ) = 0;
+
+            virtual bool handleStateChanged( SmartPtr<IState> &state ) = 0;
+
+            virtual SmartPtr<IStateContext> getStateContext() const = 0;
+
+            virtual void setStateContext( SmartPtr<IStateContext> stateContext ) = 0;
+
+            virtual SmartPtr<IStateListener> getStateListener() const = 0;
+
+            virtual void setStateListener( SmartPtr<IStateListener> stateListener ) = 0;
 
             /**
              * @brief Retrieve the underlying concrete implementation pointer.

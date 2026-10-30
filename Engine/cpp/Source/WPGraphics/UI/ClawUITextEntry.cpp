@@ -9,7 +9,6 @@ namespace workphone::ui
 
     ClawUITextEntry::ClawUITextEntry() : m_nextCursorFlash( 0 )
     {
-        setType( "TextEntry" );
     }
 
     ClawUITextEntry::~ClawUITextEntry() = default;

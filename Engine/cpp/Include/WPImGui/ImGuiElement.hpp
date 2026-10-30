@@ -499,6 +499,16 @@ namespace workphone
              */
             virtual void handleEvent( const SmartPtr<IEvent> &event );
 
+            bool handleStateMessage( const SmartPtr<IStateMessage> &message )
+            {
+                return false;
+            }
+
+            bool handleStateChanged( SmartPtr<IState> &state )
+            {
+                return false;
+            }
+
             /** @brief Mark the element as invalidated (needs redraw/rebuild). */
             void invalidate();
 

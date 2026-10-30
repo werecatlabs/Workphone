@@ -6,7 +6,6 @@ namespace workphone::ui
 {
     ClawUIItemTemplate::ClawUIItemTemplate()
     {
-        setType( String( "GUIItemTemplate" ) );
     }
 
     ClawUIItemTemplate::~ClawUIItemTemplate()

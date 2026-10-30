@@ -52,16 +52,6 @@ namespace workphone
             void unload( SmartPtr<ISharedObject> data ) override;
 
             /**
-             * @brief Updates the element position.
-             */
-            void setPosition( const Vector2F &position ) override;
-
-            /**
-             * @brief Updates the element size.
-             */
-            void setSize( const Vector2F &size ) override;
-
-            /**
              * @brief Sets the displayed text.
              */
             void setText( const String &text ) override;
@@ -105,16 +95,6 @@ namespace workphone
              * @brief Returns the underlying COM-style object pointer.
              */
             void _getObject( void **ppObject ) const override;
-
-            /**
-             * @brief Gets the underlying overlay text object.
-             */
-            SmartPtr<render::IOverlayElementText> getOverlayText() const;
-
-            /**
-             * @brief Sets the underlying overlay text object.
-             */
-            void setOverlayText( SmartPtr<render::IOverlayElementText> overlayText );
 
             /**
              * @brief Handles state changes propagated to the UI element.

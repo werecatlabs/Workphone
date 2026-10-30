@@ -25,6 +25,24 @@ namespace workphone
         class WPGraphics_API ClawUIManager : public UIManager
         {
         public:
+            class StateListener : public IStateListener
+            {
+            public:
+                StateListener();
+                ~StateListener() override;
+
+                bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override;
+
+                bool handleStateChanged( SmartPtr<IState> &state ) override;
+
+                SmartPtr<ClawUIManager> getOwner() const;
+
+                void setOwner( SmartPtr<ClawUIManager> owner );
+
+            protected:
+                AtomicWeakPtr<ClawUIManager> m_owner;
+            };
+
             class InputListener : public IEventListener
             {
             public:
@@ -267,6 +285,18 @@ namespace workphone
              */
             void setFactoryManager( SmartPtr<IFactoryManager> factoryManager );
 
+            bool handleStateMessage( const SmartPtr<IStateMessage> &message );
+
+            bool handleStateChanged( SmartPtr<IState> &state );
+
+            SmartPtr<IStateContext> getStateContext() const;
+
+            void setStateContext( SmartPtr<IStateContext> stateContext );
+
+            SmartPtr<IStateListener> getStateListener() const;
+
+            void setStateListener( SmartPtr<IStateListener> stateListener );
+
             /**
              * @brief Get the Workphone context owned by this UI manager.
              *
@@ -286,6 +316,10 @@ namespace workphone
              * @param root Smart pointer to the root element.
              */
             void setRoot( SmartPtr<IUIElement> root );
+
+            void createStateContext();
+
+            void destroyStateContext();
 
             SmartPtr<IUIWindow> m_uiWindow;  ///< The current active UI window.
 
@@ -312,6 +346,9 @@ namespace workphone
             Array<SmartPtr<IUIWindow>> m_windows;  ///< List of UI windows managed by the manager.
 
             SmartPtr<IUICursor> m_cursor;  ///< Cursor used for UI interaction.
+
+            SmartPtr<IStateContext> m_stateContext;
+            SmartPtr<IStateListener> m_stateListener;
 
             mutable RecursiveSpinMutex m_mutex;  ///< Mutex for thread-safe access to UI state.
         };

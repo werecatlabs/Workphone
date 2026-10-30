@@ -7,7 +7,6 @@ namespace workphone::ui
 {
     ClawUIScrollingTextElement::ClawUIScrollingTextElement()
     {
-        setType( "ScrollingTextElement" );
     }
 
     ClawUIScrollingTextElement::~ClawUIScrollingTextElement() = default;

@@ -12,7 +12,6 @@ namespace workphone::ui
 
     ClawUIText::ClawUIText()
     {
-        setType( "Text" );
     }
 
     ClawUIText::~ClawUIText() = default;
@@ -37,85 +36,51 @@ namespace workphone::ui
 
     void ClawUIText::setText( const String &text )
     {
+        ScopedLock lock( this );
         m_text = text;
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->invalidateStateData<UIElementStateData>() )
-            {
-                state->caption = text;
-                return;
-            }
-        }
         setLabel( text );
     }
 
     String ClawUIText::getText() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->getStateData<UIElementStateData>() )
-            {
-                return state->caption;
-            }
-        }
+        ScopedLock lock( this );
         return !m_text.empty() ? m_text : getLabel();
     }
 
     void ClawUIText::setTextSize( f32 textSize )
     {
+        ScopedLock lock( this );
         m_textSize = MathF::max( textSize, 0.0f );
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->invalidateStateData<UIElementStateData>() )
-            {
-                state->textSize = static_cast<u8>( MathF::min( m_textSize, 255.0f ) );
-            }
-        }
     }
 
     f32 ClawUIText::getTextSize() const
     {
+        ScopedLock lock( this );
         return m_textSize;
     }
 
     void ClawUIText::setVerticalAlignment( u8 alignment )
     {
+        ScopedLock lock( this );
         m_verticalAlignment = alignment;
     }
 
     u8 ClawUIText::getVerticalAlignment() const
     {
+        ScopedLock lock( this );
         return m_verticalAlignment;
     }
 
     void ClawUIText::setHorizontalAlignment( u8 alignment )
     {
+        ScopedLock lock( this );
         m_horizontalAlignment = alignment;
     }
 
     u8 ClawUIText::getHorizontalAlignment() const
     {
+        ScopedLock lock( this );
         return m_horizontalAlignment;
-    }
-
-    void ClawUIText::setPosition( const Vector2F &position )
-    {
-        ClawUIElement::setPosition( position );
-    }
-
-    void ClawUIText::setSize( const Vector2F &size )
-    {
-        ClawUIElement::setSize( size );
-    }
-
-    SmartPtr<render::IOverlayElementText> ClawUIText::getOverlayText() const
-    {
-        return nullptr;
-    }
-
-    void ClawUIText::setOverlayText( SmartPtr<render::IOverlayElementText> overlayText )
-    {
-        // Compatibility no-op: WorkphoneCore text has no retained overlay object.
     }
 
     void ClawUIText::_getObject( void **ppObject ) const

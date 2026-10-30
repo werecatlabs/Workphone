@@ -8,7 +8,6 @@ namespace workphone::ui
 {
     ClawUIVector::ClawUIVector()
     {
-        setType( "Vector" );
     }
 
     ClawUIVector::~ClawUIVector() = default;

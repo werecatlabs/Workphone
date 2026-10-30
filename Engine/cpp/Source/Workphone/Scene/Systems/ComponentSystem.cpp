@@ -101,23 +101,30 @@ namespace workphone::scene
             return;
         }
 
+        auto c = getObject( id );
+        removeDirtyComponent( c );
+
         setLoadingState( id, LoadingState::Unallocated );
         setObject( id, nullptr );
     }
 
     void ComponentSystem::removeComponent( SmartPtr<IComponent> component )
     {
+        removeDirtyComponent( component );
+
         ScopedLock lock( this );
 
         if( !component )
         {
             return;
         }
+
         auto handle = component->getHandle();
         if( !handle )
         {
             return;
         }
+
         auto id = handle->getInstanceId();
         if( id >= getSize() || getObject( id ) != component.get() )
         {
@@ -218,12 +225,12 @@ namespace workphone::scene
         return m_components[index];
     }
 
-    void ComponentSystem::setComponents( const Array<IComponent *> &components )
+    void ComponentSystem::setComponents( const Array<SmartPtr<IComponent>> &components )
     {
         m_components = { components.begin(), components.end() };
     }
 
-    Array<IComponent *> ComponentSystem::getComponents() const
+    Array<SmartPtr<IComponent>> ComponentSystem::getComponents() const
     {
         return m_components.snapshot();
     }
@@ -269,12 +276,12 @@ namespace workphone::scene
         return {};
     }
 
-    void ComponentSystem::setDirtyComponents( const Array<IComponent *> &dirtyComponents )
+    void ComponentSystem::setDirtyComponents( const Array<SmartPtr<IComponent>> &dirtyComponents )
     {
         m_dirtyComponents = { dirtyComponents.begin(), dirtyComponents.end() };
     }
 
-    Array<IComponent *> ComponentSystem::getDirtyComponents() const
+    Array<SmartPtr<IComponent>> ComponentSystem::getDirtyComponents() const
     {
         return m_dirtyComponents.snapshot();
     }
