@@ -39,7 +39,8 @@ if ($TerrainOnly) {
     $requiredTests = @(
         'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
         'WPGraphics.terrain_representative_performance', 'WPGraphics.terrain_regeneration_soak',
-        'WPGraphics.claw_production_render', 'WPGraphics.cooked_material_resource'
+        'WPGraphics.claw_production_render', 'WPGraphics.cooked_material_resource',
+        'WPEditor.scene_picking', 'WPLua.editor_deferred_script_events'
     )
     $selection = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
 }

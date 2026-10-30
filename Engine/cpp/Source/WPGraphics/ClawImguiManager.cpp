@@ -48,6 +48,48 @@ namespace workphone
                     detail::platformImeCoordinate( data->InputPos.x - viewport->Pos.x ),
                     detail::platformImeCoordinate( data->InputPos.y - viewport->Pos.y ) );
             }
+
+            void bindWin32BackendIfAvailable()
+            {
+                auto &io = ImGui::GetIO();
+                if( io.BackendPlatformUserData )
+                {
+                    return;
+                }
+
+                auto applicationManager = core::IApplicationManager::instancePtr();
+                if( !applicationManager )
+                {
+                    return;
+                }
+
+                auto graphicsSystem = applicationManager->getGraphicsSystem();
+                auto window = graphicsSystem ? graphicsSystem->getDefaultWindow() : nullptr;
+                if( !window )
+                {
+                    return;
+                }
+
+                void *windowHandle = nullptr;
+                window->getWindowHandle( &windowHandle );
+                const auto hwnd = static_cast<HWND>( windowHandle );
+                if( !hwnd || !IsWindow( hwnd ) )
+                {
+                    return;
+                }
+
+                if( ImGui_ImplWin32_Init( hwnd ) )
+                {
+                    // Keep IME updates asynchronous after the platform backend binds.
+                    io.SetPlatformImeDataFn = postPlatformImeData;
+                    WP_LOG_INFO( "ClawImguiManager: Win32 input backend bound to HWND " +
+                                 std::to_string( reinterpret_cast<std::uintptr_t>( hwnd ) ) + "." );
+                }
+                else
+                {
+                    WP_LOG_ERROR( "ClawImguiManager: failed to initialise the Win32 backend." );
+                }
+            }
 #endif
 
             // Dear ImGui packs vertex colours as ImU32 == 0xAABBGGRR
@@ -273,6 +315,9 @@ namespace workphone
                 // the old handle is stale and must be rebuilt.
                 setupViewport( wp_renderer_get_width( renderer ), wp_renderer_get_height( renderer ) );
                 createFontTexture();
+#if defined WP_PLATFORM_WIN32
+                bindWin32BackendIfAvailable();
+#endif
                 return;
             }
 
@@ -318,21 +363,7 @@ namespace workphone
             // default IME hook sends synchronously to the main HWND thread,
             // which may itself be waiting for that lock during scene teardown.
             io.SetPlatformImeDataFn = postPlatformImeData;
-            if( applicationManager )
-            {
-                if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
-                {
-                    if( auto window = graphicsSystem->getDefaultWindow() )
-                    {
-                        void *windowHandle = nullptr;
-                        window->getWindowHandle( &windowHandle );
-                        if( windowHandle && !ImGui_ImplWin32_Init( windowHandle ) )
-                        {
-                            WP_LOG_ERROR( "ClawImguiManager: failed to initialise the Win32 backend." );
-                        }
-                    }
-                }
-            }
+            bindWin32BackendIfAvailable();
 #endif
 
             io.Fonts->AddFontDefault();
@@ -408,6 +439,9 @@ namespace workphone
             ImGuiIO &io = ImGui::GetIO();
 
 #if defined WP_PLATFORM_WIN32
+            // The Editor creates its main window after configuring the renderer.
+            // Bind once that HWND is published without resetting the live UI context.
+            bindWin32BackendIfAvailable();
             const bool hasPlatformBackend = io.BackendPlatformUserData != nullptr;
             if( hasPlatformBackend )
             {

@@ -80,7 +80,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
         {
             if( strcmp( argv[i], "--help" ) == 0 || strcmp( argv[i], "-h" ) == 0 )
             {
-                printf( "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke]\n" );
+                printf( "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke] [--validation-capture-directory PATH]\n" );
                 return EXIT_SUCCESS;
             }
         }
@@ -117,6 +117,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
         try
         {
             auto app = workphone::make_ptr<editor::PackagedEditorApplication>();
+            app->validationCapture.configure( package.validationCaptureDirectory );
             if( !package.root.empty() )
             {
                 app->mediaDirectory = ( package.root / "Media" ).generic_string().c_str();

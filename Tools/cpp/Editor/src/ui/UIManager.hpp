@@ -359,7 +359,7 @@ namespace workphone
             static bool debuggerDispatchEnabled();
             bool deferScriptCall( EditorWindow *window, const String &member,
                                   const Parameters &parameters, bool hasParameters,
-                                  bool discardResults = false );
+                                  bool discardResults = false, u64 viewportGeneration = 0 );
             bool deferUIEvent( IEventListener *listener, EventType type, hash_type value,
                                const Parameters &arguments, SmartPtr<ISharedObject> sender,
                                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event );
@@ -827,7 +827,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            bool shouldDeferScriptCall( bool debuggerControl ) const;
+            bool shouldDeferScriptCall( bool debuggerControl, bool renderThreadUnsafe = false ) const;
             void enqueueScriptEvent( std::function<void()> call, bool debuggerControl,
                                      std::uintptr_t owner = 0, const String &refreshKey = "" );
             DeferredEditorScriptEvents m_scriptEvents;

@@ -1,8 +1,54 @@
 # Terrain authoring workflow
 
-The [29 October GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md) tracks
+The [29–30 October GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md) tracks
 baseline reconciliation, focused validation and separate-process packaging.
 Historical results below remain distinct from fresh candidate evidence.
+
+The live Editor follow-up uses the normal Application event queue for terrain Lua
+callbacks and caches viewport brush/recipe state outside the render frame. This
+avoids a Lua/texture-manager lock cycle found during real component selection.
+Selection and lifecycle generations discard queued rays from a retired terrain.
+Terrain-specific adapters use LuaManager's Parameters/mutable-results ABI;
+ordinary Lua return values and positional arguments are not that native ABI.
+The nested terrain panels now fill the Inspector width so the final tabs remain
+accessible when docked.
+
+The live walkthrough exposed a second input boundary: terrain image coordinates
+are normalized UVs, whereas `GraphicsCamera::getRay` expects pixels. Viewport tool
+rays must use the existing `makeScenePickingRay` path with the image rectangle and
+camera matrices, as scene drops and ordinary selection already do. Compilation
+or a directly invoked world ray does not verify that pixel-to-ray boundary.
+
+Terrain phase selection gives cancellation priority over release when the pointer
+is outside the displayed image. This also covers a short drag whose first sampled
+outside frame is the release frame. A successful active-stroke cancellation updates
+the status; idle outside hover preserves the previous completed-stroke status.
+The scene-picking and native Lua bridge regressions use this production phase
+selector. Live input and separately saved payloads remain required evidence.
+
+The [30 October observed walkthrough](../artifacts/terrain/gt0-20261029/editor-live-09/session-evidence.json)
+records this repaired path at 96 DPI: native scene open and terrain save, a bounded
+viewport sculpt, native-menu Undo/Redo, short-drag release-outside cancellation,
+native scene Save As and distinct-process scene reload. Separately saved files
+match byte for byte after Undo, Redo, cancellation and restart. This closes that
+specific sequence; Escape/focus/selection interruption, other DPI/docking
+geometries and live layer/hole paint remain separate checks.
+
+`Tools/ValidateTerrainAuthoringEvidence.ps1` checks native v3 snapshots for a
+bounded nonzero sculpt, Undo restoration, Redo/cancel preservation, native scene
+component ownership and saved/restarted content. It rejects coercible invalid
+JSON and native-invalid material/coordinate ranges. Content matching does not
+attest mouse input, actual scene loading or a process restart; retain the live
+action, process and capture evidence separately. Hardware and independent visual
+acceptance are separate gates.
+
+`Tools/ValidateTerrainCleanMachine.ps1 -Mode Prepare` creates an offline kit from
+an explicitly pinned optimized gameplay archive and its accepted package report.
+Prepare does not run a guest or modify host features. Use the generated README's
+hash-pinned Launch/Collect commands on an already enabled Sandbox host; collection
+requires fresh guest identity, pre-provisioning CRT/software inventory and native
+package evidence. Restricted PATH execution on this development host is not a
+clean-machine pass.
 
 This guide describes the native terrain authoring services and the existing Lua Terrain Editor extended in this change. It is a workflow and format reference, not a claim that every release gate in [the terrain plan](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) has passed. Build, automated, GPU, interactive and packaged evidence are recorded separately in the implementation status and validation reports.
 
@@ -200,4 +246,7 @@ results plus source/binary/device evidence. For an already configured tools buil
 `cmake --build <build-directory> --config RelWithDebInfo --target WPTerrainValidation`
 builds the terrain, physics, Lua, cooked-resource, GPU and Editor targets together.
 The focused test selection is
-`^WPGraphics\.(terrain_contracts|terrain_physics|terrain_lua_workflow|claw_production_render|cooked_material_resource)$`.
+the nine required tests in `ValidateClawGraphics.ps1 -TerrainOnly`, including
+`WPEditor.scene_picking` and `WPLua.editor_deferred_script_events`. These input and
+dispatch regressions must be built with the native terrain targets; a direct Lua
+world-ray fixture alone does not cover viewport pixel conversion or queued input.

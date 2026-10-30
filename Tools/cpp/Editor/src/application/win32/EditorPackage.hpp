@@ -10,6 +10,7 @@
 #include <editor/EditorManager.hpp>
 #include <ui/UIManager.hpp>
 #include <boost/json.hpp>
+#include "EditorValidationCapture.hpp"
 
 namespace workphone::editor
 {
@@ -21,6 +22,13 @@ namespace workphone::editor
         String mediaDirectory;
         String pluginConfiguration;
         String catalogFile;
+        EditorValidationCapture validationCapture;
+
+        void update() override
+        {
+            EditorApplication::update();
+            if( isLoaded() ) validationCapture.poll();
+        }
 
         String getMediaPath() const override { return mediaDirectory; }
         String getMediaCatalogPath( const String &mediaRoot ) const override
@@ -41,6 +49,7 @@ namespace workphone::editor
         std::filesystem::path root;
         std::filesystem::path workspace;
         bool smoke = false;
+        std::filesystem::path validationCaptureDirectory;
 
         EditorPackage( int argc, char **argv )
         {
@@ -54,7 +63,12 @@ namespace workphone::editor
             for( int i = 1; i < argc; ++i )
             {
                 const std::string argument = argv[i];
-                if( argument == "--package-root" || argument == "--workspace" )
+                if( argument == "--validation-capture-directory" )
+                {
+                    if( ++i == argc ) throw std::runtime_error( "Missing validation capture directory" );
+                    validationCaptureDirectory = argv[i];
+                }
+                else if( argument == "--package-root" || argument == "--workspace" )
                 {
                     if( ++i == argc ) throw std::runtime_error( "Missing package path argument" );
                     if( argument == "--package-root" ) { root = argv[i]; explicitRoot = true; }

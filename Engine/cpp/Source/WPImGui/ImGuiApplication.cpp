@@ -21,6 +21,7 @@
 #include "imgui_internal.h"
 #include <cmath>
 #include <Workphone/Scene/ScenePicking.hpp>
+#include <WPImGui/SceneViewportToolInput.hpp>
 #include <vector>
 #include <algorithm>
 
@@ -2028,29 +2029,17 @@ namespace workphone::ui
                                                  mouse.y >= sceneRectMin.y &&
                                                  mouse.x < sceneRectMin.x + sceneRectSize.x &&
                                                  mouse.y < sceneRectMin.y + sceneRectSize.y;
-                            const char *phase = "hover";
-                            if( sceneAssetDragging || ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
-                                !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) )
-                                phase = "cancel";
-                            else if( ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
-                                phase = "commit";
-                            else if( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
-                                phase = "begin";
-                            else if( hovered && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
-                                phase = "update";
-                            else if( !hovered )
-                                phase = "cancel";
-                            const auto ray =
-                                renderCamera->getRay( ( mouse.x - sceneRectMin.x ) / sceneRectSize.x,
-                                                      ( mouse.y - sceneRectMin.y ) / sceneRectSize.y );
-                            const auto origin = ray.getOrigin(), direction = ray.getDirection();
-                            const Parameters args{ Parameter( phase ),
-                                                   Parameter( f64( origin.x ) ),
-                                                   Parameter( f64( origin.y ) ),
-                                                   Parameter( f64( origin.z ) ),
-                                                   Parameter( f64( direction.x ) ),
-                                                   Parameter( f64( direction.y ) ),
-                                                   Parameter( f64( direction.z ) ) };
+                            const auto phase = terrainViewportBrushPhase(
+                                sceneAssetDragging || ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
+                                    !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ),
+                                hovered, ImGui::IsMouseReleased( ImGuiMouseButton_Left ),
+                                ImGui::IsMouseClicked( ImGuiMouseButton_Left ),
+                                ImGui::IsMouseDown( ImGuiMouseButton_Left ) );
+                            Parameters args;
+                            const bool validToolRay = makeSceneViewportToolArguments(
+                                *renderCamera, { sceneRectMin.x, sceneRectMin.y },
+                                { sceneRectSize.x, sceneRectSize.y }, { mouse.x, mouse.y },
+                                String( phase ), args );
                             // City edits persist while the pointer visits their settings panel.
                             // OS focus loss, Escape, hidden viewport and asset drag cancel drafts.
                             const auto &toolIO=ImGui::GetIO();
@@ -2065,6 +2054,7 @@ namespace workphone::ui
                             else if(ImGui::IsMouseReleased(ImGuiMouseButton_Left))cityPhase="commit";
                             else if(hovered && !toolIO.KeyAlt && ImGui::IsMouseClicked(ImGuiMouseButton_Left))cityPhase="begin";
                             else if(hovered && !toolIO.KeyAlt && ImGui::IsMouseDown(ImGuiMouseButton_Left))cityPhase="update";
+                            if( !validToolRay ) cityPhase="cancel";
                             auto cityArgs=args;cityArgs[0]=Parameter(String(cityPhase));bool cityToolActive=false;
                             for(auto listener:renderWindow->getObjectListeners())
                             {

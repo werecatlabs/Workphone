@@ -23,34 +23,48 @@ namespace workphone::editor
 
     TerrainWindow::~TerrainWindow() = default;
 
+    u64 TerrainWindow::getViewportScriptGeneration() const
+    {
+        return m_viewportScriptGeneration.load( std::memory_order_acquire );
+    }
+
+    void TerrainWindow::invalidateViewportScriptState()
+    {
+        std::lock_guard<std::mutex> lock( m_viewportScriptStateMutex );
+        m_viewportScriptGeneration.fetch_add( 1, std::memory_order_acq_rel );
+        m_recipePreview.clear();
+        m_viewportBrushEnabled = false;
+        m_viewportBrushRadius = 0.0;
+    }
+
     void TerrainWindow::refreshViewportScriptState()
     {
-        if( Thread::getCurrentTask() != TaskId::Application || !UIManager::debuggerDispatchEnabled() ) return;
+        if( Thread::getCurrentTask() != TaskId::Application ) return;
         auto app = core::IApplicationManager::instancePtr();
         if( !app || app->getQuit() ) return;
         auto scripts = app ? app->getScriptManager() : nullptr;
         if( scripts && scripts->isDebuggerPaused() ) return;
-        Parameters recipe, enabled, radius;
+        const auto generation = getViewportScriptGeneration();
+        Parameters recipe, state;
         if( isLoaded() && isWindowVisible() )
             if( auto invoker = getInvoker() )
             {
                 // These getters used to run synchronously inside ImGui. Refresh
                 // the explicit preview snapshot outside the native render frame.
-                invoker->callObjectMember( "update" );
-                invoker->callObjectMember( "getTerrainRecipePreview", {}, recipe );
-                invoker->callObjectMember( "getViewportBrushEnabled", {}, enabled );
-                invoker->callObjectMember( "getViewportBrushRadius", {}, radius );
+                invoker->callObjectMember( "getViewportScriptState", {}, state );
             }
         double brushRadius = 0.0;
-        if( !radius.empty() )
+        if( state.size() >= 2 )
         {
-            const auto &r = radius.front();
+            const auto &r = state[1];
             brushRadius = r.type == ParameterType::PARAM_TYPE_F32 ? r.getF32() : r.getF64();
         }
-        const bool brushEnabled = !enabled.empty() && enabled.front().getBool();
+        const bool brushEnabled = state.size() >= 2 && state[0].getBool();
+        if( state.size() == 4 ) recipe = Parameters{ state[2], state[3] };
         bool cancelStroke = false;
         {
             std::lock_guard<std::mutex> lock( m_viewportScriptStateMutex );
+            if( generation != getViewportScriptGeneration() ) return;
             cancelStroke = m_viewportBrushEnabled && !brushEnabled;
             m_recipePreview = std::move( recipe );
             m_viewportBrushEnabled = brushEnabled;
@@ -74,6 +88,7 @@ namespace workphone::editor
         {
             return;
         }
+        invalidateViewportScriptState();
         cancelViewportStroke();
         if( previous && m_viewportListener )
         {
@@ -95,8 +110,8 @@ namespace workphone::editor
     {
         if( auto invoker = getInvoker() )
         {
-            callScriptMember(
-                "handleViewportBrush",
+            callScriptMemberWithDiscardedResults(
+                "handleViewportBrushEvent",
                 { Parameter( "cancel" ), Parameter( 0.0 ), Parameter( 0.0 ), Parameter( 0.0 ),
                   Parameter( 0.0 ), Parameter( -1.0 ), Parameter( 0.0 ) } );
         }
@@ -106,6 +121,7 @@ namespace workphone::editor
     {
         if( !visible )
         {
+            invalidateViewportScriptState();
             cancelViewportStroke();
         }
         else
@@ -117,6 +133,7 @@ namespace workphone::editor
 
     void TerrainWindow::unload( SmartPtr<ISharedObject> data )
     {
+        invalidateViewportScriptState();
         cancelViewportStroke();
         if( auto viewport = m_sceneViewport.load().lock() )
         {
@@ -149,6 +166,7 @@ namespace workphone::editor
     {
         try
         {
+            invalidateViewportScriptState();
             cancelViewportStroke();
             attachViewport();
             ScriptWindow::updateSelection();
@@ -197,42 +215,36 @@ namespace workphone::editor
         }
         if( value == StringUtil::getHash( "terrainRecipePreview" ) )
         {
-            if( UIManager::debuggerDispatchEnabled() )
-            {
-                std::lock_guard<std::mutex> lock( owner->m_viewportScriptStateMutex );
-                return Parameter( owner->m_recipePreview );
-            }
-            Parameters result;
-            invoker->callObjectMember( "getTerrainRecipePreview", {}, result );
-            return Parameter( result );
+            std::lock_guard<std::mutex> lock( owner->m_viewportScriptStateMutex );
+            return Parameter( owner->m_recipePreview );
         }
         if( value != StringUtil::getHash( "terrainViewportBrush" ) || arguments.size() != 7 )
         {
             return {};
         }
-        const bool deferred = UIManager::debuggerDispatchEnabled();
-        Parameters enabled;
+        bool enabled = false;
         f64 cachedRadius = 0.0;
-        if( deferred )
+        u64 generation = 0;
         {
             std::lock_guard<std::mutex> lock( owner->m_viewportScriptStateMutex );
-            enabled.emplace_back( owner->m_viewportBrushEnabled );
+            enabled = owner->m_viewportBrushEnabled;
             cachedRadius = owner->m_viewportBrushRadius;
+            generation = owner->getViewportScriptGeneration();
         }
-        else
+        if( !enabled )
         {
-            invoker->callObjectMember( "update" );
-            invoker->callObjectMember( "getViewportBrushEnabled", {}, enabled );
-        }
-        if( enabled.empty() || !enabled.front().getBool() )
-        {
-            if( !deferred ) owner->cancelViewportStroke();
             return {};
         }
-        const auto phase = arguments.front().getStr();
+        const auto &phaseArgument = arguments.front();
+        const auto phase = phaseArgument.type == ParameterType::PARAM_TYPE_CHAR_PTR
+            ? String( phaseArgument.getCharPtr() ? phaseArgument.getCharPtr() : "" )
+            : phaseArgument.getStr();
         if( phase != "hover" )
         {
-            owner->callScriptMemberWithDiscardedResults( "handleViewportBrush", arguments );
+            if( auto editor = EditorManager::getSingletonPtr() )
+                if( auto ui = editor->getUI() )
+                    ui->deferScriptCall( owner.get(), "handleViewportBrushEvent", arguments, true, true,
+                                         generation );
         }
         // Return world-space ring samples to the viewport's existing draw list.
         // Authoring state and brush execution stay in the Lua terrain editor.
@@ -263,15 +275,7 @@ namespace workphone::editor
         {
             return Parameter( preview );
         }
-        Parameters radiusResult;
-        if( deferred ) radiusResult.emplace_back( cachedRadius );
-        else invoker->callObjectMember( "getViewportBrushRadius", {}, radiusResult );
-        if( radiusResult.empty() )
-        {
-            return Parameter( preview );
-        }
-        const auto &r = radiusResult.front();
-        const f64 radius = r.type == ParameterType::PARAM_TYPE_F32 ? r.getF32() : r.getF64();
+        const f64 radius = cachedRadius;
         if( !std::isfinite( radius ) || radius <= 0 )
         {
             return Parameter( preview );

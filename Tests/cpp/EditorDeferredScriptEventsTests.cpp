@@ -6,6 +6,8 @@
 
 using workphone::editor::DeferredEditorScriptEvents;
 using workphone::editor::invokeEditorScriptCall;
+using workphone::editor::shouldDeferEditorScriptCall;
+using workphone::editor::isCurrentEditorScriptEventGeneration;
 
 struct ScriptAbiProbe
 {
@@ -103,6 +105,65 @@ int main()
         require( abi.argumentCount == 0, "Zero-argument callback acquired parameters" );
         invokeEditorScriptCall( abi, "setProperties", parameters, true, false );
         require( abi.argumentCount == 1 && abi.resultWrites == 2, "Parameters-only callback acquired results" );
+
+        require( shouldDeferEditorScriptCall( true, false, false, false, true ),
+                 "Normal terrain Render callbacks must defer without a debugger" );
+        require( !shouldDeferEditorScriptCall( false, false, false, false, true ),
+                 "Normal terrain Application callbacks must retain their synchronous ABI" );
+        require( !shouldDeferEditorScriptCall( true, false, false, false, false ),
+                 "Terrain dispatch must not change other normal Editor panels" );
+        require( shouldDeferEditorScriptCall( true, true, false, true, false ) &&
+                 shouldDeferEditorScriptCall( false, true, true, false, true ) &&
+                 !shouldDeferEditorScriptCall( false, true, true, true, false ),
+                 "Terrain dispatch must preserve debugger Render and paused-control rules" );
+
+        task = Task::Render;
+        renderFrameActive = true;
+        applied.clear();
+        for( int phase : { 1, 2, 3 } )
+        {
+            auto terrainCall = [&, phase] {
+                require( task == Task::Application && !renderFrameActive,
+                         "Normal terrain Lua entered a frame that can own texture-manager locks" );
+                applied.push_back( phase );
+            };
+            if( shouldDeferEditorScriptCall( task == Task::Render, false, false, false, true ) )
+                require( events.enqueue( terrainCall, false ), "Normal terrain command enqueue failed" );
+            else terrainCall();
+        }
+        require( applied.empty(), "Normal terrain commands entered Lua synchronously on Render" );
+        events.dispatch( true );
+        require( applied.empty(), "Debugger-only drain executed ordinary terrain authoring" );
+        task = Task::Application;
+        renderFrameActive = false;
+        events.dispatch( false );
+        require( applied == std::vector<int>( { 1, 2, 3 } ),
+                 "Normal terrain dispatch lost begin/sample/commit ordering" );
+
+        std::uint64_t selectionGeneration = 1;
+        applied.clear();
+        const auto queueBrush = [&]( std::uint64_t capturedGeneration, int phase ) {
+            require( events.enqueue( [&, capturedGeneration, phase] {
+                if( isCurrentEditorScriptEventGeneration( capturedGeneration, selectionGeneration ) )
+                    applied.push_back( phase );
+            }, false ), "Generation-scoped terrain event enqueue failed" );
+        };
+        const auto firstTerrain = selectionGeneration;
+        queueBrush( firstTerrain, 1 );
+        ++selectionGeneration;
+        // An old render snapshot may enqueue even after selection changes. Its
+        // original generation, not the generation at enqueue time, must travel.
+        queueBrush( firstTerrain, 3 );
+        queueBrush( selectionGeneration, 11 );
+        queueBrush( selectionGeneration, 13 );
+        events.dispatch( false );
+        require( applied == std::vector<int>( { 11, 13 } ),
+                 "An old terrain stroke edited the new selection or suppressed its current commands" );
+        queueBrush( selectionGeneration, 14 );
+        ++selectionGeneration; // Hiding/unloading must also retire pending brush work.
+        events.dispatch( false );
+        require( applied == std::vector<int>( { 11, 13 } ),
+                 "Retired terrain viewport work executed after lifecycle invalidation" );
         std::cout << "Editor deferred script events: PASS\n";
         return 0;
     }

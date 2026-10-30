@@ -1,4 +1,6 @@
 #include <WPLua/LuaManager.hpp>
+#include <WPLua/LuaObjectData.hpp>
+#include <WPImGui/SceneViewportToolInput.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <WPLuabind/StringConverter.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
@@ -8,11 +10,14 @@
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <Workphone/Interface/System/ICommand.hpp>
+#include <Workphone/Interface/Script/IScriptClass.hpp>
 #include <luabind/luabind.hpp>
 #include <filesystem>
 #include <cstdio>
 #include <stdexcept>
+#include <limits>
 extern "C" {
 #include <lauxlib.h>
 #include <lualib.h>
@@ -73,6 +78,129 @@ int main()
                 }
                 lua_settop( state, top );
             };
+
+            // Exercise the same Parameters/results ABI used by TerrainWindow,
+            // rather than calling the public Lua helpers directly.
+            auto bridgeTerrain = make_ptr<scene::TerrainSystem>();
+            if( !bridgeTerrain->applyTerrainData( data, error ) )
+                throw std::runtime_error( error.c_str() );
+            luabind::globals( state )["bridgeTerrain"] = bridgeTerrain;
+            auto bridgeOwner = make_ptr<Properties>();
+            if( !manager.createObject( "TerrainEditor", bridgeOwner ) )
+                throw std::runtime_error( "Native terrain viewport bridge instance must initialize" );
+            auto bridgeData = dynamic_pointer_cast<LuaObjectData>( bridgeOwner->getScriptData() );
+            if( !bridgeData ) throw std::runtime_error( "Native terrain bridge must retain Lua object data" );
+            luabind::globals( state )["bridgeEditor"] = bridgeData->getObject();
+            run( R"(
+                bridgeEditor.terrain = bridgeTerrain
+                bridgeEditor.settings.viewportBrushEnabled = true
+                bridgeEditor.settings.brushMode = 0
+                bridgeEditor.settings.brushSize = 0.6
+                bridgeEditor.settings.brushStrength = 1
+                bridgeEditor.settings.brushOpacity = 1
+            )" );
+            const auto invokeBridge = [&]( const String &member, const Parameters &parameters ) {
+                Parameters values;
+                manager.callObjectMember( bridgeOwner, member, parameters, values );
+                if( manager.getError() ) throw std::runtime_error( manager.getLastDiagnostic().c_str() );
+                return values;
+            };
+            auto viewport = invokeBridge( "getViewportScriptState", {} );
+            if( viewport.size() != 2 || viewport[0].type != ParameterType::PARAM_TYPE_BOOL || !viewport[0].getBool() ||
+                viewport[1].type != ParameterType::PARAM_TYPE_F64 || viewport[1].getF64() != 0.6 )
+                throw std::runtime_error( "Native viewport bridge must return enabled and numeric radius" );
+            if( !invokeBridge( "getViewportBrushEnabled", {} ).empty() )
+                throw std::runtime_error( "Viewport bridge must preserve the global results-container ABI" );
+            run( R"(
+                bridgeEditor.recipe = bridgeTerrain:createTerrainRecipe()
+                assert(bridgeEditor.recipe)
+                bridgeEditor._showRecipePreview = true
+                bridgeEditor._recipePending = false
+            )" );
+            viewport = invokeBridge( "getViewportScriptState", {} );
+            if( viewport.size() != 4 || !viewport[2].object || viewport[3].object != bridgeTerrain )
+                throw std::runtime_error( "Native viewport bridge must retain recipe then terrain object identity" );
+            run( "bridgeEditor._showRecipePreview = false; bridgeEditor.recipe = nil" );
+            const auto original = bridgeTerrain->getTerrainSnapshot()->heights;
+            const auto brush = [&]( const char *phase ) {
+                return invokeBridge( "handleViewportBrushEvent",
+                    { Parameter( phase ), Parameter( 0.0 ), Parameter( 20.0 ), Parameter( 0.0 ),
+                      Parameter( 0.0 ), Parameter( -1.0 ), Parameter( 0.0 ) } );
+            };
+            const auto requireApplied = [&]( const char *phase ) {
+                const auto values = brush( phase );
+                if( values.size() != 1 || !values[0].getBool() )
+                {
+                    const auto status = luabind::object_cast<String>( bridgeData->getObject()["_currentStatus"] );
+                    throw std::runtime_error( std::string( "Native viewport brush phase '" ) + phase +
+                        "' failed; results=" + std::to_string( values.size() ) + "; status=" + status.c_str() );
+                }
+            };
+            requireApplied( "begin" );
+            if( bridgeTerrain->getTerrainSnapshot()->heights == original )
+                throw std::runtime_error( "Native viewport begin must apply actual terrain samples" );
+            struct ViewportBridgeCamera
+            {
+                bool validProjection = false;
+                Matrix4<real_Num> getViewMatrix() const { return Matrix4<real_Num>::identity(); }
+                Matrix4<real_Num> getProjectionMatrix() const
+                {
+                    auto projection = Matrix4<real_Num>::identity();
+                    if( !validProjection ) projection[0][0] = std::numeric_limits<real_Num>::quiet_NaN();
+                    return projection;
+                }
+            };
+            Parameters invalidRayCancel;
+            if( ui::makeSceneViewportToolArguments( ViewportBridgeCamera{}, { 8, 80 }, { 384, 300 },
+                    { 195, 244 }, "update", invalidRayCancel ) )
+                throw std::runtime_error( "Invalid native viewport projection must not emit a brush update" );
+            const auto cancelledRay = invokeBridge( "handleViewportBrushEvent", invalidRayCancel );
+            if( cancelledRay.size() != 1 || !cancelledRay[0].getBool() ||
+                bridgeTerrain->getTerrainSnapshot()->heights != original )
+                throw std::runtime_error( "Invalid viewport ray must cancel the active native stroke and restore samples" );
+            requireApplied( "begin" );
+            Parameters outsideRelease;
+            if( !ui::makeSceneViewportToolArguments( ViewportBridgeCamera{ true }, { 8, 86 }, { 384, 300 },
+                    { 230, 70 }, ui::terrainViewportBrushPhase( false, false, true, false, false ), outsideRelease ) ||
+                outsideRelease[0].getStr() != "cancel" )
+                throw std::runtime_error( "Release-outside viewport input must produce the actual cancel protocol" );
+            const auto outsideResult = invokeBridge( "handleViewportBrushEvent", outsideRelease );
+            if( outsideResult.size() != 1 || !outsideResult[0].getBool() ||
+                bridgeTerrain->getTerrainSnapshot()->heights != original ||
+                luabind::object_cast<String>( bridgeData->getObject()["_currentStatus"] ) != "Cancelled terrain stroke." )
+                throw std::runtime_error( "Release outside must restore native samples and report cancellation explicitly" );
+            requireApplied( "begin" );
+            requireApplied( "cancel" );
+            if( bridgeTerrain->getTerrainSnapshot()->heights != original )
+                throw std::runtime_error( "Native viewport cancel must restore actual terrain samples" );
+            requireApplied( "begin" );
+            requireApplied( "commit" );
+            const auto committed = bridgeTerrain->getTerrainSnapshot()->heights;
+            auto viewportUndo = commands->getPreviousCommand();
+            if( committed == original || !viewportUndo )
+                throw std::runtime_error( "Native viewport commit must retain an undoable terrain edit" );
+            viewportUndo->undo();
+            if( bridgeTerrain->getTerrainSnapshot()->heights != original )
+                throw std::runtime_error( "Native viewport commit undo must restore the original samples" );
+            auto viewportRedo = commands->getNextCommand();
+            if( !viewportRedo ) throw std::runtime_error( "Native viewport commit must retain redo history" );
+            viewportRedo->redo();
+            if( bridgeTerrain->getTerrainSnapshot()->heights != committed )
+                throw std::runtime_error( "Native viewport commit redo must restore the committed samples" );
+            requireApplied( "cancel" );
+            if( luabind::object_cast<String>( bridgeData->getObject()["_currentStatus"] ) !=
+                    "Committed terrain stroke. Use Edit > Undo/Redo." )
+                throw std::runtime_error( "Idle outside cancellation must not replace a completed stroke's status" );
+            run( "bridgeEditor.settings.viewportBrushEnabled = false" );
+            viewport = invokeBridge( "getViewportScriptState", {} );
+            if( viewport.size() != 2 || viewport[0].getBool() )
+                throw std::runtime_error( "Native viewport bridge must publish disabled state" );
+            const auto rejected = invokeBridge( "handleViewportBrushEvent", {} );
+            if( rejected.size() != 1 || rejected[0].getBool() )
+                throw std::runtime_error( "Malformed native viewport events must be rejected" );
+            manager.destroyObject( bridgeOwner );
+            run( "bridgeEditor = nil; bridgeTerrain = nil; collectgarbage('collect')" );
+            commands->clearAll();
             run( R"(
                 editor = TerrainEditor(nil)
                 editor.terrain = terrainFixture

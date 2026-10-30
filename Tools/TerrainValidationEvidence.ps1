@@ -9,6 +9,7 @@ function Get-TerrainSourceSnapshot([string]$RepositoryRoot) {
         'Tests/CMakeLists.txt', 'Tests/cpp/CMakeLists.txt', 'Tests/cpp/*.hpp',
         'Tests/cpp/TerrainContractsTests.cpp', 'Tests/cpp/TerrainPhysicsContractsTests.cpp',
         'Tests/cpp/TerrainLuaBindingTests.cpp', 'Tests/cpp/ClawProductionTests.cpp',
+        'Tests/cpp/ScenePickingTests.cpp', 'Tests/cpp/EditorDeferredScriptEventsTests.cpp',
         'Tests/cpp/ClawCookedResourceTests.cpp', 'Tests/cpp/GraphicsProduction', 'Tests/cpp/Fixtures',
         'CMakeLists.txt', 'CMakePresets.json', 'CMake', 'Dependencies/CMakeLists.txt',
         'Dependencies/cJSON/CMakeLists.txt', 'Tools/ValidateClawGraphics.ps1',

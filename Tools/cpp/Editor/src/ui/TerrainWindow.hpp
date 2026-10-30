@@ -5,6 +5,7 @@
 #include "ui/ScriptWindow.hpp"
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <atomic>
 #include <mutex>
 
 namespace workphone
@@ -82,13 +83,16 @@ namespace workphone
             void updateSelection() override;
             void setWindowVisible( bool visible ) override;
             void refreshViewportScriptState();
+            u64 getViewportScriptGeneration() const;
 
             WP_CLASS_REGISTER_DECL;
 
         private:
             void attachViewport();
             void cancelViewportStroke();
+            void invalidateViewportScriptState();
             mutable std::mutex m_viewportScriptStateMutex;
+            std::atomic<u64> m_viewportScriptGeneration{ 1 };
             Parameters m_recipePreview;
             bool m_viewportBrushEnabled = false;
             f64 m_viewportBrushRadius = 0.0;

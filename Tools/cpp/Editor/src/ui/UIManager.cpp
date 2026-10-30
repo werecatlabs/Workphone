@@ -76,15 +76,18 @@ namespace workphone::editor
         return scripts && scripts->getDebuggerPort() != 0;
     }
 
-    bool UIManager::shouldDeferScriptCall( bool debuggerControl ) const
+    bool UIManager::shouldDeferScriptCall( bool debuggerControl, bool renderThreadUnsafe ) const
     {
         auto app = core::IApplicationManager::instancePtr();
         auto scripts = app ? app->getScriptManager() : nullptr;
-        if( !scripts || scripts->getDebuggerPort() == 0 ) return false;
+        if( !scripts ) return false;
         auto graphics = app->getGraphicsSystem();
         const auto renderTask = graphics ? graphics->getRenderTask() : TaskId::Render;
-        return Thread::getCurrentTask() == renderTask ||
-               ( scripts->isDebuggerPaused() && !debuggerControl );
+        const bool debuggerEnabled = scripts->getDebuggerPort() != 0;
+        return shouldDeferEditorScriptCall( Thread::getCurrentTask() == renderTask,
+                                           debuggerEnabled,
+                                           debuggerEnabled && scripts->isDebuggerPaused(),
+                                           debuggerControl, renderThreadUnsafe );
     }
 
     void UIManager::enqueueScriptEvent( std::function<void()> call, bool debuggerControl,
@@ -131,23 +134,40 @@ namespace workphone::editor
 
     bool UIManager::deferScriptCall( EditorWindow *window, const String &member,
                                     const Parameters &parameters, bool hasParameters,
-                                    bool discardResults )
+                                    bool discardResults, u64 viewportGeneration )
     {
         const bool debuggerControl = window && window == m_luaDebuggerWindow.get();
-        if( !window || !shouldDeferScriptCall( debuggerControl ) ) return false;
+        // Terrain Lua may load textures while the render frame owns the texture
+        // manager. Keep its callbacks on Application even without a debugger.
+        const bool terrainWindow = window && window->isDerived<TerrainWindow>();
+        if( !window || !shouldDeferScriptCall( debuggerControl, terrainWindow ) ) return false;
+        const bool viewportBrush = terrainWindow && member == "handleViewportBrushEvent";
+        if( viewportBrush && !viewportGeneration )
+            viewportGeneration = static_cast<TerrainWindow *>( window )->getViewportScriptGeneration();
         auto invoker = window->getInvoker();
         if( !invoker ) return true;
         const WeakPtr<EditorWindow> owner( window );
         const WeakPtr<IScriptInvoker> expectedInvoker( invoker.get() );
         auto key = !hasParameters && ( member == "update" || member == "updateSelection" ) ? member : String();
-        if( member == "handleViewportBrush" && !parameters.empty() && parameters.front().getStr() == "cancel" )
-            key = "viewportCancel";
-        enqueueScriptEvent( [owner, expectedInvoker, member, parameters, hasParameters, discardResults]() {
+        if( member == "handleViewportBrushEvent" && !parameters.empty() )
+        {
+            const auto &phaseArgument = parameters.front();
+            const auto phase = phaseArgument.type == ParameterType::PARAM_TYPE_CHAR_PTR
+                ? String( phaseArgument.getCharPtr() ? phaseArgument.getCharPtr() : "" )
+                : phaseArgument.getStr();
+            if( phase == "cancel" ) key = "viewportCancel";
+        }
+        enqueueScriptEvent( [owner, expectedInvoker, member, parameters, hasParameters, discardResults,
+                             viewportBrush, viewportGeneration]() {
             auto app = core::IApplicationManager::instancePtr();
             if( !app || app->getQuit() ) return;
             auto target = owner.lock();
             auto expected = expectedInvoker.lock();
             if( !target || !target->isLoaded() || !expected || target->getInvoker() != expected ) return;
+            // A delayed ray must not begin a stroke against a newly selected terrain.
+            if( viewportBrush && !isCurrentEditorScriptEventGeneration(
+                    viewportGeneration,
+                    static_cast<TerrainWindow *>( target.get() )->getViewportScriptGeneration() ) ) return;
             invokeEditorScriptCall( *expected, member, parameters, hasParameters, discardResults );
         }, debuggerControl, reinterpret_cast<std::uintptr_t>( window ), key );
         return true;
@@ -180,8 +200,11 @@ namespace workphone::editor
         if( Thread::getCurrentTask() != TaskId::Application ) return;
         m_scriptEvents.dispatch( debuggerOnly );
         if( m_scriptEvents.size() == 0 ) m_scriptEventOverflowReported = false;
-        if( !debuggerOnly && debuggerDispatchEnabled() )
+        if( !debuggerOnly )
+        {
             if( auto terrain = getTerrainWindow() ) terrain->refreshViewportScriptState();
+            if( auto actor = getActorWindow() ) actor->refreshTerrainViewportScriptState();
+        }
     }
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager, ISharedObject );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::UpdateSelectionJob, Job );
