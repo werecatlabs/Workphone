@@ -1,4 +1,5 @@
 #include <Workphone/Interface/Net/NetworkCodec.hpp>
+#include <Workphone/Interface/Net/NetworkSceneValidation.hpp>
 #include <algorithm>
 #include <cstdio>
 #include <string>
@@ -31,6 +32,43 @@ bool throws( Fn fn )
 int main()
 {
     using namespace workphone::network;
+    // The Editor uses this same validator before network play. Its diagnostic
+    // contract must catch routing collisions and unsupported backend settings.
+    const NetworkAuthoringCapabilities development{ true, true, false };
+    std::vector<AuthoredNetworkView> views = { { 1, 10, 0, 1, false, false, true },
+                                               { 2, 11, 65534, 0, false, false, true } };
+    CHECK( validateNetworkViews( views, development ).empty() );
+    views[1].objectId = 10;
+    auto issues = validateNetworkViews( views, development );
+    CHECK( issues.size() == 1 && issues[0].code == NetworkSceneIssueCode::DuplicateObjectId &&
+           issues[0].viewIndex == 1 && issues[0].relatedViewIndex == 0 );
+    views[1].objectId = -1;
+    views[1].ownerId = 65535;
+    views[1].authority = 2;
+    views[1].reliable = true;
+    views[1].ownershipRequests = true;
+    issues = validateNetworkViews( views, development );
+    const auto hasIssue = [&]( NetworkSceneIssueCode code ) {
+        return std::any_of( issues.begin(), issues.end(), [&]( const auto &issue ) {
+            return issue.code == code && issue.viewIndex == 1;
+        } );
+    };
+    CHECK( issues.size() == 5 && hasIssue( NetworkSceneIssueCode::UnassignedObjectId ) &&
+           hasIssue( NetworkSceneIssueCode::InvalidOwnerId ) &&
+           hasIssue( NetworkSceneIssueCode::UnsupportedAuthority ) &&
+           hasIssue( NetworkSceneIssueCode::UnsupportedDelivery ) &&
+           hasIssue( NetworkSceneIssueCode::UnsupportedOwnershipRequests ) );
+    views[1].active = false;
+    CHECK( validateNetworkViews( views, development ).empty() );
+    views[1].actorIdentity = 1;
+    issues = validateNetworkViews( views, development );
+    CHECK( issues.size() == 1 && issues[0].code == NetworkSceneIssueCode::DuplicateComponent );
+    views = { { 1, 0, 0, 1, true, true, true } };
+    CHECK( validateNetworkViews( views, {} ).empty() );  // Offline authoring has no backend yet.
+    CHECK( validateNetworkViews( views, { true, true, true } ).empty() );
+    views[0].reliable = false;
+    views[0].ownershipRequests = false;
+    CHECK( validateNetworkViews( views, { true, false, true } ).size() == 1 );
     std::vector<unsigned char> bytes;
     write( bytes, std::uint16_t( 0x1234 ) );
     write( bytes, std::int32_t( -2147483647 - 1 ) );

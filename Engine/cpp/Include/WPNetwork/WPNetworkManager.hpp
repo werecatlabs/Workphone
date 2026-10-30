@@ -3,6 +3,7 @@
 
 #include <WPNetwork/WPNetworkPrerequisites.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
+#include <WPNetwork/WPNetworkDiagnostics.hpp>
 #include <mutex>
 
 extern "C" {
@@ -34,6 +35,10 @@ namespace workphone
         ~WPNetworkManager() override;
         void unload( SmartPtr<ISharedObject> data ) override;
         void poll() override;
+        /// Cancel a pending connection or disconnect a client; keep its socket
+        /// available for an explicit reconnect. Use unload() to stop a server.
+        void disconnect();
+        WPNetworkDiagnostics getDiagnostics() const;
         u32 getCapabilities() const override;
         s32 getPacketSenderId( SmartPtr<IPacket> packet ) const override;
 
@@ -121,6 +126,9 @@ namespace workphone
 
         /** @brief Sets the listener port. @param port The port number to use. */
         void setPort( u32 port );
+        /// Server IPv4 interface in host byte order; zero means all interfaces.
+        /// Configure before startup. Development factories use loopback.
+        void setBindAddress( u32 address );
 
         /** @brief Gets the maximum number of allowed clients. @return Max clients. */
         u32 getMaxClients() const;
@@ -161,7 +169,10 @@ namespace workphone
         bool m_globalRelay = false;        ///< Flag for global packet relay
         bool m_socketRuntimeInitialized = false;
         bool m_polling = false;
+        WPNetworkSessionState m_terminalState = WPNetworkSessionState::Idle;
+        String m_lastError;
         u32 m_port = 15822;                ///< The network port used for listening/connecting
+        u32 m_bindAddress = 0;
         u32 m_maxClients = NET_MAX_PEERS;  ///< Maximum number of clients allowed on the server
         u16 m_netIterations =
             NET_MAX_EVENTS;  ///< Maximum number of network events to process per update

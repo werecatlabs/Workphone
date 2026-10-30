@@ -13,6 +13,7 @@ namespace workphone
     struct WPNetwork_API WPNetworkConfig
     {
         u32 port = 15822;
+        u32 bindAddress = 0x7f000001u;  ///< Server interface defaults to loopback.
         u32 maxClients = 32;
         u16 eventsPerPoll = 128;
         bool verbose = false;

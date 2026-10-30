@@ -64,6 +64,23 @@ if(TARGET WPNetwork)
     set_target_properties(WPNetworkIntegrationTests PROPERTIES FOLDER Tests/Network)
     add_test(NAME WPNetwork.integration COMMAND WPNetworkIntegrationTests)
     set_tests_properties(WPNetwork.integration PROPERTIES LABELS "network;headless;scene" TIMEOUT 30)
+
+    add_executable(WPNetworkProcessTests NetworkProcessTests.cpp)
+    target_compile_features(WPNetworkProcessTests PRIVATE cxx_std_17)
+    target_compile_definitions(WPNetworkProcessTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(WPNetworkProcessTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(WPNetworkProcessTests PRIVATE WPNetwork Workphone)
+    set_target_properties(WPNetworkProcessTests PROPERTIES FOLDER Tests/Network)
+    if(WIN32)
+        find_program(WP_NETWORK_POWERSHELL NAMES pwsh powershell REQUIRED)
+        add_test(NAME WPNetwork.local_multiprocess
+            COMMAND "${WP_NETWORK_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${WP_ROOT}/Scripts/Run-WPNetworkLocal.ps1"
+                -Executable "$<TARGET_FILE:WPNetworkProcessTests>" -Clients 3 -TimeoutSeconds 20)
+        set_tests_properties(WPNetwork.local_multiprocess PROPERTIES
+            LABELS "network;headless;multiprocess;development" TIMEOUT 35)
+    endif()
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)

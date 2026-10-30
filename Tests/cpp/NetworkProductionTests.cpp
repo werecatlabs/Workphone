@@ -7,6 +7,7 @@
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/System/TimerChrono.hpp>
 #include <Workphone/Scene/GameActor.hpp>
 #include <Workphone/Scene/Transform.hpp>
 #include <Workphone/Scene/Components/NetworkStream.hpp>
@@ -23,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <atomic>
+#include "NetworkSceneValidationContracts.hpp"
 
 using namespace workphone;
 #define CHECK( condition )                                                      \
@@ -34,6 +36,7 @@ using namespace workphone;
             return false;                                                       \
         }                                                                       \
     } while( false )
+
 template <class Error, class Fn>
 bool throws( Fn fn )
 {
@@ -51,20 +54,25 @@ bool throws( Fn fn )
 class Recorder : public INetworkListener
 {
 public:
-    void connect( u32 ) override
+    void connect( u32 player ) override
     {
         ++joined;
+        lastJoined = player;
     }
+
     void disconnect( u32 ) override
     {
         ++left;
     }
+
     void handlePacket( SmartPtr<IPacket> packet ) override
     {
         received = packet;
         ++messages;
     }
+
     unsigned joined = 0, left = 0, messages = 0;
+    u32 lastJoined = 0;
     SmartPtr<IPacket> received;
 };
 
@@ -77,7 +85,9 @@ public:
         setActor( actor );
         setEnabled( true );
     }
+
     using NetworkView::handlePacket;
+
     bool hasSnapshot() const
     {
         return m_hasReceivedSnapshot;
@@ -91,10 +101,12 @@ public:
     {
         throw std::runtime_error( "intentional callback failure" );
     }
+
     void disconnect( u32 ) override
     {
         throw std::runtime_error( "intentional callback failure" );
     }
+
     void handlePacket( SmartPtr<IPacket> ) override
     {
         throw std::runtime_error( "intentional callback failure" );
@@ -107,6 +119,7 @@ public:
     explicit ReentrantListener( WPNetworkManager *manager ) : manager( manager )
     {
     }
+
     void connect( u32 ) override
     {
         ++depth;
@@ -115,12 +128,15 @@ public:
         --depth;
         ++joined;
     }
+
     void disconnect( u32 ) override
     {
     }
+
     void handlePacket( SmartPtr<IPacket> ) override
     {
     }
+
     WPNetworkManager *manager;
     int depth = 0, maxDepth = 0, joined = 0;
 };
@@ -133,19 +149,24 @@ bool profiles()
             std::filesystem::temp_directory_path() /
             ( "wp-network-" +
               std::to_string( std::chrono::steady_clock::now().time_since_epoch().count() ) + ".json" );
+
         ~TemporaryProfile()
         {
             std::error_code error;
             std::filesystem::remove( path, error );
         }
+
         void write( const std::string &text )
         {
             std::ofstream output( path );
             output << text;
             if( !output )
+            {
                 throw std::runtime_error( "profile fixture write failed" );
+            }
         }
     } fixture;
+
     const String path = fixture.path.string().c_str();
     const std::string prefix =
         R"({"version":1,"backend":"native_udp_development","environment":"development")";
@@ -155,6 +176,8 @@ bool profiles()
     auto server = createWPNetworkServer( path );
     auto native = dynamic_cast<WPNetworkManager *>( server.get() );
     CHECK( native && native->isServer() && native->getContext()->running );
+    CHECK( native->getDiagnostics().boundHost == 0x7f000001u );
+    CHECK( throws<std::logic_error>( [&] { native->setBindAddress( 0 ); } ) );
     const auto port = net_get_bound_port( native->getContext() );
     fixture.write( prefix + ",\"port\":" + std::to_string( port ) + "}" );
     CHECK( throws<std::runtime_error>( [&] { createWPNetworkServer( path ); } ) );
@@ -165,7 +188,9 @@ bool profiles()
     client->unload( nullptr );
     for( const auto &suffix :
          { ",\"port\":65536}", ",\"maxClients\":0}", ",\"eventsPerPoll\":1.5}", ",\"verbose\":\"true\"}",
-           ",\"password\":\"secret\"}", ",\"version\":1}", "} garbage", ",\"port\" 12}" } )
+           ",\"password\":\"secret\"}", ",\"version\":1}", "} garbage", ",\"port\" 12}",
+           ",\"bindAddress\":\"localhost\"}", ",\"bindAddress\":\"127.00.0.1\"}",
+           ",\"bindAddress\":\"127.0.0.1\\u0000extra\"}" } )
     {
         fixture.write( prefix + suffix );
         CHECK( throws<std::invalid_argument>( [&] { WPNetworkConfig::load( path ); } ) );
@@ -241,11 +266,17 @@ SmartPtr<WPNetworkPacket> snapshot( u32 sequence, u8 channels, SmartPtr<ISystemA
     packet->write( sequence );
     packet->write( channels );
     if( channels & 1 )
+    {
         packet->write( Vector3<real_Num>( 10, 20, 30 ) );
+    }
     if( channels & 2 )
+    {
         packet->write( Vector3<real_Num>( 0, 45, 0 ) );
+    }
     if( channels & 4 )
+    {
         packet->write( Vector3<real_Num>( 2, 2, 2 ) );
+    }
     packet->setSystemAddress( address );
     return packet;
 }
@@ -264,6 +295,7 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     auto server = make_ptr<WPNetworkManager>();
     auto a = make_ptr<WPNetworkManager>(), b = make_ptr<WPNetworkManager>();
     CHECK( !server->getContext()->running );
+    CHECK( server->getDiagnostics().state == WPNetworkSessionState::Idle );
     CHECK( server->getCapabilities() == INetworkManager::UnreliableDelivery );
     server->setPort( 0 );
     server->setServer( true );
@@ -272,8 +304,12 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     auto reentrant = make_ptr<ReentrantListener>( server.get() );
     server->addListener( reentrant );
     const auto port = net_get_bound_port( server->getContext() );
+    CHECK( throws<std::logic_error>( [&] { server->disconnect(); } ) );
     CHECK( port != 0 );
+    CHECK( server->getDiagnostics().state == WPNetworkSessionState::Listening );
+    CHECK( server->getDiagnostics().boundPort == port );
     a->connect( "127.0.0.1", port, "" );
+    CHECK( a->getDiagnostics().state == WPNetworkSessionState::Connecting );
     b->connect( "127.0.0.1", port, "" );
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds( 3 );
     while( ( a->getConnectionStatus() != INetworkManager::ConnectionStatus::NCS_ESTABLISHED ||
@@ -287,6 +323,11 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     }
     CHECK( a->getPlayerNumber() != b->getPlayerNumber() );
     CHECK( record->joined == 2 );
+    const auto connectedSnapshot = a->getDiagnostics();
+    CHECK( connectedSnapshot.state == WPNetworkSessionState::Connected );
+    CHECK( connectedSnapshot.localPlayerId == a->getPlayerNumber() );
+    CHECK( server->getDiagnostics().peerCount == 2 );
+    CHECK( server->getDiagnostics().receivedDatagrams >= 2 );
     CHECK( reentrant->joined == 2 && reentrant->maxDepth == 1 );
     CHECK( server->getPlayerNumber() == 0 && a->getPlayerNumber() != 0xffffu &&
            b->getPlayerNumber() != 0xffffu );
@@ -386,10 +427,82 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     transform = nullptr;
     application->setPlaying( false );
 
-    net_disconnect( a->getContext() );
+    auto clientEvents = make_ptr<Recorder>();
+    a->addListener( clientEvents );
+    const auto oldPort = a->getDiagnostics().boundPort;
+    a->disconnect();
+    a->disconnect();
+    CHECK( a->getDiagnostics().boundPort != oldPort );
+    CHECK( a->getDiagnostics().state == WPNetworkSessionState::Disconnected );
+    CHECK( connectedSnapshot.state == WPNetworkSessionState::Connected );
     a->poll();
+    CHECK( clientEvents->left == 1 );
     server->poll();
     CHECK( a->getConnectionStatus() == INetworkManager::ConnectionStatus::NCS_FAILED );
+    auto probe = make_ptr<WPNetworkManager>();
+    probe->setServer( false );
+    probe->getContext()->connect_timeout_ms = 10;
+    const auto silentPort = b->getDiagnostics().boundPort;
+    probe->connect( "127.0.0.1", silentPort, "" );
+    probe->disconnect();
+    probe->poll();
+    CHECK( probe->getDiagnostics().state == WPNetworkSessionState::Disconnected );
+    CHECK( probe->getDiagnostics().lastError.empty() );
+    probe->getContext()->connect_timeout_ms = 10;
+    probe->connect( "127.0.0.1", silentPort, "" );
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 1 );
+    while( probe->getDiagnostics().state == WPNetworkSessionState::Connecting &&
+           std::chrono::steady_clock::now() < deadline )
+    {
+        probe->poll();
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+    }
+    const auto failure = probe->getDiagnostics();
+    CHECK( failure.state == WPNetworkSessionState::Failed && !failure.lastError.empty() );
+    probe->unload( nullptr );
+    // Server admitted this attempt, but client has not consumed the accept yet.
+    probe->connect( "127.0.0.1", port, "" );
+    server->poll();
+    const auto pendingPort = probe->getDiagnostics().boundPort;
+    probe->disconnect();
+    CHECK( probe->getDiagnostics().boundPort != pendingPort );
+    probe->connect( "127.0.0.1", port, "" );
+    const auto reconnectDeadline = std::chrono::steady_clock::now() + std::chrono::seconds( 1 );
+    while( probe->getDiagnostics().state == WPNetworkSessionState::Connecting &&
+           std::chrono::steady_clock::now() < reconnectDeadline )
+    {
+        server->poll();
+        probe->poll();
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+    }
+    CHECK( probe->getDiagnostics().state == WPNetworkSessionState::Connected );
+    probe->unload( nullptr );
+    CHECK( probe->getDiagnostics().state == WPNetworkSessionState::Stopped );
+    CHECK( probe->getDiagnostics().boundPort == 0 );
+    CHECK( failure.state == WPNetworkSessionState::Failed && !failure.lastError.empty() );
+    probe->setServer( false );
+    CHECK( probe->getDiagnostics().state == WPNetworkSessionState::Idle );
+    CHECK( probe->getDiagnostics().lastError.empty() );
+    probe->setNetIterations( 1 );
+    CHECK( throws<std::runtime_error>( [&] { probe->connect( "", 0, "" ); } ) );
+    CHECK( probe->getDiagnostics().state == WPNetworkSessionState::Failed );
+    const auto joinsBefore = record->joined;
+    probe->connect( "127.0.0.1", port, "" );
+    const auto admissionDeadline = std::chrono::steady_clock::now() + std::chrono::seconds( 1 );
+    while( record->joined == joinsBefore && std::chrono::steady_clock::now() < admissionDeadline )
+    {
+        server->poll();
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+    }
+    CHECK( record->joined > joinsBefore );
+    server->kickClient( static_cast<u16>( record->lastJoined ) );
+    std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+    probe->poll();
+    CHECK( probe->getDiagnostics().state != WPNetworkSessionState::Connected );
+    CHECK( probe->getDiagnostics().lastError.empty() );
+    probe->poll();
+    CHECK( probe->getDiagnostics().state == WPNetworkSessionState::Disconnected );
+    probe->unload( nullptr );
     server->unload( nullptr );
     server->unload( nullptr );
     CHECK( !server->getContext()->running && net_get_bound_port( server->getContext() ) == 0 );
@@ -403,10 +516,14 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
         std::thread polling( [&] {
             entered.store( true );
             for( int i = 0; i < 1000; ++i )
+            {
                 server->poll();
+            }
         } );
         while( !entered.load() )
+        {
             std::this_thread::yield();
+        }
         server->unload( nullptr );
         polling.join();
         CHECK( !server->getContext()->running );
@@ -423,10 +540,12 @@ int main()
     TypeManager::setInstance( &types );
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance( application );
+    application->setTimer( make_ptr<TimerChrono>() );
     bool ok = false;
     try
     {
-        ok = codecs() && profiles() && sessions( application );
+        ok = codecs() && profiles() && sessions( application ) &&
+             networkSceneValidationContracts( application );
     }
     catch( const std::exception &error )
     {
@@ -437,8 +556,10 @@ int main()
     TypeManager::setInstance( nullptr );
     types.unload();
     if( ok )
+    {
         std::puts(
             "PASS: concrete packet/streams, sessions, sender authorization, atomic scene state and "
             "lifecycle" );
+    }
     return ok ? 0 : 1;
 }

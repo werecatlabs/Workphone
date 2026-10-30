@@ -172,7 +172,10 @@ void net_context_shutdown( NetContext *ctx );
 
 /* Server/client startup. */
 int net_start_server( NetContext *ctx, unsigned short port, int max_peers );
+/* Specific IPv4 bind interface, host byte order; zero means wildcard. */
+int net_start_server_on( NetContext *ctx, NetAddress address, int max_peers );
 int net_start_client( NetContext *ctx );
+int net_start_client_on( NetContext *ctx, unsigned int host );
 int net_connect( NetContext *ctx, const char *host, unsigned short port );
 
 /* Main update. Call once per frame/tick. */
@@ -190,6 +193,9 @@ void net_disconnect( NetContext *ctx );
 /* Native UDP is a development-only, unencrypted, unreliable transport. */
 int net_send_reliable( NetContext *ctx, NetPeerId peer_id, const void *data, unsigned int size );
 unsigned short net_get_bound_port( const NetContext *ctx );
+int net_get_bound_address( const NetContext *ctx, NetAddress *address );
+/* Strict dotted decimal; output is unchanged on failure. */
+int net_parse_ipv4( const char *text, unsigned int *host );
 /* Injectable monotonic time for scheduling tests; real sockets are still used. */
 void net_update_at( NetContext *ctx, unsigned int now_ms );
 

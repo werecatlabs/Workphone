@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "backend": "native_udp_development",
+  "environment": "development",
+  "bindAddress": "127.0.0.1",
+  "port": 15822,
+  "maxClients": 32,
+  "eventsPerPoll": 128,
+  "verbose": false
+}

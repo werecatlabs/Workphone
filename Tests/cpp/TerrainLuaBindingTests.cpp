@@ -15,6 +15,7 @@
 #include <Workphone/Interface/Script/IScriptClass.hpp>
 #include <luabind/luabind.hpp>
 #include <filesystem>
+#include <cmath>
 #include <cstdio>
 #include <stdexcept>
 #include <limits>
@@ -106,9 +107,10 @@ int main()
                 return values;
             };
             auto viewport = invokeBridge( "getViewportScriptState", {} );
-            if( viewport.size() != 2 || viewport[0].type != ParameterType::PARAM_TYPE_BOOL || !viewport[0].getBool() ||
-                viewport[1].type != ParameterType::PARAM_TYPE_F64 || viewport[1].getF64() != 0.6 )
-                throw std::runtime_error( "Native viewport bridge must return enabled and numeric radius" );
+            if( viewport.size() != 3 || viewport[0].type != ParameterType::PARAM_TYPE_BOOL || !viewport[0].getBool() ||
+                viewport[1].type != ParameterType::PARAM_TYPE_F64 || viewport[1].getF64() != 0.6 ||
+                viewport[2].type != ParameterType::PARAM_TYPE_BOOL || viewport[2].getBool() )
+                throw std::runtime_error( "Native viewport bridge must return enabled, radius and solid-only policy" );
             if( !invokeBridge( "getViewportBrushEnabled", {} ).empty() )
                 throw std::runtime_error( "Viewport bridge must preserve the global results-container ABI" );
             run( R"(
@@ -118,7 +120,7 @@ int main()
                 bridgeEditor._recipePending = false
             )" );
             viewport = invokeBridge( "getViewportScriptState", {} );
-            if( viewport.size() != 4 || !viewport[2].object || viewport[3].object != bridgeTerrain )
+            if( viewport.size() != 5 || viewport[2].getBool() || !viewport[3].object || viewport[4].object != bridgeTerrain )
                 throw std::runtime_error( "Native viewport bridge must retain recipe then terrain object identity" );
             run( "bridgeEditor._showRecipePreview = false; bridgeEditor.recipe = nil" );
             const auto original = bridgeTerrain->getTerrainSnapshot()->heights;
@@ -191,9 +193,98 @@ int main()
             if( luabind::object_cast<String>( bridgeData->getObject()["_currentStatus"] ) !=
                     "Committed terrain stroke. Use Edit > Undo/Redo." )
                 throw std::runtime_error( "Idle outside cancellation must not replace a completed stroke's status" );
+
+            // Target an interior hole with a radius too small to reach any solid cell.
+            // Exercise the real Lua results-container adapter, native picking, edit and history.
+            commands->clearAll();
+            render::TerrainData holeData;
+            holeData.dimensions = { 9, 9 };
+            holeData.origin = { -4, -4 };
+            holeData.heights.resize( 81 );
+            holeData.holes.assign( 64, 0 );
+            for( s32 z = 0; z < 9; ++z )
+                for( s32 x = 0; x < 9; ++x )
+                    holeData.heights[size_t( z ) * 9 + x] = 3 + .2f * x + .1f * z;
+            holeData.heights[4 * 9 + 4] += 1;
+            for( s32 z = 2; z < 6; ++z )
+                for( s32 x = 2; x < 6; ++x ) holeData.holes[size_t( z ) * 8 + x] = 1;
+            if( !bridgeTerrain->applyTerrainData( holeData, error ) )
+                throw std::runtime_error( error.c_str() );
+            const Ray3F repairRay( { .25f, 20, .5f }, { 0, -1, 0 } );
+            Vector3<real_Num> repairHit;
+            f32 repairHeight = 0;
+            if( render::intersectTerrain( *bridgeTerrain->getTerrainSnapshot(), {}, repairRay, repairHit ) ||
+                render::sampleTerrainHeight( *bridgeTerrain->getTerrainSnapshot(), {}, { .25, 0, .5 }, repairHeight ) )
+                throw std::runtime_error( "Interior hole must remain empty for gameplay rays and support queries" );
+            run( "bridgeEditor.settings.brushMode = 0; bridgeEditor.settings.brushSize = 0.4" );
+            const auto repairBrush = [&]( const char *phase ) {
+                return invokeBridge( "handleViewportBrushEvent",
+                    { Parameter( phase ), Parameter( .25 ), Parameter( 20.0 ), Parameter( .5 ),
+                      Parameter( 0.0 ), Parameter( -1.0 ), Parameter( 0.0 ) } );
+            };
+            const auto requireRepair = [&]( const char *phase, bool expected ) {
+                const auto values = repairBrush( phase );
+                if( values.size() != 1 || values[0].getBool() != expected )
+                {
+                    const auto status = luabind::object_cast<String>( bridgeData->getObject()["_currentStatus"] );
+                    throw std::runtime_error( std::string( "Hole repair viewport phase '" ) + phase +
+                        "' had unexpected result; status=" + status.c_str() );
+                }
+            };
+            requireRepair( "hover", false );
+            requireRepair( "begin", false );
+            if( bridgeTerrain->getTerrainSnapshot()->holes != holeData.holes )
+                throw std::runtime_error( "Ordinary viewport tools must not edit through a hole" );
+            run( "bridgeEditor.settings.brushMode = 9" );
+            viewport = invokeBridge( "getViewportScriptState", {} );
+            if( viewport.size() != 3 || !viewport[0].getBool() || !viewport[2].getBool() ||
+                viewport[1].getF64() != 0.4 )
+                throw std::runtime_error( "Fill Hole must publish its explicit authoring pick policy with the cached radius" );
+            run( "bridgeEditor.settings.brushMode = 8" );
+            viewport = invokeBridge( "getViewportScriptState", {} );
+            if( viewport.size() != 3 || viewport[2].getBool() )
+                throw std::runtime_error( "Switching to Hole must remove the cached authoring-only picking opt-in" );
+            run( "bridgeEditor.settings.brushMode = 9" );
+            requireRepair( "hover", true );
+            {
+                const luabind::object preview = bridgeData->getObject()["brushPreview"];
+                if( std::abs( luabind::object_cast<double>( preview["x"] ) - .25 ) > .0001 ||
+                    std::abs( luabind::object_cast<double>( preview["y"] ) - 4.55 ) > .0001 ||
+                    std::abs( luabind::object_cast<double>( preview["z"] ) - .5 ) > .0001 )
+                    throw std::runtime_error( "Fill Hole preview must hit the authored nonplanar surface inside the void" );
+            }
+            auto repairedHoles = holeData.holes;
+            repairedHoles[4 * 8 + 4] = 0;
+            const auto requireHoleState = [&]( const Array<u8> &expected, const char *message ) {
+                const auto source = bridgeTerrain->getTerrainSnapshot();
+                if( source->holes != expected || source->heights != holeData.heights )
+                    throw std::runtime_error( message );
+            };
+            requireRepair( "begin", true );
+            requireHoleState( repairedHoles, "Fill Hole must repair only the targeted native cell without changing heights" );
+            requireRepair( "cancel", true );
+            requireHoleState( holeData.holes, "Cancelled Fill Hole must restore the original native hole patch" );
+            requireRepair( "begin", true );
+            requireRepair( "commit", true );
+            requireHoleState( repairedHoles, "Committed Fill Hole must preserve its native cell repair" );
+            auto repairUndo = commands->getPreviousCommand();
+            if( !repairUndo ) throw std::runtime_error( "Fill Hole must create an undoable edit" );
+            repairUndo->undo();
+            requireHoleState( holeData.holes, "Fill Hole undo must reopen the exact original hole patch" );
+            if( render::intersectTerrain( *bridgeTerrain->getTerrainSnapshot(), {}, repairRay, repairHit ) )
+                throw std::runtime_error( "Undo must remove gameplay ray support at the repaired cell" );
+            auto repairRedo = commands->getNextCommand();
+            if( !repairRedo ) throw std::runtime_error( "Fill Hole must retain redo history" );
+            repairRedo->redo();
+            requireHoleState( repairedHoles, "Fill Hole redo must restore the exact committed hole repair" );
+            if( !render::intersectTerrain( *bridgeTerrain->getTerrainSnapshot(), {}, repairRay, repairHit ) ||
+                std::abs( repairHit.y - 4.55 ) > .0001 ||
+                render::intersectTerrain( *bridgeTerrain->getTerrainSnapshot(), {},
+                    Ray3F( { -.75f, 20, .5f }, { 0, -1, 0 } ), repairHit ) )
+                throw std::runtime_error( "Only the filled cell may regain gameplay ray support after redo" );
             run( "bridgeEditor.settings.viewportBrushEnabled = false" );
             viewport = invokeBridge( "getViewportScriptState", {} );
-            if( viewport.size() != 2 || viewport[0].getBool() )
+            if( viewport.size() != 3 || viewport[0].getBool() || viewport[2].getBool() )
                 throw std::runtime_error( "Native viewport bridge must publish disabled state" );
             const auto rejected = invokeBridge( "handleViewportBrushEvent", {} );
             if( rejected.size() != 1 || rejected[0].getBool() )

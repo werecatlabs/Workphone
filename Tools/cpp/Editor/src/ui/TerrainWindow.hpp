@@ -95,6 +95,7 @@ namespace workphone
             std::atomic<u64> m_viewportScriptGeneration{ 1 };
             Parameters m_recipePreview;
             bool m_viewportBrushEnabled = false;
+            bool m_viewportBrushPickHeightfield = false;
             f64 m_viewportBrushRadius = 0.0;
             // events
             void OnRaiseBtnToggled();

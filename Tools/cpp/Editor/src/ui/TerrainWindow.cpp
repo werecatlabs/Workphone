@@ -34,6 +34,7 @@ namespace workphone::editor
         m_viewportScriptGeneration.fetch_add( 1, std::memory_order_acq_rel );
         m_recipePreview.clear();
         m_viewportBrushEnabled = false;
+        m_viewportBrushPickHeightfield = false;
         m_viewportBrushRadius = 0.0;
     }
 
@@ -54,13 +55,14 @@ namespace workphone::editor
                 invoker->callObjectMember( "getViewportScriptState", {}, state );
             }
         double brushRadius = 0.0;
-        if( state.size() >= 2 )
+        if( state.size() == 3 || state.size() == 5 )
         {
             const auto &r = state[1];
             brushRadius = r.type == ParameterType::PARAM_TYPE_F32 ? r.getF32() : r.getF64();
         }
-        const bool brushEnabled = state.size() >= 2 && state[0].getBool();
-        if( state.size() == 4 ) recipe = Parameters{ state[2], state[3] };
+        const bool brushEnabled = ( state.size() == 3 || state.size() == 5 ) && state[0].getBool();
+        const bool brushPickHeightfield = brushEnabled && state[2].getBool();
+        if( state.size() == 5 ) recipe = Parameters{ state[3], state[4] };
         bool cancelStroke = false;
         {
             std::lock_guard<std::mutex> lock( m_viewportScriptStateMutex );
@@ -68,6 +70,7 @@ namespace workphone::editor
             cancelStroke = m_viewportBrushEnabled && !brushEnabled;
             m_recipePreview = std::move( recipe );
             m_viewportBrushEnabled = brushEnabled;
+            m_viewportBrushPickHeightfield = brushPickHeightfield;
             m_viewportBrushRadius = brushRadius;
         }
         if( cancelStroke ) cancelViewportStroke();
@@ -223,11 +226,13 @@ namespace workphone::editor
             return {};
         }
         bool enabled = false;
+        bool pickHeightfield = false;
         f64 cachedRadius = 0.0;
         u64 generation = 0;
         {
             std::lock_guard<std::mutex> lock( owner->m_viewportScriptStateMutex );
             enabled = owner->m_viewportBrushEnabled;
+            pickHeightfield = owner->m_viewportBrushPickHeightfield;
             cachedRadius = owner->m_viewportBrushRadius;
             generation = owner->getViewportScriptGeneration();
         }
@@ -288,7 +293,10 @@ namespace workphone::editor
         auto actor = terrain->getActor();
         const auto placement = actor ? actor->getWorldTransform() : Transform3<real_Num>();
         Vector3<real_Num> hit;
-        if( !snapshot || !render::intersectTerrain( *snapshot, placement, ray, hit ) )
+        const bool picked = snapshot && ( pickHeightfield
+            ? render::intersectTerrainHeightfieldForAuthoring( *snapshot, placement, ray, hit )
+            : render::intersectTerrain( *snapshot, placement, ray, hit ) );
+        if( !picked )
         {
             return Parameter( preview );
         }
@@ -300,7 +308,10 @@ namespace workphone::editor
             auto world = matrix.transformAffine( Vector3<real_Num>(
                 local.x + radius * std::cos( angle ), 0, local.z + radius * std::sin( angle ) ) );
             f32 height = 0;
-            if( !render::sampleTerrainHeight( *snapshot, placement, world, height ) )
+            const bool sampled = pickHeightfield
+                ? render::sampleTerrainHeightForAuthoring( *snapshot, placement, world, height )
+                : render::sampleTerrainHeight( *snapshot, placement, world, height );
+            if( !sampled )
             {
                 world.y = std::numeric_limits<real_Num>::quiet_NaN();
             }

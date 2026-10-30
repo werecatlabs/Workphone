@@ -1,6 +1,16 @@
 # WPNetwork implementation status
 
-Updated: 10 October 2026. Implements the first foundation increment of [the production plan](WPNETWORK_PRODUCTION_PLAN.md). R1 and R2 are not certified or complete.
+Updated: 30 October 2026. Implements the foundation and development-workflow increments of [the production plan](WPNETWORK_PRODUCTION_PLAN.md). R1 and R2 are not certified or complete.
+
+## Development workflow increment, 30 October
+
+- Repaired test registration after networking contracts moved to `Tests/cpp/NetworkProduction`: the isolated preset and full build now use the correct source and include paths.
+- Added immutable `WPNetworkManager::getDiagnostics()` snapshots: session state, actual bound endpoint, local identity, peer/event counts, transport counters, capabilities and retained error text. No raw context pointer is needed; snapshots remain readable after stop.
+- Added explicit client disconnect/pending cancellation and immediate reconnect. Cancellation reserves a fresh socket before releasing the old endpoint, preventing delayed control traffic from the previous attempt entering the next one. Repeated calls preserve the single queued disconnect callback. Native cancellation sends a best-effort release to a server that may have admitted the request; delivery remains unreliable.
+- Added native and wrapper IPv4 interface binding. Development factories default to loopback, with a strictly validated `bindAddress` profile field. Direct manager construction and legacy native startup retain wildcard binding unless configured explicitly. Server/client fixtures verify their actual loopback bindings.
+- Added scene-wide NetworkView validation for unassigned/duplicate IDs, multiple views per actor, invalid owners, unsupported authority/delivery and unreliable ownership requests. The Editor rejects network Play before scene capture/flag changes and shows actionable Inspector text. Offline Play without a network manager remains available.
+- Added `WPNetworkProcessTests` and `Scripts/Run-WPNetworkLocal.ps1`: one server process plus 2-8 real clients, bounded deadlines, validated request/reply data and distinct IDs, disconnect/teardown checks, owned-process cleanup, retained logs and JSON reports. This development smoke launcher does not complete the Editor launcher UI or impairment/security certification.
+- Recorded the [transport decision](WPNETWORK_TRANSPORT_DECISION.md): GNS behind the Workphone facade with project-controlled self-hosted certificate issuance. The adapter, immutable dependency audit and trust conformance tests remain pending.
 
 ## Implemented foundation
 
@@ -16,7 +26,7 @@ Updated: 10 October 2026. Implements the first foundation increment of [the prod
 
 ## Development use
 
-`config/network.development.json` selects the current UDP development backend. `port: 0` asks the OS for an ephemeral server port; use `net_get_bound_port()` to inspect the resulting native endpoint. `maxClients` is 1 through `NET_MAX_PEERS`, and `eventsPerPoll` is 1 through `NET_MAX_EVENTS`. A client factory starts an unconnected socket; call `connect(address, port, "")` explicitly and poll until established or failed. Nonempty passwords are rejected.
+`Samples/cpp/Network/Config/network.development.json` selects the current UDP development backend. `port: 0` asks the OS for an ephemeral server port; use `net_get_bound_port()` to inspect the resulting native endpoint. `maxClients` is 1 through `NET_MAX_PEERS`, and `eventsPerPoll` is 1 through `NET_MAX_EVENTS`. A client factory starts an unconnected socket; call `connect(address, port, "")` explicitly and poll until established or failed. Nonempty passwords are rejected.
 
 All libraries consuming the changed native context or C++ manager interface must be rebuilt together. The native handshake now uses WGP2; old WGP1 peers are incompatible. The gameplay envelope remains version 1.
 
@@ -26,13 +36,24 @@ The native UDP backend is unencrypted and unreliable. The nonce binds connection
 
 ## Validation
 
+Recorded on Windows x64/MSVC, 30 October 2026: `Scripts/Validate-WPNetwork.ps1 -IncludeEditor` passes. Isolated native/codec/authoring contracts pass **2/2 in Debug** and **2/2 in RelWithDebInfo**; production scene/diagnostic/lifecycle integration and the three-client separate-process scenario pass **2/2 in RelWithDebInfo**. WPNetwork, WPLuaBind and Editor build successfully. The integration fixture uses the production timer required by the current transform lifecycle. These remain headless/build results; interactive Inspector, Play/Stop and persistence acceptance are open.
+
+
 Recorded on Windows x64/MSVC, 10 October 2026: native/codec suites pass **2/2 in Debug** and **2/2 in RelWithDebInfo**; the production integration suite passes **1/1 in RelWithDebInfo**. Workphone, WPNetwork, WPLuaBind and Editor build successfully in RelWithDebInfo, including the changed network binding and ActorWindow command path. The validation runner and `git diff --check` pass. These results cover this foundation increment, not the R1/R2 release gates. Interactive Editor and Lua runtime behavior remain unverified.
 
 The isolated `network-contracts-debug` and `network-contracts` presets build and run native socket and portable codec tests without the renderer/Editor dependency graph. CTest treats zero selected tests as an error. Native fixtures use real loopback UDP endpoints and cover distinct client IDs, unsolicited/wrong-endpoint accepts, exclusive bind, invalid/oversized input, receive budgets/pressure, reconnect, retry/timeout wraparound and teardown/rebind. Codec fixtures cover golden bytes and atomic parse/capacity failures.
 
 `WPNetworkIntegrationTests` links the real Workphone and WPNetwork libraries. It exercises actual packet/stream interoperability, profile factories/bind errors, multiple clients and sender association, callback isolation, scene transform rejection/acceptance, ownership rejection, detached listeners and repeated concurrent poll/stop. The scene fixture injects a real manager into a NetworkView attached to a real actor/transform; it does not run the full scene loader, renderer or Editor workflow.
 
-Run `Scripts/Validate-WPNetwork.ps1` for both isolated configurations. Add `-IncludeEngine` for the production integration test; add `-IncludeEditor` to build Editor and Lua bindings too. The full configuration uses `project_x64` and its configured dependencies. Missing binaries, a failed dependency build or absent fixtures are validation gaps, not passes.
+Run `Scripts/Validate-WPNetwork.ps1` for both isolated configurations. Add `-IncludeEngine` for the production integration and separate-process tests; add `-IncludeEditor` to build Editor and Lua bindings too. The full configuration uses `project_x64` and its configured dependencies. Missing binaries, a failed dependency build or absent fixtures are validation gaps, not passes.
+
+For a manual local smoke run after building `WPNetworkProcessTests`, run:
+
+```powershell
+./Scripts/Run-WPNetworkLocal.ps1 -Clients 3
+```
+
+The default executable is the RelWithDebInfo Windows x64 build; pass `-Executable` for another build path and `-OutputDirectory` for a new/empty report directory. The launcher prints its report path. Each report records actual process IDs, server-assigned identities, loopback bindings and successful teardown. It retains child stdout/stderr logs and terminates only processes it started if the scenario fails or times out. This exercises fixture traffic, not a playable game scene or loss/jitter simulation.
 
 Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a scene and prefab; repeat Play/Stop; remove components during traffic; verify no networking starts in Edit mode and no subscriptions survive teardown. A compilation or headless scene test does not establish this interactive behavior.
 
@@ -40,14 +61,14 @@ Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a
 
 | Package | Status and next concrete dependency |
 |---|---|
-| NET-00 | Baseline harness added; transport comparison, performance baseline and final shipping backend decision remain |
+| NET-00 | Transport direction recorded; baseline and separate-process harness added; dependency pin/audit, backend comparison and performance baseline remain |
 | NET-01 | Socket/codec/lifecycle repairs implemented; fuzz/sanitizer coverage and comprehensive event-overload certification remain |
 | NET-02 | Pending: authenticated encrypted transport, reliable channels, congestion/fragmentation, IPv6/asynchronous DNS, admission and replay protection |
-| NET-03 | Polling, distinct player IDs and timeout repairs added; session service/facade, connection state model, roster/readiness and synchronized clock remain |
+| NET-03 | Polling, distinct player IDs, diagnostics, cancellation/reconnect and timeout repairs added; session service/facade, connection state model, roster/readiness and synchronized clock remain |
 | NET-04/05 | Pending: registry, prefab allowlist, spawn/despawn, late-join baselines, ownership epochs, typed state/RPC and relevance |
 | NET-06 | Existing immediate transform replication hardened; interpolation, physics/character authority and prediction remain |
-| NET-07/08 | Existing component and command path hardened; full component catalogue, NetworkSession authoring, validators, local process launcher and diagnostics remain |
+| NET-07/08 | Existing component/command path hardened; scene preflight, Inspector diagnostics and standalone local process launcher added; full component catalogue, NetworkSession authoring, validators, local process launcher and diagnostics remain |
 | NET-09 | Pending: dedicated server packaging, health/metrics, operating budgets and R1 certification |
 | NET-10/11/12 | Pending: richer gameplay, self-hosted/local service providers, reconnect/streaming/replay and R2 certification |
 
-Continue with the NET-00 transport conformance comparison and NET-02 security/delivery implementation before expanding automatic spawning or shipping Editor launch controls. Those features depend on a reliable, authenticated control channel.
+Continue with the NET-00 dependency pin/audit and transport conformance comparison and NET-02 security/delivery implementation before expanding automatic spawning or shipping Editor launch controls. Those features depend on a reliable, authenticated control channel.

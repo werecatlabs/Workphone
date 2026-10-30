@@ -166,6 +166,43 @@ namespace terrain_data_contracts
         require( intersectTerrain( saddle, {}, Ray3F( { -1, 1, 0.75f }, { 1, 0, 0 } ), hit ) &&
                      terrainNear( hit.x, 0.5 ) && terrainNear( hit.y, 1 ),
                  "Horizontal ray from outside must traverse cells and find the triangle surface" );
+        {
+            auto hole = saddle;
+            hole.holes = { 1 };
+            const Ray3F ray( { 0.75f, 10, 0.75f }, { 0, -1, 0 } );
+            require( !intersectTerrain( hole, {}, ray, hit ) &&
+                         !sampleTerrainHeight( hole, {}, { 0.75, 0, 0.75 }, height ) &&
+                         intersectTerrainHeightfieldForAuthoring( hole, {}, ray, hit ) &&
+                         sampleTerrainHeightForAuthoring( hole, {}, { 0.75, 0, 0.75 }, height ) &&
+                         terrainNear( height, 2 ) && terrainNear( hit.y, 2 ),
+                     "Repair picking uses authored triangles inside holes while gameplay queries miss" );
+            require( intersectTerrainHeightfieldForAuthoring(
+                         hole, {}, Ray3F( { -1, 1, 0.75f }, { 1, 0, 0 } ), hit ) &&
+                         terrainNear( hit.x, 0.5 ) && terrainNear( hit.y, 1 ),
+                     "Hole repair picking traverses the actual nonplanar heightfield, not a fallback plane" );
+            const Vector3<real_Num> local( 0.75, 2, 0.75 );
+            const auto world = yawed.getPosition() + yawed.getOrientation() * ( local * yawed.getScale() );
+            require( intersectTerrainHeightfieldForAuthoring(
+                         hole, yawed, Ray3F( { f32( world.x ), f32( world.y + 10 ), f32( world.z ) },
+                                             { 0, -1, 0 } ), hit ) &&
+                         terrainNear( hit.x, world.x ) && terrainNear( hit.y, world.y ) &&
+                         terrainNear( hit.z, world.z ) &&
+                         sampleTerrainHeightForAuthoring( hole, yawed, world, height ) &&
+                         terrainNear( height, world.y ),
+                     "Hole repair picking preserves translated, yawed and nonuniformly scaled placement" );
+            require( !intersectTerrainHeightfieldForAuthoring(
+                         hole, {}, Ray3F( { 2, 10, 2 }, { 0, -1, 0 } ), hit ) &&
+                         !intersectTerrainHeightfieldForAuthoring(
+                             hole, {}, Ray3F( { 0.75f, 10, 0.75f }, { 0, 0, 0 } ), hit ) &&
+                         !intersectTerrainHeightfieldForAuthoring(
+                             hole, {}, Ray3F( { 0.75f, std::numeric_limits<f32>::quiet_NaN(), 0.75f },
+                                             { 0, -1, 0 } ), hit ) &&
+                         !sampleTerrainHeightForAuthoring( hole, {}, { 2, 0, 2 }, height ) &&
+                         !sampleTerrainHeightForAuthoring(
+                             hole, {}, { 0.75, std::numeric_limits<real_Num>::quiet_NaN(), 0.75 }, height ) &&
+                         hole.holes == Array<u8>{ 1 },
+                     "Repair queries reject outside and invalid rays without changing hole ownership" );
+        }
         TerrainMeshData geometry;
         require( buildTerrainMeshData( data, geometry, error ) && geometry.positions.size() == 15 &&
                      geometry.indices.size() == 48 && geometry.uvs.front() == Vector2F( 0, 0 ) &&

@@ -23,6 +23,7 @@
 #include <commands/AddComponentCmd.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/NetworkSceneValidation.hpp>
 #include <string>
 
 namespace workphone::editor
@@ -893,11 +894,26 @@ namespace workphone::editor
                     auto authorityName = authorityIndex < scene::NetworkView::authorityModeNames.size()
                                              ? scene::NetworkView::authorityModeNames[authorityIndex]
                                              : String( "Unknown" );
-                    m_networkSummary->setText(
-                        "Networking: View " + StringUtil::toString( networkView->getViewId() ) +
+                    auto summary = "Networking: View " + StringUtil::toString( networkView->getViewId() ) +
                         " | Owner " + StringUtil::toString( networkView->getOwnerId() ) + " | " +
                         authorityName + " @ " + StringUtil::toString( networkView->getSendRate() ) +
-                        " Hz" );
+                        " Hz";
+                    if( auto gameManager = applicationManager->getGameManager() )
+                    {
+                        const auto validation = scene::validateNetworkScene(
+                            gameManager->getCurrentScene(), applicationManager->getNetworkManager() );
+                        for( const auto &issue : validation.issues )
+                        {
+                            if( validation.actors[issue.viewIndex] == actor ||
+                                ( issue.relatedViewIndex != network::NetworkSceneIssue::NoRelatedView &&
+                                  validation.actors[issue.relatedViewIndex] == actor ) )
+                            {
+                                summary += String( " | Fix: " ) + network::networkSceneIssueMessage( issue.code );
+                                break;
+                            }
+                        }
+                    }
+                    m_networkSummary->setText( summary );
                 }
                 else
                 {

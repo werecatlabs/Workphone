@@ -392,8 +392,10 @@ namespace workphone::render
         return true;
     }
 
-    bool sampleTerrainHeight( const TerrainData &data, const Transform3<real_Num> &transform,
-                              const Vector3<real_Num> &worldPosition, f32 &worldHeight )
+    static bool sampleTerrainHeightfield( const TerrainData &data,
+                                         const Transform3<real_Num> &transform,
+                                         const Vector3<real_Num> &worldPosition, f32 &worldHeight,
+                                         bool includeHoleCells )
     {
         worldHeight = 0;
         String error;
@@ -417,7 +419,7 @@ namespace workphone::render
         z = std::clamp( z, 0.0, f64( data.dimensions.y - 1 ) );
         const auto ix = std::min( static_cast<s32>( x ), data.dimensions.x - 2 );
         const auto iz = std::min( static_cast<s32>( z ), data.dimensions.y - 2 );
-        if( terrainCellIsHole( data, ix, iz ) )
+        if( !includeHoleCells && terrainCellIsHole( data, ix, iz ) )
         {
             return false;
         }
@@ -435,8 +437,23 @@ namespace workphone::render
         return std::isfinite( worldHeight );
     }
 
-    bool intersectTerrain( const TerrainData &data, const Transform3<real_Num> &transform,
-                           const Ray3F &ray, Vector3<real_Num> &worldHit )
+    bool sampleTerrainHeight( const TerrainData &data, const Transform3<real_Num> &transform,
+                              const Vector3<real_Num> &worldPosition, f32 &worldHeight )
+    {
+        return sampleTerrainHeightfield( data, transform, worldPosition, worldHeight, false );
+    }
+
+    bool sampleTerrainHeightForAuthoring( const TerrainData &data,
+                                          const Transform3<real_Num> &transform,
+                                          const Vector3<real_Num> &worldPosition, f32 &worldHeight )
+    {
+        return sampleTerrainHeightfield( data, transform, worldPosition, worldHeight, true );
+    }
+
+    static bool intersectTerrainHeightfield( const TerrainData &data,
+                                            const Transform3<real_Num> &transform,
+                                            const Ray3F &ray, Vector3<real_Num> &worldHit,
+                                            bool includeHoleCells )
     {
         worldHit = Vector3<real_Num>::zero();
         String error;
@@ -541,9 +558,9 @@ namespace workphone::render
             const auto c = position( data, x, z + 1 );
             const auto d = position( data, x + 1, z + 1 );
             f64 first = 0, second = 0;
-            const bool solid = !terrainCellIsHole( data, x, z );
-            const bool hitFirst = solid && rayTriangle( origin, direction, a, c, b, first );
-            const bool hitSecond = solid && rayTriangle( origin, direction, b, c, d, second );
+            const bool pickCell = includeHoleCells || !terrainCellIsHole( data, x, z );
+            const bool hitFirst = pickCell && rayTriangle( origin, direction, a, c, b, first );
+            const bool hitSecond = pickCell && rayTriangle( origin, direction, b, c, d, second );
             const auto distance = hitFirst && hitSecond ? std::min( first, second )
                                   : hitFirst            ? first
                                                         : second;
@@ -576,6 +593,19 @@ namespace workphone::render
             enter = end;
         }
         return false;
+    }
+
+    bool intersectTerrain( const TerrainData &data, const Transform3<real_Num> &transform,
+                           const Ray3F &ray, Vector3<real_Num> &worldHit )
+    {
+        return intersectTerrainHeightfield( data, transform, ray, worldHit, false );
+    }
+
+    bool intersectTerrainHeightfieldForAuthoring( const TerrainData &data,
+                                                 const Transform3<real_Num> &transform,
+                                                 const Ray3F &ray, Vector3<real_Num> &worldHit )
+    {
+        return intersectTerrainHeightfield( data, transform, ray, worldHit, true );
     }
 
     bool buildTerrainMeshData( const TerrainData &data, TerrainMeshData &output, String &error )

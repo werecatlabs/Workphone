@@ -2296,11 +2296,14 @@ function TerrainEditor:getViewportBrushRadius() return tonumber((self.settings.b
 
 -- Native ScriptInvoker callbacks receive Parameters and a mutable results
 -- container; ordinary Lua return values are not collected by that ABI.
+-- State is enabled, radius, authoring-heightfield policy, then optional recipe/terrain.
 function TerrainEditor:getViewportScriptState(parameters, results)
     if results == nil then return; end
     self:update();
-    results:addAsBool(self:getViewportBrushEnabled());
+    local enabled = self:getViewportBrushEnabled();
+    results:addAsBool(enabled);
     results:addAsNumber(self:getViewportBrushRadius());
+    results:addAsBool(enabled and (tonumber(self.settings.brushMode) or 0) == 9);
     local recipe, terrain = self:getTerrainRecipePreview();
     if recipe and terrain then
         results:addAsObject(recipe);
@@ -2346,7 +2349,10 @@ function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dir
     if not self:getViewportBrushEnabled() then return false; end
     local options = self:nativeBrushOptions();
     options.recipe=nil; options.rayX=originX; options.rayY=originY; options.rayZ=originZ; options.dirX=dirX; options.dirY=dirY; options.dirZ=dirZ;
-    local ok, err = safeCall(self.terrain, "editTerrain", "pick", options);
+    -- Fill Hole must target the authored triangles inside the void being repaired.
+    -- Every other tool retains solid-only picking, as do gameplay ray queries.
+    local pickAction = (tonumber(self.settings.brushMode) or 0) == 9 and "pickHeightfield" or "pick";
+    local ok, err = safeCall(self.terrain, "editTerrain", pickAction, options);
     if not ok or err ~= "" then self.brushPreview = nil; return false; end
     self.brushPreview = {x=options.hitX, y=options.hitY, z=options.hitZ, radius=options.radius};
     self.settings.brushCentreX=options.x; self.settings.brushCentreZ=options.z;

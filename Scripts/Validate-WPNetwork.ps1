@@ -24,10 +24,10 @@ try {
     }
     if ($IncludeEngine -or $IncludeEditor) {
         Invoke-NetworkCheck cmake @('-S', '.', '-B', 'project_x64')
-        $networkTargets = @('WPNetworkIntegrationTests')
+        $networkTargets = @('WPNetworkIntegrationTests', 'WPNetworkProcessTests')
         if ($IncludeEditor) { $networkTargets += @('WPLuaBind', 'Editor') }
         Invoke-NetworkCheck cmake (@('--build', 'project_x64', '--config', $Configuration, '--target') + $networkTargets + @('--parallel', '4'))
-        Invoke-NetworkCheck ctest @('--test-dir', 'project_x64', '-C', $Configuration, '-R', '^WPNetwork\.integration$', '--no-tests=error', '--output-on-failure')
+        Invoke-NetworkCheck ctest @('--test-dir', 'project_x64', '-C', $Configuration, '-R', '^WPNetwork\.(integration|local_multiprocess)$', '--no-tests=error', '--output-on-failure')
     }
     Invoke-NetworkCheck git @('diff', '--check')
 } finally {

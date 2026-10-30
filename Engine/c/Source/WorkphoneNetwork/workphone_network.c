@@ -187,7 +187,7 @@ static int net_set_nonblocking( NetSocketHandle socket_handle )
 #endif
 }
 
-static NetSocketHandle net_create_udp_socket( unsigned short port )
+static NetSocketHandle net_create_udp_socket( unsigned int host, unsigned short port )
 {
     NetSocket s;
     struct sockaddr_in addr;
@@ -210,7 +210,7 @@ static NetSocketHandle net_create_udp_socket( unsigned short port )
 
     memset( &addr, 0, sizeof( addr ) );
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl( INADDR_ANY );
+    addr.sin_addr.s_addr = htonl( host );
     addr.sin_port = htons( port );
 
     if( bind( s, (struct sockaddr *)&addr, sizeof( addr ) ) < 0 )
@@ -604,6 +604,11 @@ void net_context_shutdown( NetContext *ctx )
 
 int net_start_server( NetContext *ctx, unsigned short port, int max_peers )
 {
+    return net_start_server_on( ctx, net_make_address( 0, port ), max_peers );
+}
+
+int net_start_server_on( NetContext *ctx, NetAddress address, int max_peers )
+{
     if( !ctx || ctx->running )
         return NET_RESULT_ERROR;
 
@@ -613,7 +618,7 @@ int net_start_server( NetContext *ctx, unsigned short port, int max_peers )
     if( max_peers > NET_MAX_PEERS )
         max_peers = NET_MAX_PEERS;
 
-    ctx->socket_handle = net_create_udp_socket( port );
+    ctx->socket_handle = net_create_udp_socket( address.host, address.port );
 
     if( !net_socket_is_valid( ctx->socket_handle ) )
     {
@@ -631,13 +636,18 @@ int net_start_server( NetContext *ctx, unsigned short port, int max_peers )
 
 int net_start_client( NetContext *ctx )
 {
+    return net_start_client_on( ctx, 0 );
+}
+
+int net_start_client_on( NetContext *ctx, unsigned int host )
+{
     if( !ctx || ctx->running )
         return NET_RESULT_ERROR;
 
     /*
         Bind to port 0 so OS assigns an ephemeral port.
     */
-    ctx->socket_handle = net_create_udp_socket( 0 );
+    ctx->socket_handle = net_create_udp_socket( host, 0 );
 
     if( !net_socket_is_valid( ctx->socket_handle ) )
     {
@@ -910,6 +920,8 @@ void net_disconnect( NetContext *ctx )
 
     if( ctx->mode == NET_MODE_CLIENT && ctx->connecting )
     {
+        /* Best effort release if the server accepted but the reply is in flight. */
+        net_send_raw( ctx, &ctx->server_address, NET_MSG_DISCONNECT, NULL, 0 );
         ctx->connecting = 0;
         net_push_error( ctx, "Connection cancelled" );
     }
@@ -983,13 +995,48 @@ int net_send_reliable( NetContext *ctx, NetPeerId peer_id, const void *data, uns
 
 unsigned short net_get_bound_port( const NetContext *ctx )
 {
+    NetAddress address;
+    return net_get_bound_address( ctx, &address ) == NET_RESULT_OK ? address.port : 0;
+}
+
+int net_get_bound_address( const NetContext *ctx, NetAddress *out_address )
+{
     struct sockaddr_in address;
     NetSockLen size;
-    if( !ctx || !net_socket_is_valid( ctx->socket_handle ) )
-        return 0;
+    if( !ctx || !out_address || !net_socket_is_valid( ctx->socket_handle ) )
+        return NET_RESULT_ERROR;
     memset( &address, 0, sizeof( address ) );
     size = (NetSockLen)sizeof( address );
     if( getsockname( ctx->socket_handle, (struct sockaddr *)&address, &size ) != 0 )
-        return 0;
-    return ntohs( address.sin_port );
+        return NET_RESULT_ERROR;
+    *out_address = net_address_from_sockaddr( &address );
+    return NET_RESULT_OK;
+}
+
+int net_parse_ipv4( const char *text, unsigned int *host )
+{
+    unsigned int result = 0;
+    int octet;
+    if( !text || !host )
+        return NET_RESULT_ERROR;
+    for( octet = 0; octet < 4; ++octet )
+    {
+        unsigned int value = 0;
+        int digits = 0;
+        const char *start = text;
+        while( *text >= '0' && *text <= '9' )
+        {
+            value = value * 10 + (unsigned int)( *text++ - '0' );
+            if( ++digits > 3 || value > 255 )
+                return NET_RESULT_ERROR;
+        }
+        if( digits == 0 || ( digits > 1 && *start == '0' ) ||
+            ( octet < 3 ? *text != '.' : *text != '\0' ) )
+            return NET_RESULT_ERROR;
+        result = ( result << 8 ) | value;
+        if( octet < 3 )
+            ++text;
+    }
+    *host = result;
+    return NET_RESULT_OK;
 }

@@ -2,7 +2,7 @@
 
 Date: 10 October 2026. Reviewed checkout: `4593215cd`; the working tree was clean at the start of this review.
 
-Status: implementation in progress. WPNetwork is not production certified. See [implementation status](WPNETWORK_IMPLEMENTATION_STATUS.md) for completed repairs, validation evidence and outstanding packages; the feature catalogue below is the target scope.
+Status: implementation in progress. The 30 October development-workflow increment adds scene validation, connection diagnostics and a separate-process smoke launcher. [Transport direction](WPNETWORK_TRANSPORT_DECISION.md): GNS with self-hosted certificate issuance; adapter and certification pending. WPNetwork is not production certified. See [implementation status](WPNETWORK_IMPLEMENTATION_STATUS.md) for completed repairs, validation evidence and outstanding packages; the feature catalogue below is the target scope.
 
 Scope: native `WorkphoneNetwork`, C++ `WPNetwork`, engine networking interfaces, game scene components, Lua bindings, Editor authoring and multiplayer testing, dedicated server packaging, and online-service integration boundaries.
 

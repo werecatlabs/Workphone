@@ -145,7 +145,7 @@ Brush size is a radius in terrain-local metres. Raise/lower/stamp/noise strength
 
 **Stamp** accepts a binary PGM height image with normalized samples; an empty stamp path uses a smooth radial mound. **Terrace** uses the displayed terrace interval in local height metres. **Noise** uses a deterministic integer hash of the sample index and seed, producing bounded additive sample noise.
 
-Hole values belong to cells, not vertices. A painted hole removes both triangles of that cell from rendering, ray/height queries and collision. Fill holes using its local centre action or a brush footprint that overlaps a solid edge; normal surface picking deliberately cannot hit an empty hole.
+Hole values belong to cells, not vertices. A painted hole removes both runtime triangles of that cell from rendering, gameplay ray/height queries and collision. In **Fill Hole** mode, the Editor picks and previews the retained authored heightfield inside the void, allowing a repair stroke to start within a hole. Other tools retain solid-only picking. The repair query shares the existing triangulation and placement rules and creates no fallback collision plane.
 
 ## Four terrain materials and masks
 

@@ -1,4 +1,4 @@
-set(WP_NETWORK_TEST_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+get_filename_component(WP_NETWORK_TEST_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 add_executable(WorkphoneNetworkTests NativeNetworkTests.c)
 target_link_libraries(WorkphoneNetworkTests PRIVATE WorkphoneNetwork)
 set_target_properties(WorkphoneNetworkTests PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON FOLDER Tests/Network)

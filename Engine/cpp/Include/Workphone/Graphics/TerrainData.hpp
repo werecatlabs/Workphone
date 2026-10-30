@@ -90,7 +90,7 @@ namespace workphone::render
         // global appearance strengths default to zero, preserving earlier assets.
         Array<Vector2F> surfaceMasks;
         // Empty means solid. Otherwise one 0/1 per row-major CELL, stride=dimensions.x-1.
-        // A hole removes both triangles; there is no hidden collision or pick surface.
+        // A hole removes both runtime triangles; there is no hidden collision or gameplay pick surface.
         Array<u8> holes;
         u64 revision = 0;
     };
@@ -124,6 +124,15 @@ namespace workphone::render
                                          const Vector3<real_Num> &worldPosition, f32 &worldHeight );
     WPCore_API bool intersectTerrain( const TerrainData &data, const Transform3<real_Num> &transform,
                                       const Ray3F &ray, Vector3<real_Num> &worldHit );
+    /** Editor repair tools may query the authored heightfield beneath hole cells.
+     * This does not make those cells solid for rendering, collision or gameplay queries.
+     */
+    WPCore_API bool sampleTerrainHeightForAuthoring(
+        const TerrainData &data, const Transform3<real_Num> &transform,
+        const Vector3<real_Num> &worldPosition, f32 &worldHeight );
+    WPCore_API bool intersectTerrainHeightfieldForAuthoring(
+        const TerrainData &data, const Transform3<real_Num> &transform, const Ray3F &ray,
+        Vector3<real_Num> &worldHit );
     WPCore_API bool buildTerrainMeshData( const TerrainData &data, TerrainMeshData &output,
                                           String &error );
 }  // namespace workphone::render
