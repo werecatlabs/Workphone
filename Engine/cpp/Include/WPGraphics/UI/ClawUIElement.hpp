@@ -280,13 +280,25 @@ namespace workphone
 
             void invalidate();
 
-            SmartPtr<IStateContext> getStateContext() const;
+            SmartPtr<IStateContext> getStateContext() const
+            {
+                return nullptr;
+            }
 
-            void setStateContext( SmartPtr<IStateContext> stateContext );
+            virtual void setStateContext(SmartPtr<IStateContext> stateContext)
+            {
 
-            SmartPtr<IStateListener> getStateListener() const;
+            }
 
-            void setStateListener( SmartPtr<IStateListener> stateListener );
+            virtual SmartPtr<IStateListener> getStateListener() const
+            {
+                return nullptr;
+            }
+
+            virtual void setStateListener(SmartPtr<IStateListener> stateListener)
+            {
+
+            }
 
             void sortZOrder();
 
@@ -312,15 +324,39 @@ namespace workphone
 
             bool isThreadSafe() const;
 
-            void addMessage( SmartPtr<IStateMessage> message );
+            void lock()
+            {
+                auto applicationManager = core::IApplicationManager::instance();
+                auto ui = applicationManager->getRenderUI();
+                ui->lock();
+            }
+
+            void lock_shared()
+            {
+                auto applicationManager = core::IApplicationManager::instance();
+                auto ui = applicationManager->getRenderUI();
+                ui->lock();
+            }
+
+            void unlock()
+            {
+                auto applicationManager = core::IApplicationManager::instance();
+                auto ui = applicationManager->getRenderUI();
+                ui->unlock();
+            }
+
+            void unlock_shared()
+            {
+                auto applicationManager = core::IApplicationManager::instance();
+                auto ui = applicationManager->getRenderUI();
+                ui->unlock();
+            }
 
         protected:
             /** Sort local membership and return its pinned draw-order snapshot. */
             Array<SmartPtr<IUIElement>> sortChildrenByOrder();
 
             void setType( const String &type );
-
-            virtual void createStateContext();
 
             /** Push this element's absolute rectangle into the active free-form layout. */
             bool beginWorkphoneWidget( struct wp_context *ctx ) const;
@@ -349,12 +385,12 @@ namespace workphone
             /// Used to store user properties.
             mutable SmartPtr<ISharedObject> m_userProperties;
 
-            /// The attached user data.
-            void *m_userData;
-
             Vector2F m_position = Vector2F::zero();
             Vector2F m_size = Vector2F( 1.0f, 1.0f );
             ColourF m_colour = ColourF::White;
+
+            /// The attached user data.
+            void *m_userData;
 
             f32 m_scale = 1.0f;
 
@@ -400,6 +436,8 @@ namespace workphone
             /// The children of the gui element.
             ConcurrentArray<SmartPtr<IUIElement>> m_children;
 
+            RecursiveSpinMutex m_mutex;
+
             /// The number of the next name extension.
             static u32 m_nextGeneratedNameExt;
         };
@@ -418,9 +456,9 @@ namespace workphone
         {
             auto name = String( "GUIElement" ) + StringUtil::toString( m_nextGeneratedNameExt++ );
             this->setName( name );
+            this->setId( m_nextGeneratedNameExt );
 
             m_layout = nullptr;
-            createStateContext();
         }
 
         template <class T>
@@ -441,24 +479,9 @@ namespace workphone
                 m_parent = nullptr;
                 m_layout = nullptr;
 
-                auto stateContext = getStateContext();
                 setStateContext( nullptr );
                 setStateListener( nullptr );
-                if( stateContext )
-                {
-                    stateContext->setOwner( nullptr );
-                    auto applicationManager = core::IApplicationManager::instance();
-                    auto stateManager =
-                        applicationManager ? applicationManager->getStateManager() : nullptr;
-                    if( stateManager )
-                    {
-                        stateManager->removeStateContext( stateContext );
-                    }
-                    else
-                    {
-                        stateContext->unload( nullptr );
-                    }
-                }
+
                 this->setLoadingState( LoadingState::Unloaded );
             }
             catch( std::exception &e )
@@ -642,10 +665,6 @@ namespace workphone
                 child->setLayout( getLayout() );
             }
 
-            if( auto stateContext = child->getStateContext() )
-            {
-                stateContext->setDirty( true );
-            }
             updateZOrder();
         }
 
@@ -1004,15 +1023,6 @@ namespace workphone
         {
             m_visible = visible;
 
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    state->flags = BitUtil::setFlagValue(
-                        state->flags, static_cast<u16>( IUIElement::visibleFlag ), visible );
-                }
-            }
-
             if( cascade )
             {
                 auto children = getChildren();
@@ -1024,11 +1034,6 @@ namespace workphone
                     }
                 }
             }
-
-            // if( !visible && element->hasFocus() )
-            //{
-            //     setFocus( false );
-            // }
         }
 
         template <class T>
@@ -1069,19 +1074,6 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::addMessage( SmartPtr<IStateMessage> message )
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-
-            if( auto stateContext = getStateContext() )
-            {
-                const auto stateTask = graphicsSystem->getStateTask();
-                stateContext->addMessage( stateTask, message );
-            }
-        }
-
-        template <class T>
         ConcurrentArray<SmartPtr<IUIElement>> &ClawUIElement<T>::getChildrenRef()
         {
             return m_children;
@@ -1115,14 +1107,6 @@ namespace workphone
         void ClawUIElement<T>::setPosition( const Vector2F &position )
         {
             m_position = position;
-
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    state->position = position;
-                }
-            }
         }
 
         template <class T>
@@ -1248,28 +1232,12 @@ namespace workphone
         template <class T>
         u32 ClawUIElement<T>::getOrder() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    return state->zorder;
-                }
-            }
-
             return m_order;
         }
 
         template <class T>
         void ClawUIElement<T>::setOrder( u32 order )
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    state->zorder = order;
-                }
-            }
-
             m_order = order;
         }
 
@@ -1334,14 +1302,6 @@ namespace workphone
         template <class T>
         Vector2F ClawUIElement<T>::getPosition() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    return state->position;
-                }
-            }
-
             return m_position;
         }
 
@@ -1349,27 +1309,11 @@ namespace workphone
         void ClawUIElement<T>::setSize( const Vector2F &size )
         {
             m_size = size;
-
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    state->size = size;
-                }
-            }
         }
 
         template <class T>
         Vector2F ClawUIElement<T>::getSize() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UITransformStateData>() )
-                {
-                    return state->size;
-                }
-            }
-
             return m_size;
         }
 
@@ -1394,15 +1338,6 @@ namespace workphone
         template <class T>
         bool ClawUIElement<T>::isVisible() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    return BitUtil::getFlagValue( state->flags,
-                                                  static_cast<u16>( IUIElement::visibleFlag ) );
-                }
-            }
-
             return m_visible;
         }
 
@@ -1454,70 +1389,8 @@ namespace workphone
         }
 
         template <class T>
-        void ClawUIElement<T>::createStateContext()
-        {
-            if( getStateContext() )
-            {
-                return;
-            }
-
-            auto applicationManager = core::IApplicationManager::instance();
-            if( !applicationManager )
-            {
-                return;
-            }
-
-            auto stateManager = applicationManager->getStateManager();
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-            auto factoryManager = applicationManager->getFactoryManager();
-            if( !stateManager || !graphicsSystem || !factoryManager )
-            {
-                return;
-            }
-
-            auto stateContext = stateManager->addStateContext();
-
-            auto listener = factoryManager->make_ptr<ElementStateListener>();
-            listener->setOwner( this );
-            stateContext->addStateListener( listener );
-
-            auto state = factoryManager->make_ptr<State>();
-            stateContext->addState( state );
-
-            auto stateData = factoryManager->make_ptr<UIElementStateData>();
-            stateData->colour = m_colour;
-            stateData->flags = BitUtil::setFlagValue(
-                stateData->flags, static_cast<u16>( IUIElement::visibleFlag ), m_visible );
-            state->setData( stateData );
-
-            auto transformState = factoryManager->make_ptr<State>();
-            stateContext->addState( transformState );
-
-            auto transformStateData = factoryManager->make_ptr<UITransformStateData>();
-            transformStateData->position = m_position;
-            transformStateData->size = m_size;
-            transformState->setData( transformStateData );
-
-            stateContext->setOwner( this );
-
-            setStateContext( stateContext );
-            setStateListener( listener );
-
-            auto stateTask = graphicsSystem->getStateTask();
-            stateContext->setTaskId( stateTask );
-        }
-
-        template <class T>
         ColourF ClawUIElement<T>::getColour() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    return state->colour;
-                }
-            }
-
             return m_colour;
         }
 
@@ -1525,43 +1398,11 @@ namespace workphone
         void ClawUIElement<T>::setColour( const ColourF &colour )
         {
             m_colour = colour;
-
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    state->colour = colour;
-                }
-            }
         }
 
         template <class T>
         void ClawUIElement<T>::invalidate()
         {
-        }
-
-        template <class T>
-        SmartPtr<IStateContext> ClawUIElement<T>::getStateContext() const
-        {
-            return m_stateContext;
-        }
-
-        template <class T>
-        void ClawUIElement<T>::setStateContext( SmartPtr<IStateContext> stateContext )
-        {
-            m_stateContext = stateContext;
-        }
-
-        template <class T>
-        SmartPtr<IStateListener> ClawUIElement<T>::getStateListener() const
-        {
-            return m_stateListener;
-        }
-
-        template <class T>
-        void ClawUIElement<T>::setStateListener( SmartPtr<IStateListener> stateListener )
-        {
-            m_stateListener = stateListener;
         }
 
         template <class T>
@@ -1707,20 +1548,21 @@ namespace workphone
         template <class T>
         bool ClawUIElement<T>::handleStateChanged( SmartPtr<IState> &state )
         {
+            if( state->getOwner() == this )
+            {
+                auto stateData = state->getData();
+                if( stateData->isExactly<UIElementStateData>() )
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
         template <class T>
         bool ClawUIElement<T>::getHandleInputEvents() const
         {
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    return BitUtil::getFlagValue(
-                        state->flags, static_cast<u16>( IUIElement::handleInputEventsFlag ) );
-                }
-            }
 
             return m_handleInputEvents;
         }
@@ -1729,15 +1571,6 @@ namespace workphone
         void ClawUIElement<T>::setHandleInputEvents( bool handleInputEvents )
         {
             m_handleInputEvents = handleInputEvents;
-            if( auto stateContext = getStateContext() )
-            {
-                if( auto state = stateContext->getStateByType<UIElementStateData>() )
-                {
-                    state->flags = BitUtil::setFlagValue(
-                        state->flags, static_cast<u16>( IUIElement::handleInputEventsFlag ),
-                        handleInputEvents );
-                }
-            }
         }
 
         template <class T>

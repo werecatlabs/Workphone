@@ -979,20 +979,28 @@ namespace workphone::ui
         auto factoryManager = applicationManager->getFactoryManager();
 
         auto stateContext = stateManager->addStateContext();
+        stateContext->setOwner( this );
         setStateContext( stateContext );
+
+                    auto stateTask = graphicsSystem->getStateTask();
+        stateContext->setTaskId( stateTask );
 
         auto listener = factoryManager->make_ptr<StateListener>();
         listener->setOwner( this );
         stateContext->addStateListener( listener );
+        setStateListener( listener );
     }
 
     bool ClawUIManager::handleStateChanged( SmartPtr<IState> &state )
     {
         for( auto element : m_elements )
         {
-            if( element->handleStateChanged( state ) )
+            if( state->getOwner() == element )
             {
-                return true;
+                if( element->handleStateChanged( state ) )
+                {
+                    return true;
+                }
             }
         }
 
