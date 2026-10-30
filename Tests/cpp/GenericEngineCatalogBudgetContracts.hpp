@@ -60,6 +60,8 @@ namespace generic_engine_catalog_budget_contracts
     inline void bootstrap()
     {
         auto storage = allocateSourceBudgetStorage(257, 64);
+        auto *physical = static_cast<u8 *>(storage);
+        for (size_t i = 0; i < 257; ++i) physical[i] = static_cast<u8>(i ^ 0xa5);
         auto first = WorldStreamingScheduler::shared();
         const auto before = first->stats();
         require(before.used[Capacity::source] >= sourceBudgetStorageBytes(257, 64),
@@ -69,9 +71,16 @@ namespace generic_engine_catalog_budget_contracts
                 "shared ledger accepts a configured startup limit");
         WorldStreamingScheduler::shutdownShared();
         auto restarted = WorldStreamingScheduler::shared();
-        require(restarted->stats().used[Capacity::source] == before.used[Capacity::source] &&
-                    restarted->stats().limits[Capacity::source] == before.limits[Capacity::source] - 1,
+        const auto afterRestart = restarted->stats();
+        // Both service generations remain alive. The second generation adds its
+        // own admitted control and worker storage to the same allocation ledger.
+        require(afterRestart.used[Capacity::source] >= before.used[Capacity::source] &&
+                    afterRestart.used[Capacity::source] == first->stats().used[Capacity::source] &&
+                    afterRestart.limits[Capacity::source] == before.limits[Capacity::source] - 1,
                 "service restart preserves live physical allocations and configured limits");
+        for (size_t i = 0; i < 257; ++i)
+            require(physical[i] == static_cast<u8>(i ^ 0xa5),
+                    "service restart preserves the contents of retained physical storage");
         require(restarted->setBudget(StreamMemoryClass::SourceCpu, before.limits[Capacity::source], error),
                 "startup limit restores");
         {
@@ -96,9 +105,10 @@ namespace generic_engine_catalog_budget_contracts
         }
         { WorldStreamingScheduler isolated;
           require(!isolated.stats().used[Capacity::source], "isolated scheduler retains its independent ledger"); }
+        const auto beforeStorageRelease = restarted->stats().used[Capacity::source];
         freeSourceBudgetStorage(storage, 64);
         require(restarted->stats().used[Capacity::source] + sourceBudgetStorageBytes(257, 64) ==
-                    before.used[Capacity::source], "bootstrap storage retires through the same ledger");
+                    beforeStorageRelease, "bootstrap storage retires through the same ledger");
         testStartupAdmission = true;
     }
 

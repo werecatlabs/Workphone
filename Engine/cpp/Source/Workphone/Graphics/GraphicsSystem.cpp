@@ -143,8 +143,13 @@ namespace workphone::render
     void GraphicsSystem::update()
     {
         MaterialPublicationScope materialUpdates;
+        const bool hadPendingWork = !m_unloadQueue.empty() || !m_loadQueue.empty() ||
+                                    !m_reloadQueue.empty();
         updateUnloadQueue();
-        releaseUnusedAssets();
+        // Pending loads need immediate reclamation; idle frame cleanup can
+        // honor the material retry delay after an unsuccessful eviction.
+        const bool automatic = !hadPendingWork && m_loadQueue.empty() && m_reloadQueue.empty();
+        releaseUnusedAssetsImpl( 32, automatic );
         updateLoadQueue();
         updateReloadQueue();
 
@@ -238,6 +243,12 @@ namespace workphone::render
 
     GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssets( u32 maximumCandidates )
     {
+        return releaseUnusedAssetsImpl( maximumCandidates, false );
+    }
+
+    GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssetsImpl(
+        u32 maximumCandidates, bool automatic )
+    {
         AssetResidencyRelease released;
         if( !maximumCandidates )
         {
@@ -246,7 +257,8 @@ namespace workphone::render
         ScopedLock lifecycleLock( this );
         if( auto manager = dynamic_pointer_cast<MaterialManager>( getMaterialManager() ) )
         {
-            released.materials = manager->releaseUnusedResources( maximumCandidates );
+            released.materials = automatic ? manager->releaseUnusedResourcesOnUpdate( maximumCandidates )
+                                           : manager->releaseUnusedResources( maximumCandidates );
         }
         if( auto manager = dynamic_pointer_cast<TextureManager>( getTextureManager() ) )
         {

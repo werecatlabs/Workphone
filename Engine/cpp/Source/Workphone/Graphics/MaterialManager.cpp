@@ -438,6 +438,11 @@ namespace workphone::render
         return 0;
     }
 
+    u32 MaterialManager::releaseUnusedResourcesOnUpdate( u32 maximumCandidates )
+    {
+        return releaseUnusedResources( maximumCandidates );
+    }
+
     void MaterialManager::destroyResource( SmartPtr<IResource> resource )
     {
         ScopedLock graphicsOwner( materialGraphicsOwner() );

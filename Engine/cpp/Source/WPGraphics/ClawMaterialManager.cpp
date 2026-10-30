@@ -215,6 +215,16 @@ namespace workphone::render
 
     u32 ClawMaterialManager::releaseUnusedResources( u32 maximumCandidates )
     {
+        return releaseUnusedResourcesImpl( maximumCandidates, false );
+    }
+
+    u32 ClawMaterialManager::releaseUnusedResourcesOnUpdate( u32 maximumCandidates )
+    {
+        return releaseUnusedResourcesImpl( maximumCandidates, true );
+    }
+
+    u32 ClawMaterialManager::releaseUnusedResourcesImpl( u32 maximumCandidates, bool automatic )
+    {
         auto application = core::IApplicationManager::instancePtr();
         auto graphics = application ? application->getGraphicsSystem() : nullptr;
         if( !graphics || !maximumCandidates )
@@ -239,7 +249,7 @@ namespace workphone::render
             }
             if( auto material = dynamic_cast<ClawMaterial *>( candidate.get() ) )
             {
-                if( material->releaseUnusedResources() )
+                if( material->releaseUnusedResources( automatic ) )
                 {
                     ++released;
                 }

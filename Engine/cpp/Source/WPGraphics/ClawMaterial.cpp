@@ -404,30 +404,23 @@ namespace workphone
             m_documentWorkingBytes = 0;
             String().swap( m_residentDocument );
             m_documentBudget.reset();
+            m_residencyRetry.reset();
         }
 
-        bool ClawMaterial::releaseUnusedResources()
+        bool ClawMaterial::releaseUnusedResources( bool automatic )
         {
             if( !m_fileResident || !isLoaded() || isLoadLocked() || getReferences() != 2 ||
                 m_root.load() )
             {
                 return false;
             }
+            const auto now = detail::MaterialResidencyRetry::Clock::now();
+            if( automatic && !m_residencyRetry.ready( now ) )
+            {
+                return false;
+            }
             try
             {
-                auto application = core::IApplicationManager::instance();
-                auto files = application->getFileSystem();
-                // Never destroy the sole copy after its backing source disappears.
-                auto source = files->open( getFilePath(), true, false, false, false, false );
-                if( !source )
-                {
-                    source = files->open( getFilePath(), true, false, false, true, true );
-                }
-                if( !source || !source->size() || source->size() > ( 1ull << 20 ) )
-                {
-                    return false;
-                }
-
                 s32 materialWeakOwners = 0;
                 if( auto context = getStateContext() )
                 {
@@ -568,6 +561,10 @@ namespace workphone
                 {
                     return false;
                 }
+                // Dirty or temporarily unreloadable materials must remain resident.
+                // Recheck their complete document periodically, rather than rebuilding
+                // it every frame. Forced sweeps bypass this delay for admission/retry.
+                m_residencyRetry.defer( now );
                 String error;
                 auto working = WorldStreamingScheduler::shared()->reserve(
                     StreamMemoryClass::WorkingCpu, m_documentWorkingBytes, error );
@@ -576,6 +573,19 @@ namespace workphone
                     return false;
                 }
                 if( authoringDocument() != m_residentDocument )
+                {
+                    return false;
+                }
+                auto application = core::IApplicationManager::instance();
+                auto files = application->getFileSystem();
+                // Only probe the filesystem for a graph we can actually retire.
+                // Never destroy the sole copy after its backing source disappears.
+                auto source = files->open( getFilePath(), true, false, false, false, false );
+                if( !source )
+                {
+                    source = files->open( getFilePath(), true, false, false, true, true );
+                }
+                if( !source || !source->size() || source->size() > ( 1ull << 20 ) )
                 {
                     return false;
                 }
@@ -591,6 +601,7 @@ namespace workphone
             }
             catch( const std::exception &error )
             {
+                m_residencyRetry.defer( now );
                 WP_LOG_WARNING( "Material eviction deferred: " + String( error.what() ) );
                 return false;
             }

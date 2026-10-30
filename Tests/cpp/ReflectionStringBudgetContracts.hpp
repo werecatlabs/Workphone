@@ -85,9 +85,24 @@ namespace reflection_string_budget_contracts
                 "budget denial reports an error without recursively locking the string ledger");
         require(!budget.scheduler->setBudget(StreamMemoryClass::SourceCpu, resident - 1, error) && !error.empty(),
                 "budget shrink denial is safe when string admission has no headroom");
-        auto token = budget.scheduler->reserve(StreamMemoryClass::SourceCpu, 0, error);
-        require(token && error.empty(), "successful admission clears an existing denial diagnostic");
+        // A zero-payload lease still owns admitted implementation/control storage.
+        // Keep denial and successful diagnostic clearing as separate contracts.
+        const auto beforeZeroDenial = budget.used();
+        require(!budget.scheduler->reserve(StreamMemoryClass::SourceCpu, 0, error) &&
+                    !error.empty() && budget.used() == beforeZeroDenial,
+                "zero-payload admission rejects unavailable lease metadata without leaking storage");
         budget.restore();
+        const auto beforeToken = budget.used();
+        {
+            auto token = budget.scheduler->reserve(StreamMemoryClass::SourceCpu, 0, error);
+            require(token && token->bytes() == 0 &&
+                        token->memoryClass() == StreamMemoryClass::SourceCpu && error.empty(),
+                    "successful admission after capacity returns clears an existing denial diagnostic");
+            require(budget.used() > beforeToken,
+                    "zero-payload lease implementation and control storage remain charged");
+        }
+        require(budget.used() == beforeToken,
+                "last zero-payload lease owner releases all admitted metadata storage");
         value.reserve(400000);
         require(value.size() == 80 && value[79] == 'x', "engine String growth retries after admission returns");
         {

@@ -35,6 +35,7 @@ namespace workphone::render
 
         SmartPtr<IResource> loadFromFile( const String &filePath ) override;
         u32 releaseUnusedResources( u32 maximumCandidates = 32 ) override;
+        u32 releaseUnusedResourcesOnUpdate( u32 maximumCandidates = 32 ) override;
 
         /** @copydoc MaterialManager::_getObject */
         void _getObject( void **ppObject ) const override;
@@ -42,6 +43,7 @@ namespace workphone::render
         WP_CLASS_REGISTER_DECL;
 
     private:
+        u32 releaseUnusedResourcesImpl( u32 maximumCandidates, bool automatic );
         size_t m_evictionCursor = 0;
     };
 }  // namespace workphone::render

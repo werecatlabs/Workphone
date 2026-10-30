@@ -383,6 +383,10 @@ if (WP_BUILD_TESTS)
                 set_target_properties(WPMaterialLoadSequenceTests PROPERTIES FOLDER Tests/Cpp)
                 add_test(NAME WPGraphics.material_load_sequence COMMAND WPMaterialLoadSequenceTests)
                 set_tests_properties(WPGraphics.material_load_sequence PROPERTIES LABELS "graphics;assets;scene;headless" TIMEOUT 30)
+                add_test(NAME WPGraphics.material_residency_retry
+                    COMMAND WPMaterialLoadSequenceTests --automatic-material-residency-contracts)
+                set_tests_properties(WPGraphics.material_residency_retry PROPERTIES
+                    LABELS "graphics;material;assets;headless" TIMEOUT 30)
                 add_test(NAME WPGraphics.material_heap_profile_contract
                     COMMAND WPMaterialLoadSequenceTests --heap-profile-self-test)
                 set_tests_properties(WPGraphics.material_heap_profile_contract PROPERTIES

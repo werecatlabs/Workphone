@@ -5,6 +5,7 @@
 #include <Workphone/Graphics/Material.hpp>
 #include <WPGraphics/MaterialProgramDX11.hpp>
 #include <WPGraphics/MaterialProgramReloadDX11.hpp>
+#include <WPGraphics/ClawMaterialResidencyRetry.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 
 struct wp_graphics_material;
@@ -92,8 +93,11 @@ namespace workphone
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
             void loadFromFile( const String &filePath ) override;
-            /** Caller holds the sole manager and candidate references. */
-            bool releaseUnusedResources();
+            /** Caller holds the sole manager and candidate references.
+             * Automatic inspections defer retries after an unsuccessful expensive check.
+             * Explicit reclamation always retries immediately.
+             */
+            bool releaseUnusedResources( bool automatic = false );
             void createMaterialByType() override;
 
             ClawMaterial( const ClawMaterial & ) = delete;
@@ -197,6 +201,7 @@ namespace workphone
             StreamBudget m_documentBudget;
             u64 m_documentWorkingBytes = 0;
             bool m_fileResident = false;
+            detail::MaterialResidencyRetry m_residencyRetry;
         };
     }  // namespace render
 }  // namespace workphone

@@ -690,6 +690,9 @@ namespace workphone
 
             WP_CLASS_REGISTER_DECL;
 
+        private:
+            AssetResidencyRelease releaseUnusedAssetsImpl( u32 maximumCandidates, bool automatic );
+
         protected:
             /**
              * @brief Process pending load requests.
