@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/GameActor.hpp>
-#include "UIHierarchyUpdate.hpp"
+#include <Workphone/Scene/UIHierarchyUpdate.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/Transform.hpp>
@@ -614,12 +614,9 @@ namespace workphone::scene
         }
 
         auto children = getChildren();
-        for( auto child : children )
+        for( auto &child : children )
         {
-            if( child )
-            {
-                child->updateDirty( flags, oldFlags );
-            }
+            child->updateDirty( flags, oldFlags );
         }
     }
 
@@ -901,19 +898,19 @@ namespace workphone::scene
 
     void GameActor::setEnabled( bool enabled, bool cacade )
     {
-        setFlag( ActorFlagEnabled, enabled, false );
+        if( isEnabled() != enabled )
+        {
+            setFlag( ActorFlagEnabled, enabled, false );
 
-        updateVisibility();
+            updateVisibility();
+        }
 
         if( cacade )
         {
             auto children = getChildren();
             for( auto &child : children )
             {
-                if( child )
-                {
-                    child->setEnabled( enabled, cacade );
-                }
+                child->setEnabled( enabled, cacade );
             }
         }
     }
@@ -926,11 +923,16 @@ namespace workphone::scene
 
     void GameActor::setVisible( bool visible, bool cacade )
     {
-        setFlag( ActorFlagVisible, visible, false );
+        if( isVisible() != visible )
+        {
+            setFlag( ActorFlagVisible, visible, false );
+        }
 
         if( cacade )
         {
-            for( auto &child : getChildren() )
+            ScopedLock lock( &m_childrenMutex, false );
+
+            for( auto child = m_childrenHead; child != nullptr; child = child->nextChild.load() )
             {
                 child->setVisible( visible, cacade );
             }
@@ -1511,11 +1513,17 @@ namespace workphone::scene
                 {
                     ScopedLock lock( &m_childrenMutex );
                     auto raw = m_childrenHead;
-                    if( !raw ) break;
+                    if( !raw )
+                    {
+                        break;
+                    }
                     child = raw;
                     m_childrenHead = raw->nextChild.load();
                     raw->nextChild = nullptr;
-                    if( !m_childrenHead ) m_childrenTail = nullptr;
+                    if( !m_childrenHead )
+                    {
+                        m_childrenTail = nullptr;
+                    }
                     --m_numChildren;
                     raw->removeReference();
                 }
@@ -1528,11 +1536,17 @@ namespace workphone::scene
                 {
                     ScopedLock lock( &m_componentsMutex );
                     auto raw = m_componentsHead;
-                    if( !raw ) break;
+                    if( !raw )
+                    {
+                        break;
+                    }
                     component = raw;
                     m_componentsHead = raw->m_next.load();
                     raw->m_next = nullptr;
-                    if( !m_componentsHead ) m_componentsTail = nullptr;
+                    if( !m_componentsHead )
+                    {
+                        m_componentsTail = nullptr;
+                    }
                     raw->removeReference();
                 }
                 try
