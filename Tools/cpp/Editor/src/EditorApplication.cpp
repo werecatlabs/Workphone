@@ -22,6 +22,7 @@
 #    include <WPImGui/ImGuiButton.hpp>
 #endif
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
+#include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <EditorApplication.hpp>
 #include <commands/AddActorCmd.hpp>
@@ -1355,6 +1356,7 @@ namespace workphone::editor
             {
             case TaskId::GarbageCollect:
             {
+                render::collectUnusedGraphicsAssets( applicationManager->getGraphicsSystem() );
             }
             break;
             case TaskId::Primary:

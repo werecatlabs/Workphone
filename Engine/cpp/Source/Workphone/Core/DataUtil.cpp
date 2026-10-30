@@ -911,7 +911,11 @@ namespace workphone
             {
                 if( auto properties = parsePropertiesFromJson( dataStr ) )
                 {
+                    // Properties assignment preserves destination object identity.
+                    // Restore the serialized document node name explicitly.
+                    const auto name = properties->getName();
                     *ptr = *properties;
+                    ptr->setName( name );
                 }
             }
             break;
@@ -987,7 +991,9 @@ namespace workphone
             {
                 if( auto parsedProperties = parsePropertiesFromJson( dataStr ) )
                 {
+                    const auto name = parsedProperties->getName();
                     *properties = *parsedProperties;
+                    properties->setName( name );
                 }
             }
         }

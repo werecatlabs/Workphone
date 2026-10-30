@@ -11,6 +11,7 @@
 #include <Workphone/Graphics/GraphicsMesh.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/Graphics/MaterialManager.hpp>
 #include <Workphone/Graphics/TextureManager.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
@@ -140,11 +141,12 @@ namespace
         u32 releaseUnusedResources( u32 maximumCandidates ) override
         { ++forcedSweeps; events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
         u32 releaseUnusedResourcesOnUpdate( u32 maximumCandidates ) override
-        { ++automaticSweeps; events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
+        { ++automaticSweeps; lastAutomaticTask = Thread::getCurrentTask(); events->push_back( 1 ); allowances.push_back( maximumCandidates ); return 3; }
         Array<u32> *events = nullptr;
         Array<u32> allowances;
         u32 forcedSweeps = 0;
         u32 automaticSweeps = 0;
+        TaskId lastAutomaticTask = TaskId::None;
     };
     class TextureSweepProbe : public render::TextureManager
     {
@@ -159,10 +161,12 @@ namespace
     class AssetSweepGraphicsProbe : public render::GraphicsSystem
     {
     public:
+        void lock() override { if( onLock ) onLock(); GraphicsSystem::lock(); }
         SmartPtr<render::IMaterialManager> getMaterialManager() const override { return materials; }
         SmartPtr<render::ITextureManager> getTextureManager() const override { return textures; }
         SmartPtr<MaterialSweepProbe> materials;
         SmartPtr<TextureSweepProbe> textures;
+        std::function<void()> onLock;
     };
     class AssetQueueOrderProbe : public DeferredGraphicsProbe
     {
@@ -838,7 +842,7 @@ BOOST_AUTO_TEST_CASE( world_component_retries_denied_cold_coordinator_without_an
     component->unload(nullptr);
 }
 
-BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new_loads )
+BOOST_AUTO_TEST_CASE( graphics_cleanup_runs_on_garbage_collection_instead_of_frame_update )
 {
     TestGuard guard;
     Array<u32> events;
@@ -850,12 +854,27 @@ BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new
     auto newObject = make_ptr<AssetQueueOrderProbe>(); newObject->events = &events;
     graphics->unloadObject( oldObject, true ); graphics->loadObject( newObject, true );
     graphics->update();
-    BOOST_REQUIRE_EQUAL( events.size(), 4u );
-    for( u32 i = 0; i < 4; ++i ) BOOST_CHECK_EQUAL( events[i], i );
+    BOOST_REQUIRE_EQUAL( events.size(), 2u );
+    BOOST_CHECK_EQUAL( events[0], 0u ); BOOST_CHECK_EQUAL( events[1], 3u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 0u );
+    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 0u );
+    BOOST_CHECK( graphics->textures->allowances.empty() );
+    events.clear();
+    {
+        struct RestoreTask
+        {
+            TaskId previous = Thread::getCurrentTask();
+            ~RestoreTask() { Thread::setCurrentTask( previous ); }
+        } restoreTask;
+        Thread::setCurrentTask( TaskId::GarbageCollect );
+        render::collectUnusedGraphicsAssets( graphics );
+    }
+    BOOST_REQUIRE_EQUAL( events.size(), 2u );
+    BOOST_CHECK_EQUAL( events[0], 1u ); BOOST_CHECK_EQUAL( events[1], 2u );
+    BOOST_CHECK( graphics->materials->lastAutomaticTask == TaskId::GarbageCollect );
+    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
     BOOST_CHECK_EQUAL( graphics->materials->allowances.front(), 32u );
     BOOST_CHECK_EQUAL( graphics->textures->allowances.front(), 32u );
-    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 1u );
-    BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 0u );
     events.clear();
     const auto released = graphics->releaseUnusedAssets( 7 );
     BOOST_CHECK_EQUAL( released.materials, 3u ); BOOST_CHECK_EQUAL( released.textures, 5u );
@@ -864,25 +883,57 @@ BOOST_AUTO_TEST_CASE( graphics_owner_reclaims_materials_then_textures_before_new
     BOOST_REQUIRE_EQUAL( events.size(), 2u );
     graphics->releaseUnusedAssets( 0 );
     BOOST_CHECK_EQUAL( events.size(), 2u );
-    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 2u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 1u );
+    render::collectUnusedGraphicsAssets( graphics, 0 );
+    render::collectUnusedGraphicsAssets( nullptr );
+    BOOST_CHECK_EQUAL( events.size(), 2u );
 
     events.clear();
     graphics->update();
-    BOOST_REQUIRE_EQUAL( events.size(), 2u );
-    BOOST_CHECK_EQUAL( events[0], 1u ); BOOST_CHECK_EQUAL( events[1], 2u );
+    BOOST_CHECK( events.empty() );
     BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
-    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 2u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 1u );
 
-    // Reload admission also needs an immediate retry of previously rejected assets.
+    // Load, reload and unload traffic cannot put material inspection back on the frame path.
     graphics->reloadObject( newObject, true );
     graphics->update();
     BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
-    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 3u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 1u );
 
     graphics->unloadObject( newObject, true );
     graphics->update();
     BOOST_CHECK_EQUAL( graphics->materials->automaticSweeps, 1u );
-    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 4u );
+    BOOST_CHECK_EQUAL( graphics->materials->forcedSweeps, 1u );
+}
+
+BOOST_AUTO_TEST_CASE( graphics_garbage_collection_excludes_concurrent_render_capture )
+{
+    TestGuard guard;
+    Array<u32> events;
+    auto graphics = make_ptr<AssetSweepGraphicsProbe>();
+    graphics->materials = make_ptr<MaterialSweepProbe>(); graphics->materials->events = &events;
+    graphics->textures = make_ptr<TextureSweepProbe>(); graphics->textures->events = &events;
+    std::promise<void> requested;
+    auto requestedFuture = requested.get_future();
+    std::future<void> completed;
+    {
+        ScopedLock owner( graphics );
+        graphics->onLock = [&] {
+            if( Thread::getCurrentTask() == TaskId::GarbageCollect ) requested.set_value();
+        };
+        completed = std::async( std::launch::async, [graphics]() mutable {
+            Thread::setCurrentTask( TaskId::GarbageCollect );
+            render::collectUnusedGraphicsAssets( graphics, 5 );
+        } );
+        BOOST_REQUIRE( requestedFuture.wait_for( std::chrono::seconds( 5 ) ) == std::future_status::ready );
+        BOOST_CHECK( events.empty() );
+    }
+    completed.get();
+    graphics->onLock = {};
+    BOOST_REQUIRE_EQUAL( events.size(), 2u );
+    BOOST_CHECK_EQUAL( graphics->materials->allowances.front(), 5u );
+    BOOST_CHECK_EQUAL( graphics->textures->allowances.front(), 5u );
+    BOOST_CHECK( graphics->materials->lastAutomaticTask == TaskId::GarbageCollect );
 }
 
 BOOST_AUTO_TEST_CASE( scene_retirement_uses_the_existing_graphics_cache_sweep )

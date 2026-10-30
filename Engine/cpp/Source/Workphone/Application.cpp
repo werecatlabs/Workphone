@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
+#include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/Application.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
@@ -562,6 +563,7 @@ namespace workphone::core
         {
             try
             {
+                render::collectUnusedGraphicsAssets( applicationManager->getGraphicsSystem() );
                 auto timer = applicationManager->getTimer();
 
                 auto dt = timer->getDeltaTime();

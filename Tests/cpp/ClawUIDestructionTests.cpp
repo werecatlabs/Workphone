@@ -4,6 +4,7 @@
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/StateManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Memory/WeakPtr.hpp>
@@ -65,6 +66,10 @@ namespace
             application = make_ptr<core::ApplicationManager>();
             core::IApplicationManager::setInstance( application );
             application->setFactoryManager( make_ptr<FactoryManager>() );
+            states = make_ptr<StateManager>();
+            application->setStateManager( states );
+            states->load( nullptr );
+            if( !states->isLoaded() ) throw std::runtime_error( "UI fixture StateManager failed to load" );
             application->setGraphicsSystem( make_ptr<render::ClawHammerSystem>() );
             application->setGameManager( make_ptr<scene::GameManager>() );
             Thread::setCurrentTask( TaskId::Render );
@@ -75,6 +80,9 @@ namespace
             application->setRenderUI( nullptr );
             application->setGameManager( nullptr );
             application->setGraphicsSystem( nullptr );
+            states->unload( nullptr );
+            application->setStateManager( nullptr );
+            states = nullptr;
             application->setFactoryManager( nullptr );
             core::IApplicationManager::setInstance( nullptr );
             application = nullptr;
@@ -85,6 +93,7 @@ namespace
 
         std::unique_ptr<TypeManager> types;
         SmartPtr<core::ApplicationManager> application;
+        SmartPtr<StateManager> states;
         TaskId previousTask;
     };
 
@@ -1141,9 +1150,13 @@ namespace
         manager->load( nullptr );
         ok &= check( input->listenerCount == 1 && !input->registered.expired(),
                      "loading after unload must register a new input listener" );
+        manager->unload( nullptr );
+        ok &= check( !manager->isLoaded() && input->listenerCount == 0 && input->registered.expired(),
+                     "explicit shutdown must retire the reloaded input listener before destruction" );
+        WeakPtr<ui::ClawUIManager> weakManager( manager );
         manager = nullptr;
-        ok &= check( input->listenerCount == 0 && input->registered.expired(),
-                     "manager destruction must not leave a dangling input callback" );
+        ok &= check( weakManager.expired() && input->listenerCount == 0 && input->registered.expired(),
+                     "releasing an unloaded manager must destroy it without a dangling input callback" );
         fixture.application->setInputDeviceManager( nullptr );
         return ok;
     }
@@ -1258,7 +1271,7 @@ namespace
         return ok;
     }
 
-    enum class Cleanup { Clear, Unload, Destructor };
+    enum class Cleanup { Clear, Unload, ReleaseAfterUnload };
 
     bool testTreeCleanup( Cleanup cleanup )
     {
@@ -1268,7 +1281,10 @@ namespace
         auto container = manager->addElement( ui::IUILayoutContainer::typeInfo() );
         auto leaf = manager->addElement( ui::IUIText::typeInfo() );
         if( !root || !container || !leaf )
+        {
+            manager->unload( nullptr );
             return check( false, "nested UI tree must be created" );
+        }
         root->addChild( container );
         container->addChild( leaf );
         WeakPtr<ui::IUIElement> weakRoot( root ), weakContainer( container ), weakLeaf( leaf );
@@ -1292,10 +1308,16 @@ namespace
         }
         else
         {
+            // Loaded managers require explicit shutdown before destruction.
+            // Check that releasing a valid, unloaded manager has no ownership cycle.
+            manager->unload( nullptr );
+            WeakPtr<ui::ClawUIManager> weakManager( manager );
             manager = nullptr;
+            ok &= check( weakManager.expired(), "release after shutdown must destroy the manager" );
         }
         ok &= check( weakRoot.expired() && weakContainer.expired() && weakLeaf.expired(),
                      "tree cleanup must destroy the layout, container, and leaf" );
+        if( manager ) manager->unload( nullptr );
         return ok;
     }
 }
@@ -1379,7 +1401,7 @@ int main( int argc, char **argv )
     ok &= testBulkRemoval();
     ok &= testTreeCleanup( Cleanup::Clear );
     ok &= testTreeCleanup( Cleanup::Unload );
-    ok &= testTreeCleanup( Cleanup::Destructor );
+    ok &= testTreeCleanup( Cleanup::ReleaseAfterUnload );
     ok &= testInputListenerCleanup( fixture );
     try { assertions += input_listener_dispatch_contracts::run(); }
     catch( const std::exception &error ) { ok &= check( false, error.what() ); }
@@ -1391,6 +1413,6 @@ int main( int argc, char **argv )
     ok &= testSortCapturesEachOrderOnce();
     ok &= testDrawPinsItsFrameMembers( fixture );
     if( ok )
-        std::printf( "Claw UI destruction tests: 29 cases, %u assertions passed.\n", assertions );
+        std::printf( "Claw UI destruction tests: %u assertions passed.\n", assertions );
     return ok ? 0 : 1;
 }

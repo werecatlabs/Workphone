@@ -8,6 +8,7 @@
 #include <Workphone/Scene/Components/UI/Layout.hpp>
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
 #include <Workphone/Scene/Components/UI/ScrollView.hpp>
+#include <Workphone/State/States/UITransformStateData.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <cstdio>
 #include <functional>
@@ -38,7 +39,7 @@ namespace layout_input_sort_contracts
             if( includeNull ) children.push_back( nullptr );
             return children;
         }
-        void attach( const SmartPtr<IComponent> &component )
+        void attach( SmartPtr<IComponent> component )
         {
             component->setActor( this );
             components.push_back( component );
@@ -97,6 +98,8 @@ namespace layout_input_sort_contracts
         explicit Context( const SmartPtr<core::ApplicationManager> &application ) : app( application )
         {
             previousWindow = app->getWindow();
+            previousEditor = app->isEditor();
+            app->setEditor( false );
             app->setWindow( make_ptr<Window>() );
             root = make_ptr<Actor>();
             root->getHandle()->setInstanceId( 1000 );
@@ -127,6 +130,7 @@ namespace layout_input_sort_contracts
             nodes.clear();
             layout->setCanvas( nullptr );
             app->setWindow( previousWindow );
+            app->setEditor( previousEditor );
         }
         size_t add( unsigned id, u32 order, bool withTransform = true )
         {
@@ -136,6 +140,7 @@ namespace layout_input_sort_contracts
             if( withTransform )
             {
                 node.transform = make_ptr<Transform>();
+                node.transform->addState( make_ptr<UITransformStateData>() );
                 node.transform->setZOrder( order, false );
                 node.actor->attach( node.transform );
             }
@@ -158,6 +163,7 @@ namespace layout_input_sort_contracts
         SmartPtr<Layout> layout, canvas;
         SmartPtr<MouseState> mouse;
         SmartPtr<InputEvent> event;
+        bool previousEditor = false;
         std::vector<Node> nodes;
         std::vector<unsigned> delivered;
     };

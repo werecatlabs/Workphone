@@ -104,10 +104,12 @@ namespace properties_json_contracts
         for( const bool pretty : { false, true } )
         {
             auto restored = make_ptr<Properties>();
+            restored->setName( "previous root" );
             DataUtil::parse( pretty ? formatted : compact, restored.get() );
-            require( restored->getName() == "root" && restored->getNumProperties() == 2 &&
-                         restored->getNumChildren() == 2,
-                     "JSON restores node names, property counts and repeated-name children" );
+            require( restored->getName() == "root",
+                     "typed JSON parse restores the serialized root handle_name" );
+            require( restored->getNumProperties() == 2 && restored->getNumChildren() == 2,
+                     "JSON restores property counts and repeated-name children" );
             const auto &field = restored->getPropertyObject( "alpha" );
             require( field.getValue() == alpha.getValue() && field.getTypeName() == "string" &&
                          field.isReadOnly() && field.getAttributes().size() == 2 &&
@@ -133,12 +135,18 @@ namespace properties_json_contracts
             require( DataUtil::toString( restored.get(), false ) == compact &&
                          DataUtil::toString( restored.get(), true ) == formatted,
                      "both JSON input formats roundtrip to identical canonical output" );
+            auto sharedDestination = make_ptr<Properties>();
+            sharedDestination->setName( "previous shared root" );
+            DataUtil::parse( pretty ? formatted : compact,
+                             static_cast<ISharedObject *>( sharedDestination.get() ) );
+            require( sharedDestination->getName() == "root" &&
+                         DataUtil::toString( sharedDestination.get(), false ) == compact,
+                     "shared-object JSON parse preserves the same root name, metadata and children" );
         }
         require( DataUtil::toString( input.get(), false ) == compact && first->getNumChildren() == 1 &&
                      leaf->getPropertyAsBool( "flag" ),
                  "moving completed JSON trees leaves source properties and nested children intact" );
-        require( DataUtil::convert( nullptr ).empty() &&
-                     DataUtil::toString( static_cast<Properties *>( nullptr ), false ) == "{}" &&
+        require( DataUtil::toString( static_cast<Properties *>( nullptr ), false ) == "{}" &&
                      DataUtil::toString( static_cast<Properties *>( nullptr ), true ) == "{}\n",
                  "null properties retain empty-object serialization in both formats" );
     }

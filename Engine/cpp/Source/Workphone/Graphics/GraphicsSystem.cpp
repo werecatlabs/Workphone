@@ -2,6 +2,7 @@
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/Graphics/MaterialManager.hpp>
 #include <Workphone/Graphics/TextureManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
@@ -65,6 +66,38 @@
 
 namespace workphone::render
 {
+    namespace
+    {
+        GraphicsSystem::AssetResidencyRelease releaseGraphicsAssets(
+            IGraphicsSystem &graphics, u32 maximumCandidates, bool automatic )
+        {
+            GraphicsSystem::AssetResidencyRelease released;
+            if( !maximumCandidates )
+            {
+                return released;
+            }
+            ScopedLock lifecycleLock( &graphics );
+            if( auto manager = dynamic_pointer_cast<MaterialManager>( graphics.getMaterialManager() ) )
+            {
+                released.materials = automatic ? manager->releaseUnusedResourcesOnUpdate( maximumCandidates )
+                                               : manager->releaseUnusedResources( maximumCandidates );
+            }
+            if( auto manager = dynamic_pointer_cast<TextureManager>( graphics.getTextureManager() ) )
+            {
+                released.textures = manager->releaseUnusedResources( maximumCandidates );
+            }
+            return released;
+        }
+    }
+
+    void collectUnusedGraphicsAssets( SmartPtr<IGraphicsSystem> graphics, u32 maximumCandidates )
+    {
+        if( graphics && maximumCandidates )
+        {
+            releaseGraphicsAssets( *graphics, maximumCandidates, true );
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone::render, GraphicsSystem,
                                SharedGraphicsObject<IGraphicsSystem> );
     WP_CLASS_REGISTER_DERIVED( workphone::render, GraphicsSystem::StateListener, IStateListener );
@@ -96,6 +129,7 @@ namespace workphone::render
 
     void GraphicsSystem::unload( SmartPtr<ISharedObject> data )
     {
+        ScopedLock lifecycleLock( this );
         for( auto window : m_windows )
         {
             window->unload( nullptr );
@@ -143,13 +177,7 @@ namespace workphone::render
     void GraphicsSystem::update()
     {
         MaterialPublicationScope materialUpdates;
-        const bool hadPendingWork = !m_unloadQueue.empty() || !m_loadQueue.empty() ||
-                                    !m_reloadQueue.empty();
         updateUnloadQueue();
-        // Pending loads need immediate reclamation; idle frame cleanup can
-        // honor the material retry delay after an unsuccessful eviction.
-        const bool automatic = !hadPendingWork && m_loadQueue.empty() && m_reloadQueue.empty();
-        releaseUnusedAssetsImpl( 32, automatic );
         updateLoadQueue();
         updateReloadQueue();
 
@@ -249,22 +277,7 @@ namespace workphone::render
     GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssetsImpl(
         u32 maximumCandidates, bool automatic )
     {
-        AssetResidencyRelease released;
-        if( !maximumCandidates )
-        {
-            return released;
-        }
-        ScopedLock lifecycleLock( this );
-        if( auto manager = dynamic_pointer_cast<MaterialManager>( getMaterialManager() ) )
-        {
-            released.materials = automatic ? manager->releaseUnusedResourcesOnUpdate( maximumCandidates )
-                                           : manager->releaseUnusedResources( maximumCandidates );
-        }
-        if( auto manager = dynamic_pointer_cast<TextureManager>( getTextureManager() ) )
-        {
-            released.textures = manager->releaseUnusedResources( maximumCandidates );
-        }
-        return released;
+        return releaseGraphicsAssets( *this, maximumCandidates, automatic );
     }
 
     void GraphicsSystem::updateUnloadQueue()
