@@ -25,6 +25,8 @@
 #include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <EditorApplication.hpp>
+#include <core/EditorMediaPaths.hpp>
+#include <core/EditorWorkspacePaths.hpp>
 #include <commands/AddActorCmd.hpp>
 #include <commands/AddComponentCmd.hpp>
 #include <commands/PromptCmd.hpp>
@@ -2049,6 +2051,9 @@ namespace workphone::editor
 
             fileSystem->addFolder( workingDirectory );
 
+            // Runtime preferences can select a project before its document is loaded.
+            // Establish writable directories before UI and catalog startup use them.
+            initializeEditorWorkspacePaths( applicationManager, workingDirectory );
             auto cachePath = applicationManager->getCachePath();
             auto cacheAbsolutePath = Path::getAbsolutePath( workingDirectory, cachePath );
             fileSystem->addFolder( cacheAbsolutePath );
@@ -2072,37 +2077,28 @@ namespace workphone::editor
             }
 
             auto applicationFlags = getApplicationFlags();
+            String mediaPath;
             if( BitUtil::getFlagValue<u8>( applicationFlags, IApplication::developerModeFlag ) )
             {
 #if defined WP_PLATFORM_WIN32
-                auto mediaPath = String( "../../../../../Media" );
-                auto scriptsPath = String( "../../../../../Media/Scripts/" );
+                mediaPath = "../../../../../Media";
 #elif defined WP_PLATFORM_APPLE
-                auto mediaPath = String( "../../Media" );
-                auto scriptsPath = String( "../../Media/Scripts/" );
+                mediaPath = "../../Media";
 #else
-                auto mediaPath = String( "../../Media" );
-                auto scriptsPath = String( "../../Media/Scripts/" );
+                mediaPath = "../../Media";
 #endif
-
-                //auto absoluteMediaPath = Path::lexically_normal( workingDirectory, mediaPath );
-                applicationManager->setMediaPath( mediaPath );
-
-                auto absoluteScriptsPath = Path::lexically_normal( workingDirectory, scriptsPath );
-                fileSystem->addFolder( scriptsPath, true );
-                fileSystem->addFolder( mediaPath, false );
             }
             else
             {
-                auto mediaPath = getMediaPath();
-                auto scriptsPath = mediaPath + scriptsFolderStr;
-
-                applicationManager->setMediaPath( mediaPath );
-                fileSystem->addFolder( scriptsPath, true );
-                fileSystem->addFolder( mediaPath, false );
-
-                //fileSystem->addFileArchive( "Media.zip", false, false, IFileSystem::ArchiveType::Zip );
+                mediaPath = getMediaPath();
             }
+
+            // Bundled resources belong to the editor installation. Relative archive paths
+            // otherwise resolve against the active project when mounted or refreshed.
+            mediaPath = mountEditorMedia( fileSystem, workingDirectory, mediaPath );
+            applicationManager->setMediaPath( mediaPath );
+            WP_LOG( "Mounted editor Media folder: " + mediaPath + "; startup directory: " +
+                    workingDirectory + "; project directory: " + projectPath );
 
             fileSystem->addFileArchive( ".FBCache", true, true, IFileSystem::ArchiveType::Folder );
             fileSystem->addFileArchive( "./", true, true, IFileSystem::ArchiveType::Folder );
