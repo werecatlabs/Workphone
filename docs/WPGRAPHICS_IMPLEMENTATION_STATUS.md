@@ -1,5 +1,109 @@
 # WPGraphics implementation status
 
+## Terrain GT0 baseline, validation and package follow-up — 29–30 October 2026
+
+The [terrain GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md) reconciles
+the historical terrain findings with the connected TERR-01–10 implementation and
+tracks the remaining release gates. Focused validation requires the seven
+terrain CPU/physics/Lua/performance/soak/production-render/cooked-resource suites,
+plus scene-picking and Editor event-queue regressions in the current nine-test gate.
+Source, executable and runtime-library changes invalidate candidate evidence.
+
+The [current follow-up index](../artifacts/terrain/gt0-20261029/gt0-editor-followup-evidence-index.json)
+binds eighteen accepted tests, the observed Editor sequence, both fresh source-free
+gameplay packages and the prepared portable clean-Windows kit.
+
+The validation aggregate now includes the later-declared Editor target, and
+WPGraphics links the CMake cJSON target so a clean configuration builds its actual
+dependency. Terrain package fixtures use `writeRuntimePackage` instead of copying
+the compilation directory and its database. Separate relocated and ZIP-extracted
+consumers exercise the pinned texture closure, actual DX11 pixels, replacement
+failure retention, cache lifetime and renderer recreation. Negative processes
+check missing manifests and corrupt payloads; captures remain outside installed
+assets. Package and test evidence remain distinct from release certification.
+
+The historical `E496F8DB...` representative terrain/vehicle follow-up passed in
+Debug and RelWithDebInfo: seven fresh terrain suites per configuration, native terrain
+render/query/collision agreement and hole rejection, all five vehicle driving
+phases, separate terrain/car captures, negative asset cases and copied plus
+ZIP-extracted gameplay consumers. `SampleVehicleAdvanced` reuses
+`ProceduralRaceScene`; its cooked terrain and configuration-specific pinned
+vehicle recipe require no author compiler or compilation database at runtime.
+The follow-up fixes Windows long-path publication/cleanup, readiness retries that
+starved render/physics tasks, inconsistent initial road grip and package UI
+persistence. The [gameplay evidence index](../artifacts/terrain/gt0-20261029/gt0-gameplay-evidence-index.json)
+rechecks source, runtime binaries, complete archives and precise negative causes.
+
+The live Editor follow-up found and repaired terrain callback lock ordering,
+Parameters/results and native phase-string ABI mismatches, stale queued selection
+ownership and clipped tabs. Actual UI import and native v3 saving succeeded;
+the next stroke exposed normalized image coordinates being passed to a
+pixel-coordinate camera method. After the ray repair, live validation exposed
+release outside the image committing an active stroke. The production phase
+selector now cancels outside before checking release; its regression invokes the
+same selector and verifies actual LuaManager/native sample rollback. Active
+cancellation reports status without replacing completed status on idle frames.
+
+The current repaired source is
+`C4B9ADB426748B6A6F7067F9136B731F50135839ACAE1C28BB97F576D4F599A3`.
+The [build/test report](../artifacts/terrain/gt0-20261029/editor-release-outside-fix-01/report.json)
+records rebuilt WPImGui, relinked WPGraphics and Editor/regression builds in both
+configurations. All nine mandatory tests passed in each: Debug **229.45s** and
+RelWithDebInfo **90.91s**, without source/runtime drift during the suites.
+
+[Live sessions 09/10](../artifacts/terrain/gt0-20261029/editor-live-09/session-evidence.json)
+verified native Scene viewport sculpt of 312/4,225 samples (maximum local delta
+0.349393129m), native-menu Undo/Redo, release-outside cancellation, native scene
+save and distinct-process native scene reopen at 96 DPI. Saved undo bytes match
+the baseline (`9053215D...`); redo, cancel and restarted bytes match the painted
+snapshot (`2FB8B52D...20B0`). Both processes exited with code zero and no
+source/runtime drift. The [independent content report](../artifacts/terrain/gt0-20261029/editor-final-content-review-01/terrain-authoring-evidence.json)
+checks all seven saved artifacts while keeping UI/process-restart claims separate.
+This observed path passes; `fullEditorWorkflowMatrixAccepted` and
+`interactiveEditorAuthoringAccepted` remain false, including live
+Escape/focus-loss/selection cancellation, other DPI settings, layer/hole edits
+and continuous stroke sampling.
+
+The current [optimized package 05 verification](../artifacts/terrain/gt0-20261029/package-refresh-05/final-verification.json)
+and [gameplay report](../artifacts/terrain/gt0-20261029/gameplay-RelWithDebInfo-package-05/gameplay-package-evidence.json)
+reconcile that same `C4B9ADB4...` source with all eighteen tests. All seven package
+subprocesses passed: copied/extracted five-phase driving, two captures and precise
+negative causes. Driving took **407.06s/419.48s** under the unchanged **600s**
+watchdog, with root-owned Editors stopped and other host work continuing. Runtime
+inputs, assets and all 38 payload files retained their hashes; four directory
+entries also appear in the ZIP. Its SHA256 is
+`ADC4450CDE05A8006AE529FCDF1C8F38D5D30D8038CDFCF96D5374A18CFD0ED4`.
+[Offline kit 04](../artifacts/terrain/gt0-20261029/clean-machine-kit-04/README.txt)
+and its [preparation evidence](../artifacts/terrain/gt0-20261029/clean-machine-kit-04/kit-evidence.json)
+pin that archive and are stock Windows PowerShell 5.1 prepared-only evidence.
+No guest ran or prerequisite was supplied; genuine clean-Windows deployment
+remains open.
+
+The [portable kit ZIP](../artifacts/terrain/gt0-20261029/offline-kit-transfer-04/WorkphoneTerrainCleanWindowsValidationKit.zip)
+has all nine prepared files verified against kit 04, plus its empty evidence
+directory. Use its README's Launch/Collect commands after extraction on an
+already Sandbox-capable host; transfer does not establish a guest pass.
+
+The fresh [Debug package pass](../artifacts/terrain/gt0-20261029/package-refresh-Debug-05/final-verification.json)
+also completed all seven checks on `C4B9ADB4...`; copied/extracted driving took
+**420.80s/417.71s** under the same 600s limit. Its archive SHA256 is
+`AA8B77C7CB4E4217797096DFC3A2F992D8E4A57014DF76123F65BBEFF2EC458C`.
+Debug relocation uses this host's development CRTs; kit 04 applies only to the
+optimized package. [Combined verification](../artifacts/terrain/gt0-20261029/package-refresh-final-05/combined-verification.json)
+reconciles fourteen subprocesses, eighteen tests, 76 payload files and eight ZIP
+directory entries without source/runtime/asset drift. The earlier Debug
+`E496F8DB...` pass and preceding
+[optimized package 04](../artifacts/terrain/gt0-20261029/package-refresh-04/final-verification.json),
+[kit 03](../artifacts/terrain/gt0-20261029/clean-machine-kit-03/README.txt) and
+`6C5D806F...` baselines remain historical evidence.
+
+This machine exposes Microsoft Basic Display Adapter and the exercised DX11
+device is Microsoft Basic Render Driver (WARP). Native Editor backbuffer
+observation is available, while the Windows capture provider still times out.
+Physical hardware, the remaining live workflow checks, independent visual
+acceptance, actual clean-machine deployment and the long mixed-scene soak remain
+separate gates. See the completion record for run paths and exact scopes.
+
 ## Catalog-cooked C++ SDK content and Windows path repair - 24 October 2026
 
 The installed SDK now includes a catalog-checked material/texture sample. Its

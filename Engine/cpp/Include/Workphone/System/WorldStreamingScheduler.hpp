@@ -133,6 +133,8 @@ namespace workphone
         // allocating a diagnostic String on the budget-denial path.
         static StreamBudget reserveSharedSource( u64 bytes );
         StreamBudget reserve( StreamMemoryClass memoryClass, u64 bytes, String &error );
+        /// Whether a retained lease belongs to this scheduler's immutable ledger.
+        bool ownsBudget( const StreamBudget & ) const;
         bool setBudget( StreamMemoryClass memoryClass, u64 bytes, String &error );
         std::shared_ptr<WorldStreamProducer> createProducer( const WorldStreamProducerLimits &,
                                                              String &error );

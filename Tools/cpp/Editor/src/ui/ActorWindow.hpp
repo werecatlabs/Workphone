@@ -162,6 +162,7 @@ namespace workphone
             void updateSelection() override;
 
             void updateMaterialEditorStatus();
+            void refreshTerrainViewportScriptState();
 
             void refreshLayerDropdown();
 

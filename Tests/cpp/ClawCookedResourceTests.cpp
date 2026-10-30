@@ -1066,11 +1066,11 @@ int main( int argc, char **argv )
             cooked_terrain_contracts::createPackage( fs::u8path( argv[2] ) );
             return 0;
         }
-        if( argc == 3 && std::strcmp( argv[1], "--terrain-package-consume" ) == 0 )
+        if( ( argc == 3 || argc == 4 ) && std::strcmp( argv[1], "--terrain-package-consume" ) == 0 )
         {
             // Deliberately bypass Fixture: it initializes SQLite, a catalog and
             // compiler registries that a source-free consumer must never need.
-            terrain_package_contracts::consume( fs::u8path( argv[2] ) );
+            terrain_package_contracts::consume( fs::u8path( argv[2] ), argc == 4 ? fs::u8path( argv[3] ) : fs::path{} );
             return 0;
         }
         u32 retirementCycles = 0;

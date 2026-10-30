@@ -20,6 +20,7 @@
 #include <Workphone/Thread/Thread.hpp>
 #include <WorkphoneCore/workphone.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #if defined WP_PLATFORM_WIN32
 #    include <WPGraphics/ClawWin32ImGuiMessages.hpp>
 #    include <backends/imgui_impl_win32.h>
@@ -43,7 +44,7 @@ namespace
         if( !condition ) throw std::runtime_error( message );
     }
 
-    bool near( float actual, float expected ) { return std::abs( actual - expected ) < .001f; }
+    bool nearlyEqual( float actual, float expected ) { return std::abs( actual - expected ) < .001f; }
 
 #if defined WP_PLATFORM_WIN32
     struct NativeShortcutMessages
@@ -225,6 +226,86 @@ namespace
         manager.OnEvent( event );
     }
 
+    void windowInitialPlacement()
+    {
+        auto window = make_ptr<ui::ImGuiWindow>();
+        window->setSize( Vector2F( 850, 760 ) );
+        auto properties = window->getProperties();
+        String placement;
+        require( properties->getPropertyValue( "initialPlacement", placement ) && placement == "default",
+                 "ordinary windows must retain their existing default dock policy" );
+        properties->setProperty( "initialPlacement", String( "floating" ) );
+        window->setProperties( properties );
+        require( window->getProperties()->getPropertyValue( "initialPlacement", placement ) && placement == "floating",
+                 "native window properties must retain an explicit floating policy" );
+
+        const auto draw = [&]( const char *name, float width, float height ) {
+            ImGui::NewFrame();
+            require( window->applyInitialPlacement(), "floating windows must bypass the ordinary default dock" );
+            ImGui::Begin( name );
+            const auto actual = ImGui::GetWindowSize();
+            require( ImGui::GetWindowDockID() == 0 && nearlyEqual( actual.x, width ) && nearlyEqual( actual.y, height ),
+                     "first-use floating windows must honor their valid size within viewport bounds" );
+            ImGui::End(); ImGui::EndFrame();
+        };
+        draw( "Initial floating fixture", 850, 760 );
+        window->setSize( Vector2F( 10000, 10000 ) );
+        const auto viewport = ImGui::GetMainViewport();
+        draw( "Clamped floating fixture", viewport->WorkSize.x, viewport->WorkSize.y );
+
+        // A later script reload must not resize or recenter a window the user
+        // moved and resized after its first display.
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos( ImVec2( 47, 53 ), ImGuiCond_Always );
+        ImGui::SetNextWindowSize( ImVec2( 321, 234 ), ImGuiCond_Always );
+        ImGui::Begin( "Initial floating fixture" ); ImGui::End(); ImGui::EndFrame();
+        draw( "Initial floating fixture", 321, 234 );
+        ImGui::NewFrame(); window->applyInitialPlacement();
+        ImGui::Begin( "Initial floating fixture" );
+        require( nearlyEqual( ImGui::GetWindowPos().x, 47 ) && nearlyEqual( ImGui::GetWindowPos().y, 53 ),
+                 "repeated floating defaults must preserve user-adjusted positions" );
+        ImGui::End(); ImGui::EndFrame();
+
+        // Actual ini loading disables FirstUseEver size/position/dock hints.
+        // Loading a saved floating window must preserve its saved geometry.
+        ImGui::LoadIniSettingsFromMemory(
+            "[Window][Saved floating fixture]\nPos=83,91\nSize=345,246\nCollapsed=0\n\n" );
+        draw( "Saved floating fixture", 345, 246 );
+        ImGui::NewFrame(); window->applyInitialPlacement();
+        ImGui::Begin( "Saved floating fixture" );
+        require( nearlyEqual( ImGui::GetWindowPos().x, 83 ) && nearlyEqual( ImGui::GetWindowPos().y, 91 ),
+                 "loaded ini geometry must take precedence over floating defaults" );
+        ImGui::End(); ImGui::EndFrame();
+
+        const auto flags = ImGui::GetIO().ConfigFlags;
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        const ImGuiID savedDock = 0x57465031;
+        ImGui::DockBuilderAddNode( savedDock );
+        ImGui::DockBuilderSetNodePos( savedDock, ImVec2( 100, 120 ) );
+        ImGui::DockBuilderSetNodeSize( savedDock, ImVec2( 500, 400 ) );
+        ImGui::LoadIniSettingsFromMemory(
+            "[Window][Saved docked fixture]\nPos=100,120\nSize=500,400\nCollapsed=0\nDockId=0x57465031,0\n\n" );
+        ImGui::NewFrame(); window->applyInitialPlacement();
+        ImGui::Begin( "Saved docked fixture" );
+        require( ImGui::GetWindowDockID() == savedDock,
+                 "an explicit first-use floating policy must preserve the user's saved dock" );
+        ImGui::End(); ImGui::EndFrame();
+        ImGui::DockBuilderRemoveNode( savedDock );
+        ImGui::GetIO().ConfigFlags = flags;
+
+        window->setSize( Vector2F( 0, -1 ) );
+        ImGui::NewFrame();
+        require( window->applyInitialPlacement(), "invalid size must not disable explicit floating placement" );
+        require( !( ImGui::GetCurrentContext()->NextWindowData.Flags & ImGuiNextWindowDataFlags_HasSize ),
+                 "invalid requested dimensions must never reach native ImGui size hints" );
+        ImGui::Begin( "Invalid floating dimensions" ); ImGui::End(); ImGui::EndFrame();
+        properties->setProperty( "initialPlacement", String( "default" ) );
+        window->setProperties( properties );
+        ImGui::NewFrame();
+        require( !window->applyInitialPlacement(), "restoring default placement must leave existing docking logic in control" );
+        ImGui::EndFrame();
+    }
+
     void textReplacement()
     {
         auto widget=make_ptr<ui::ImGuiText>();
@@ -240,7 +321,7 @@ namespace
             if(expected.empty())
                 require(ImGui::GetWindowDrawList()->VtxBuffer.Size==vertices,"cleared text submits no stale glyphs");
             else
-                require(near(ImGui::GetItemRectSize().x,ImGui::CalcTextSize(expected.c_str()).x),
+                require(nearlyEqual(ImGui::GetItemRectSize().x,ImGui::CalcTextSize(expected.c_str()).x),
                     "actual text rendering uses the current replacement rather than retired diagnostics");
             ImGui::End();ImGui::EndFrame();
         };
@@ -433,17 +514,17 @@ namespace
         style.WindowBorderSize = 3;
         const auto originalColour = style.Colors[ImGuiCol_WindowBg];
         ui::WPImGuiStyle::applyProjectTheme( settings.get() );
-        require( near( style.Colors[ImGuiCol_WindowBg].x, originalColour.x ) &&
-                     near( style.Colors[ImGuiCol_WindowBg].w, originalColour.w ),
+        require( nearlyEqual( style.Colors[ImGuiCol_WindowBg].x, originalColour.x ) &&
+                     nearlyEqual( style.Colors[ImGuiCol_WindowBg].w, originalColour.w ),
                  "a legacy profile must preserve the initialized ImGui palette" );
-        require( near( style.FramePadding.x, 9 ) && near( style.FramePadding.y, 7 ) &&
-                     near( style.WindowBorderSize, 3 ),
+        require( nearlyEqual( style.FramePadding.x, 9 ) && nearlyEqual( style.FramePadding.y, 7 ) &&
+                     nearlyEqual( style.WindowBorderSize, 3 ),
                  "a legacy profile must preserve host layout metrics" );
 
         settings->setProperty( "editor.theme", 3 );
         ui::WPImGuiStyle::applyProjectTheme( settings.get() );
-        require( near( style.WindowBorderSize, 2 ) && near( style.FrameBorderSize, 1 ) &&
-                     near( style.Colors[ImGuiCol_WindowBg].x, 0 ),
+        require( nearlyEqual( style.WindowBorderSize, 2 ) && nearlyEqual( style.FrameBorderSize, 1 ) &&
+                     nearlyEqual( style.Colors[ImGuiCol_WindowBg].x, 0 ),
                  "an explicit high contrast selection must change the real ImGui style" );
 
         for( const auto theme : { 0, 2, 1 } )
@@ -452,24 +533,24 @@ namespace
             ui::WPImGuiStyle::applyProjectTheme( settings.get() );
             settings->setProperty( "editor.theme", theme );
             ui::WPImGuiStyle::applyProjectTheme( settings.get() );
-            require( near( style.WindowBorderSize, 1 ) && near( style.FrameBorderSize, 0 ) &&
-                         near( style.FramePadding.x, 6 ) && near( style.FramePadding.y, 6 ),
+            require( nearlyEqual( style.WindowBorderSize, 1 ) && nearlyEqual( style.FrameBorderSize, 0 ) &&
+                         nearlyEqual( style.FramePadding.x, 6 ) && nearlyEqual( style.FramePadding.y, 6 ),
                      "explicit theme transitions must restore editor layout metrics" );
         }
-        require( near( style.Colors[ImGuiCol_WindowBg].x, ui::WPImGuiStyle::gray( 6 ).x ),
+        require( nearlyEqual( style.Colors[ImGuiCol_WindowBg].x, ui::WPImGuiStyle::gray( 6 ).x ),
                  "the dark theme must restore the editor palette" );
         style.FramePadding.x = 11;
         ui::WPImGuiStyle::applyProjectTheme( settings.get() );
-        require( near( style.FramePadding.x, 11 ),
+        require( nearlyEqual( style.FramePadding.x, 11 ),
                  "an unchanged theme must not reset style customizations every frame" );
 
         auto partial = make_ptr<Properties>();
         partial->setProperty( "graphics.hdr", true );
         ui::WPImGuiStyle::applyProjectTheme( partial.get() );
-        require( near( style.FramePadding.x, 11 ),
+        require( nearlyEqual( style.FramePadding.x, 11 ),
                  "a partial graphics profile must not replace ImGui styling" );
         ui::WPImGuiStyle::applyProjectTheme( settings.get() );
-        require( near( style.FramePadding.x, 6 ),
+        require( nearlyEqual( style.FramePadding.x, 6 ),
                  "an explicit selection after a legacy profile must apply again" );
     }
 
@@ -506,13 +587,13 @@ namespace
         editor.draw( window );
         const auto published = window->getPosition();
         const auto publishedSize = window->getSize();
-        require( near( published.X(), image.x ) && near( published.Y(), image.y ),
+        require( nearlyEqual( published.X(), image.x ) && nearlyEqual( published.Y(), image.y ),
                  "published viewport origin must equal the actual texture image origin" );
-        require( near( publishedSize.X(), displayed.x ) && near( publishedSize.Y(), displayed.y ),
+        require( nearlyEqual( publishedSize.X(), displayed.x ) && nearlyEqual( publishedSize.Y(), displayed.y ),
                  "published display bounds must retain fractional image dimensions" );
         require( texture->size.X() == int( displayed.x ) && texture->size.Y() == int( displayed.y ),
                  "texture allocation must retain integer pixel dimensions" );
-        require( near( ImGui::GetItemRectMin().x, image.x ) && near( ImGui::GetItemRectMin().y, image.y ),
+        require( nearlyEqual( ImGui::GetItemRectMin().x, image.x ) && nearlyEqual( ImGui::GetItemRectMin().y, image.y ),
                  "the reserved image item must start at the published input origin" );
         ImGui::End();
         ImGui::EndFrame();
@@ -549,13 +630,14 @@ int main()
         Fixture fixture;
         projectThemeSelection();
         textReplacement();
+        windowInitialPlacement();
         buttonKeyboardAccelerators( fixture );
 #if defined WP_PLATFORM_WIN32
         nativeSystemMenuShortcuts();
 #endif
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui theme/text/button/native-message/viewport input: %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/window-placement/button/native-message/viewport input: %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

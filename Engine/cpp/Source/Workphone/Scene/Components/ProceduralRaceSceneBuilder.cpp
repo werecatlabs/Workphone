@@ -44,6 +44,7 @@ namespace workphone::scene::race
         cityTerrainRoads( other.cityTerrainRoads ),
         roadAuthoring( other.roadAuthoring ),
         roadTerrain( other.roadTerrain ),
+        terrainGameplaySource( other.terrainGameplaySource ),
         cityLayout( other.cityLayout ),
         cityBuildingSupportChecks( other.cityBuildingSupportChecks ),
         cityCulledParcels( other.cityCulledParcels ),
@@ -99,6 +100,7 @@ namespace workphone::scene::race
         swap( cityRoadShowcase, other.cityRoadShowcase );
         swap( roadAuthoring, other.roadAuthoring );
         swap( roadTerrain, other.roadTerrain );
+        swap( terrainGameplaySource, other.terrainGameplaySource );
         swap( cityTerrainRoads, other.cityTerrainRoads );
         cityLayout.swap( other.cityLayout );
         swap( cityBuildingSupportChecks, other.cityBuildingSupportChecks );
@@ -3598,6 +3600,94 @@ namespace workphone::scene::race
             sun->setCastShadows( true );
             sun->setVisible( true );
         }
+
+        void buildTerrainGameplayScene( SceneAssets &assets )
+        {
+            const auto source = assets.terrainGameplaySource;
+            String error;
+            if( !source || !render::validateTerrainData( *source, error ) )
+            {
+                throw std::runtime_error( error.empty() ? "Terrain gameplay source is unavailable."
+                                                        : error.c_str() );
+            }
+
+            // This bounded reference frame supports the existing driving telemetry.
+            // Native terrain supplies every visible and collidable ground triangle;
+            // there is no generated road mesh or fallback collision plane.
+            const std::array<Vector3F, 5> corners = {
+                Vector3F( 0, 0, 0 ), Vector3F( 0, 0, -160 ), Vector3F( 24, 0, -160 ),
+                Vector3F( 24, 0, 32 ), Vector3F( 0, 0, 32 ) };
+            Circuit circuit;
+            circuit.samples.reserve( 256 );
+            for( size_t i = 0; i < corners.size(); ++i )
+            {
+                const auto delta = corners[( i + 1 ) % corners.size()] - corners[i];
+                const auto length = delta.length();
+                const auto tangent = delta / length;
+                const Vector3F right( -tangent.z, 0, tangent.x );
+                const auto steps = static_cast<u32>( std::ceil( length / 2.f ) );
+                for( u32 step = 0; step < steps; ++step )
+                {
+                    auto position = corners[i] + delta * ( float( step ) / steps );
+                    f32 height = 0;
+                    // Include the vehicle-width strip so a reference over a hole
+                    // cannot be mistaken for a playable terrain route.
+                    for( const auto offset : { -4.f, 0.f, 4.f } )
+                    {
+                        if( !render::sampleTerrainHeight( *source, Transform3<real_Num>(),
+                                                         position + right * offset, height ) ||
+                            std::abs( height ) > .001f )
+                        {
+                            throw std::runtime_error(
+                                "Terrain gameplay requires a flat, solid route at y=0 inside "
+                                "x=[-4,28], z=[-164,36]." );
+                        }
+                    }
+                    circuit.samples.push_back(
+                        { position, right, circuit.length + length * float( step ) / steps } );
+                }
+                circuit.length += length;
+            }
+
+            auto manager = core::IApplicationManager::instance()->getGameManager();
+            auto scene = manager->getCurrentScene();
+            reserveOwnerSlot( assets.actors );
+            auto ground = manager->createActor();
+            if( !ground )
+            {
+                throw std::runtime_error( "Cannot create terrain gameplay ground." );
+            }
+            assets.actors.push_back( ground );
+            assets.ground = ground;
+            ground->setName( "Terrain gameplay ground" );
+            ground->setStatic( true );
+            ground->setPosition( Vector3F::zero() );
+            ground->setOrientation( QuaternionF::identity() );
+            ground->setScale( Vector3F::unit() );
+            scene->addActor( ground );
+            scene->registerAllUpdates( ground );
+            auto terrain = ground->addComponent<TerrainSystem>();
+            if( !terrain || !ground->addComponent<CollisionTerrain>() ||
+                !ground->addComponent<Rigidbody>() )
+            {
+                throw std::runtime_error(
+                    "Terrain gameplay requires native terrain, collision and rigidbody components." );
+            }
+            if( !terrain->isLoaded() )
+            {
+                terrain->load( nullptr );
+            }
+            terrain->setTreesEnabled( false );
+            terrain->setGrassEnabled( false );
+            if( !terrain->getTerrain() || !terrain->applyTerrainData( *source, error ) )
+            {
+                throw std::runtime_error( error.empty() ? "Terrain gameplay renderer is unavailable."
+                                                        : error.c_str() );
+            }
+            // Preserve the renderer's deferred publication boundary. Configuration
+            // waits for its matching native render/query/collision generation.
+            assets.circuit.swap( circuit );
+        }
     }  // namespace
 
     size_t Circuit::nearest( const Vector3F &position ) const
@@ -3821,6 +3911,34 @@ namespace workphone::scene::race
                 throw std::runtime_error(
                     "Generated scene activation requires a native physics scene." );
             }
+            if( assets.terrainGameplaySource )
+            {
+                const auto terrain =
+                    assets.ground ? assets.ground->getComponent<TerrainSystem>() : nullptr;
+                const auto collision =
+                    assets.ground ? assets.ground->getComponent<CollisionTerrain>() : nullptr;
+                if( !terrain || !collision )
+                {
+                    throw std::runtime_error( "Terrain gameplay ground lost its native components." );
+                }
+                const auto renderer = dynamic_cast<render::Terrain *>( terrain->getTerrain().get() );
+                const auto requested = terrain->getTerrainSnapshot();
+                render::TerrainSnapshot active;
+                Transform3<real_Num> placement;
+                u64 serial = 0;
+                bool detached = true;
+                terrain->getTerrainIntegrationState( active, placement, serial, detached );
+                if( !renderer || !requested || !serial || detached || active != requested ||
+                    renderer->hasPendingTerrainPublication() ||
+                    renderer->getTerrainSnapshot() != requested ||
+                    renderer->getActiveTerrainSnapshot() != requested ||
+                    collision->getTerrainSnapshot() != requested )
+                {
+                    // A newly generated deferred terrain has no native shape until
+                    // the render transaction publishes all consumers together.
+                    return false;
+                }
+            }
             for( const auto &generated : cohort )
             {
                 if( generated->isEnabledInScene() )
@@ -3867,7 +3985,11 @@ namespace workphone::scene::race
         assets.resourcePrefix = "__procedural/race/" + StringUtil::getUUID();
         const auto started = std::chrono::steady_clock::now();
         buildCar( assets, actor, seed, quality );
-        if( assets.cityRoadShowcase )
+        if( assets.terrainGameplaySource )
+        {
+            buildTerrainGameplayScene( assets );
+        }
+        else if( assets.cityRoadShowcase )
         {
             buildRoadAuthoringShowcase( assets, actor, seed, quality );
         }
@@ -3900,7 +4022,7 @@ namespace workphone::scene::race
         shadowGeometry.quad( { -1.6f, .025f, -3.7f }, { 1.6f, .025f, -3.7f }, { 1.6f, .025f, 3.7f },
                              { -1.6f, .025f, 3.7f }, { 0, 1, 0 } );
         assets.shadow = mesh( assets, "Vehicle contact shadow", shadowGeometry, shadowMaterial );
-        if( assets.cityTerrainRoads )
+        if( assets.cityTerrainRoads || assets.terrainGameplaySource )
         {
             for( auto generated : assets.actors )
             {
@@ -4083,7 +4205,7 @@ namespace workphone::scene::race
             wheelProps->setProperty( "Brake Friction Torque", float( w.brakeTorqueNm ) );
             // Keep startup traction consistent with the assisted Grand Prix setup
             // and ProceduralRaceScene::updateSurfaceGrip's on-road multiplier.
-            wheelProps->setProperty( "Grip", 1.0f );
+            wheelProps->setProperty( "Grip", 1.25f );
             // A small rear reserve makes breakaway progressive under power.
             const auto axleGrip = i < 2 ? 1.0 : 1.06;
             wheelProps->setProperty(

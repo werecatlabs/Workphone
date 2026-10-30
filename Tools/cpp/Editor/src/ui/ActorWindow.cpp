@@ -1411,6 +1411,14 @@ namespace workphone::editor
         }
     }
 
+    void ActorWindow::refreshTerrainViewportScriptState()
+    {
+        if( auto terrain = dynamic_pointer_cast<TerrainWindow>( m_terrainWindow ) )
+        {
+            terrain->refreshViewportScriptState();
+        }
+    }
+
     SmartPtr<TransformWindow> ActorWindow::getTransformWindow() const
     {
         return m_transformWindow;

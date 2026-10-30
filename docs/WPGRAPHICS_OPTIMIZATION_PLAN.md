@@ -1,5 +1,9 @@
 # WorkphoneGraphics performance review and implementation plan
 
+Terrain follow-up, 29 October: OPT-13's original whole-grid findings are historical.
+Tiled LOD, asynchronous geometry and residency budgets are implemented; remaining
+performance and certification work is tracked in the [GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md).
+
 Reviewed: 10 October 2026 in `G:\Workphone`. Source baseline: `f45f375efb8d8c722810c130c5a01beb129cf50d`. During the review HEAD advanced to `2b411b811478e5cc7dbc31a398e16d2e34129810`; the intervening changes affect planning documents only, with no changes to the inspected engine, test or sample sources. Concurrent animation/resource document edits are preserved.
 
 Status: source review and implementation plan; renderer changes have **not** been implemented. Existing RelWithDebInfo graphics test executables were rerun: **11 passed, 1 external-media test skipped**. They were not rebuilt for this review. Their DX11 device evidence identifies **Microsoft Basic Render Driver/WARP**, feature level `b000`, driver `10.0.19041.7548`. No representative Editor/game benchmark, hardware GPU capture, memory profile or fresh-build certification was performed. Source findings below are confirmed in the inspected paths; performance gains are hypotheses or proposed acceptance targets until measured.

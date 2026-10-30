@@ -18,7 +18,7 @@ local function widget()
     function w:getValue() return self.value end
     function w:setElementId(v) self.id=v end
     function w:getElementId() return self.id end
-    function w:setSameLine() end
+    function w:setSameLine(value) self.sameLine=value end
     function w:setEnabled(value) self.enabled=value end
     function w:getProperties()
         return {setProperty=function(properties,name,value) properties[name]=value end}
@@ -42,6 +42,10 @@ local parent=widget()
 local window={getParentWindow=function() return parent end,setHandleEvents=function() end}
 dofile('bin/Media/Scripts/Lua/Editor/LuaDebuggerPanel.lua')
 local panel=setmetatable({},{__index=LuaDebuggerPanel}); panel:__init(window); panel:load()
+assert(parent.properties.initialPlacement=='floating','Debugger must request usable first-use floating placement')
+assert(not panel.controlButtons.pause.sameLine and panel.controlButtons.continue.sameLine and
+       not panel.controlButtons.stepIn.sameLine and panel.controlButtons.next.sameLine and panel.controlButtons.stepOut.sameLine,
+       'Debugger run controls and stepping controls must use separate compact rows')
 for _,button in ipairs(panel.staticButtons) do assert(button.enabled==false,'Debugger-disabled controls were enabled at startup') end
 assert(not panel.preferencesLoaded and panel.status.text:find('WP_LUA_DEBUGGER=1',1,true),'Disabled debugger did not explain availability')
 debuggerPort=4555

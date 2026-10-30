@@ -43,12 +43,14 @@ function LuaDebuggerPanel:load()
     self.ui = IApplicationManager.instance():getUI()
     self.parent = self.window:getParentWindow()
     self.parent:setLabel('Lua Debugger'); self.parent:setSize(Vector2F(850, 760))
+    local placement=self.parent:getProperties()
+    placement:setProperty('initialPlacement','floating'); self.parent:setProperties(placement)
     self.nextId = 0
     local commands, labels = {'pause','continue','stepIn','next','stepOut'}, {'Pause','Continue','Step Into','Step Over','Step Out'}
     local shortcuts={continue='F5',stepIn='F11',next='F10',stepOut='Shift+F11'}
     for i, command in ipairs(commands) do
         local action = command
-        self.controlButtons[action] = self:button(labels[i], function() self:control(action) end, false, i>1,shortcuts[action])
+        self.controlButtons[action] = self:button(labels[i], function() self:control(action) end, false, i==2 or i>3,shortcuts[action])
     end
     self.file = self:field('Source file')
     self.line = self:field('Line')

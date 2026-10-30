@@ -11,6 +11,20 @@
 
 namespace workphone::editor
 {
+    inline bool isCurrentEditorScriptEventGeneration( std::uint64_t expected,
+                                                      std::uint64_t current )
+    {
+        return expected == current;
+    }
+
+    inline bool shouldDeferEditorScriptCall( bool renderTask, bool debuggerEnabled,
+                                            bool debuggerPaused, bool debuggerControl,
+                                            bool renderThreadUnsafe )
+    {
+        return ( renderTask && ( debuggerEnabled || renderThreadUnsafe ) ) ||
+               ( debuggerEnabled && debuggerPaused && !debuggerControl );
+    }
+
     template <class Invoker, class Member, class Parameters>
     void invokeEditorScriptCall( Invoker &invoker, const Member &member,
                                  const Parameters &parameters, bool hasParameters,

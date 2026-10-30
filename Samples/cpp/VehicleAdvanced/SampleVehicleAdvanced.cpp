@@ -2,6 +2,7 @@
 #include "ProceduralScene.h"
 #include "FrameCapture.h"
 #include "ProductionSceneProfile.h"
+#include "TerrainGameplayPackage.h"
 #include <WPProcedural/WPProcedural.hpp>
 #include <Workphone/Workphone.hpp>
 #include <iomanip>
@@ -29,6 +30,8 @@
 #    include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #    include <WPGraphics/ClawSceneNode.hpp>
 #    include <WPGraphics/ClawScene.hpp>
+#    include <WPGraphics/ClawTerrain.hpp>
+#    include <WPGraphics/ClawUiSettings.hpp>
 #    include <workphone_graphics_object.h>
 #    include "MaterialSceneCpuWorkload.h"
 #    include "MaterialSceneCpuEdits.h"
@@ -405,6 +408,38 @@ namespace workphone
         unload( nullptr );
     }
 
+    void SampleVehicleAdvanced::setTerrainGameplayOptions( bool enabled,
+                                                           const std::string &packageDirectory,
+                                                           bool exportOnly )
+    {
+        m_terrainGameplay = enabled || !packageDirectory.empty();
+        m_terrainGameplayExportOnly = exportOnly;
+        m_terrainGameplayPackageDirectory = packageDirectory.empty()
+            ? std::string() : std::filesystem::absolute( packageDirectory ).lexically_normal().string();
+#if WP_GRAPHICS_SYSTEM_CLAW
+        render::setClawUiSettingsPersistence( packageDirectory.empty() );
+#endif
+        if( !m_terrainGameplayPackageDirectory.empty() )
+        {
+            m_audioEnabled = false;
+            m_hudEnabled = false;
+        }
+    }
+
+    void SampleVehicleAdvanced::exportTerrainGameplayPackage( const std::string &directory )
+    {
+#if WP_TERRAIN_GAMEPLAY_PACKAGE
+        if( !m_terrainGameplay || !m_terrainGameplaySource || !m_terrainGameplayPackageDirectory.empty() ||
+            !m_raceScene || !m_raceScene->isGenerated() )
+            throw std::runtime_error( "Terrain gameplay export requires a generated authoring scene." );
+        advanced::terrain_gameplay::exportPackage( directory, *m_terrainGameplaySource,
+            m_seed, int( m_quality ), m_assets.vehicle.contentHash );
+        std::cout << "Terrain gameplay export: PASS\n";
+#else
+        throw std::runtime_error( "Terrain gameplay packaging is unavailable in this build." );
+#endif
+    }
+
     void SampleVehicleAdvanced::load( SmartPtr<ISharedObject> data )
     {
         try
@@ -551,6 +586,27 @@ namespace workphone
             {
                 Application::unload( data );
             }
+            m_terrainGameplaySource.reset();
+#if WP_TERRAIN_GAMEPLAY_PACKAGE
+            m_terrainGameplayPackage.reset();
+#endif
+            if( !m_terrainGameplayEphemeralDirectory.empty() )
+            {
+                const auto path = std::filesystem::path(m_terrainGameplayEphemeralDirectory);
+                const auto temp = std::filesystem::weakly_canonical(std::filesystem::temp_directory_path());
+                const auto resolved = std::filesystem::weakly_canonical(path);
+                const auto filename = path.filename().string();
+                const bool validationsPassed = m_terrainSurfacesValidated &&
+                    (!m_smokeTest || m_smokeTestPassed) &&
+                    ((m_capturePath.empty() && m_benchmarkSeconds<=0) || m_capturePassed);
+                if( validationsPassed && filename.rfind("WorkphoneTerrainGameplay-",0)==0 &&
+                    filename.size()==61 && resolved.parent_path()==temp && resolved.filename()==path.filename() )
+                    std::filesystem::remove_all(resolved);
+                else
+                    std::cerr << "Terrain gameplay temporary evidence retained: " << m_terrainGameplayEphemeralDirectory << '\n';
+                m_terrainGameplayEphemeralDirectory.clear();
+            }
+            m_terrainSurfacesValidated = false;
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -583,6 +639,68 @@ namespace workphone
             {
                 m_raceScene->configurePhysics();
                 m_physicsConfigured = m_raceScene->isPhysicsConfigured();
+            }
+#if WP_TERRAIN_GAMEPLAY_PACKAGE && WP_GRAPHICS_SYSTEM_CLAW
+            if( m_terrainGameplay && !m_physicsConfigured )
+            {
+                const auto now = core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad();
+                if( now > 3 && now >= m_nextDebugLog )
+                {
+                    m_nextDebugLog = now + 2;
+                    const auto ground = m_assets.ground;
+                    const auto terrain = ground ? ground->getComponent<scene::TerrainSystem>() : nullptr;
+                    const auto collision = ground ? ground->getComponent<scene::CollisionTerrain>() : nullptr;
+                    const auto body = ground ? ground->getComponent<scene::Rigidbody>() : nullptr;
+                    const auto renderer = terrain ? dynamic_cast<render::ClawTerrain *>(terrain->getTerrain().get()) : nullptr;
+                    const auto source = terrain ? terrain->getTerrainSnapshot() : nullptr;
+                    const auto query = terrain ? terrain->getActiveTerrainSnapshot() : nullptr;
+                    const auto collisionSource = collision ? collision->getTerrainSnapshot() : nullptr;
+                    const auto requested = renderer ? renderer->getTerrainSnapshot() : nullptr;
+                    const auto active = renderer ? renderer->getActiveTerrainSnapshot() : nullptr;
+                    const auto rendered = renderer ? renderer->getRenderedTerrainSnapshot() : nullptr;
+                    const auto identity = []( const render::TerrainSnapshot &value ) {
+                        std::ostringstream text;
+                        text << value.get() << ':' << (value ? value->revision : 0);
+                        return text.str();
+                    };
+                    std::ostringstream pending;
+                    pending << "Terrain gameplay pending: source=" << identity(source)
+                            << " query=" << identity(query) << " requested=" << identity(requested)
+                            << " active=" << identity(active) << " rendered=" << identity(rendered)
+                            << " collision=" << identity(collisionSource)
+                            << " actorEnabled=" << bool(ground && ground->isEnabledInScene())
+                            << " componentEnabled=" << bool(terrain && terrain->isEnabled())
+                            << " actorState=" << (ground ? int(ground->getState()) : -1)
+                            << " staticBody=" << bool(body && body->getRigidStatic())
+                            << " shapes=" << (body && body->getRigidStatic() ? body->getRigidStatic()->getNumShapes() : 0);
+                    if( renderer )
+                    {
+                        const auto residency = renderer->getTerrainResidency();
+                        pending << " visible=" << renderer->isVisible()
+                                << " publicationPending=" << renderer->hasPendingTerrainPublication()
+                                << " residentTiles=" << residency.residentTiles << " stagedTiles=" << residency.stagedTiles
+                                << " requestedTiles=" << residency.requestedTiles
+                                << " residencyError=" << renderer->getTerrainResidencyError().c_str();
+                    }
+                    if( collision ) pending << " collisionError=" << collision->getTerrainError().c_str();
+                    WP_LOG(pending.str());
+                    std::cout << pending.str() << '\n';
+                }
+            }
+#endif
+            if( m_terrainGameplay && m_physicsConfigured && !m_terrainSurfacesValidated )
+            {
+                // Deferred ground may have published after Play created the car.
+                // Start the existing smoke phases from the normal spawn and rest.
+                performReset();
+                m_terrainSurfacesValidated = validateTerrainGameplaySurfaces();
+                if( !m_terrainSurfacesValidated )
+                {
+                    m_smokeTestPassed = m_capturePassed = false;
+                    m_captureAttempted = true;
+                    core::IApplicationManager::instance()->setQuit( true );
+                    return;
+                }
             }
             if( m_resetRequested.exchange( false ) )
             {
@@ -692,7 +810,8 @@ namespace workphone
             const auto profileNow = std::max( 0.0, sceneTime - m_reviewStart );
             ++m_reviewFrames;
             bool profileStartedThisFrame = false;
-            if( profileNow > 5 && m_reviewFrames >= 30 && !m_benchmarkStarted )
+            if( profileNow > 5 && m_reviewFrames >= 30 && !m_benchmarkStarted &&
+                ( !m_terrainGameplay || m_terrainSurfacesValidated ) )
             {
                 m_benchmarkStarted = true;
                 m_profileStart = profileNow;
@@ -744,7 +863,7 @@ namespace workphone
 #endif
                 bool linearSceneValid = true;
                 size_t treeMeshes = 0, treeImposters = 0;
-                bool treeLODValid = m_assets.openCity || m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
+                bool treeLODValid = m_terrainGameplay || m_assets.openCity || m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
                 for( const auto &group : m_assets.treeLODs )
                 {
                     auto levels = group->getLevels();
@@ -807,7 +926,11 @@ namespace workphone
                          << ",\n  \"renderUpdatesMeasured\": " << m_profileFrames
                          << ",\n  \"sceneMeshes\": " << m_assets.meshes.size()
                          << ",\n  \"sceneTextures\": " << m_assets.textures.size();
-                evidence << ",\n  \"sceneMode\": " << advanced::jsonString( m_assets.cityTerrainRoads?"terrain-city":m_assets.cityRoadShowcase?"road-authoring-showcase":m_assets.openCity ? "city" : "circuit" );
+                evidence << ",\n  \"sceneMode\": " << advanced::jsonString( m_terrainGameplay?"terrain-gameplay":m_assets.cityTerrainRoads?"terrain-city":m_assets.cityRoadShowcase?"road-authoring-showcase":m_assets.openCity ? "city" : "circuit" );
+                if( m_terrainGameplay )
+                    evidence << ",\n  \"terrainGameplaySurfacesValidated\": " << (m_terrainSurfacesValidated?"true":"false")
+                             << ",\n  \"terrainGameplaySourceFree\": " << (!m_terrainGameplayPackageDirectory.empty()?"true":"false")
+                             << ",\n  \"vehicleRecipeHash\": " << advanced::jsonString(StringUtil::toString(m_assets.vehicle.contentHash));
                 bool cityValid = m_assets.openCity == m_openCity && m_assets.cityRoadShowcase==m_roadAuthoringShowcase && m_assets.cityTerrainRoads==m_cityTerrainRoads;
                 if(m_assets.cityTerrainRoads)
                 {
@@ -1094,7 +1217,8 @@ namespace workphone
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
-                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid && cityValid;
+                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid && cityValid &&
+                                  ( !m_terrainGameplay || m_terrainSurfacesValidated );
                 evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
                          << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
                          << "  \"limits\": \"Control replay is physics-tick based; settings and source hashes are recorded by the capture runner. Timings do not certify image quality.\"\n}\n";
@@ -1713,6 +1837,8 @@ namespace workphone
     void SampleVehicleAdvanced::updateSmokeTest()
     {
         auto app = core::IApplicationManager::instance();
+        if( m_terrainGameplay && !m_terrainSurfacesValidated )
+            return;
         // Application allows scene state and resources to settle before stepping physics.
         if( app->getTimer()->getTimeSinceSceneLoad() <= 3.0 )
             return;
@@ -1927,8 +2053,109 @@ namespace workphone
         }
     }
 
+    bool SampleVehicleAdvanced::validateTerrainGameplaySurfaces()
+    {
+#if WP_TERRAIN_GAMEPLAY_PACKAGE && WP_GRAPHICS_SYSTEM_CLAW
+        const auto fail = []( const char *detail ) {
+            WP_LOG_ERROR( String( "Terrain gameplay surfaces: FAIL " ) + detail );
+            std::cerr << "Terrain gameplay surfaces: FAIL " << detail << '\n';
+            return false;
+        };
+        const auto ground = m_assets.ground;
+        const auto terrain = ground ? ground->getComponent<scene::TerrainSystem>() : nullptr;
+        const auto collision = ground ? ground->getComponent<scene::CollisionTerrain>() : nullptr;
+        const auto rigidbody = ground ? ground->getComponent<scene::Rigidbody>() : nullptr;
+        const auto renderer = terrain ? dynamic_cast<render::ClawTerrain *>(terrain->getTerrain().get()) : nullptr;
+        const auto source = terrain ? terrain->getTerrainSnapshot() : nullptr;
+        const auto active = terrain ? terrain->getActiveTerrainSnapshot() : nullptr;
+        if( !m_physicsConfigured || !ground || !ground->isStatic() || !renderer || !source ||
+            active != source || renderer->getTerrainSnapshot() != source ||
+            renderer->getActiveTerrainSnapshot() != source || renderer->getRenderedTerrainSnapshot() != source ||
+            !collision || collision->getTerrainSnapshot() != source || !collision->getShape() ||
+            !collision->getShape()->isAttached() || !rigidbody || !rigidbody->getRigidStatic() ||
+            ground->getComponent<scene::CollisionBox>() )
+            return fail( "source/render/query/collision publication or terrain ownership mismatch" );
+        const auto residency = renderer->getTerrainResidency();
+        if( !residency.residentTiles || residency.activeRevision != source->revision ||
+            (!m_terrainGameplayPackageDirectory.empty() && !residency.usedCookedTileManifest) )
+            return fail( "native terrain tiles or cooked manifest are unavailable" );
+        for( const auto &generated : m_assets.actors )
+            if( generated && generated->isStatic() && generated->getComponent<scene::CollisionBox>() )
+                return fail( "a generated static collision box can hide terrain collision failure" );
+
+        auto physics = core::IApplicationManager::instance()->getPhysicsManager()->getPhysicsScene();
+        if( !physics ) return fail( "native physics scene is unavailable" );
+        const auto placement = ground->getWorldTransform();
+        for( const auto &point : {Vector3F(16,0,32),Vector3F(128,0,0),Vector3F(-128,0,96),Vector3F(0,0,-128)} )
+        {
+            f32 height = 0;
+            if( !render::sampleTerrainHeight(*active,placement,point,height) )
+                return fail( "solid terrain query missed" );
+            const Vector3F start(point.x,height+50,point.z),end(point.x,height-50,point.z);
+            const auto rendered = renderer->intersects(Ray3F(start,Vector3F(0,-1,0)));
+            Vector3F hit,normal;
+            SmartPtr<ISharedObject> object;
+            if( !rendered || !rendered->hasIntersected() ||
+                !std::isfinite(rendered->getPosition().y) ||
+                std::abs(rendered->getPosition().y-height)>.035f ||
+                std::abs(renderer->getHeightAtWorldPosition(point)-height)>.035f ||
+                !physics->intersects(start,end,hit,normal,object) || !(object==rigidbody->getRigidStatic()) ||
+                !std::isfinite(hit.y) || !std::isfinite(normal.y) || std::abs(hit.y-height)>.035f || normal.y<.5f )
+                return fail( "native solid ray height/body differs from terrain query and renderer" );
+        }
+        const Vector3F hole(200.5f,0,160.5f);
+        f32 height = 0;
+        const auto rendered = renderer->intersects(Ray3F({hole.x,64,hole.z},{0,-1,0}));
+        Vector3F hit,normal;
+        SmartPtr<ISharedObject> object;
+        if( render::sampleTerrainHeight(*active,placement,hole,height) ||
+            (rendered && rendered->hasIntersected()) ||
+            physics->intersects({hole.x,64,hole.z},{hole.x,-64,hole.z},hit,normal,object) )
+            return fail( "hole has a query, rendered or native collision surface" );
+        WP_LOG( "Terrain gameplay surfaces: PASS" );
+        std::cout << "Terrain gameplay surfaces: PASS\n";
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    void SampleVehicleAdvanced::createFileSystem()
+    {
+        if( m_terrainGameplayPackageDirectory.empty() )
+        {
+            Application::createFileSystem();
+            return;
+        }
+        auto app = core::IApplicationManager::instance();
+        auto fileSystem = app->getFactoryManager()->make_object<IFileSystem>();
+        if( !fileSystem ) throw std::runtime_error("Package file system factory is unavailable.");
+        fileSystem->load(nullptr);
+        app->setFileSystem(fileSystem);
+        const String assets(m_terrainGameplayPackageDirectory.c_str());
+        fileSystem->addFolder(assets,true);
+        app->setMediaPath(assets);
+    }
+
+    String SampleVehicleAdvanced::getMediaPath() const
+    {
+        return m_terrainGameplayPackageDirectory.empty() ? Application::getMediaPath()
+            : String(m_terrainGameplayPackageDirectory.c_str());
+    }
+
+    bool SampleVehicleAdvanced::createScriptManager()
+    {
+        return m_terrainGameplayPackageDirectory.empty() ? Application::createScriptManager() : false;
+    }
+
+    void SampleVehicleAdvanced::createDefaultFont()
+    {
+        if( m_terrainGameplayPackageDirectory.empty() ) Application::createDefaultFont();
+    }
+
     bool SampleVehicleAdvanced::createSoundManager()
     {
+        if( !m_terrainGameplayPackageDirectory.empty() ) return false;
         if( !m_audioEnabled )
             return Application::createSoundManager();
         auto app = core::IApplicationManager::instance();
@@ -2041,6 +2268,25 @@ namespace workphone
             vehicleManager->load( nullptr );
         }
 
+        if( m_terrainGameplay )
+        {
+#if WP_TERRAIN_GAMEPLAY_PACKAGE
+            m_terrainSurfacesValidated = false;
+            if( !m_terrainGameplayPackageDirectory.empty() )
+            {
+                m_terrainGameplayPackage = advanced::terrain_gameplay::loadPackage(m_terrainGameplayPackageDirectory);
+                m_seed = m_terrainGameplayPackage->seed;
+                m_quality = static_cast<procedural::VehicleAppearanceQuality>(m_terrainGameplayPackage->quality);
+                m_terrainGameplaySource = render::TerrainSnapshot(m_terrainGameplayPackage->decoded,
+                    &m_terrainGameplayPackage->decoded->data.terrain);
+            }
+            else
+                m_terrainGameplaySource = std::make_shared<render::TerrainData>(advanced::terrain_gameplay::makeSource());
+#else
+            throw std::runtime_error("Terrain gameplay packaging is unavailable in this build.");
+#endif
+        }
+
         m_vehicleActor = sceneManager->createActor();
         m_vehicleActor->setName( "Procedural Grand Prix" );
         m_vehicleActor->setPosition( getVehicleSpawnPosition() );
@@ -2052,6 +2298,7 @@ namespace workphone
         m_raceScene->setQuality( static_cast<s32>( m_quality ) );
         m_raceScene->setFoliageWorldEnabled( m_foliageWorldEnabled );
         m_raceScene->setMaterialExportDirectory( m_materialExportDirectory );
+        if( m_terrainGameplay ) m_raceScene->setTerrainGameplaySource(m_terrainGameplaySource);
         if( m_openCity )
         {
             auto properties = m_raceScene->getProperties();
@@ -2066,6 +2313,51 @@ namespace workphone
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
+#if WP_TERRAIN_GAMEPLAY_PACKAGE && WP_GRAPHICS_SYSTEM_CLAW
+        if( m_terrainGameplay && !m_terrainGameplayPackage && !m_terrainGameplayExportOnly )
+        {
+            const auto path = std::filesystem::temp_directory_path() /
+                (std::string("WorkphoneTerrainGameplay-")+StringUtil::getUUID().c_str());
+            m_terrainGameplayEphemeralDirectory = path.string();
+            advanced::terrain_gameplay::exportPackage(path,*m_terrainGameplaySource,
+                m_seed,int(m_quality),m_assets.vehicle.contentHash);
+            m_terrainGameplayPackage = advanced::terrain_gameplay::loadPackage(path);
+        }
+        if( m_terrainGameplayPackage )
+        {
+            if( m_assets.vehicle.contentHash != m_terrainGameplayPackage->vehicleHash )
+                throw std::runtime_error("Terrain gameplay vehicle recipe content hash mismatch.");
+            auto terrain = m_assets.ground ? m_assets.ground->getComponent<scene::TerrainSystem>() : nullptr;
+            auto clawTerrain = terrain ? dynamic_cast<render::ClawTerrain *>(terrain->getTerrain().get()) : nullptr;
+            auto renderer = dynamic_cast<render::ClawRendererDX11 *>(applicationManager->getGraphicsSystem()->getRendererPtr());
+            if( !terrain || !clawTerrain || !renderer )
+                throw std::runtime_error("Terrain gameplay package requires native Claw terrain and DX11 renderer.");
+            String error;
+            const auto candidate = render::stageCookedTerrainMaterial(*renderer,m_terrainGameplayPackage->decoded,error);
+            // Reconcile authoritative bytes first; the equal-data renderer apply
+            // then preserves the TerrainSystem snapshot identity and publication gate.
+            if( !candidate || !terrain->applyTerrainData(m_terrainGameplayPackage->decoded->data.terrain,error) ||
+                !clawTerrain->applyCookedTerrain(candidate,error) )
+                throw std::runtime_error(error.empty()?"Cannot stage cooked terrain gameplay material.":error.c_str());
+            if( terrain->getTerrainSnapshot()!=clawTerrain->getTerrainSnapshot() )
+                throw std::runtime_error("Cooked terrain replaced its authoritative component snapshot.");
+            if( !m_terrainGameplayPackageDirectory.empty() )
+            {
+                WP_LOG("Terrain gameplay package: PASS sourceFree=true compilerRegistry=false authoringDatabase=false");
+                std::cout << "Terrain gameplay package: PASS sourceFree=true compilerRegistry=false authoringDatabase=false\n";
+            }
+        }
+#endif
+        if( m_terrainGameplay )
+        {
+            if( !m_assets.vehicle.contentHash )
+                throw std::runtime_error("Terrain gameplay vehicle recipe has no generated content hash.");
+            std::ostringstream recipe;
+            recipe << "Terrain gameplay recipe: PASS hash=" << std::hex << std::setfill('0')
+                   << std::setw(16) << m_assets.vehicle.contentHash;
+            WP_LOG(recipe.str());
+            std::cout << recipe.str() << '\n';
+        }
         m_cityExtent = m_citySpacing = 0;
         m_cityOverviewExtent = 0;
         m_cityOverviewCentre = m_cityStreetCentre = Vector3F::zero();
@@ -2254,7 +2546,14 @@ namespace workphone
                     }
                     else if( m_captureView == "track" )
                     {
-                        if( m_assets.cityRoadShowcase )
+                        if( m_terrainGameplay )
+                        {
+                            // Include every source edge, both tile borders and
+                            // the off-corridor hole; the car has its own close view.
+                            m_cameraActor->setPosition( Vector3F( 0, 680, 0 ) );
+                            m_cameraActor->lookAt( Vector3F::zero(), Vector3F::unitZ() );
+                        }
+                        else if( m_assets.cityRoadShowcase )
                         {
                             m_cameraActor->setPosition({110,150,110});m_cameraActor->lookAt({0,3,0},Vector3F::unitY());
                         }
@@ -2449,6 +2748,9 @@ int main( int argc, char **argv )
                    "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
+                   "  --terrain-gameplay            Native representative terrain and existing vehicle\n"
+                   "  --export-terrain-gameplay NEW_DIR  Export its source-free asset closure, then exit\n"
+                   "  --terrain-gameplay-package DIR  Load packaged terrain and authoritative vehicle recipe\n"
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
                    "  --no-audio                    Disable vehicle sounds\n"
                    "  --audio-smoke-test            Check idle, redline, skid and mute playback\n"
@@ -2470,6 +2772,8 @@ int main( int argc, char **argv )
     std::string evidencePath, replayPath;
     std::vector<advanced::ReviewControl> replayControls;
     std::string materialExportDirectory;
+    bool terrainGameplay = false, seedExplicit = false, qualityExplicit = false;
+    std::string terrainGameplayExportDirectory, terrainGameplayPackageDirectory;
     std::string sceneProfilePath, sceneProfileError;
     auto sceneProfileMode = advanced::ProductionSceneProfile::Mode::Memory;
     bool sceneProfileModeExplicit = false;
@@ -2493,6 +2797,12 @@ int main( int argc, char **argv )
         {
             if( String( argv[i] ) == "--smoke-test" )
                 smokeTest = true;
+            else if( String( argv[i] ) == "--terrain-gameplay" )
+                terrainGameplay = true;
+            else if( String( argv[i] ) == "--export-terrain-gameplay" && i+1<argc )
+            { terrainGameplay = true; terrainGameplayExportDirectory = argv[++i]; }
+            else if( String( argv[i] ) == "--terrain-gameplay-package" && i+1<argc )
+            { terrainGameplay = true; terrainGameplayPackageDirectory = argv[++i]; }
             else if( String( argv[i] ) == "--no-audio" )
                 audioEnabled = false;
             else if( String( argv[i] ) == "--audio-smoke-test" )
@@ -2601,9 +2911,10 @@ int main( int argc, char **argv )
             else if( String( argv[i] ) == "--view" && i + 1 < argc )
                 captureView = argv[++i];
             else if( String( argv[i] ) == "--seed" && i + 1 < argc )
-                seed = static_cast<u32>( std::stoul( argv[++i] ) );
+            { seed = static_cast<u32>( std::stoul( argv[++i] ) ); seedExplicit = true; }
             else if( String( argv[i] ) == "--quality" && i + 1 < argc )
             {
+                qualityExplicit = true;
                 const String value = argv[++i];
                 if( value == "low" )
                     quality = procedural::VehicleAppearanceQuality::Preview;
@@ -2618,6 +2929,27 @@ int main( int argc, char **argv )
             }
             else
                 throw std::runtime_error( std::string( "Unknown option or missing value: " ) + argv[i] );
+        }
+        if( terrainGameplay )
+        {
+#if !WP_TERRAIN_GAMEPLAY_PACKAGE
+            throw std::runtime_error("Terrain gameplay packaging is unavailable in this build.");
+#endif
+            if( openCity || cityOptionsExplicit || foliageWorld || !materialExportDirectory.empty() )
+                throw std::runtime_error("Terrain gameplay cannot combine city, foliage-world or material source export modes.");
+            if( !terrainGameplayExportDirectory.empty() && !terrainGameplayPackageDirectory.empty() )
+                throw std::runtime_error("Choose terrain gameplay export or package consumption.");
+            if( !terrainGameplayPackageDirectory.empty() && (seedExplicit || qualityExplicit) )
+                throw std::runtime_error("Terrain gameplay packages own their seed and quality; explicit overrides are unavailable.");
+            if( !terrainGameplayPackageDirectory.empty() && !sceneProfilePath.empty() )
+                throw std::runtime_error("Packaged terrain gameplay scene profiling is unavailable until profile metadata uses the pinned recipe.");
+            if( trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest )
+                throw std::runtime_error("Terrain gameplay supports --smoke-test and capture validation; other scenario smoke tests are unavailable.");
+            if( !terrainGameplayExportDirectory.empty() &&
+                (smokeTest || !capturePath.empty() || benchmarkSeconds>0 || !sceneProfilePath.empty()) )
+                throw std::runtime_error("Terrain gameplay export exits after loading; choose a separate gameplay validation run.");
+            if( !terrainGameplayPackageDirectory.empty() )
+            { audioEnabled = false; hud = false; }
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "street" && captureView != "boulevard" )
@@ -2674,7 +3006,7 @@ int main( int argc, char **argv )
     }
     int exitCode = 1;
     const bool unattended=smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ||
-        !capturePath.empty() || benchmarkSeconds>0 || bool(sceneProfile);
+        !capturePath.empty() || benchmarkSeconds>0 || bool(sceneProfile) || terrainGameplay;
 
     auto unloadApplication = [&app, &sceneProfile]() {
         if( app )
@@ -2732,16 +3064,26 @@ int main( int argc, char **argv )
         app->setRoadAuthoringShowcase( roadAuthoringShowcase );
         app->setCityTerrainRoads( cityTerrainRoads );
         app->setMaterialExportDirectory( materialExportDirectory );
+        app->setTerrainGameplayOptions(terrainGameplay,terrainGameplayPackageDirectory,!terrainGameplayExportDirectory.empty());
         if( !pluginsConfig.empty() )
             app->setPluginsConfigFilePath( pluginsConfig );
         app->load( nullptr );
         if( app->getLoadingState() != LoadingState::Loaded )
             throw std::runtime_error( "SampleVehicleAdvanced failed to load." );
-        app->run();
-        exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) && !app->smokeTestPassed() ) ||
-                           ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() )
+        if( !terrainGameplayExportDirectory.empty() )
+        {
+            app->exportTerrainGameplayPackage(terrainGameplayExportDirectory);
+            exitCode = 0;
+        }
+        else
+        {
+            app->run();
+            exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) && !app->smokeTestPassed() ) ||
+                           ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() ) ||
+                           !app->terrainGameplayPassed()
                        ? 1
                        : 0;
+        }
         if( sceneProfile && !sceneProfile->invariantsPassed() )
         {
             sceneProfileError = "Production scene profile did not complete its rendering/telemetry invariants.";

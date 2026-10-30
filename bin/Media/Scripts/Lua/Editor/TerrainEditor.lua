@@ -1043,11 +1043,11 @@ function TerrainEditor:load()
 		return;
 	end
 
-	parentWindow:setSize(Vector2F(780.0, 840.0));
+	parentWindow:setSize(Vector2F(0.0, 840.0));
 
 	self:ref("editorWindow", ui:addElement(windowTypeInfo));
 	self.editorWindow:setLabel("Terrain Editor");
-	self.editorWindow:setSize(Vector2F(780.0, 840.0));
+	self.editorWindow:setSize(Vector2F(0.0, 840.0));
 	parentWindow:addChild(self.editorWindow);
 
 	self:ref("statusText", addText(ui, self.editorWindow, "Select a TerrainSystem to edit.", false));
@@ -2293,8 +2293,36 @@ end
 
 function TerrainEditor:getViewportBrushEnabled() return self.terrain ~= nil and self.settings.viewportBrushEnabled == true and not self._cancelStrokePending; end
 function TerrainEditor:getViewportBrushRadius() return tonumber((self.settings.brushMode == 6 or (tonumber(self.settings.brushMode) or 0) >= 10) and self.settings.layerPaintSize or self.settings.brushSize) or 1; end
+
+-- Native ScriptInvoker callbacks receive Parameters and a mutable results
+-- container; ordinary Lua return values are not collected by that ABI.
+function TerrainEditor:getViewportScriptState(parameters, results)
+    if results == nil then return; end
+    self:update();
+    results:addAsBool(self:getViewportBrushEnabled());
+    results:addAsNumber(self:getViewportBrushRadius());
+    local recipe, terrain = self:getTerrainRecipePreview();
+    if recipe and terrain then
+        results:addAsObject(recipe);
+        results:addAsObject(terrain);
+    end
+end
+
+function TerrainEditor:handleViewportBrushEvent(parameters, results)
+    local applied = false;
+    if parameters and parameters:size() == 7 then
+        -- at() preserves both native CHAR_PTR and owned String phase values.
+        applied = self:handleViewportBrush(parameters:at(0),
+            parameters:getAsNumber(1), parameters:getAsNumber(2), parameters:getAsNumber(3),
+            parameters:getAsNumber(4), parameters:getAsNumber(5), parameters:getAsNumber(6));
+    end
+    if results then results:addAsBool(applied == true); end
+end
+
 function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dirX, dirY, dirZ)
     if phase == "cancel" then
+        local hadStroke = self._strokeTerrain ~= nil;
+        local foliage = self._foliageStroke == true;
         local terrain = self._strokeTerrain or self.terrain;
         self.brushPreview = nil;
         if terrain then
@@ -2306,6 +2334,7 @@ function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dir
         end
         self._strokeTerrain = nil; self._foliageStroke=false;
         self._cancelStrokePending = false;
+        if hadStroke then self:setStatus(foliage and "Cancelled foliage stroke." or "Cancelled terrain stroke."); end
         return true;
     end
     if phase == "commit" then

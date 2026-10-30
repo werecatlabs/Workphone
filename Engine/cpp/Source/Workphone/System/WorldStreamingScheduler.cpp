@@ -671,6 +671,11 @@ namespace workphone
         }
     }
 
+    bool WorldStreamingScheduler::ownsBudget( const StreamBudget &lease ) const
+    {
+        return lease && lease->m_state == m_impl->budget;
+    }
+
     bool WorldStreamingScheduler::setBudget( StreamMemoryClass category, u64 bytes, String &error )
     {
         const auto index = size_t( category );
