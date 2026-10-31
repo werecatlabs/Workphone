@@ -59,6 +59,9 @@ namespace
     {
         EnvironmentValue maximum("WP_RESOURCE_PACKAGE_MAX_RUN_MS", "0");
         EnvironmentValue grace("WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS", "30000");
+        EnvironmentValue historyCount("WP_RESOURCE_PACKAGE_HISTORY_KEEP_COUNT", "64");
+        EnvironmentValue historyBytes("WP_RESOURCE_PACKAGE_HISTORY_MAX_BYTES", "67108864");
+        EnvironmentValue logBytes("WP_RESOURCE_PACKAGE_MAX_LOG_BYTES", "0");
         auto app = core::IApplicationManager::instance();
         app->setProjectPath(project.u8string().c_str());
         app->setRunning(true);
@@ -216,6 +219,11 @@ namespace
             require(!manager->startResourcePackagePreview() && !queue->captured,
                 "Invalid cancellation grace fails before queueing a preview");
         }
+        for(const auto key : {"WP_RESOURCE_PACKAGE_HISTORY_KEEP_COUNT", "WP_RESOURCE_PACKAGE_HISTORY_MAX_BYTES", "WP_RESOURCE_PACKAGE_MAX_LOG_BYTES"})
+        {
+            EnvironmentValue invalid(key, "4294967295");
+            require(!manager->startResourcePackage() && !queue->captured, "Invalid resource budgets fail before queueing");
+        }
         queue->accepting = false;
         require(!manager->startResourcePackage() && !manager->isResourcePackageBusy(),
                 "A dropped queue request reports failure rather than staying busy");
@@ -358,8 +366,9 @@ namespace
         queue->captured->execute();
         require(!fs::exists(project.parent_path() / "unload-output"), "Manager unload cancels queued work");
         for(const auto &entry : fs::directory_iterator(project / ".workphone" / "package-jobs"))
-            require(entry.path().extension() == ".log" || entry.path().filename().u8string().find(".preview.json") != std::string::npos,
-                "Finished requests retain only logs and preview reports");
+            require(entry.path().extension() == ".log" || entry.path().filename().u8string().find(".preview.json") != std::string::npos ||
+                entry.path().filename().u8string().find(".completed.json") != std::string::npos,
+                "Finished requests retain only logs and owned history metadata");
         queue->captured = nullptr;
         app->setPackageManager(nullptr);
         app->setJobQueue(nullptr);
@@ -373,7 +382,7 @@ namespace
     {
         const auto jobs = project / ".workphone" / "package-jobs";
         const auto marker = project / "crash-child.pid";
-        for(int mode = 1; mode <= 5; ++mode)
+        for(int mode : {1,2,3,4,6,7,8,5})
         {
             fs::remove(marker);
             auto request = std::make_shared<ResourcePackageJobState>();
@@ -386,6 +395,7 @@ namespace
             request->logPath = (jobs / fs::u8path((id + ".log").c_str())).u8string().c_str();
             request->maximumRunMilliseconds = mode == 2 ? 0 : 2000;
             request->cancelGraceMilliseconds = 500;
+            request->maximumLogBytes = mode==6 || mode==7 ? 4096 : (mode==8 ? 0 : 32*1024*1024);
             auto job = make_ptr<ResourcePackageJob>(request);
             auto future = std::async(std::launch::async, [job]() mutable {
                 Thread::setCurrentThreadId(Thread::ThreadId::WorkerThread);
@@ -397,7 +407,7 @@ namespace
             if(!fs::exists(marker)) request->cancel = true;
             require(fs::exists(marker), "Watchdog child started and published its test PID");
             HANDLE child = nullptr;
-            if(mode != 5)
+            if(mode != 5 && mode != 7 && mode != 8)
             {
                 DWORD pid = 0; std::ifstream input(marker); input >> pid;
                 child = OpenProcess(SYNCHRONIZE, FALSE, pid);
@@ -407,13 +417,13 @@ namespace
             if(!ready) request->cancel = true;
             require(ready, "Package child supervision finishes within a bounded wait");
             future.get();
-            if(mode != 5)
+            if(mode != 5 && mode != 7 && mode != 8)
             {
                 const auto exited = child && WaitForSingleObject(child, 1000) == WAIT_OBJECT_0;
                 if(child) CloseHandle(child);
                 require(exited, "Supervised child has exited before the job completes");
             }
-            const bool retained = mode == 1 || mode == 2 || mode == 5;
+            const bool retained = mode == 1 || mode == 2 || mode == 5 || mode == 6;
             require(fs::exists(snapshot) == retained, "Only uncertain outcomes retain captured requests");
             if(retained)
             {
@@ -426,6 +436,15 @@ namespace
             else
                 require(request->status == "succeeded" && request->exitCode == 0,
                     "Successful child completion wins over a pending deadline");
+            if(mode==6 || mode==7)
+            {
+                const auto path=fs::u8path(request->logPath.c_str());
+                require(fs::file_size(path)==4096,"Diagnostic file never exceeds its captured byte budget");
+                std::ifstream input(path,std::ios::binary);
+                const std::string bytes((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+                require(bytes.find("[log truncated by package job]")!=std::string::npos,"Truncation remains visible after process exit");
+            }
+            if(mode==8) require(fs::file_size(fs::u8path(request->logPath.c_str()))==16384,"Explicit zero log budget disables truncation");
         }
         std::cout << "PASS: watchdog deadline, forced cancellation, cooperative timeout, success race and unexpected child exit\n";
     }
@@ -448,6 +467,14 @@ int wmain(int argc, wchar_t **argv)
             return name.back() == '3' ? 3 : 0;
         }
         if(name == "d08c0000-0000-4000-8000-000000000005") return 17;
+        if(name == "d08c0000-0000-4000-8000-000000000006" ||
+           name == "d08c0000-0000-4000-8000-000000000007" || name == "d08c0000-0000-4000-8000-000000000008")
+        {
+            const std::string bytes(16384,'x'); DWORD written=0;
+            do { if(!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr)) return 19; }
+            while(name.back()=='6');
+            return 0;
+        }
         Sleep(INFINITE);
         return 1;
     }

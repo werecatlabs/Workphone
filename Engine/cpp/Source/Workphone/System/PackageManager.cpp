@@ -131,7 +131,7 @@ namespace workphone
                     "Package profile source root does not match the active project" );
             }
             auto request = std::make_shared<ResourcePackageJobState>();
-            auto executionLimit = []( const char *name, u32 fallback, u32 maximum ) -> u32 {
+            auto executionLimit = []( const char *name, u32 fallback, u32 maximum, u32 minimum = 1000 ) -> u32 {
                 const auto raw = std::getenv( name );
                 if( !raw )
                 {
@@ -144,7 +144,7 @@ namespace workphone
                     throw std::runtime_error( std::string( "Invalid execution limit: " ) + name );
                 }
                 const auto number = std::stoull( value );
-                if( number > maximum || ( number != 0 && number < 1000 ) )
+                if( number > maximum || ( number != 0 && number < minimum ) )
                 {
                     throw std::runtime_error( std::string( "Execution limit is out of range: " ) +
                                               name );
@@ -156,6 +156,12 @@ namespace workphone
             request->cancelGraceMilliseconds =
                 executionLimit( "WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS", request->cancelGraceMilliseconds,
                                 10 * 60 * 1000 );
+            request->historyKeepCount = executionLimit("WP_RESOURCE_PACKAGE_HISTORY_KEEP_COUNT",
+                request->historyKeepCount, 4096, 1);
+            request->historyMaximumBytes = executionLimit("WP_RESOURCE_PACKAGE_HISTORY_MAX_BYTES",
+                request->historyMaximumBytes, 1024 * 1024 * 1024, 1024);
+            request->maximumLogBytes = executionLimit("WP_RESOURCE_PACKAGE_MAX_LOG_BYTES",
+                request->maximumLogBytes, 512 * 1024 * 1024, 1024);
             request->arguments = arguments;
             request->projectRoot = project.u8string().c_str();
             const auto id = StringUtil::getUUID();

@@ -17,6 +17,9 @@ namespace workphone
         // Captured before queueing. Zero explicitly disables the respective limit.
         u32 maximumRunMilliseconds = 30 * 60 * 1000;
         u32 cancelGraceMilliseconds = 30 * 1000;
+        u32 historyKeepCount = 64;
+        u32 historyMaximumBytes = 64 * 1024 * 1024;
+        u32 maximumLogBytes = 32 * 1024 * 1024;
         String status = "queued", diagnostic;
         std::atomic<bool> cancel{ false };
         std::atomic<bool> finished{ false };

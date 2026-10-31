@@ -954,7 +954,8 @@ function ProjectSettings:load()
 	self.saveButton = addButton(ui, actionsHeader, "Save", ProjectSettingsTypes.Save, true);
 	self.resetButton = addButton(ui, actionsHeader, "Reset", ProjectSettingsTypes.Reset, true);
 	self.validateButton = addButton(ui, actionsHeader, "Validate", ProjectSettingsTypes.Validate, false);
-	self.reloadRendererButton = addButton(ui, actionsHeader, "Reapply Renderer Settings", ProjectSettingsTypes.ReloadRenderer, true);
+	self.reloadRendererButton = addButton(ui, actionsHeader, "Renderer Reload (Unavailable)", ProjectSettingsTypes.ReloadRenderer, true);
+	self.reloadRendererButton:setEnabled(false, false);
 	self.buildSelectedButton = addButton(ui, actionsHeader, "Build Selected Platform", ProjectSettingsTypes.BuildSelected, true);
 	self.exportJsonButton = addButton(ui, actionsHeader, "Export JSON", ProjectSettingsTypes.ExportJson, false);
 	self.importJsonButton = addButton(ui, actionsHeader, "Import JSON", ProjectSettingsTypes.ImportJson, true);

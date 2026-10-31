@@ -12,6 +12,7 @@ import ctypes
 from ctypes import wintypes
 import os
 import time
+from resource_package_history import check_history, validate_receipts
 
 host = pathlib.Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory(prefix="wp-package-jobs-") as temporary:
@@ -73,6 +74,8 @@ with tempfile.TemporaryDirectory(prefix="wp-package-jobs-") as temporary:
         for log in (project / ".workphone" / "package-jobs").glob("*.log"):
             print(log.name, log.read_text(errors="replace"), file=sys.stderr)
     assert result.returncode == 0, result.returncode
+    validate_receipts(project)
+    check_history(host.with_name("WorkphoneResourcePackage.exe"), pathlib.Path(temporary) / "history café")
     # Kill an actual native job owner with a live (deliberately blocking) child.
     # This certifies request/child lifetime handling, not a crash inside a cook
     # or the package-directory publication window.

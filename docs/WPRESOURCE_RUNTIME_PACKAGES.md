@@ -309,7 +309,7 @@ durability certification remain open.
 The Editor runs preview through the same owned child job, immutable captured
 profile, single-request guard, cancellation event and project/unload lifecycle as
 build. Successful reports remain beside job logs as `<request>.preview.json`;
-log/report retention quotas remain open. UI polling reads a successful report
+owned log/report retention is described below. UI polling reads a successful report
 on completion and again on explicit page navigation on the owner thread. It shows
 25 members per page across at most 4096 resources, with Previous/Next controls,
 the current row range, and up to three immediate inclusion parents per member.
@@ -367,9 +367,70 @@ or declares a prior package successful/failed. Inspect outputs first, then save
 an explicit profile with an unused destination before retrying.
 
 This establishes snapshot recovery and child-lifetime behavior after a tested
-owner-process kill. It does not certify killing a compiler during cooking/export,
-the publication window, orphan artifact reclamation, power-loss durability,
-hostile filesystem races or retention quotas.
+owner-process kill. The separate publication test described below covers process
+termination inside the real resource pipeline. Orphan cooking/staging artifact
+reclamation, power-loss durability and hostile filesystem races remain open.
+
+## Diagnostic budgets and completed-job history
+
+Windows jobs drain child stdout/stderr through a private pipe into the exclusive
+job log. The default log limit is 32 MiB. Bytes beyond that limit are discarded,
+the log receives a truncation footer within its existing size, and the supervisor
+signals cancellation. An unresponsive child follows the same cancellation grace
+and forced-interruption route as a timeout. Exit zero still wins if publication
+already completed; a log limit never authorizes deleting package outputs. Pipe
+draining has bounded work per watchdog poll, so continuous output cannot starve
+deadline/cancellation checks. `WP_RESOURCE_PACKAGE_MAX_LOG_BYTES` accepts
+1024–536870912 bytes; zero explicitly disables this limit.
+
+After a known successful, failed, cancelled or timed-out completion, the worker
+writes an exclusive `<request>.completed.json` receipt. It binds the project,
+request UUID, completion time/status and exact size/fingerprint of the owned log
+and successful preview report. Interrupted requests receive no receipt. Job
+completion remains busy until receipt/cleanup/retention work finishes.
+
+Automatic retention keeps up to 64 completed requests and 64 MiB of managed
+history, reserving the just-completed request so the window can read its log and
+report. Before queueing, the Editor captures validated overrides:
+
+| Setting | Nonzero range | Default |
+| --- | --- | --- |
+| `WP_RESOURCE_PACKAGE_HISTORY_KEEP_COUNT` | 1–4096 | 64 |
+| `WP_RESOURCE_PACKAGE_HISTORY_MAX_BYTES` | 1024–1073741824 | 67108864 |
+
+Zero in either history setting disables automatic pruning. These settings and the
+log budget are captured with the request; later environment changes do not alter
+an executing job. Inspect or apply an explicit history policy with:
+
+```text
+WorkphoneResourcePackage --prune-jobs <project-root> <keep-count> <max-bytes>
+WorkphoneResourcePackage --apply-prune-jobs <project-root> <keep-count> <max-bytes>
+```
+
+The first command is a dry run. Explicit zero count/bytes selects every eligible
+completed bundle for removal. Neither command touches package outputs, authored
+files, unmarked legacy logs, invalid/foreign receipts or interrupted evidence.
+Pruning acquires the request lock, validates receipt identity and file bytes,
+and refuses modified, redirected, open or unavailable files. It persists an exact
+receipt-bound `.pruning` intent before deleting members; a later invocation can
+resume an interrupted deletion without treating arbitrary missing files as owned.
+Unknown intents are preserved. It scans at most 4096 directory entries and reports
+incomplete accounting, lock skips and preservation warnings. The budget covers
+valid receipted files, not the entire job directory: protected or unprunable data
+can exceed it. Cooking caches and abandoned package staging trees are separate.
+
+## Process-termination publication contracts
+
+`WPResource.publication_crash` kills a standalone host in three controlled phases
+of the real ResourceSystem: during a test compiler's payload write, during checked
+admission with staging present, and after the destination is committed but before
+the caller receives success. Each case preserves a previous package byte-for-byte,
+removes source/cooked availability, verifies old and committed new packages through
+the source-free runtime, then reopens the authoring pipeline in a fresh process
+and performs an explicit export to a new destination. Existing destinations are
+never overwritten. The compiler is a deterministic test family, so this proves
+process-death publication/reopen contracts rather than real importer crash safety,
+physical power-loss durability, staging reclamation or full-family certification.
 
 ## Validation boundary
 
@@ -383,7 +444,7 @@ stale binding rejection and UUID-preserving authoring rename beside a pinned pac
 
 This resource-directory API does not complete interactive closure-preview
 acceptance, scene/mesh/animation/audio/UI typed consumer adoption, multi-mount precedence, asynchronous
-residency, executable packaging, compiler/export-kill recovery, interactive Editor acceptance
+residency, full-family compiler interruption, interactive Editor acceptance
 or representative hardware/full-family shipping application certification. The
 native package-job fixture separately exercises a source-free Lua consumer; that
 does not close the other typed-family or interactive release gates.

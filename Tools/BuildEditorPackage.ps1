@@ -25,6 +25,8 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Tools/cpp/ResourcePackageTool/main.cpp','Tools/cpp/ResourcePackageTool/CMakeLists.txt',
     'Engine/cpp/Source/Workphone/System/ResourcePackageProfile.cpp',
     'Engine/cpp/Include/Workphone/System/ResourcePackageRecovery.hpp',
+    'Engine/cpp/Include/Workphone/System/ResourcePackageHistory.hpp',
+    'Engine/cpp/Source/Workphone/System/ResourcePackageHistory.cpp',
     'Engine/cpp/Include/Workphone/System/ResourceSystem.hpp',
     'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp',
     'Engine/cpp/Source/Workphone/System/CompiledResource.cpp',
@@ -36,7 +38,8 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/Workphone/Jobs/ResourcePackageJob.cpp',
     'Engine/cpp/Source/WPLuaBind/Bindings/SystemBind.cpp',
     'Engine/cpp/Project/WPLuaBind/CMakeLists.txt',
-    'bin/Media/Scripts/Lua/Editor/PackageEditor.lua','Tests/python/resource_package_cli.py') | ForEach-Object {
+    'bin/Media/Scripts/Lua/Editor/PackageEditor.lua','Tests/python/resource_package_cli.py',
+    'Tests/python/resource_package_history.py') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
 $evidence['packagingInputs'] = @($inputs)
@@ -61,6 +64,9 @@ try {
     if (-not $SkipBuild) {
         Invoke-CMake 'configure' @('-S', $repo, '-B', $build, '-DWP_INSTALL_EDITOR_PACKAGE=ON')
         Invoke-CMake 'build' @('--build', $build, '--config', 'RelWithDebInfo', '--target', 'WorkphoneEditorPackageBinaries', '--parallel', '8')
+    }
+    if (-not (Select-String -LiteralPath (Join-Path $build 'CMakeCache.txt') -Pattern '^WP_INSTALL_EDITOR_PACKAGE:BOOL=ON$' -Quiet)) {
+        throw 'Editor package installation is disabled. Configure with -DWP_INSTALL_EDITOR_PACKAGE=ON and build WorkphoneEditorPackageBinaries before using -SkipBuild.'
     }
     $stage = Join-Path $output 'WorkphoneEditor'
     & cmake --install $build --config Debug --component WorkphoneEditor --prefix (Join-Path $output 'rejected-debug') *> (Join-Path $output 'reject-debug.log')

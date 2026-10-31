@@ -85,7 +85,13 @@ namespace
 #    else
             config << "Plugin=WPGraphics\n";
 #    endif
-            config << "Plugin=WPSQLite\nPlugin=WPPhysics\nPlugin=WPOISInput\nPlugin=WPAssimp\n";
+            config << "Plugin=WPSQLite\nPlugin=WPPhysics\nPlugin=WPAssimp\n";
+#    if WP_BUILD_AUDIO
+            // Application initialization now requires the selected audio provider
+            // before resource/database creation. Match that production dependency;
+            // device availability remains a separate, explicitly reported result.
+            config << "Plugin=WPAudio\n";
+#    endif
             config.close();
             app.pluginConfiguration = configPath.generic_string().c_str();
             app.setDebugMode( true );

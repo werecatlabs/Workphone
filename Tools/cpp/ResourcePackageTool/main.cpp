@@ -16,6 +16,7 @@
 #include <rapidjson/stringbuffer.h>
 #include <Workphone/System/ResourcePackageProfile.hpp>
 #include <Workphone/System/ResourcePackageRecovery.hpp>
+#include <Workphone/System/ResourcePackageHistory.hpp>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
@@ -27,6 +28,26 @@ namespace
 
     int run(const Array<String> &input)
     {
+        if(input.size()==5 && (input[1]=="--prune-jobs" || input[1]=="--apply-prune-jobs"))
+        {
+            auto number = [](const String &value, u64 maximum) -> u64 {
+                if(value.empty()||value.size()>10||value.find_first_not_of("0123456789")!=String::npos)
+                    throw std::runtime_error("Retention limits must be decimal integers");
+                const auto parsed=std::stoull(value.c_str());
+                if(parsed>maximum) throw std::runtime_error("Retention limit exceeds its supported bound");
+                return parsed;
+            };
+            ResourcePackageHistoryResult result; String error;
+            if(!pruneResourcePackageHistory(input[2],static_cast<u32>(number(input[3],4096)),
+                number(input[4],1024ull*1024*1024),input[1]=="--prune-jobs",{},result,error))
+                throw std::runtime_error(error.c_str());
+            std::cout << "Selected " << result.selected.size() << "; removed " << result.removed.size()
+                << "; skipped " << result.skipped.size() << "; warnings " << result.warnings.size()
+                << "; retained bytes " << result.retainedBytes << '\n';
+            for(const auto &id:result.selected) std::cout << id << '\n';
+            for(const auto &warning:result.warnings) std::cerr << warning << '\n';
+            return 0;
+        }
         if(input.size() == 3 && input[1] == "--recover-jobs")
         {
             ResourcePackageRecoveryResult recovery;
@@ -99,6 +120,8 @@ namespace
                          "<new-output-directory> <target> --map <catalog-type=extension> --root <uuid> "
                          "[--map <type=extension>] [--root <uuid>]\n"
                          "       WorkphoneResourcePackage --profile <profile.json>\n"
+                         "       WorkphoneResourcePackage --prune-jobs <project> <keep-count> <max-bytes>\n"
+                         "       WorkphoneResourcePackage --apply-prune-jobs <project> <keep-count> <max-bytes>\n"
                          "       WorkphoneResourcePackage --recover-jobs <project-root>\n"
                          "       WorkphoneResourcePackage --preview-profile <profile.json> <new-report.json>\n"
                          "       WorkphoneResourcePackage --verify <package-directory> <target> <uuid> [uuid...]\n"

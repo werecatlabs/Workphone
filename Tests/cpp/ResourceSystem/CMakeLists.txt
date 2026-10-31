@@ -21,6 +21,15 @@ add_test(NAME WPResourceTests COMMAND WPResourceTests)
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+    add_executable(WPResourcePublicationCrashHost ResourcePublicationCrashHost.cpp)
+    target_include_directories(WPResourcePublicationCrashHost PRIVATE ${WP_ROOT}/Engine/cpp/Include)
+    target_link_libraries(WPResourcePublicationCrashHost PRIVATE $<TARGET_LINKER_FILE:WPSQLite> $<TARGET_LINKER_FILE:Workphone>)
+    add_dependencies(WPResourcePublicationCrashHost WPSQLite Workphone)
+    set_target_properties(WPResourcePublicationCrashHost PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPResource.publication_crash
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/ResourcePublicationCrashContracts.py"
+                "$<TARGET_FILE:WPResourcePublicationCrashHost>")
+    set_tests_properties(WPResource.publication_crash PROPERTIES TIMEOUT 120 LABELS "resource;recovery;process")
     add_test(NAME WPResource.writer_lease
         COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/ResourceWriterLeaseContracts.py"

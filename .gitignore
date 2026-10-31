@@ -205,3 +205,4 @@ steam_appid.txt
 /.codex
 /build_windows.cmd
 /build_android.cmd
+/Tests/python/__pycache__/

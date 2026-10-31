@@ -1419,6 +1419,107 @@ runtime set. `git diff --check` passed. Interactive acceptance, retention,
 artifact reclamation, real compiler/export interruption, clean-machine/license
 audit, power-loss and full shipping certification remain open.
 
+## Increment 25: Owned job history and live diagnostic budgets (30 October 2026)
+
+Known completed Windows package jobs now publish exclusive, project-bound receipts
+with exact log/preview names, completion status/time and file size/fingerprints.
+Interrupted outcomes retain their captured requests and never become eligible
+history. Automatic retention reserves the current result and defaults to 64
+requests / 64 MiB. Captured environment overrides and dry-run/apply CLI commands
+are documented in `WPRESOURCE_RUNTIME_PACKAGES.md`. Legacy/unmanaged, changed,
+foreign, redirected, locked and uncertain records are preserved with warnings.
+Receipt-bound durable prune intents permit restart after partial deletion; cleanup
+never recursively deletes a directory or touches authored/package output files.
+The scan is bounded to 4096 entries and reports incomplete accounting; this is a
+managed-history policy rather than a guarantee about total directory disk use.
+
+Child stdout/stderr now passes through an owned pipe. The parent caps diagnostic
+files at a captured 32 MiB default, retains a truncation footer within the cap,
+requests cooperative cancellation on excess and uses the existing grace/watchdog
+for an unresponsive writer. Draining has bounded work between supervision checks.
+Successful publication still wins over a concurrent limit; forced termination
+continues to report an unknown outcome. Jobs stay busy through receipt/prune work,
+so another request cannot race the previous completion's ownership cleanup.
+
+Native fixtures exercise continuous output followed by forced interruption,
+quick successful output beyond the cap, explicit unlimited output, and invalid
+captured limits. Independent CLI fixtures exercise count/byte retention, dry-run
+byte preservation, modified/foreign/escaped members, unrelated producer metadata,
+active/viewed-file locks, idempotence and resumed partial pruning. These fixtures
+also run against the installed package tool. Cooking-cache/staging reclamation,
+unmanaged history and asset-operation quarantine retention remain separate work.
+
+## Increment 26: Resource publication process-kill contracts (30 October 2026)
+
+The new `WPResource.publication_crash` fixture uses a standalone host, real
+ResourceSystem/SQLite compilation index, checked admission and immutable exporter.
+It kills the host during a deterministic test compiler's payload write, during
+admission with staging present, and after destination publication before success
+acknowledgement. No production fault hook is introduced. Each case verifies the
+previous package bytes, source-free read-only runtime consumption after removing
+authoring/cooked availability, writer/index reopen in a fresh process, explicit
+new-destination export and existing-output preservation. The committed-but-
+unacknowledged case verifies the new package as well. This closes these controlled
+process-death contracts; real mesh/audio/animation/importer crashes, physical
+power loss, orphan artifact cleanup and representative scale/soaks remain open.
+
+## Editor shipping target and current release boundary (30 October 2026)
+
+The user selected the native Editor project as the shipping target. Visible
+software and DX11 probes used an isolated workspace and the previously validated
+19 October package; both native-window capture paths timed out, including one
+retry after activation. They establish no mouse/input or artist workflow pass.
+Evidence is retained in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/editor-asset-release-ui-20261030.json`.
+This workstation exposes Microsoft Basic Display Adapter, driver
+10.0.19041.3636, so representative hardware certification is unavailable here.
+
+The source audit still finds cooked texture/material and Lua compiler adoption;
+scene/prefab/mesh/animation/audio/UI typed package families are not certified by
+those consumers. Full profile/toolchain BuildKeys, remaining authoring/reference
+coverage, asynchronous residency, cache/variant/streaming and R2 domain workflows
+remain implementation work. Clean-machine, legal/license, real hardware,
+interactive Editor and full-family certification remain open. None of the focused
+or installed checks changes those gates to passed.
+
+### Validation evidence for increments 25–26
+
+RelWithDebInfo rebuilt successfully and all ten release suites passed in 105.73
+seconds (`project_x64/resource-package-release-final-opt-tests.log`). This includes
+the new publication crash contract, native job/log supervision, CLI retention,
+catalog, resource, graphics, Lua and PackageEditor workflow suites. Debug resource
+and Editor targets also rebuilt. All ten Debug release suites passed. The initial
+aggregate Editor run completed in 749.92 seconds with 73/95 cases passing and 22
+Play-mode fixture construction failures
+(`project_x64/resource-package-release-final-debug-tests.log`). Its private plugin
+list still requested removed OIS input and omitted the audio provider now required
+before resource initialization. The fixture now omits OIS and loads the configured
+audio provider; production checks/assertions and timeouts are unchanged. Rebuilt
+primary Play and worker-restored camera cases both passed (15.81 seconds total;
+`project_x64/resource-package-release-editor-fixture-focused.log`). The final
+aggregate rerun passed in 794.38 seconds within the unchanged 900-second timeout:
+95/95 cases and 1,966,040/1,966,040 assertions passed. Driver/result:
+`project_x64/resource-package-release-editor-final-all.log`; retained detailed
+report: `project_x64/resource-package-release-editor-final-report.log`.
+This verifies the automated native Editor suite, including the corrected lifecycle
+fixture; it does not replace visible input, device or full-family package evidence.
+
+The first installed attempt correctly failed because the current CMake cache had
+`WP_INSTALL_EDITOR_PACKAGE=OFF`, leaving the Debug rejection gate unexercised. Its
+failed evidence is retained in `resource-history-validation-20261030`. Packaging
+was explicitly configured ON and the complete runtime target rebuilt. The script
+now reports a disabled install configuration directly when `-SkipBuild` is used.
+
+Fresh installed validation passed with `validationPassed=true` and
+`releaseCertified=false`. Runtime/symbol archives, payload/module hashes and six
+installer/CLI/startup checks are retained at
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-history-final-validation-20261030/`.
+The relocated CLI also passed the history safety/restart fixtures. Read-only and
+cross-volume startup preserved installed bytes; missing required media/plugins
+failed explicitly, and Debug installation was rejected. Loaded runtime hashes
+match the matching current built modules. Driver log:
+`project_x64/resource-package-release-final-installed-tests.log`.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -1429,11 +1530,12 @@ remaining profile authoring, quality, topology and shipping-package gates using
 the same immutable resource pipeline.
 
 1. Finish the first integrity slice: authored numeric-root UUID mapping, immutable
-   metadata migration, full-project reference coverage, retention and conflict resolution UI.
+   metadata migration, full-project reference coverage, asset-operation retention
+   and conflict resolution UI.
 2. Extend target/mode indexing to full profile/toolchain BuildKeys, authored
    revision fences and generation recovery/retention on top of captured inputs,
    complete-request index transactions and immutable artifacts. Certify
-   interrupted publication.
+   importer-specific interruption and power-loss publication.
 3. Extend the saved-document reference graph across remaining domain authoring routes
    and legacy migration/remaining-format discovery; persist
    typed compile/install/platform dependency modes, invalidation and cycle policy.
