@@ -222,7 +222,7 @@ namespace workphone
         if( isLoaded() ) return;
         if( getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading )
         { m_lastDiagnostic="Lua lifecycle transition is already active";setError(true);return; }
-        if(m_runtimeScriptsMode && !m_runtimeScriptResources)
+        if(m_runtimeScriptsMode && !m_runtimeScriptResources && !m_runtimeScriptResolver)
         { m_lastDiagnostic="Remount runtime UUID resources before recreating the Lua VM";setError(true);return; }
         try
         {
@@ -317,6 +317,7 @@ namespace workphone
             setLoadingState( LoadingState::Unloaded );
         }
         m_runtimeScriptResources.reset();
+        m_runtimeScriptResolver={};
     }
 
     void LuaManager::setClassNames( const Array<String> &classNames )
@@ -678,7 +679,7 @@ namespace workphone
             if(getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading)
             { m_lastDiagnostic="Unload the runtime UUID VM before changing script resource policy";setError(true);return; }
             // Leaving runtime mode is an explicit unloaded-VM policy operation.
-            m_runtimeScriptResources.reset();m_runtimeScriptsMode=false;
+            m_runtimeScriptResources.reset();m_runtimeScriptResolver={};m_runtimeScriptsMode=false;
         }
         m_scriptCatalog = catalog;
         m_scriptResources = resources;
@@ -710,6 +711,7 @@ namespace workphone
             if(!candidate->initializeRuntime(bounded,error))
             { m_lastDiagnostic=error;setError(true);return false; }
             m_runtimeScriptResources=std::move(candidate);
+            m_runtimeScriptResolver={};
             m_runtimeScriptsMode=true;
             m_scriptCatalog=nullptr;m_scriptResources.reset();m_compiledScriptsOnly=true;m_loadedScriptAssets.clear();
             m_lastDiagnostic.clear();setError(false);return true;
@@ -718,6 +720,28 @@ namespace workphone
         { error=exception.what();m_lastDiagnostic=error;setError(true);return false; }
     }
 
+    bool LuaManager::configureRuntimeResourceResolver(
+        std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,String &error)
+    {
+        ScopedLock lock(this);error.clear();
+        if(!resolver || getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading ||
+            getLoadingState()==LoadingState::Unloading || !m_objectData.empty() || !m_instances.empty())
+        {error="A pinned resolver requires an unloaded fresh Lua VM";m_lastDiagnostic=error;setError(true);return false;}
+        m_runtimeScriptResolver=std::move(resolver);m_runtimeScriptResources.reset();m_runtimeScriptsMode=true;
+        m_scriptCatalog=nullptr;m_scriptResources.reset();m_compiledScriptsOnly=true;m_loadedScriptAssets.clear();
+        m_lastDiagnostic.clear();setError(false);return true;
+    }
+    SmartPtr<IScriptManager> LuaManager::createRuntimeInstance(
+        std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,String &error)
+    {
+        try {
+            auto candidate=make_ptr<LuaManager>();
+            if(!candidate->configureRuntimeResourceResolver(std::move(resolver),error))return nullptr;
+            candidate->load(nullptr);
+            if(!candidate->isLoaded()){error=candidate->getLastDiagnostic();return nullptr;}
+            return candidate;
+        }catch(const std::exception &failure){error=failure.what();return nullptr;}
+    }
     bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
     {
         ScopedLock lock( this );
@@ -796,14 +820,19 @@ namespace workphone
         };
         if(m_runtimeScriptsMode)
         {
-            if(!isLoaded() || !m_runtimeScriptResources)return fail("Runtime script VM is not loaded or mounted");
-            String error;resource::ResourceID id;
-            if(!m_runtimeScriptResources->resolveRuntimeUUID(uuid,id,error))return fail(error);
-            if(id.type()!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
+            if(!isLoaded() || (!m_runtimeScriptResources&&!m_runtimeScriptResolver))return fail("Runtime script VM is not loaded or mounted");
+            String error;
             const auto identity=StringUtil::make_lower(uuid);
+            if(m_runtimeScriptResources) {
+                resource::ResourceID id;
+                if(!m_runtimeScriptResources->resolveRuntimeUUID(identity,id,error))return fail(error);
+                if(id.type()!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
+            }
             if(m_loadedScriptAssets.find(identity)!=m_loadedScriptAssets.end())
             { m_lastDiagnostic.clear();setError(false);return true; }
-            auto compiled=m_runtimeScriptResources->loadUUID(identity,error);
+            std::shared_ptr<const resource::RuntimeResource> compiled;
+            try {compiled=m_runtimeScriptResolver?m_runtimeScriptResolver(identity,error):m_runtimeScriptResources->loadUUID(identity,error);}
+            catch(const std::exception &exception){return fail(exception.what());}
             if(!compiled)return fail(error);
             if(compiled->header.resourceType!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
             if(!loadScriptResourceInternal(compiled,{}))return false;

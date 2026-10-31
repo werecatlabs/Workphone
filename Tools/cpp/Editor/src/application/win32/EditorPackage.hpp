@@ -50,6 +50,9 @@ namespace workphone::editor
         std::filesystem::path workspace;
         bool smoke = false;
         std::filesystem::path validationCaptureDirectory;
+        std::filesystem::path runtimeScenePackage;
+        std::string runtimeSceneUuid,runtimeSceneTarget="pc";
+        bool runtimeSceneValidate=false;
 
         EditorPackage( int argc, char **argv )
         {
@@ -63,7 +66,14 @@ namespace workphone::editor
             for( int i = 1; i < argc; ++i )
             {
                 const std::string argument = argv[i];
-                if( argument == "--validation-capture-directory" )
+                if(argument=="--runtime-scene-package"||argument=="--runtime-scene-uuid"||argument=="--runtime-scene-target")
+                {
+                    if(++i==argc)throw std::runtime_error("Missing runtime scene argument");
+                    if(argument=="--runtime-scene-package")runtimeScenePackage=argv[i];
+                    else if(argument=="--runtime-scene-uuid")runtimeSceneUuid=argv[i];else runtimeSceneTarget=argv[i];
+                }
+                else if(argument=="--runtime-scene-validate")runtimeSceneValidate=true;
+                else if( argument == "--validation-capture-directory" )
                 {
                     if( ++i == argc ) throw std::runtime_error( "Missing validation capture directory" );
                     validationCaptureDirectory = argv[i];
@@ -76,6 +86,9 @@ namespace workphone::editor
                 }
                 else if( argument == "--package-smoke" ) smoke = true;
             }
+            if(runtimeScenePackage.empty()!=runtimeSceneUuid.empty()||(runtimeSceneValidate&&runtimeScenePackage.empty()))
+                throw std::runtime_error("Runtime scene startup requires both --runtime-scene-package and --runtime-scene-uuid");
+            if(!runtimeScenePackage.empty())runtimeScenePackage=std::filesystem::canonical(runtimeScenePackage);
             if( !installed && !explicitRoot && !smoke && workspace.empty() )
             {
                 // Development plugin/media paths are relative to the executable,

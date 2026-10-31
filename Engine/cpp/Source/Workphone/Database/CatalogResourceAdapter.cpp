@@ -167,6 +167,44 @@ namespace workphone
         return true;
     }
 
+    bool CatalogResourceAdapter::captureAssetBindings(std::map<String,resource::ResourceID> &bindings,String &error) const
+    {
+        error.clear();bindings.clear();
+        try {
+            if(!validateBinding(error))return false;
+            auto catalog=m_catalog;
+            asset_package_detail::Admission admission(m_catalog,error);if(!admission.active)return false;
+            std::map<String,resource::ResourceID> captured;std::set<String> identities;u64 bytes=0;
+            for(const auto &mapping:m_mappings) {
+                AssetDatabaseManager::EntryQuery query;query.type=mapping.catalogType;query.includeScenes=false;query.pageSize=256;
+                AssetDatabaseManager::EntryCursor cursor;bool more=false;
+                do {
+                    auto page=catalog->queryEntries(query,more?&cursor:nullptr);
+                    if(!page.succeeded){error=page.error;return false;}
+                    for(const auto &entry:page.entries) {
+                        Request request{entry,resource::ResourceID(entry.path)};
+                        if(!validateRequest(request,error))return false;
+                        auto uuid=StringUtil::make_lower(entry.uuid);
+                        if(uuid.size()!=36){error="Captured asset UUID is malformed";return false;}
+                        bool nonzero=false;
+                        for(size_t i=0;i<uuid.size();++i) {
+                            const char c=uuid[i];
+                            if(i==8||i==13||i==18||i==23){if(c!='-'){error="Malformed asset UUID";return false;}}
+                            else if((c>='0'&&c<='9')||(c>='a'&&c<='f'))nonzero|=c!='0';
+                            else {error="Malformed asset UUID";return false;}
+                        }
+                        bytes+=uuid.size()+request.resourceId.str().size()+256;
+                        if(!nonzero||captured.size()>=65536||bytes>(32ull<<20)||
+                            !captured.emplace(uuid,request.resourceId).second||!identities.insert(request.resourceId.str()).second)
+                        {error="Captured asset bindings exceed limits or contain aliases";return false;}
+                    }
+                    cursor=std::move(page.next);more=page.hasMore;
+                }while(more);
+            }
+            bindings.swap(captured);return true;
+        }catch(const std::exception &failure){error=failure.what();return false;}
+    }
+
     bool CatalogResourceAdapter::writeRuntimePackage( const String &directory,
                                                       const Array<Request> &roots, String &error ) const
     {
@@ -267,6 +305,11 @@ namespace workphone
                         return false;
                     }
                     AssetPackagePolicy policy;
+                    if(context.capturedAssetBindings) {
+                        const auto captured=context.capturedAssetBindings->find(StringUtil::make_lower(uuid));
+                        if(captured==context.capturedAssetBindings->end()||captured->second!=id)
+                        {diagnostic="Catalog UUID mapping changed after build capture: "+id.str();return false;}
+                    }
                     if( !getAssetPackagePolicy( m_catalog, uuid, policy, diagnostic ) )
                     {
                         return false;

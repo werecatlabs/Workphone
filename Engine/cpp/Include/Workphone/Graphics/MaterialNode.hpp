@@ -10,6 +10,7 @@
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -324,6 +325,16 @@ namespace workphone
             WP_CLASS_REGISTER_TEMPLATE_DECL( MaterialNode, T );
 
         protected:
+            static void validateParent(const IMaterialNode *child,SmartPtr<IMaterialNode> parent)
+            {
+                const IMaterialNode *visited[256]{};size_t count=0;
+                while(parent) {
+                    if(parent.get()==child)throw std::invalid_argument("Material nodes cannot contain a parent cycle");
+                    if(count==256)throw std::length_error("Material node parent depth exceeds its bound");
+                    for(size_t i=0;i<count;++i)if(visited[i]==parent.get())throw std::invalid_argument("Existing material parent cycle");
+                    visited[count++]=parent.get();parent=parent->getParent();
+                }
+            }
             /// Whether this material node is enabled and should contribute to rendering.
             atomic_bool m_enabled = true;
 
@@ -369,8 +380,11 @@ namespace workphone
         template <class T>
         void MaterialNode<T>::unload( SmartPtr<ISharedObject> data )
         {
+            for(auto child:m_children)
+                if(child&&child.get()!=this&&(!child->getParentPtr()||child->getParentPtr()==this))child->setParent(nullptr);
             m_children.releaseStorage();
             m_parent = nullptr;
+            m_material = nullptr;
         }
 
         template <class T>
@@ -378,6 +392,9 @@ namespace workphone
         {
             if( child )
             {
+                validateParent(child.get(),this);
+                if(m_children.size()==m_children.capacity())m_children.reserve(std::max(size_t(1),m_children.capacity()*2));
+                if(auto previous=child->getParent();previous&&previous.get()!=this)previous->removeChild(child);
                 m_children.push_back( child );
                 child->setParent( this );
             }
@@ -392,6 +409,10 @@ namespace workphone
         {
             if( child )
             {
+                validateParent(child.get(),this);
+                auto previous=m_children[index];
+                if(previous&&previous!=child&&(!previous->getParentPtr()||previous->getParentPtr()==this))previous->setParent(nullptr);
+                if(auto owner=child->getParent();owner&&owner.get()!=this)owner->removeChild(child);
                 m_children[index] = child;
                 child->setParent( this );
             }
@@ -408,7 +429,7 @@ namespace workphone
             if( it != m_children.end() )
             {
                 m_children.erase( it );
-                child->setParent( nullptr );
+                if(!child->getParentPtr()||child->getParentPtr()==this)child->setParent( nullptr );
             }
             if( auto material = getMaterial() )
             {
@@ -429,10 +450,9 @@ namespace workphone
         template <class T>
         void MaterialNode<T>::removeAllChildren()
         {
-            auto children = getChildren();
-            for( auto &child : children )
+            for( auto child : m_children )
             {
-                if( child )
+                if( child&&(!child->getParentPtr()||child->getParentPtr()==this) )
                 {
                     child->setParent( nullptr );
                 }
@@ -465,7 +485,7 @@ namespace workphone
             {
                 if( child && child->getId() == id )
                 {
-                    child->setParent( nullptr );
+                    return child;
                 }
             }
 
@@ -481,7 +501,15 @@ namespace workphone
         template <class T>
         void MaterialNode<T>::setChildren( const Array<SmartPtr<IMaterialNode>> &children )
         {
-            m_children = { children.begin(), children.end() };
+            for(auto child:children)if(child)validateParent(child.get(),this);
+            SourceBudgetConcurrentArray<SmartPtr<IMaterialNode>> next(children.begin(),children.end());
+            for(auto child:m_children)
+                if(child&&(!child->getParentPtr()||child->getParentPtr()==this))child->setParent(nullptr);
+            m_children = std::move(next);
+            for(auto child:children)if(child) {
+                if(auto previous=child->getParent();previous&&previous.get()!=this)previous->removeChild(child);
+                child->setParent(this);
+            }
             if( auto material = getMaterial() )
             {
                 material->setPass( nullptr );
@@ -504,7 +532,9 @@ namespace workphone
         template <class T>
         void MaterialNode<T>::setParent( SmartPtr<IMaterialNode> parent )
         {
+            validateParent(this,parent);
             m_parent = parent;
+            setMaterial(parent?parent->getMaterial():nullptr);
         }
 
         template <class T>
@@ -524,7 +554,7 @@ namespace workphone
             m_material = material;
             for( auto child : m_children )
             {
-                if( child && child.get() != this )
+                if( child && child.get() != this&&child->getParentPtr()==this )
                 {
                     child->setMaterial( material );
                 }

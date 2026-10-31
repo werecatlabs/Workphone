@@ -24,6 +24,17 @@
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/ResourceClosureStream.hpp>
+#include <Workphone/System/SceneResourceCompiler.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/System/TaskLock.hpp>
+#include <Workphone/Scene/GameScene.hpp>
+#include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include <Workphone/Scene/Components/Script.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsMesh.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <EditorApplication.hpp>
 #include <core/EditorMediaPaths.hpp>
 #include <core/EditorWorkspacePaths.hpp>
@@ -57,6 +68,8 @@
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Database/MediaAssetCatalog.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <thread>
+#include <map>
 
 #ifdef _WP_STATIC_LIB_
 #    include <FBRenderUI/FBRenderUI.hpp>
@@ -444,6 +457,146 @@ namespace workphone::editor
     WP_CLASS_REGISTER_DERIVED( workphone::editor, EditorApplication::EventListener, IEventListener );
 
     const String EditorApplication::scriptsFolderStr = String( "/Scripts" );
+
+    struct EditorApplication::RuntimeSceneBootstrap
+    {
+        struct Root { UUID identity;SmartPtr<scene::IGameActor> actor;u32 slot=0; };
+        String directory,uuid,target,error,projectPath,projectDirectory,projectFile;
+        std::thread::id owner;
+        std::chrono::steady_clock::time_point started;
+        std::shared_ptr<resource::ResourcePayloadMount> mount;
+        std::unique_ptr<resource::ResourceClosureStream> stream;
+        std::shared_ptr<const resource::RuntimeAssetContext> context;
+        SmartPtr<scene::IGameManager> manager;
+        SmartPtr<scene::GameScene> scene;
+        SmartPtr<Project> project;
+        StreamBudget metadata;
+        Array<Root> roots{Allocator<Root>(sourceBudget)};
+        u64 generation=0,requestGeneration=0;
+        u32 actors=0,components=0,scripts=0,meshes=0;
+        bool pending=false,complete=false,succeeded=false;
+    };
+
+    void EditorApplication::configureRuntimeScenePackage(const String &directory,const String &uuid,const String &target)
+    {
+        if(isLoaded())throw std::logic_error("Configure runtime scene startup before loading the Editor");
+        if(directory.empty()||uuid.size()!=36||target.empty()||target.size()>128)throw std::invalid_argument("Runtime scene requires package directory, canonical UUID and target");
+        auto staged=std::make_unique<RuntimeSceneBootstrap>();
+        const auto path=std::filesystem::canonical(std::filesystem::u8path(directory.c_str()));
+        if(!std::filesystem::is_directory(path)||!std::filesystem::is_regular_file(path/"runtime.wprm"))throw std::invalid_argument("Runtime scene package manifest is missing");
+        staged->directory=path.u8string().c_str();staged->uuid=uuid;staged->target=target;staged->owner=std::this_thread::get_id();m_runtimeScene=std::move(staged);
+    }
+    bool EditorApplication::runtimeSceneComplete() const {return m_runtimeScene&&m_runtimeScene->complete;}
+    bool EditorApplication::runtimeSceneSucceeded() const {return m_runtimeScene&&m_runtimeScene->succeeded;}
+    String EditorApplication::runtimeSceneDiagnostic() const {return m_runtimeScene?m_runtimeScene->error:String();}
+    String EditorApplication::runtimeSceneReport() const
+    {
+        if(!m_runtimeScene)return "{}";const auto &state=*m_runtimeScene;
+        return boost::json::serialize(boost::json::object{{"status",state.succeeded?"loaded":state.complete?"failed":"loading"},
+            {"uuid",state.uuid.c_str()},{"target",state.target.c_str()},{"roots",state.roots.size()},
+            {"actors",state.actors},{"components",state.components},{"scripts",state.scripts},{"meshes",state.meshes},
+            {"streamGeneration",state.requestGeneration},{"diagnostic",state.error.c_str()}}).c_str();
+    }
+    void EditorApplication::retireRuntimeSceneBootstrap() noexcept
+    {
+        if(!m_runtimeScene)return;auto &state=*m_runtimeScene;
+        try {
+            if(state.owner!=std::this_thread::get_id())return;
+            if(state.stream){state.stream->cancel();state.stream->drain();state.stream.reset();}state.mount.reset();
+            if(state.manager&&state.manager->isLoaded()) {
+                auto app=core::IApplicationManager::instancePtr();SmartPtr<ITask> renderTask;
+                if(app)if(auto tasks=app->getTaskManager())if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())renderTask=task;
+                TaskLock pause(renderTask);ScopedLock managerLock(state.manager);
+                auto graphics=app?app->getGraphicsSystem():nullptr;ScopedLock graphicsLock(graphics);
+                for(auto &root:state.roots)if(root.actor&&root.actor->isLoaded()&&root.actor->getScene()==state.scene&&
+                    root.actor->getHandle()->getUUID()==root.identity&&state.manager->getActor(root.slot)==root.actor)
+                    state.manager->destroyActor(root.actor);
+            }
+            Array<RuntimeSceneBootstrap::Root> retired{Allocator<RuntimeSceneBootstrap::Root>(sourceBudget)};state.roots.swap(retired);state.metadata.reset();state.context.reset();state.scene=nullptr;state.manager=nullptr;state.project=nullptr;state.pending=false;
+        }catch(const std::exception &error){try{WP_LOG_ERROR(String("Runtime scene teardown failed: ")+error.what());}catch(...){}}
+    }
+    void EditorApplication::cancelRuntimeSceneStartup(const String &reason)
+    {
+        if(!m_runtimeScene)return;if(m_runtimeScene->owner!=std::this_thread::get_id())throw std::logic_error("Runtime scene cancellation requires its primary owner");
+        retireRuntimeSceneBootstrap();m_runtimeScene->error=reason;m_runtimeScene->complete=true;m_runtimeScene->succeeded=false;
+    }
+    void EditorApplication::startRuntimeSceneBootstrap()
+    {
+        if(!m_runtimeScene)return;auto &state=*m_runtimeScene;
+        try {
+            if(state.owner!=std::this_thread::get_id())throw std::logic_error("Runtime scene startup requires its primary owner");
+            auto app=core::IApplicationManager::instancePtr();state.manager=app?app->getGameManager():nullptr;
+            state.scene=state.manager?dynamic_pointer_cast<scene::GameScene>(state.manager->getCurrentScene()):nullptr;
+            if(!state.scene||!state.scene->isLoaded())throw std::runtime_error("Runtime scene startup requires the loaded native scene");
+            state.project=m_editorManager?m_editorManager->getProject():nullptr;state.projectPath=app->getProjectPath();state.projectDirectory=state.project?state.project->getPath():String();state.projectFile=state.project?state.project->getFilePath():String();state.generation=state.scene->getLoadGeneration();
+            resource::RuntimeResourceConfig config;config.compiledRoot=state.directory;config.manifestPath=(std::filesystem::u8path(state.directory.c_str())/"runtime.wprm").u8string().c_str();config.target=state.target;
+            config.maxPayloadBytes=8ull<<20;config.maxClosurePayloadBytes=64ull<<20;config.maxClosureResources=256;config.maxDependencyDepth=64;
+            WorldStreamProducerLimits limits;limits.maximumPending=256;limits.maximumActive=2;limits.maximumReady=16;limits.maximumReadyBytes=32ull<<20;
+            String error;state.mount=resource::ResourcePayloadMount::create(config,WorldStreamingScheduler::shared(),limits,error);
+            if(!state.mount)throw std::runtime_error(error.c_str());state.stream=resource::ResourceClosureStream::create(state.mount,error);
+            if(!state.stream||!state.stream->requestUUID(1,state.uuid,{},100,error))throw std::runtime_error(error.c_str());
+            state.requestGeneration=state.stream->generation();state.started=std::chrono::steady_clock::now();state.pending=true;
+        }catch(const std::exception &error){cancelRuntimeSceneStartup(error.what());}
+    }
+    void EditorApplication::updateRuntimeSceneBootstrap()
+    {
+        if(!m_runtimeScene)return;auto &state=*m_runtimeScene;if(state.owner!=std::this_thread::get_id())return;
+        if(!state.pending&&!state.succeeded)return;
+        try {
+            auto app=core::IApplicationManager::instancePtr();auto project=m_editorManager?m_editorManager->getProject():nullptr;
+            if(!app||app->getGameManager()!=state.manager||project!=state.project||app->getProjectPath()!=state.projectPath||
+                (project&&(project->getPath()!=state.projectDirectory||project->getFilePath()!=state.projectFile))||
+                !state.scene||!state.scene->isLoaded()||state.manager->getCurrentScene()!=state.scene||state.scene->getLoadGeneration()!=state.generation)
+                throw std::runtime_error("Runtime scene startup was cancelled by a project or scene change");
+            if(!state.pending)return;
+            if(std::chrono::steady_clock::now()-state.started>std::chrono::seconds(30))throw std::runtime_error("Runtime scene package startup exceeded 30 seconds");
+            resource::ResourcePayloadResult result;if(!state.stream->take(result))return;
+            if(result.key!=1||result.generation!=state.requestGeneration)throw std::runtime_error("Runtime scene closure result was superseded");
+            if(!result.resource)throw std::runtime_error(result.error.empty()?"Runtime scene closure is unavailable":result.error.c_str());
+            String error;auto graph=resource::decodeActorGraphResource(result.resource,error);if(!graph)throw std::runtime_error(error.c_str());
+            auto context=resource::createActorGraphRuntimeContext(graph,state.target,true,error);if(!context)throw std::runtime_error(error.c_str());
+            auto working=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,result.resource->payload.size()*48+(1ull<<20),error);
+            if(!working)throw std::runtime_error(error.c_str());auto document=make_ptr<Properties>();
+            if(!PropertiesBinarySerializer::deserialize(result.resource->payload,*document,&error))throw std::runtime_error(error.c_str());
+            const auto roots=document->getChildrenByName("actors");
+            state.metadata=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,1024+256*roots.size(),error);if(!state.metadata)throw std::runtime_error(error.c_str());
+            state.roots.resize(roots.size());std::map<UUID,size_t> expected;
+            for(size_t i=0;i<roots.size();++i){state.roots[i].identity=StringUtil::parseUUID(roots[i]->getProperty("uuid"));expected.emplace(state.roots[i].identity,i);}
+            const auto capacity=state.manager->getActors().size();
+            if(state.generation==std::numeric_limits<u64>::max())throw std::runtime_error("Runtime scene generation is exhausted");
+            const auto committedGeneration=state.generation+1;
+            {
+                SmartPtr<ITask> renderTask;if(auto tasks=app->getTaskManager())if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())renderTask=task;
+                TaskLock pause(renderTask);ScopedLock managerLock(state.manager);
+                if(state.scene->getLoadGeneration()!=state.generation)throw std::runtime_error("Runtime scene generation changed before installation");
+                if(!resource::installCookedSceneGraph(graph,state.scene,context,error))throw std::runtime_error(error.c_str());
+                state.context=context;
+                size_t captured=0;for(u32 slot=0;slot<capacity;++slot)if(auto actor=state.manager->getActor(slot))if(actor->isLoaded()&&actor->getScene()==state.scene) {
+                    auto found=expected.find(actor->getHandle()->getUUID());if(found!=expected.end()){auto &root=state.roots[found->second];root.actor=actor;root.slot=slot;++captured;}
+                }
+                if(captured!=state.roots.size())throw std::runtime_error("Runtime scene roots did not publish as captured");
+                if(state.scene->getLoadGeneration()!=committedGeneration)throw std::runtime_error("Runtime scene generation changed during installation");
+                state.generation=committedGeneration;
+            }
+            auto verify=[&](auto &&self,const SmartPtr<scene::IGameActor> &actor)->void {
+                if(state.actors>=4096)throw std::runtime_error("Runtime scene owner validation exceeds its actor limit");
+                ++state.actors;for(const auto &component:actor->getComponents()) {
+                    ++state.components;if(!component->isLoaded())throw std::runtime_error("Runtime scene component did not load");
+                    if(auto script=dynamic_pointer_cast<scene::Script>(component)) {
+                        if(!script->getScriptData()||script->getRuntimeScriptManager()!=context->scripts||script->getRuntimeScriptManager()==app->getScriptManager())throw std::runtime_error("Runtime Script did not construct through its private VM");
+                        script->update();++state.scripts;
+                    }
+                    if(auto renderer=dynamic_pointer_cast<scene::MeshRenderer>(component)) {
+                        auto mesh=renderer->getGraphicsObjectByType<render::IGraphicsMesh>();void *native=nullptr;if(mesh)mesh->_getObject(&native);
+                        if(!mesh||!mesh->isLoaded()||!native)throw std::runtime_error("Runtime renderer has no loaded native mesh object");++state.meshes;
+                    }
+                }
+                for(const auto &child:actor->getChildren())self(self,child);
+            };for(const auto &root:state.roots)verify(verify,root.actor);
+            state.stream->drain();state.stream.reset();state.mount.reset();state.pending=false;state.complete=true;state.succeeded=true;
+            WP_LOG("Runtime scene package loaded: "+state.uuid);
+        }catch(const std::exception &error){cancelRuntimeSceneStartup(error.what());WP_LOG_ERROR("Runtime scene package failed: "+state.error);}
+    }
 
     EditorApplication::EditorApplication()
     {
@@ -942,13 +1095,14 @@ namespace workphone::editor
                 else WP_LOG_ERROR( "Could not start the Lua debugger" );
             }
         }
-
+        if(isLoaded())startRuntimeSceneBootstrap();
     }
 
     void EditorApplication::unload( SmartPtr<ISharedObject> data )
     {
         try
         {
+            retireRuntimeSceneBootstrap();
             if( isLoaded() )
             {
                 setLoadingState( LoadingState::Unloading );
@@ -1262,6 +1416,8 @@ namespace workphone::editor
             {
                 taskManager->update();
             }
+
+            updateRuntimeSceneBootstrap();
 
             Thread::yield();
         }
@@ -2206,10 +2362,15 @@ namespace workphone::editor
             workphone::dynamic_pointer_cast<render::GraphicsSettings>( configurationData );
         WP_ASSERT( configuration );
 
-        configuration->setCreateWindow( false );
-        // configuration->setCreateWindow( true );
+        // A cooked scene can install native textures during its first owner
+        // iteration. Configure its selected backend with a real window before
+        // those uploads; the ordinary Editor retains its deferred-window path.
+        const bool runtimeStartup=bool(m_runtimeScene);
+        if(runtimeStartup)graphicsSystem->setRendererType(m_rendererType);
+        configuration->setCreateWindow( runtimeStartup );
 
-        graphicsSystem->configure( configuration );
+        const bool configured=graphicsSystem->configure( configuration );
+        if(runtimeStartup&&!configured)return false;
         graphicsSystem->setRendererType( m_rendererType );
 
         if( auto settings = applicationManager->getEditorSettings() )
@@ -2249,7 +2410,10 @@ namespace workphone::editor
             properties->setProperty( "WindowHandle", m_windowHandle );
         }
 
-        auto window = graphicsSystem->createRenderWindow( "Editor", 400, 400, false, properties );
+        auto window = runtimeStartup ? graphicsSystem->getDefaultWindow() :
+            graphicsSystem->createRenderWindow( "Editor", 400, 400, false, properties );
+        if(runtimeStartup&&!window)return false;
+        if(runtimeStartup&&isDebugMode())window->setVisible(false);
         applicationManager->setWindow( window );
 
         auto resourceGroupManager = graphicsSystem->getResourceGroupManager();

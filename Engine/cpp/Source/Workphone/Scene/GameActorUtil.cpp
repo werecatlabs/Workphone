@@ -6,6 +6,11 @@
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Jobs/CameraManagerReset.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include <Workphone/Scene/Components/Animator.hpp>
+#include <Workphone/Scene/Components/Script.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -509,7 +514,7 @@ namespace workphone::scene
     }
 
     Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors( const Array<SmartPtr<Properties>> &data,
-                                                                SmartPtr<IGameScene> target )
+        SmartPtr<IGameScene> target,std::shared_ptr<const resource::RuntimeAssetContext> runtimeAssets )
     {
         if( activeBatch )
         {
@@ -648,11 +653,13 @@ namespace workphone::scene
                 Properties::exchangeObjectResolver( std::move( previous ) );
                 activeBatch = nullptr;
             }
-        } scope{ Properties::exchangeObjectResolver(
-            [&batch]( const String &uuid ) -> SmartPtr<ISharedObject> {
+        } scope{ Properties::exchangeObjectResolver( {} ) };
+        Properties::exchangeObjectResolver(
+            [&batch, &scope]( const String &uuid ) -> SmartPtr<ISharedObject> {
                 auto it = batch.objects.find( uuid );
-                return it == batch.objects.end() ? nullptr : it->second;
-            } ) };
+                if( it != batch.objects.end() ) return it->second;
+                return scope.previous ? scope.previous( uuid ) : nullptr;
+            } );
 
         activeBatch = &batch;
         try
@@ -670,11 +677,19 @@ namespace workphone::scene
                 actor->setScene( target );
                 loadFromData( actor, properties, true );
             }
+            // Seal every component before the first load/property callback can
+            // reach a sibling. Native initialization can publish component events.
+            if(runtimeAssets)for(const auto &entry:batch.components) {
+                    if(auto component=workphone::dynamic_pointer_cast<Mesh>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<MeshRenderer>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Animator>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Script>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+            }
             for( const auto &entry : batch.components )
             {
                 checkCurrent();
                 manager->loadObject( entry.first, entry.second, false );
-                if( entry.first->getLoadingState() == LoadingState::Error )
+                if( entry.first->getLoadingState() == LoadingState::Error || runtimeAssets&&!entry.first->isLoaded() )
                 {
                     throw std::runtime_error( "Component initialization failed" );
                 }

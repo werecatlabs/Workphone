@@ -244,6 +244,8 @@ namespace workphone::render
     {
         const auto changed = getMaterial() != material;
         MaterialNode<IMaterialPass>::setMaterial( material );
+        for(auto unit:m_textures)
+            if(unit&&unit->getParentPtr()==this)unit->setMaterial(material);
         if( changed && material )
         {
             if( auto context = getStateContextPtr() )
@@ -559,10 +561,12 @@ namespace workphone::render
     void MaterialPass::reload( SmartPtr<ISharedObject> data )
     {
         auto parent = getParent();
+        auto material = getMaterial();
 
         unload( data );
 
         setParent( parent );
+        setMaterial( material );
         load( data );
 
         setupMaterial();
@@ -655,6 +659,16 @@ namespace workphone::render
     {
         try
         {
+            // Pending texture uploads may outlive this pass and material. Detach
+            // their owner links before any teardown snapshot can be refused.
+            for(auto unit:m_textures)
+            {
+                if(unit&&(!unit->getParentPtr()||unit->getParentPtr()==this))
+                {
+                    unit->setMaterial(nullptr);
+                    unit->setParent(nullptr);
+                }
+            }
             Array<SmartPtr<IMaterialTexture>> ownedUnits;
             for( const auto &unit : m_textures )
             {
@@ -690,6 +704,8 @@ namespace workphone::render
         {
             WP_LOG_EXCEPTION( e );
         }
+        m_material = nullptr;
+        m_parent = nullptr;
     }
 
     void MaterialPass::setSceneBlending( u32 blendType )

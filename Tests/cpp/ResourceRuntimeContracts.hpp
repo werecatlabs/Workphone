@@ -1,6 +1,7 @@
 #ifndef WP_RESOURCE_RUNTIME_CONTRACTS_HPP
 #define WP_RESOURCE_RUNTIME_CONTRACTS_HPP
 #include "CompiledResourceHeaderContracts.hpp"
+#include "RuntimeResourceAdmissionContracts.hpp"
 
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
@@ -255,6 +256,9 @@ namespace resource_runtime_contracts
         const auto uuidManifest = cooked / "runtime-uuid.wprm";
         require( authoring.writeRuntimeManifest( pathText( uuidManifest ), { rootId }, bindings, error ), error );
         const auto uuidManifestBytes = read( uuidManifest );
+        RuntimeResourceConfig admissionConfig;admissionConfig.compiledRoot=pathText(cooked);
+        admissionConfig.manifestPath=pathText(uuidManifest);admissionConfig.target=authoringConfig.target;
+        runtime_resource_admission_contracts::run(admissionConfig,rootId,leafId,rootUUID);
         require( authoring.writeRuntimeManifest( pathText( uuidManifest ), { rootId },
                      { { leafUUID, leafId }, { upperRootUUID, rootId } }, error ) &&
                  read( uuidManifest ) == uuidManifestBytes,

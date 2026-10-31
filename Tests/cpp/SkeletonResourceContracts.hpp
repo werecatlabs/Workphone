@@ -1,9 +1,12 @@
 #pragma once
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/System/SkeletonResourceCompiler.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
 #include <Workphone/Interface/Mesh/IGraphicsBone.hpp>
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/Scene/Components/Mesh.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -57,6 +60,32 @@ BOOST_AUTO_TEST_CASE( typed_skeleton_compiler_and_owner_install_contract )
     auto broken=std::make_shared<RuntimeResource>(*resource); broken->header.compilerVersion=0;
     BOOST_CHECK(!animator.loadResource(broken,error)); BOOST_CHECK(animator.getSkeleton()==previous);
     BOOST_CHECK_EQUAL(animator.getAnimations().size(),1u);
+    const String rigUuid="12b43688-9d32-4e85-b5dc-f8bac29dc309",meshUuid="12b43688-9d32-4e85-b5dc-f8bac29dc310";
+    auto meshResource=std::make_shared<RuntimeResource>();meshResource->header.resourceType=ResourceTypeID("mesh");
+    meshResource->header.resourceId=ResourceID("data://native.mesh");
+    auto runtimeContext=std::make_shared<RuntimeAssetContext>();
+    runtimeContext->resolve=[resource,meshResource,rigUuid,meshUuid](const String &uuid,String &error)->std::shared_ptr<const RuntimeResource>{
+        if(uuid==rigUuid)return resource;if(uuid==meshUuid)return meshResource;error="Unbound fixture UUID";return {};
+    };
+    scene::Animator packaged;packaged.configureRuntimeAssets(runtimeContext);
+    auto animationProperties=make_ptr<Properties>();animationProperties->setProperty("animationAssetUuid",rigUuid);
+    animationProperties->setProperty("animationTime",.25f);packaged.setProperties(animationProperties);
+    BOOST_REQUIRE(packaged.getSkeleton());BOOST_CHECK_CLOSE(packaged.getSkeleton()->getBone("Root")->getPosition().x,.5f,.001f);
+    const auto packagedRig=packaged.getSkeleton();auto missing=make_ptr<Properties>();missing->setProperty("animationAssetUuid","unbound");
+    BOOST_CHECK_THROW(packaged.setProperties(missing),std::runtime_error);BOOST_CHECK(packaged.getSkeleton()==packagedRig);
+    auto cache=make_ptr<Properties>();cache->setProperty("animationCachePath","authoring.skeleton.xml");
+    BOOST_CHECK_THROW(packaged.setProperties(cache),std::runtime_error);BOOST_CHECK(packaged.getSkeleton()==packagedRig);
+    scene::Mesh meshComponent;meshComponent.configureRuntimeAssets(runtimeContext);
+    auto meshProperties=make_ptr<Properties>();meshProperties->setProperty("Mesh Resource",meshUuid);meshProperties->setProperty("Skeleton",rigUuid);
+    meshComponent.setProperties(meshProperties);
+    BOOST_CHECK(meshComponent.getRuntimeResource()==meshResource);BOOST_CHECK(meshComponent.getRuntimeSkeletonResource()==resource);
+    BOOST_CHECK(!meshComponent.getMeshResource());
+    auto wrongMesh=make_ptr<Properties>();wrongMesh->setProperty("Mesh Resource",rigUuid);
+    BOOST_CHECK_THROW(meshComponent.setProperties(wrongMesh),std::runtime_error);BOOST_CHECK(meshComponent.getRuntimeResource()==meshResource);
+    BOOST_CHECK_THROW(meshComponent.setMeshPath("authoring.mesh"),std::runtime_error);
+    meshComponent.unload(nullptr);packaged.unload(nullptr);
+    BOOST_CHECK(!meshComponent.getRuntimeResource() && !meshComponent.getRuntimeSkeletonResource() && !packaged.getSkeleton());
+    BOOST_CHECK_THROW(packaged.setProperties(animationProperties),std::runtime_error);
     auto corrupt=std::make_shared<RuntimeResource>(*resource); corrupt->payload[0]^=1;
     BOOST_CHECK(!SkeletonResourceCompiler::decode(*corrupt,error));
     corrupt=std::make_shared<RuntimeResource>(*resource); corrupt->header.formatVersion=0;

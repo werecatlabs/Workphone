@@ -7,6 +7,7 @@
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; }
     namespace scene
     {
 
@@ -46,6 +47,7 @@ namespace workphone
 
             /** @copydoc Resource<IPrefab>::setData */
             void setData( SmartPtr<ISharedObject> data ) override;
+            void setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context );
 
             /**
              * @copydoc IGamePrefabManager::lock
@@ -71,6 +73,7 @@ namespace workphone
         protected:
             /** Data. */
             SmartPtr<ISharedObject> m_data;
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
         };
     }  // namespace scene
 }  // namespace workphone

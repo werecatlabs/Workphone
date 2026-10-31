@@ -7,6 +7,7 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/System/FSMListener.hpp>
+#include <memory>
 
 namespace workphone
 {
@@ -61,6 +62,14 @@ namespace workphone
              */
             void load( SmartPtr<ISharedObject> data ) override;
             bool createScriptManager() override;
+            /** Explicit source-free scene startup. Configure before load; the
+             * primary iterate owner transports and commits one pinned closure. */
+            void configureRuntimeScenePackage(const String &directory,const String &uuid,const String &target="pc");
+            bool runtimeSceneComplete() const;
+            bool runtimeSceneSucceeded() const;
+            String runtimeSceneDiagnostic() const;
+            String runtimeSceneReport() const;
+            void cancelRuntimeSceneStartup(const String &reason);
 
             /**
              * @brief Unloads the editor application.
@@ -163,6 +172,11 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
+            struct RuntimeSceneBootstrap;
+            std::unique_ptr<RuntimeSceneBootstrap> m_runtimeScene;
+            void startRuntimeSceneBootstrap();
+            void updateRuntimeSceneBootstrap();
+            void retireRuntimeSceneBootstrap() noexcept;
             void loadEditorPreferences();
             void configureSceneRenderWindow();
 

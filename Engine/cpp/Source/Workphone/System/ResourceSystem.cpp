@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -16,6 +17,7 @@
 #include <shared_mutex>
 #include <sstream>
 #include <iomanip>
+#include <limits>
 
 #if defined WP_PLATFORM_WIN32
 #    include <process.h>
@@ -58,6 +60,49 @@ namespace workphone::resource
             std::map<String, String> artifacts;
             std::map<String, ResourceID> bindings;
         };
+
+        // Keep the reservation alive until every owned header/payload/dependency
+        // has physically retired, including children escaped from a parent DAG.
+        struct AdmittedRuntimeResource
+        {
+            StreamBudget admission;
+            RuntimeResource value;
+        };
+
+        bool addAdmissionBytes(u64 &bytes,u64 addition,String &error)
+        {
+            if(addition>std::numeric_limits<u64>::max()-bytes)
+            {error="Resource memory admission size overflow";return false;}
+            bytes+=addition;return true;
+        }
+
+        u64 headerMemoryAllowance(u64 encoded,u64 dependencies)
+        {
+            // Callers cap encoded at 8 MiB and dependencies at 4096. Covers
+            // string normalization, vectors, traversal maps and retained header.
+            return 8192+12*encoded+1024*dependencies;
+        }
+
+        void runtimeReadFailure(String &error,const char *message) noexcept
+        {
+            try {error=message;}
+            catch(...) {try {error="Read admission failed";}catch(...) {error.clear();}}
+        }
+
+        bool runtimeHeaderEnvelope(const RuntimeManifest &manifest,const CompiledResourceHeader &header,
+                                   u64 &encoded,String &error)
+        {
+            constexpr u64 cap=8ull<<20;encoded=52;
+            auto add=[&](u64 bytes){if(bytes>cap-encoded)return false;encoded+=bytes;return true;};
+            if(!add(4)||!add(header.resourceId.str().size())){error="Runtime header exceeds metadata admission limit";return false;}
+            for(const auto &id:header.installDependencies) {
+                const auto artifact=manifest.artifacts.find(id.str());
+                if(artifact==manifest.artifacts.end()||!add(4)||!add(id.str().size())||
+                    !add(4+2*sizeof(u64))||!add(artifact->second.size()))
+                {error="Runtime dependency header exceeds metadata admission limit";return false;}
+            }
+            return true;
+        }
 
         bool canonicalRuntimeUUID( const String &input, String &output )
         {
@@ -215,10 +260,12 @@ namespace workphone::resource
                                             left.installArtifacts == right.installArtifacts ) );
         }
 
-        bool readManifest( const String &path, RuntimeManifest &manifest, String &error )
+        bool readManifest( const String &path, RuntimeManifest &manifest, String &error,
+                           u64 admittedContainerBytes=maximumManifestBytes+(8ull<<20) )
         {
             RuntimeResource container;
-            if( !CompiledResourceIO::read( path, container, error, maximumManifestBytes ) )
+            if( !CompiledResourceIO::read(path,container,error,std::min(maximumManifestBytes,admittedContainerBytes),
+                                          std::min<u64>(8ull<<20,admittedContainerBytes)) )
             {
                 return false;
             }
@@ -1016,6 +1063,7 @@ namespace workphone::resource
             context.target = config.target;
             context.packagedBuild = options.packagedBuild;
             context.buildProfile = config.buildProfile;
+            context.assetBindings = capturedAssetBindings;
             if( resourceId.str().size() > 1024 || config.target.size() > 128 )
             {
                 return fail( "Resource identity or target exceeds artifact namespace limits" );
@@ -1178,6 +1226,10 @@ namespace workphone::resource
             sourceHash = hashString( compilerName, sourceHash );
             sourceHash = combineHash( sourceHash, profileKey.size() );
             sourceHash = hashString( profileKey, sourceHash );
+            if(capturedAssetBindings && !capturedAssetBindings->empty()) {
+                sourceHash=hashString("captured-asset-bindings-v1",sourceHash);
+                sourceHash=combineHash(sourceHash,assetBindingsHash);
+            }
             sourceHash = hashString( config.target, sourceHash );
             sourceHash = combineHash( sourceHash, options.packagedBuild ? 1u : 0u );
             sourceHash = combineHash( sourceHash, sourceFileHash );
@@ -1507,6 +1559,16 @@ namespace workphone::resource
             const InstallDependencyArtifact *parentPin = nullptr, bool shallow = false,
             u64 payloadLimit = 1024ull << 20 )
         {
+            // Traversal keys/maps can outlive individual reader scratch. The
+            // retained per-node allowance covers completed-map ownership; this
+            // working lease covers the active recursion frame before any copy.
+            StreamBudget traversal;
+            if(!shallow){
+                const auto length=resourceId.str().size();
+                if(length>(1u<<20)){error="Resource identity exceeds reader admission bounds";return nullptr;}
+                traversal=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,8192+8*u64(length),error);
+                if(!traversal)return nullptr;
+            }
             CompiledResourceRecord committedRecord;
             String artifact;
             if( runtimeOnly )
@@ -1613,6 +1675,7 @@ namespace workphone::resource
             } stackGuard{ request.stack, resourceId.str() };
 
             std::shared_ptr<RuntimeResource> loaded;
+            StreamBudget readerScratch;
             if( !cached )
             {
                 fs::path outputPath;
@@ -1621,15 +1684,41 @@ namespace workphone::resource
                 {
                     return nullptr;
                 }
-                loaded = std::make_shared<RuntimeResource>();
                 const auto remaining = runtimeConfig.maxClosurePayloadBytes - request.payloadBytes;
+                u64 headerEnvelope=8ull<<20;
+                if(runtimeOnly&&!runtimeHeaderEnvelope(runtimeManifest,pinned->second,headerEnvelope,error))return nullptr;
+                u64 admittedPayload=std::min(payloadLimit,std::min(runtimeConfig.maxPayloadBytes,remaining));
+                if(runtimeOnly)admittedPayload=std::min(admittedPayload,pinned->second.payloadSize);
+                if(!shallow){
+                    u64 payloadBytes=0,metadataBytes=0;
+                    if(runtimeOnly){
+                        payloadBytes=pinned->second.payloadSize;
+                        metadataBytes=headerMemoryAllowance(headerEnvelope,pinned->second.installDependencies.size());
+                    }else{
+                        std::error_code sizeError;const auto fileBytes=fs::file_size(fileSystemIOPath(outputPath),sizeError);
+                        if(sizeError){error="Cannot bound compiled resource storage before admission";return nullptr;}
+                        // Authoring pins do not include size. The actual container
+                        // length conservatively bounds its retained payload; a
+                        // file-derived header bound avoids a 100-MiB minimum.
+                        payloadBytes=fileBytes;headerEnvelope=std::min<u64>(headerEnvelope,fileBytes);
+                        admittedPayload=std::min<u64>(admittedPayload,fileBytes);
+                        metadataBytes=headerMemoryAllowance(headerEnvelope,std::min<u64>(4096,headerEnvelope/5));
+                    }
+                    u64 retainedBytes=metadataBytes;if(!addAdmissionBytes(retainedBytes,payloadBytes,error))return nullptr;
+                    auto admission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,retainedBytes,error);
+                    if(!admission)return nullptr;
+                    readerScratch=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,metadataBytes,error);
+                    if(!readerScratch)return nullptr;
+                    auto owner=std::allocate_shared<AdmittedRuntimeResource>(SourceBudgetAllocator<AdmittedRuntimeResource>{});
+                    owner->admission=std::move(admission);loaded=std::shared_ptr<RuntimeResource>(owner,&owner->value);
+                }else loaded=std::make_shared<RuntimeResource>();
                 if( !CompiledResourceIO::read(
                         pathString( outputPath ), *loaded, error,
-                        std::min( payloadLimit,
-                                  std::min( runtimeConfig.maxPayloadBytes, remaining ) ) ) )
+                        admittedPayload,headerEnvelope ) )
                 {
                     return nullptr;
                 }
+                readerScratch.reset();
             }
             const auto &header = cached ? cached->header : loaded->header;
             if( header.resourceId != resourceId || header.resourceType != resourceId.type() )
@@ -1769,6 +1858,7 @@ namespace workphone::resource
         std::shared_ptr<const RuntimeResource> loadClosure( const ResourceID &id, String &error )
         {
             std::lock_guard<std::mutex> loadLock( runtimeLoadMutex );
+            try {
             LoadRequest request;
             request.packagedBuild = activePackagedBuild;
             auto loaded = loadNode( id, request, error );
@@ -1782,12 +1872,17 @@ namespace workphone::resource
                 runtimeCache[request.artifacts.at( entry.first )] = entry.second;
             }
             return loaded;
+            }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return nullptr;}
         }
 
         std::shared_ptr<IResourceCompilerRegistry> registry;
         std::shared_ptr<IResourceCompilationDatabase> database;
+        StreamBudget assetBindingsBudget;
+        std::shared_ptr<const std::map<String,ResourceID>> capturedAssetBindings;
+        u64 assetBindingsHash=0;
         ResourceSystemConfig config;
         RuntimeResourceConfig runtimeConfig;
+        StreamBudget runtimeManifestAdmission;
         RuntimeManifest runtimeManifest;
         std::map<String, CompilationReport> verifiedBuilds;
         fs::path sourceRoot;
@@ -1796,7 +1891,8 @@ namespace workphone::resource
         mutable std::shared_mutex operationMutex;
         mutable std::shared_mutex cacheMutex;
         mutable std::mutex runtimeLoadMutex;
-        std::map<String, std::weak_ptr<const RuntimeResource>> runtimeCache;
+        std::map<String,std::weak_ptr<const RuntimeResource>,std::less<String>,
+            SourceBudgetAllocator<std::pair<const String,std::weak_ptr<const RuntimeResource>>>> runtimeCache;
         bool initialized = false;
         bool runtimeOnly = false;
         bool activePackagedBuild = false;
@@ -1836,6 +1932,39 @@ namespace workphone::resource
 
         try { (void)config.buildProfile.key(); }
         catch(const std::exception &exception) { error=exception.what(); return false; }
+        u64 bindingBytes=0,bindingHash=14695981039346656037ull;
+        if(config.assetBindings.size()>65536){error="Captured asset bindings exceed 65536 entries";return false;}
+        for(const auto &binding:config.assetBindings) {
+            String canonical;
+            if(!canonicalRuntimeUUID(binding.first,canonical)||canonical!=binding.first||
+               !binding.second.isValid()||binding.second.isSubResource()||binding.second.str().size()>1024)
+            {error="Captured asset bindings require canonical unique UUIDs and resource identities";return false;}
+            bindingBytes+=binding.first.size()+binding.second.str().size()+256;
+            if(bindingBytes>(32ull<<20)){error="Captured asset binding metadata exceeds 32 MiB";return false;}
+            bindingHash=combineHash(bindingHash,binding.first.size());bindingHash=hashString(binding.first,bindingHash);
+            bindingHash=combineHash(bindingHash,binding.second.str().size());bindingHash=hashString(binding.second.str(),bindingHash);
+        }
+        StreamBudget bindingsBudget,bindingsWorking;
+        std::shared_ptr<const std::map<String,ResourceID>> bindings;
+        if(bindingBytes) {
+            bindingsWorking=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,bindingBytes*2,error);
+            if(!bindingsWorking)return false;
+            std::set<String> boundIds;
+            for(const auto &binding:config.assetBindings)if(!boundIds.insert(binding.second.str()).second)
+            {error="Captured asset bindings contain aliased resource identities";return false;}
+            bindingsBudget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,bindingBytes*3,error);
+            if(!bindingsBudget)return false;
+            try {
+                struct CapturedBindings {
+                    StreamBudget admission;
+                    std::map<String,ResourceID> values;
+                };
+                auto owned=std::make_shared<CapturedBindings>();
+                owned->admission=bindingsBudget;owned->values=config.assetBindings;
+                bindings=std::shared_ptr<const std::map<String,ResourceID>>(owned,&owned->values);
+            }
+            catch(const std::exception &failure){error=failure.what();return false;}
+        }
 
         std::error_code filesystemError;
         fs::path source = fs::canonical( fs::u8path( config.sourceRoot.c_str() ), filesystemError );
@@ -1915,6 +2044,10 @@ namespace workphone::resource
 
         m_impl->writerLease = std::move( writerLease );
         m_impl->config = config;
+        m_impl->config.assetBindings.clear();
+        m_impl->capturedAssetBindings=std::move(bindings);
+        m_impl->assetBindingsBudget=std::move(bindingsBudget);
+        m_impl->assetBindingsHash=bindingHash;
         m_impl->config.databasePath = databasePath;
         m_impl->sourceRoot = std::move( source );
         m_impl->compiledRoot = std::move( compiled );
@@ -1930,6 +2063,10 @@ namespace workphone::resource
     }
 
     bool ResourceSystem::initializeRuntime( const RuntimeResourceConfig &config, String &error )
+    { return initializeRuntime(config,error,{},{}); }
+
+    bool ResourceSystem::initializeRuntime(const RuntimeResourceConfig &config,String &error,
+        std::shared_ptr<StreamBudgetLease> manifestAdmission,std::shared_ptr<StreamBudgetLease> workingAdmission)
     {
         error.clear();
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
@@ -1948,6 +2085,7 @@ namespace workphone::resource
             error = "Runtime resource configuration is incomplete or exceeds its limits";
             return false;
         }
+        try {
         std::error_code filesystemError;
         auto compiled = fs::absolute( fs::u8path( config.compiledRoot.c_str() ), filesystemError );
         if( !filesystemError )
@@ -1960,8 +2098,18 @@ namespace workphone::resource
             error = "Runtime compiled root must be an existing accessible directory";
             return false;
         }
+        std::error_code manifestError;
+        const auto manifestBytes=fs::file_size(fileSystemIOPath(fs::u8path(config.manifestPath.c_str())),manifestError);
+        if(manifestError || manifestBytes>maximumManifestBytes+(8ull<<20))
+        {error="Cannot bound runtime manifest storage before admission";return false;}
+        const u64 admissionBytes=65536+12*manifestBytes;
+        if((manifestAdmission && (manifestAdmission->memoryClass()!=StreamMemoryClass::SourceCpu || manifestAdmission->bytes()<admissionBytes)) ||
+           (workingAdmission && (workingAdmission->memoryClass()!=StreamMemoryClass::WorkingCpu || workingAdmission->bytes()<admissionBytes)))
+        {error="Adopted runtime manifest admissions have an invalid class or insufficient bytes";return false;}
+        if(!manifestAdmission){manifestAdmission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,admissionBytes,error);if(!manifestAdmission)return false;}
+        if(!workingAdmission){workingAdmission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,admissionBytes,error);if(!workingAdmission)return false;}
         RuntimeManifest manifest;
-        if( !readManifest( config.manifestPath, manifest, error ) )
+        if( !readManifest( config.manifestPath, manifest, error,manifestBytes ) )
         {
             return false;
         }
@@ -1972,11 +2120,13 @@ namespace workphone::resource
         }
         m_impl->runtimeConfig = config;
         m_impl->runtimeManifest = std::move( manifest );
+        m_impl->runtimeManifestAdmission=std::move(manifestAdmission);
         m_impl->compiledRoot = std::move( compiled );
         m_impl->sourceRoot.clear();
         m_impl->runtimeOnly = true;
         m_impl->initialized = true;
         return true;
+        }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return false;}
     }
 
     bool ResourceSystem::writeRuntimeManifest( const String &path, const Array<ResourceID> &roots,
@@ -2356,6 +2506,7 @@ namespace workphone::resource
             RuntimePackageContext context;
             context.sourceRoot = pathString( m_impl->sourceRoot );
             context.target = m_impl->config.target;
+            context.capturedAssetBindings = m_impl->capturedAssetBindings;
             for( const auto &entry : manifest.resources )
             {
                 context.resources.push_back( entry.second.resourceId );
@@ -2535,8 +2686,11 @@ namespace workphone::resource
             m_impl->database->disconnect();
         }
         m_impl->runtimeManifest = RuntimeManifest();
+        m_impl->runtimeManifestAdmission.reset();
         m_impl->verifiedBuilds.clear();
         m_impl->sourceRoot.clear();
+        m_impl->capturedAssetBindings.reset();
+        m_impl->assetBindingsBudget.reset();
         m_impl->compiledRoot.clear();
         m_impl->initialized = false;
         m_impl->writerLease.reset();
@@ -2683,6 +2837,7 @@ namespace workphone::resource
 
     std::shared_ptr<const RuntimeResource> ResourceSystem::load( const ResourceID &resourceId,
                                                                  String &error )
+    try
     {
         error.clear();
         if( !resourceId.isValid() )
@@ -2703,6 +2858,7 @@ namespace workphone::resource
         // are loaded concurrently. Async scheduling and residency budgets remain separate work.
         return m_impl->loadClosure( resourceId, error );
     }
+    catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return nullptr;}
 
     bool ResourceSystem::resolveRuntimeUUID( const String &uuid, ResourceID &output,
                                              String &error ) const
@@ -2712,6 +2868,7 @@ namespace workphone::resource
     }
 
     std::shared_ptr<const RuntimeResource> ResourceSystem::loadUUID( const String &uuid, String &error )
+    try
     {
         std::shared_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         ResourceID id;
@@ -2721,10 +2878,12 @@ namespace workphone::resource
         }
         return m_impl->loadClosure( id, error );
     }
+    catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return nullptr;}
 
     std::shared_ptr<const RuntimeResource> ResourceSystem::loadPayload( const ResourceID &id,
                                                                         String &error,
                                                                         u64 maximumPayloadBytes )
+    try
     {
         error.clear();
         if( !id.isValid() )
@@ -2745,6 +2904,25 @@ namespace workphone::resource
         Impl::LoadRequest request;
         request.packagedBuild = m_impl->activePackagedBuild;
         return m_impl->loadNode( id, request, error, nullptr, true, maximumPayloadBytes );
+    }
+    catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return nullptr;}
+
+    bool ResourceSystem::payloadMemoryRequirements(const ResourceID &id,u64 &payloadBytes,
+                                                   u64 &metadataBytes,String &error) const
+    {
+        payloadBytes=0;metadataBytes=0;error.clear();
+        std::shared_lock<std::shared_mutex> operationLock(m_impl->operationMutex);
+        {std::lock_guard<std::mutex> stateLock(m_impl->stateMutex);
+            if(!m_impl->initialized||!m_impl->runtimeOnly||!id.isValid())
+            {error="Payload admission requires an initialized runtime mount and valid identity";return false;}}
+        const auto entry=m_impl->runtimeManifest.resources.find(id.str());
+        if(entry==m_impl->runtimeManifest.resources.end()) {error="Resource is not present in the runtime manifest";return false;}
+        u64 encoded=0;if(!runtimeHeaderEnvelope(m_impl->runtimeManifest,entry->second,encoded,error))return false;
+        // Eight-MiB encoded and 4096-dependency limits make this arithmetic
+        // bounded; the allowance covers normalization/set/vector copies as well
+        // as the retained header, not just its on-disk spelling.
+        metadataBytes=headerMemoryAllowance(encoded,entry->second.installDependencies.size());
+        payloadBytes=entry->second.payloadSize;return true;
     }
 
     void ResourceSystem::unload( const ResourceID &resourceId )

@@ -349,6 +349,12 @@ namespace workphone
          * Mount changes require unload/recreate; runtime reload is unavailable. */
         bool configureRuntimeScriptResources( const resource::RuntimeResourceConfig &config,
                                                String &error );
+        bool configureRuntimeResourceResolver(
+            std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,
+            String &error) override;
+        SmartPtr<IScriptManager> createRuntimeInstance(
+            std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,
+            String &error) override;
         bool loadScriptAsset( const String &uuid ) override;
         bool loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot = {} );
 
@@ -748,6 +754,7 @@ namespace workphone
         std::shared_ptr<resource::IResourceSystem> m_scriptResources;
         std::shared_ptr<resource::ResourceSystem> m_runtimeScriptResources;
         bool m_runtimeScriptsMode = false;
+        std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> m_runtimeScriptResolver;
         bool m_compiledScriptsOnly = false;
         Map<String, u64> m_loadedScriptAssets;
         bool applyCompiledModulePolicy();

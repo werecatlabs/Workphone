@@ -18,6 +18,10 @@
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/System/CompiledResource.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
+#include <stdexcept>
 
 namespace workphone::scene
 {
@@ -29,6 +33,53 @@ namespace workphone::scene
     MeshRenderer::MeshRenderer() = default;
 
     MeshRenderer::~MeshRenderer() = default;
+
+    void MeshRenderer::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    {
+        if(!context || !context->resolve || isLoaded() || getLoadingState()==LoadingState::Loading ||
+           getLoadingState()==LoadingState::Unloading || (m_runtimeAssets && m_runtimeAssets!=context))
+            throw std::runtime_error("MeshRenderer runtime assets require an unloaded component and resolver");
+        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+    }
+
+    bool MeshRenderer::installRuntimeMesh(std::shared_ptr<const resource::RuntimeResource> resource,String &error)
+    {
+#if WP_TYPED_ANIMATION_RESOURCE
+        if(!m_runtimeAssets || !resource){error="Missing captured runtime mesh/context";return false;}
+        const auto type=resource->header.resourceType;
+        if(type!=workphone::resource::ResourceTypeID("mesh") && type!=workphone::resource::ResourceTypeID("skinres"))
+        {error="MeshRenderer UUID requires a mesh or skinres resource";return false;}
+        if(resource==m_runtimeResource && getGraphicsObject())return true;
+        auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystemPtr():nullptr;
+        auto scene=graphics?graphics->getGraphicsScene():nullptr;auto actor=getActor();
+        if(!scene || !actor){error="Runtime MeshRenderer requires its actor and graphics scene";return false;}
+        ScopedLock lock(graphics);
+        if(auto mesh=getGraphicsObjectByType<render::IGraphicsMesh>()){
+            if(!mesh->loadResource(resource,error,m_runtimeAssets->target,m_runtimeAssets->packagedBuild))return false;
+            m_runtimeResource=std::move(resource);return true;
+        }
+        SmartPtr<render::IGraphicsMesh> mesh;
+        SmartPtr<render::IGraphicsSceneNode> node;
+        try {
+            mesh=scene->addGraphicsObjectByType<render::IGraphicsMesh>();
+            if(!mesh)throw std::runtime_error("Cannot allocate runtime graphics mesh");
+            mesh->setVisible(false);
+            if(!mesh->loadResource(resource,error,m_runtimeAssets->target,m_runtimeAssets->packagedBuild))throw std::runtime_error(error.c_str());
+            auto root=scene->getRootSceneNode();if(!root)throw std::runtime_error("Runtime graphics scene has no root node");
+            node=root->addChildSceneNode(actor->getName()+"_RuntimeMesh_"+StringUtil::toString(m_idExt++));
+            if(!node)throw std::runtime_error("Cannot allocate runtime mesh scene node");
+            node->attachObject(mesh);mesh->setVisibilityFlags(render::IGraphicsObject::SceneFlag);
+            setGraphicsObject(mesh);setMeshNode(node);
+            m_runtimeResource=std::move(resource);return true;
+        }catch(const std::exception &failure){
+            if(node){node->detachAllObjects();scene->removeSceneNode(node);}
+            if(mesh){mesh->unload(nullptr);scene->removeGraphicsObject(mesh);}
+            setGraphicsObject(nullptr);setMeshNode(nullptr);error=failure.what();return false;
+        }
+#else
+        error="Cooked mesh resources are unavailable in this build";return false;
+#endif
+    }
 
     void MeshRenderer::updateFlags( u32 flags, u32 oldFlags )
     {
@@ -58,6 +109,8 @@ namespace workphone::scene
             setLoadingState( LoadingState::Loading );
 
             Renderer::load( data );
+            if(m_runtimeAssetsMode && getLoadingState()==LoadingState::Error)
+                throw std::runtime_error("Runtime MeshRenderer initialization failed");
 
             if( !getGraphicsObject() )
             {
@@ -71,15 +124,17 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            if(m_runtimeAssetsMode){setLoadingState(LoadingState::Error);throw;}
         }
     }
 
     void MeshRenderer::unload( SmartPtr<ISharedObject> data )
     {
+        m_runtimeResource.reset();m_runtimeAssets.reset();
         try
         {
             const auto loadingState = getLoadingState();
-            if( loadingState == LoadingState::Allocated || loadingState == LoadingState::Unloaded )
+            if( (loadingState == LoadingState::Allocated || loadingState == LoadingState::Unloaded) && !getGraphicsObject() )
             {
                 return;
             }
@@ -162,11 +217,22 @@ namespace workphone::scene
     auto MeshRenderer::getProperties() const -> SmartPtr<Properties>
     {
         auto properties = Renderer::getProperties();
+        if(properties)properties->setProperty("meshAssetUuid",m_meshAssetUuid,Properties::resourceStr);
         return properties;
     }
 
     void MeshRenderer::setProperties( SmartPtr<Properties> properties )
     {
+        if(m_runtimeAssetsMode){
+            if(!properties || !m_runtimeAssets)throw std::runtime_error("Missing runtime MeshRenderer context/properties");
+            String uuid=m_meshAssetUuid,error;properties->getPropertyValue("meshAssetUuid",uuid);
+            std::shared_ptr<const resource::RuntimeResource> resource;
+            if(!uuid.empty())resource=m_runtimeAssets->resolve(uuid,error);
+            else if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())resource=mesh->getRuntimeResource();
+            if(!resource)throw std::runtime_error(error.empty()?"Runtime MeshRenderer requires a captured mesh UUID":error.c_str());
+            if(!installRuntimeMesh(resource,error))throw std::runtime_error(error.c_str());
+            m_meshAssetUuid=std::move(uuid);
+        }
         Renderer::setProperties( properties );
 
         updateMesh();
@@ -239,6 +305,17 @@ namespace workphone::scene
 
     void MeshRenderer::updateMesh()
     {
+        if(m_runtimeAssetsMode){
+            // A Mesh sibling may notify us before our own UUID properties load.
+            // setProperties stages the selected asset during real initialization.
+            if(getLoadingState()==LoadingState::Allocated)return;
+            if(!m_runtimeAssets)throw std::runtime_error("Runtime MeshRenderer requires its captured asset context");
+            String error;std::shared_ptr<const resource::RuntimeResource> resource;
+            if(!m_meshAssetUuid.empty())resource=m_runtimeAssets->resolve(m_meshAssetUuid,error);
+            else if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())resource=mesh->getRuntimeResource();
+            if(!resource || !installRuntimeMesh(resource,error))throw std::runtime_error(error.empty()?"Runtime mesh UUID is unavailable":error.c_str());
+            return;
+        }
         try
         {
             auto actor = getActorPtr();
@@ -387,6 +464,7 @@ namespace workphone::scene
 
     AABB3<real_Num> MeshRenderer::calculateBoundingBox()
     {
+        if(m_runtimeAssetsMode)if(auto mesh=getGraphicsObjectByType<render::IGraphicsMesh>())return mesh->getLocalAABB();
         auto boundingBox = AABB3<real_Num>();
         if( auto actor = getActorPtr() )
         {

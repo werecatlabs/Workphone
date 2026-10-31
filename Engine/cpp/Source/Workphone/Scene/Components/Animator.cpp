@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
 #if WP_TYPED_ANIMATION_RESOURCE
 #include <Workphone/System/SkeletonResourceCompiler.hpp>
 #endif
@@ -227,8 +228,32 @@ namespace workphone::scene
 
     Animator::Animator() = default;
 
+    void Animator::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    {
+        if(!context || !context->resolve || isLoaded() || m_animationGraph.isValid() ||
+           getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading ||
+           (m_runtimeAssets && m_runtimeAssets!=context))
+            throw std::runtime_error("Animator runtime assets require an unloaded component, resolver and no graph");
+        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+    }
+
+    bool Animator::loadRuntimeAnimation(const String &uuid,String &error)
+    {
+        if(!m_runtimeAssets){error="Animator requires its captured runtime asset context";return false;}
+        try {
+            std::shared_ptr<const resource::RuntimeResource> resource;
+            if(!uuid.empty())resource=m_runtimeAssets->resolve(uuid,error);
+            else if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())resource=mesh->getRuntimeSkeletonResource();
+            if(!resource){if(error.empty())error="Animator requires a captured skeleton/clip UUID";return false;}
+            String identity=uuid;
+            if(resource!=m_runtimeAnimation && !loadResource(resource,error))return false;
+            m_animationAssetUuid=std::move(identity);m_runtimeAnimation=std::move(resource);return true;
+        }catch(const std::exception &failure){error=failure.what();return false;}
+    }
+
     void Animator::load( SmartPtr<ISharedObject> data )
     {
+        if(m_runtimeAssetsMode && !m_runtimeAssets)throw std::runtime_error("Animator runtime assets must be reconfigured before load");
         setLoadingState( LoadingState::Loading );
         Component::load( data );
 
@@ -247,6 +272,7 @@ namespace workphone::scene
 
     void Animator::unload( SmartPtr<ISharedObject> data )
     {
+        m_runtimeAnimation.reset();m_runtimeAssets.reset();
         // Loading-state changes commit before optional notification admission.
         // A refused notification must not strand this generation's IK owners.
         try
@@ -830,6 +856,7 @@ namespace workphone::scene
 
     bool Animator::restoreRuntimeAnimations()
     {
+        if(m_runtimeAssetsMode){String error;const auto loaded=loadRuntimeAnimation(m_animationAssetUuid,error);if(!loaded)m_playbackStatus=error;return loaded;}
         auto actors = animationActors( getActor() );
         auto cacheKey =
             m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
@@ -1028,6 +1055,7 @@ namespace workphone::scene
 
         properties->setProperty( animationTimeStr, m_animationTime );
         properties->setProperty( "animationCachePath", m_animationCachePath );
+        properties->setProperty("animationAssetUuid",m_animationAssetUuid,Properties::resourceStr);
         properties->setProperty( "playbackStatus", m_playbackStatus, true );
         properties->setProperty( animationSpeedStr, m_animationSpeed );
         properties->setProperty( animationWeightStr, m_animationWeight );
@@ -1080,6 +1108,13 @@ namespace workphone::scene
         if( !properties )
         {
             return;
+        }
+
+        if(m_runtimeAssetsMode){
+            String uuid=m_animationAssetUuid,cache,error;
+            properties->getPropertyValue("animationAssetUuid",uuid);properties->getPropertyValue("animationCachePath",cache);
+            if(!cache.empty())throw std::runtime_error("Runtime Animator forbids authoring animation caches");
+            if(!loadRuntimeAnimation(uuid,error))throw std::runtime_error(error.c_str());
         }
 
         properties->getPropertyValue( "animationCachePath", m_animationCachePath );

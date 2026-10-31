@@ -64,6 +64,9 @@ namespace workphone::resource
 
         static bool read( const String &path, RuntimeResource &resource, String &error,
                           u64 maxPayloadBytes = 1024ull * 1024ull * 1024ull );
+        /** A captured manifest may impose a tighter header allocation envelope. */
+        static bool read( const String &path, RuntimeResource &resource, String &error,
+                          u64 maxPayloadBytes, u64 maxEncodedHeaderBytes );
     };
 }  // namespace workphone::resource
 

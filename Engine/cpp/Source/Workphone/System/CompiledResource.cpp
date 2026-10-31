@@ -219,7 +219,8 @@ namespace workphone::resource
         }
 
         bool readHeaderFromStream( std::istream &stream, CompiledResourceHeader &header,
-                                   u64 &payloadOffset, String &error )
+                                   u64 &payloadOffset, String &error,
+                                   u64 maximumHeaderBytes=maxEncodedHeaderBytes )
         {
             header = CompiledResourceHeader();
             // Establish file and aggregate metadata bounds before any variable
@@ -229,6 +230,7 @@ namespace workphone::resource
             stream.seekg(0,std::ios::end); const auto end=stream.tellg();
             stream.seekg(start);
             HeaderReadBudget budget;
+            budget.encodedRemaining=std::min(maximumHeaderBytes,maxEncodedHeaderBytes);
             constexpr u64 fixedHeaderBytes=4+2+2+5*8+4;
             if(!stream || end<start) { error="Cannot bound compiled resource header"; return false; }
             budget.fileRemaining=static_cast<u64>(end-start);
@@ -586,6 +588,12 @@ namespace workphone::resource
     bool CompiledResourceIO::read( const String &path, RuntimeResource &resource, String &error,
                                    u64 maxPayloadBytes )
     {
+        return read(path,resource,error,maxPayloadBytes,maxEncodedHeaderBytes);
+    }
+
+    bool CompiledResourceIO::read( const String &path, RuntimeResource &resource, String &error,
+                                   u64 maxPayloadBytes, u64 maximumHeaderBytes )
+    {
         resource = RuntimeResource();
         const auto inputPath = fileSystemIOPath( std::filesystem::u8path( path.c_str() ) );
         std::ifstream stream( inputPath, std::ios::binary );
@@ -596,7 +604,7 @@ namespace workphone::resource
         }
 
         u64 payloadOffset = 0;
-        if( !readHeaderFromStream( stream, resource.header, payloadOffset, error ) )
+        if( !readHeaderFromStream( stream, resource.header, payloadOffset, error, maximumHeaderBytes ) )
         {
             return false;
         }

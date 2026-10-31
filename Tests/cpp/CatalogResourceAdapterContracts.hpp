@@ -5,6 +5,7 @@
 #include <Workphone/System/Resource.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Database/AssetPackagePolicy.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <functional>
 #include <future>
+#include <cstdio>
 #include <stdexcept>
 
 namespace workphone
@@ -100,6 +102,8 @@ namespace catalog_adapter_contracts
         std::function<void()> duringCompile;
         u64 version = 1;
         bool fail = false;
+        bool captureBindings = false;
+        mutable std::shared_ptr<const std::map<String,ResourceID>> retainedBindings;
 
         String name() const override
         {
@@ -112,6 +116,7 @@ namespace catalog_adapter_contracts
         bool getDependencies( const CompileContext &context, DependencySet &dependencies,
                               String &error ) const override
         {
+            if(captureBindings)retainedBindings=context.assetBindings;
             std::ifstream stream( context.sourcePath.c_str() );
             if( !stream )
             {
@@ -237,6 +242,60 @@ namespace catalog_adapter_contracts
         auto checkedRoot = checkedRuntime.loadUUID(uuid,error);
         require(checkedRoot && checkedRuntime.loadUUID(dependencyUUID,error) == checkedRoot->dependencies[0],
                 "Catalog export must map every transitive install dependency to its durable UUID");
+        {
+            std::map<String,ResourceID> captured;
+            const bool capturedOK=adapter.captureAssetBindings(captured,error);require(capturedOK,error.c_str());
+            require(captured.size()==2 && captured.at(StringUtil::make_lower(uuid))==request.resourceId &&
+                captured.at(StringUtil::make_lower(dependencyUUID))==ResourceID("data://dependency.ctest"),
+                "Captured binding snapshot must include mapped files and exclude scene-domain rows");
+            auto boundConfig=config;boundConfig.compiledRoot=(root/"captured-compiled").u8string().c_str();boundConfig.assetBindings=captured;
+            auto bound=std::make_shared<ResourceSystem>(registry,std::make_shared<ResourceCompilationDatabase>());
+            const bool initialized=bound->initialize(boundConfig,error);require(initialized,error.c_str());
+            boundConfig.assetBindings.clear(); // Caller mutation cannot retarget the captured build.
+            CatalogResourceAdapter admitted(catalog,bound,config.sourceRoot,mappings);
+            CatalogResourceAdapter::Request boundRoot;require(admitted.resolve(uuid,boundRoot,error),"Captured root resolve");
+            compiler->captureBindings=true;
+            const auto cooked=admitted.compile(boundRoot,packaged);require(cooked.succeeded(),"Captured binding cook");
+            const bool exported=admitted.writeRuntimePackage((root/"captured-package").u8string().c_str(),{boundRoot},error);
+            require(exported,error.c_str());
+            require(admitted.compile(boundRoot,packaged).status==CompilationStatus::UpToDate,"Detached capture must remain immutable after caller map mutation");
+            compiler->captureBindings=false;
+            std::weak_ptr<const std::map<String,ResourceID>> escapedBindings=compiler->retainedBindings;
+            bound->shutdown();
+            require(!escapedBindings.expired()&&*compiler->retainedBindings==captured,
+                "A compiler's captured binding snapshot must remain valid after service shutdown");
+            auto sharedScheduler=WorldStreamingScheduler::shared();const auto sourceClass=size_t(StreamMemoryClass::SourceCpu);
+            const auto retainedBytes=sharedScheduler->stats().used[sourceClass];
+            u64 bindingBytes=0;for(const auto &binding:captured)bindingBytes+=3*(binding.first.size()+binding.second.str().size()+256);
+            // Lease storage itself participates in SourceCpu. Measure through
+            // the public allocator rather than hard-coding its ABI/control size.
+            auto calibration=sharedScheduler->reserve(StreamMemoryClass::SourceCpu,bindingBytes,error);
+            require(calibration!=nullptr,"Cannot calibrate captured binding admission");
+            const auto admittedBytes=sharedScheduler->stats().used[sourceClass]-retainedBytes;
+            calibration.reset();
+            require(sharedScheduler->stats().used[sourceClass]==retainedBytes,"Calibration must retire its complete admission");
+            compiler->retainedBindings.reset();
+            const auto retiredBytes=sharedScheduler->stats().used[sourceClass];
+            if(!escapedBindings.expired()||retiredBytes+admittedBytes!=retainedBytes)
+                std::fprintf(stderr,"Captured binding retirement: expired=%d source=%llu->%llu expected=%llu\n",
+                    int(escapedBindings.expired()),static_cast<unsigned long long>(retainedBytes),
+                    static_cast<unsigned long long>(retiredBytes),static_cast<unsigned long long>(admittedBytes));
+            require(escapedBindings.expired()&&retiredBytes+admittedBytes==retainedBytes,
+                "Escaped captured bindings must retain and release their own source admission");
+            auto wrongConfig=config;wrongConfig.compiledRoot=(root/"wrong-captured-compiled").u8string().c_str();
+            wrongConfig.assetBindings=captured;wrongConfig.assetBindings.erase(StringUtil::make_lower(dependencyUUID));
+            wrongConfig.assetBindings.emplace("8740ebf2-7110-41ea-8243-661a77a8f708",ResourceID("data://dependency.ctest"));
+            auto wrong=std::make_shared<ResourceSystem>(registry,std::make_shared<ResourceCompilationDatabase>());
+            require(wrong->initialize(wrongConfig,error),"Wrong captured mapping fixture initialize");
+            CatalogResourceAdapter rejected(catalog,wrong,config.sourceRoot,mappings);
+            require(rejected.resolve(uuid,boundRoot,error),"Wrong capture root resolve");
+            const auto wrongCook=rejected.compile(boundRoot,packaged);
+            require(wrongCook.succeeded()&&wrongCook.sourceHash!=cooked.sourceHash,"Captured identity map must participate in immutable build inputs");
+            const auto destination=root/"wrong-captured-package";
+            require(!rejected.writeRuntimePackage(destination.u8string().c_str(),{boundRoot},error)&&!fs::exists(destination)&&
+                error.find("mapping changed")!=String::npos,"Current catalog admission must reject UUID remapping after captured cook");
+            wrong->shutdown();
+        }
         const auto rejectedPath = root / "rejected-catalog-package";
         AssetPackagePolicy dependencyPolicy;
         require(getAssetPackagePolicy(catalog,dependencyUUID,dependencyPolicy,error) &&

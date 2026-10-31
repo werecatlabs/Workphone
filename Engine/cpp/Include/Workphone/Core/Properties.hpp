@@ -56,6 +56,9 @@ namespace workphone
         // A scoped loader may resolve objects in its pinned graph before scene publication.
         using ObjectResolver = std::function<SmartPtr<ISharedObject>( const String & )>;
         static ObjectResolver exchangeObjectResolver( ObjectResolver resolver );
+        /** Scope typed runtime loads without consulting the authoring database.
+         * Returns the previous thread-local fallback policy for restoration. */
+        static bool exchangeObjectResolverFallback( bool allowDatabaseFallback );
         /** @brief Empty string constant used for default values. */
         static const String emptyStr;
         /** @brief Resource string constant used for resource type properties. */

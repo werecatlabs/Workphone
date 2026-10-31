@@ -347,7 +347,7 @@ namespace workphone
                     ordered.push_back( data );
                 }
             }
-            actors = scene::GameActorUtil::loadSceneActors( ordered, target );
+            actors = scene::GameActorUtil::loadSceneActors( ordered, target, m_runtimeAssets );
             for( const auto &actor : actors )
             {
                 if( !current() )
@@ -457,6 +457,11 @@ namespace workphone
         if( !data || m_prepared ) throw std::invalid_argument("Scene preparation is already sealed or empty");
         m_preparedData = std::move(data);
         m_prepared = true;
+    }
+
+    void SceneLoadJob::setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
+    {
+        m_runtimeAssets = std::move(context);
     }
 
 }  //  namespace workphone

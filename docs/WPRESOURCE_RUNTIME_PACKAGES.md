@@ -432,24 +432,55 @@ capture and importer-specific interruption certification remain separate gates.
 
 ## Scheduled runtime payload reads
 
-`ResourcePayloadStream` combines the read-only `ResourceSystem::loadPayload` path
-with the existing `WorldStreamingScheduler`. Creation owns a private immutable
-runtime mount, preventing queued work from retargeting a project reopen. Owner
-threads replace demand and take results; worker callbacks perform verified reads
-without constructing scene, graphics or audio objects. Each demand names a resource,
-job key, priority and maximum payload size. Scheduler admission bounds pending,
-active, ready, working and result payload reservations. UUIDs resolve through that
-same private mount, without a catalog lookup. Pending identities are limited to
-1024 bytes and charged to pending admission. Returned resources alias the result
-reservation, including after stream destruction, until the last consumer
-releases them. Invalid/oversized demand is rejected; missing or corrupt pinned
-resources return errors. Cancellation is checked before and after a read, and
-stale generations are suppressed by the shared scheduler. It cannot interrupt a
-blocked filesystem call. Limits cover payload reservations, not total process RSS.
-Reads are shallow and do not enter the complete-closure cache or retain child
-payloads. Owner threads choose which typed installer receives each result.
-This is whole-payload scheduling, not mesh LOD, texture mip, audio seeking or
-arbitrary chunk-range streaming.
+`ResourcePayloadMount::create(config, scheduler, limits, error)` captures one
+read-only manifest generation and a persistent `WorldStreamingScheduler` queue.
+`ResourcePayloadStream::create(config, scheduler, limits, error)` creates a private
+mount; `ResourcePayloadStream::create(existingStream->mount(), error)` explicitly
+shares that captured mount. Matching paths alone do not merge mounts or retarget
+queued work when a project reopens. UUID resolution uses the captured manifest,
+without a catalog lookup. All requesters sharing a mount use its creating owner
+thread for demand changes, consumption, cache operations and destruction.
+
+Each demand supplies a logical key, resource ID, priority and maximum payload
+size. `replace` retains matching physical reads across accepted batches and
+requesters: the shared identity is the resource ID plus payload limit. Each
+requester keeps its own delivery keys and generation. Invalid or oversized
+replacement preserves accepted demand; missing or corrupt pinned resources
+produce result errors. Pending identities are limited to 1024 bytes. Queue and
+completion counters describe physical jobs shared by the mount; the stream's
+reported generation belongs to its requester.
+
+`cancel(key)` removes one logical interest; `cancel()` removes that requester's
+interests. Physical work is cancelled after its last interest retires.
+`setPriority(key, priority)` updates the maximum current subscriber priority of
+queued shared work. Executing reads are not preempted or restarted. `drain()` waits
+for that requester's retired callbacks and captures, including old generations,
+without draining another requester's unrelated cancellations. Final mount
+destruction drains its physical producer.
+
+Worker reads use `ResourceSystem::loadPayload`: they verify one pinned container,
+retain no child payloads, and do not enter the complete-closure identity cache or
+construct native scene, graphics or audio objects. For existing typed installers,
+`ResourceClosureStream::create(sharedMount, error)` adds `request`/`requestUUID`
+and `take`. It discovers validated shallow dependency headers, shares their reads,
+then assembles a separate complete `RuntimeResource` dependency graph on a worker.
+Published shallow resources are never modified. Every copied node owns its
+payload/header `SourceCpu` lease, so an escaped child remains charged after its
+root or requester is destroyed.
+
+`ResourceClosureLimits` defaults to 8 MiB per payload, 64 MiB per unique closure,
+256 resources and depth 64. The captured runtime limits and mount/scheduler
+capacity also apply. Unique counts, aggregate bytes, depth and cycles are checked
+before admitting discovered children. Later read, graph or assembly-budget
+failures are returned through `take`; rejected initial validation/admission keeps
+the previous request. Assembly polls cancellation per node and per 64 KiB payload
+copy. The owner still validates its project/request generation before invoking a
+typed installer and publishing native objects.
+
+Filesystem cancellation is checked before and after a payload read; it cannot
+interrupt a blocked filesystem call. These APIs schedule complete payloads and
+closures. Native chunk ranges, mesh LOD, texture mip and audio-seek/device
+residency require their own format and consumer integration.
 
 ## Runtime Script component UUIDs
 
@@ -477,9 +508,11 @@ Reentrant VM teardown from inside a Lua/native callback remains unsupported.
 The native regression constructs and updates an actual Script component through
 its UUID after removing source, catalog and compilation storage. It covers two
 fresh VM lifetimes, missing/wrong-type rejection, a catalog spy, retained component
-cleanup and preservation after rejected source/reload/retarget operations. Scene
-compilation still rejects component-bearing graphs until their UUID dependencies
-and pinned reference installation are integrated.
+cleanup and preservation after rejected source/reload/retarget operations. Version-2
+scene/prefab compilation now binds Script UUIDs alongside Mesh, MeshRenderer and
+Animator in the [supported mixed graph subset](#mixed-scene-and-prefab-graphs).
+Their pinned closure supplies the private runtime Script VM and existing native
+component installers. Other component types still require explicit typed adoption.
 
 ## Typed PCM audio
 
@@ -612,14 +645,14 @@ independent Animators, checks deformed vertices and reads posed/rest pixels afte
 source/catalog/cooking storage removal. Animation graphs, morphs, retargeting and
 full model import remain separate feature gates.
 
-## Transform-only scene and prefab graphs
+## Mixed scene and prefab graphs
 
 Map the authored types to `fbscene` or `prefab`. The compiler validates the actual
 Properties JSON schema and writes the existing `FBSCNBIN` binary representation.
-The initial supported subset contains actor identity, local transforms and nested
-actors. Components, external references, lighting and Editor camera state are
-rejected until captured UUID dependency resolution and their typed installers
-are integrated. Limits are 8 MiB of source, 4096 actors and depth 64, with canonical
+The supported subset contains actor identity, transforms, nested actors and native
+Mesh, MeshRenderer, Animator and Script components. Lighting, camera state and
+other component types require their own typed adoption. Limits are 8 MiB of source,
+4096 total groups and depth 64, with canonical
 nonnil UUIDs, finite transforms and unit quaternions.
 
 `decodeActorGraphResource` retains a CPU admission lease in every decoded Properties
@@ -630,6 +663,38 @@ existing `GamePrefab` and `createInstanceData` UUID remapping. Cloned nodes reta
 their own lease. Editor contracts cover hierarchy/transforms, remapped identities,
 rollback/readiness, stale generation rejection and escaped-node lifetimes. This
 does not provide arbitrary component-bearing Editor scene shipping.
+
+Output version 2 resolves authored UUIDs through captured `assetBindings` and
+stores typed ResourceIDs on the existing UUID Property's `compiledResourceId`
+attribute. The CLI captures mapped files under catalog admission before cooking;
+publication rejects UUID/resource remapping. Native callers provide a canonical
+detached map in ResourceSystemConfig. It is shared immutably with compiler contexts
+and included in build input hashes. Missing/wrong-type or actor-identity-colliding
+asset UUIDs fail. Prior transform-only version-1 scene/prefab packages remain readable.
+
+Mesh uses `Mesh Resource` and optional `Skeleton` UUIDs; MeshRenderer accepts its
+sibling or `meshAssetUuid`; Animator accepts `animationAssetUuid` or the sibling
+skeleton; Script uses `scriptAssetUuid` and `className`. Loose mesh/cache paths
+are rejected. `createActorGraphRuntimeContext` retains the exact pinned resources
+and stages a private Script VM without replacing the Editor VM. Pass that context
+to the scene/prefab installer. Typed Properties resolution is strict and cannot
+fall back to an authoring database. Contexts are sealed before component loading.
+
+Scene publication pauses rendering before taking manager and graphics locks across
+commit/rollback. Prefab instances retain their context, revalidate mutable data and
+preserve external asset UUIDs while remapping actor/component identities.
+
+The product Editor accepts `--runtime-scene-package DIR --runtime-scene-uuid UUID`
+and optional `--runtime-scene-target pc`. Startup requests a complete asynchronous
+closure, then decodes/installs on the owner with project/scene generation checks.
+Switch/unload cancels and drains owned work and retires matching owned actors.
+`--runtime-scene-validate` supplies bounded hidden-window startup with structured output;
+this is runtime validation, not visual/input or hardware certification.
+Runtime startup configures the selected backend before typed uploads and reuses
+its existing native window. Use `--dx11` for typed material/texture uploads.
+The Software path accepts material-free geometry/skin scenes; typed material
+installation reports unavailability. The product probe covers both positive
+paths, clean Software material rejection and clean missing-UUID failure.
 
 ## Bounded native UI trees
 
@@ -655,25 +720,57 @@ interactive input, visual layout and project-switch publication remain open.
 ## Whole-payload residency and shared work
 
 `ResourcePayloadStream::setResidencyLimits(entries, payloadBytes)` enables an
-optional payload cache; `findResident(id)` returns its existing leased result.
-Lookup updates eviction order. Quota eviction drops cache ownership while live
-consumers retain scheduler result reservations. New accepted reads evict cached
-ownership when result headroom is needed. Defaults disable caching. All cache
-operations are owner-thread operations. The quota counts payload bytes and
-entries. Resident requests are delivered through the scheduler without a new
-payload reservation and retain the original physical lease. Matching resource
-and size-limit requests within one demand batch share one physical read and fan
-out logical job keys. Scheduler statistics count physical jobs. The stream retains
-charged pending-delivery metadata until take/cancel. Cancellation clears aliases;
-invalid demand preserves the previously accepted deliveries. Cached work runs
-ahead of cold work, including equal maximum priorities, to avoid result-pressure
-deadlock. Coalescing across concurrently active batches, complete object/header
-accounting and chunk/LOD/mip/audio residency remain open work.
+optional cache shared by every requester of the same `ResourcePayloadMount`.
+Defaults disable caching; the entry limit is capped by the mount's physical-work
+capacity. `findResident(id)` returns the existing leased result and updates eviction
+order. Accepted resident demands are delivered through the scheduler without a
+second payload reservation, retain the original shared ownership, and still
+enforce the requested size limit. Cached callbacks receive maximum scheduler
+priority and precede equal-priority cold additions within the same submission.
+If an existing cold queue front cannot obtain working/result or ready-byte
+admission, the scheduler considers that producer's highest-priority zero-working,
+zero-result job. A later cache hit can therefore progress across submissions while
+the cold job remains pending. Producer fairness and active/ready count limits still
+apply; executing work is not preempted.
 
-WPRS headers are capped at 8 MiB of encoded metadata and checked against actual
-remaining file bytes before string/vector allocation. Container strings and all
-ResourceIDs require valid UTF-8 without embedded NULs. This bounds parser input;
-it does not establish full runtime metadata accounting or authenticated packages.
+The cache quota counts payload bytes and entries. Header, delivery and cache
+metadata have separate admission. Eviction drops cache ownership; live consumers
+keep their payload/header reservations. New accepted reads evict cached ownership
+when result headroom is needed, but cannot release another consumer's pins.
+Matching work persists across batches and shared requesters while interests remain;
+different mounts or payload limits use separate work identities.
+
+Manifest admission reserves conservative `SourceCpu` storage and `WorkingCpu`
+parse allowance before mount initialization. The mount passes those same leases
+to `ResourceSystem` for adoption. Logical subscriptions, physical-work records and
+cache entries retain pending-metadata admission; their maps/wrappers and engine
+string storage also use the existing source-budget allocators. Shallow reads
+reserve the pinned payload size in `ResultCpu`, retain a conservative header/object
+allowance in `SourceCpu`, and admit reader work before allocating. Returned aliases
+keep those leases until their final owner retires. Closure assembly additionally
+admits its CPU work and each copied node's payload/header storage; original shallow
+buffers and assembled copies may coexist during preparation and retirement.
+
+Synchronous `ResourceSystem::load`/`loadUUID` now retain per-node `SourceCpu`
+payload/header leases and temporary `WorkingCpu` reader/traversal admission.
+The complete-closure cache keeps weak references. Escaped dependency handles retain
+their own node admission after a root, cache or mount retires. Runtime manifest
+storage remains admitted until the mount releases it.
+
+WPRS headers are capped at 8 MiB of encoded metadata and checked against remaining
+file bytes before string/vector allocation. Runtime reads also tighten header and
+payload allocation limits to their manifest pins; manifest parsing uses observed
+container bounds. Container strings and all ResourceIDs require valid UTF-8 without
+embedded NULs. These are conservative participation allowances and parser bounds,
+not exact process RSS accounting or package authentication. Unrelated allocations,
+all Lua VM/preload storage, and complete native GPU/audio/decoder residency are not
+fully covered. Chunk/LOD/mip/audio-seek integration and representative scale,
+soak and hardware certification remain open.
+
+`WPResourceTests` exercises persistent shared reads, independent cancellation and
+priority changes, full-queue reconciliation, cancellation at the source-allocation
+cap, closure limits, asynchronous assembly cancellation and escaped-node leases.
+Those contracts do not certify the remaining native residency integrations.
 
 ## Validation boundary
 
@@ -685,9 +782,14 @@ with original source/cooked storage removed and read-only runtime byte preservat
 `WorkphoneAssets.catalog_contracts` covers the real catalog-to-package UUID bridge,
 stale binding rejection and UUID-preserving authoring rename beside a pinned package.
 
-This resource-directory API does not complete interactive closure-preview
-acceptance, mixed-component scene and whole-Editor typed consumer adoption,
-multi-mount precedence, complete asynchronous residency, full-family compiler interruption, interactive Editor acceptance
-or representative hardware/full-family shipping application certification. The
-native package-job fixture separately exercises a source-free Lua consumer; that
-does not close the other typed-family or interactive release gates.
+The bounded Mesh/MeshRenderer/Animator/Script scene/prefab subset and the product
+Editor's asynchronous package/UUID startup path are implemented. The source-free
+Editor CLI probe passed with one actor, four components, one Script and one Mesh;
+it also rejected a missing UUID and preserved the package bytes. This establishes
+that bounded bootstrap and its failure/preservation behavior.
+
+Arbitrary component graphs, whole-Editor authoring and typed consumer adoption,
+interactive closure-preview acceptance, multi-mount precedence, native
+chunk/LOD/mip/audio-seek residency and full-family compiler interruption remain
+open. Interactive visual/input/audio acceptance, representative hardware and
+full-family shipping application certification remain separate release gates.

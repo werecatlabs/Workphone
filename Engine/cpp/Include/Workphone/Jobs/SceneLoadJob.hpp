@@ -7,6 +7,7 @@
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; }
 
     // Inputs are configured before submission and the destination scene is pinned.
     // Async preparation performs only I/O and parsing. This job commits on the
@@ -45,6 +46,7 @@ namespace workphone
         /** Already decoded immutable actor document; configure before submission.
          * The caller must validate/own the complete document before handing it off. */
         void setPreparedData( SmartPtr<Properties> data );
+        void setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context );
 
         WP_CLASS_REGISTER_DECL;
 
@@ -60,6 +62,7 @@ namespace workphone
         atomic_bool m_createActorJobs = false;
         u64 m_loadGeneration = 0;
         SmartPtr<Properties> m_preparedData;
+        std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
         String m_preparedPath;
         String m_preparedLabel;
         String m_prepareError;

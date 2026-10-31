@@ -13,7 +13,7 @@ $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { throw 'Use a new output directory to preserve previous evidence.' }
 New-Item -ItemType Directory -Path $output | Out-Null
 $evidence = [ordered]@{ schemaVersion = 1; validationPassed = $false; releaseCertified = $false
-    scope = 'Relocated Windows x64 C++ Editor candidate; headless software startup'
+    scope = 'Relocated Windows x64 C++ Editor candidate; startup and source-free mixed scenes on DX11 and Software'
     buildDirectory = $build; incrementalBuild = $true; buildSkipped = [bool]$SkipBuild
     interactiveValidated = $false; cleanMachineValidated = $false; licenseAuditComplete = $false }
 $checks = [Collections.Generic.List[object]]::new()
@@ -21,6 +21,11 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Tools/cpp/Editor/src/application/win32/Main.cpp','Tools/cpp/Editor/src/application/win32/EditorPackage.hpp',
     'Tools/cpp/Editor/src/EditorApplication.hpp','Tools/cpp/Editor/src/EditorApplication.cpp',
     'Engine/cpp/Source/Workphone/System/ApplicationManager.cpp','docs/WPGRAPHICS_EDITOR_PACKAGE.md',
+    'Engine/cpp/Source/Workphone/Graphics/MaterialTexture.cpp',
+    'Engine/cpp/Include/Workphone/Graphics/MaterialNode.hpp',
+    'Engine/cpp/Source/Workphone/Graphics/Material.cpp',
+    'Engine/cpp/Source/Workphone/Graphics/MaterialPass.cpp',
+    'Engine/cpp/Source/Workphone/Graphics/MaterialTechnique.cpp',
     'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt','docs/WPGRAPHICS_EDITOR_THIRD_PARTY_NOTICES.txt',
     'Tools/cpp/ResourcePackageTool/main.cpp','Tools/cpp/ResourcePackageTool/CMakeLists.txt',
     'Engine/cpp/Project/Workphone/CMakeLists.txt','Engine/cpp/Project/WPGraphics/CMakeLists.txt',
@@ -32,6 +37,24 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Include/Workphone/System/ResourceBuildProfile.hpp',
     'Engine/cpp/Include/Workphone/System/ResourcePackageBuildProfile.hpp',
     'Engine/cpp/Include/Workphone/System/ResourcePayloadStream.hpp',
+    'Engine/cpp/Include/Workphone/System/ResourceClosureStream.hpp',
+    'Engine/cpp/Include/Workphone/System/RuntimeAssetContext.hpp',
+    'Engine/cpp/Source/Workphone/System/RuntimeAssetContext.cpp',
+    'Engine/cpp/Include/Workphone/System/WorldStreamingScheduler.hpp',
+    'Engine/cpp/Source/Workphone/System/WorldStreamingScheduler.cpp',
+    'Engine/cpp/Include/Workphone/Interface/Script/IScriptManager.hpp',
+    'Engine/cpp/Include/Workphone/Interface/Graphics/IGraphicsMesh.hpp',
+    'Engine/cpp/Include/Workphone/Scene/GameActorUtil.hpp',
+    'Engine/cpp/Source/Workphone/Scene/GameActorUtil.cpp',
+    'Engine/cpp/Include/Workphone/Scene/GamePrefab.hpp',
+    'Engine/cpp/Source/Workphone/Scene/GamePrefab.cpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/Mesh.hpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/Mesh.cpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/MeshRenderer.hpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/MeshRenderer.cpp',
+    'Engine/cpp/Source/Workphone/Script/ProjectScriptPolicy.cpp',
+    'Engine/cpp/Include/Workphone/Core/Properties.hpp',
+    'Engine/cpp/Source/Workphone/Core/Properties.cpp',
     'Engine/cpp/Include/Workphone/Interface/Resource/IResourceSystem.hpp',
     'Engine/cpp/Include/Workphone/Interface/Resource/IResourceCompiler.hpp',
     'Engine/cpp/Include/Workphone/Interface/Database/IResourceCompilationDatabase.hpp',
@@ -84,6 +107,13 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/WPLuaBind/Bindings/SystemBind.cpp',
     'Engine/cpp/Project/WPLuaBind/CMakeLists.txt',
     'bin/Media/Scripts/Lua/Editor/PackageEditor.lua','Tests/python/resource_package_cli.py',
+    'Tests/python/resource_mixed_scene_runtime.py',
+    'Tests/cpp/ClawCookedResourceTests.cpp','Tests/cpp/ClawQueuedMaterialNodeContracts.hpp',
+    'Tests/cpp/CookedTerrainContracts.hpp','Tests/cpp/SkeletonResourceContracts.hpp',
+    'Tests/cpp/ResourceClosureStreamContracts.hpp','Tests/cpp/RuntimeResourceAdmissionContracts.hpp',
+    'Tests/cpp/CatalogResourceAdapterContracts.hpp','Tests/cpp/ResourceSystem/ResourceSystemSmoke.cpp',
+    'Tests/cpp/ResourcePackageJobTests.cpp',
+    'Tests/cpp/ResourceRuntimeContracts.hpp','Tools/cpp/Editor/src/tests/SceneResourceTests.cpp',
     'Tests/python/resource_package_history.py','Tools/AuditEditorPackage.ps1') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
@@ -208,6 +238,9 @@ try {
     $checks.Add([ordered]@{ name = 'relocated-resource-package-profiles'; exitCode = $LASTEXITCODE })
     if ($LASTEXITCODE -ne 0) { throw 'Relocated resource package CLI validation failed' }
     Invoke-Editor 'startup' 0 'Editor package startup and teardown passed'
+    & $python (Join-Path $repo 'Tests/python/resource_mixed_scene_runtime.py') (Join-Path $root 'bin/Editor.exe') (Join-Path $root 'bin/WorkphoneResourcePackage.exe') *> (Join-Path $output 'relocated-mixed-scene-runtime.log')
+    $checks.Add([ordered]@{name='relocated-mixed-scene-runtime';exitCode=$LASTEXITCODE})
+    if($LASTEXITCODE -ne 0){throw 'Relocated product Editor mixed scene validation failed'}
     # Remove a required media input in this task-owned extracted copy, then restore.
     $media = Join-Path $root 'Media/Scripts/Lua/Editor/Editor.lua'
     [IO.File]::Move($media, "$media.hidden")

@@ -12,6 +12,7 @@
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; }
     namespace scene
     {
 
@@ -38,7 +39,8 @@ namespace workphone
             static SmartPtr<Properties> createInstanceData( SmartPtr<Properties> data );
             // Creates all shells before loading any component properties. Caller owns scene lock.
             static Array<SmartPtr<IGameActor>> loadSceneActors( const Array<SmartPtr<Properties>> &data,
-                                                                SmartPtr<IGameScene> target = nullptr );
+                                                                SmartPtr<IGameScene> target = nullptr,
+                std::shared_ptr<const resource::RuntimeAssetContext> runtimeAssets = {} );
             /**
              * @name Common property key strings
              * @{

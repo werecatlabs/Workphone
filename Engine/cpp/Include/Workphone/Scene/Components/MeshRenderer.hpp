@@ -1,10 +1,12 @@
 #ifndef __MeshRenderer_h__
 #define __MeshRenderer_h__
+#include <memory>
 
 #include <Workphone/Scene/Components/Renderer.hpp>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; struct RuntimeResource; }
     namespace scene
     {
 
@@ -19,6 +21,7 @@ namespace workphone
         class WPCore_API MeshRenderer : public Renderer
         {
         public:
+            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
             static const String meshNodeSuffixStr;
             static const String meshPathStr;
 
@@ -116,6 +119,11 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            bool installRuntimeMesh(std::shared_ptr<const resource::RuntimeResource>,String &error);
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
+            std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;
+            String m_meshAssetUuid;
+            bool m_runtimeAssetsMode=false;
             /**
              * @brief Calculates the axis-aligned bounding box for the mesh.
              * @return The calculated bounding box.

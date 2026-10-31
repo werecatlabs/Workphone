@@ -3,9 +3,11 @@
 
 #include <Workphone/Mesh/ProgressiveMeshOptions.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsObject.hpp>
+#include <memory>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; }
     namespace render
     {
 
@@ -122,6 +124,11 @@ namespace workphone
             /** Publish a sampled CPU skeleton to this mesh. Unsupported backends
              * report an explicit error; rejected staging preserves geometry. */
             virtual bool applySkeletonPose( SmartPtr<ISkeleton> skeleton, String &error );
+
+            /** Install a pinned cooked mesh/skin on the serialized graphics owner.
+             * Unsupported backends return false; failed staging retains old data. */
+            virtual bool loadResource(std::shared_ptr<const resource::RuntimeResource>,String &error,
+                                      const String &target="pc",bool packagedBuild=true);
 
             WP_CLASS_REGISTER_DECL;
         };

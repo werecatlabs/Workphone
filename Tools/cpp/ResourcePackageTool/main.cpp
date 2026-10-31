@@ -276,6 +276,10 @@ namespace
         if(!resources->initialize(config, error))
             throw std::runtime_error(error.c_str());
         CatalogResourceAdapter adapter(catalog, resources, config.sourceRoot, mappings);
+        if(!adapter.captureAssetBindings(config.assetBindings,error))
+            throw std::runtime_error(error.c_str());
+        resources->shutdown();
+        if(!resources->initialize(config,error))throw std::runtime_error(error.c_str());
         Array<CatalogResourceAdapter::Request> roots;
         // Resolve every root before cooking so malformed identities fail early.
         for(const auto &uuid : uuids)

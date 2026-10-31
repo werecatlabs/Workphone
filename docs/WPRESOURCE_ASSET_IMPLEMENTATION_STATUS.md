@@ -7,20 +7,20 @@ production release gates remain open.
 
 ## Latest implemented scope (31 October 2026)
 
-Increments 33–35 below extend the existing resource pipeline. The current bounded
+Increments 33–37 below extend the existing resource pipeline. The current bounded
 subsets are distinct from completing each production-plan family:
 
 | Area | Implemented and tested | Still required for full scope |
 | --- | --- | --- |
 | Mesh/material/skin | WPM1 geometry, ordered typed materials, pinned skin weights/rig, native CPU deformation and rendered package pixels | Full model import, LODs and component/application adoption |
 | Skeleton/clip | Existing XML hierarchy and linear quaternion-interpolated clips, independent Animator installation | Graph/mask/retarget/morph formats and complete authoring integration |
-| Scene/prefab | Transform/identity graphs, existing binary serializer, generation-aware append/rollback and prefab UUID remap | Captured external UUID dependencies, components, nested overrides and strict runtime reference resolution |
+| Scene/prefab | Captured external UUID dependencies, strict pinned Mesh/MeshRenderer/Animator/Script installation, generation-aware append/rollback, prefab UUID remap and actual Editor package bootstrap | Other component families, arbitrary authored references and nested overrides |
 | UI | Window/container/text/button trees through existing native controls, owner publication and cleanup | Font/image/style/localization dependencies, visual/input and project-switch acceptance |
-| Script components | Private runtime UUID mount, compiled module closure, real Script construction/update with authoring storage absent | Mixed-component package bootstrap, reentrant VM teardown and full VM/preload residency accounting |
-| Payload streaming | Leased cache hits, within-batch shared reads, fanout/cancel cleanup and pressure progress | Cross-batch/per-request work, complete metadata/decoded/device accounting and chunk/LOD/mip/audio demand |
+| Script components | Private runtime UUID mount or captured resolver, compiled module closure, per-graph VM and real construction/update after authoring storage removal | Reentrant VM teardown and full VM/preload residency accounting |
+| Payload streaming | Explicit shared mounts, cross-batch/per-request physical work, asynchronous complete closures, independent cancellation/priority, conservative raw/metadata admission and escaped-child leases | Complete decoded/device accounting, chunk/LOD/mip/audio demand and measured native fallback behavior |
 
-Current-source validation and candidate evidence are recorded under
-[increment 35](#current-validation-for-increment-35). Release certification remains
+Current implementation is recorded under increments 36–37. Validation for those
+increments is recorded separately below; increment 35's candidate predates them. Release certification remains
 false; these changes do not close the complete R1/R2 plan.
 
 Foliage integration on 11 October adds compact target/resource cache directory
@@ -1888,12 +1888,13 @@ independent hash verification: `resource-domain-final-input-module-verification.
 Interactive, clean-machine and legal flags remain false. This candidate covers
 increments 33–34; later source changes require matching rebuilt evidence.
 
-### Remaining full-family integration
+### Full-family integration remaining after increments 33–34
 
-Mixed-component scene shipping requires a captured authored AssetUUID-to-ResourceID
+At that point, mixed-component scene shipping required a captured authored AssetUUID-to-ResourceID
 resolver during compilation, strict pinned runtime reference resolution and typed
-branches in existing component installers. MeshRenderer still has legacy authoring
-paths, and the mixed-component bootstrap must adopt explicit runtime Lua configuration.
+branches in existing component installers. Increments 36–37 implement those paths
+for the four explicitly supported components and add an Editor runtime bootstrap.
+Other component schemas and authoring routes remain open.
 Guessing paths from UUIDs would bypass
 the package admission contract, so unsupported component graphs fail compilation.
 The new typed APIs do not close that integration, arbitrary model/animation/UI
@@ -1925,8 +1926,8 @@ cancellation from an independent watchdog, and check restart and normal reload
 after debugger stop. Failed initialization unbinds debugger/state metadata before
 closing a partially created VM.
 
-This closes an actual runtime Script UUID consumer boundary; scene compilation
-still rejects component graphs. Explicit text/debug execution remains available.
+This closed an actual runtime Script UUID consumer boundary; at increment 35 scene
+compilation still rejected component graphs. Explicit text/debug execution remains available.
 Reentrant VM teardown from inside a Lua/native callback, complete Lua VM/preload/
 debugger-source residency accounting and full mixed-family application bootstrap
 remain open.
@@ -1971,6 +1972,158 @@ Win32_SoundDevice entries (`project_x64/resource-release-host-inventory.json`).
 This host does not supply representative GPU or audible-device certification.
 Interactive, clean-machine and legal flags remain false; the full-family scene,
 residency and other R1/R2 gates listed above remain open.
+
+## Increment 36: captured mixed-component scene and prefab packages
+
+Package builds capture a detached, canonical catalog AssetUUID-to-ResourceID map
+under the existing catalog admission transaction. That immutable map participates
+in the build input fingerprint and is shared with compilers. Checked export rejects
+closure UUID mappings that changed since capture. Empty maps preserve earlier
+build identities. The CLI now captures this map before compiling package roots.
+
+Scene/prefab version 2 uses the existing binary Properties serializer and supports
+Mesh, MeshRenderer, Animator and Script beside transforms/identity. UUID references
+become explicit typed compile/install edges and sealed compiledResourceId fields.
+Decoding rejects mismatched dependency sets, identity/hash/generation drift and
+unsupported components/properties. Exact legacy version-1 transform-only graphs
+remain readable. Runtime Properties resolution is strict, scoped and independent
+of catalog/loose paths; the default authoring behavior remains compatible.
+
+The existing Mesh/MeshRenderer/Animator installers adopt captured typed inputs,
+native mesh uploads and private rigs. Script components use a private compiled-only
+VM shared by their graph; Editor's global authoring VM stays independent. Contexts
+are installed before the first component load callback. Scene publication follows
+the existing generation/rollback path under render/manager/graphics ownership;
+prefab instantiation validates mutable data before UUID remapping. External asset
+UUIDs remain stable across instances.
+
+The product Editor now accepts --runtime-scene-package and --runtime-scene-uuid
+with --interactive. It captures the mount, requests its complete closure
+asynchronously and fences owner-thread publication against scene/project/request
+changes. Owned roots and work retire on switch/unload. --runtime-scene-validate
+checks real Script data/private-VM and mesh adoption, emits a structured result,
+and uses a bounded validation watchdog. Normal startup without these flags keeps
+the existing authoring lifecycle.
+
+Runtime startup configures the selected backend and its existing native window
+before the first typed upload; validation hides and reuses that window. Textured
+materials use DX11. Software supports the material-free geometry/skin path and
+reports typed material unavailability explicitly. Material facades retained by
+future upload queues now retire parent/material links during unload, eviction,
+removal and replacement. Transfers preserve the new owner's graph, reload restores
+its association, and self/ancestor cycles fail before mutation. These fixes use
+the existing Material/Technique/Pass/Texture lifecycle and keep its public layout.
+
+This is a defined four-component subset. AudioEmitter, direct Material, cameras,
+lights, UI components, arbitrary reference schemas and nested prefab overrides
+still need explicit typed adapters. Arbitrary Lua constructor/native side effects
+are not transactionally reversible or sandboxed.
+
+## Increment 37: persistent shared streaming and asynchronous closures
+
+WorldStreamingScheduler now supports enqueue/reconcile, per-key cancellation,
+priority changes and owned drain without replacing unrelated demand. Executing
+generation tokens remain tracked until callbacks and their captures retire.
+Allocation-free queue removal preserves cancellation/drain progress under pressure.
+When a cold job cannot be admitted, a later zero-cost cache delivery can still run
+at its own priority; producer fairness and ready/worker limits remain enforced.
+
+ResourcePayloadMount explicitly shares one immutable mount and scheduler among
+requesters. Matching physical reads survive demand replacements and coalesce
+across requester lifetimes. Delivery keys/generations/cancellation are local to
+each requester; physical cancellation occurs after the last interest retires.
+ResourceClosureStream discovers typed dependencies incrementally and assembles an
+immutable complete RuntimeResource DAG on the scheduler, without modifying shared
+shallow resources. Caller and captured-mount count/depth/byte bounds both apply.
+Owners still validate their request generation before publishing native objects.
+
+Raw payloads and retained headers have per-node SourceCpu leases in synchronous
+and asynchronous loads. Escaped children keep their own leases. Manifest, weak
+cache, request/delivery, traversal and captured-binding storage use conservative
+shared admission; temporary read/copy work uses WorkingCpu. Shared mounts adopt
+their pre-admitted manifest leases rather than charging them twice. Integrity and
+manifest-derived read limits precede payload/header allocation. Cancellation checks
+bound assembly copies to 64 KiB; a blocking filesystem read is checked before and
+after the call.
+
+These changes implement whole-resource streaming and participating residency,
+not complete physical-memory accounting. Native chunk/mesh-LOD/texture-mip/audio-
+seek demand, complete decoded/GPU/audio residency, Lua VM/preload accounting,
+frame/underrun performance, large-project scale and soak certification remain open.
+
+### Validation for increments 36–37
+
+The staged product launch probe passes with source/catalog/index storage removed,
+read-only package bytes unchanged, actual private Script VM and mesh adoption,
+and explicit failure for a missing UUID. Evidence:
+`project_x64/resource-mixed-scene-product-first-probe.log`.
+Final rebuilt contract and installed-candidate evidence is recorded below;
+earlier increment-35 results predate these changes.
+
+The first optimized seventeen-suite run exposed an old graphics-fixture baseline
+that included newly admitted raw input owners; its corrected fixture keeps strict
+derived Source/Result/GPU equality, then proves raw-input and manifest retirement
+separately. A separate cache-pressure run exposed ready-result ordering when both
+cached and cold work had completed before polling; delivery now preserves cache
+precedence, and its regression waits for both completions. The corrected optimized
+selection passed 17/17 in 150.53 seconds (`resource-mixed-residency-final-opt-tests.log`).
+The expanded Debug scene case passed 197 assertions in 14.86 seconds
+(`resource-mixed-scene-focused-debug-report.log`).
+
+The first installed candidate then exposed a queued MaterialTexture retaining its
+parent-material association after unload. Normal-heap CDB evidence is retained in
+`resource-mixed-scene-retained-normal-heap-cdb-stack.log`; the earlier candidate
+has `validationPassed=false`. The product probe now explicitly runs both DX11 and
+Software. The first Debug selection passed 18/19; its package-job fixture exposed
+partial PID-marker publication. Publishing the complete marker atomically preserves
+the existing assertions and timeouts. These failures and their evidence are kept;
+final evidence below must use rebuilt sources including both corrections.
+
+The final source set rebuilt the matching Editor, cooker and all affected native
+hosts in RelWithDebInfo and Debug. Optimized passed **17/17** in **141.52 seconds**;
+Debug passed **19/19** in **274.84 seconds**, including the expanded mixed scene,
+prefab and UI cases and the corrected package-job supervision fixture. The final
+material contracts additionally cover queued destruction, twelve detach/replace/
+transfer routes, reload, non-mutating lookup and cycle rejection. Captured UUID
+maps retain admission after service shutdown; the test calibrates lease storage
+through the public allocator and checks exact retirement.
+
+Logs, JUnit and full native output use prefixes
+`project_x64/resource-mixed-residency-release-opt-` and
+`project_x64/resource-mixed-residency-release-debug-` with suffixes
+`tests.log`, `results.xml` and `report.log`. Build logs are
+`resource-mixed-residency-release-RelWithDebInfo-build.log` and
+`resource-mixed-residency-release-Debug-build.log`.
+
+The full Debug Editor aggregate passed **97/97 cases and 1,840,929 assertions**
+in **828.97 seconds**, within its unchanged **900-second** timeout. No builds or
+package compression ran concurrently. Full output and JUnit are retained in
+`resource-mixed-residency-editor-all-report.log` and
+`resource-mixed-residency-editor-all-results.xml`; CTest output is
+`resource-mixed-residency-editor-all-tests.log`.
+
+The fresh installed candidate passed **7/7** checks with read-only payload
+preservation, **151** captured inputs without drift and matching SHA-256 for all
+**12** built/installed executable and DLL files. The product check launches a
+textured DX11 scene and a material-free Software scene, validates one actor/four
+components/private Script VM/native mesh, then requires clean reported failures
+for Software typed materials and a missing UUID. Both scenes run after all
+authoring source/catalog/index storage is removed. Runtime/symbol archives and
+package evidence are retained at
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-mixed-residency-verified-candidate-20261031/`.
+Driver and independent verification:
+`resource-mixed-residency-verified-installed-validation.log`,
+`resource-mixed-residency-verified-input-module-verification.json`.
+This candidate supersedes the earlier failed candidate and the increment-35
+candidate for current source.
+The independent input/module verification passed again after the full Editor run.
+
+`validationPassed=true`, `releaseCertified=false`; interactive, clean-machine
+and legal flags remain false. Refreshed Windows inventory still lists only
+Microsoft Basic Display Adapter and no sound devices
+(`resource-mixed-residency-host-inventory.json`). These gates do not certify
+representative hardware/audio, live visual/input behavior, project scale/soak,
+all component families or native chunk/LOD/mip/audio residency.
 
 ## Next implementation gates
 

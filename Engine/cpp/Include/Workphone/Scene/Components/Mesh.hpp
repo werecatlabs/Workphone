@@ -3,9 +3,11 @@
 
 #include <Workphone/Mesh/ProgressiveMeshOptions.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
+#include <memory>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; struct RuntimeResource; }
     namespace scene
     {
 
@@ -21,6 +23,9 @@ namespace workphone
         class WPCore_API Mesh : public Component
         {
         public:
+            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            std::shared_ptr<const resource::RuntimeResource> getRuntimeResource() const;
+            std::shared_ptr<const resource::RuntimeResource> getRuntimeSkeletonResource() const;
             /** Property key for the mesh file path. */
             static const String m_meshPathStr;
 
@@ -159,6 +164,10 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
+            std::shared_ptr<const resource::RuntimeResource> m_runtimeResource,m_runtimeSkeleton;
+            String m_runtimeMeshUuid,m_runtimeSkeletonUuid;
+            bool m_runtimeAssetsMode=false;
             /**
              * @brief Handle internal component finite-state-machine events.
              *

@@ -158,6 +158,21 @@ namespace workphone
         // they must not call producer mutation/drain or destroy their producer.
         // Atomic demand replacement: rejection preserves existing demand/results.
         bool replace( const Array<WorldStreamRequest> &requests, String &error );
+        // Atomic addition without cancelling or restarting existing jobs. Keys
+        // must be distinct from every pending, executing or ready job.
+        bool enqueue( const Array<WorldStreamRequest> &requests, String &error );
+        // Atomically retires selected keys and admits additions, preserving every
+        // other job. Additions must use fresh outstanding keys.
+        bool reconcile( const Array<WorldStreamRequest> &requests,
+                        const Array<u64> &cancelKeys, String &error );
+        // Key cancellation leaves unrelated work and the producer epoch intact.
+        bool cancel( u64 key );
+        // Updates a queued job; executing/ready work cannot be reprioritized.
+        bool setPriority( u64 key, s32 priority );
+        bool contains( u64 key ) const;
+        // Cancels this key and waits for its callback/captures, without cancelling
+        // other keys. Like drain(), never call from a scheduler callback.
+        void drain( u64 key );
         // Input/resource leases use this producer's service, including when tests
         // or an isolated application supply a scheduler other than shared().
         StreamBudget reserve( StreamMemoryClass memoryClass, u64 bytes, String &error );

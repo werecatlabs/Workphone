@@ -5,6 +5,8 @@
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
 #include <functional>
 
+namespace workphone { class StreamBudgetLease; }
+
 namespace workphone::resource
 {
     /** Durable authored identity mapped to one member of a pinned install closure. */
@@ -18,6 +20,7 @@ namespace workphone::resource
     {
         String sourceRoot, target;
         Array<ResourceID> resources;
+        std::shared_ptr<const std::map<String,ResourceID>> capturedAssetBindings;
     };
 
     struct WPCore_API RuntimePackagePreviewEntry
@@ -81,6 +84,12 @@ namespace workphone::resource
         bool initialize( const ResourceSystemConfig &config, String &error ) override;
         /** Requires no source tree, compiler registry or compilation database. Never writes. */
         bool initializeRuntime( const RuntimeResourceConfig &config, String &error );
+        /** Adopt dedicated manifest admissions held by a shared streaming mount.
+         * Nonnull leases must have the correct class and sufficient bytes; an
+         * omitted admission is reserved internally before parsing. */
+        bool initializeRuntime(const RuntimeResourceConfig &,String &error,
+            std::shared_ptr<StreamBudgetLease> manifestAdmission,
+            std::shared_ptr<StreamBudgetLease> workingAdmission = {});
 
         /** Export the committed cooked install closure, pinning hashes, versions and target.
          * Roots must first pass compile() (including UpToDate) in this authoring session.
@@ -135,6 +144,11 @@ namespace workphone::resource
          */
         std::shared_ptr<const RuntimeResource> loadPayload( const ResourceID &, String &error,
                                                             u64 maximumPayloadBytes = 1024ull << 20 );
+        /** Runtime-only admission plan from the captured manifest. Metadata is a
+         * conservative allowance for retained header/object storage and bounded
+         * reader temporaries; outputs reset on failure. Does not open artifacts. */
+        bool payloadMemoryRequirements( const ResourceID &, u64 &payloadBytes,
+                                        u64 &metadataBytes, String &error ) const;
         void unload( const ResourceID &resourceId ) override;
         void clearRuntimeCache() override;
 

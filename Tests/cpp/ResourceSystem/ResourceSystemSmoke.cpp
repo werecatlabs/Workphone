@@ -1,4 +1,5 @@
 #include "../ResourceRuntimeContracts.hpp"
+#include "../ResourceClosureStreamContracts.hpp"
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourcePayloadStream.hpp>
@@ -455,8 +456,92 @@ namespace
 #endif
     }
 
+    void persistentSchedulerContracts()
+    {
+        WorldStreamLimits limits;limits.workers=1;limits.maximumPending=2;limits.maximumReady=4;
+        auto service=std::make_shared<WorldStreamingScheduler>(limits);String error;
+        WorldStreamProducerLimits quota;quota.maximumPending=2;quota.maximumReady=4;
+        auto producer=service->createProducer(quota,error);require(producer!=nullptr,error.c_str());
+        struct State {std::atomic<bool> entered{false},release{false},cancelled{false};std::atomic<u32> count{0};std::array<std::atomic<u64>,8> order{};};
+        auto state=std::make_shared<State>();
+        auto gate=[state](u64 key){WorldStreamRequest request;request.key=key;request.execute=[state](const StreamCancellation &cancel){
+            state->entered=true;while(!state->release&&!cancel.cancelled())std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            state->cancelled=cancel.cancelled();return WorldStreamResult{};};return request;};
+        auto job=[state](u64 key){WorldStreamRequest request;request.key=key;request.execute=[state,key](const StreamCancellation &){
+            state->order[state->count.fetch_add(1)]=key;return WorldStreamResult{};};return request;};
+        require(producer->enqueue({gate(1)},error),error.c_str());
+        auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(!state->entered&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(state->entered,"Persistent scheduler gate starts");
+        require(producer->enqueue({job(2),job(3)},error),error.c_str());
+        require(producer->setPriority(3,10),"Pending work priority can change without replacement");
+        auto urgent=job(4);urgent.priority=20;
+        require(producer->reconcile({urgent},{2},error),"A full pending queue atomically retires one key and accepts another");
+        require(!producer->enqueue({job(4)},error)&&producer->stats().pending==2,
+            "Duplicate persistent addition preserves unrelated accepted jobs");
+        require(!producer->cancel(999)&&!state->cancelled,"Unrelated key changes preserve the executing token");
+        state->release=true;u32 received=0;WorldStreamResult result;
+        until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(received<3&&std::chrono::steady_clock::now()<until) {
+            if(producer->take(result)){require(result.key!=2,"Retired key never publishes");++received;}
+            else std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        producer->drain();require(received==3&&state->count==2&&state->order[0]==4&&state->order[1]==3,
+            "Updated priorities control physical dispatch while unrelated active work survives");
+        state->entered=false;state->release=false;state->cancelled=false;
+        require(producer->enqueue({gate(5)},error),error.c_str());
+        until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(!state->entered&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(state->entered,"Key cancellation gate starts");require(producer->enqueue({job(6),job(9)},error),error.c_str());
+        {
+            auto shared=WorldStreamingScheduler::shared();const auto budget=shared->stats();
+            struct Restore {std::shared_ptr<WorldStreamingScheduler> scheduler;u64 limit;~Restore(){String ignored;scheduler->setBudget(StreamMemoryClass::SourceCpu,limit,ignored);}};
+            Restore restore{shared,budget.limits[size_t(StreamMemoryClass::SourceCpu)]};
+            require(shared->setBudget(StreamMemoryClass::SourceCpu,budget.used[size_t(StreamMemoryClass::SourceCpu)],error),error.c_str());
+            require(producer->cancel(9),"Pending cancellation must not allocate after the SourceCpu cap is reached");
+        }
+        require(producer->cancel(5),"An executing key has its own cancellation token");producer->drain(5);
+        require(state->cancelled,"Scoped drain waits for the cancelled callback");
+        until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        result={};while(!producer->take(result)&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(result.key==6,"Scoped cancellation/drain leaves other pending work publishable");producer->drain();
+        state->entered=false;state->release=false;state->cancelled=false;
+        WorldStreamRequest retiring;retiring.key=7;retiring.execute=[state](const StreamCancellation &cancel){
+            state->entered=true;while(!state->release)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            state->cancelled=cancel.cancelled();return WorldStreamResult{};};
+        require(producer->enqueue({retiring},error),error.c_str());until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(!state->entered&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(state->entered,"Old-generation callback starts");require(producer->replace({job(8)},error),error.c_str());
+        require(producer->contains(7),"Old-generation executing keys remain visible after producer replacement");
+        std::thread release([state]{std::this_thread::sleep_for(std::chrono::milliseconds(20));state->release=true;});
+        producer->drain(7);const bool finished=state->cancelled.load();release.join();
+        require(finished,"Scoped drain includes replaced-generation callback/capture retirement");
+        until=std::chrono::steady_clock::now()+std::chrono::seconds(5);result={};
+        while(!producer->take(result)&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(result.key==8,"Draining an old-generation key preserves the new generation's work");producer->drain();
+        for(const auto category:{StreamMemoryClass::WorkingCpu,StreamMemoryClass::ResultCpu}) {
+            auto pressure=service->reserve(category,service->stats().limits[size_t(category)],error);require(pressure!=nullptr,error.c_str());
+            auto coldRan=std::make_shared<std::atomic<bool>>(false);
+            WorldStreamRequest cold;cold.key=10;cold.priority=std::numeric_limits<s32>::max();cold.workingBytes=1;cold.maximumResultBytes=1;
+            cold.execute=[coldRan](const StreamCancellation &){*coldRan=true;return WorldStreamResult{};};
+            require(producer->enqueue({cold},error),error.c_str());
+            require(producer->stats().pending==1&&!coldRan->load(),"Cold maximum-priority work waits for its admission");
+            WorldStreamRequest cached;cached.key=11;cached.priority=std::numeric_limits<s32>::max();
+            cached.execute=[](const StreamCancellation &){return WorldStreamResult{};};
+            require(producer->enqueue({cached},error),error.c_str());
+            until=std::chrono::steady_clock::now()+std::chrono::seconds(5);result={};
+            while(!producer->take(result)&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            require(result.key==11&&!coldRan->load()&&producer->stats().pending==1,
+                "A later zero-cost maximum-priority completion bypasses a blocked cold front across submissions");
+            pressure.reset();until=std::chrono::steady_clock::now()+std::chrono::seconds(5);result={};
+            while(!producer->take(result)&&std::chrono::steady_clock::now()<until)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            require(result.key==10&&coldRan->load(),"Bypassed cold work retains its original admission and completes after pressure retires");producer->drain();
+        }
+    }
+
     void buildProfileContracts(const fs::path &root)
     {
+        persistentSchedulerContracts();
         class ProfileProbe final : public IResourceCompiler
         {
         public:
@@ -534,6 +619,7 @@ namespace
         {
             // Cache delivery is automatic and retains the original lease even
             // after the immutable mounted artifact is no longer available.
+            stream->drain();const auto residentMetadata=scheduler->stats().used[size_t(StreamMemoryClass::PendingCpu)];
             const auto artifact=fs::u8path(paths[0].c_str());
             const auto hidden=fs::path(artifact.wstring()+L".cache-only");
             fs::rename(artifact,hidden);
@@ -569,8 +655,8 @@ namespace
             stream->cancel();
             require(!stream->take(hit),"Cancellation discards unconsumed coalesced deliveries");
             stream->drain();
-            require(!scheduler->stats().used[size_t(StreamMemoryClass::PendingCpu)],
-                "Cancellation and drain release retained logical-delivery reservations");
+            require(scheduler->stats().used[size_t(StreamMemoryClass::PendingCpu)]==residentMetadata,
+                "Cancellation and drain release logical metadata while retaining bounded cache metadata");
             fs::rename(hidden,artifact);
         }
         stream->setResidencyLimits(0,0);
@@ -637,8 +723,14 @@ namespace
                 require(warm.resource!=nullptr,"Warm the mixed-demand resident cache");
             }
             require(mixed->findResident(id)!=nullptr,"The last warm completion remains resident");
+            const auto completed=mixed->stats().completed;
             require(mixed->replace({{51,ResourceID("data://child.txtres"),1024,std::numeric_limits<s32>::max()},
                 {52,id,1024,0}},error),error.c_str());
+            const auto staged=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(mixed->stats().ready<2&&std::chrono::steady_clock::now()<staged)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            require(mixed->stats().ready==2&&mixed->stats().completed==completed+2,
+                "Stage both cached/cold completions before owner consumption to exercise the maximum-priority delivery tie");
             size_t received=0; const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
             while(received<2&&std::chrono::steady_clock::now()<until) {
                 ResourcePayloadResult value;
@@ -650,6 +742,44 @@ namespace
                 else std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             require(received==2,"Mixed cache/cold demand must not deadlock");
+            fs::rename(childArtifact,unavailable);
+        }
+        {
+            // Hold dispatch until both requesters and replacement batches have
+            // subscribed. This verifies physical sharing rather than a warm cache.
+            const auto unavailable=fs::path(childArtifact.wstring()+L".unavailable");fs::rename(unavailable,childArtifact);
+            WorldStreamLimits settings;settings.workers=1;auto service=std::make_shared<WorldStreamingScheduler>(settings);
+            auto first=ResourcePayloadStream::create(runtime,service,{},error);require(first!=nullptr,error.c_str());
+            auto second=ResourcePayloadStream::create(first->mount(),error);require(second!=nullptr,error.c_str());
+            auto pressure=service->reserve(StreamMemoryClass::WorkingCpu,settings.bytes[size_t(StreamMemoryClass::WorkingCpu)],error);require(pressure!=nullptr,error.c_str());
+            require(first->replace({{70,id,1024,0}},error),error.c_str());
+            require(second->replace({{80,id,1024,10}},error),error.c_str());
+            for(u64 key=71;key<81;++key)require(first->replace({{key,id,1024,s32(key)}},error),error.c_str());
+            require(first->stats().pending==1&&first->stats().completed==0&&first->stats().cancelled==0,
+                "Repeated batches and requesters retain one pending physical read without restart");
+            require(first->cancel(80)&&!first->cancel(80)&&second->stats().pending==1,
+                "One requester's cancellation does not cancel another requester's shared read");
+            require(first->replace({{81,id,1024,-10},{82,ResourceID("data://child.txtres"),1024,-20}},error),error.c_str());
+            require(first->setPriority(82,100)&&second->setPriority(80,-30),"Logical priorities update shared pending jobs");
+            const auto generation=first->stats().generation;
+            require(!first->replace({{83,id,1024,0},{83,id,1024,0}},error)&&first->stats().generation==generation,
+                "Invalid replacement retains shared subscriptions and their epoch");
+            pressure.reset();ResourcePayloadResult left,right;const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while((!left.resource||!right.resource)&&std::chrono::steady_clock::now()<until) {
+                if(!left.resource){ResourcePayloadResult value;if(first->take(value)&&value.key==81)left=value;}
+                if(!right.resource)second->take(right);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(left.resource&&right.resource&&left.resource==right.resource&&
+                !left.resource.owner_before(right.resource)&&!right.resource.owner_before(left.resource),
+                "Independent requesters receive the original shared payload/header leases");
+            require(first->stats().completed==2,"Two unique resources execute exactly two physical reads across all batches");
+            const auto sourceClass=size_t(StreamMemoryClass::SourceCpu);first->drain();second->drain();
+            const auto retained=service->stats().used[sourceClass];require(retained>0,"Mount and delivered headers retain source metadata reservations");
+            first.reset();second.reset();require(service->stats().used[sourceClass]>0,"Escaped payload owns metadata after its shared mount retires");
+            left={};right={};require(service->stats().used[sourceClass]==0,"Last payload owner releases isolated metadata reservations");
+            require(!service->stats().used[size_t(StreamMemoryClass::PendingCpu)],"All shared subscriptions and physical queue metadata retire");
+            resource_closure_stream_contracts::run(runtime,id);
             fs::rename(childArtifact,unavailable);
         }
         require(!stream->replace({{20,id,9ull<<20,0}},error)&&!error.empty(),"Demand above producer residency budget is rejected");

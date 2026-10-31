@@ -33,6 +33,8 @@ namespace workphone
     }
     SmartPtr<IScriptManager> getProjectScriptManager( ISharedObject *owner )
     {
+        if(auto script=dynamic_cast<scene::Script *>(owner))
+            if(script->hasRuntimeAssets())return script->getRuntimeScriptManager();
         if( !owner || dynamic_cast<scene::Script *>( owner ) )
         {
             std::lock_guard<std::mutex> lock( projectVmMutex );

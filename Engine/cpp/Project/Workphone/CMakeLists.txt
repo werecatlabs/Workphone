@@ -28,6 +28,8 @@ if (NOT WP_BUILD_RESOURCE_SYSTEM)
 endif()
 
 set_property(SOURCE ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/Animator.cpp
+                    ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/Mesh.cpp
+                    ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/MeshRenderer.cpp
     APPEND PROPERTY COMPILE_DEFINITIONS WP_TYPED_ANIMATION_RESOURCE=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
 
 set(WP_HEADER_REL_PATH "${WP_ROOT}/Engine/cpp/Include/Workphone")

@@ -1071,6 +1071,10 @@ namespace workphone
                     }
                     else
                     {
+                    if(m_runtimeMaterials)
+                    {
+                        throw std::runtime_error("Cooked mesh has no typed skin weights; load a skinres resource for skeletal playback");
+                    }
                     const auto count = wp_graphics_mesh_get_vertex_count( m_mesh );
                     const auto stride = wp_graphics_mesh_get_vertex_stride( m_mesh );
                     const auto raw = static_cast<const u8 *>( wp_graphics_mesh_get_vertices( m_mesh ) );

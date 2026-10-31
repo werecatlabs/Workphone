@@ -10,6 +10,9 @@
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Mesh/ProgressiveMeshOptions.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/System/CompiledResource.hpp>
+#include <stdexcept>
 
 namespace workphone::scene
 {
@@ -27,10 +30,22 @@ namespace workphone::scene
 
     Mesh::~Mesh() = default;
 
+    void Mesh::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    {
+        if(!context || !context->resolve || isLoaded() || getLoadingState()==LoadingState::Loading ||
+           getLoadingState()==LoadingState::Unloading || (m_runtimeAssets && m_runtimeAssets!=context))
+            throw std::runtime_error("Mesh runtime assets require an unloaded component and resolver");
+        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+    }
+    std::shared_ptr<const resource::RuntimeResource> Mesh::getRuntimeResource() const {return m_runtimeResource;}
+    std::shared_ptr<const resource::RuntimeResource> Mesh::getRuntimeSkeletonResource() const {return m_runtimeSkeleton;}
+
     void Mesh::load( SmartPtr<ISharedObject> data )
     {
+        if(m_runtimeAssetsMode && !m_runtimeAssets)throw std::runtime_error("Mesh runtime assets must be reconfigured before load");
         setLoadingState( LoadingState::Loading );
         Component::load( data );
+        if(m_runtimeAssetsMode){setLoadingState(LoadingState::Loaded);return;}
 
         if( m_componentFSM )
         {
@@ -65,6 +80,7 @@ namespace workphone::scene
 
     void Mesh::unload( SmartPtr<ISharedObject> data )
     {
+        m_runtimeResource.reset();m_runtimeSkeleton.reset();m_runtimeAssets.reset();
         try
         {
             setLoadingState( LoadingState::Unloading );
@@ -89,6 +105,7 @@ namespace workphone::scene
 
     void Mesh::setMeshPath( const String &meshPath )
     {
+        if(m_runtimeAssetsMode){if(!meshPath.empty())throw std::runtime_error("Runtime mesh paths cannot load authoring files");m_meshPath.clear();return;}
         m_meshPath = meshPath;
 
         if( !StringUtil::isNullOrEmpty( meshPath ) )
@@ -120,6 +137,7 @@ namespace workphone::scene
 
     void Mesh::setMeshResource( SmartPtr<IMeshResource> meshResource )
     {
+        if(m_runtimeAssetsMode && meshResource)throw std::runtime_error("Runtime meshes require their captured UUID resource");
         m_meshResource = meshResource;
 
         if( m_meshResource )
@@ -178,10 +196,12 @@ namespace workphone::scene
         properties->setProperty( m_meshPathStr, meshPath );
 
         auto meshResource = getMeshResource();
-        properties->setPropertyAsType( m_meshStr, meshResource );
+        if(m_runtimeAssetsMode)properties->setProperty(m_meshStr,m_runtimeMeshUuid,Properties::resourceStr);
+        else properties->setPropertyAsType( m_meshStr, meshResource );
 
         auto skeleton = getSkeleton();
-        properties->setPropertyAsType( m_skeletonStr, skeleton );
+        if(m_runtimeAssetsMode)properties->setProperty(m_skeletonStr,m_runtimeSkeletonUuid,Properties::resourceStr);
+        else properties->setPropertyAsType( m_skeletonStr, skeleton );
 
         auto &meshPathProperty = properties->getPropertyObject( m_meshPathStr );
         meshPathProperty.setTypeName( "file" );
@@ -194,6 +214,40 @@ namespace workphone::scene
 
     void Mesh::setProperties( SmartPtr<Properties> properties )
     {
+        if(m_runtimeAssetsMode)
+        {
+            if(!properties || !m_runtimeAssets)throw std::runtime_error("Missing runtime Mesh asset context/properties");
+            String meshId=m_runtimeMeshUuid,skeletonId=m_runtimeSkeletonUuid,path,error;
+            properties->getPropertyValue(m_meshStr,meshId);properties->getPropertyValue(m_skeletonStr,skeletonId);
+            properties->getPropertyValue(m_meshPathStr,path);
+            if(!path.empty())throw std::runtime_error("Runtime Mesh forbids authoring paths");
+            if(meshId.empty())throw std::runtime_error("Runtime Mesh requires its captured mesh UUID");
+            auto mesh=m_runtimeAssets->resolve(meshId,error);
+            if(!mesh)throw std::runtime_error(error.empty()?"Missing captured mesh UUID":error.c_str());
+#if WP_TYPED_ANIMATION_RESOURCE
+            if(mesh->header.resourceType!=resource::ResourceTypeID("mesh") && mesh->header.resourceType!=resource::ResourceTypeID("skinres"))
+                throw std::runtime_error("Mesh UUID requires a mesh or skinres resource");
+#else
+            throw std::runtime_error("Cooked mesh resources are unavailable in this build");
+#endif
+            std::shared_ptr<const resource::RuntimeResource> skeleton;
+            if(!skeletonId.empty()){
+                skeleton=m_runtimeAssets->resolve(skeletonId,error);
+                if(!skeleton
+#if WP_TYPED_ANIMATION_RESOURCE
+                   || skeleton->header.resourceType!=resource::ResourceTypeID("skelres")
+#endif
+                   )
+                    throw std::runtime_error(error.empty()?"Skeleton UUID requires a skelres resource":error.c_str());
+            }
+            m_runtimeResource.swap(mesh);m_runtimeSkeleton.swap(skeleton);
+            try {if(auto actor=getActor())if(auto renderer=actor->getComponent<MeshRenderer>())renderer->updateMesh();}
+            catch(...){m_runtimeResource.swap(mesh);m_runtimeSkeleton.swap(skeleton);throw;}
+            m_runtimeMeshUuid=std::move(meshId);m_runtimeSkeletonUuid=std::move(skeletonId);m_meshPath.clear();
+            m_meshResource=nullptr;m_skeleton=nullptr;
+            s32 priority=m_fsmPriority;properties->getPropertyValue(m_fsmPriorityStr,priority);setFsmPriority(priority);
+            Component::setProperties(properties);return;
+        }
         Component::setProperties( properties );
 
         auto applicationManager = core::IApplicationManager::instance();

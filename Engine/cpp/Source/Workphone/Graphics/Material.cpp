@@ -654,6 +654,14 @@ namespace workphone::render
         invalidateRenderState();
         try
         {
+            auto cachedTechnique=m_technique.load();auto cachedPass=m_pass.load();
+            m_technique=nullptr;setPass(nullptr);
+            if(cachedTechnique){auto owner=cachedTechnique->getMaterial();if(!owner||owner.get()==this)cachedTechnique->unload(data);}
+            if(cachedPass){auto owner=cachedPass->getMaterial();if(!owner||owner.get()==this)cachedPass->unload(data);}
+            for(auto technique:m_techniques)if(technique) {
+                auto owner=technique->getMaterial();if(!owner||owner.get()==this)technique->unload(data);
+            }
+            m_techniques.releaseStorage();
             if( auto context = getStateContext() )
             {
                 for( auto listener : context->getStateListeners() )
@@ -678,13 +686,6 @@ namespace workphone::render
             if( state != LoadingState::Unloaded )
             {
                 setLoadingState( LoadingState::Unloading );
-
-                for( auto technique : m_techniques )
-                {
-                    technique->unload( data );
-                }
-
-                m_techniques.releaseStorage();
 
                 ResourceGraphics<IMaterial>::unload( nullptr );
 
@@ -1198,8 +1199,13 @@ namespace workphone::render
     void Material::removeTechnique( SmartPtr<IMaterialTechnique> technique )
     {
         invalidateRenderState();
+        if(technique&&std::find(m_techniques.begin(),m_techniques.end(),technique)!=m_techniques.end()) {
+            auto owner=technique->getMaterial();if(!owner||owner.get()==this)technique->setMaterial(nullptr);
+            setPass(nullptr);
+        }
         m_techniques.erase( std::remove( m_techniques.begin(), m_techniques.end(), technique ),
                             m_techniques.end() );
+        if(m_technique==technique)m_technique=m_techniques.empty()?nullptr:m_techniques[0];
         invalidateRenderState();
     }
 
@@ -1207,19 +1213,17 @@ namespace workphone::render
     {
         SourceBudgetConcurrentArray<SmartPtr<IMaterialTechnique>> next( techniques.begin(),
                                                                         techniques.end() );
+        for(auto previous:m_techniques)if(previous) {
+            auto owner=previous->getMaterial();if(!owner||owner.get()==this)previous->setMaterial(nullptr);
+        }
         m_techniques = std::move( next );
+        m_technique=techniques.empty()?nullptr:techniques.front();setPass(nullptr);
         for( auto technique : techniques )
         {
             if( technique )
             {
+                if(auto previous=technique->getMaterial();previous&&previous.get()!=this)previous->removeTechnique(technique);
                 technique->setMaterial( this );
-                for( auto pass : technique->getPasses() )
-                {
-                    if( pass )
-                    {
-                        pass->setMaterial( this );
-                    }
-                }
             }
         }
         invalidateRenderState();
@@ -1228,6 +1232,10 @@ namespace workphone::render
     void Material::removeAllTechniques()
     {
         invalidateRenderState();
+        for(auto technique:m_techniques)if(technique) {
+            auto owner=technique->getMaterial();if(!owner||owner.get()==this)technique->setMaterial(nullptr);
+        }
+        m_technique=nullptr;setPass(nullptr);
         m_techniques.clear();
         invalidateRenderState();
     }
@@ -1515,17 +1523,12 @@ namespace workphone::render
 
     void Material::addTechnique( SmartPtr<IMaterialTechnique> technique )
     {
+        if(m_techniques.size()==m_techniques.capacity())m_techniques.reserve(std::max(size_t(1),m_techniques.capacity()*2));
+        if(technique)if(auto previous=technique->getMaterial();previous&&previous.get()!=this)previous->removeTechnique(technique);
         m_techniques.push_back( technique );
         if( technique )
         {
             technique->setMaterial( this );
-            for( auto pass : technique->getPasses() )
-            {
-                if( pass )
-                {
-                    pass->setMaterial( this );
-                }
-            }
         }
         invalidateRenderState();
         applyPendingLegacySurface();
