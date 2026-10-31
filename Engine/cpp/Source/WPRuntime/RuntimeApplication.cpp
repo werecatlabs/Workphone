@@ -173,6 +173,7 @@ namespace workphone
                     if( !StringUtil::isNullOrEmpty( projectPath ) )
                     {
                         applicationManager->setProjectPath( projectPath );
+                        applicationManager->setCachePath( projectPath + "/Cache" );
                     }
 
                     const auto sceneFilePath = project.getSceneFilePath();
@@ -195,6 +196,21 @@ namespace workphone
                 else if( Path::isExistingFolder( projectFilePath ) )
                 {
                     applicationManager->setProjectPath( projectFilePath );
+                }
+
+                // Metadata-only hosts do not install a resource database.
+                if( auto resourceDatabase = applicationManager->getResourceDatabase() )
+                {
+                    const auto dbFilePath = resourceDatabase->getFilePath();
+                    auto databasePath = Path::isPathAbsolute( dbFilePath )
+                                            ? dbFilePath
+                                            : applicationManager->getCachePath() + "/" + dbFilePath;
+                    auto projectCatalog = resourceDatabase->getDatabaseManager();
+                    if( projectCatalog )
+                    {
+                        projectCatalog->setDatabasePath( StringUtil::cleanupPath( databasePath ) );
+                        projectCatalog->open();
+                    }
                 }
             }
 
@@ -317,9 +333,9 @@ namespace workphone
                 {
                     auto it = std::find_if( sceneFileNames.begin(), sceneFileNames.end(),
                                             []( const FileInfo &fileInfo ) {
-                                                return fileInfo.fileName == "Splash.fbscenebin" ||
-                                                       fileInfo.fileName == "Splash.fbscene" ||
-                                                       fileInfo.fileName == "Splash.fbscenexml";
+                                                return fileInfo.fileName == "Application.fbscenebin" ||
+                                                       fileInfo.fileName == "Application.fbscene" ||
+                                                       fileInfo.fileName == "Application.fbscenexml";
                                             } );
                     if( it != sceneFileNames.end() )
                     {
@@ -333,11 +349,14 @@ namespace workphone
                 }
             }
 
-            auto currentScenePath = scene->getFilePath();
-            if( !StringUtil::isNullOrEmpty( sceneFilePath ) && currentScenePath != sceneFilePath )
-            {
-                sceneManager->loadScene( sceneFilePath, false );
-            }
+            //auto currentScenePath = scene->getFilePath();
+            //if( !StringUtil::isNullOrEmpty( sceneFilePath ) && currentScenePath != sceneFilePath )
+            //{
+            //    sceneManager->loadScene( sceneFilePath, false );
+            //}
+
+            // todo remove
+            sceneManager->loadScene( "Application.fbscene", false );
 
             WaitForSeconds( pull, 1.0 );
 
