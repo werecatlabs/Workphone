@@ -58,6 +58,24 @@ namespace workphone::resource
         u32 maxDependencyDepth = 64;
     };
 
+    /** Manifest-sealed corruption-check directory; hashes are not authentication. */
+    struct WPCore_API RuntimeResourceRangeInfo
+    {
+        std::shared_ptr<StreamBudgetLease> admission;
+        CompiledResourceHeader header;
+        u32 manifestVersion=0,chunkBytes=65536;
+        u64 chunkCount=0,metadataBytes=0;
+        bool independentlyVerified=false;
+    };
+    struct WPCore_API RuntimeResourceChunk
+    {
+        std::shared_ptr<StreamBudgetLease> admission;
+        ResourceID resourceId;
+        u64 offset=0,payloadSize=0,hash=0,payloadBytesRead=0;
+        bool legacyWholePayloadFallback=false;
+        Array<u8> bytes;
+    };
+
     /**
      * Dependency-aware build and runtime resource service.
      *
@@ -149,6 +167,11 @@ namespace workphone::resource
          * reader temporaries; outputs reset on failure. Does not open artifacts. */
         bool payloadMemoryRequirements( const ResourceID &, u64 &payloadBytes,
                                         u64 &metadataBytes, String &error ) const;
+        bool resourceInfo(const ResourceID &,RuntimeResourceRangeInfo &,String &error) const;
+        /** V4 verifies one chunk against its manifest pin. Earlier manifests
+         * validate the complete payload before slicing; no unchecked ranges. */
+        std::shared_ptr<const RuntimeResourceChunk> loadChunk(const ResourceID &,u64 index,String &error,
+                                                            bool workingAlreadyAdmitted=false);
         void unload( const ResourceID &resourceId ) override;
         void clearRuntimeCache() override;
 

@@ -1,6 +1,7 @@
 #include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/AudioResourceCompiler.hpp>
 #include <workphone_audio_core.h>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <filesystem>
 #include <fstream>
 
@@ -27,6 +28,8 @@ namespace workphone::audio
         std::ifstream input(std::filesystem::u8path(context.sourcePath.c_str()),std::ios::binary|std::ios::ate);
         const auto size=input?input.tellg():std::streampos(-1);
         if(size<12 || size>64u*1024u*1024u) { messages.push_back("Invalid audio source size"); return resource::CompilationStatus::Failure; }
+        String admissionError;auto working=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,static_cast<u64>(size)+65536,admissionError);
+        if(!working){messages.push_back(admissionError);return resource::CompilationStatus::Failure;}
         Array<u8> bytes(static_cast<size_t>(size)); input.seekg(0);
         input.read(reinterpret_cast<char*>(bytes.data()),bytes.size()); String error;
         if(!input || !validateBytes(bytes,error)) { messages.push_back(error.empty()?"Cannot read audio source":error); return resource::CompilationStatus::Failure; }
@@ -39,6 +42,10 @@ namespace workphone::audio
         const AudioResourceCompiler compiler;
         if(value.header.resourceType!=resource::ResourceTypeID("wav") ||
             value.header.resourceId.type()!=resource::ResourceTypeID("wav") ||
+            value.header.resourceId.isSubResource() || !value.header.installDependencies.empty() ||
+            !value.header.installArtifacts.empty() || !value.dependencies.empty() ||
+            value.header.payloadSize!=value.payload.size() ||
+            value.header.payloadHash!=resource::hashBytes(value.payload.data(),value.payload.size()) ||
             value.header.compilerVersion!=compiler.versionFor(resource::ResourceTypeID("wav")))
         { error="Unsupported cooked audio type or version"; return false; }
         return validateBytes(value.payload,error);

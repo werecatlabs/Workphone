@@ -437,7 +437,7 @@ namespace workphone
         }
 
         bool ClawMesh::loadResource(std::shared_ptr<const resource::RuntimeResource> loadedResource,String &error,
-                                   const String &target,bool packagedBuild)
+                                   const String &target,bool packagedBuild,std::shared_ptr<resource::ResourcePayloadMount> mount)
         {
 #if WP_FOLIAGE_SOURCE_RESOURCES
             error.clear();
@@ -458,7 +458,7 @@ namespace workphone
                 // Stage a complete independent owner. Neither materials, geometry,
                 // bind vertices nor the rig can change this object on failure.
                 auto candidate=std::make_unique<ClawMesh>();
-                if(!candidate->loadResource(meshResource,error,target,packagedBuild)) return false;
+                if(!candidate->loadResource(meshResource,error,target,packagedBuild,mount)) return false;
                 auto rig=resource::SkeletonResourceCompiler::decode(*skeletonResource,error);
                 if(!rig) return false;
                 const auto count=wp_graphics_mesh_get_vertex_count(candidate->m_mesh);
@@ -530,7 +530,7 @@ namespace workphone
                             std::shared_ptr<const resource::RuntimeResource> child;
                             for(const auto &dependency:loadedResource->dependencies)
                                 if(dependency&&dependency->header.resourceId==id) { child=dependency; break; }
-                            auto material=bridge.stageRuntime(child,error); if(!material) return false;
+                            auto material=bridge.stageRuntime(child,error,mount); if(!material) return false;
                             found=staged.emplace(id.str(),material).first; retained->push_back(material);
                         }
                         slots.push_back(found->second->material());

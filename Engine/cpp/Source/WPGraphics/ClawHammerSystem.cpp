@@ -1,5 +1,8 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawMaterial.hpp>
+#include <WPGraphics/Resources/ClawMaterialResource.hpp>
+#include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
+#include <WPGraphics/Resources/ClawTextureStream.hpp>
 #include <WPGraphics/MaterialProgramReloadDX11.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
@@ -45,6 +48,61 @@ namespace workphone
 {
     namespace render
     {
+        std::shared_ptr<resource::ResourceLeafProviderFactory> ClawHammerSystem::createRuntimeLeafProviderFactory(
+            std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            return createRuntimeTextureLeafProviderFactory(std::move(mount),error);
+#else
+            error.clear();return {};
+#endif
+        }
+        std::shared_ptr<const resource::RuntimeResource> ClawHammerSystem::captureRuntimeResourceSnapshot(
+            std::shared_ptr<const resource::RuntimeResource> resource,std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            return snapshotRuntimeTexture(std::move(resource),std::move(mount),error);
+#else
+            error.clear();return resource;
+#endif
+        }
+        SmartPtr<IMaterial> ClawHammerSystem::createRuntimeMaterial(
+            std::shared_ptr<const resource::RuntimeResource> resource,String &error,
+            const String &target,bool packagedBuild,std::shared_ptr<resource::ResourcePayloadMount> mount)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            error.clear();try {
+                auto renderer=workphone::dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
+                if(!renderer||!renderer->isLoaded()){error="Runtime material requires an active DX11 renderer";return nullptr;}
+                ClawMaterialResource installer(nullptr,nullptr,"",{},renderer,target,packagedBuild);
+                auto candidate=installer.stageRuntime(std::move(resource),error,std::move(mount));if(!candidate)return nullptr;
+                auto material=candidate->material();material->setLoadingState(LoadingState::Loaded);return material;
+            }catch(const std::exception &failure){error=failure.what();return nullptr;}
+#else
+            return IGraphicsSystem::createRuntimeMaterial(std::move(resource),error,target,packagedBuild,std::move(mount));
+#endif
+        }
+        SmartPtr<ITexture> ClawHammerSystem::createRuntimeTexture(
+            std::shared_ptr<const resource::RuntimeResource> resource,String &error,
+            const String &target,bool packagedBuild,std::shared_ptr<resource::ResourcePayloadMount> mount)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            error.clear();try {
+                auto renderer=workphone::dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
+                if(!resource||!renderer||!renderer->isLoaded()){error="Runtime texture requires a pinned resource and active DX11 renderer";return nullptr;}
+                if(mount&&isRuntimeTextureSnapshot(*resource)){auto texture=make_ptr<ClawTexture>();
+                    if(!texture->loadRuntimeStream(resource,mount,target,packagedBuild,wp_renderer_get_dx11(renderer->getNativeRenderer()),error))return nullptr;
+                    texture->setLoadingState(LoadingState::Loaded);return texture;}
+                CookedTextureData data;if(!decodeCookedTexture(*resource,data,error))return nullptr;
+                if(data.target!=target||data.packagedBuild!=packagedBuild){error="Runtime texture target/build mismatch";return nullptr;}
+                auto texture=make_ptr<ClawTexture>();auto native=wp_renderer_get_dx11(renderer->getNativeRenderer());
+                if(!(data.ddsBytes.empty()?texture->uploadCookedMips(data.levels,data.mipSettings,native,error):uploadCookedDds(texture.get(),data,native,error)))return nullptr;
+                texture->setLoadingState(LoadingState::Loaded);return texture;
+            }catch(const std::exception &failure){error=failure.what();return nullptr;}
+#else
+            return IGraphicsSystem::createRuntimeTexture(std::move(resource),error,target,packagedBuild,std::move(mount));
+#endif
+        }
         namespace
         {
             // Keep phase timings separate from the render task so CPU scene

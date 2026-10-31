@@ -100,5 +100,47 @@ namespace resource_closure_stream_contracts
             require(current.key==302&&current.resource&&current.generation!=oldGeneration,"A new request survives prior assembly cancellation");
             stream->drain();
         }
+        {
+            struct Counters {u32 ready=0,created=0;};auto counters=std::make_shared<Counters>();
+            class Leaf final : public ResourceLeafProvider
+            {
+            public:
+                Leaf(CompiledResourceHeader header,std::shared_ptr<Counters> counts):m_header(std::move(header)),m_counts(std::move(counts)){}
+                ResourceLeafStatus poll(std::shared_ptr<const RuntimeResource> &out,String &)override
+                {auto value=std::make_shared<RuntimeResource>();value->header=m_header;value->streamData=std::make_shared<RuntimeResourceStreamData>();out=value;++m_counts->ready;return ResourceLeafStatus::Ready;}
+                u64 maximumResidentBytes()const override{return 0;}void cancel()override{}void drain()override{}
+            private:CompiledResourceHeader m_header;std::shared_ptr<Counters> m_counts;
+            };
+            class Scoped final : public ResourceLeafProviderFactory
+            {
+            public:
+                Scoped(ResourceID recipe,std::shared_ptr<Counters> counts,bool enabled=false):m_recipe(std::move(recipe)),m_counts(std::move(counts)),m_enabled(enabled){}
+                std::shared_ptr<ResourceLeafProviderFactory> cloneForRequest(const ResourceID &root,String &)override
+                {return std::make_shared<Scoped>(m_recipe,m_counts,root==m_recipe);}
+                bool observeResourceReady(const std::shared_ptr<const RuntimeResource> &raw,String &)override
+                {if(raw->header.resourceId==m_recipe)m_observed=true;return true;}
+                bool handles(const ResourceID &id)const override{return m_enabled&&m_observed&&id==ResourceID("data://child.txtres");}
+                std::shared_ptr<ResourceLeafProvider> create(std::shared_ptr<ResourcePayloadMount>,const ResourceID &,const RuntimeResourceRangeInfo &info,s32,String &)override
+                {++m_counts->created;return std::make_shared<Leaf>(info.header,m_counts);}
+            private:ResourceID m_recipe;std::shared_ptr<Counters> m_counts;bool m_enabled=false,m_observed=false;
+            };
+            auto scheduler=std::make_shared<WorldStreamingScheduler>();auto mount=ResourcePayloadMount::create(config,scheduler,{},error);require(mount!=nullptr,error.c_str());
+            auto probe=ResourcePayloadStream::create(mount,error);require(probe!=nullptr,error.c_str());u64 bytes=0,metadata=0;
+            require(probe->memoryRequirements(root,bytes,metadata,error),error.c_str());const auto working=size_t(StreamMemoryClass::WorkingCpu);
+            auto factory=std::make_shared<Scoped>(root,counters);auto stream=ResourceClosureStream::create(mount,error,factory);require(stream!=nullptr,error.c_str());
+            auto pressure=scheduler->reserve(StreamMemoryClass::WorkingCpu,scheduler->stats().limits[working]-bytes-metadata,error);require(pressure!=nullptr,error.c_str());
+            auto stage=[&](u64 key,u32 count){require(stream->request(key,root,limits,0,error),error.c_str());ResourcePayloadResult output;
+                const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+                while(counters->ready<count&&std::chrono::steady_clock::now()<until){require(!stream->take(output),"Sparse graph assembly waits behind pressure");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+                require(counters->ready==count,"Observed recipe selects its sparse child before reading that child payload");};
+            stage(401,1);const auto oldGeneration=stream->generation();
+            require(!stream->request(402,ResourceID("data://absent.txtres"),limits,0,error)&&stream->generation()==oldGeneration,
+                "Rejected request scopes leave the accepted recipe/provider selection untouched");pressure.reset();auto accepted=wait(*stream);
+            require(accepted.resource&&accepted.resource->dependencies[0]->streamData,"Rejected scope does not turn the prior sparse child into a raw load");stream->drain();accepted={};
+            pressure=scheduler->reserve(StreamMemoryClass::WorkingCpu,scheduler->stats().limits[working]-bytes-metadata,error);require(pressure!=nullptr,error.c_str());stage(403,2);
+            require(stream->request(404,ResourceID("data://child.txtres"),limits,0,error),error.c_str());pressure.reset();auto ordinary=wait(*stream);
+            require(ordinary.key==404&&ordinary.resource&&!ordinary.resource->streamData&&!ordinary.resource->payload.empty()&&counters->created==2,
+                "A different root cannot reuse a previous recipe's sparse snapshot for the same ordinary resource ID");stream->drain();
+        }
     }
 }

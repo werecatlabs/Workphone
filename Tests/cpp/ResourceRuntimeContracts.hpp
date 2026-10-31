@@ -764,7 +764,7 @@ namespace resource_runtime_contracts
         runtime.shutdown();
         writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot, graphRoot } );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted duplicate manifest identities" );
-        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot }, 4 );
+        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot }, 5 );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted a newer manifest schema" );
         // The shared subtree is visited first along the short branch. Memoization
         // must still count its depth when the long branch reaches it afterwards.

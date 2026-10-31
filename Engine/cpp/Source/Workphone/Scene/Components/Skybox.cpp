@@ -17,6 +17,12 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/Interface/System/IFactoryManager.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
+#include <cmath>
+#include <map>
+#include <stdexcept>
 
 namespace workphone::scene
 {
@@ -44,10 +50,19 @@ namespace workphone::scene
         m_materialSharedListener->setOwner( this );
     }
 
-    Skybox::~Skybox() = default;
+    Skybox::~Skybox() { if(m_runtimeAssetsMode)unload(nullptr); }
+
+    void Skybox::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    {
+        if(!context||!context->resolve||isLoaded()||getLoadingState()==LoadingState::Loading||
+           getLoadingState()==LoadingState::Unloading||(m_runtimeAssets&&m_runtimeAssets!=context))
+            throw std::runtime_error("Skybox runtime assets require an unloaded component and resolver");
+        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+    }
 
     void Skybox::load( SmartPtr<ISharedObject> data )
     {
+        if(m_runtimeAssetsMode&&!m_runtimeAssets)throw std::runtime_error("Skybox runtime assets must be reconfigured before load");
         try
         {
             if( getLoadingState() == LoadingState::Loaded )
@@ -64,6 +79,7 @@ namespace workphone::scene
             }
 
             Component::load( data );
+            if(m_runtimeAssetsMode){if(!m_material)throw std::runtime_error("Runtime skybox requires six captured texture UUIDs");for(const auto &texture:m_runtimeTextures)if(!texture)throw std::runtime_error("Runtime skybox requires all captured texture resources");}
 
             auto applicationManager = core::IApplicationManager::instancePtr();
             if( !applicationManager )
@@ -106,11 +122,13 @@ namespace workphone::scene
                 WP_LOG_ERROR( "GraphicsSystem is null during Skybox::load" );
             }
 
+            if(m_runtimeAssetsMode&&!m_skybox)throw std::runtime_error("Runtime skybox native allocation failed");
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            if(m_runtimeAssetsMode){unload(nullptr);throw;}
             setLoadingState( LoadingState::Loaded );
         }
     }
@@ -120,8 +138,9 @@ namespace workphone::scene
         try
         {
             const auto loadingState = getLoadingState();
-            if( loadingState == LoadingState::Unloaded )
+            if( loadingState == LoadingState::Unloaded&&!m_material&&!m_skybox )
             {
+                m_runtimeAssets.reset();
                 return;
             }
 
@@ -136,6 +155,7 @@ namespace workphone::scene
                     if( m_skybox )
                     {
                         m_skybox->setVisible( false );
+                        if(m_runtimeAssetsMode)m_skybox->setMaterial(nullptr);
 
                         auto smgr = graphicsSystem->getGraphicsScenePtr();
                         if( smgr )
@@ -177,6 +197,7 @@ namespace workphone::scene
             WP_LOG_EXCEPTION( e );
             setLoadingState( LoadingState::Unloaded );
         }
+        m_runtimeAssets.reset();for(auto &resource:m_runtimeTextures)resource.reset();for(auto &identity:m_runtimeTextureUuids)identity.clear();
     }
 
     void Skybox::updateFlags( u32 flags, u32 oldFlags )
@@ -262,6 +283,14 @@ namespace workphone::scene
     {
         auto properties = Component::getProperties();
 
+        if(m_runtimeAssetsMode)
+        {
+            const String keys[]={frontPropertyKey,backPropertyKey,leftPropertyKey,rightPropertyKey,upPropertyKey,downPropertyKey};
+            for(size_t i=0;i<6;++i)properties->setProperty(keys[i],m_runtimeTextureUuids[i]);
+            properties->setProperty(swapLeftRightPropertyKey,m_swapLeftRight);properties->setProperty(swapUpDownPropertyKey,m_swapUpDown);
+            properties->setProperty(swapFrontBackPropertyKey,m_swapFrontBack);properties->setProperty("distance",m_distance);return properties;
+        }
+
         properties->setProperty( frontPropertyKey,
                                  m_textures[static_cast<u32>( SkyboxTextureTypes::Front )] );
         properties->setProperty( backPropertyKey,
@@ -286,6 +315,45 @@ namespace workphone::scene
         if( !properties )
         {
             return;
+        }
+
+        if(m_runtimeAssetsMode)
+        {
+            if(!m_runtimeAssets)throw std::runtime_error("Runtime skybox properties require a configured context");
+            const String keys[]={frontPropertyKey,backPropertyKey,leftPropertyKey,rightPropertyKey,upPropertyKey,downPropertyKey};
+            std::array<String,6> identities=m_runtimeTextureUuids;std::array<std::shared_ptr<const resource::RuntimeResource>,6> resources;
+            bool swapLR=m_swapLeftRight,swapUD=m_swapUpDown,swapFB=m_swapFrontBack;
+            properties->getPropertyValue(swapLeftRightPropertyKey,swapLR);properties->getPropertyValue(swapUpDownPropertyKey,swapUD);properties->getPropertyValue(swapFrontBackPropertyKey,swapFB);
+            auto distance=m_distance;properties->getPropertyValue("distance",distance);
+            if(!std::isfinite(distance)||distance<=0)throw std::runtime_error("Runtime skybox distance must be finite and positive");
+            auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystemPtr():nullptr;
+            if(!graphics||!app->getFactoryManager())throw std::runtime_error("Runtime skybox requires its graphics system and factory");
+            ScopedLock owner(graphics);String error;
+            Array<SmartPtr<render::ITexture>> textures;textures.resize(6);std::map<String,SmartPtr<render::ITexture>> staged;
+            for(size_t i=0;i<6;++i)
+            {
+                properties->getPropertyValue(keys[i],identities[i]);identities[i]=StringUtil::make_lower(identities[i]);
+                if(identities[i].empty())throw std::runtime_error("Runtime skybox requires all six texture UUIDs");
+                resources[i]=m_runtimeAssets->resolve(identities[i],error);
+                if(!resources[i]||resources[i]->header.resourceType!=resource::ResourceTypeID("texres"))throw std::runtime_error(error.empty()?"Skybox UUID requires a texres resource":error.c_str());
+                auto found=staged.find(identities[i]);
+                if(found!=staged.end())textures[i]=found->second;
+                else if(resources[i]==m_runtimeTextures[i]&&m_textures[i])textures[i]=m_textures[i];
+                else textures[i]=graphics->createRuntimeTexture(resources[i],error,m_runtimeAssets->target,m_runtimeAssets->packagedBuild,m_runtimeAssets->mount);
+                if(!textures[i]||!textures[i]->isLoaded())throw std::runtime_error(error.empty()?"Cannot stage runtime skybox texture":error.c_str());
+                staged.emplace(identities[i],textures[i]);
+            }
+            auto ordered=textures;
+            if(swapLR)std::swap(ordered[2],ordered[3]);if(swapUD)std::swap(ordered[4],ordered[5]);if(swapFB)std::swap(ordered[0],ordered[1]);
+            auto material=app->getFactoryManager()->make_object<render::IMaterial>();
+            if(!material)throw std::runtime_error("Cannot allocate runtime skybox material");
+            material->setMaterialType(MaterialType::SkyboxCubemap);material->load(nullptr);
+            if(!material->isLoaded())throw std::runtime_error("Cannot load runtime skybox material");
+            material->setLightingEnabled(false);material->setCubicTextures(ordered);
+            Component::setProperties(properties);
+            m_material=material;for(size_t i=0;i<6;++i)m_textures[i]=textures[i];m_runtimeTextures=std::move(resources);m_runtimeTextureUuids=std::move(identities);
+            m_swapLeftRight=swapLR;m_swapUpDown=swapUD;m_swapFrontBack=swapFB;m_distance=distance;
+            syncRenderSkybox(this);updateVisibility();return;
         }
 
         auto actor = getActorPtr();
@@ -466,6 +534,7 @@ namespace workphone::scene
 
     void Skybox::setTextures( const Array<SmartPtr<render::ITexture>> &textures )
     {
+        if(m_runtimeAssetsMode)throw std::runtime_error("Runtime skybox textures must use captured UUID properties");
         for( size_t i = 0; i < textures.size(); ++i )
         {
             if( i < m_textures.size() )
@@ -490,6 +559,7 @@ namespace workphone::scene
 
     void Skybox::setTexture( SmartPtr<render::ITexture> texture, u8 index )
     {
+        if(m_runtimeAssetsMode)throw std::runtime_error("Runtime skybox textures must use captured UUID properties");
         if( texture )
         {
             if( index < m_textures.size() )
@@ -504,6 +574,12 @@ namespace workphone::scene
 
     void Skybox::setTextureByName( const String &textureName, u8 index )
     {
+        if(m_runtimeAssetsMode)
+        {
+            if(index>=6)throw std::runtime_error("Runtime skybox texture index is invalid");
+            const String keys[]={frontPropertyKey,backPropertyKey,leftPropertyKey,rightPropertyKey,upPropertyKey,downPropertyKey};
+            auto properties=getProperties();properties->setProperty(keys[index],textureName);setProperties(properties);return;
+        }
         if( index < m_textures.size() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -637,6 +713,13 @@ namespace workphone::scene
 
     void Skybox::setupMaterial()
     {
+        if(m_runtimeAssetsMode)
+        {
+            if(!m_runtimeAssets||!m_material)return;
+            auto textures=getTextures();
+            if(m_swapLeftRight)std::swap(textures[2],textures[3]);if(m_swapUpDown)std::swap(textures[4],textures[5]);if(m_swapFrontBack)std::swap(textures[0],textures[1]);
+            m_material->setCubicTextures(textures);return;
+        }
         try
         {
             auto applicationManager = core::IApplicationManager::instancePtr();

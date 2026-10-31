@@ -1094,6 +1094,8 @@ if (WP_EDITOR_TESTS)
         actor_prefab_test
         cooked_scene_prefab_resource_test
         ui_resource_package_test
+        runtime_media_component_test
+        audio_runtime_stream_test
         actor_addremove_test
         terrain_test
         ui_test

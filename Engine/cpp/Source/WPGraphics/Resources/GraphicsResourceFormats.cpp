@@ -1,6 +1,7 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
+#include <WPGraphics/Resources/ClawTextureStream.hpp>
 #include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 
@@ -1179,7 +1180,8 @@ namespace workphone::render
                 require( matches == 1,
                          "Cooked material requires exactly one installed generation per texture" );
             }
-            Array<std::pair<resource::ResourceID, TextureMipFilter>> validatedTextures;
+            struct ValidatedTexture {resource::ResourceID id;TextureMipFilter filter;u32 storageFormat;};
+            Array<ValidatedTexture> validatedTextures;
             const auto validateSlot = [&]( const resource::ResourceID &id, u64 sourceHash,
                                            u64 payloadHash, u64 compilerVersion,
                                            MaterialTextureSlot slot ) {
@@ -1197,11 +1199,12 @@ namespace workphone::render
                          "Cooked material texture dependency generation does not match" );
                 for( const auto &cached : validatedTextures )
                 {
-                    if( cached.first == id )
+                    if( cached.id == id )
                     {
                         CookedTextureData semantic;
                         semantic.target = data.target;
-                        semantic.mipSettings.filter = cached.second;
+                        semantic.mipSettings.filter = cached.filter;
+                        semantic.storageFormat=cached.storageFormat;
                         if( !validateMaterialTextureSemantic( semantic, slot, error ) )
                         {
                             throw std::runtime_error( error.c_str() );
@@ -1210,7 +1213,7 @@ namespace workphone::render
                     }
                 }
                 CookedTextureData texture;
-                if( !decodeCookedTexture( *dependency, texture, error ) )
+                if( !(dependency->streamData?describeRuntimeTextureSnapshot(*dependency,texture,error):decodeCookedTexture(*dependency,texture,error)) )
                 {
                     throw std::runtime_error( error.c_str() );
                 }
@@ -1220,7 +1223,7 @@ namespace workphone::render
                 {
                     throw std::runtime_error( error.c_str() );
                 }
-                validatedTextures.emplace_back( id, texture.mipSettings.filter );
+                validatedTextures.push_back({id,texture.mipSettings.filter,texture.storageFormat});
             };
             validateSlot( data.textureId, data.textureSourceHash, data.texturePayloadHash,
                           data.textureCompilerVersion, MaterialTextureSlot::BaseColour );

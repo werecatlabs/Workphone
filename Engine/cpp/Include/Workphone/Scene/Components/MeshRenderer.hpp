@@ -22,6 +22,11 @@ namespace workphone
         {
         public:
             void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            bool isRuntimeLODStreamed() const;
+            bool hasRuntimeLODResidency() const;
+            bool prepareRuntimeLOD(String &error,s32 priority=0);
+            void releaseRuntimeLOD();
+            String runtimeLODError() const;
             static const String meshNodeSuffixStr;
             static const String meshPathStr;
 
@@ -124,6 +129,9 @@ namespace workphone
             std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;
             String m_meshAssetUuid;
             bool m_runtimeAssetsMode=false;
+            struct RuntimeLODData;
+            std::unique_ptr<RuntimeLODData> m_runtimeLOD;
+            bool m_streamMesh=false;
             /**
              * @brief Calculates the axis-aligned bounding box for the mesh.
              * @return The calculated bounding box.

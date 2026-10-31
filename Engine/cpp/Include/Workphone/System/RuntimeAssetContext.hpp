@@ -5,6 +5,7 @@
 
 namespace workphone::resource
 {
+    class ResourcePayloadMount;
     using RuntimeResourceResolver = std::function<std::shared_ptr<const RuntimeResource>(const String &,String &)>;
     /** A consumer's immutable pinned closure. No catalog or source fallback.
      * Resolver captures must not retain this context (the private VM may retain
@@ -17,6 +18,7 @@ namespace workphone::resource
         Properties::ObjectResolver objects;
         SmartPtr<IScriptManager> scripts;
         bool requiresScripts=false;
+        std::shared_ptr<ResourcePayloadMount> mount;
     };
     WPCore_API bool prepareRuntimeAssetScripts(const std::shared_ptr<RuntimeAssetContext> &,String &error);
 }

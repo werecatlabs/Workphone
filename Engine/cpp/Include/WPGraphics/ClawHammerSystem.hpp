@@ -33,6 +33,16 @@ namespace workphone
         class WPGraphics_API ClawHammerSystem : public GraphicsSystem
         {
         public:
+            std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeLeafProviderFactory(
+                std::shared_ptr<resource::ResourcePayloadMount>,String &) override;
+            std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
+                std::shared_ptr<const resource::RuntimeResource>,std::shared_ptr<resource::ResourcePayloadMount>,String &) override;
+            SmartPtr<IMaterial> createRuntimeMaterial(
+                std::shared_ptr<const resource::RuntimeResource>,String &,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
+            SmartPtr<ITexture> createRuntimeTexture(
+                std::shared_ptr<const resource::RuntimeResource>,String &,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
             /**
              * @class StateListener
              * @brief Listener for handling state changes within the ClawHammerSystem.

@@ -14,6 +14,7 @@
 #include <Workphone/Interface/System/ITask.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Script/IScriptManager.hpp>
+#include <Workphone/Interface/Sound/ISoundManager.hpp>
 #include <rapidjson/document.h>
 #include <filesystem>
 #include <fstream>
@@ -44,7 +45,7 @@ namespace workphone::resource
     WP_CLASS_REGISTER_DERIVED(workphone::resource,LeasedActorGraphProperties,Properties);
     namespace
     {
-        constexpr size_t maximumBytes=8ull<<20, maximumNodes=4096, maximumDepth=64;
+        constexpr size_t maximumBytes=8ull<<20, maximumNodes=4096, maximumDepth=64,maximumFields=128;
         void require(bool condition,const char *error) { if(!condition) throw std::runtime_error(error); }
         String text(const rapidjson::Value &value)
         {
@@ -80,12 +81,12 @@ namespace workphone::resource
             stream>>std::ws; require(stream.eof(),"Actor transform has trailing values");
             if(orientation) require(std::abs(norm-1.0)<0.001,"Actor orientation must be a unit quaternion");
         }
-        enum class Role { Scene,Actor,Transform,Components,Component };
+        enum class Role { Scene,Actor,Transform,Components,Component,LODLevel,DetailBound };
         using JSON=rapidjson::Value;
         const String bindingAttribute="compiledResourceId";
         String componentName(const String &name)
         {
-            for(const auto &supported:Array<String>{"Mesh","MeshRenderer","Animator","Script"})
+            for(const auto &supported:Array<String>{"Mesh","MeshRenderer","Animator","Script","Material","Skybox","Camera","Light","AudioEmitter","UIComponent","LODGroup"})
                 if(name==supported||name=="workphone::scene::"+supported||name=="fb::scene::"+supported)
                     return supported;
             throw std::runtime_error("Unsupported cooked component type: "+std::string(name.c_str()));
@@ -95,12 +96,20 @@ namespace workphone::resource
             return (component=="Mesh"&&(field=="Mesh Resource"||field=="Skeleton"))||
                    (component=="MeshRenderer"&&field=="meshAssetUuid")||
                    (component=="Animator"&&field=="animationAssetUuid")||
-                   (component=="Script"&&field=="scriptAssetUuid");
+                   (component=="Script"&&field=="scriptAssetUuid")||
+                   (component=="Material"&&field=="Material")||
+                   (component=="AudioEmitter"&&field=="Sound")||
+                   (component=="UIComponent"&&field=="uiAssetUuid")||
+                   (component=="Skybox"&&(field=="Front"||field=="Back"||field=="Up"||field=="Down"||field=="Right"||field=="Left"));
         }
         bool assetType(const String &component,const String &field,const ResourceTypeID &type)
         {
             if(component=="Mesh"&&field=="Skeleton"||component=="Animator"&&field=="animationAssetUuid")return type==ResourceTypeID("skelres");
             if(component=="Script"&&field=="scriptAssetUuid")return type==ResourceTypeID("lua");
+            if(component=="Material")return type==ResourceTypeID("matres");
+            if(component=="Skybox")return type==ResourceTypeID("texres");
+            if(component=="AudioEmitter")return type==ResourceTypeID("wav");
+            if(component=="UIComponent")return type==ResourceTypeID("uires");
             return (component=="Mesh"&&field=="Mesh Resource"||component=="MeshRenderer"&&field=="meshAssetUuid")&&
                 (type==ResourceTypeID("mesh")||type==ResourceTypeID("skinres"));
         }
@@ -124,11 +133,69 @@ namespace workphone::resource
             if(key=="componentFlags"){integer(value);return;}
             if(key=="state"){integer(value,5);require(value!="2","Destroyed components cannot be cooked");return;}
             if(assetField(component,key)){if(!value.empty())(void)uuid(value);return;}
+            auto oneOf=[&](std::initializer_list<const char *> names){for(const auto name:names)if(key==name)return true;return false;};
+            auto bounded=[&](double low,double high){scalar(value);const double number=std::stod(value.c_str());require(number>=low&&number<=high,"Cooked component scalar is outside its native range");};
+            auto colour=[&](){vector(value,4);std::istringstream input(value.c_str());input.imbue(std::locale::classic());double number;for(int i=0;i<4;++i){input>>number;require(number>=0&&number<=1,"Cooked colour channel is outside [0,1]");}};
+            auto disabled=[&](){boolean(value);require(value=="0"||value=="false","Cooked component cannot invoke authoring actions");};
+            if(component=="Material") {
+                if(key=="Material Path"){require(value.empty(),"Cooked Material requires a UUID, not Material Path");return;}
+                if(key=="index"){integer(value,65535);return;}
+            }
+            if(component=="Skybox") {
+                if(oneOf({"swapLeftRight","swapUpDown","swapFrontBack"})){boolean(value);return;}
+                if(key=="distance"){bounded(.001,10000000);return;}
+            }
+            if(component=="AudioEmitter") {
+                if(oneOf({"Play","Stop","Pause","Unpause"})){disabled();return;}
+                if(key=="runtimeAudioDiagnostic")return;
+            }
+            if(component=="UIComponent") {
+                if(key=="runtimeUIDiagnostic")return;
+            }
+            if(component=="LODGroup") {
+                if(key=="localReferencePoint"){vector(value,3);return;}
+                if(key=="size"||key=="lodBias"){bounded(.000001,10000000);return;}
+                if(key=="hysteresis"){bounded(0,.5);return;}
+                if(key=="forcedLOD"){if(value!="-1")integer(value,15);return;}
+                if(key=="cullBelowLastLOD"||key=="lodEnabled"){boolean(value);return;}
+                if(key=="lodLevels"){integer(value,16);return;}
+                if(key=="detailBoundCount"){integer(value,256);return;}
+                if(key=="Recalculate Bounds"){disabled();return;}
+            }
+            if(component=="Light") {
+                if(key=="diffuseColour"||key=="specularColour"){colour();return;}
+                if(key=="debugColour"){integer(value);return;}
+                if(key=="lightType"){integer(value,2);return;}
+                if(key=="range"){bounded(.001,10000000);return;}
+                if(oneOf({"intensity","constant","linear","quadratic"})){bounded(0,10000000);return;}
+            }
+            if(component=="Camera") {
+                if(key=="zOrder"||key=="visibilityMask"){integer(value);return;}
+                if(key=="viewportBackgroundColour"){colour();return;}
+                if(oneOf({"isActive","enableShadows","enableSceneRender","enableUI","clearEveryFrame","overlaysEnabled","autoUpdated","postProcessing.enabled","postProcessing.fxaa","postProcessing.bloom"})){boolean(value);return;}
+                if(key=="fov"){bounded(.001,179.999);return;}
+                if(key=="nearClip"||key=="farClip"){bounded(.000001,100000000);return;}
+                if(key=="orthoWidth"||key=="orthoHeight"){bounded(0,0);return;}
+                if(key=="outputRenderTexture"||key=="postProcessing.workspace"){require(value.empty(),"Cooked Camera cannot resolve an undeclared render target/workspace");return;}
+                if(key=="reset"||key=="updateActiveState"){disabled();return;}
+                if(key=="postProcessing.exposure"){bounded(-32,32);return;}
+                if(key=="postProcessing.gamma"){bounded(.01,16);return;}
+                if(key=="postProcessing.contrast"||key=="postProcessing.saturation"){bounded(0,16);return;}
+                if(key=="postProcessing.bloomIntensity"||key=="postProcessing.bloomThreshold"){bounded(0,64);return;}
+                if(key=="postProcessing.vignette"){bounded(0,1);return;}
+                for(int i=0;i<4;++i){const String prefix="compositing.layer"+StringUtil::toString(i);
+                    if(key==prefix+".renderTexture"){require(value.empty(),"Cooked Camera composite render targets require explicit typed bindings");return;}
+                    if(key==prefix+".enabled"){disabled();return;}
+                    if(key==prefix+".blendMode"){integer(value,3);return;}
+                    if(key==prefix+".opacity"){bounded(0,1);return;}
+                }
+            }
             if(component=="Mesh") {
                 if(key=="Mesh Path"){require(value.empty(),"Cooked Mesh requires a UUID, not Mesh Path");return;}
                 if(key=="FSM Priority"){integer(value,0x7fffffffull);return;}
             }
             if(component=="MeshRenderer") {
+                if(key=="streamMesh"){boolean(value);return;}
                 if(key=="materialName"){require(value.empty(),"Cooked renderer cannot load a loose material name");return;}
                 if(key=="castShadows"||key=="reflections"||key=="occulsion"){integer(value,3);return;}
                 if(key=="recieveShadows"){integer(value,1);return;}
@@ -170,7 +237,7 @@ namespace workphone::resource
                 if(key=="handle_name") { result->setName(text(i->value)); continue; }
                 if(key=="children") { require(i->value.IsArray()&&i->value.Size()<=maximumNodes,"Invalid actor children"); continue; }
                 if(key=="__wp_properties_v1") {
-                    require(i->value.IsArray()&&i->value.Size()<=32,"Actor metadata exceeds limits");
+                    require(i->value.IsArray()&&i->value.Size()<=maximumFields,"Actor metadata exceeds limits");
                     for(const auto &entry:i->value.GetArray()) {
                         require(entry.IsObject()&&entry.MemberCount()==4,"Invalid actor metadata"); std::set<String> fields;
                         String propertyName;const JSON *attributesValue=nullptr;
@@ -193,7 +260,16 @@ namespace workphone::resource
                 const auto value=text(i->value);
                 if(role==Role::Scene) { require(key=="lighting"&&value.empty(),"Scene property requires an unsupported typed installer"); continue; }
                 if(role==Role::Components)require(false,"Component container cannot contain properties");
-                if(role==Role::Transform) {
+                if(role==Role::LODLevel) {
+                    if(key=="screenRelativeHeight"){scalar(value,true);require(std::stod(value.c_str())<=1,"LOD threshold exceeds one");}
+                    else if(key=="fadeTransitionWidth"){scalar(value,true);require(std::stod(value.c_str())==0,"Runtime LOD cross-fades are unavailable");}
+                    else if(key=="renderers") {Array<String> references;StringUtil::parseArray(value,references);require(!references.empty()&&references.size()<=64,"LOD level requires bounded renderer UUIDs");for(const auto &reference:references)(void)uuid(reference);}
+                    else require(false,"Unsupported cooked LOD level field");
+                } else if(role==Role::DetailBound) {
+                    if(key=="centre")vector(value,3);
+                    else if(key=="diameter"){scalar(value,true);require(std::stod(value.c_str())>0,"LOD detail bound must have positive diameter");}
+                    else require(false,"Unsupported cooked LOD detail bound field");
+                } else if(role==Role::Transform) {
                     require(key=="Position"||key=="Scale"||key=="Orientation","Unknown transform field");
                     vector(value,key=="Orientation"?4:3,key=="Orientation");
                 } else if(role==Role::Actor) {
@@ -206,13 +282,30 @@ namespace workphone::resource
                     componentField(component,key,value);
                     if(key=="uuid")require(identities.insert(uuid(value)).second,"Duplicate component UUID");
                 }
-                result->setProperty(key,key=="uuid"||assetField(component,key)&&!value.empty()?uuid(value):key=="componentType"?"workphone::scene::"+component:value);
+                if(role==Role::LODLevel&&key=="renderers") {
+                    Array<String> references;StringUtil::parseArray(value,references);for(auto &reference:references)reference=uuid(reference);
+                    result->setProperty(key,StringUtil::toString(references));
+                } else result->setProperty(key,key=="uuid"||assetField(component,key)&&!value.empty()?uuid(value):key=="componentType"?"workphone::scene::"+component:value);
             }
             require(seen.count("children")!=0,"Actor graph requires children array");
             if(role==Role::Actor) require(seen.count("uuid")!=0,"Actor graph requires durable actor UUIDs");
             if(role==Role::Component) {
                 require(seen.count("uuid")!=0,"Cooked components require durable UUIDs");
                 if(component=="Script")require(seen.count("className")&&seen.count("scriptAssetUuid")&&!result->getProperty("scriptAssetUuid").empty(),"Cooked Script requires className and scriptAssetUuid");
+                if(component=="Material"||component=="AudioEmitter"||component=="UIComponent") {
+                    const String field=component=="Material"?"Material":component=="AudioEmitter"?"Sound":"uiAssetUuid";
+                    require(!result->getProperty(field).empty(),"Cooked resource component requires its typed asset UUID");
+                }
+                if(component=="Skybox")for(const auto face:{"Front","Back","Up","Down","Right","Left"})
+                    require(!result->getProperty(face).empty(),"Cooked Skybox requires six typed face UUIDs");
+                if(component=="Camera") {
+                    const auto nearValue=result->getProperty("nearClip"),farValue=result->getProperty("farClip");
+                    require((farValue.empty()?1000.:std::stod(farValue.c_str()))>(nearValue.empty()?.1:std::stod(nearValue.c_str())),"Cooked Camera farClip must exceed nearClip");
+                }
+                if(component=="Light") {
+                    auto number=[&](const char *field,double fallback){const auto value=result->getProperty(field);return value.empty()?fallback:std::stod(value.c_str());};
+                    require(number("constant",1)+number("linear",0)+number("quadratic",0)>0,"Cooked Light requires nonzero attenuation");
+                }
             }
             for(const auto &binding:bindings) {
                 require(role==Role::Component&&assetField(component,binding.first)&&seen.count(binding.first)&&!result->getProperty(binding.first).empty(),"Unexpected cooked asset binding");
@@ -230,6 +323,8 @@ namespace workphone::resource
                     else require(name=="child","Actor child requires an unsupported typed installer");
                 } else if(role==Role::Components) {
                     require(name=="component"&&child.HasMember("componentType"),"Invalid cooked component container");childRole=Role::Component;
+                } else if(role==Role::Component&&component=="LODGroup") {
+                    require(name=="lodLevel"||name=="detailBound","Unsupported cooked LOD child");childRole=name=="lodLevel"?Role::LODLevel:Role::DetailBound;
                 } else require(false,"Transform cannot contain child groups");
                 result->addChild(parseNode(child,childRole,depth+1,nodes,identities,lease,cooked));
             }
@@ -274,6 +369,62 @@ namespace workphone::resource
             }
             for(const auto &child:data->getChildren())inspectRelationships(child);
         }
+        std::set<ResourceID> inspectLODReferences(const SmartPtr<Properties> &data,bool bound)
+        {
+            std::map<String,SmartPtr<Properties>> renderers;
+            Array<SmartPtr<Properties>> groups;
+            auto collect=[&](auto &&self,const SmartPtr<Properties> &node)->void {
+                if(node->hasProperty("componentType")) {
+                    const auto name=componentName(node->getProperty("componentType"));
+                    if(name=="MeshRenderer")renderers.emplace(node->getProperty("uuid"),node);
+                    if(name=="LODGroup")groups.push_back(node);
+                }
+                for(const auto &child:node->getChildren())self(self,child);
+            };collect(collect,data);
+            std::set<String> controlled;
+            std::set<ResourceID> streamed,ordinary;
+            for(const auto &group:groups) {
+                const auto levels=group->getChildrenByName("lodLevel");
+                require(!levels.empty()&&levels.size()<=16,"Cooked LODGroup requires bounded levels");
+                const auto declared=group->getProperty("lodLevels"),forced=group->getProperty("forcedLOD"),boundCount=group->getProperty("detailBoundCount");
+                require(declared.empty()||std::stoull(declared.c_str())==levels.size(),"Cooked LOD count differs from its levels");
+                require(forced.empty()||forced=="-1"||std::stoull(forced.c_str())<levels.size(),"Forced LOD is outside the declared levels");
+                require(boundCount.empty()||std::stoull(boundCount.c_str())==group->getChildrenByName("detailBound").size(),"Cooked LOD detail count differs from its bounds");
+                size_t groupReferences=0;
+                double previous=2;
+                for(size_t level=0;level<levels.size();++level) {
+                    const auto height=levels[level]->getProperty("screenRelativeHeight");
+                    require(!height.empty(),"Cooked LOD level requires screenRelativeHeight");
+                    const auto threshold=std::stod(height.c_str());require(threshold<previous,"Cooked LOD levels require descending thresholds");previous=threshold;
+                    Array<String> references;StringUtil::parseArray(levels[level]->getProperty("renderers"),references);
+                    require(!references.empty(),"Cooked LOD level requires renderer references");
+                    groupReferences+=references.size();require(groupReferences<=256,"Cooked LOD group exceeds its renderer reference limit");
+                    for(const auto &reference:references) {
+                        const auto identity=uuid(reference);const auto found=renderers.find(identity);
+                        require(found!=renderers.end()&&controlled.insert(identity).second,"LOD reference is missing, wrong-type or controlled by multiple levels/groups");
+                        const auto flag=found->second->getProperty("streamMesh");
+                        if(level+1==levels.size())require(flag!="true"&&flag!="1","Coarsest LOD must retain a non-streamed fallback renderer");
+                    }
+                }
+            }
+            auto assets=[&](auto &&self,const SmartPtr<Properties> &node)->void {
+                if(node->hasProperty("componentType")) {
+                    const auto name=componentName(node->getProperty("componentType"));
+                    const auto flag=node->getProperty("streamMesh");const bool stream=name=="MeshRenderer"&&(flag=="true"||flag=="1");
+                    if(stream)require(controlled.count(node->getProperty("uuid"))&&!node->getProperty("meshAssetUuid").empty(),"Streamed mesh requires an explicit UUID and an LODGroup fallback");
+                    for(const auto &property:node->getPropertiesAsArray())if(assetField(name,property.getName())&&!property.getValue().empty()) {
+                        const auto encoded=property.getAttribute(bindingAttribute);
+                        if(bound){ResourceID id(encoded);require(id.isValid(),"Missing compiled LOD asset binding");
+                            if(stream){require(id.type()==ResourceTypeID("mesh"),"Only static mesh LOD chunks support streaming");streamed.insert(id);}
+                            else ordinary.insert(id);
+                        }
+                    }
+                }
+                for(const auto &child:node->getChildren())self(self,child);
+            };assets(assets,data);
+            for(const auto &id:streamed)require(!ordinary.count(id),"A streamed LOD mesh cannot also be pinned by a non-streamed component");
+            return streamed;
+        }
         struct ParsedSource { StreamBudget budget; SmartPtr<Properties> data; AssetBindings bindings; };
         ParsedSource source(const CompileContext &context)
         {
@@ -287,7 +438,7 @@ namespace workphone::resource
             require(budget!=nullptr,"Actor graph source preparation budget exhausted");
             String bytes(static_cast<size_t>(size),'\0'); file.seekg(0); file.read(bytes.data(),bytes.size());
             require(bool(file),"Incomplete actor graph source read");
-            auto data=parseJSON(bytes,context.resourceId.type()==ResourceTypeID("fbscene"));inspectRelationships(data);
+            auto data=parseJSON(bytes,context.resourceId.type()==ResourceTypeID("fbscene"));inspectRelationships(data);inspectLODReferences(data,false);
             AssetBindings bindings;
             std::set<String> objectIdentities;
             auto collectIdentities=[&](auto &&self,const SmartPtr<Properties> &node)->void {
@@ -304,6 +455,7 @@ namespace workphone::resource
                 auto entry=bindings.emplace(identity,id);require(entry.second||entry.first->second==id,"Conflicting captured cooked UUID binding");
                 properties.getPropertyObject(field).setAttribute(bindingAttribute,id.str());
             });
+            inspectLODReferences(data,true);
             return {std::move(budget),std::move(data),std::move(bindings)};
         }
         // Allocation-free validation of the existing Properties binary envelope
@@ -325,7 +477,7 @@ namespace workphone::resource
             void string() { auto size=number(); require(size<=4096&&size<=bytes.size()-at,"Binary actor string exceeds limit"); require(!size||!std::memchr(bytes.data()+at,0,size),"NUL in binary actor string"); utf8(bytes.data()+at,size);at+=size; }
             void node(size_t depth) {
                 require(depth<=maximumDepth&&++nodes<=maximumNodes,"Binary actor graph exceeds limits"); string();
-                auto fields=number(); require(fields<=32,"Binary actor field limit exceeded");
+                auto fields=number(); require(fields<=maximumFields,"Binary actor field limit exceeded");
                 for(u32 i=0;i<fields;++i) { string();string();string();require(at<bytes.size(),"Truncated actor flag"); require(bytes[at++]<=1,"Invalid actor flag"); auto attributes=number();require(attributes<=16,"Actor attribute limit exceeded");for(u32 a=0;a<attributes;++a){string();string();} }
                 auto children=number(); require(children<=maximumNodes,"Actor child limit exceeded"); for(u32 i=0;i<children;++i)node(depth+1);
             }
@@ -334,7 +486,7 @@ namespace workphone::resource
         {
             size_t localCount=0;if(!count)count=&localCount;
             size_t localBytes=0;if(!projectedBytes)projectedBytes=&localBytes;
-            require(depth<=maximumDepth&&++*count<=maximumNodes&&data.getNumProperties()<=32,"Actor graph JSON projection exceeds limits");
+            require(depth<=maximumDepth&&++*count<=maximumNodes&&data.getNumProperties()<=maximumFields,"Actor graph JSON projection exceeds limits");
             out.SetObject(); JSON name; const auto group=data.getName();require(group.size()<=4096&&*projectedBytes<=maximumBytes-group.size(),"Actor group name exceeds limits");*projectedBytes+=group.size();name.SetString(group.data(),static_cast<rapidjson::SizeType>(group.size()),allocator); out.AddMember("handle_name",name,allocator);
             JSON metadata(rapidjson::kArrayType);
             for(const auto &property:data.getPropertiesAsArray()) {
@@ -357,7 +509,7 @@ namespace workphone::resource
         }
         void estimateProjection(const Properties &data,size_t depth,size_t &nodes,u64 &bytes)
         {
-            require(depth<=maximumDepth&&++nodes<=maximumNodes&&data.getNumProperties()<=32,"Cooked document validation exceeds node/field limits");
+            require(depth<=maximumDepth&&++nodes<=maximumNodes&&data.getNumProperties()<=maximumFields,"Cooked document validation exceeds node/field limits");
             const auto name=data.getName();require(name.size()<=4096,"Cooked document group exceeds string limit");bytes+=name.size()+128;
             // Retire property snapshots before descending, so one bounded scratch
             // lease covers this preflight even at the maximum tree depth.
@@ -383,7 +535,7 @@ namespace workphone::resource
         bool requiresScripts=false;
     };
     String SceneResourceCompiler::name() const { return "WorkphoneActorGraphBinary"; }
-    Array<CompilerOutput> SceneResourceCompiler::outputs() const { return {{ResourceTypeID("fbscene"),2},{ResourceTypeID("prefab"),2}}; }
+    Array<CompilerOutput> SceneResourceCompiler::outputs() const { return {{ResourceTypeID("fbscene"),3},{ResourceTypeID("prefab"),3}}; }
     bool SceneResourceCompiler::getDependencies(const CompileContext &context,DependencySet &dependencies,String &error) const
     { error.clear();try { const auto parsed=source(context);std::set<ResourceID> unique;for(const auto &binding:parsed.bindings)if(unique.insert(binding.second).second){dependencies.compileDependencies.push_back(CompileDependency::resource(binding.second));dependencies.installDependencies.push_back(binding.second);}return true; }catch(const std::exception &e){error=e.what();return false;} }
     CompilationStatus SceneResourceCompiler::compile(const CompileContext &context,std::ostream &output,Array<String> &messages) const
@@ -397,7 +549,9 @@ namespace workphone::resource
             require(resource!=nullptr,"Missing cooked actor graph"); const auto type=resource->header.resourceType; const SceneResourceCompiler compiler;
             const auto legacyVersion=combineHash(combineHash(combineHash(14695981039346656037ull,1),1),type.value());
             const bool legacy=resource->header.compilerVersion==legacyVersion;
-            require(resource->header.isValid()&&(type==ResourceTypeID("fbscene")||type==ResourceTypeID("prefab"))&&!resource->header.resourceId.isSubResource()&&resource->header.resourceId.type()==type&&(legacy||resource->header.compilerVersion==compiler.versionFor(type)),"Unsupported cooked actor graph header/type/version/selector");
+            const auto mixedVersion=combineHash(combineHash(combineHash(14695981039346656037ull,2),1),type.value());
+            const bool mixed=resource->header.compilerVersion==mixedVersion;
+            require(resource->header.isValid()&&(type==ResourceTypeID("fbscene")||type==ResourceTypeID("prefab"))&&!resource->header.resourceId.isSubResource()&&resource->header.resourceId.type()==type&&(legacy||mixed||resource->header.compilerVersion==compiler.versionFor(type)),"Unsupported cooked actor graph header/type/version/selector");
             if(legacy)require(resource->header.installDependencies.empty()&&resource->dependencies.empty(),"Legacy actor graphs cannot bind typed dependencies");
             require(resource->header.installDependencies.size()==resource->dependencies.size(),"Cooked graph dependency closure is incomplete");
             const auto &bytes=resource->payload;
@@ -416,9 +570,16 @@ namespace workphone::resource
                     for(const auto &child:node->getChildren())self(self,child);
                 };check(check,data);
             }
+            if(mixed) {
+                auto check=[&](auto &&self,const SmartPtr<Properties> &node)->void {
+                    if(node->hasProperty("componentType")){const auto name=componentName(node->getProperty("componentType"));require(name=="Mesh"||name=="MeshRenderer"||name=="Animator"||name=="Script","Version-two scene contains a newer component schema");}
+                    for(const auto &child:node->getChildren())self(self,child);
+                };check(check,data);
+            }
             rapidjson::Document doc; asJSON(*data,doc,doc.GetAllocator());size_t nodes=0;std::set<String> identities;
             auto result=std::make_shared<CookedActorGraph>();result->resource=std::move(resource);result->metadataBudget=retained;result->scene=type==ResourceTypeID("fbscene");result->data=parseNode(doc,result->scene?Role::Scene:Role::Actor,0,nodes,identities,retained,true);
             inspectRelationships(result->data);
+            inspectLODReferences(result->data,true);
             std::map<ResourceID,std::shared_ptr<const RuntimeResource>> dependencies;
             for(size_t i=0;i<result->resource->dependencies.size();++i) {
                 const auto &dependency=result->resource->dependencies[i];const auto &id=result->resource->header.installDependencies[i];
@@ -445,6 +606,20 @@ namespace workphone::resource
     }
     bool actorGraphRequiresScripts(const std::shared_ptr<const CookedActorGraph> &graph)
     { return graph&&graph->requiresScripts; }
+    bool inspectActorGraphStreamingMeshes(const RuntimeResource &resource,Array<ResourceID> &output,String &error)
+    {
+        error.clear();try {
+            const auto type=resource.header.resourceType;
+            require(type==ResourceTypeID("fbscene")||type==ResourceTypeID("prefab"),"Streaming recipe must be a scene or prefab");
+            require(resource.header.isValid()&&resource.payload.size()>=20&&resource.payload.size()<=maximumBytes&&resource.payload.size()==resource.header.payloadSize&&hashBytes(resource.payload.data(),resource.payload.size())==resource.header.payloadHash,"Streaming recipe integrity mismatch");
+            Preflight preflight{resource.payload};preflight.node(0);require(preflight.at==resource.payload.size(),"Trailing streaming recipe bytes");
+            auto scratch=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,resource.payload.size()*48+(1ull<<20),error);require(scratch!=nullptr,"Streaming recipe inspection budget exhausted");
+            auto data=make_ptr<Properties>();require(PropertiesBinarySerializer::deserialize(resource.payload,*data,&error),"Invalid streaming recipe");
+            rapidjson::Document doc;asJSON(*data,doc,doc.GetAllocator());size_t nodes=0;std::set<String> identities;
+            auto validated=parseNode(doc,type==ResourceTypeID("fbscene")?Role::Scene:Role::Actor,0,nodes,identities,{},true);inspectRelationships(validated);
+            const auto ids=inspectLODReferences(validated,true);Array<ResourceID> staged;staged.reserve(ids.size());for(const auto &id:ids)staged.push_back(id);output.swap(staged);return true;
+        }catch(const std::exception &failure){error=failure.what();return false;}
+    }
     bool validateCookedActorGraphData(SmartPtr<Properties> data,bool scene,std::shared_ptr<const RuntimeAssetContext> context,String &error)
     {
         error.clear();try {
@@ -455,7 +630,7 @@ namespace workphone::resource
             auto scratch=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,estimatedBytes*48+(1ull<<20),error);
             require(scratch!=nullptr,"Cooked document validation budget exhausted");
             rapidjson::Document doc;asJSON(*data,doc,doc.GetAllocator());size_t nodes=0;std::set<String> identities;
-            auto validated=parseNode(doc,scene?Role::Scene:Role::Actor,0,nodes,identities,{},true);inspectRelationships(validated);
+            auto validated=parseNode(doc,scene?Role::Scene:Role::Actor,0,nodes,identities,{},true);inspectRelationships(validated);inspectLODReferences(validated,true);
             inspectAssets(validated,[&](Properties &properties,const String &component,const String &field,const String &identity) {
                 require(context&&context->resolve,"Cooked actor document requires a pinned asset context");
                 const ResourceID id(properties.getPropertyObject(field).getAttribute(bindingAttribute));
@@ -465,13 +640,54 @@ namespace workphone::resource
             });return true;
         }catch(const std::exception &exception){error=exception.what();return false;}
     }
-    std::shared_ptr<RuntimeAssetContext> createActorGraphRuntimeContext(std::shared_ptr<const CookedActorGraph> graph,const String &target,bool packagedBuild,String &error)
+    std::shared_ptr<RuntimeAssetContext> createActorGraphRuntimeContext(std::shared_ptr<const CookedActorGraph> graph,const String &target,bool packagedBuild,String &error,
+        std::shared_ptr<ResourcePayloadMount> mount)
     {
         error.clear();try {
             require(graph&&!target.empty(),"Cooked graph context requires a graph and target");
-            auto context=std::make_shared<RuntimeAssetContext>();context->target=target;context->packagedBuild=packagedBuild;context->requiresScripts=graph->requiresScripts;
+            auto context=std::make_shared<RuntimeAssetContext>();context->target=target;context->packagedBuild=packagedBuild;context->requiresScripts=graph->requiresScripts;context->mount=std::move(mount);
             struct DetachedAssets { StreamBudget lease;std::map<String,std::shared_ptr<const RuntimeResource>> values; };
-            auto assets=std::make_shared<DetachedAssets>();assets->lease=graph->metadataBudget;assets->values=graph->assets;
+            auto assets=std::make_shared<DetachedAssets>();assets->lease=graph->metadataBudget;
+            const auto streamed=inspectLODReferences(graph->data,true);
+            auto inspectSkin=[&](auto &&self,const std::shared_ptr<const RuntimeResource> &node,u32 depth,std::set<const RuntimeResource *> &seen)->void {
+                require(node&&depth<=256,"Invalid retained skin dependency graph");
+                if(!seen.insert(node.get()).second)return;
+                require(!streamed.count(node->header.resourceId),"A streamed LOD mesh cannot also be a retained skin dependency");
+                for(const auto &child:node->dependencies)self(self,child,depth+1,seen);
+            };
+            for(const auto &asset:graph->assets)if(asset.second->header.resourceType==ResourceTypeID("skinres")) {
+                std::set<const RuntimeResource *> seen;inspectSkin(inspectSkin,asset.second,0,seen);
+            }
+            auto app=core::IApplicationManager::instancePtr();
+            auto graphics=app?app->getGraphicsSystem():nullptr;auto audio=app?app->getSoundManager():nullptr;
+            std::map<const RuntimeResource *,std::shared_ptr<const RuntimeResource>> snapshots;
+            std::set<const RuntimeResource *> visiting;
+            struct SnapshotOwner { StreamBudget lease;RuntimeResource value; };
+            auto snapshot=[&](auto &&self,const std::shared_ptr<const RuntimeResource> &input,u32 depth)->std::shared_ptr<const RuntimeResource> {
+                if(!context->mount||!input)return input;
+                const auto existing=snapshots.find(input.get());if(existing!=snapshots.end())return existing->second;
+                require(depth<=256&&snapshots.size()+visiting.size()<65536&&visiting.insert(input.get()).second,"Streaming snapshot exceeds graph limits or contains a cycle");
+                auto leaf=input;
+                if(input->header.resourceType==ResourceTypeID("texres")&&graphics)leaf=graphics->captureRuntimeResourceSnapshot(input,context->mount,error);
+                else if(input->header.resourceType==ResourceTypeID("wav")&&audio)leaf=audio->captureRuntimeResourceSnapshot(input,context->mount,error);
+                require(leaf!=nullptr,"Cannot capture a typed streaming resource snapshot");
+                if(leaf!=input){visiting.erase(input.get());snapshots.emplace(input.get(),leaf);return leaf;}
+                bool changed=false;Array<std::shared_ptr<const RuntimeResource>> children;
+                children.reserve(input->dependencies.size());
+                for(const auto &dependency:input->dependencies){auto child=self(self,dependency,depth+1);changed|=child!=dependency;children.push_back(std::move(child));}
+                const bool sparseMesh=streamed.count(input->header.resourceId)!=0;
+                if(!changed&&!sparseMesh){visiting.erase(input.get());snapshots.emplace(input.get(),input);return input;}
+                u64 bytes=sizeof(RuntimeResource)+(sparseMesh?0:input->payload.size())+8192;
+                for(const auto &id:input->header.installDependencies)bytes+=256+4*id.str().size();
+                for(const auto &pin:input->header.installArtifacts)bytes+=256+4*pin.path.size();
+                auto lease=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,bytes,error);
+                require(lease!=nullptr,"Streaming recipe snapshot admission exhausted");
+                auto owned=std::make_shared<SnapshotOwner>();owned->lease=std::move(lease);owned->value.header=input->header;
+                if(!sparseMesh)owned->value.payload=input->payload;
+                owned->value.dependencies=std::move(children);owned->value.streamData=sparseMesh?std::make_shared<RuntimeResourceStreamData>():input->streamData;
+                auto result=std::shared_ptr<const RuntimeResource>(owned,&owned->value);visiting.erase(input.get());snapshots.emplace(input.get(),result);return result;
+            };
+            for(const auto &asset:graph->assets)assets->values.emplace(asset.first,snapshot(snapshot,asset.second,0));
             context->resolve=[assets](const String &identity,String &error)->std::shared_ptr<const RuntimeResource> {
                 error.clear();const auto found=assets->values.find(StringUtil::make_lower(identity));
                 if(found==assets->values.end()){error="UUID is outside the cooked graph's captured asset closure";return {};}
@@ -487,7 +703,8 @@ namespace workphone::resource
         SmartPtr<scene::GameScene> concrete;u64 generation=0;bool previousReady=false;
         error.clear();try {
             require(graph&&graph->scene&&target&&target->isLoaded(),"Cooked scene requires a loaded target scene");
-            require(graph->assets.empty()||context&&context->resolve,"Mixed cooked scene requires its pinned runtime asset context");
+            if(!context&&graph->assets.empty())context=createActorGraphRuntimeContext(graph,"pc",true,error);
+            require(context&&context->resolve,"Cooked scene requires its pinned runtime asset context");
             require(!graph->requiresScripts||context&&context->scripts&&context->scripts->isLoaded(),"Cooked Script scene requires a private loaded runtime VM");
             if(context)for(const auto &asset:graph->assets) {
                 auto resolved=context->resolve(asset.first,error);
@@ -523,7 +740,8 @@ namespace workphone::resource
                 committed=concrete->getLoadGeneration()==generation&&target->getSceneLoadingState()==scene::IGameScene::SceneLoadingState::Loaded;
                 if(!committed&&previousReady)concrete->restoreReadySceneAfterFailedAppend(generation);
             }
-            require(committed,"Cooked scene graph commit failed or was superseded");return true;
+            if(!committed){const auto diagnostic=job->getLoadDiagnostic();throw std::runtime_error(diagnostic.empty()?"Cooked scene graph commit failed or was superseded":diagnostic.c_str());}
+            return true;
         }catch(const std::exception &e){
             if(concrete&&previousReady)concrete->restoreReadySceneAfterFailedAppend(generation);
             error=e.what();return false;

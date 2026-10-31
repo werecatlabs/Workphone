@@ -3,6 +3,8 @@
 #include <Workphone/Scene/Components/Camera.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
+#include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/ICameraManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/System/IJobQueue.hpp>
@@ -35,6 +37,7 @@ namespace workphone::scene
 
     void LODSystem::unload( SmartPtr<ISharedObject> data )
     {
+        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
         if( ISharedObject::getLoadingState() == LoadingState::Unloaded )
         {
             return;
@@ -72,6 +75,7 @@ namespace workphone::scene
 
     void LODSystem::update()
     {
+        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
         if( !isLoaded() )
         {
             return;
@@ -152,6 +156,7 @@ namespace workphone::scene
 
     void LODSystem::removeComponent( SmartPtr<IComponent> component )
     {
+        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
         if( !component || !component->isDerived<LODGroup>() )
         {
             return;
@@ -187,6 +192,7 @@ namespace workphone::scene
 
     void LODSystem::removeComponent( u32 id )
     {
+        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
         ScopedLock lock( this );
         if( id >= m_groups.size() || !m_groups[id] )
         {
@@ -481,6 +487,9 @@ namespace workphone::scene
 
     void LODSystem::applyBatch( const SharedPtr<LODBatch> &batch )
     {
+        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;
+        auto graphics=application?application->getGraphicsSystemPtr():nullptr;
+        ScopedLock managerLock(manager);ScopedLock graphicsLock(graphics);
         for( size_t index = 0; index < batch->slots.size(); ++index )
         {
             const auto slot = batch->slots[index];
@@ -512,6 +521,7 @@ namespace workphone::scene
                 m_appliedRevisions[slot] = revision;
                 group->applyLOD( lodIndex );
             }
+            else group->applyLOD(lodIndex); // Poll native residency without changing selection/hysteresis.
         }
     }
 

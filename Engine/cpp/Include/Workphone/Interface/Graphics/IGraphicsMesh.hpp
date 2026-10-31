@@ -7,7 +7,7 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeResource; }
+    namespace resource { struct RuntimeResource; class ResourcePayloadMount; }
     namespace render
     {
 
@@ -128,7 +128,8 @@ namespace workphone
             /** Install a pinned cooked mesh/skin on the serialized graphics owner.
              * Unsupported backends return false; failed staging retains old data. */
             virtual bool loadResource(std::shared_ptr<const resource::RuntimeResource>,String &error,
-                                      const String &target="pc",bool packagedBuild=true);
+                                      const String &target="pc",bool packagedBuild=true,
+                                      std::shared_ptr<resource::ResourcePayloadMount> mount={});
 
             WP_CLASS_REGISTER_DECL;
         };

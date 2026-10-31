@@ -1330,6 +1330,10 @@ namespace workphone
         std::lock_guard<std::mutex> lock( m_impl->mutex ); m_impl->requests.clear(); m_impl->output.clear();
     }
     void LuaDebugger::poll() { m_impl->poll(); }
+    void LuaDebugger::clearSources()
+    {
+        m_impl->sources.clear();m_impl->sourceBytes=0;m_impl->nextSource=1;
+    }
     void LuaDebugger::source( const std::string &name, const std::string &text )
     {
         auto key = m_impl->path( name );

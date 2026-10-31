@@ -22,7 +22,7 @@ add_compile_definitions (WORKPHONE_INCLUDE_STANDARD_IO)
 
 # define header and source files for the library
 file(GLOB_RECURSE HEADER_FILES "../../Include/WPGraphics/*.h" "../../Include/WPGraphics/*.hpp" "../../Include/WPGraphics/*.inl")
-file(GLOB_RECURSE SOURCE_FILES "../../Source/WPGraphics/*.cpp")
+file(GLOB_RECURSE SOURCE_FILES CONFIGURE_DEPENDS "../../Source/WPGraphics/*.cpp")
 
 if(NOT WP_BUILD_RESOURCE_SYSTEM)
     list(FILTER SOURCE_FILES EXCLUDE REGEX "/Resources/.*\\.cpp$")

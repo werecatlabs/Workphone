@@ -1,5 +1,6 @@
 #include "../ResourceRuntimeContracts.hpp"
 #include "../ResourceClosureStreamContracts.hpp"
+#include "../ResourceChunkStreamContracts.hpp"
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourcePayloadStream.hpp>
@@ -542,6 +543,7 @@ namespace
     void buildProfileContracts(const fs::path &root)
     {
         persistentSchedulerContracts();
+        resource_chunk_stream_contracts::run(root/"chunk-contracts");
         class ProfileProbe final : public IResourceCompiler
         {
         public:

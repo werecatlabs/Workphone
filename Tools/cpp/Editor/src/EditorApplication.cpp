@@ -27,6 +27,7 @@
 #include <Workphone/System/ResourceClosureStream.hpp>
 #include <Workphone/System/SceneResourceCompiler.hpp>
 #include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/System/RuntimeSceneLeafFactory.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
@@ -473,7 +474,7 @@ namespace workphone::editor
         StreamBudget metadata;
         Array<Root> roots{Allocator<Root>(sourceBudget)};
         u64 generation=0,requestGeneration=0;
-        u32 actors=0,components=0,scripts=0,meshes=0;
+        u32 actors=0,components=0,scripts=0,meshes=0,residentMeshes=0,streamingMeshes=0;
         bool pending=false,complete=false,succeeded=false;
     };
 
@@ -495,6 +496,7 @@ namespace workphone::editor
         return boost::json::serialize(boost::json::object{{"status",state.succeeded?"loaded":state.complete?"failed":"loading"},
             {"uuid",state.uuid.c_str()},{"target",state.target.c_str()},{"roots",state.roots.size()},
             {"actors",state.actors},{"components",state.components},{"scripts",state.scripts},{"meshes",state.meshes},
+            {"residentMeshes",state.residentMeshes},{"streamingMeshes",state.streamingMeshes},
             {"streamGeneration",state.requestGeneration},{"diagnostic",state.error.c_str()}}).c_str();
     }
     void EditorApplication::retireRuntimeSceneBootstrap() noexcept
@@ -530,10 +532,12 @@ namespace workphone::editor
             if(!state.scene||!state.scene->isLoaded())throw std::runtime_error("Runtime scene startup requires the loaded native scene");
             state.project=m_editorManager?m_editorManager->getProject():nullptr;state.projectPath=app->getProjectPath();state.projectDirectory=state.project?state.project->getPath():String();state.projectFile=state.project?state.project->getFilePath():String();state.generation=state.scene->getLoadGeneration();
             resource::RuntimeResourceConfig config;config.compiledRoot=state.directory;config.manifestPath=(std::filesystem::u8path(state.directory.c_str())/"runtime.wprm").u8string().c_str();config.target=state.target;
-            config.maxPayloadBytes=8ull<<20;config.maxClosurePayloadBytes=64ull<<20;config.maxClosureResources=256;config.maxDependencyDepth=64;
+            config.maxPayloadBytes=1ull<<30;config.maxClosurePayloadBytes=64ull<<20;config.maxClosureResources=256;config.maxDependencyDepth=64;
             WorldStreamProducerLimits limits;limits.maximumPending=256;limits.maximumActive=2;limits.maximumReady=16;limits.maximumReadyBytes=32ull<<20;
             String error;state.mount=resource::ResourcePayloadMount::create(config,WorldStreamingScheduler::shared(),limits,error);
-            if(!state.mount)throw std::runtime_error(error.c_str());state.stream=resource::ResourceClosureStream::create(state.mount,error);
+            if(!state.mount)throw std::runtime_error(error.c_str());
+            auto leaves=resource::createRuntimeSceneLeafFactory(state.mount,error);if(!leaves)throw std::runtime_error(error.c_str());
+            state.stream=resource::ResourceClosureStream::create(state.mount,error,std::move(leaves));
             if(!state.stream||!state.stream->requestUUID(1,state.uuid,{},100,error))throw std::runtime_error(error.c_str());
             state.requestGeneration=state.stream->generation();state.started=std::chrono::steady_clock::now();state.pending=true;
         }catch(const std::exception &error){cancelRuntimeSceneStartup(error.what());}
@@ -554,7 +558,7 @@ namespace workphone::editor
             if(result.key!=1||result.generation!=state.requestGeneration)throw std::runtime_error("Runtime scene closure result was superseded");
             if(!result.resource)throw std::runtime_error(result.error.empty()?"Runtime scene closure is unavailable":result.error.c_str());
             String error;auto graph=resource::decodeActorGraphResource(result.resource,error);if(!graph)throw std::runtime_error(error.c_str());
-            auto context=resource::createActorGraphRuntimeContext(graph,state.target,true,error);if(!context)throw std::runtime_error(error.c_str());
+            auto context=resource::createActorGraphRuntimeContext(graph,state.target,true,error,state.mount);if(!context)throw std::runtime_error(error.c_str());
             auto working=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,result.resource->payload.size()*48+(1ull<<20),error);
             if(!working)throw std::runtime_error(error.c_str());auto document=make_ptr<Properties>();
             if(!PropertiesBinarySerializer::deserialize(result.resource->payload,*document,&error))throw std::runtime_error(error.c_str());
@@ -588,12 +592,14 @@ namespace workphone::editor
                     }
                     if(auto renderer=dynamic_pointer_cast<scene::MeshRenderer>(component)) {
                         auto mesh=renderer->getGraphicsObjectByType<render::IGraphicsMesh>();void *native=nullptr;if(mesh)mesh->_getObject(&native);
-                        if(!mesh||!mesh->isLoaded()||!native)throw std::runtime_error("Runtime renderer has no loaded native mesh object");++state.meshes;
+                        const bool resident=mesh&&mesh->isLoaded()&&native;
+                        if(!resident&&!renderer->isRuntimeLODStreamed())throw std::runtime_error("Runtime renderer has no loaded native mesh object");
+                        ++state.meshes;if(resident)++state.residentMeshes;if(renderer->isRuntimeLODStreamed())++state.streamingMeshes;
                     }
                 }
                 for(const auto &child:actor->getChildren())self(self,child);
             };for(const auto &root:state.roots)verify(verify,root.actor);
-            state.stream->drain();state.stream.reset();state.mount.reset();state.pending=false;state.complete=true;state.succeeded=true;
+            state.stream->drain();state.stream.reset();state.mount->trimCompletedPayloads();state.mount.reset();state.pending=false;state.complete=true;state.succeeded=true;
             WP_LOG("Runtime scene package loaded: "+state.uuid);
         }catch(const std::exception &error){cancelRuntimeSceneStartup(error.what());WP_LOG_ERROR("Runtime scene package failed: "+state.error);}
     }

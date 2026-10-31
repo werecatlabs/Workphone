@@ -38,7 +38,8 @@ namespace workphone
             void reload( SmartPtr<ISharedObject> data ) override;
             /** Owner-thread install; failure retains the previous mesh. */
             bool loadResource(std::shared_ptr<const resource::RuntimeResource>, String &error,
-                              const String &target="pc", bool packagedBuild=true) override;
+                              const String &target="pc", bool packagedBuild=true,
+                              std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
 
             /** Unloads the currently loaded mesh data. */
             void unload( SmartPtr<ISharedObject> data ) override;

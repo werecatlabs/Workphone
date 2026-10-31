@@ -23,6 +23,8 @@ namespace workphone
         void bind( lua_State * );
         void poll();
         void source( const std::string &name, const std::string &text );
+        // VM executor only, after stop(): discard cached native source text.
+        void clearSources();
         void exception( lua_State *, const char *message );
         unsigned short port() const;
         bool paused() const;

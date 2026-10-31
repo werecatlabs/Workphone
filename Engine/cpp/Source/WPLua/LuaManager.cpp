@@ -6,6 +6,7 @@
 #include <WPLua/LuaObjectData.hpp>
 #include <WPLua/LuaScriptCompiler.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/System/IPlugin.hpp>
 #include <Workphone/Interface/System/IPluginManager.hpp>
@@ -18,6 +19,13 @@
 #include <stdexcept>
 #include <set>
 #include <functional>
+#include <cstring>
+#include <limits>
+#include <vector>
+#include <exception>
+#ifdef WP_LUA_BACKEND_LUAJIT
+#include <lj_arch.h>
+#endif
 
 extern "C" {
 #include <lua.h>
@@ -46,6 +54,108 @@ namespace workphone
     namespace
     {
         char managerRegistryKey;
+
+        struct RuntimeLuaDomain final : SourceBudgetObject
+        {
+            static constexpr u64 bootstrapBytes=32ull<<20;
+            struct Source
+            {
+                // Native text and its name die before their conservative lease.
+                StreamBudget admission;
+                std::string name;
+                size_t bytes=0;
+            };
+            StreamBudget metadata;
+            StreamBudget bootstrap;
+            std::vector<Source,SourceBudgetAllocator<Source>> sources;
+            size_t bootstrapLive=0;
+            bool bootstrapping=true;
+            RuntimeLuaDomain() : metadata(WorldStreamingScheduler::reserveSharedSource(65536)),
+                bootstrap(WorldStreamingScheduler::reserveSharedSource(bootstrapBytes))
+            { if(!metadata||!bootstrap)throw std::bad_alloc(); }
+            bool retainSource(const String &name,size_t bytes) noexcept
+            {
+                try {
+                    auto found=std::find_if(sources.begin(),sources.end(),[&](const Source &entry){
+                        return entry.name.size()==name.size()&&(!name.size()||!std::memcmp(entry.name.data(),name.data(),name.size()));});
+                    if(found!=sources.end()&&found->bytes>=bytes)return true;
+                    // The debugger retains at most 256 source texts; leave room
+                    // for policy chunks and a full 256-module package closure.
+                    if(found==sources.end()&&sources.size()>=512)return false;
+                    constexpr auto maximum=std::numeric_limits<u64>::max();
+                    if(bytes>(maximum-4096)/4)return false;
+                    const auto textBytes=u64(bytes)*4+4096;
+                    if(name.size()>(maximum-textBytes)/8)return false;
+                    Source staged;
+                    staged.admission=WorldStreamingScheduler::reserveSharedSource(textBytes+u64(name.size())*8);
+                    if(!staged.admission)return false;
+                    staged.name.assign(name.data(),name.size());staged.bytes=bytes;
+                    if(found==sources.end())sources.push_back(std::move(staged));
+                    else std::swap(*found,staged);
+                    return true;
+                }catch(...){return false;}
+            }
+        };
+
+        struct alignas(std::max_align_t) RuntimeLuaBlock { size_t capacity; bool bootstrap; };
+
+        void freeRuntimeLuaBlock(RuntimeLuaDomain &domain,RuntimeLuaBlock *block) noexcept
+        {
+            if(block->bootstrap){domain.bootstrapLive-=sizeof(RuntimeLuaBlock)+block->capacity;
+                ::operator delete(block,std::align_val_t(alignof(RuntimeLuaBlock)));}
+            else freeSourceBudgetStorage(block,alignof(RuntimeLuaBlock));
+        }
+
+        void *runtimeLuaAllocate(void *data,void *pointer,size_t oldBytes,size_t bytes) noexcept
+        {
+            auto &domain=*static_cast<RuntimeLuaDomain*>(data);
+            const auto previous=pointer?static_cast<RuntimeLuaBlock*>(pointer)-1:nullptr;
+            if(!bytes){if(previous)freeRuntimeLuaBlock(domain,previous);return nullptr;}
+            // Lua requires that shrinking an allocation cannot fail. Keeping its
+            // physical capacity also keeps that capacity charged until free.
+            if(previous&&bytes<=previous->capacity)return pointer;
+            try {
+                if(bytes>std::numeric_limits<size_t>::max()-sizeof(RuntimeLuaBlock))return nullptr;
+                const auto total=sizeof(RuntimeLuaBlock)+bytes;
+                RuntimeLuaBlock *replacement;
+                if(domain.bootstrapping){
+                    // Pre-admission prevents normal quota pressure from causing
+                    // Lua longjmp through binding libraries' C++ local owners.
+                    if(total>RuntimeLuaDomain::bootstrapBytes-domain.bootstrapLive)return nullptr;
+                    replacement=static_cast<RuntimeLuaBlock*>(::operator new(total,std::align_val_t(alignof(RuntimeLuaBlock))));
+                    domain.bootstrapLive+=total;
+                }else replacement=static_cast<RuntimeLuaBlock*>(allocateSourceBudgetStorage(total,alignof(RuntimeLuaBlock)));
+                ::new(replacement) RuntimeLuaBlock{bytes,domain.bootstrapping};
+                auto value=replacement+1;
+#ifdef WP_LUA_BACKEND_LUAJIT
+                // GC64 tags still reserve the upper pointer bits. Never hand a
+                // custom high-address allocation to the VM unchecked.
+                constexpr uintptr_t pointerLimit=uintptr_t(1)<<47;
+                const auto address=reinterpret_cast<uintptr_t>(value);
+                if(address>=pointerLimit||bytes>pointerLimit-address){freeRuntimeLuaBlock(domain,replacement);return nullptr;}
+#endif
+                if(previous){std::memcpy(value,pointer,std::min(oldBytes,bytes));freeRuntimeLuaBlock(domain,previous);}
+                return value;
+            }catch(...){return nullptr;}
+        }
+
+        RuntimeLuaDomain *runtimeLuaDomain(lua_State *state)
+        {
+            if(!state)return nullptr;void *data=nullptr;
+            return lua_getallocf(state,&data)==runtimeLuaAllocate?static_cast<RuntimeLuaDomain*>(data):nullptr;
+        }
+
+        void closeLuaState(lua_State *state)
+        {
+            if(!state)return;
+            // Lua invokes its allocator throughout finalization. The opaque
+            // native/source owner must outlive the final lua_close callback.
+            std::unique_ptr<RuntimeLuaDomain> owner(runtimeLuaDomain(state));
+            lua_close(state);
+        }
+
+        void memoryDiagnostic(String &error,const char *message) noexcept
+        {try{error=message;}catch(...){try{error="Lua memory denied";}catch(...){error.clear();}}}
 
         String scriptSourceIdentity( const SmartPtr<IStream> &stream, const String &requested )
         {
@@ -181,6 +291,27 @@ namespace workphone
             lua_call( state, arguments, 0 );
             return 0;
         }
+
+        struct ManagerFunction {lua_CFunction function;char key;};
+        ManagerFunction managerFunctions[]={{scriptTraceback,0},{installPreloads,0},{invokeScript,0},{constructScript,0}};
+        void cacheRuntimeFunctions(lua_State *state)
+        {
+            for(auto &entry:managerFunctions){lua_pushlightuserdata(state,&entry.key);lua_pushcfunction(state,entry.function);lua_rawset(state,LUA_REGISTRYINDEX);}
+        }
+        bool pushManagerFunction(lua_State *state,lua_CFunction function)
+        {
+            if(!runtimeLuaDomain(state)){lua_pushcfunction(state,function);return true;}
+            // LuaJIT allocates a C closure for pushcfunction. Bootstrap already
+            // created these four closures inside the protected admission scope.
+            // A raw lookup only borrows their retained VM ownership.
+            if(!lua_checkstack(state,4))return false;
+            for(auto &entry:managerFunctions)if(entry.function==function){
+                lua_pushlightuserdata(state,&entry.key);lua_rawget(state,LUA_REGISTRYINDEX);
+                if(lua_tocfunction(state,-1)==function)return true;
+                lua_pop(state,1);return false;
+            }
+            return false;
+        }
     }
 
     WP_CLASS_REGISTER_DERIVED( workphone, LuaManager, IScriptManager );
@@ -245,10 +376,11 @@ namespace workphone
             // Binding plugins/policy installation may have attached debugger
             // hooks before initialization failed. Retire those on this executor.
             m_debugger->stop();
+            if(m_runtimeScriptsMode)m_debugger->clearSources();
             if( auto state = getLuaState() )
             {
                 bindStateManager(state,nullptr);
-                lua_close( state );
+                closeLuaState( state );
             }
             m_luaState = nullptr;
             m_bError = true;
@@ -272,6 +404,7 @@ namespace workphone
             setLoadingState( LoadingState::Unloading );
 
             m_debugger->stop();
+            if(m_runtimeScriptsMode)m_debugger->clearSources();
 
             for( auto objectData : m_objectData )
             {
@@ -307,7 +440,7 @@ namespace workphone
             lua_gc( m_luaState, LUA_GCCOLLECT, 0 );
 
             // closes the lua state
-            lua_close( m_luaState );
+            closeLuaState( m_luaState );
             m_luaState = nullptr;
 
             auto nullScriptObject = m_nullScriptObject.load();
@@ -750,13 +883,14 @@ namespace workphone
         return loadScriptResourceInternal(std::move(resource),sourceRoot);
     }
 
-    bool LuaManager::loadScriptResourceInternal( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
+    bool LuaManager::loadScriptResourceInternal( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot ) try
     {
         LuaScriptCompiler compiler;
         Array<ScriptPreload> entries;
         std::set<String> visited;
         std::set<String> moduleNames;
         size_t totalBytes = 0;
+        bool sourceAdmissionDenied=false;
         std::function<bool( const resource::RuntimeResource * )> collect;
         collect = [&]( const resource::RuntimeResource *item ) {
             if( !item || !item->header.isValid() || item->header.resourceId.isSubResource() ||
@@ -774,6 +908,8 @@ namespace workphone
             ScriptPreload entry;
             entry.slashName = item->header.resourceId.sourceRelativePath();
             entry.sourceName = "@" + ( sourceRoot.empty() ? entry.slashName : sourceRoot + "/" + entry.slashName );
+            if(auto domain=runtimeLuaDomain(getLuaState());domain&&!domain->retainSource(entry.sourceName,item->payload.size()))
+            {sourceAdmissionDenied=true;return false;}
             entry.slashName.resize( entry.slashName.size() - 4 ); // .lua
             entry.dottedName = entry.slashName;
             std::replace( entry.dottedName.begin(), entry.dottedName.end(), '/', '.' );
@@ -786,7 +922,7 @@ namespace workphone
         };
         if( !collect( resource.get() ) )
         {
-            m_lastDiagnostic = "Invalid or incompatible compiled Lua resource";
+            m_lastDiagnostic = sourceAdmissionDenied?"Runtime Lua source memory budget denied":"Invalid or incompatible compiled Lua resource";
             setError( true );
             return false;
         }
@@ -795,8 +931,8 @@ namespace workphone
         for( const auto &entry : entries )
             m_debugger->source( entry.sourceName.c_str(), std::string( entry.source.data(), entry.source.size() ) );
         const int top = lua_gettop( state );
-        lua_pushcfunction( state, scriptTraceback );
-        lua_pushcfunction( state, installPreloads );
+        if(!pushManagerFunction(state,scriptTraceback)||!pushManagerFunction(state,installPreloads)){
+            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua preload entry memory denied");setError(true);return false;}
         lua_pushlightuserdata( state, &entries );
         const int status = lua_pcall( state, 1, 0, top + 1 );
         if( status != LUA_OK )
@@ -809,6 +945,8 @@ namespace workphone
         if( status != LUA_OK ) return false;
         return executeSource( entries.back().source, entries.back().sourceName );
     }
+    catch(const std::bad_alloc &)
+    {memoryDiagnostic(m_lastDiagnostic,"Runtime Lua preload memory budget denied");setError(true);return false;}
 
     bool LuaManager::loadScriptAsset( const String &uuid )
     {
@@ -894,9 +1032,12 @@ namespace workphone
             setError( true );
             return false;
         }
+        if(auto domain=runtimeLuaDomain(state);domain&&!domain->retainSource(sourceName,source.size()))
+        {memoryDiagnostic(m_lastDiagnostic,"Runtime Lua source memory budget denied");setError(true);return false;}
         m_debugger->source( sourceName.c_str(), std::string( source.data(), source.size() ) );
         const int top = lua_gettop( state );
-        lua_pushcfunction( state, scriptTraceback );
+        if(!pushManagerFunction(state,scriptTraceback)){
+            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua source entry memory denied");setError(true);return false;}
         const int handler = top + 1;
         int status = luaL_loadbufferx( state, source.data(), source.size(),
                                       sourceName.c_str(), "t" );
@@ -929,8 +1070,8 @@ namespace workphone
         const int top = lua_gettop( state );
         ScriptInvocation call{ receiver, globalName.empty() ? nullptr : globalName.c_str(),
                                functionName.c_str(), parameters, results, optional };
-        lua_pushcfunction( state, scriptTraceback );
-        lua_pushcfunction( state, invokeScript );
+        if(!pushManagerFunction(state,scriptTraceback)||!pushManagerFunction(state,invokeScript)){
+            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua invocation entry memory denied");setError(true);return false;}
         lua_pushlightuserdata( state, &call );
         int status = lua_pcall( state, 1, 0, top + 1 );
         if( status != LUA_OK )
@@ -1020,11 +1161,26 @@ namespace workphone
     void LuaManager::createLuaState()
     {
         // create the lua state
-
-        auto luaState = luaL_newstate();
+        std::unique_ptr<RuntimeLuaDomain> domain;
+        lua_State *luaState=nullptr;
+        if(m_runtimeScriptsMode){
+#if defined(WP_LUA_BACKEND_LUAJIT) && LJ_64 && !LJ_GC64
+            throw std::runtime_error("Budgeted runtime Lua requires the GC64 LuaJIT configuration");
+#else
+            domain=std::make_unique<RuntimeLuaDomain>();
+#if LUA_VERSION_NUM >= 505
+            luaState=lua_newstate(runtimeLuaAllocate,domain.get(),luaL_makeseed(nullptr));
+#else
+            luaState=lua_newstate(runtimeLuaAllocate,domain.get());
+#endif
+#endif
+        }else luaState=luaL_newstate();
         if( !luaState ) throw std::runtime_error( "Could not allocate Lua state" );
         m_luaState = luaState;
+        domain.release(); // closeLuaState owns opaque runtime userdata from here.
+        auto initialize=[this,luaState]{
         bindStateManager( luaState, this );
+        if(m_runtimeScriptsMode)cacheRuntimeFunctions(luaState);
 
         luaL_openlibs( luaState );
 
@@ -1123,6 +1279,29 @@ namespace workphone
         luabind::set_pcall_callback( handleLuaPCallError );
         set_cast_failed_callback( handleCastFailed );
 #endif
+        };
+        if(m_runtimeScriptsMode){
+            struct Initialization {decltype(initialize) *action;std::exception_ptr failure;};
+            Initialization call{&initialize,{}};
+            const auto bootstrap=+[](lua_State *state)->int{
+                auto call=static_cast<Initialization*>(lua_touserdata(state,1));
+                try{(*call->action)();}catch(...){call->failure=std::current_exception();}
+                return 0;
+            };
+#if LUA_VERSION_NUM < 502
+            // LuaJIT/5.1 pushcfunction itself allocates; cpcall protects that
+            // first closure allocation as well as the binding registration.
+            const int status=lua_cpcall(luaState,bootstrap,&call);
+#else
+            // Modern Lua represents a zero-upvalue C function without allocating.
+            lua_pushcfunction(luaState,bootstrap);lua_pushlightuserdata(luaState,&call);
+            const int status=lua_pcall(luaState,1,0,0);
+#endif
+            if(call.failure)std::rethrow_exception(call.failure);
+            if(status!=LUA_OK){const auto text=lua_tostring(luaState,-1);
+                throw std::runtime_error(text?text:"Runtime Lua bootstrap allocation failed");}
+            runtimeLuaDomain(luaState)->bootstrapping=false;
+        }else initialize();
     }
 
     String LuaManager::getDebugInfo()
@@ -1392,7 +1571,7 @@ namespace workphone
             m_debugger->bind( replacement );
             m_debugger->copySourcesFrom( *candidate.m_debugger );
         }
-        if( previous ) lua_close( previous );
+        if( previous ) closeLuaState( previous );
         updateClassNames();
         m_lastDiagnostic.clear();
         setError( false );
@@ -1406,8 +1585,8 @@ namespace workphone
         if( !state ) return false;
         const int top = lua_gettop( state );
         ScriptConstruction call{ className.c_str(), owner };
-        lua_pushcfunction( state, scriptTraceback );
-        lua_pushcfunction( state, constructScript );
+        if(!pushManagerFunction(state,scriptTraceback)||!pushManagerFunction(state,constructScript)){
+            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua construction entry memory denied");setError(true);return false;}
         lua_pushlightuserdata( state, &call );
         int status = lua_pcall( state, 1, 1, top + 1 );
         if( status == LUA_OK )

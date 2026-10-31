@@ -10,6 +10,7 @@ namespace workphone
     namespace resource
     {
         struct RuntimeAssetContext;
+        class ResourcePayloadMount;
         /** Existing actor Properties documents compiled into the existing binary
          * serializer. Supported components use captured typed UUID references;
          * unsupported types, authoring paths and nested component data fail closed. */
@@ -26,10 +27,13 @@ namespace workphone
         WPCore_API std::shared_ptr<const CookedActorGraph> decodeActorGraphResource(
             std::shared_ptr<const RuntimeResource>,String &error);
         WPCore_API bool actorGraphRequiresScripts(const std::shared_ptr<const CookedActorGraph> &);
+        /** Validate sealed recipe metadata before streamed dependencies reside. */
+        WPCore_API bool inspectActorGraphStreamingMeshes(const RuntimeResource &,Array<ResourceID> &,String &error);
         /** Resolver owns only detached UUID/pinned-resource maps. The returned
          * mutable context can stage private native services before publication. */
         WPCore_API std::shared_ptr<RuntimeAssetContext> createActorGraphRuntimeContext(
-            std::shared_ptr<const CookedActorGraph>,const String &target,bool packagedBuild,String &error);
+            std::shared_ptr<const CookedActorGraph>,const String &target,bool packagedBuild,String &error,
+            std::shared_ptr<ResourcePayloadMount> mount={});
         WPCore_API bool validateCookedActorGraphData(SmartPtr<Properties>,bool scene,
             std::shared_ptr<const RuntimeAssetContext>,String &error);
         /** Owner-thread, synchronous commit through the existing generation-aware

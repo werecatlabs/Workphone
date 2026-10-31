@@ -4,10 +4,13 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
+#include <memory>
+#include <array>
 #include <Workphone/Interface/System/IStateListener.hpp>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; struct RuntimeResource; }
     namespace scene
     {
 
@@ -22,6 +25,7 @@ namespace workphone
         class WPCore_API Skybox : public Component
         {
         public:
+            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
             /** @name Property Keys
              *  Strings used as keys to identify properties of the Skybox component.
              */
@@ -344,6 +348,10 @@ namespace workphone
 
             /** @brief Whether to swap front and back textures. */
             bool m_swapFrontBack = false;
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
+            std::array<std::shared_ptr<const resource::RuntimeResource>,6> m_runtimeTextures;
+            std::array<String,6> m_runtimeTextureUuids;
+            bool m_runtimeAssetsMode=false;
         };
 
         inline render::ISkybox *Skybox::getSkyboxPtr() const

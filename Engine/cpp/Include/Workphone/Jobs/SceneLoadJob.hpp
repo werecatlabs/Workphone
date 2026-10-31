@@ -47,6 +47,8 @@ namespace workphone
          * The caller must validate/own the complete document before handing it off. */
         void setPreparedData( SmartPtr<Properties> data );
         void setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context );
+        /** Read after synchronous execute or after the queued job has finished. */
+        String getLoadDiagnostic() const;
 
         WP_CLASS_REGISTER_DECL;
 

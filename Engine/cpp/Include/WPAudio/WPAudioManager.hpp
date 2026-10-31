@@ -6,6 +6,7 @@
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <map>
+#include <thread>
 
 namespace workphone
 {
@@ -61,6 +62,15 @@ namespace workphone
          * Called once per frame to update sound states and process audio.
          */
         void update() override;
+
+        SmartPtr<ISound> createRuntimeSound(
+            std::shared_ptr<const resource::RuntimeResource> resource,String &error,
+            std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
+        std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
+            std::shared_ptr<const resource::RuntimeResource> resource,
+            std::shared_ptr<resource::ResourcePayloadMount> mount,String &error) override;
+        std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeLeafProviderFactory(
+            std::shared_ptr<resource::ResourcePayloadMount> mount,String &error) override;
 
         /** Suspend native processing without changing voice play/pause states
          * or queued buffers. Control-owner only; never call from an audio callback.
@@ -196,6 +206,7 @@ namespace workphone
 
     private:
         struct PlatformAudioState;
+        std::thread::id m_controlOwner;
 
         /**
          * @brief Initialize the native audio backend for the target platform.

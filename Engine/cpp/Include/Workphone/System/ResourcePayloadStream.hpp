@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <thread>
 
 namespace workphone::resource
@@ -32,8 +33,16 @@ namespace workphone::resource
                 return result;
             }
         };
+        // A custom mount ledger participates alongside the shared allocator's
+        // physical accounting. The alias retains both admissions with metadata.
+        struct SourceAdmissions
+        {
+            StreamBudget captured,physical;
+        };
     }
     class ResourcePayloadStream;
+    class ResourceChunkStream;
+    class ResourceChunkCache;
     /** One immutable manifest generation and persistent physical queue. Streams
      * sharing this object share pending/executing/completed reads. All requesters
      * belong to its creating thread. Cache quotas belong to this shared mount. */
@@ -62,8 +71,43 @@ namespace workphone::resource
         }
         ResourcePayloadMount(const ResourcePayloadMount &)=delete;
         ResourcePayloadMount &operator=(const ResourcePayloadMount &)=delete;
+        bool resourceInfo(const ResourceID &id,RuntimeResourceRangeInfo &info,String &error) const
+        {
+            try {
+                if(m_scheduler==WorldStreamingScheduler::shared())return m_read->resourceInfo(id,info,error);
+                u64 payload=0,metadata=0;if(!m_read->payloadMemoryRequirements(id,payload,metadata,error))return false;
+                auto source=m_scheduler->reserve(StreamMemoryClass::SourceCpu,metadata,error);if(!source)return false;
+                auto admission=std::allocate_shared<payload_stream_detail::SourceAdmissions>(SourceBudgetAllocator<payload_stream_detail::SourceAdmissions>{});
+                admission->captured=std::move(source);RuntimeResourceRangeInfo result;
+                if(!m_read->resourceInfo(id,result,error))return false;
+                admission->physical=std::move(result.admission);
+                result.admission=StreamBudget(admission,admission->captured.get());std::swap(info,result);return true;
+            }catch(const std::exception &failure){try{error=failure.what();}catch(...){error.clear();}return false;}
+        }
+        StreamBudget reserveOwner(StreamMemoryClass category,u64 bytes,String &error) const
+        {return m_scheduler->reserve(category,bytes,error);}
+        bool trimCompletedPayloads()
+        {if(!owner())return false;m_resident.clear();m_residentBytes=0;return true;}
+        /** Captures the same immutable generation on the calling owner thread;
+         * never reparses a mutable manifest path. Live views on one owner share. */
+        std::shared_ptr<ResourcePayloadMount> createReadOnlyOwnerView(String &error)
+        {
+            error.clear();try {
+                std::lock_guard<std::mutex> lock(m_viewsMutex);
+                for(auto i=m_views.begin();i!=m_views.end();)if(i->second.expired())i=m_views.erase(i);else ++i;
+                const auto owner=std::this_thread::get_id();const auto found=m_views.find(owner);
+                if(found!=m_views.end())if(auto view=found->second.lock())return view;
+                auto view=std::shared_ptr<ResourcePayloadMount>(new ResourcePayloadMount);
+                view->m_metadata=m_metadata;view->m_scheduler=m_scheduler;view->m_read=m_read;view->m_owner=owner;
+                view->m_limits=m_limits;view->m_runtimeLimits=m_runtimeLimits;view->m_maximumLogical=m_maximumLogical;view->m_maximumWork=m_maximumWork;
+                view->m_producer=m_scheduler->createProducer(m_limits,error);if(!view->m_producer)return {};
+                m_views[owner]=view;return view;
+            }catch(const std::exception &failure){error=failure.what();return {};}
+        }
     private:
         friend class ResourcePayloadStream;
+        friend class ResourceChunkStream;
+        friend class ResourceChunkCache;
         using Work=payload_stream_detail::Work;using Identity=payload_stream_detail::Identity;
         template<class K,class V>using Map=payload_stream_detail::Map<K,V>;
         struct Resident {StreamBudget metadata;std::shared_ptr<const RuntimeResource> resource;u64 access=0;};
@@ -121,6 +165,9 @@ namespace workphone::resource
         std::shared_ptr<WorldStreamingScheduler> m_scheduler;
         std::shared_ptr<ResourceSystem> m_read;
         std::shared_ptr<WorldStreamProducer> m_producer;
+        std::weak_ptr<ResourceChunkCache> m_chunks;
+        std::mutex m_viewsMutex;
+        Map<std::thread::id,std::weak_ptr<ResourcePayloadMount>> m_views;
         WorldStreamProducerLimits m_limits;
         RuntimeResourceConfig m_runtimeLimits;
         std::thread::id m_owner;

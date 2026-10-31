@@ -102,7 +102,8 @@ namespace workphone::render
             auto sidecar=std::filesystem::u8path(context.sourceRoot.c_str())/
                 std::filesystem::u8path((context.resourceId.sourceRelativePath()+".materials").c_str());
             Array<resource::ResourceID> materials; if(std::filesystem::exists(sidecar)) materials=bindings(sidecar);
-            String error; require(check(bytes,materials,error),error.c_str());
+            String error;
+            if(!check(bytes,materials,error))throw std::runtime_error(error.c_str());
             require(!context.target.empty()&&context.target.size()<=1024,"Invalid mesh target");
             output.write("WPMR",4); word(output,1); word(output,context.packagedBuild?1:0); text(output,context.target);
             word(output,u32(materials.size())); for(const auto &id:materials) text(output,id.str());
@@ -144,7 +145,8 @@ namespace workphone::render
             require(count>0&&count<=meshLimit,"Mesh geometry exceeds limit");
             decoded.budget=asset_budget::reserveCpuBytes(count,true); require(bool(decoded.budget),"Mesh decode budget exhausted");
             decoded.geometry.assign(value.payload.begin()+offset,value.payload.end());
-            require(check(decoded.geometry,decoded.materials,error),error.c_str()); output=std::move(decoded); return true;
+            if(!check(decoded.geometry,decoded.materials,error))throw std::runtime_error(error.c_str());
+            output=std::move(decoded); return true;
         } catch(const std::exception &e) { error=e.what(); return false; }
     }
     bool MeshResourceCompiler::validate(const resource::RuntimeResource &value,String &error)

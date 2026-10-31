@@ -12,4 +12,17 @@ namespace workphone
 
     ISoundManager::~ISoundManager() = default;
 
+    SmartPtr<ISound> ISoundManager::createRuntimeSound(
+        std::shared_ptr<const resource::RuntimeResource>,String &error,std::shared_ptr<resource::ResourcePayloadMount>)
+    {
+        error="Cooked audio voices are unsupported by this sound backend";return nullptr;
+    }
+    std::shared_ptr<const resource::RuntimeResource> ISoundManager::captureRuntimeResourceSnapshot(
+        std::shared_ptr<const resource::RuntimeResource> resource,
+        std::shared_ptr<resource::ResourcePayloadMount>,String &error)
+    {error.clear();return resource;}
+    std::shared_ptr<resource::ResourceLeafProviderFactory> ISoundManager::createRuntimeLeafProviderFactory(
+        std::shared_ptr<resource::ResourcePayloadMount>,String &error)
+    {error.clear();return {};}
+
 }  // namespace workphone

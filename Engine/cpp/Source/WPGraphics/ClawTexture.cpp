@@ -925,6 +925,7 @@ namespace workphone
             {
                 return;
             }
+            if(m_runtimeStream){setLoadingState(LoadingState::Loaded);return;}
 
             setLoadingState( LoadingState::Loading );
 
@@ -943,6 +944,7 @@ namespace workphone
 
         void ClawTexture::unload( SmartPtr<ISharedObject> data )
         {
+            if(m_runtimeStream)m_runtimeStream->unload();
             // Lazy CPU/native access can acquire physical residency after a
             // rejected load left the logical state Unloaded. Retire that data
             // on every unload; the state alone does not prove cache emptiness.
@@ -1143,6 +1145,7 @@ namespace workphone
         std::shared_ptr<const TextureMipLevel> ClawTexture::getCpuBaseMip( String &error )
         {
             error.clear();
+            if(m_runtimeStream){error="Offline CPU base-mip snapshots require the complete typed texture; runtime residency does not read authoring files";return {};}
             if( getRenderTarget() ||
                 ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
             {
@@ -1386,11 +1389,13 @@ namespace workphone
 
         Vector2I ClawTexture::getActualSize() const
         {
+            if(m_runtimeStream)return m_runtimeStream->residentSize();
             return m_size;
         }
 
         void ClawTexture::getTextureGPU( void **ppTexture ) const
         {
+            if(m_runtimeStream){getTextureFinal(ppTexture);return;}
             if( ppTexture )
             {
                 auto renderTarget = dynamic_pointer_cast<ClawRenderTarget>( getRenderTarget() );
@@ -1408,6 +1413,13 @@ namespace workphone
 
         void ClawTexture::getTextureFinal( void **ppTexture ) const
         {
+            if(m_runtimeStream)
+            {
+                if(ppTexture){auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystemPtr():nullptr;
+                    auto renderer=graphics?dynamic_pointer_cast<ClawRendererDX11>(graphics->getRenderer()):nullptr;
+                    *ppTexture=getNativeTextureView(renderer?wp_renderer_get_dx11(renderer->getNativeRenderer()):nullptr);}
+                return;
+            }
             if( ppTexture )
             {
                 auto renderTarget = dynamic_pointer_cast<ClawRenderTarget>( getRenderTarget() );
@@ -1425,6 +1437,7 @@ namespace workphone
 
         void *ClawTexture::getNativeTextureView( wp_renderer_dx11 *renderer ) const
         {
+            if(m_runtimeStream){const auto policy=textureUploadPolicy();String error;return m_runtimeStream->view(renderer,policy.quality,policy.maximum,error);}
             if( !renderer || getRenderTarget() ||
                 ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
             {
@@ -1436,6 +1449,27 @@ namespace workphone
             }
             return ensureTextureView( this, renderer );
         }
+
+        bool ClawTexture::loadRuntimeStream(std::shared_ptr<const resource::RuntimeResource> resource,
+            std::shared_ptr<resource::ResourcePayloadMount> mount,const String &target,bool packaged,
+            wp_renderer_dx11 *renderer,String &error)
+        {
+            error.clear();try {
+                if(getRenderTarget()||(getUsageFlags()&static_cast<u32>(TextureUsage::TU_RENDERTARGET))){error="Runtime mip streaming requires a sampled texture";return false;}
+                auto candidate=ClawTextureStream::create(std::move(resource),std::move(mount),target,packaged,renderer,error);if(!candidate)return false;
+                // Stage notifications too: their admission must not destroy an
+                // already usable ordinary/runtime texture on failure.
+                setLoadingState(LoadingState::Loaded);
+                {std::scoped_lock lock(g_textureMutex);auto old=g_textureData.find(this);if(old!=g_textureData.end()){destroyTextureView(old->second);g_textureData.erase(old);}}
+                m_size=candidate->originalSize();m_runtimeStream=std::move(candidate);return true;
+            }catch(const std::exception &failure){error=failure.what();return false;}
+        }
+        bool ClawTexture::setRuntimeMipDemand(u32 firstMip,s32 priority,s32 residencyPriority,String &error)
+        {if(!m_runtimeStream){error="Texture does not have a runtime mip plan";return false;}return m_runtimeStream->setDemand(firstMip,priority,residencyPriority,error);}
+        bool ClawTexture::processRuntimeStreaming(wp_renderer_dx11 *renderer,String &error)
+        {if(!m_runtimeStream){error="Texture does not have a runtime mip plan";return false;}return m_runtimeStream->process(renderer,error);}
+        RuntimeTextureStreamState ClawTexture::runtimeMipState()const
+        {return m_runtimeStream?m_runtimeStream->state():RuntimeTextureStreamState{};}
 
         size_t ClawTexture::getTextureHandle() const
         {

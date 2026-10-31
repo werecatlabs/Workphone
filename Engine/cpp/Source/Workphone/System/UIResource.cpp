@@ -150,23 +150,38 @@ namespace workphone::ui
     UIResourceInstance::~UIResourceInstance()
     {for(size_t i=m_elements.size();i>0;--i)if(m_manager&&m_elements[i-1])m_manager->removeElement(m_elements[i-1]);}
     SmartPtr<IUIElement> UIResourceInstance::root() const{return m_elements.empty()?nullptr:m_elements[0];}
-    bool UIResourceInstance::publish(SmartPtr<IUIElement> parent,String &error)
+    bool UIResourceInstance::setActive(bool visible,bool enabled,String &error)
+    {
+        error.clear();if(std::this_thread::get_id()!=m_owner||!m_published||!m_manager||!m_manager->isLoaded()){
+            error="UI activation requires its published generation and loaded owner manager";return false;}
+        for(size_t i=0;i<m_elements.size();++i){m_elements[i]->setVisible(visible&&m_visible[i]!=0,false);m_elements[i]->setEnabled(enabled&&m_enabled[i]!=0,false);}return true;
+    }
+    bool UIResourceInstance::publish(SmartPtr<IUIElement> parent,String &error,const UIResourceInstance *replacing)
     {
         error.clear();if(std::this_thread::get_id()!=m_owner){error="UI publication requires its creating owner thread";return false;}
         if(!parent||m_published){error="UI publication requires a parent and an unpublished instance";return false;}
         try {
             require(m_manager&&m_manager->isLoaded(),"UI publication manager is unloaded");
-            const auto snapshot=m_manager->getChildObjects();std::set<const IUIElement*> registered,own;
+            const auto snapshot=m_manager->getChildObjects();
+            using ElementSet=std::set<const IUIElement*,std::less<const IUIElement*>,SourceBudgetAllocator<const IUIElement*>>;
+            ElementSet registered,own;
             for(const auto &object:snapshot)if(auto element=dynamic_cast<IUIElement*>(object.get()))registered.insert(element);
             require(registered.count(parent.get())!=0,"UI publication parent is not registered in the captured manager");
             for(const auto &element:m_elements) {
                 require(registered.count(element.get())!=0,"UI staged control was removed from the captured manager");own.insert(element.get());
             }
+            ElementSet retiring;
+            if(replacing){
+                require(replacing!=this&&replacing->m_manager==m_manager&&replacing->m_owner==m_owner&&
+                    replacing->m_published&&replacing->root()&&replacing->root()->getParent()==parent,
+                    "UI replacement requires the same live manager, owner and publication parent");
+                for(const auto &element:replacing->m_elements){require(registered.count(element.get())!=0,"UI replacement generation was already retired");retiring.insert(element.get());}
+            }
             // Existing ImGui windows identify native state by their labels. Until
             // an explicit backend ID namespace exists, prevent two visible trees
             // from aliasing that global state instead of silently mixing them.
             for(const auto &object:snapshot)if(auto window=dynamic_cast<IUIWindow*>(object.get()))
-                if(!own.count(window)&&window->isVisible())for(const auto &element:m_elements)
+                if(!own.count(window)&&!retiring.count(window)&&window->isVisible())for(const auto &element:m_elements)
                     if(auto staged=dynamic_cast<IUIWindow*>(element.get()))
                         require(staged->getLabel()!=window->getLabel(),"UI window label is already visible in the captured manager");
             size_t depth=0;for(auto ancestor=parent;ancestor;ancestor=ancestor->getParent()) {
@@ -188,10 +203,10 @@ namespace workphone::ui
             u64 metadataBytes=65536+16384*nodes.size();for(const auto &node:nodes)metadataBytes+=8*node.label.size();
             result->m_metadataBudget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,metadataBytes,error);
             require(result->m_metadataBudget!=nullptr,"UI retained metadata budget exhausted");
-            result->m_elements.reserve(nodes.size());result->m_visible.reserve(nodes.size());
+            result->m_elements.reserve(nodes.size());result->m_visible.reserve(nodes.size());result->m_enabled.reserve(nodes.size());
             for(const auto &node:nodes) {
                 auto element=manager->addElement(nativeType(node.type));require(element!=nullptr,"UI backend does not support a required cooked control type");
-                result->m_elements.push_back(element);result->m_visible.push_back(node.visible);element->setVisible(false,false);
+                result->m_elements.push_back(element);result->m_visible.push_back(node.visible);result->m_enabled.push_back(node.enabled);element->setVisible(false,false);
                 auto properties=make_ptr<Properties>();properties->setProperty("position",node.position);properties->setProperty("size",node.size);properties->setProperty("visible",false);properties->setProperty("enabled",node.enabled);element->setProperties(properties);
                 element->setElementId(node.id);element->setLabel(node.label);element->setPosition(node.position);element->setSize(node.size);element->setEnabled(node.enabled,false);element->setVisible(false,false);
                 if(node.type==Text){auto text=workphone::dynamic_pointer_cast<IUIText>(element);require(text!=nullptr,"UI backend returned incompatible text control");text->setText(node.label);text->setTextSize(node.textSize);}

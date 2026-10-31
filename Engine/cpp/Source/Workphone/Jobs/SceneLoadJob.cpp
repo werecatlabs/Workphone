@@ -309,7 +309,7 @@ namespace workphone
             auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
             auto editorData = m_preparedData->getChild( "editorCamera" );
             std::unordered_set<String> retainedRootIds;
-            if( app->isPlaying() )
+            if( !m_runtimeAssets && app->isPlaying() )
             {
                 for( const auto &root : target->getActors() )
                 {
@@ -322,7 +322,7 @@ namespace workphone
             Array<SmartPtr<Properties>> ordered;
             for( const auto &data : m_preparedData->getChildrenByName( ApplicationUtil::actorsStr ) )
             {
-                if( scene::GameActorUtil::isEditorCameraData( editorCamera, data ) )
+                if( !m_runtimeAssets && scene::GameActorUtil::isEditorCameraData( editorCamera, data ) )
                 {
                     if( !editorData )
                     {
@@ -390,11 +390,13 @@ namespace workphone
         }
         catch( const std::exception &e )
         {
+            m_prepareError = e.what();
             rollback();
             WP_LOG_EXCEPTION( e );
         }
         catch( ... )
         {
+            m_prepareError = "Unknown error committing scene";
             rollback();
             WP_LOG_ERROR( "Unknown error committing scene" );
         }
@@ -462,6 +464,11 @@ namespace workphone
     void SceneLoadJob::setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
         m_runtimeAssets = std::move(context);
+    }
+
+    String SceneLoadJob::getLoadDiagnostic() const
+    {
+        return m_prepareError;
     }
 
 }  //  namespace workphone

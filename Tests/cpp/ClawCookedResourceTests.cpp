@@ -1055,6 +1055,7 @@ namespace
 #include "ClawCookedMaterialRetirementContracts.hpp"
 #include "TerrainPackageContracts.hpp"
 #include "ClawQueuedMaterialNodeContracts.hpp"
+#include "ClawTextureStreamingContracts.hpp"
 
 int main( int argc, char **argv )
 {
@@ -1194,6 +1195,7 @@ int main( int argc, char **argv )
         if( programRetirement ) { cooked_material_shader_contracts::run( fixture, retirementCycles, true ); return 0; }
         claw_cooked_material_retirement_contracts::run( fixture, retirementCycles ? retirementCycles : 32 );
         if( retirementCycles ) return 0;
+        claw_texture_streaming_contracts::run(fixture);
         cooked_material_shader_contracts::run( fixture );
         generatedAsphaltContracts( fixture );
         contracts( fixture );

@@ -9,6 +9,13 @@
 #include <Workphone/System/RuntimeAssetContext.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include <Workphone/Scene/Components/Material.hpp>
+#include <Workphone/Scene/Components/Skybox.hpp>
+#include <Workphone/Scene/Components/Camera.hpp>
+#include <Workphone/Scene/Components/Light.hpp>
+#include <Workphone/Scene/Components/AudioEmitter.hpp>
+#include <Workphone/Scene/Components/UI/UIComponent.hpp>
+#include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <unordered_map>
@@ -684,6 +691,13 @@ namespace workphone::scene
                     if(auto component=workphone::dynamic_pointer_cast<MeshRenderer>(entry.first))component->configureRuntimeAssets(runtimeAssets);
                     if(auto component=workphone::dynamic_pointer_cast<Animator>(entry.first))component->configureRuntimeAssets(runtimeAssets);
                     if(auto component=workphone::dynamic_pointer_cast<Script>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Material>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Skybox>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Camera>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Light>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<AudioEmitter>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<UIComponent>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<LODGroup>(entry.first))component->configureRuntimeAssets(runtimeAssets);
             }
             for( const auto &entry : batch.components )
             {
@@ -694,6 +708,8 @@ namespace workphone::scene
                     throw std::runtime_error( "Component initialization failed" );
                 }
             }
+            if(runtimeAssets)for(const auto &entry:batch.components)
+                if(auto group=workphone::dynamic_pointer_cast<LODGroup>(entry.first))group->finalizeRuntimeLOD();
             checkCurrent();
             return roots;
         }

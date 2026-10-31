@@ -656,6 +656,7 @@ namespace workphone::core
         break;
         case TaskId::Sound:
         {
+            if(soundManager)soundManager->update();
         }
         break;
         default:

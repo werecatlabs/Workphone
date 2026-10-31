@@ -114,6 +114,7 @@ namespace workphone::scene
         {
             WP_LOG_EXCEPTION( e );
             setLoadingState( LoadingState::Error );
+            if(m_runtimeAssetsMode)throw;
         }
     }
 

@@ -26,7 +26,7 @@ namespace workphone::render
     }
 
     bool IGraphicsMesh::loadResource(std::shared_ptr<const resource::RuntimeResource>,String &error,
-                                     const String &,bool)
+                                       const String &,bool,std::shared_ptr<resource::ResourcePayloadMount>)
     {
         error="Cooked mesh installation is unsupported by this graphics backend.";
         return false;

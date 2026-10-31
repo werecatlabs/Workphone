@@ -5,6 +5,9 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/UI/IUIElement.hpp>
 #include <Workphone/Math/AABB2.hpp>
+#include <memory>
+
+namespace workphone::resource { struct RuntimeAssetContext; }
 
 namespace workphone
 {
@@ -109,6 +112,10 @@ namespace workphone
              * @brief Destructor.
              */
             ~UIComponent() override;
+
+            /** A bounded typed UI document host; configure before loading. */
+            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context);
+            String getRuntimeDiagnostic() const;
 
             /**
              * @brief Loads the UIComponent data.
@@ -423,6 +430,11 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            struct RuntimeUIState;
+            std::shared_ptr<RuntimeUIState> m_runtimeUI;
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
+            String m_uiAssetUuid,m_runtimeDiagnostic;
+            bool m_runtimeAssetsMode=false;
             /**
              * @brief Handles the specified event type and updates the UIComponent.
              *

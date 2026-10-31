@@ -41,7 +41,9 @@ namespace workphone::ui
          * All staged controls must still be registered. Visible external windows
          * cannot share a staged window label (experimental native-ID restriction).
          * Callers still fence project/request generations before publication. */
-        bool publish(SmartPtr<IUIElement> parent,String &error);
+        bool publish(SmartPtr<IUIElement> parent,String &error,
+            const UIResourceInstance *replacing=nullptr);
+        bool setActive(bool visible,bool enabled,String &error);
     private:
         friend WPCore_API std::shared_ptr<UIResourceInstance> stageUIResource(
             SmartPtr<IUIManager>,std::shared_ptr<const resource::RuntimeResource>,String &);
@@ -49,7 +51,7 @@ namespace workphone::ui
         std::shared_ptr<StreamBudgetLease> m_metadataBudget;
         SmartPtr<IUIManager> m_manager;
         Array<SmartPtr<IUIElement>> m_elements;
-        Array<u8> m_visible;
+        Array<u8> m_visible,m_enabled;
         std::shared_ptr<const resource::RuntimeResource> m_resource;
         std::thread::id m_owner;
         bool m_published=false;

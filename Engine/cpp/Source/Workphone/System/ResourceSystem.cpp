@@ -50,15 +50,20 @@ namespace workphone::resource
         constexpr u32 maximumManifestResources = 65536;
         constexpr u32 maximumManifestDependencies = 4096;
         constexpr u32 maximumManifestDepth = 256;
+        constexpr u32 resourceChunkBytes=65536;
+        constexpr u64 maximumManifestChunks=1ull<<20;
         const ResourceID manifestResourceId( "data://runtime.wprm" );
 
         struct RuntimeManifest
         {
+            struct Chunks {u32 bytes=resourceChunkBytes;Array<u64> hashes=makeSourceBudgetSnapshot<u64>();};
+            u32 version=0;
             String target;
             Array<ResourceID> roots;
             std::map<String, CompiledResourceHeader> resources;
             std::map<String, String> artifacts;
             std::map<String, ResourceID> bindings;
+            std::map<String,Chunks> chunks;
         };
 
         // Keep the reservation alive until every owned header/payload/dependency
@@ -285,13 +290,14 @@ namespace workphone::resource
                 return false;
             };
             if( !readManifestNumber( input, version ) ||
-                ( version != 1 && version != 2 && version != 3 ) ||
+                ( version != 1 && version != 2 && version != 3 && version != 4 ) ||
                 !readManifestString( input, manifest.target ) ||
                 !readManifestNumber( input, rootCount ) || rootCount == 0 ||
                 rootCount > maximumManifestResources )
             {
                 return malformed();
             }
+            manifest.version=static_cast<u32>(version);u64 totalChunks=0;
             std::set<String> rootIds;
             for( u64 index = 0; index < rootCount; ++index )
             {
@@ -349,6 +355,16 @@ namespace workphone::resource
                         return malformed();
                     }
                     header.installDependencies.emplace_back( dependency );
+                }
+                if(version>=4) {
+                    u64 chunkBytes=0,count=0;
+                    if(!readManifestNumber(input,chunkBytes)||chunkBytes!=resourceChunkBytes||!readManifestNumber(input,count)||
+                        count>maximumManifestChunks-totalChunks||count!=header.payloadSize/resourceChunkBytes+(header.payloadSize%resourceChunkBytes!=0))return malformed();
+                    const auto at=input.tellg();
+                    if(at<0||u64(at)>bytes.size()||count>(bytes.size()-u64(at))/sizeof(u64))return malformed();
+                    RuntimeManifest::Chunks directory;directory.hashes.reserve(static_cast<size_t>(count));
+                    for(u64 chunk=0;chunk<count;++chunk){u64 hash=0;if(!readManifestNumber(input,hash))return malformed();directory.hashes.push_back(hash);}
+                    totalChunks+=count;manifest.chunks.emplace(header.resourceId.str(),std::move(directory));
                 }
                 if( !header.isValid() ||
                     !manifest.resources.emplace( header.resourceId.str(), std::move( header ) ).second )
@@ -2177,6 +2193,7 @@ namespace workphone::resource
         }
         RuntimeManifest manifest;
         manifest.target = m_impl->config.target;
+        manifest.version=4;u64 totalChunks=0;
         std::set<String> visiting;
         std::map<String, u32> subtreeDepths;
         std::function<bool( const ResourceID & )> visit = [&]( const ResourceID &id ) {
@@ -2220,10 +2237,13 @@ namespace workphone::resource
                 return false;
             }
             CompiledResourceHeader header;
-            if( !CompiledResourceIO::validate( pathString( output ), header, error ) )
+            RuntimeManifest::Chunks directory;
+            if( !CompiledResourceIO::buildChunkHashes( pathString( output ), header,resourceChunkBytes,directory.hashes,error ) )
             {
                 return false;
             }
+            if(directory.hashes.size()>maximumManifestChunks-totalChunks){error="Runtime manifest chunk directory exceeds its limit";return false;}
+            totalChunks+=directory.hashes.size();
             const auto verified = m_impl->verifiedBuilds.find(
                 Impl::variantResourceKey( id.str(), m_impl->activePackagedBuild ) );
             if( !m_impl->database->getRecord( id.str(), m_impl->variant( m_impl->activePackagedBuild ),
@@ -2266,6 +2286,7 @@ namespace workphone::resource
             }
             visiting.erase( id.str() );
             manifest.artifacts[id.str()] = record.outputPath;
+            manifest.chunks.emplace(id.str(),std::move(directory));
             manifest.resources.emplace( id.str(), std::move( header ) );
             subtreeDepths[id.str()] = subtreeDepth;
             return true;
@@ -2297,7 +2318,7 @@ namespace workphone::resource
         }
 
         std::ostringstream encoded( std::ios::binary );
-        writeManifestNumber( encoded, bindings.empty() ? 2 : 3 );
+        writeManifestNumber( encoded, 4 );
         bool stringsValid = writeManifestString( encoded, manifest.target );
         writeManifestNumber( encoded, sortedRoots.size() );
         for( const auto &root : sortedRoots )
@@ -2320,12 +2341,14 @@ namespace workphone::resource
             {
                 stringsValid = writeManifestString( encoded, dependency.str() ) && stringsValid;
             }
+            const auto &directory=manifest.chunks.at(entry.first);writeManifestNumber(encoded,directory.bytes);
+            writeManifestNumber(encoded,directory.hashes.size());for(const auto hash:directory.hashes)writeManifestNumber(encoded,hash);
             if( encoded.tellp() > static_cast<std::streamoff>( maximumManifestBytes ) )
             {
                 break;
             }
         }
-        if( !bindings.empty() )
+        if( manifest.version>=3 )
         {
             writeManifestNumber( encoded, manifest.bindings.size() );
             for( const auto &binding : manifest.bindings )
@@ -2924,6 +2947,64 @@ namespace workphone::resource
         metadataBytes=headerMemoryAllowance(encoded,entry->second.installDependencies.size());
         payloadBytes=entry->second.payloadSize;return true;
     }
+
+    bool ResourceSystem::resourceInfo(const ResourceID &id,RuntimeResourceRangeInfo &output,String &error) const
+    try {
+        error.clear();RuntimeResourceRangeInfo result;
+        std::shared_lock<std::shared_mutex> operationLock(m_impl->operationMutex);
+        if(!m_impl->initialized||!m_impl->runtimeOnly||!id.isValid()){runtimeReadFailure(error,"Range metadata requires a runtime mount");return false;}
+        const auto found=m_impl->runtimeManifest.resources.find(id.str());
+        if(found==m_impl->runtimeManifest.resources.end()){runtimeReadFailure(error,"Range resource is absent from manifest");return false;}
+        u64 envelope=0;if(!runtimeHeaderEnvelope(m_impl->runtimeManifest,found->second,envelope,error))return false;
+        result.metadataBytes=headerMemoryAllowance(envelope,found->second.installDependencies.size());
+        result.admission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,result.metadataBytes,error);if(!result.admission)return false;
+        result.header=found->second;result.manifestVersion=m_impl->runtimeManifest.version;
+        result.chunkCount=found->second.payloadSize/resourceChunkBytes+(found->second.payloadSize%resourceChunkBytes!=0);
+        result.independentlyVerified=m_impl->runtimeManifest.chunks.count(id.str())!=0;
+        std::swap(output,result);return true;
+    }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return false;}
+
+    std::shared_ptr<const RuntimeResourceChunk> ResourceSystem::loadChunk(const ResourceID &id,u64 index,String &error,bool workingAlreadyAdmitted)
+    try {
+        error.clear();std::shared_lock<std::shared_mutex> operationLock(m_impl->operationMutex);
+        if(!m_impl->initialized||!m_impl->runtimeOnly||!id.isValid()){runtimeReadFailure(error,"Chunk read requires a runtime mount");return {};}
+        const auto &manifest=m_impl->runtimeManifest;const auto found=manifest.resources.find(id.str());
+        if(found==manifest.resources.end()){runtimeReadFailure(error,"Chunk resource is absent from manifest");return {};}
+        const auto &pin=found->second;const u64 count=pin.payloadSize/resourceChunkBytes+(pin.payloadSize%resourceChunkBytes!=0);
+        if(index>=count){runtimeReadFailure(error,"Chunk index exceeds pinned payload");return {};}
+        const auto offset=index*resourceChunkBytes,length=std::min<u64>(resourceChunkBytes,pin.payloadSize-offset);
+        u64 envelope=0;if(!runtimeHeaderEnvelope(manifest,pin,envelope,error))return {};
+        const auto metadata=headerMemoryAllowance(envelope,pin.installDependencies.size());
+        auto source=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,metadata+length,error);if(!source)return {};
+        const auto directory=manifest.chunks.find(id.str());const bool legacy=directory==manifest.chunks.end();
+        u64 workingBytes=metadata;if(!addAdmissionBytes(workingBytes,legacy?pin.payloadSize:length,error))return {};
+        StreamBudget working;if(!workingAlreadyAdmitted){working=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,workingBytes,error);if(!working)return {};}
+        auto result=std::allocate_shared<RuntimeResourceChunk>(SourceBudgetAllocator<RuntimeResourceChunk>{});
+        result->admission=std::move(source);result->resourceId=id;result->offset=offset;result->payloadSize=pin.payloadSize;
+        result->legacyWholePayloadFallback=legacy;
+        if(legacy) {
+            u64 bytes=metadata;if(!addAdmissionBytes(bytes,pin.payloadSize,error))return {};
+            auto fallback=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,bytes,error);if(!fallback)return {};
+            std::lock_guard<std::mutex> loadLock(m_impl->runtimeLoadMutex);Impl::LoadRequest request;
+            const auto complete=m_impl->loadNode(id,request,error,nullptr,true,pin.payloadSize);if(!complete)return {};
+            result->bytes.resize(static_cast<size_t>(length));std::copy_n(complete->payload.data()+offset,static_cast<size_t>(length),result->bytes.data());
+            result->hash=hashBytes(result->bytes.data(),result->bytes.size());result->payloadBytesRead=pin.payloadSize;
+        }else {
+            fs::path path;if(!resolveUnderRoot(m_impl->compiledRoot,"data://"+manifest.artifacts.at(id.str()),true,path,error))return {};
+            CompiledResourceHeader header;const auto expected=directory->second.hashes[static_cast<size_t>(index)];
+            if(!CompiledResourceIO::readPinnedRange(pathString(path),header,offset,length,expected,result->bytes,error,envelope)||
+                !sameRuntimeHeader(header,pin,false)){if(error.empty())error="Chunk container differs from pinned generation";return {};}
+            for(size_t i=0;i<header.installDependencies.size();++i)if(header.formatVersion>=2) {
+                const auto &child=header.installDependencies[i];const auto childHeader=manifest.resources.find(child.str());
+                const auto childPath=manifest.artifacts.find(child.str());const auto &artifact=header.installArtifacts[i];
+                if(childHeader==manifest.resources.end()||childPath==manifest.artifacts.end()||artifact.path!=childPath->second||
+                    artifact.sourceHash!=childHeader->second.sourceHash||artifact.payloadHash!=childHeader->second.payloadHash)
+                {error="Chunk dependency artifact pin differs from manifest";return {};}
+            }
+            result->hash=expected;result->payloadBytesRead=length;
+        }
+        return result;
+    }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return {};}
 
     void ResourceSystem::unload( const ResourceID &resourceId )
     {

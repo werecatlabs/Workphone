@@ -44,12 +44,12 @@ replacement. No executable, plugin or redistributable dependency is included.
 
 ## UUID manifest contract
 
-The existing three-argument `writeRuntimeManifest` still writes manifest payload
-version 2. The overload with a nonempty `Array<RuntimeResourceBinding>` writes
-version 3. The WPRS outer container remains unchanged. Versions 1 and 2 continue
-to load with an empty UUID map; there is no UUID-to-path guessing.
+New `writeRuntimeManifest` and package exports write manifest payload version 4.
+WPRS resource containers remain version 1/2; no cooker payload change is required
+to index an existing verified artifact. Manifest versions 1, 2 and 3 remain readable.
+Versions 1/2 have an empty UUID map; there is no UUID-to-path guessing.
 
-Version 3 appends a little-endian 64-bit binding count followed by length-prefixed
+Version 3 introduced a little-endian 64-bit binding count followed by length-prefixed
 UUID and ResourceID strings to the version-2 payload. Entries are sorted by
 canonical lowercase UUID. UUID input accepts exactly the dashed 36-character hex
 form, case-insensitively, and rejects nil. UUIDs and bound ResourceIDs are each
@@ -58,6 +58,18 @@ closure. The map is bounded by the existing 65,536-resource and 16-MiB manifest
 limits; malformed maps fail before a mount becomes initialized. Unbound closure
 members remain accessible by ResourceID. A partial map is explicitly supported;
 export does not certify complete authored-reference coverage.
+
+Version 4 retains those identities and bindings and adds a chunk directory after
+each resource's dependency list: little-endian `u64 chunkBytes`, `u64 chunkCount`
+and `u64 chunkHash[chunkCount]`. Chunk size is currently fixed at 65,536 bytes;
+offsets are `index * chunkBytes`, and the final length follows the pinned payload
+size. Empty payloads have zero chunks. The exporter computes independent FNV hashes
+while streaming and checking the complete artifact payload against its existing
+payload hash. The directory is sealed by the manifest container's payload hash.
+These are corruption checks, not cryptographic authentication. The body remains
+limited to 16 MiB and 65,536 resources, with at most 1,048,576 total chunk entries.
+Version 4 writes the binding count even when it is zero. Invalid counts, chunk
+sizes, payload coverage and truncated hash lists fail mount admission.
 
 `CatalogResourceAdapter::runtimeBinding(request, binding, error)` supplies the
 validated authored UUID and exact ResourceID from a current catalog request.
@@ -130,7 +142,7 @@ catalog admission through the same saved profile request.
 
 Build `WorkphoneResourcePackage` when Workphone, SQLite, WPGraphics and WPLua are
 enabled. It registers graphics (`texres`/`matres`), Lua, terrain, foliage, native
-mesh/skin, skeleton/clip, transform-only scene/prefab and bounded UI compilers,
+mesh/skin, skeleton/clip, bounded typed scene/prefab and UI compilers,
 plus PCM audio when enabled. The supported subsets are described below.
 Provide an existing writable project catalog, its actual source root, a cooked
 root, a new destination, an explicit target and root asset UUIDs:
@@ -439,7 +451,17 @@ mount; `ResourcePayloadStream::create(existingStream->mount(), error)` explicitl
 shares that captured mount. Matching paths alone do not merge mounts or retarget
 queued work when a project reopens. UUID resolution uses the captured manifest,
 without a catalog lookup. All requesters sharing a mount use its creating owner
-thread for demand changes, consumption, cache operations and destruction.
+thread for demand changes, consumption and cache operations.
+
+`createReadOnlyOwnerView(error)` is callable from another owner thread. It shares
+the exact captured read-only `ResourceSystem`, manifest pins and manifest lease,
+then creates fresh owner-local queues/caches. It never reparses the manifest path;
+replacing that path cannot retarget an existing view. Live views are memoized per
+OS owner thread. Native render/audio consumers use their own view rather than
+pumping another thread's mutable queue. Off-owner chunk-stream teardown requires
+the caller to pause/fence owner processing before `retireAfterOwnerQuiesced()`.
+Worker callbacks only access immutable inputs; native object retirement remains
+on the backend's supported lifecycle boundary.
 
 Each demand supplies a logical key, resource ID, priority and maximum payload
 size. `replace` retains matching physical reads across accepted batches and
@@ -477,10 +499,85 @@ the previous request. Assembly polls cancellation per node and per 64 KiB payloa
 copy. The owner still validates its project/request generation before invoking a
 typed installer and publishing native objects.
 
+`ResourceClosureStream::create(sharedMount, error, factory)` optionally accepts a
+`ResourceLeafProviderFactory`. `handles(ResourceID)` selects eligible leaves;
+`observeResourceReady` sees validated raw parents before child discovery, allowing
+a scene recipe to opt specific mesh IDs into streaming. Stateful factories use
+`cloneForRequest` for isolated recipe selection: rejected replacements preserve
+the previous scope, and a new root cannot inherit an old root's sparse choice for
+the same asset. A matching provider keeps its work across replacements.
+
+Providers poll on the creating owner and use verified range requests for metadata
+and bootstrap bytes. Their declared resident allowance replaces the full logical
+payload extent in closure admission; full header identity, compiler version,
+source/payload hashes, payload size and dependency IDs remain pinned. Dependencies
+are discovered from the manifest header while the provider is pending. Before and
+after every poll, closure admission rechecks current resident estimates against
+per-resource, aggregate, captured-mount and working limits. A provider detecting a
+required whole-format fallback raises its estimate and returns Pending before
+queueing that read; the next poll requires renewed admission.
+
+Ready snapshots carry opaque `RuntimeResource::streamData` with their own retained
+leases. This is in-memory native metadata, not a new serialized field. Worker DAG
+assembly preserves it and copies only bounded sparse payload bytes. Texture and
+PCM providers can therefore prepare cold metadata/bootstrap without first reading
+the entire image/clip. This differs from steady-state sparsification, which drops
+full leaf payloads only after they were loaded. Retained context graphs clone
+changed ancestors and keep sparse leaves, letting old whole-payload pins retire.
+Portable textures retain the 1×1 mip fallback. BC DDS keeps the smallest legal
+block-aligned native base and its subordinate mips (for a square BC1 chain,
+4×4→2×2→1×1 uses 24 encoded bytes). Coarser demands clamp to that native base.
+Manifest versions 1–3 retain the complete verified loading path. Legacy texture
+encodings or unmipped layouts that require a whole decode retain explicit bounded
+fallback; a nonnull opaque marker does not imply that every payload is sparse.
+
 Filesystem cancellation is checked before and after a payload read; it cannot
-interrupt a blocked filesystem call. These APIs schedule complete payloads and
-closures. Native chunk ranges, mesh LOD, texture mip and audio-seek/device
-residency require their own format and consumer integration.
+interrupt a blocked filesystem call. Native range consumers use the separate
+chunk transport below. The new cold-provider/native integration is source work
+pending rebuilt validation; prior whole-payload evidence does not certify it.
+
+## Verified chunk ranges and native residency
+
+`ResourceChunkStream::create(ownerView, error)` shares chunk work within that
+captured owner view. `request(key, id, offset, length, priority, residentPriority,
+error)` names a payload-relative interval. Bounds use the pinned payload size.
+Each v4 chunk read checks the container identity/header and its independent sealed
+chunk hash. A corrupt unrequested chunk does not require reading the entire file;
+a requested corrupt chunk produces an error. Earlier manifests verify the full
+payload before slicing and report that full I/O cost; they never accept unchecked
+ranges.
+
+`process()` advances owner state; `take(ResourceChunkResult&)` returns the exact
+contiguous requested bytes through `result.resource->bytes`. Range assembly runs
+on a worker from checked immutable chunks. Each newly requested chunk union
+reserves its complete `ResultCpu` footprint before dispatch, preventing concurrent
+partial ranges from pinning fragments while every request waits for more space.
+Chunk alignment adds up to one extra boundary chunk per end. The global byte and
+pending-interest limits still apply; failed admission preserves existing requests.
+The assembled result has its own `SourceCpu` lease and can outlive the stream.
+
+`cancel(key)` and `setPriority` affect logical interests, preserving another
+requester's shared I/O. Optional mount-view cache limits default to zero; eviction
+chooses lower residency priority, then older access. Residency priority can also
+be updated by asset/range after a request completes. Eviction releases cache
+ownership, not live consumer pins. Admission first reclaims eligible raw chunks
+and same-owner whole-payload cache entries; `trimCompletedPayloads()` explicitly
+releases whole-payload cache ownership after scene staging/drain.
+
+`progress(key)` separates requested bytes, ready coverage, aligned reservations,
+I/O bytes, pending chunks and assembly/completion state. Cache reuse reports no new
+I/O; legacy fallback reports whole-payload reads. `reserveOwner` admits retained
+decoded/native storage against the captured scheduler's memory classes. Native
+texture/LOD consumers keep their last published resident fallback when replacement
+admission, reads or upload fail. PCM callbacks use preallocated silence during
+underrun without advancing the content cursor. Transport success alone does not
+publish a GPU buffer or audio voice.
+
+Current source integrates this path with native texture mip tails and PCM ring
+playback/seek, with cold leaf preparation and owner-view handoff. Static mesh LOD
+uses its explicitly versioned/opt-in layout. These integrations and their
+corruption/pressure/retirement contracts passed the rebuilt matrices recorded
+below. Representative hardware certification remains separate.
 
 ## Runtime Script component UUIDs
 
@@ -499,8 +596,17 @@ text/debug execution remains an API; this mode does not sandbox script code.
 Unload retires the VM and releases the mount. Reusing that manager requires an
 explicit runtime remount or an explicit authoring configuration while unloaded.
 The mount caps individual payloads to the Lua source limit, closures to 256
-resources and 64 MiB. Existing preload/source copies and Lua VM allocations are
-not fully charged to the shared residency scheduler.
+resources and 64 MiB. Runtime VMs reserve a 32-MiB `SourceCpu` bootstrap envelope
+before entering binding/plugin initialization. Subsequent Lua heap growth admits
+the complete replacement allocation while the old block remains live. Shrinking
+retains physical capacity and its charge; GC/free/VM close retire storage.
+Source/preload/debugger text has conservative retained admission, and cached
+manager trampolines avoid an unprotected LuaJIT closure allocation on entry.
+Quota denial preserves the existing VM or leaves failed initialization unloaded.
+Authoring VMs retain their existing allocator. Native extensions, driver pools
+and LuaJIT machine-code/FFI allocations outside the Lua allocator are outside
+this managed accounting; it is not a process-memory ceiling. The default Lua
+backend passed both rebuilt matrix selections; LuaJIT pressure acceptance remains open.
 External debugger stop/unload signals cancellation before waiting for the Lua
 executor lock, then cleans hooks/registry on the retired executor boundary.
 Reentrant VM teardown from inside a Lua/native callback remains unsupported.
@@ -519,16 +625,27 @@ component installers. Other component types still require explicit typed adoptio
 The package tool registers `audio::AudioResourceCompiler` when WPAudio is built.
 Map the catalog's sound type to `wav`. Version 1 cooks validated, nonempty mono
 or stereo PCM16 WAVE at 8–192 kHz, up to 64 MiB, into a normal pinned WPRS member.
-Malformed/unsupported audio fails compilation. Raw WAVE bytes are retained for the
-existing native decoder; no new catalog, codec cache or voice system is introduced.
+Malformed/unsupported audio fails compilation. The WAVE payload format is unchanged;
+existing full decoding/clip caching remains the small/legacy path.
 `AudioResourceCompiler::validate` checks runtime type/version and WAVE structure.
 On the sound control thread, `WPAudioSound::loadResource` takes a cooked resource,
 uses the existing clip cache and voice lifecycle, and skips all filesystem fallback.
 Unload an existing sound before changing assets. Device creation failure returns
 false; successful cooking/validation does not establish audible playback.
-The CLI fixture includes a Lua root with a WAV install dependency and removes
-their authoring inputs/cook cache before UUID mounting. Other audio codecs, long
-clip streaming, Editor sound authoring and the other typed families remain open.
+The prior CLI fixture includes a Lua root with a WAV install dependency and removes
+their authoring inputs/cook cache before UUID mounting.
+
+New source adds v4 large-PCM cold metadata walking and a native range-fed ring.
+The walker checks bounded RIFF chunk headers and PCM format/alignment while skipping
+sample bodies, then retains at most 128 KiB of bootstrap samples. Playback uses
+eight fixed 64-KiB PCM slots plus a preallocated silence block. Only the control
+owner requests/takes verified ranges; the XAudio2 callback acquires/submits/completes
+slots without allocating or performing I/O. Seek quiesces the native voice, cancels
+old requests and uses new request identities; late results cannot populate reset
+slots. Small/legacy clips keep their prior complete verified path. Other codecs,
+clips above the declared 64-MiB limit, and audible-device certification remain
+outside this increment. The new cold/ring/seek contracts are pending rebuilt
+validation, not covered by the earlier whole-WAV fixture's pass.
 
 ## Diagnostic budgets and completed-job history
 
@@ -649,9 +766,12 @@ full model import remain separate feature gates.
 
 Map the authored types to `fbscene` or `prefab`. The compiler validates the actual
 Properties JSON schema and writes the existing `FBSCNBIN` binary representation.
-The supported subset contains actor identity, transforms, nested actors and native
-Mesh, MeshRenderer, Animator and Script components. Lighting, camera state and
-other component types require their own typed adoption. Limits are 8 MiB of source,
+The source subset contains actor identity, transforms, nested actors and bounded
+Mesh, MeshRenderer, Animator, Script, Material, Skybox, Camera, Light, AudioEmitter,
+UIComponent and LODGroup components. Current compiler output version 3 extends the
+prior four-component version-2 subset; arbitrary components/properties remain
+rejected. New component/native acceptance is pending this increment's rebuilt
+validation. Limits are 8 MiB of source,
 4096 total groups and depth 64, with canonical
 nonnil UUIDs, finite transforms and unit quaternions.
 
@@ -664,7 +784,8 @@ their own lease. Editor contracts cover hierarchy/transforms, remapped identitie
 rollback/readiness, stale generation rejection and escaped-node lifetimes. This
 does not provide arbitrary component-bearing Editor scene shipping.
 
-Output version 2 resolves authored UUIDs through captured `assetBindings` and
+Output version 2 introduced authored UUID resolution through captured `assetBindings`
+and current version 3 retains it. It
 stores typed ResourceIDs on the existing UUID Property's `compiledResourceId`
 attribute. The CLI captures mapped files under catalog admission before cooking;
 publication rejects UUID/resource remapping. Native callers provide a canonical
@@ -763,8 +884,10 @@ payload allocation limits to their manifest pins; manifest parsing uses observed
 container bounds. Container strings and all ResourceIDs require valid UTF-8 without
 embedded NULs. These are conservative participation allowances and parser bounds,
 not exact process RSS accounting or package authentication. Unrelated allocations,
-all Lua VM/preload storage, and complete native GPU/audio/decoder residency are not
-fully covered. Chunk/LOD/mip/audio-seek integration and representative scale,
+authoring/unsupported consumer paths, native extension/JIT/FFI storage outside
+the managed runtime Lua allocator and native driver allocation pools are not
+fully covered. New chunk/mip/LOD/PCM owner participation
+does not establish a total process or device-memory ceiling. Representative scale,
 soak and hardware certification remain open.
 
 `WPResourceTests` exercises persistent shared reads, independent cancellation and
@@ -774,7 +897,8 @@ Those contracts do not certify the remaining native residency integrations.
 
 ## Validation boundary
 
-`WPResourceTests` covers deterministic v3 export, invalid/duplicate/aliased/outside-
+Prior rebuilt `WPResourceTests` evidence covers deterministic v3 export,
+invalid/duplicate/aliased/outside-
 closure mappings, legacy manifests, empty maps, concurrent UUID/path identity,
 closure budgets, last-good manifest preservation, package-mode admission, exact
 file membership, existing destinations, corrupt inputs, staging cleanup, relocation
@@ -782,14 +906,36 @@ with original source/cooked storage removed and read-only runtime byte preservat
 `WorkphoneAssets.catalog_contracts` covers the real catalog-to-package UUID bridge,
 stale binding rejection and UUID-preserving authoring rename beside a pinned package.
 
-The bounded Mesh/MeshRenderer/Animator/Script scene/prefab subset and the product
-Editor's asynchronous package/UUID startup path are implemented. The source-free
-Editor CLI probe passed with one actor, four components, one Script and one Mesh;
+Final configuration-specific manifest-v4/chunk and sparse-provider results are
+tracked in the implementation ledger: **17/17 optimized** and **21/21 Debug**
+checks passed on the frozen source. Their cases include requested/unrequested corruption,
+legacy whole-verified fallback, exact owner views after manifest replacement,
+unaligned/shared ranges, upfront reservations, priority eviction, cold sparse
+bootstrap, dynamic fallback admission and request-scoped provider replacement.
+Native portable/BC1 DDS mip promotion/demotion, physical owner handoff and pressure
+also passed, alongside existing-selector static LOD demand, cold PCM/ring/seek,
+actual Primary dispatch, media UI replacement and staged-camera rollback.
+These are software-rendered/native contract results, not representative hardware
+or audible playback acceptance. Default Lua managed allocation/GC/preload/teardown
+contracts passed in both configurations; optional LuaJIT pressure remains open.
+
+The earlier bounded Mesh/MeshRenderer/Animator/Script scene/prefab subset and product
+Editor asynchronous package/UUID startup path supplied a source-free
+CLI probe pass with one actor, four components, one Script and one Mesh;
 it also rejected a missing UUID and preserved the package bytes. This establishes
 that bounded bootstrap and its failure/preservation behavior.
 
+The current relocated product probe loads four actors, 12 components on DX11
+or 10 on Software, one private Script VM, two resident native meshes and one
+unloaded streamed high mesh. Structured failures cover unsupported Software
+materials, missing UUIDs and this host's unavailable audio output. Seven installed
+checks passed with all read-only bytes preserved, 210 captured inputs without
+drift and 12 matching built/installed modules. Full Editor aggregate evidence and
+candidate paths are recorded under resource increments 38–41 in the ledger.
+
 Arbitrary component graphs, whole-Editor authoring and typed consumer adoption,
-interactive closure-preview acceptance, multi-mount precedence, native
-chunk/LOD/mip/audio-seek residency and full-family compiler interruption remain
-open. Interactive visual/input/audio acceptance, representative hardware and
+interactive closure-preview acceptance, multi-mount precedence, additional native
+streaming formats/consumer adoption and full-family compiler interruption remain
+open. Interactive visual/input/audio
+acceptance, representative hardware and
 full-family shipping application certification remain separate release gates.
