@@ -44,6 +44,24 @@ namespace workphone::adbeditor
         m_assetDatabaseWindow = workphone::make_ptr<AssetDatabaseWindow>();
         m_assetDatabaseWindow->load( data );
 
+        //if( !m_assetDatabaseManager )
+        //{
+        //    auto applicationManager = core::IApplicationManager::instance();
+        //    WP_ASSERT( applicationManager );
+
+        //    auto workingDirectory = Path::getWorkingDirectory();
+        //    auto mediaRelativePath = applicationManager->getMediaPath();
+
+        //    auto mediaPath = Path::lexically_normal( workingDirectory, mediaRelativePath );
+
+        //    auto databaseManager = workphone::make_ptr<AssetDatabaseManager>();
+
+        //    auto dbPath = mediaPath + "/reference.db";
+        //    databaseManager->loadFromFile( dbPath );
+
+        //    m_assetDatabaseManager = databaseManager;
+        //}
+
         setLoadingState( LoadingState::Loaded );
     }
 

@@ -111,9 +111,9 @@ namespace workphone
             referenceComponentsWindow->addChild( referenceComponentsGrid );
             setComponentsAttribsGrid( referenceComponentsGrid );
 
-            //buildResourceTree( resourcesTree );
-            //buildStaticComponentsTree( staticComponentsTree );
-            //buildComponentsTree( modelTreeComponents );
+            buildResourceTree( resourcesTree );
+            buildStaticComponentsTree( staticComponentsTree );
+            buildComponentsTree( modelTreeComponents );
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -192,22 +192,6 @@ namespace workphone
 
     SmartPtr<AssetDatabaseManager> AssetDatabaseWindow::getAssetDatabaseManager() const
     {
-        if( !m_assetDatabaseManager )
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto workingDirectory = Path::getWorkingDirectory();
-            auto mediaRelativePath = applicationManager->getMediaPath();
-
-            auto mediaPath = Path::lexically_normal( workingDirectory, mediaRelativePath );
-
-            auto databaseManager = workphone::make_ptr<AssetDatabaseManager>();
-            databaseManager->loadFromFile( mediaPath + "/resources.db" );
-
-            m_assetDatabaseManager = databaseManager;
-        }
-
         return m_assetDatabaseManager;
     }
 
