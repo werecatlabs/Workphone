@@ -1,11 +1,16 @@
 add_executable(WorkphoneResourcePackage main.cpp)
 target_include_directories(WorkphoneResourcePackage PRIVATE
     ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+    ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+    ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32
     ${WP_ROOT}/Dependencies/rapidjson/include)
 target_link_libraries(WorkphoneResourcePackage PRIVATE
     $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPSQLite>
     $<TARGET_LINKER_FILE:WPGraphics> $<TARGET_LINKER_FILE:WPLua>)
 add_dependencies(WorkphoneResourcePackage Workphone WPSQLite WPGraphics WPLua)
+if(WIN32)
+    target_link_libraries(WorkphoneResourcePackage PRIVATE psapi)
+endif()
 if(TARGET WPAudio)
     target_compile_definitions(WorkphoneResourcePackage PRIVATE WP_PACKAGE_AUDIO=1)
     target_link_libraries(WorkphoneResourcePackage PRIVATE $<TARGET_LINKER_FILE:WPAudio>)
@@ -26,6 +31,12 @@ if(BUILD_TESTING)
     endif()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        if(TARGET WPGraphicsCookedResourceTests)
+            add_test(NAME WorkphoneAssets.typed_package_families
+                COMMAND "${Python3_EXECUTABLE}" "${WP_ROOT}/Tests/python/resource_package_families.py"
+                    "$<TARGET_FILE:WPGraphicsCookedResourceTests>" "$<TARGET_FILE:WorkphoneResourcePackage>")
+            set_tests_properties(WorkphoneAssets.typed_package_families PROPERTIES TIMEOUT 240 RUN_SERIAL TRUE LABELS "resource;package;graphics")
+        endif()
         if(WIN32)
         add_executable(ResourcePackageJobTests ${WP_ROOT}/Tests/cpp/ResourcePackageJobTests.cpp
             ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp

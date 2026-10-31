@@ -9,7 +9,7 @@ namespace terrain_package_contracts
 
     // This entry point initializes only graphics/application services. No compiler
     // registry, source mount, catalog, SQLite plugin or compilation DB is created.
-    inline void consume( const fs::path &package, const fs::path &capture = {} )
+    inline void consume( const fs::path &package, const fs::path &capture = {}, const char *manifestName="terrain.wprs" )
     {
         claw_texture_mip_contracts::Fixture graphics;
         graphics.initialize();
@@ -19,7 +19,7 @@ namespace terrain_package_contracts
         ResourceSystem runtime( nullptr, nullptr );
         RuntimeResourceConfig mount;
         mount.compiledRoot = path( package );
-        mount.manifestPath = path( package / "terrain.wprs" );
+        mount.manifestPath = path( package / manifestName );
         mount.target = "terrain-dx11-contract";
         cooked_terrain_contracts::require( runtime.initializeRuntime( mount, error ), error );
         auto loaded = runtime.load( ResourceID( "data://ground.terrain" ), error );

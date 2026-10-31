@@ -74,6 +74,14 @@ with tempfile.TemporaryDirectory(prefix="wp-package-jobs-") as temporary:
         for log in (project / ".workphone" / "package-jobs").glob("*.log"):
             print(log.name, log.read_text(errors="replace"), file=sys.stderr)
     assert result.returncode == 0, result.returncode
+    keyed = project / "profile-v2.json"
+    keyed_values = dict(json.loads(profile.read_bytes()), version=2, output="../profile-v2-output",
+        buildProfile=dict(name="desktop", toolchain="job-contract-tools", settings={"quality":"high","empty":""}))
+    keyed.write_text(json.dumps(keyed_values), encoding="utf-8")
+    profiled = subprocess.run([str(host), "--run-profile", str(project), str(keyed)], cwd=host.parent,
+                             capture_output=True, text=True, timeout=60)
+    assert profiled.returncode == 0, (profiled.stdout, profiled.stderr)
+    assert (project.parent / "profile-v2-output" / "runtime.wprm").is_file()
     validate_receipts(project)
     check_history(host.with_name("WorkphoneResourcePackage.exe"), pathlib.Path(temporary) / "history café")
     # Kill an actual native job owner with a live (deliberately blocking) child.

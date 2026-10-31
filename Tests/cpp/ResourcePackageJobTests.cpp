@@ -136,6 +136,18 @@ namespace
                 local profile = loaded.profile
                 assert(profile.target == 'pc' and #profile.roots == 1)
                 assert(profile.mappings[1].catalogType == 'script')
+                profile.buildProfile='desktop'
+                profile.toolchain='test-toolchain-identity'
+                profile.buildSettings='{"quality":"high","empty":""}'
+                local profiled=packages:saveResourcePackageProfile('ui-profiled.json',profile)
+                assert(profiled.ok,profiled.error)
+                local roundtrip=packages:readResourcePackageProfile('ui-profiled.json')
+                assert(roundtrip.ok and roundtrip.profile.buildProfile=='desktop')
+                assert(roundtrip.profile.toolchain=='test-toolchain-identity')
+                assert(roundtrip.profile.buildSettings:find('"empty":""',1,true))
+                profile.buildSettings='{"duplicate":"a","duplicate":"b"}'
+                assert(not packages:saveResourcePackageProfile('ui-duplicate-settings.json',profile).ok)
+                profile.buildProfile=''; profile.toolchain=''; profile.buildSettings='{}'
                 profile.target = 'ui-profile-contract'
                 profile.output = '../ui-authored-output'
                 profile.cookedRoot = './ui-cooked'

@@ -9,6 +9,7 @@
 #include <luabind/luabind.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <Workphone/System/ResourcePackageProfile.hpp>
+#include <Workphone/System/ResourcePackageBuildProfile.hpp>
 #include <filesystem>
 #include <set>
 #include <cmath>
@@ -90,11 +91,11 @@ namespace workphone
         {
             if(!valid) throw std::runtime_error(message);
         }
-        String profileString(const luabind::object &value)
+        String profileString(const luabind::object &value, bool allowEmpty=false, size_t maximum=4096)
         {
             profileRequire(luabind::type(value) == LUA_TSTRING, "Profile fields must be strings");
             auto text = luabind::object_cast<String>(value);
-            profileRequire(!text.empty() && text.size() <= 4096 && text.find('\0') == String::npos,
+            profileRequire((allowEmpty || !text.empty()) && text.size() <= maximum && text.find('\0') == String::npos,
                            "Profile strings must contain 1 to 4096 bytes without NULs");
             return text;
         }
@@ -387,7 +388,7 @@ namespace workphone
                                        "Invalid or duplicate root UUID");
                         roots[rootIndex++] = args[i + 1];
                     }
-                    else
+                    else if(args[i]=="--map")
                     {
                         const auto split = args[i + 1].find('=');
                         const auto type = args[i + 1].substr(0, split), extension = args[i + 1].substr(split + 1);
@@ -399,6 +400,9 @@ namespace workphone
                         mappings[mappingIndex++] = mapping;
                     }
                 values["mappings"] = mappings; values["roots"] = roots;
+                const auto build=packageBuildProfile(args);
+                values["buildProfile"]=build.profile; values["toolchain"]=build.toolchain;
+                values["buildSettings"]=packageBuildSettingsJSON(build);
                 result["profile"] = values;
                 result["path"] = String(file.u8string().c_str());
                 result["ok"] = true;
@@ -416,7 +420,12 @@ namespace workphone
             {
                 const auto project = profileProject(manager);
                 const auto file = profilePath(path, project);
-                profileFields(values, {"sourceRoot", "catalog", "cookedRoot", "output", "target", "mappings", "roots"});
+                std::set<String> allowed={"sourceRoot", "catalog", "cookedRoot", "output", "target", "mappings", "roots"};
+                profileRequire(luabind::type(values)==LUA_TTABLE,"Profile settings must be a table");
+                const bool hasBuild=luabind::type(values["buildProfile"])!=LUA_TNIL ||
+                    luabind::type(values["toolchain"])!=LUA_TNIL || luabind::type(values["buildSettings"])!=LUA_TNIL;
+                if(hasBuild) { allowed.insert("buildProfile"); allowed.insert("toolchain"); allowed.insert("buildSettings"); }
+                profileFields(values,allowed);
                 Array<String> args = {"WorkphoneResourcePackage"};
                 for(const char *field : {"sourceRoot", "catalog", "cookedRoot", "output"})
                     args.push_back(profilePath(profileString(values[field]), project).u8string().c_str());
@@ -441,6 +450,19 @@ namespace workphone
                     profileRequire(profileUUID(uuid) && identities.insert(StringUtil::make_lower(uuid)).second,
                                    "Invalid or duplicate root UUID");
                     args.push_back("--root"); args.push_back(uuid);
+                }
+                if(hasBuild)
+                {
+                    resource::ResourceBuildProfile build;
+                    build.profile=profileString(values["buildProfile"],true);
+                    build.toolchain=profileString(values["toolchain"],true);
+                    build.settings=parsePackageBuildSettings(profileString(values["buildSettings"],false,65536));
+                    (void)build.key();
+                    if(!build.key().empty()) {
+                        args.push_back("--build-profile"); args.push_back(build.profile);
+                        args.push_back("--toolchain"); args.push_back(build.toolchain);
+                        args.push_back("--build-settings"); args.push_back(packageBuildSettingsJSON(build));
+                    }
                 }
                 savePackageProfile(file.u8string().c_str(), args);
                 manager->setResourcePackageProfile(file.u8string().c_str());

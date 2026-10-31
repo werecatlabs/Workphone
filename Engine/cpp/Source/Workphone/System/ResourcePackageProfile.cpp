@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/ResourcePackageProfile.hpp>
+#include <Workphone/System/ResourcePackageBuildProfile.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
@@ -62,10 +63,12 @@ workphone::Array<workphone::String> workphone::loadPackageProfile( const workpho
     document.Parse<rapidjson::kParseValidateEncodingFlag | rapidjson::kParseIterativeFlag>(
         bytes.data(), bytes.size() );
     require( !document.HasParseError(), "Invalid UTF-8 JSON package profile" );
-    fields( document, { "version", "sourceRoot", "catalog", "cookedRoot", "output", "target", "mappings",
-                        "roots" } );
-    require( document["version"].IsUint() && document["version"].GetUint() == 1,
+    require(document.IsObject() && document.HasMember("version"),"Missing profile version");
+    require( document["version"].IsUint() && (document["version"].GetUint() == 1 || document["version"].GetUint()==2),
              "Unsupported package profile version" );
+    std::set<std::string> allowed={"version","sourceRoot","catalog","cookedRoot","output","target","mappings","roots"};
+    if(document["version"].GetUint()==2) allowed.insert("buildProfile");
+    fields(document,allowed);
     Array<String> args = { "WorkphoneResourcePackage" };
     for( const auto field : pathFields )
     {
@@ -97,19 +100,33 @@ workphone::Array<workphone::String> workphone::loadPackageProfile( const workpho
         args.push_back( "--root" );
         args.push_back( string( root ) );
     }
+    if(document["version"].GetUint()==2)
+    {
+        const auto &profile=document["buildProfile"];
+        fields(profile,{"name","toolchain","settings"});
+        args.push_back("--build-profile"); args.push_back(string(profile["name"]));
+        args.push_back("--toolchain"); args.push_back(string(profile["toolchain"]));
+        require(profile["settings"].IsObject() && profile["settings"].MemberCount()<=64,"Invalid build settings object");
+        for(const auto &entry:profile["settings"].GetObject()) require(entry.value.IsString(),"Build settings require string values");
+        rapidjson::StringBuffer buffer; rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        profile["settings"].Accept(writer);
+        args.push_back("--build-settings"); args.push_back(String(buffer.GetString(),buffer.GetSize()));
+        (void)packageBuildProfile(args);
+    }
     return args;
 }
 
 void workphone::savePackageProfile( const workphone::String &path,
                                     const workphone::Array<workphone::String> &args )
 {
+    const auto buildProfile=packageBuildProfile(args);
     const auto file = fs::absolute( fs::u8path( path.c_str() ) );
     require( fs::is_directory( file.parent_path() ), "Package profile parent directory must exist" );
     rapidjson::StringBuffer buffer;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer( buffer );
     writer.StartObject();
     writer.Key( "version" );
-    writer.Uint( 1 );
+    writer.Uint( buildProfile.key().empty()?1:2 );
     for( size_t i = 0; i < 4; ++i )
     {
         writer.Key( pathFields[i] );
@@ -146,6 +163,15 @@ void workphone::savePackageProfile( const workphone::String &path,
         }
     }
     writer.EndArray();
+    if(!buildProfile.key().empty())
+    {
+        writer.Key("buildProfile"); writer.StartObject();
+        writer.Key("name"); writer.String(buildProfile.profile.c_str());
+        writer.Key("toolchain"); writer.String(buildProfile.toolchain.c_str());
+        writer.Key("settings"); writer.StartObject();
+        for(const auto &entry:buildProfile.settings) { writer.Key(entry.first.c_str()); writer.String(entry.second.c_str()); }
+        writer.EndObject(); writer.EndObject();
+    }
     writer.EndObject();
     require( buffer.GetSize() <= maximumBytes, "Package profile exceeds 64 KiB" );
     const auto staging =

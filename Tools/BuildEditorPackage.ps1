@@ -29,6 +29,7 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/Workphone/System/ResourcePackageHistory.cpp',
     'Engine/cpp/Include/Workphone/System/ResourceSystem.hpp',
     'Engine/cpp/Include/Workphone/System/ResourceBuildProfile.hpp',
+    'Engine/cpp/Include/Workphone/System/ResourcePackageBuildProfile.hpp',
     'Engine/cpp/Include/Workphone/System/ResourcePayloadStream.hpp',
     'Engine/cpp/Include/Workphone/Interface/Resource/IResourceSystem.hpp',
     'Engine/cpp/Include/Workphone/Interface/Resource/IResourceCompiler.hpp',

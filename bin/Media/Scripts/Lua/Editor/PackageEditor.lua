@@ -3,7 +3,7 @@ class 'PackageEditor' (BaseEditor)
 PackageEditorTypes = { Profile=1, Build=2, Cancel=3, Load=4, Save=5,
     Source=6, Catalog=7, Cooked=8, Output=9, Target=10, Roots=11, Mappings=12,
     Search=13, TypeFilter=14, Find=15, Preview=16, RootsPrevious=17, RootsNext=18,
-    PreviewPrevious=19, PreviewNext=20, RootFirst=100 }
+    PreviewPrevious=19, PreviewNext=20, BuildProfile=21, Toolchain=22, BuildSettings=23, RootFirst=100 }
 
 local function trim(value) return (value:gsub("^%s+", ""):gsub("%s+$", "")) end
 local function tokens(value)
@@ -35,6 +35,9 @@ function PackageEditor:resetDraft(root)
     self.fields.cookedRoot:setText(root ~= "" and root .. "/.workphone/cooked-package" or "")
     self.fields.output:setText("")
     self.fields.target:setText("pc")
+    self.fields.buildProfile:setText("")
+    self.fields.toolchain:setText("")
+    self.fields.buildSettings:setText("{}")
     self.fields.roots:setText("")
     self.fields.mappings:setText("script=lua")
 end
@@ -48,7 +51,7 @@ function PackageEditor:load()
     self.editorWindow:setSize(Vector2F(800.0, 650.0))
     self.window:getParentWindow():addChild(self.editorWindow)
     local help = ui:addElement(IUIText.typeInfo())
-    help:setText("Load a profile or enter package settings. Save creates a new profile: choose an unused filename. Output must be outside the project and cooked storage.")
+    help:setText("Load or save settings to a new profile filename. Output must be outside project/cooked storage. Build identity includes current cooker modules; identify any external tools in the toolchain label. Format options remain in asset recipes.")
     self.editorWindow:addChild(help)
     local function entry(label, id)
         local control = ui:addElement(IUITextEntry.typeInfo())
@@ -77,7 +80,10 @@ function PackageEditor:load()
         output=entry("New output directory", PackageEditorTypes.Output),
         target=entry("Target", PackageEditorTypes.Target),
         roots=entry("Root UUIDs (semicolon separated)", PackageEditorTypes.Roots),
-        mappings=entry("Type mappings (catalog-type=extension; ...)", PackageEditorTypes.Mappings)
+        mappings=entry("Type mappings (catalog-type=extension; ...)", PackageEditorTypes.Mappings),
+        buildProfile=entry("Build profile (blank for legacy/default)", PackageEditorTypes.BuildProfile),
+        toolchain=entry("Verified toolchain identity", PackageEditorTypes.Toolchain),
+        buildSettings=entry("Effective build settings (JSON string object)", PackageEditorTypes.BuildSettings)
     }
     self.saveButton = button("Save new profile", PackageEditorTypes.Save)
     self.rootSearch = entry("Find root (literal path or UUID)", PackageEditorTypes.Search)
@@ -189,6 +195,9 @@ function PackageEditor:loadProfile()
         return false
     end
     local profile = result.profile
+    self.fields.buildProfile:setText(profile.buildProfile or "")
+    self.fields.toolchain:setText(profile.toolchain or "")
+    self.fields.buildSettings:setText(profile.buildSettings or "{}")
     for _, name in ipairs({"sourceRoot", "catalog", "cookedRoot", "output", "target"}) do
         self.fields[name]:setText(profile[name])
     end
@@ -207,6 +216,9 @@ end
 function PackageEditor:saveProfile()
     self:clearPreview()
     local profile = {roots=tokens(self.fields.roots:getText()), mappings={}}
+    for _, name in ipairs({"buildProfile", "toolchain", "buildSettings"}) do
+        profile[name] = self.fields[name]:getText()
+    end
     for _, name in ipairs({"sourceRoot", "catalog", "cookedRoot", "output", "target"}) do
         profile[name] = self.fields[name]:getText()
     end

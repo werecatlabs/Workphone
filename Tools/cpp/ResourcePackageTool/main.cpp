@@ -3,6 +3,9 @@
 #include <Workphone/Database/CatalogResourceAdapter.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/System/ResourcePackageBuildProfile.hpp>
+#include <WPGraphics/Resources/TerrainResource.hpp>
+#include <WPGraphics/Resources/FoliageResource.hpp>
 #if WP_PACKAGE_AUDIO
 #include <WPAudio/AudioResourceCompiler.hpp>
 #endif
@@ -22,12 +25,72 @@
 #include <Workphone/System/ResourcePackageHistory.hpp>
 #ifdef _WIN32
 #include <Windows.h>
+#include <Psapi.h>
 #endif
 
 namespace
 {
     using namespace workphone;
     using namespace workphone::resource;
+
+    // Windows keeps these input files immutable through compilation/admission.
+    // Absolute installation paths do not participate in the derived identity.
+    class CookerModulePins
+    {
+    public:
+        String identity;
+#ifdef _WIN32
+        struct File { HANDLE value=INVALID_HANDLE_VALUE; ~File(){if(value!=INVALID_HANDLE_VALUE)CloseHandle(value);} };
+        std::vector<std::unique_ptr<File>> files;
+        std::map<String,std::filesystem::path> baseline;
+        static std::map<String,std::filesystem::path> inventory()
+        {
+            HMODULE modules[512]{}; DWORD bytes=0;
+            if(!EnumProcessModules(GetCurrentProcess(),modules,sizeof(modules),&bytes)||bytes>sizeof(modules))
+                throw std::runtime_error("Cannot capture cooker module inventory");
+            wchar_t executable[32768]{};
+            const auto executableLength=GetModuleFileNameW(nullptr,executable,32768);
+            if(!executableLength||executableLength>=32768) throw std::runtime_error("Cannot locate cooker executable");
+            const auto directory=std::filesystem::canonical(executable).parent_path();
+            std::map<String,std::filesystem::path> result;
+            for(size_t i=0;i<bytes/sizeof(HMODULE);++i)
+            {
+                wchar_t name[32768]{}; const auto length=GetModuleFileNameW(modules[i],name,32768);
+                if(!length||length>=32768) throw std::runtime_error("Cannot locate a loaded cooker module");
+                auto path=std::filesystem::canonical(std::filesystem::path(name));
+                String label=StringUtil::make_lower(path.filename().u8string().c_str());
+                const bool known=label=="workphone.dll"||label=="wpgraphics.dll"||label=="wplua.dll"||
+                    label=="wpaudio.dll"||label=="wpsqlite.dll";
+                if(known || std::filesystem::equivalent(path.parent_path(),directory))
+                    if(!result.emplace(label,path).second) throw std::runtime_error("Aliased cooker module names");
+            }
+            return result;
+        }
+        void capture()
+        {
+            baseline=inventory(); u64 combined=hashString("workphone-cooker-modules-v1");
+            for(const auto &entry:baseline)
+            {
+                auto file=std::make_unique<File>();
+                file->value=CreateFileW(entry.second.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+                if(file->value==INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot pin a cooker module input");
+                files.push_back(std::move(file));
+                u64 hash=0,size=0; String error;
+                if(!CompiledResourceIO::hashFile(entry.second.u8string().c_str(),hash,size,error)) throw std::runtime_error(error.c_str());
+                combined=hashString(entry.first,combineHash(combined,entry.first.size()));
+                combined=combineHash(combineHash(combined,size),hash);
+            }
+            identity=String(std::to_string(combined).c_str());
+        }
+        void verify() const
+        {
+            if(baseline!=inventory()) throw std::runtime_error("Cooker module set changed; retry with a new captured identity");
+        }
+#else
+        void capture(){throw std::runtime_error("Automatic package toolchain capture is currently supported on Windows only");}
+        void verify() const {}
+#endif
+    };
 
     int run(const Array<String> &input)
     {
@@ -154,9 +217,11 @@ namespace
                     throw std::runtime_error("Invalid or duplicate package type mapping");
                 mappings.push_back({type, extension});
             }
+            else if(args[i]=="--build-profile" || args[i]=="--toolchain" || args[i]=="--build-settings") {}
             else
                 throw std::runtime_error("Unknown package option");
         }
+        const auto buildProfile=packageBuildProfile(args);
         if(mappings.empty() || uuids.empty() || args[5].empty())
             throw std::runtime_error("At least one mapping, root UUID and explicit target are required");
         if(!savePath.empty())
@@ -176,7 +241,9 @@ namespace
         auto registry = std::make_shared<ResourceCompilerRegistry>();
         String error;
         if(!registry->registerCompiler(std::make_shared<render::GraphicsResourceCompiler>(), &error) ||
-           !registry->registerCompiler(std::make_shared<LuaScriptCompiler>(), &error))
+           !registry->registerCompiler(std::make_shared<LuaScriptCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::TerrainResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::FoliageResourceCompiler>(), &error))
             throw std::runtime_error(error.c_str());
         auto resources = std::make_shared<ResourceSystem>(registry, std::make_shared<ResourceCompilationDatabase>());
 #if WP_PACKAGE_AUDIO
@@ -187,6 +254,13 @@ namespace
         config.sourceRoot = args[1];
         config.compiledRoot = args[3];
         config.target = args[5];
+        config.buildProfile = buildProfile;
+        CookerModulePins modulePins;
+        if(!buildProfile.key().empty()) {
+            modulePins.capture();
+            config.buildProfile.toolchain=String(std::to_string(buildProfile.toolchain.size()).c_str())+":"+
+                buildProfile.toolchain+":modules-v1:"+modulePins.identity;
+        }
         if(!resources->initialize(config, error))
             throw std::runtime_error(error.c_str());
         CatalogResourceAdapter adapter(catalog, resources, config.sourceRoot, mappings);
@@ -211,6 +285,7 @@ namespace
                 throw std::runtime_error("Package compilation failed; no output directory published");
         }
         if(cancelled()) return 3;
+        if(!buildProfile.key().empty()) modulePins.verify();
         if(!previewPath.empty())
         {
             Array<RuntimePackagePreviewEntry> entries;

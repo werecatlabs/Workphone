@@ -142,6 +142,29 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     settings = json.loads(saved)
     assert settings["version"] == 1 and settings["sourceRoot"] == "sources"
     assert settings["roots"] == [main_id] and settings["target"] == "pc"
+    # Version 2 profiles preserve exact effective settings and select distinct
+    # persistent generations in a shared cooking index.
+    keyed_paths = []
+    for name, toolchain, quality in [("low", "tools-1", "low"), ("high", "tools-1", "high"), ("new-tools", "tools-2", "low")]:
+        keyed = root / ("profile-" + name + ".json")
+        values = {"quality": quality, "empty": "", "quoted": 'café;="\\\n'}
+        keyed_request = [source, catalog, root / "keyed-cooked", root / ("keyed-" + name), "pc",
+                         "--map", "script=lua", "--root", main_id, "--build-profile", "desktop",
+                         "--toolchain", toolchain, "--build-settings", json.dumps(values, ensure_ascii=False)]
+        invoke(["--save-profile", keyed, *keyed_request])
+        document = json.loads(keyed.read_bytes())
+        assert document["version"] == 2 and document["buildProfile"] == dict(name="desktop", toolchain=toolchain, settings=values)
+        invoke(["--profile", keyed])
+        invoke(["--preview-profile", keyed, root / ("keyed-preview-" + name + ".json")])
+        keyed_paths.append({p.relative_to(root / ("keyed-" + name)).as_posix() for p in (root / ("keyed-" + name)).rglob("*.wprs")})
+    assert len({tuple(sorted(p)) for p in keyed_paths}) == 3
+    with closing(sqlite3.connect(root / "keyed-cooked" / ".resource_compilation.db")) as db:
+        assert db.execute("SELECT COUNT(*) FROM compiled_resources").fetchone()[0] == 6
+    for flags in [["--build-profile", "missing-tools"], ["--toolchain", "missing-profile"],
+                  ["--build-profile", "x", "--toolchain", "t", "--build-settings", '{"x":"a","x":"b"}'],
+                  ["--build-profile", "x", "--toolchain", "t", "--build-settings", '{"x":1}']]:
+        invoke(["--save-profile", root / "invalid-build.json", *request, *flags], expected=1)
+        assert not (root / "invalid-build.json").exists()
     invoke(["--save-profile", profile, *request], expected=1)
     assert profile.read_bytes() == saved
     preview = root / "preview café.json"

@@ -29,6 +29,43 @@ namespace cooked_foliage_contracts
         for(size_t i=18;i<data.size();i+=4){data[i+1]=173;data[i+3]=255;}
         std::ofstream f(p,std::ios::binary);f.write(reinterpret_cast<const char*>(data.data()),data.size());require(bool(f),"Foliage fixture TGA write");
     }
+    inline void consumePackage(const fs::path &package,const String &uuid)
+    {
+        // Graphics-only consumer: no catalog, compiler registry or authoring DB.
+        claw_texture_mip_contracts::Fixture graphics; graphics.initialize();
+        auto &renderer=*graphics.renderer;
+        String error; auto runtime=std::make_shared<ResourceSystem>(nullptr,nullptr);
+        RuntimeResourceConfig config; config.compiledRoot=path(package);
+        config.manifestPath=path(package/"runtime.wprm"); config.target="windows-dx11-dds-bgra8-v1";
+        require(runtime->initializeRuntime(config,error),error);
+        ResourceID id; require(runtime->resolveRuntimeUUID(uuid,id,error),error);
+        auto scheduler=WorldStreamingScheduler::shared(); WorldStreamProducerLimits limits; limits.maximumReadyBytes=4096;
+        auto producer=scheduler->createProducer(limits,error); require(producer!=nullptr,error);
+        require(queueCookedFoliageWorld(*producer,runtime,id,config.target,true,{},error),error);
+        WorldStreamResult prepared; const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+        while(!producer->take(prepared)) { require(std::chrono::steady_clock::now()<deadline,"Checked foliage decode timeout"); std::this_thread::yield(); }
+        require(prepared.payload&&prepared.error.empty(),prepared.error);
+        auto decoded=std::static_pointer_cast<const DecodedFoliageWorld>(prepared.payload);
+        require(decoded->source.snapshot->instances.empty()&&decoded->source.cells.size()==3,"Checked foliage mounts a shallow world directory");
+        producer->drain(); producer.reset();
+        auto candidate=stageCookedFoliageWorld(renderer,decoded,error); require(candidate!=nullptr,error);
+        auto target=make_ptr<ClawRenderTarget>(); target->setSize({128,128}); renderer.setRenderTarget(target);
+        renderer.setCamera(nullptr); renderer.setViewport(nullptr); renderer.disableShadows();
+        auto native=wp_renderer_get_dx11(renderer.getNativeRenderer()); claw_foliage_contracts::setup(native);
+        renderer.setSceneLighting(ColourF::White,{0,0,-1},ColourF::White,0);
+        ClawFoliageWorld world; require(world.setSource(candidate->source,candidate->resolver,error),error);
+        ClawFoliageView camera; camera.orthographic=true; camera.forcedLod=0; camera.cull=false;
+        const auto ready=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+        while(world.diagnostics().sourceRevision!=candidate->source.snapshot->revision)
+        { require(world.prepare(renderer,{camera},0,error),error); require(std::chrono::steady_clock::now()<ready,"Checked foliage publication timeout"); std::this_thread::yield(); }
+        wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL); require(world.render(renderer,camera,error),error);
+        require(world.diagnostics().residentInstances==3&&world.diagnostics().actualDraws>0,"Checked package enters native foliage draws");
+        auto pixels=claw_foliage_contracts::pixels(native); size_t green=0;
+        for(size_t i=0;i<pixels.size();i+=4) green+=pixels[i+1]>20&&pixels[i+1]>pixels[i]*2;
+        require(green>100,"Checked foliage package visibly samples its installed texture");
+        world.clear(); renderer.setRenderTarget(nullptr); runtime->shutdown();
+        std::puts("PASS: checked UUID foliage package, source-free scheduled page reads and native draws");
+    }
     inline void run(ClawRendererDX11 &renderer,const fs::path &parent)
     {
         struct RenderScope{ClawRendererDX11 &renderer;~RenderScope(){renderer.setCamera(nullptr);renderer.setViewport(nullptr);renderer.setRenderTarget(nullptr);renderer.disableShadows();}}renderScope{renderer};
