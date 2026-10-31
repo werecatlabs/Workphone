@@ -2,6 +2,8 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+add_subdirectory(./AssetDatabaseEditor)
+
 if(TARGET Workphone)
     add_subdirectory(SceneWorldTool)
 endif()

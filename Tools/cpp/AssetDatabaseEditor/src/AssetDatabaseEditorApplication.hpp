@@ -28,6 +28,14 @@ namespace workphone
         class AssetDatabaseEditorApplication : public core::Application
         {
         public:
+            enum class ElementId
+            {
+                Open,
+                Exit,
+
+                Count
+            };
+
             AssetDatabaseEditorApplication();
             ~AssetDatabaseEditorApplication() override;
 
@@ -35,11 +43,14 @@ namespace workphone
             void unload( SmartPtr<ISharedObject> data ) override;
             void run() override;
             void iterate() override;
-
+            void createPlugins();
+            void createScene();
+            void createUI();
             WP_CLASS_REGISTER_DECL;
 
         protected:
             SmartPtr<AssetDatabaseEditorMainWindow> m_mainWindow;
+            SmartPtr<ui::IUIApplication> m_application;
         };
     }  // namespace adbeditor
 }  // namespace workphone
