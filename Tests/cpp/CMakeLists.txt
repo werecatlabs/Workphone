@@ -41,6 +41,41 @@ if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
 endif()
 
 if(TARGET Workphone)
+    add_executable(RuntimeStartupTests RuntimeStartupTests.cpp)
+    target_compile_features(RuntimeStartupTests PRIVATE cxx_std_17)
+    target_compile_definitions(RuntimeStartupTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(RuntimeStartupTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(RuntimeStartupTests PRIVATE Workphone)
+    if(WIN32)
+        target_link_directories(RuntimeStartupTests PRIVATE
+            ${WP_ROOT}/Dependencies/lib/windows/boost
+            ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    endif()
+    set_target_properties(RuntimeStartupTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPRuntime.startup COMMAND RuntimeStartupTests)
+    set_tests_properties(WPRuntime.startup PROPERTIES LABELS "runtime;scene;headless" TIMEOUT 30)
+
+    if(TARGET WPSQLite)
+        add_executable(BundledMediaTests BundledMediaTests.cpp)
+        target_compile_features(BundledMediaTests PRIVATE cxx_std_17)
+        target_compile_definitions(BundledMediaTests PRIVATE BOOST_ALL_NO_LIB)
+        target_include_directories(BundledMediaTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+        target_link_libraries(BundledMediaTests PRIVATE Workphone WPSQLite)
+        if(WIN32)
+            target_link_directories(BundledMediaTests PRIVATE
+                ${WP_ROOT}/Dependencies/lib/windows/boost
+                ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        endif()
+        set_target_properties(BundledMediaTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPRuntime.bundled_media_catalog COMMAND BundledMediaTests)
+        set_tests_properties(WPRuntime.bundled_media_catalog PROPERTIES
+            LABELS "runtime;assets;filesystem;database;headless" TIMEOUT 30)
+    endif()
+
     add_executable(EditorMediaPathTests EditorMediaPathTests.cpp)
     target_compile_features(EditorMediaPathTests PRIVATE cxx_std_17)
     target_compile_definitions(EditorMediaPathTests PRIVATE BOOST_ALL_NO_LIB)

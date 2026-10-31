@@ -5,6 +5,7 @@
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
 #include <Workphone/System/ProjectServices.hpp>
+#include <Workphone/System/BundledMediaPaths.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -72,6 +73,10 @@
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/System/PluginManager.hpp>
 #include <Workphone/Workphone.hpp>
+
+#ifdef _WIN32
+#    include <Windows.h>
+#endif
 
 #if defined WP_PLATFORM_APPLE
 #    include <Workphone/Core/OSX/macUtils.hpp>
@@ -774,6 +779,18 @@ namespace workphone::core
                 auto resourceDatabase = factoryManager->make_object<IResourceDatabase>();
                 applicationManager->setResourceDatabase( resourceDatabase );
                 resourceDatabase->load( nullptr );
+
+                String mediaCatalogError;
+                const auto mediaRoot = applicationManager->getMediaPath();
+                if( mountBundledMediaCatalog( resourceDatabase, mediaRoot, mediaCatalogError ) )
+                {
+                    WP_LOG( "Mounted bundled media catalog: " + mediaRoot +
+                            "/.workphone/media-assets.db" );
+                }
+                else
+                {
+                    WP_LOG_ERROR( "Cannot mount bundled media catalog: " + mediaCatalogError );
+                }
 
                 createDefaultFont();
 
@@ -2431,37 +2448,24 @@ namespace workphone::core
             auto workingDirectory = Path::getWorkingDirectory();
             fileSystem->addFolder( workingDirectory );
 
-            auto mediaPath = String( "" );
-            auto scriptsPath = String( "" );
-
-            if( applicationManager->isEditor() )
+            const auto projectPath = applicationManager->getProjectPath();
+            if( !projectPath.empty() )
             {
-#if defined WP_PLATFORM_WIN32
-                mediaPath = String( "../../../../../Media" );
-                scriptsPath = String( "../../../../../Media/Scripts/" );
-#elif defined WP_PLATFORM_APPLE
-                mediaPath = String( "../../Media" );
-                scriptsPath = String( "../../Media/Scripts/" );
-#else
-                mediaPath = String( "../../Media" );
-                scriptsPath = String( "../../Media/Scripts/" );
-#endif
-            }
-            else
-            {
-#if defined WP_PLATFORM_WIN32
-                mediaPath = String( "../../../../../Media" );
-                scriptsPath = String( "../../../../../Media/Scripts/" );
-#elif defined WP_PLATFORM_APPLE
-                mediaPath = String( "../../Media" );
-                scriptsPath = String( "../../Media/Scripts/" );
-#else
-                mediaPath = String( "../../Media" );
-                scriptsPath = String( "../../Media/Scripts/" );
-#endif
+                fileSystem->addFolder( Path::getAbsolutePath( workingDirectory, projectPath ), true );
             }
 
-            auto absolutePath = Path::lexically_normal( workingDirectory, mediaPath );
+            String executableDirectory;
+#ifdef _WIN32
+            std::vector<wchar_t> module( 32768 );
+            const auto count =
+                GetModuleFileNameW( nullptr, module.data(), static_cast<DWORD>( module.size() ) );
+            if( count > 0 && count < module.size() )
+            {
+                executableDirectory =
+                    std::filesystem::path( std::wstring( module.data(), count ) )
+                        .parent_path().generic_u8string().c_str();
+            }
+#endif
 
             auto packs = fileSystem->getFileNamesWithExtension( workingDirectory, ".fbpack" );
             for( auto &pack : packs )
@@ -2469,16 +2473,11 @@ namespace workphone::core
                 fileSystem->addFileArchive( pack, true, true, IFileSystem::ArchiveType::Zip );
             }
 
-#if defined WP_PLATFORM_WIN32
-            fileSystem->addFolder( mediaPath, false );
-            fileSystem->addFolder( scriptsPath, true );
+            const auto mediaPath = mountBundledMedia( fileSystem, workingDirectory, getMediaPath(),
+                                                       executableDirectory );
             applicationManager->setMediaPath( mediaPath );
-#else
-            auto absoluteMediaPath = Path::lexically_normal( workingDirectory, mediaPath );
-            fileSystem->addFolder( mediaPath, false );
-            fileSystem->addFolder( scriptsPath, true );
-            applicationManager->setMediaPath( mediaPath );
-#endif
+            WP_LOG( "Mounted bundled Media folder: " + mediaPath + "; startup directory: " +
+                    workingDirectory );
 
             fileSystem->addFileArchive( ".FBCache", true, true, IFileSystem::ArchiveType::Folder );
             fileSystem->addFileArchive( "./", true, true, IFileSystem::ArchiveType::Folder );

@@ -1,6 +1,8 @@
 #include <WPRuntime/WPRuntimePCH.hpp>
 #include <WPRuntime/RuntimeApplication.hpp>
+#include <WPRuntime/RuntimeStartup.hpp>
 #include <Workphone/Workphone.hpp>
+#include <filesystem>
 
 #ifdef _WP_STATIC_LIB_
 #    include <WPSQLite/WPSQLite.hpp>
@@ -127,6 +129,55 @@ namespace workphone
 
             auto applicationManager = new core::ApplicationManager;
             core::IApplicationManager::setInstance( applicationManager );
+            applicationManager->load( nullptr );
+
+            // Project settings, writable catalogs and scripts are needed while
+            // the base application creates its subsystems, before scene loading.
+            const auto startupDirectory = Path::getWorkingDirectory();
+            auto projectFilePath = getProjectFilePath();
+            auto projectPath = startupDirectory;
+            if( !projectFilePath.empty() )
+            {
+                projectFilePath = Path::getAbsolutePath( startupDirectory, projectFilePath );
+                setProjectFilePath( projectFilePath );
+                const auto extension =
+                    StringUtil::make_lower( Path::getFileExtension( projectFilePath ) );
+                if( extension == ".fbproject" || extension == ".fbp" )
+                {
+                    RuntimeProject project;
+                    project.load( projectFilePath );
+                    const auto documentDirectory = Path::getFilePath( projectFilePath );
+                    projectPath = project.getPath().empty()
+                                      ? documentDirectory
+                                      : Path::getAbsolutePath( documentDirectory, project.getPath() );
+                    if( !project.getSceneFilePath().empty() )
+                    {
+                        setSceneFilePath( Path::getAbsolutePath( projectPath,
+                                                                project.getSceneFilePath() ) );
+                    }
+                }
+                else if( extension == ".fbscene" || extension == ".fbscenexml" ||
+                         extension == ".fbscenebin" )
+                {
+                    projectPath = Path::getFilePath( projectFilePath );
+                    setSceneFilePath( projectFilePath );
+                }
+                else if( Path::isExistingFolder( projectFilePath ) )
+                {
+                    projectPath = projectFilePath;
+                }
+                else
+                {
+                    WP_EXCEPTION( "Runtime project or scene does not exist: " + projectFilePath );
+                }
+            }
+            applicationManager->setProjectPath( projectPath );
+            const auto cachePath = Path::getAbsolutePath( projectPath, "Cache" );
+            const auto settingsPath = Path::getAbsolutePath( projectPath, "SettingsCache" );
+            std::filesystem::create_directories( std::filesystem::u8path( cachePath.c_str() ) );
+            std::filesystem::create_directories( std::filesystem::u8path( settingsPath.c_str() ) );
+            applicationManager->setCachePath( cachePath + "/" );
+            applicationManager->setSettingsPath( settingsPath + "/" );
 
             setCreateFrameStatistics( true );
             Application::load( data );
@@ -139,78 +190,19 @@ namespace workphone
             meshManager->load( nullptr );
             applicationManager->setMeshManager( meshManager );
 
-            auto projectFilePath = getProjectFilePath();
-            auto projectPath = Path::getFilePath( projectFilePath );
-
-            auto fileSystem = applicationManager->getFileSystemPtr();
-            WP_ASSERT( fileSystem );
-
-            fileSystem->addFolder( projectPath, true );
-
-            auto scriptManager = applicationManager->getScriptManagerPtr();
-            if( scriptManager )
+            WP_LOG( "Runtime project: " + applicationManager->getProjectPath() );
+            // Metadata-only hosts do not install a resource database.
+            if( auto resourceDatabase = applicationManager->getResourceDatabase() )
             {
-                auto supportedExtensions = scriptManager->getSupportedFileExtensions();
-                for( const auto &scriptExt : supportedExtensions )
+                const auto dbFilePath = resourceDatabase->getFilePath();
+                auto databasePath = Path::isPathAbsolute( dbFilePath )
+                                        ? dbFilePath
+                                        : applicationManager->getCachePath() + "/" + dbFilePath;
+                auto projectCatalog = resourceDatabase->getDatabaseManager();
+                if( projectCatalog )
                 {
-                    auto scripts = fileSystem->getFileNamesWithExtension( scriptExt );
-                    Util::sort( scripts.begin(), scripts.end() );
-                    scriptManager->loadScripts( scripts );
-                }
-            }
-
-            if( !StringUtil::isNullOrEmpty( projectFilePath ) )
-            {
-                const auto extension =
-                    StringUtil::make_lower( Path::getFileExtension( projectFilePath ) );
-                if( extension == ".fbproject" || extension == ".fbp" )
-                {
-                    RuntimeProject project;
-                    project.load( projectFilePath );
-
-                    const auto projectPath = project.getPath();
-                    WP_ASSERT( !StringUtil::isNullOrEmpty( projectPath ) );
-                    if( !StringUtil::isNullOrEmpty( projectPath ) )
-                    {
-                        applicationManager->setProjectPath( projectPath );
-                        applicationManager->setCachePath( projectPath + "/Cache" );
-                    }
-
-                    const auto sceneFilePath = project.getSceneFilePath();
-                    if( !StringUtil::isNullOrEmpty( sceneFilePath ) )
-                    {
-                        setSceneFilePath( sceneFilePath );
-                    }
-                }
-                else if( extension == ".fbscene" || extension == ".fbscenexml" ||
-                         extension == ".fbscenebin" )
-                {
-                    setSceneFilePath( projectFilePath );
-
-                    const auto scenePath = Path::getFilePath( projectFilePath );
-                    if( !StringUtil::isNullOrEmpty( scenePath ) )
-                    {
-                        applicationManager->setProjectPath( scenePath );
-                    }
-                }
-                else if( Path::isExistingFolder( projectFilePath ) )
-                {
-                    applicationManager->setProjectPath( projectFilePath );
-                }
-
-                // Metadata-only hosts do not install a resource database.
-                if( auto resourceDatabase = applicationManager->getResourceDatabase() )
-                {
-                    const auto dbFilePath = resourceDatabase->getFilePath();
-                    auto databasePath = Path::isPathAbsolute( dbFilePath )
-                                            ? dbFilePath
-                                            : applicationManager->getCachePath() + "/" + dbFilePath;
-                    auto projectCatalog = resourceDatabase->getDatabaseManager();
-                    if( projectCatalog )
-                    {
-                        projectCatalog->setDatabasePath( StringUtil::cleanupPath( databasePath ) );
-                        projectCatalog->open();
-                    }
+                    projectCatalog->setDatabasePath( StringUtil::cleanupPath( databasePath ) );
+                    projectCatalog->open();
                 }
             }
 
@@ -218,6 +210,7 @@ namespace workphone
             WP_ASSERT( jobQueue );
             if( jobQueue )
             {
+                m_sceneLoadCoroutineQueued = true;
                 jobQueue->startCoroutine(
                     std::bind( &RuntimeApplication::loadSceneCoroutine, this, std::placeholders::_1 ) );
             }
@@ -227,6 +220,7 @@ namespace workphone
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            throw;
         }
     }
 
@@ -239,14 +233,11 @@ namespace workphone
 
             auto applicationManager = core::IApplicationManager::instance();
             WP_ASSERT( applicationManager );
-
-            Application::unload( data );
-
             if( applicationManager )
             {
-                applicationManager->unload( nullptr );
+                applicationManager->setPlaying( false );
             }
-            core::IApplicationManager::setInstance( nullptr );
+            Application::unload( data );
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -278,8 +269,6 @@ namespace workphone
 
     void RuntimeApplication::loadSceneCoroutine( ICoroutineData::PullType &pull )
     {
-        WaitForSeconds( pull, 1.0 );
-
         auto applicationManager = core::ApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );
         if( !applicationManager )
@@ -307,10 +296,17 @@ namespace workphone
             return;
         }
 
-        if( graphicsSystem->isLoaded() && renderUI->isLoaded() && sceneManager->isLoaded() )
+        // Loading notifications can arrive before startup has finished. Keep
+        // the one queued coroutine alive until every required subsystem is ready.
+        while( !graphicsSystem->isLoaded() || !renderUI->isLoaded() || !sceneManager->isLoaded() )
         {
-            WaitForSeconds( pull, 0.2 );
-
+            if( applicationManager->getQuit() || !applicationManager->isRunning() )
+            {
+                return;
+            }
+            pull();
+        }
+        {
             String sceneFilePath;
             {
                 ScopedLock lock( this );
@@ -344,24 +340,66 @@ namespace workphone
                     else
                     {
                         const auto &frontFile = sceneFileNames.front();
-                        sceneFilePath = frontFile.fileName.c_str();
+                        sceneFilePath = frontFile.absolutePath.c_str();
                     }
                 }
             }
 
-            //auto currentScenePath = scene->getFilePath();
-            //if( !StringUtil::isNullOrEmpty( sceneFilePath ) && currentScenePath != sceneFilePath )
-            //{
-            //    sceneManager->loadScene( sceneFilePath, false );
-            //}
-
-            // todo remove
-            sceneManager->loadScene( "Application.fbscene", false );
+            if( sceneFilePath.empty() )
+            {
+                WP_LOG_ERROR( "Runtime startup: no scene was configured or found in the project." );
+                return;
+            }
+            WP_LOG( "Runtime loading scene: " + sceneFilePath );
+            if( !loadRuntimeScene( applicationManager, sceneFilePath ) )
+            {
+                WP_LOG_ERROR( "Runtime startup: scene did not finish loading: " + sceneFilePath );
+                return;
+            }
+            setSceneFilePath( sceneFilePath );
 
             WaitForSeconds( pull, 1.0 );
 
-            auto gameManager = applicationManager->getGameManagerPtr();
-            gameManager->play();
+            if( applicationManager->getQuit() || !applicationManager->isRunning() )
+            {
+                return;
+            }
+            if( startRuntimePlay( applicationManager ) )
+            {
+                // Scene cameras own their viewports. Remove the bootstrap view
+                // once one is ready, so the main window renders the game's
+                // camera instead of the temporary startup camera.
+                auto taskManager = applicationManager->getTaskManager();
+                auto renderLock = taskManager->lockTask( TaskId::Render );
+                auto window = graphicsSystem->getDefaultWindow();
+                auto sceneCameras = scene->getComponents<scene::Camera>();
+                const auto hasMainCamera = std::any_of(
+                    sceneCameras.begin(), sceneCameras.end(), [&]( const auto &camera ) {
+                        auto viewport = camera->getViewport();
+                        return camera->isActive() && viewport && viewport->isActive() &&
+                               viewport->getRenderTarget() == window;
+                    } );
+                if( hasMainCamera )
+                {
+                    if( auto bootstrapViewport = getViewport() )
+                    {
+                        bootstrapViewport->setActive( false );
+                        bootstrapViewport->setRenderTarget( nullptr );
+                        window->removeViewport( bootstrapViewport );
+                        setViewport( nullptr );
+                    }
+                    if( auto bootstrapCamera = getCamera() )
+                    {
+                        bootstrapCamera->setVisible( false );
+                    }
+                    WP_LOG( "Runtime handed the main window to the scene camera." );
+                }
+                WP_LOG( "Runtime entered Play mode: " + sceneFilePath );
+            }
+            else
+            {
+                WP_LOG_ERROR( "Runtime startup: cannot enter Play mode: " + sceneFilePath );
+            }
         }
     }
 
@@ -372,6 +410,10 @@ namespace workphone
     {
         if( eventType == EventType::Loading && eventValue == IEvent::loadingStateChanged )
         {
+            if( !isLoaded() )
+            {
+                return {};
+            }
             if( object )
             {
                 if( object->isDerived<render::IGraphicsSystem>() ||
@@ -439,7 +481,22 @@ namespace workphone
 
     void RuntimeApplication::createPlugins()
     {
-        setPluginsConfigFilePath( configFilePath );
+        auto runtimeConfig = configFilePath;
+#ifdef _WIN32
+        // Launchers may choose a project or source directory as the working
+        // directory; the runtime plugin list travels with the executable.
+        std::vector<wchar_t> module( 32768 );
+        const auto count =
+            GetModuleFileNameW( nullptr, module.data(), static_cast<DWORD>( module.size() ) );
+        if( count > 0 && count < module.size() )
+        {
+            const auto executableDirectory =
+                std::filesystem::path( std::wstring( module.data(), count ) )
+                    .parent_path().generic_u8string();
+            runtimeConfig = Path::getAbsolutePath( executableDirectory.c_str(), configFilePath );
+        }
+#endif
+        setPluginsConfigFilePath( runtimeConfig );
 
         Application::createPlugins();
     }
@@ -613,14 +670,17 @@ int WPRuntimeMain( int argc, char *argv[] )
     catch( Exception &e )
     {
         MessageBoxUtil::show( e.what() );
+        return 1;
     }
     catch( std::exception &e )
     {
         MessageBoxUtil::show( e.what() );
+        return 1;
     }
     catch( ... )
     {
         MessageBoxUtil::show( "Unknown error" );
+        return 1;
     }
 
     return 0;
