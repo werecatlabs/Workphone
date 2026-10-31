@@ -9,6 +9,7 @@
 #include <Workphone/Interface/System/IStateManager.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Core/BitUtil.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 namespace workphone
 {

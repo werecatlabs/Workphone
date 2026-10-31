@@ -9,9 +9,15 @@ The install additionally retains the bundled JPEG/TIFF/LibRaw/codec-zlib,
 Lua CJSON, UTF8CPP, ZZipLib and Assimp/contributor notice source files.
 Multiple upstream licensing alternatives are preserved as supplied; this
 inventory does not select an alternative or determine redistribution terms.
-ZZipLib's local header references LGPL/MPL alternatives without reproducing
-their full terms. Native File Dialog has no standalone license text in its
-local dependency directory. These and per-media permissions require review.
+ZZipLib declares source version 0.13.62. Original COPYING.LIB and COPYING.MPL
+from that pinned upstream tag are retained; three bundled C files differ
+from the tag, so complete source/prebuilt provenance remains unresolved.
+All seven bundled Native File Dialog source/header files match release_116
+after CRLF normalization; its pinned original LICENSE is retained.
+The installed UPSTREAM-PROVENANCE.json files record source fingerprints,
+upstream URLs and notice SHA256 hashes. They do not establish prebuilt
+library versions, choose license alternatives or record permission approval.
+Dependency obligations and per-media permissions still require review.
 The complete dependency and media license audit remains outstanding.
 
 Copyright (C) 1994-2025 Lua.org, PUC-Rio.

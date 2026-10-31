@@ -2,6 +2,7 @@
 #define _COverlayManager_H
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Interface/Graphics/IOverlayManager.hpp>
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 

@@ -1,5 +1,20 @@
 # WPGraphics production readiness and feature implementation plan
 
+Release-candidate follow-up, 31 October: the supported Windows x64
+Core/Claw/SQLite SDK now covers all six existing graphics cooked formats,
+1,571 standalone Windows headers, real native UI layout and animator lifecycle
+contracts, and 34 required dependency notice/provenance files. A stable normal 42-target
+rebuild and fresh packages are recorded in the
+[implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md).
+The full graphics/resource run has 60 passes, no failures and one unavailable
+original-model fixture gate; strict release validation therefore remains blocked.
+The source-free SDK and Editor checks do not certify interactive authoring,
+clean Windows, physical GPU recovery/performance, complete media/dependency
+permissions or the long mixed-scene soak. Imported mesh/skeleton/clip typed
+compiler adoption and optional-plugin SDKs remain broader programme work outside
+this three-component development SDK. SHIP-03's current profile is implemented;
+GR/R1/R2 certification is not complete.
+
 Terrain follow-up, 29 October: use the [GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md)
 and [capability matrix](TERRAIN_WORKFLOW.md#capability-and-evidence-matrix) for current
 terrain scope. Older terrain findings and milestone summaries below are historical;

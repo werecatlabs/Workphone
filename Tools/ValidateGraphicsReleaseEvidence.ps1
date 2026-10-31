@@ -44,6 +44,10 @@ try {
     if(-not $sdk.value.abi.validationPassed -or $sdk.value.abi.nativeLayoutDefinitions.Count -ne 5 -or
         @($sdk.value.consumerResults | Where-Object { -not $_.nativeUiLayoutPassed }).Count -or
         $sdk.value.consumerResults.Count -ne 2) { throw 'SDK native/C++ ABI or caller-owned UI layout evidence is incomplete.' }
+    $configEntry=@($sdk.value.payload | Where-Object path -eq 'lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake')
+    if($configEntry.Count -ne 1 -or $configEntry[0].sha256 -ne $sdk.value.abi.installedConfigSha256 -or
+        $sdk.value.abi.producingProjects.Count -ne 4) { throw 'SDK ABI metadata does not describe its installed config and producing projects.' }
+    Assert-Inputs $sdk.value.abi.producingProjects
     if($sdk.value.buildArtifacts.Count -ne 15 -or $sdk.value.cookedContent.files.Count -ne 7 -or
         $sdk.value.cookedConsumerResults.Count -ne 2 -or
         @($sdk.value.cookedConsumerResults | Where-Object { -not $_.validationPassed -or $_.cases.Count -ne 17 }).Count -or
@@ -81,7 +85,8 @@ try {
             -not $item.value.requiredTests.Count -or
             @($item.value.tests | Where-Object { $_.status -notin @('passed','unavailable') }).Count -or
             $item.value.changedSourceInputs.Count -or $item.value.changedExecutableInputs.Count -or
-            $item.value.changedRuntimeLibraries.Count -or $item.value.changedTestBinaries.Count) {
+            $item.value.changedRuntimeLibraries.Count -or
+            @($item.value.changedTestBinaries | Where-Object { $null -ne $_ }).Count) {
             throw "Graphics evidence is incomplete or changed during execution: $path"
         }
         Assert-Inputs $item.value.sourceInputs
@@ -119,7 +124,7 @@ try {
             checked=$headers.value.checkedHeaders;passed=$headers.value.passedHeaders;failed=$headers.value.failedHeaders}
     }
     Add-Gate 'Complete installed public header surface' ([bool]($headers -and $headers.value.fullPublicSurfacePassed)) 'Required supported headers and the exhaustive legacy header audit have distinct acceptance scopes.'
-    Add-Gate 'Broader engine typed assets and optional-plugin SDKs' $false 'The six existing graphics formats are covered. Imported mesh/skeleton/clip cooking and SDK link surfaces for the other runtime plugins are outside this candidate.'
+    Add-Gate 'Broader R1 typed-asset integration' $false 'The six existing graphics formats are covered. Imported mesh/skeleton/clip cooking remains broader R1 work. Optional-plugin SDKs are outside the supported Core/Graphics/SQLite profile.'
     $audits=@(foreach($package in @($sdk,$editor)) {
         $audit=Read-Evidence (Join-Path (Split-Path $package.path -Parent) 'dependency-media-audit.json')
         if(-not $audit.value.inventoryComplete -or -not $audit.value.noticeBytesVerified) { throw 'Dependency/media inventory or required notice verification is incomplete.' }
@@ -130,7 +135,7 @@ try {
     })
     $report['dependencyAudits']=$audits
     Add-Gate 'Bundled required dependency notices and payload inventory' $true 'Original notice bytes and actual binaries/media inventoried; permission approval is separate.'
-    Add-Gate 'Complete dependency/media licensing review' $false 'Review the candidate audit openReviewItems, including media, Native File Dialog and ZZipLib terms.'
+    Add-Gate 'Complete dependency/media licensing review' $false 'Review the exact candidate audit openReviewItems, including media permissions, distribution obligations and modified/prebuilt dependency provenance.'
     Add-Gate 'Interactive Editor authoring matrix' $false 'No complete candidate-bound interactive authoring acceptance is supplied by these automated reports.'
     Add-Gate 'Fresh Windows prerequisite execution' $false 'An offline kit is preparation evidence; actual clean guest execution is required.'
     Add-Gate 'Representative physical GPU performance and recovery' $false 'Software/basic-adapter execution cannot certify physical hardware.'

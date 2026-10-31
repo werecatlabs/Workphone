@@ -2,6 +2,7 @@
 #define _WP_GUIElement_H
 
 #include <Workphone/Interface/UI/IUIElement.hpp>
+#include <Workphone/Interface/UI/IUILayoutWindow.hpp>
 #include <Workphone/Interface/UI/IUIDropTarget.hpp>
 #include <Workphone/Interface/UI/IUIDragSource.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>

@@ -1,5 +1,83 @@
 # WPGraphics implementation status
 
+## Windows C++ SDK and release-candidate completion work — 31 October 2026
+
+The installed Core/Claw/SQLite SDK now exercises all six existing graphics cooking
+formats: material, texture, terrain, foliage world, species and page. The real
+catalog exporter admits three roots and six UUID-bound resources, publishes only
+the manifest and six WPRS files, and removes private authoring inputs. The runtime
+consumer checks exact material/mip/terrain/hole/tile/species/page values, shared
+texture identity, rejection cases and retained immutable data after shutdown.
+No new mesh/skeleton/clip compiler or optional-plugin SDK is implied.
+
+The public-header repair closes 151 failures found by the first exhaustive audit.
+The final Windows audit passes **1,571/1,571** standalone headers without a PCH;
+all 1,575 inventoried files match the frozen source. Four include fragments/PCHs
+require their owning translation units, and only the two Apple-specific macUtils
+headers are omitted from this Windows SDK. This proves syntax coverage, not that
+every legacy declaration is exported or every legacy subsystem is functional.
+The [full audit](../project_graphics_sdk/header-final-exhaustive/sdk-header-evidence.json)
+and [portable support table](../project_graphics_sdk/header-final-exhaustive/header-support.json)
+record every header hash and result.
+
+The SDK now exports the five actual WORKPHONE_INCLUDE_* UI definitions, which
+must agree between native Core and the Graphics adapter. Installed configuration
+is compared with 115 producing-project public definitions (including 112 WP_
+definitions), plus those five native switches. A real exported UI context is
+constructed/destroyed in guarded caller-owned storage, with font and by-value
+interfaces checked. Header checks use Unicode compiler response files and short
+MSBuild scratch directories, and preserve the producing compiler instance.
+
+Four formerly invalid position/scale animator templates now use the existing
+Animator clock for duration, pause, reverse and looping. Endpoints apply before
+completion callbacks, and updates safely return when callbacks release targets
+or replace/delete the animator. Explicit instantiation, lifecycle/exception and
+AtomicString concurrency checks pass. The focused AddressSanitizer run instruments
+the consumer/template code; its imported Core DLL is not instrumented.
+
+The normal 42-target RelWithDebInfo rebuild passes with all **5,728** tracked build
+inputs stable. The fresh full graphics/resource gate reports **60 passed, zero
+failed and one unavailable**, with unchanged sources, executables and runtime
+DLLs. Real UI StateManager lifecycle fixtures and exact independently charged
+lease-metadata retirement checks replace stale fixture assumptions; existing
+input/pixel, denial, cache and physical-owner assertions remain active.
+Strict validation remains false because the original external importer fixture
+gate cannot run. The [fixture recovery record](../project_x64/external-fixture-recovery/fixture-recovery-evidence.json)
+pins all six upstream assets and nine notices: Mikki is explicitly restricted to
+MyGUI demos, and remaining original-asset permission/provenance is not established.
+No substitute geometry, fixture downloads or weakened test conditions were used.
+
+The fresh SDK candidate is
+`project_graphics_sdk/cpp-sdk-validation-6f107a39fb434021911c6c05deb38ed1/`.
+Both RelWithDebInfo and Release pass their two sample CTests, 17 fresh cooked
+process cases and the installed animator/AtomicString CTest each. The 39 required
+standalone headers also pass per configuration. All **17,573** extracted payload
+files retain their hashes; private authoring inputs are absent and source inputs
+and producing ABI metadata remain unchanged. The validator performs a normal
+incremental build, rather than skipping it.
+
+The matching Editor candidate is
+`project_graphics_sdk/editor-validation-97d2d88cd19b40969b918359b3996e27/`.
+All **six** relocation/startup/CLI checks pass with **303** runtime files and
+**12** separate PDBs. Its packaging build is explicitly skipped after the shared
+normal rebuild. Both packages verify 34 required notice/provenance files and inventory
+actual dependencies/media. Original Native File Dialog release_116 and ZZipLib
+0.13.62 texts have pinned provenance; modified/prebuilt ZZip and prebuilt-library
+provenance, distribution obligations and media permissions remain open.
+
+The Editor candidate includes a portable clean-Windows validation kit and pinned
+archive. Preparation, containment and invalid-input rejection are validated;
+**no guest executed**. This host has Sandbox/Hyper-V disabled and exposes the
+Basic Display Adapter; observed DX11 execution uses WARP. Interactive authoring,
+actual clean-Windows prerequisites, physical GPU performance/recovery and the
+long mixed-scene/memory-pressure soak remain separate acceptance gates. The
+consolidated `release-gates.json` keeps releaseReady/releaseCertified false.
+The final consistency check passes with all 12 shared runtime binaries matching.
+Incorrect archive hashes, another candidate's passing audit, and attempted
+`RequireComplete` acceptance all produce the required rejection; original inputs
+remain unchanged. The portable clean-Windows ZIP independently verifies all 12
+prepared files and still records no guest execution.
+
 ## Terrain GT0 baseline, validation and package follow-up — 29–30 October 2026
 
 The [terrain GT0 completion record](WPGRAPHICS_TERRAIN_GT0_COMPLETION.md) reconciles

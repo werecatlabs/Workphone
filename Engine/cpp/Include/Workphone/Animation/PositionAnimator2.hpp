@@ -55,9 +55,12 @@ namespace workphone
         Vector2<real_Num> getEnd() const;
 
     protected:
+        void onComplete() override;
+        void applyValue();
         Vector2<real_Num> m_start;  ///< Starting position of the animation.
         Vector2<real_Num> m_end;    ///< Ending position of the animation.
         T *m_object;                ///< The object being animated.
+        bool *m_completionMarker = nullptr;
     };
 
     template <class T>
@@ -91,7 +94,40 @@ namespace workphone
     {
         if( !isPlaying() )
             return;
-        Animator::update();
+        bool completed = false;
+        m_completionMarker = &completed;
+        try
+        {
+            Animator::update();
+        }
+        catch( ... )
+        {
+            if( !completed )
+                m_completionMarker = nullptr;
+            throw;
+        }
+        // A completion callback may release the target or this animator. Only
+        // the stack marker remains safe to inspect after that callback.
+        if( completed )
+            return;
+        m_completionMarker = nullptr;
+        applyValue();
+    }
+
+    template <class T>
+    void PositionAnimator2<T>::onComplete()
+    {
+        auto *marker = m_completionMarker;
+        m_completionMarker = nullptr;
+        if( marker )
+            *marker = true;
+        applyValue();
+        Animator::onComplete();
+    }
+
+    template <class T>
+    void PositionAnimator2<T>::applyValue()
+    {
         if( !m_object )
             return;
         const auto length = getAnimationLength();

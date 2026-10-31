@@ -2,13 +2,12 @@
 #define __GenericPool_H
 
 #include <Workphone/Core/Allocator.hpp>
+#include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Core/GenericPoolData.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 #include <Workphone/Thread/Thread.hpp>
-#include <Workphone/System/RttiClass.hpp>
-#include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <memory>
 #include <vector>

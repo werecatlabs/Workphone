@@ -167,8 +167,8 @@ try {
         sdkDevelopment='Matching producing MSVC compiler ABI, CMake, Windows SDK and release DLL CRT'
         cleanMachineVerified=$false;hostInstalledSoftwareIsNotCleanMachineEvidence=$true}
     $report['openReviewItems']=@('Per-media permission review, including shipped fonts and images.'
-        'Native File Dialog: no standalone local licensing text was found in Dependencies/nativefiledialog.'
-        'ZZipLib header names LGPL/MPL alternatives; complete local terms/selected distribution obligations are not established by the header.'
+        'Native File Dialog: all seven bundled source/header files match release_116 after CRLF normalization; pinned original license retained. Prebuilt library version/provenance remains unestablished.'
+        'ZZipLib declares 0.13.62; nine of twelve C source files match that upstream tag after CRLF normalization. Pinned Library GPL v2/MPL1.1 original terms are retained; modified-source/prebuilt provenance and selected distribution obligations remain unresolved.'
         'Static/transitive dependency selection and source/provenance obligations require review; no legal approval is inferred.'
         'Actual fresh guest execution and prerequisite reconciliation remain separate from host inventory.')
     $report['inventoryComplete']=$true

@@ -3,6 +3,7 @@
 
 #include "workphone_command_buffer.h"
 #include "workphone_menu.h"
+#include "workphone_panel.h"
 
 #ifndef WORKPHONE_WINDOW_MAX_NAME
 #    define WORKPHONE_WINDOW_MAX_NAME 64

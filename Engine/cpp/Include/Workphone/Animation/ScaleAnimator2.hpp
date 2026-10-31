@@ -45,6 +45,8 @@ namespace workphone
         void update() override;
 
     protected:
+        void onComplete() override;
+        void applyValue();
         /// Starting scale of the animation.
         Vector2<real_Num> m_start;
         /// Ending scale of the animation.
@@ -52,6 +54,7 @@ namespace workphone
 
         /// Pointer to the object being animated.
         T *m_object;
+        bool *m_completionMarker = nullptr;
     };
 
     template <class T>
@@ -84,7 +87,39 @@ namespace workphone
     {
         if( !isPlaying() )
             return;
-        Animator::update();
+        bool completed = false;
+        m_completionMarker = &completed;
+        try
+        {
+            Animator::update();
+        }
+        catch( ... )
+        {
+            if( !completed )
+                m_completionMarker = nullptr;
+            throw;
+        }
+        // A completion callback may release the target or this animator.
+        if( completed )
+            return;
+        m_completionMarker = nullptr;
+        applyValue();
+    }
+
+    template <class T>
+    void ScaleAnimator2<T>::onComplete()
+    {
+        auto *marker = m_completionMarker;
+        m_completionMarker = nullptr;
+        if( marker )
+            *marker = true;
+        applyValue();
+        Animator::onComplete();
+    }
+
+    template <class T>
+    void ScaleAnimator2<T>::applyValue()
+    {
         if( !m_object )
             return;
         const auto length = getAnimationLength();

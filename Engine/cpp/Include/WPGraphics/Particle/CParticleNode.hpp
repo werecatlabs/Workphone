@@ -2,6 +2,9 @@
 #define CParticleNode_h__
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
+#include <Workphone/Interface/IBuildDirector.hpp>
+#include <Workphone/Interface/Graphics/IParticleSystem.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/Handle.hpp>
 #include <Workphone/Interface/Graphics/IParticleNode.hpp>
 

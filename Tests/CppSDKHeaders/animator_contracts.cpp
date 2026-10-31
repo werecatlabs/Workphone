@@ -9,6 +9,7 @@
 #include <Workphone/System/TimerMT.hpp>
 #include <atomic>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -36,13 +37,123 @@ namespace cpp_sdk_animator_contracts
     {
     public:
         f64 delta = 0;
-        f64 getDeltaTime() const override { return delta; }
+        bool fail = false;
+        f64 getDeltaTime() const override
+        {
+            if( fail ) throw std::runtime_error( "injected timer failure" );
+            return delta;
+        }
     };
 
     void require( bool condition, const std::string &message )
     {
         if( !condition )
             throw std::runtime_error( message );
+    }
+
+    template <template <class> class A, class T>
+    void completionLifetime( FrameTimer &clock, const typename T::Value &start,
+                             const typename T::Value &end, bool scaling, const char *family )
+    {
+        const auto verify = [&]( bool condition, const char *message ) {
+            require( condition, std::string( family ) + ": " + message );
+        };
+        const auto value = [&]( const T &target ) { return scaling ? target.scale : target.position; };
+        const auto writes = [&]( const T &target ) { return scaling ? target.scaleWrites : target.positionWrites; };
+        for( const bool reverse : { false, true } )
+        {
+            auto target = std::make_unique<T>();
+            A<T> instant( target.get(), 0, start, end );
+            instant.setReverse( reverse );
+            bool sawEndpoint = false;
+            instant.setOnCompleteCallback( [&] {
+                sawEndpoint = value( *target ) == ( reverse ? start : end );
+                target.reset();
+            } );
+            instant.start();
+            clock.delta = 0;
+            instant.update();
+            verify( sawEndpoint && !target && instant.isFinished(),
+                    "zero-duration callback must observe its endpoint before releasing the target" );
+            instant.update();
+        }
+        {
+            T target;
+            A<T> restart( &target, 1, start, end );
+            unsigned completed = 0;
+            bool sawEndpoint = false;
+            restart.setOnCompleteCallback( [&] {
+                sawEndpoint = value( target ) == end;
+                if( ++completed == 1 ) restart.start();
+            } );
+            restart.start();
+            clock.delta = 1;
+            restart.update();
+            verify( sawEndpoint && completed == 1 && restart.isPlaying() &&
+                        restart.getAnimationTime() == 0 && value( target ) == end && writes( target ) == 1,
+                    "callback restart must not overwrite the completed endpoint in the old update" );
+            clock.delta = .25;
+            restart.update();
+            verify( value( target ) == start + ( end - start ) * real_Num( .25f ),
+                    "restarted playback must advance on the next update" );
+        }
+        {
+            T oldTarget, nextTarget;
+            std::unique_ptr<A<T>> active = std::make_unique<A<T>>( &oldTarget, 1, start, end );
+            bool sawEndpoint = false;
+            active->setOnCompleteCallback( [&] {
+                sawEndpoint = value( oldTarget ) == end;
+                auto replacement = std::make_unique<A<T>>( &nextTarget, 2, start, end );
+                replacement->start();
+                // This deletes the animator and its callback while that callback
+                // returns. The old update may inspect only its stack marker.
+                active = std::move( replacement );
+            } );
+            active->start();
+            auto *original = active.get();
+            clock.delta = 1;
+            original->update();
+            verify( sawEndpoint && active.get() != original && writes( oldTarget ) == 1 &&
+                        writes( nextTarget ) == 0 && value( oldTarget ) == end,
+                    "completion may replace the animator without stale old or new target writes" );
+            clock.delta = .5;
+            active->update();
+            verify( value( nextTarget ) == start + ( end - start ) * real_Num( .25f ) &&
+                        writes( oldTarget ) == 1,
+                    "replacement playback must belong entirely to the new target" );
+        }
+        {
+            auto target = std::make_unique<T>();
+            A<T> throwing( target.get(), 1, start, end );
+            bool sawEndpoint = false, caught = false;
+            throwing.setOnCompleteCallback( [&] {
+                sawEndpoint = value( *target ) == end;
+                target.reset();
+                throw std::runtime_error( "injected completion failure" );
+            } );
+            throwing.start();
+            clock.delta = 1;
+            try { throwing.update(); }
+            catch( const std::runtime_error & ) { caught = true; }
+            verify( caught && sawEndpoint && !target && throwing.isFinished(),
+                    "throwing completion must not leave a stack marker or touch its released target" );
+            throwing.update();
+        }
+        {
+            T target;
+            A<T> retry( &target, 1, start, end );
+            retry.start();
+            clock.fail = true;
+            bool caught = false;
+            try { retry.update(); }
+            catch( const std::runtime_error & ) { caught = true; }
+            clock.fail = false;
+            verify( caught && writes( target ) == 0, "a failed clock update must not touch the target" );
+            clock.delta = 1;
+            retry.update();
+            verify( retry.isFinished() && value( target ) == end,
+                    "a pre-completion exception must clear its marker and permit retry" );
+        }
     }
 
     struct Runtime
@@ -255,6 +366,10 @@ int main()
         playback<PositionAnimator3, Target3>( *runtime.timer, { 0, 4, 8 }, { 8, 12, 16 }, false, "position3" );
         playback<ScaleAnimator2, Target2>( *runtime.timer, { 0, 4 }, { 8, 12 }, true, "scale2" );
         playback<ScaleAnimator3, Target3>( *runtime.timer, { 0, 4, 8 }, { 8, 12, 16 }, true, "scale3" );
+        completionLifetime<PositionAnimator2, Target2>( *runtime.timer, { 0, 4 }, { 8, 12 }, false, "position2" );
+        completionLifetime<PositionAnimator3, Target3>( *runtime.timer, { 0, 4, 8 }, { 8, 12, 16 }, false, "position3" );
+        completionLifetime<ScaleAnimator2, Target2>( *runtime.timer, { 0, 4 }, { 8, 12 }, true, "scale2" );
+        completionLifetime<ScaleAnimator3, Target3>( *runtime.timer, { 0, 4, 8 }, { 8, 12, 16 }, true, "scale3" );
         atomicString();
         std::cout << "Installed animator templates and AtomicString contracts passed\n";
         return 0;

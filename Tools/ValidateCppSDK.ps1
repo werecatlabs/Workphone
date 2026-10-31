@@ -81,7 +81,7 @@ try {
         'Engine/cpp/Source/Workphone/Database/AssetPackagePolicy.cpp','Engine/cpp/Project/Workphone/CMakeLists.txt',
         'Engine/cpp/Project/WPGraphics/CMakeLists.txt','Engine/cpp/Project/WPSQLite/CMakeLists.txt') |
         ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_) }
-    $noticeEntries=[regex]::Matches((Get-Content (Join-Path $repo 'CMake/InstallWorkphoneEditorNotices.cmake') -Raw),'"((?:Dependencies|Engine)/[^"|]+)\|([^"|]+)"')
+    $noticeEntries=[regex]::Matches((Get-Content (Join-Path $repo 'CMake/InstallWorkphoneEditorNotices.cmake') -Raw),'"([^"|]+)\|([^"|]+)"')
     $inputFiles += @($noticeEntries | ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_.Groups[1].Value) })
     $report['inputs'] = @($inputFiles | Sort-Object FullName -Unique | ForEach-Object {
         [ordered]@{path=$_.FullName;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
@@ -128,8 +128,9 @@ try {
     $report['abi']=[ordered]@{validationPassed=$true;publicDefinitions=$installedPublic;nativeLayoutDefinitions=$nativeDefinitions;
         installedConfigSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake')).Hash;
         producingProjects=@(@('Engine/cpp/Project/Workphone/Workphone.vcxproj')+$nativeProjects | ForEach-Object {
-            [ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $build $_)).Hash}
+            [ordered]@{path=(Join-Path $build $_);sha256=(Get-FileHash -LiteralPath (Join-Path $build $_)).Hash}
         })}
+    $report.abi.producingProjects+=@([ordered]@{path=(Join-Path $build 'CMakeCache.txt');sha256=(Get-FileHash -LiteralPath (Join-Path $build 'CMakeCache.txt')).Hash})
     Copy-Item -LiteralPath (Join-Path $build 'cpp-sdk/RelWithDebInfo/native-public-definitions.txt') -Destination $run
     $report['dependencyNotices']=@($noticeEntries | ForEach-Object {
         $source=$_.Groups[1].Value; $name='licenses/'+$_.Groups[2].Value
@@ -252,6 +253,7 @@ try {
     $report['cookedConsumerResults']=$cookedResults.ToArray()
     $report['headerResults']=$headerResults.ToArray()
     Assert-InputHashes $report.inputs
+    Assert-InputHashes $report.abi.producingProjects
     $after = Get-Payload $extracted
     if (($payload | ConvertTo-Json -Depth 4 -Compress) -ne ($after | ConvertTo-Json -Depth 4 -Compress)) { throw 'SDK payload changed during validation' }
     $report['readOnlyPayloadUnchanged']=$true

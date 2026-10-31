@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "dependency": "Native File Dialog",
+  "upstreamRepository": "https://github.com/mlabbe/nativefiledialog",
+  "matchingSourceTag": "release_116",
+  "matchingSourceCommit": "67345b80ebb429ecc2aeda94c478b3bcc5f7888e",
+  "capturedAtUtc": "2026-10-31T11:53:58.6241987Z",
+  "comparison": "All seven bundled upstream source/header files match this tagged source after CRLF-to-LF normalization. This does not identify a unique original checkout: these same files also occur in other upstream commits. Local CMake/build layout is not an upstream match claim.",
+  "sourceFiles": [
+    {
+      "path": "src/nfd_win.cpp",
+      "sha256": "568ec3d19730c749a2cecb0a70fc7e61f85ae321f3fcedd02dd3ce3f7c33ed6a",
+      "upstreamPath": "src/nfd_win.cpp",
+      "upstreamBlobSha1": "949da2b53dcc58dc9ad6f20685b1c84af269f5bd",
+      "normalizedLfSha256": "1d3e979cbb3f5fab95b4a8d46c55391c5a48c3b13b553c23b75329bd9bf6879a",
+      "matchesAfterCrLfNormalization": true
+    },
+    {
+      "path": "src/nfd_common.c",
+      "sha256": "410628baa7da75e1aea733a5072c4638969ea95a80e5083cc8f603bf0989f241",
+      "upstreamPath": "src/nfd_common.c",
+      "upstreamBlobSha1": "55517f5dd558b31cdb10047a38a75571faa47884",
+      "normalizedLfSha256": "641841b46cd69b36912d1fbde5407866fa7183fad552ca065c762994275d10fa",
+      "matchesAfterCrLfNormalization": true
+    },
+    {
+      "path": "src/nfd_cocoa.m",
+      "sha256": "576a69cf7b3f58ba3ec8f5ea413185be267075fd5db5ca5ce9173252384fabf1",
+      "upstreamPath": "src/nfd_cocoa.m",
+      "upstreamBlobSha1": "776152d4145ba82320f441544a683562cfdf7064",
+      "normalizedLfSha256": "93ed07289355c12e4a832aa801d190c3eb9ab0c8e12094646a276cebd9af851c",
+      "matchesAfterCrLfNormalization": true
+    },
+    {
+      "path": "include/nfd.h",
+      "sha256": "cf564bd0a00cd50195063196ead01ecb7bfa05fcbb93f642be2be68a0f917041",
+      "upstreamPath": "src/include/nfd.h",
+      "upstreamBlobSha1": "74c92743fafbb8750965e74a33d61f84ce155889",
+      "normalizedLfSha256": "8e8c5ab2b1983eb7df9078b83d298910d5ef5d2b23c8502b3aafd0be62bd4b54",
+      "matchesAfterCrLfNormalization": true
+    },
+    {
+      "path": "include/nfd_common.h",
+      "sha256": "28a83c37273d19eb82116acbdee29f88769d29573d42a1af1797dcf5ecc88c16",
+      "upstreamPath": "src/nfd_common.h",
+      "upstreamBlobSha1": "1a9ab16257c0912c60772b4478aefec916a0653b",
+      "normalizedLfSha256": "e71c2c4eb0164a2a550c53de99961da0b03302645e4df564b5b64c2096b308c6",
+      "matchesAfterCrLfNormalization": true
+    },
+    {
+      "path": "include/common.h",
+      "sha256": "9da7e8faf64148910f9633bf53bf214fc12900ba52627a211afb60f397f76ca1",
+      "upstreamPath": "src/common.h",
+      "upstreamBlobSha1": "7745d323b684b6379a9a0cb5fde6ebbe297ba4ca",
+      "normalizedLfSha256": "1e928fddc8b1d59b45ed8d2294442277a69d55fadbb4dd8384de64b4ec809e27",
+      "matchesAfterCrLfNormalization": true
+    },
+    {
+      "path": "include/simple_exec.h",
+      "sha256": "8f019fed659e8e316669f86086f84719d026c271c8afee8263cae50f797aef5b",
+      "upstreamPath": "src/simple_exec.h",
+      "upstreamBlobSha1": "6308dfe0fa3332da6bffd3bc25a6a09a0f8bba0c",
+      "normalizedLfSha256": "393b7b90769dd1e3e90f0a305404a3ebc394d502f7536bb3279c9d9a07a0ceee",
+      "matchesAfterCrLfNormalization": true
+    }
+  ],
+  "noticeFiles": [
+    {
+      "path": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "sourceUrl": "https://raw.githubusercontent.com/mlabbe/nativefiledialog/67345b80ebb429ecc2aeda94c478b3bcc5f7888e/LICENSE",
+      "sha256": "b332d6f507142c66a0e904838b6437e6273734589c22a16b57392b89bfdccb2a"
+    }
+  ],
+  "prebuiltBinaryVersionEstablished": false,
+  "permissionApprovalRecorded": false,
+  "limitations": [
+    "The version/provenance of prebuilt libraries is not established by source-content comparison.",
+    "Retaining original notices does not establish redistribution approval or a complete dependency/media audit."
+  ]
+}

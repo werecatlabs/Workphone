@@ -59,7 +59,7 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
 $evidence['packagingInputs'] = @($inputs)
 $noticeInstaller='CMake/InstallWorkphoneEditorNotices.cmake'
 $noticeSources=@($noticeInstaller)
-$noticeSources+=@([regex]::Matches((Get-Content (Join-Path $repo $noticeInstaller) -Raw),'"((?:Dependencies|Engine)/[^"|]+)\|([^"|]+)"') |
+$noticeSources+=@([regex]::Matches((Get-Content (Join-Path $repo $noticeInstaller) -Raw),'"([^"|]+)\|([^"|]+)"') |
     ForEach-Object { $_.Groups[1].Value })
 $evidence.packagingInputs+=@($noticeSources | ForEach-Object {
     [ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash}

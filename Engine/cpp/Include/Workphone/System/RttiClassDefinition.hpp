@@ -1,6 +1,7 @@
 #ifndef RttiClassDefinition_h__
 #define RttiClassDefinition_h__
 
+#include <Workphone/System/RttiClass.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 
 #define WP_STRINGIZE_HELPER( x ) #x

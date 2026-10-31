@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "dependency": "ZZipLib",
+  "upstreamRepository": "https://github.com/gdraheim/zziplib",
+  "declaredSourceVersion": "0.13.62",
+  "declaredVersionSource": "include/zzip/_config.h",
+  "upstreamTag": "v0.13.62",
+  "upstreamCommit": "0283ed8eeb494d7fc30d019b53e49490b3e8a6d7",
+  "capturedAtUtc": "2026-10-31T11:53:58.641709Z",
+  "comparison": "The local generated config declares 0.13.62. Nine of twelve bundled C source files exactly match this upstream tag after CRLF-to-LF normalization. Three C files are modified; the bundled source tree is not an exact upstream checkout.",
+  "sourceFiles": [
+    {
+      "local": "dir.c",
+      "upstream": "dir.c",
+      "normalizedExact": false,
+      "whitespaceInsensitiveExact": false,
+      "localSha256": "b22e3e24cf5a2705b68091a1900110affd6794e6a216eba4464e37d80ef66f0e",
+      "upstreamSha256": "36d1fe29af4557603891f4a9161429eb8e876d481ba109b2d6ed5f91884ac78e"
+    },
+    {
+      "local": "err.c",
+      "upstream": "err.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "073939f8d777cc016c4397818ca9334d40c4f6373da9881fab3a0c3152c5a831",
+      "upstreamSha256": "ea2cc551d766a30169190fa284ebee9063092b615dc0ea86a46b181ada131fb4"
+    },
+    {
+      "local": "fetch.c",
+      "upstream": "fetch.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "f327619dc0d82fb1e6eca381749a87de316b2cd2af092cf17d309abad7318fee",
+      "upstreamSha256": "b80b800d85444e17e4c0b7bae8ece25b47b67bcb859cda7d68ed3c62998b215d"
+    },
+    {
+      "local": "file.c",
+      "upstream": "file.c",
+      "normalizedExact": false,
+      "whitespaceInsensitiveExact": false,
+      "localSha256": "51f1afd43c5987e859ff60e26597c3cf6fe6251268f8b4d0af34cc61c7da39ee",
+      "upstreamSha256": "7c8fe27463338cb984b4d9815c1021ecfc1810ff92f642c736f1c03af9065d07"
+    },
+    {
+      "local": "fseeko.c",
+      "upstream": "fseeko.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "5c6a5263eea0ee4a469a33c7d8e7f35b3f18e27cdccc9c545ea30b2489727c05",
+      "upstreamSha256": "2655f42dbb89192816878993caaeca9defb2139cf047f2f72ee5be6c3e8e0005"
+    },
+    {
+      "local": "info.c",
+      "upstream": "info.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "cf6b5b7be880bf6529e6944a2180b84d2884815f1bc6726807931def39e3d17f",
+      "upstreamSha256": "545876701551b6bd5e8507f48504d47601f7e2c9606f80f27e5da4b301394a7b"
+    },
+    {
+      "local": "memdisk.c",
+      "upstream": "memdisk.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "09164b6077e16db46a347f41be3b4d33ed39a96e44dbe851e6eb8f524e859b04",
+      "upstreamSha256": "496029bb7d4c480f4b2fd276431e2951c8c8b4de2f838574e9facce60b05d2c2"
+    },
+    {
+      "local": "mmapped.c",
+      "upstream": "mmapped.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "944324646f384530adaefd44f2b00fe8ec90e0d0fc5f1151bcfe12e182d3dc0a",
+      "upstreamSha256": "e8ec8f7b0fb35986756e8ffce99fb280565acee5c275cce9c9de6aeba5b47fa7"
+    },
+    {
+      "local": "stat.c",
+      "upstream": "stat.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "d0c9e639fda19703303d4494bb4ef28a90897ddb4a5d8a7249ee35c3f5119ffc",
+      "upstreamSha256": "a29ec15e23e0db8e5b9a829c2b056b2b94c73ca7e01b0779212fd646aebde55c"
+    },
+    {
+      "local": "write.c",
+      "upstream": "write.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "3fa1f10ed838d010b9b5355d053522d0ec7aa796f7cc520fb95e145d350a93d5",
+      "upstreamSha256": "36fab1a33fd83cefddaf93835f38199f5fb383278d89c516e44089b8213e851b"
+    },
+    {
+      "local": "zzip_plugin.c",
+      "upstream": "plugin.c",
+      "normalizedExact": true,
+      "whitespaceInsensitiveExact": true,
+      "localSha256": "ee76db1b88f8dc1a5fb8050d50ba468a7b59291a388aec4ca4a9596d7f18621d",
+      "upstreamSha256": "0e14802672d79cb2dfc07d9dc416d272f08c7562bc115c218f727f2329ed71f2"
+    },
+    {
+      "local": "zzip_zip.c",
+      "upstream": "zip.c",
+      "normalizedExact": false,
+      "whitespaceInsensitiveExact": false,
+      "localSha256": "175a4bf361e1cda560862112b0d061e44588b3b063b80a1cad0ed8fb5cc01913",
+      "upstreamSha256": "0ac393571a7fc13bdc23721e750cb42cf0db169889053d93129f32068557e6f4"
+    }
+  ],
+  "noticeFiles": [
+    {
+      "path": "COPYING.LIB.txt",
+      "upstreamPath": "COPYING.LIB",
+      "sourceUrl": "https://raw.githubusercontent.com/gdraheim/zziplib/0283ed8eeb494d7fc30d019b53e49490b3e8a6d7/COPYING.LIB",
+      "sha256": "94b03f1a60a7fd5007149530626a895a6ef5a8b9342abfd56860c5f3956f5d23"
+    },
+    {
+      "path": "COPYING.MPL",
+      "upstreamPath": "docs/COPYING.MPL",
+      "sourceUrl": "https://raw.githubusercontent.com/gdraheim/zziplib/0283ed8eeb494d7fc30d019b53e49490b3e8a6d7/docs/COPYING.MPL",
+      "sha256": "c2aa7d58cebd24cb877bbf11d6b13a4bb7cd08b9d7db5d3037ca06c46bf4cfd8"
+    }
+  ],
+  "prebuiltBinaryVersionEstablished": false,
+  "permissionApprovalRecorded": false,
+  "limitations": [
+    "Version-aligned upstream original terms are retained for the alternatives named in bundled headers; this does not select an alternative or determine distribution obligations.",
+    "Modified source and prebuilt binary provenance remain unresolved.",
+    "Retaining original notices does not establish redistribution approval or a complete dependency/media audit."
+  ],
+  "sourceFileBaseDirectory": "source",
+  "upstreamSourceBaseDirectory": "zzip",
+  "declaredVersionSourceSha256": "136c13be82b87d92211c787b098912f2e988716ab8a3c83ecc8756c98669d5ed"
+}
