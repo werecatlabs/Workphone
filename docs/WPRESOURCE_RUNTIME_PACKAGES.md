@@ -180,6 +180,25 @@ independently of the process working directory. Saved paths are relative where
 possible, allowing a project/profile tree to relocate. Absolute paths remain
 supported. There are no command-line overrides when loading a profile.
 
+Version 2 adds the required `buildProfile` object with exactly `name`, `toolchain`
+and `settings`. The identities must be nonempty; `settings` is an object of up to
+64 string values (empty values are allowed). Duplicate keys and embedded NULs are
+rejected. The CLI flags `--build-profile <name> --toolchain <identity>` select this
+version; optional `--build-settings '{"quality":"high"}'` supplies settings.
+Saving without these flags preserves version 1 and its existing cache namespace.
+Settings identify effective compiler inputs; format-specific options still belong
+in the existing resource recipes.
+
+On Windows, profiled builds derive an additional toolchain identity from the
+loaded executable and DLLs beside it, plus the loaded Workphone, WPGraphics,
+WPLua, WPAudio, WPSQLite and Direct3D compiler modules. Their filenames, sizes and content hashes
+participate; installation paths do not. Read handles deny writes/deletion through
+compilation and export, and a changed module inventory rejects publication.
+The saved toolchain label remains unchanged and must identify external tools or
+inputs outside this module inventory. Labels are limited to 4000 bytes to leave
+room for the derived identity. Automatic module capture currently requires
+Windows. These hashes identify cache inputs; they do not authenticate binaries.
+
 The reader rejects unsupported versions, unknown/duplicate/missing fields,
 malformed UTF-8/JSON, NULs, trailing content, duplicate root UUIDs (ignoring case),
 duplicate catalog type mappings, files above 64 KiB, strings above 4096 bytes,
@@ -195,10 +214,23 @@ entry. The CLI executable still requires its normal DLL dependencies. This does
 not execute Lua or install graphics/audio resources into a live consumer.
 No files are written by verification. Missing/corrupt content returns nonzero.
 
+The checked package tool registers the existing terrain (`terrain`) and foliage
+(`folworld`, `folpage`, `folspec`) compilers alongside graphics descriptors, Lua
+and PCM audio when enabled. Catalog mappings must name each installed typed
+dependency, including `texres` layer/leaf textures. Runtime consumers use the
+existing terrain worker decode and foliage shallow-directory/page streaming
+paths. `WorkphoneAssets.typed_package_families` exports through the real catalog
+CLI, removes sources, catalog and cooking cache, then launches separate native
+consumers against read-only packages. It checks terrain drawing and foliage
+scheduled page reads, resident instances, draw calls and sampled texture pixels.
+This bounded fixture does not certify every Editor project asset family or GPU.
+
 ### PackageEditor and owned background jobs
 
 PackageEditor loads and authors the supported JSON profile settings: catalog,
-cooked storage, output directory, target, root UUIDs and explicit type mappings.
+cooked storage, output directory, target, root UUIDs, explicit type mappings,
+build profile, toolchain label and build-settings JSON. Empty build identities
+with `{}` settings retain version 1; both identities are required for version 2.
 The active project source root is displayed read-only. Roots and mappings accept
 semicolon-separated lists. Load restores the saved values; Save new profile
 creates an unused file through the shared native writer and never replaces an
@@ -391,8 +423,10 @@ captured source inputs and dependency generations participate in the generation
 hash. Artifacts keep the existing compact directory layout for Windows path limits.
 Changing compiler-name hashing causes a one-time authoring recook; existing pinned
 packages remain readable. All DLL consumers must be rebuilt with matching headers.
-Editor profile authoring and persisted package-profile settings are separate work;
-version-1 package JSON continues to select the unprofiled namespace.
+PackageEditor and version-2 package JSON persist these inputs through the shared
+reader/writer and detached job snapshot. Version-1 package JSON continues to
+select the unprofiled namespace. Authored source revision fences, external-tool
+capture and importer-specific interruption certification remain separate gates.
 
 ## Scheduled runtime payload reads
 

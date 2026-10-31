@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from contextlib import closing
 
 host, tool = map(lambda p: pathlib.Path(p).resolve(), sys.argv[1:3])
 
@@ -13,6 +14,9 @@ def run(executable, args):
     result = subprocess.run([str(executable), *map(str, args)], cwd=executable.parent,
                             capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+    for line in result.stdout.splitlines():
+        if line.startswith(("DX11 ", "PASS:")):
+            print(line)
     return result
 
 with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
@@ -34,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
                    for p in source.rglob("*") if p.is_file() and p.suffix[1:] in extensions]
         root_uuid = next(identity for identity, path, kind in entries if path == root_name)
         catalog = folder / "catalog.db"
-        with sqlite3.connect(catalog) as db:
+        with closing(sqlite3.connect(catalog)) as db, db:
             db.execute("CREATE TABLE resources(id INTEGER PRIMARY KEY,uuid TEXT,path TEXT,type TEXT)")
             db.executemany("INSERT INTO resources(uuid,path,type) VALUES(?,?,?)", entries)
         package, cooked = folder / "checked-package", folder / "checked-cooked"
@@ -46,13 +50,14 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
         assert source.resolve().is_relative_to(root.resolve()) and cooked.resolve().is_relative_to(root.resolve())
         shutil.rmtree(source)
         shutil.rmtree(cooked)
+        catalog.unlink()
         before = {p.relative_to(package): p.read_bytes() for p in package.rglob("*") if p.is_file()}
         try:
             for path in before:
                 (package / path).chmod(0o444)
             run(tool, ["--verify", package, target, *[identity for identity, _, _ in entries]])
             if family == "terrain":
-                run(host, ["--terrain-checked-package-consume", package])
+                run(host, ["--terrain-checked-package-consume", package, root_uuid])
             else:
                 run(host, ["--foliage-checked-package-consume", package, root_uuid])
             assert before == {p.relative_to(package): p.read_bytes() for p in package.rglob("*") if p.is_file()}

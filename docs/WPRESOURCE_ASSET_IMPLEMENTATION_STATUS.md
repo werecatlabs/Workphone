@@ -1623,6 +1623,108 @@ suites passed in both configurations, and the corrected aggregate Editor suite
 passed separately. The fixture change affects Debug tests only; the validated
 installed runtime and its source-input/module hashes remain unchanged.
 
+## Increment 30: persisted BuildKeys and captured Windows cooker modules
+
+Package JSON version 2 adds a strict `buildProfile` object (name, toolchain label,
+string settings). Version 1 remains supported in its original default namespace.
+The shared bounded reader/writer, Lua native bridge, PackageEditor fields and
+owned job snapshot preserve these inputs. Partial identities, duplicate settings,
+non-string values, unknown fields and over-budget requests fail before cooking.
+Format-specific options continue to use existing resource recipes; the new
+settings identify build inputs rather than silently overriding those recipes.
+
+Profiled Windows CLI requests additionally hash and pin the executable, adjacent
+loaded DLLs, engine resource modules and loaded Direct3D compiler modules. The
+resolved toolchain identity includes filenames, sizes and content hashes, without
+absolute installation paths. Open read handles deny modification/deletion until
+the request ends; a changed relevant module inventory rejects publication.
+External tools outside this inventory still require an authored toolchain label.
+This is cache identity and input pinning, not binary authentication, source-epoch
+publication fencing or power-loss certification. Automatic capture is currently
+Windows-only; legacy requests retain their previous behavior.
+
+The Debug CLI contract verifies version-2 round trips, Unicode/escaped/empty
+settings, three coexisting build variants, reused preview generations, and exact
+module-tagged SQLite keys. It relocates private copies of the cooker/DLLs and
+requires the same artifact paths and record count. Appending a test PE overlay to
+the private executable then requires distinct artifacts and new index records
+under the same authored toolchain label. Workspace binaries remain untouched.
+The current Debug CLI run passed in 43.70 seconds within its unchanged 120-second
+timeout (`project_x64/resource-profile-v2-debug-current-cli.log`). The final Lua
+PackageEditor workflow passed separately (`resource-profile-v2-final-lua.log`).
+Broader current-source validation is recorded below.
+
+## Increment 31: checked terrain and foliage shipping closures
+
+The real package tool now registers the existing terrain and foliage compilers,
+alongside graphics descriptors, Lua and enabled PCM audio. It uses their existing
+source capture, dependency declarations, compiled formats and runtime consumers.
+No parallel terrain/foliage format, database or worker pool was introduced.
+
+`WorkphoneAssets.typed_package_families` authors redistributable fixtures through
+the existing exporters, creates real catalogs with UUIDs, then builds profiled
+packages through the checked CLI. Before runtime consumption it deletes source
+trees, catalogs and cooking caches. Separate native processes resolve package
+UUIDs, decode/stage terrain and stream foliage through the shared scheduler,
+then exercise existing native drawing and sampled texture pixel checks. Package
+files are marked read-only and their membership/bytes must remain unchanged.
+Terrain retains its existing corrupt/wrong-target replacement checks. Foliage
+checks shallow world metadata, scheduled page reads, resident instances and
+actual draws. Consumers identify their actual DX11 device; this fixture is not
+representative hardware or full Editor-project certification.
+
+The first optimized run reached both consumers but failed final fixture cleanup
+because Python's SQLite connection remained open. That failure is retained in
+`project_x64/resource-typed-families-first-tests.log`. Explicit connection closure
+and catalog removal fixed that boundary; the subsequent run passed in 15.64 s
+(`resource-typed-families-cleanup-tests.log`). The final consumer variant also
+resolves the terrain root through its exported UUID map. Current-source Debug and
+optimized results for that variant are recorded below.
+
+### Current validation for increments 30–31
+
+Both configurations rebuilt the native Editor/cooker and required hosts. The
+optimized run passed all eleven release suites in 110.53 seconds
+(`project_x64/resource-profile-typed-opt-tests.log`, machine-readable
+`resource-profile-typed-opt-results.xml`). Debug passed the eleven-suite run that
+included `Editor.all` and omitted the separately executed CLI suite, in 1028.94 s
+(`resource-profile-typed-debug-tests.log`). Thus all eleven release suites passed
+in both configurations, with the aggregate Editor gate additionally passing in
+Debug: 95/95 cases, 1,492,685 assertions, 895.32 seconds within the unchanged
+900-second timeout. The detailed Debug report, including actual device output,
+is retained in `resource-profile-typed-debug-report.log`.
+
+The final typed-family test passed in Debug (20.24 s) and optimized (15.34 s).
+Both consumers reported Microsoft Basic Render Driver, vendor 1414/device 008c,
+feature level b000, driver 10.0.19041.7802. This is software DX11 evidence;
+representative hardware performance, visual/input and device playback gates
+remain open. Windows UI inspection also failed with `FrameArrived timed out`
+and `window capture timed out` on the bounded retry; no interactive acceptance
+is claimed.
+
+The initial installed candidate at
+`resource-profile-v2-typed-release-candidate-20261031` failed a test-fixture write:
+the private executable copy inherited the installed source's read-only attribute.
+The fixture now makes only its private copy writable before the PE-overlay test.
+The installed package itself remains read-only and unchanged. The corrected CLI
+contract passed against those installed files
+(`project_x64/resource-profile-typed-readonly-cli.log`); that candidate's failed
+evidence is retained, not overwritten.
+
+The fresh final candidate passed installed validation with
+`validationPassed=true` and `releaseCertified=false` at
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-profile-v2-typed-final-candidate-20261031/`.
+It retains runtime/symbol archives, payload/source/module hashes and all six
+installer/startup/relocated-CLI checks. The relocated CLI includes version-2
+profiles and the private changed-cooker test. Startup and cross-volume startup
+passed; Debug harness, missing-media and missing-plugin checks failed as required.
+The payload remained unchanged. Final packaging-input hashes have zero drift,
+and all twelve matching built/installed executable/DLL hashes agree. Driver log:
+`project_x64/resource-profile-typed-final-installed-validation.log`. Interactive,
+clean-machine and legal flags remain false; the complete required-family Editor
+shipping fixture, hardware/audio validation, scale/soak and other gates below
+remain open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -1635,7 +1737,7 @@ the same immutable resource pipeline.
 1. Finish the first integrity slice: authored numeric-root UUID mapping, immutable
    metadata migration, full-project reference coverage, asset-operation retention
    and conflict resolution UI.
-2. Extend native profile/toolchain BuildKeys to persisted package/Editor controls, authored
+2. Extend persisted profile/toolchain BuildKeys and captured Windows cooker inputs with authored
    revision fences and generation recovery/retention on top of captured inputs,
    complete-request index transactions and immutable artifacts. Certify
    importer-specific interruption and power-loss publication.

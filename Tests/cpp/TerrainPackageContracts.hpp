@@ -9,7 +9,8 @@ namespace terrain_package_contracts
 
     // This entry point initializes only graphics/application services. No compiler
     // registry, source mount, catalog, SQLite plugin or compilation DB is created.
-    inline void consume( const fs::path &package, const fs::path &capture = {}, const char *manifestName="terrain.wprs" )
+    inline void consume( const fs::path &package, const fs::path &capture = {},
+                         const char *manifestName="terrain.wprs", const String &uuid={} )
     {
         claw_texture_mip_contracts::Fixture graphics;
         graphics.initialize();
@@ -22,7 +23,10 @@ namespace terrain_package_contracts
         mount.manifestPath = path( package / manifestName );
         mount.target = "terrain-dx11-contract";
         cooked_terrain_contracts::require( runtime.initializeRuntime( mount, error ), error );
-        auto loaded = runtime.load( ResourceID( "data://ground.terrain" ), error );
+        ResourceID id("data://ground.terrain");
+        if(!uuid.empty())
+            cooked_terrain_contracts::require(runtime.resolveRuntimeUUID(uuid,id,error),error);
+        auto loaded = runtime.load( id, error );
         cooked_terrain_contracts::require( loaded && loaded->dependencies.size() == 13,
                  "Package must contain the pinned thirteen-texture closure: " + error );
         auto decoded = decodeCookedTerrainResource( loaded, mount.target, true, error );

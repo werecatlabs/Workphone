@@ -82,8 +82,8 @@ function PackageEditor:load()
         roots=entry("Root UUIDs (semicolon separated)", PackageEditorTypes.Roots),
         mappings=entry("Type mappings (catalog-type=extension; ...)", PackageEditorTypes.Mappings),
         buildProfile=entry("Build profile (blank for legacy/default)", PackageEditorTypes.BuildProfile),
-        toolchain=entry("Verified toolchain identity", PackageEditorTypes.Toolchain),
-        buildSettings=entry("Effective build settings (JSON string object)", PackageEditorTypes.BuildSettings)
+        toolchain=entry("External toolchain label", PackageEditorTypes.Toolchain),
+        buildSettings=entry("Build identity settings (JSON string object)", PackageEditorTypes.BuildSettings)
     }
     self.saveButton = button("Save new profile", PackageEditorTypes.Save)
     self.rootSearch = entry("Find root (literal path or UUID)", PackageEditorTypes.Search)

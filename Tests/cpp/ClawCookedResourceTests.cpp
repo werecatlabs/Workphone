@@ -1072,9 +1072,9 @@ int main( int argc, char **argv )
             cooked_foliage_contracts::require(writeFoliageSources(authored,cooked_foliage_contracts::path(source),ResourceID("data://forest.folworld"),error),error);
             return 0;
         }
-        if(argc==3 && std::strcmp(argv[1],"--terrain-checked-package-consume")==0)
+        if(argc==4 && std::strcmp(argv[1],"--terrain-checked-package-consume")==0)
         {
-            terrain_package_contracts::consume(fs::u8path(argv[2]),{},"runtime.wprm");
+            terrain_package_contracts::consume(fs::u8path(argv[2]),{},"runtime.wprm",argv[3]);
             return 0;
         }
         if(argc==4 && std::strcmp(argv[1],"--foliage-checked-package-consume")==0)

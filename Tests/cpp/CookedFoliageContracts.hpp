@@ -51,7 +51,10 @@ namespace cooked_foliage_contracts
         auto candidate=stageCookedFoliageWorld(renderer,decoded,error); require(candidate!=nullptr,error);
         auto target=make_ptr<ClawRenderTarget>(); target->setSize({128,128}); renderer.setRenderTarget(target);
         renderer.setCamera(nullptr); renderer.setViewport(nullptr); renderer.disableShadows();
-        auto native=wp_renderer_get_dx11(renderer.getNativeRenderer()); claw_foliage_contracts::setup(native);
+        auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());
+        require(native&&recordDX11TestDevice(static_cast<ID3D11Device*>(wp_renderer_dx11_get_device(native))),
+            "Checked foliage consumer must identify its actual device");
+        claw_foliage_contracts::setup(native);
         renderer.setSceneLighting(ColourF::White,{0,0,-1},ColourF::White,0);
         ClawFoliageWorld world; require(world.setSource(candidate->source,candidate->resolver,error),error);
         ClawFoliageView camera; camera.orthographic=true; camera.forcedLod=0; camera.cull=false;

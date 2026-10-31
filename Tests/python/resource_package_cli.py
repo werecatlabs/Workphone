@@ -47,8 +47,8 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     files = {p.relative_to(output).as_posix(): p.read_bytes() for p in output.rglob("*") if p.is_file()}
     assert "runtime.wprm" in files and len(files) == 3, files.keys()
     assert all(p == "runtime.wprm" or p.endswith(".wprs") for p in files)
-    def invoke(arguments, expected=0):
-        result = subprocess.run([str(exe), *map(str, arguments)], cwd=exe.parent,
+    def invoke(arguments, expected=0, executable=exe):
+        result = subprocess.run([str(executable), *map(str, arguments)], cwd=executable.parent,
                                 capture_output=True, text=True, env=child_environment)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result
@@ -160,6 +160,38 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     assert len({tuple(sorted(p)) for p in keyed_paths}) == 3
     with closing(sqlite3.connect(root / "keyed-cooked" / ".resource_compilation.db")) as db:
         assert db.execute("SELECT COUNT(*) FROM compiled_resources").fetchone()[0] == 6
+        targets = [row[0] for row in db.execute("SELECT target FROM compiled_resources")]
+        assert all("\0" in target and ":modules-v1:" in target for target in targets)
+    # Relocation preserves the captured toolchain identity. A changed executable
+    # must cook a new generation even when its authored toolchain label is unchanged.
+    relocated_tools = root / "relocated-tools"
+    relocated_tools.mkdir()
+    relocated_exe = relocated_tools / exe.name
+    shutil.copy2(exe, relocated_exe)
+    for module in exe.parent.glob("*.dll"):
+        shutil.copy2(module, relocated_tools / module.name)
+    relocated_profile = root / "relocated-keyed.json"
+    relocated_values = dict(json.loads((root / "profile-low.json").read_bytes()), output="keyed-relocated")
+    relocated_profile.write_text(json.dumps(relocated_values), encoding="utf-8")
+    invoke(["--profile", relocated_profile], executable=relocated_exe)
+    relocated_paths = {p.relative_to(root / "keyed-relocated").as_posix()
+                       for p in (root / "keyed-relocated").rglob("*.wprs")}
+    assert relocated_paths == keyed_paths[0]
+    with closing(sqlite3.connect(root / "keyed-cooked" / ".resource_compilation.db")) as db:
+        assert db.execute("SELECT COUNT(*) FROM compiled_resources").fetchone()[0] == 6
+    # A PE overlay changes the private test copy's fingerprint without changing
+    # its executable code. Never modify the workspace's cooker or installed DLLs.
+    relocated_exe.chmod(0o666)  # Installed source files may be read-only; this copy is test-owned.
+    with relocated_exe.open("ab") as binary:
+        binary.write(b"WORKPHONE_BUILDKEY_CHANGE_TEST")
+    relocated_values["output"] = "keyed-changed-tool"
+    relocated_profile.write_text(json.dumps(relocated_values), encoding="utf-8")
+    invoke(["--profile", relocated_profile], executable=relocated_exe)
+    changed_paths = {p.relative_to(root / "keyed-changed-tool").as_posix()
+                     for p in (root / "keyed-changed-tool").rglob("*.wprs")}
+    assert changed_paths.isdisjoint(keyed_paths[0])
+    with closing(sqlite3.connect(root / "keyed-cooked" / ".resource_compilation.db")) as db:
+        assert db.execute("SELECT COUNT(*) FROM compiled_resources").fetchone()[0] == 8
     for flags in [["--build-profile", "missing-tools"], ["--toolchain", "missing-profile"],
                   ["--build-profile", "x", "--toolchain", "t", "--build-settings", '{"x":"a","x":"b"}'],
                   ["--build-profile", "x", "--toolchain", "t", "--build-settings", '{"x":1}']]:
@@ -220,7 +252,7 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     rejected = root / "rejected-output"
     invalid_base = dict(settings, output="rejected-output", cookedRoot="rejected-cooked")
     invalid_profiles = [
-        dict(invalid_base, version=2), dict(invalid_base, unexpected=True),
+        dict(invalid_base, version=2), dict(invalid_base, version=3), dict(invalid_base, unexpected=True),
         dict(invalid_base, roots=[]), dict(invalid_base, roots=[main_id, main_id.upper()]),
         dict(invalid_base, mappings=settings["mappings"] * 2),
         dict(invalid_base, sourceRoot="bad\0path"), dict(invalid_base, roots=[main_id] * 513),

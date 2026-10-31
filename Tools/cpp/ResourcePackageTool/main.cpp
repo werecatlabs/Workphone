@@ -60,7 +60,8 @@ namespace
                 auto path=std::filesystem::canonical(std::filesystem::path(name));
                 String label=StringUtil::make_lower(path.filename().u8string().c_str());
                 const bool known=label=="workphone.dll"||label=="wpgraphics.dll"||label=="wplua.dll"||
-                    label=="wpaudio.dll"||label=="wpsqlite.dll";
+                    label=="wpaudio.dll"||label=="wpsqlite.dll"||label.find("d3dcompiler_")==0||
+                    label=="dxcompiler.dll"||label=="dxil.dll";
                 if(known || std::filesystem::equivalent(path.parent_path(),directory))
                     if(!result.emplace(label,path).second) throw std::runtime_error("Aliased cooker module names");
             }
@@ -184,7 +185,8 @@ namespace
         {
             std::cerr << "Usage: WorkphoneResourcePackage <source-root> <catalog> <cooked-root> "
                          "<new-output-directory> <target> --map <catalog-type=extension> --root <uuid> "
-                         "[--map <type=extension>] [--root <uuid>]\n"
+                         "[--map <type=extension>] [--root <uuid>] "
+                         "[--build-profile <name> --toolchain <identity> [--build-settings <JSON-object>]]\n"
                          "       WorkphoneResourcePackage --profile <profile.json>\n"
                          "       WorkphoneResourcePackage --prune-jobs <project> <keep-count> <max-bytes>\n"
                          "       WorkphoneResourcePackage --apply-prune-jobs <project> <keep-count> <max-bytes>\n"
