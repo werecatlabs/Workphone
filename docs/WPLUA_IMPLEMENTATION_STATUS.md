@@ -1,6 +1,6 @@
 # Lua implementation status and usage
 
-Updated 29 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
+Updated 31 October 2026. This records the implemented foundation, not certification of the full [production plan](WPLUA_PRODUCTION_PLAN.md).
 
 ## Script assets and runtime resources
 
@@ -19,15 +19,21 @@ data://logic/Helper.lua
 
 `require('logic.Helper')` and `require('logic/Helper')` resolve the installed module. Dependencies are compiled through the existing resource graph and installed into `package.preload`. Ambiguous aliases are rejected. Each load accepts at most 256 Lua resources and 64 MiB of source. Manifest dependencies are explicit: dynamic `require` calls are not statically inferred. Use one canonical spelling of each module name; Lua caches different `require` names separately.
 
-For packaged execution, call `configureScriptResources(catalog, resources, true)` before loading the manager. Compilation and loose-file fallback are disabled; module discovery uses preloads. The catalog and compiled dependency resources must be shipped together. This module policy is not a security sandbox: existing native bindings and standard libraries still have their normal permissions.
+For catalog-backed compiled asset execution, call `configureScriptResources(catalog, resources, true)` before loading the manager. Asset compilation and per-asset loose-file fallback are disabled; module discovery uses preloads. This configuration still requires the catalog.
 
-Script components persist `scriptAssetUuid` alongside `className`, including deserialization before actor attachment/runtime startup and partial property updates. An asset-backed component loads the asset before constructing its class. Existing components with no asset UUID continue to use already loaded global classes. The Editor still needs a dedicated asset picker and project startup integration for this workflow.
+For source-free packages, call `LuaManager::configureRuntimeScriptResources(RuntimeResourceConfig, error)` before loading a fresh VM, then use `loadScriptAsset(uuid)`. The manager owns a private immutable UUID mount with no catalog, compiler or compilation index. Missing/wrong-type UUIDs fail without authoring lookup; UUID case aliases execute the asset only once. Runtime mode caps payloads to 8 MiB and closures to 256 resources/64 MiB. It disables filesystem module search, `loadfile`, `dofile` and native library loading, and rejects loose-file/list loading, direct resource/state replacement, active authoring retarget and hot reload.
+
+Unload releases the private mount and preserves runtime policy: plain subsequent `load` fails until an explicit runtime remount or an explicit authoring configuration while unloaded. Explicit text/debug execution and existing native bindings remain available; this mode is not a security sandbox. Lua VM, preload and debugger-source copies are not yet fully charged to shared residency. See [runtime package usage](WPRESOURCE_RUNTIME_PACKAGES.md#runtime-script-component-uuids).
+
+Script components persist `scriptAssetUuid` alongside `className`, including deserialization before actor attachment/runtime startup and partial property updates. An asset-backed component loads the asset before constructing its class. This existing native consumer now works through the source-free UUID mount. Existing components with no asset UUID continue to use already loaded global classes. Cooked scene compilation still rejects component-bearing graphs; automatic project/package startup and a dedicated Editor asset picker remain open.
 
 ## Runtime and reload
 
 Source execution, global/static/member calls and constructors run through protected Lua boundaries with named diagnostics and stack restoration. Optional missing callbacks remain compatible. Constructors publish instances only after success; a failed replacement preserves the current instance. Queue draining, incremental collection, balanced class enumeration and VM-reference release are implemented.
 
-Reload stages source/assets and constructors in a candidate VM on the Application task, then promotes the candidate after validation. Syntax, dependency or constructor failure keeps the previous VM active. Outstanding legacy raw instances prevent promotion. Editor reload waits through the existing Primary coroutine queue, without sleeping while holding Render/Physics locks, and refreshes windows after completion.
+Load/unload, debugger start and update/poll serialize lifecycle checks with the manager lock. External debugger stop/unload sends signal-only cancellation before waiting for that lock, then cleans hooks and registry references after execution unwinds. Reentrant VM teardown from inside a Lua/native callback remains unsupported.
+
+In authoring mode, reload stages source/assets and constructors in a candidate VM on the Application task, then promotes the candidate after validation. Syntax, dependency or constructor failure keeps the previous VM active. Outstanding legacy raw instances prevent promotion. Editor reload waits through the existing Primary coroutine queue, without sleeping while holding Render/Physics locks, and refreshes windows after completion.
 
 Remaining reload requirements include persisted override/runtime-state migration, generation-checked public handles, native side-effect staging and rollback, and comprehensive owner-thread enforcement. Top-level Lua and constructors can call native services during candidate validation; those side effects cannot currently be rolled back. The binding fork remains constrained to one real execution thread. These are open production gates.
 
@@ -56,6 +62,14 @@ Window > Lua Debugger exposes local breakpoints and conditions/logpoints, except
 The VSIX packages a .NET Framework 4.8 stdio adapter and registers Workphone Lua with Visual Studio's DebugAdapterHost. The tool window loads an endpoint or launches the Editor, then requests a standard Visual Studio debug session. Breakpoints, Call Stack, Locals, Watch, stepping and Exception Settings use that session. The old newline client is excluded from the extension build. Build/installation/interactive verification are reported separately below; source integration alone is not certification of a live debug session.
 
 ## Validation
+
+### Source-free Script components, 31 October 2026
+
+On the default bundled Lua backend, the final RelWithDebInfo selection passed 17/17 suites in 150.51 seconds and Debug passed 19/19 in 229.34 seconds. These include the real Script consumer and running/paused debugger cancellation regressions; the Debug selection also includes cooked scene/prefab and UI Editor cases. The Script fixture removes source, catalog and cooking storage, makes the package read-only, constructs and updates an actual component, rejects fallback/retarget/reload routes, and explicitly remounts a fresh VM on the same manager after teardown.
+
+The fresh installed/relocated candidate passed six checks with unchanged read-only payload, zero captured-source drift and matching hashes for twelve modules. `validationPassed=true` and `releaseCertified=false`. Exact logs, JUnit/full output, the corrected fixture's initial timer failure and candidate hashes are retained in the [resource release ledger, increment 35](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md#increment-35-real-script-components-through-package-uuids).
+
+The full Debug Editor aggregate additionally passed 97/97 cases and 1,912,515 assertions in 801.38 seconds within its unchanged 900-second timeout (`project_x64/resource-all-typed-editor-final-tests.log`). This validates the native source-free Script boundary and automated lifecycle coverage, not a mixed-family application bootstrap, full residency or shipping certification. The dated LuaJIT/live Editor evidence below is historical; these changes have not repeated that backend or the visual, representative hardware/audio and gameplay acceptance gates.
 
 ### Pause isolation and debugger controls, 29 October 2026 follow-up
 

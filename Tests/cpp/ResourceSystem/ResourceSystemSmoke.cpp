@@ -531,6 +531,48 @@ namespace
             "Shared scheduler delivers a shallow source-free payload");
         require(stream->findResident(id)==ready.resource && stream->residentPayloadBytes()==ready.resource->payload.size(),
             "Resident cache reuses the exact leased immutable payload");
+        {
+            // Cache delivery is automatic and retains the original lease even
+            // after the immutable mounted artifact is no longer available.
+            const auto artifact=fs::u8path(paths[0].c_str());
+            const auto hidden=fs::path(artifact.wstring()+L".cache-only");
+            fs::rename(artifact,hidden);
+            const auto completed=stream->stats().completed;
+            require(stream->replace({{1000,id,1024*1024,0},{1001,id,1024*1024,7}},error),error.c_str());
+            ResourcePayloadResult hit;
+            const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(!stream->take(hit)&&std::chrono::steady_clock::now()<until)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            require(hit.key==1000&&hit.resource==ready.resource&&
+                !hit.resource.owner_before(ready.resource)&&!ready.resource.owner_before(hit.resource),
+                "Automatic resident hits reuse the original payload without artifact I/O");
+            require(scheduler->stats().used[size_t(StreamMemoryClass::PendingCpu)]!=0,
+                "Coalesced delivery metadata remains reserved until fan-out is consumed");
+            const auto generation=hit.generation;
+            require(!stream->replace({{1002,id,1024,0},{1002,id,1024,0}},error),
+                "Duplicate logical keys remain invalid when resource reads coalesce");
+            require(stream->take(hit)&&hit.key==1001&&hit.generation==generation&&hit.resource==ready.resource,
+                "Rejected replacement preserves the remaining logical delivery");
+            require(stream->stats().completed==completed+1,
+                "Identical resource and payload-limit demands share one physical completion");
+            require(stream->replace({{1003,id,1,0}},error),error.c_str());
+            const auto smallDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(!stream->take(hit)&&std::chrono::steady_clock::now()<smallDeadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            require(hit.key==1003&&!hit.resource&&!hit.error.empty(),
+                "Cached delivery still enforces each requested payload limit");
+            require(stream->replace({{1004,id,1024,0},{1005,id,1024,0}},error),error.c_str());
+            const auto cancelDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(!stream->take(hit)&&std::chrono::steady_clock::now()<cancelDeadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            require(hit.key==1004&&hit.resource,"Cache-hit fan-out becomes available before cancellation");
+            stream->cancel();
+            require(!stream->take(hit),"Cancellation discards unconsumed coalesced deliveries");
+            stream->drain();
+            require(!scheduler->stats().used[size_t(StreamMemoryClass::PendingCpu)],
+                "Cancellation and drain release retained logical-delivery reservations");
+            fs::rename(hidden,artifact);
+        }
         stream->setResidencyLimits(0,0);
         require(!stream->findResident(id) && !stream->residentPayloadBytes() && ready.resource,
             "Quota eviction releases cache ownership while retaining a live consumer");
@@ -555,6 +597,60 @@ namespace
                 else std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             require(received==2,"Cached results must not starve the remainder of an admitted batch");
+        }
+        {
+            WorldStreamLimits tiny; tiny.bytes[size_t(StreamMemoryClass::ResultCpu)]=1024;
+            auto service=std::make_shared<WorldStreamingScheduler>(tiny);
+            auto coalesced=ResourcePayloadStream::create(runtime,service,{},error);
+            require(coalesced!=nullptr,error.c_str());
+            require(coalesced->replace({{40,id,1024,0},{41,id,1024,0}},error),error.c_str());
+            std::shared_ptr<const RuntimeResource> first;
+            size_t received=0; const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(received<2&&std::chrono::steady_clock::now()<until) {
+                ResourcePayloadResult value;
+                if(coalesced->take(value)) {
+                    require(value.resource!=nullptr,"Coalesced cold read succeeds with one result reservation");
+                    if(!received) first=value.resource;
+                    else require(first==value.resource,"Coalesced cold results share their exact immutable resource");
+                    ++received;
+                }
+                else std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(received==2&&coalesced->stats().completed==1,
+                "A retained first consumer must not block a duplicate logical read");
+        }
+        {
+            // A cold front job cannot block the cached completion that owns all
+            // current result capacity, even if the cold demand has higher priority.
+            const auto unavailable=fs::path(childArtifact.wstring()+L".unavailable");
+            fs::rename(unavailable,childArtifact);
+            WorldStreamLimits tiny; tiny.bytes[size_t(StreamMemoryClass::ResultCpu)]=1024;
+            auto service=std::make_shared<WorldStreamingScheduler>(tiny);
+            auto mixed=ResourcePayloadStream::create(runtime,service,{},error);
+            require(mixed!=nullptr,error.c_str()); mixed->setResidencyLimits(2,1024);
+            require(mixed->replace({{50,id,1024,0}},error),error.c_str());
+            {
+                ResourcePayloadResult warm;
+                const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+                while(!mixed->take(warm)&&std::chrono::steady_clock::now()<until)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                require(warm.resource!=nullptr,"Warm the mixed-demand resident cache");
+            }
+            require(mixed->findResident(id)!=nullptr,"The last warm completion remains resident");
+            require(mixed->replace({{51,ResourceID("data://child.txtres"),1024,std::numeric_limits<s32>::max()},
+                {52,id,1024,0}},error),error.c_str());
+            size_t received=0; const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(received<2&&std::chrono::steady_clock::now()<until) {
+                ResourcePayloadResult value;
+                if(mixed->take(value)) {
+                    require(value.resource!=nullptr,"Mixed cached/cold demand completes under full result pressure");
+                    require(value.key==(received?51:52),"Cache-owned completion precedes blocked cold I/O");
+                    ++received;
+                }
+                else std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(received==2,"Mixed cache/cold demand must not deadlock");
+            fs::rename(childArtifact,unavailable);
         }
         require(!stream->replace({{20,id,9ull<<20,0}},error)&&!error.empty(),"Demand above producer residency budget is rejected");
         Array<ResourcePayloadDemand> oversized;

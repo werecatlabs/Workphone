@@ -71,7 +71,29 @@ Editor controls and policy-preserving file operations use the existing catalog
 session and operation journal. PackageEditor/CLI adoption, mounted media closure
 integration, asynchronous scale and interactive/release acceptance remain open.
 
-### Current review summary
+### Current implementation status (31 October 2026)
+
+Increments 30–34 add persisted profile/toolchain BuildKeys with captured Windows
+cooker modules, checked terrain/foliage/native mesh packages, typed material slots,
+skeleton/linear-clip and CPU skinning installers, transform-only scene/prefab and
+experimental UI trees. Whole-payload requests now reuse resident leases and share
+matching physical reads within a demand batch. These extend the existing compiler,
+manifest, native consumer and WorldStreamingScheduler paths. The
+[ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md) records rebuilt evidence and
+the [runtime guide](WPRESOURCE_RUNTIME_PACKAGES.md) defines supported schemas.
+Increment 35 adds an explicit private runtime UUID mount in LuaManager, exercised
+by an actual Script component after source/catalog/index removal. External debugger
+stop/unload signals cancellation before waiting for the executing VM, then retires
+VM hooks under its owner lock. This does not add component-bearing scene cooking.
+
+The declared R1/R2 scope remains open. Component-bearing Editor scenes still need
+captured UUID dependency discovery and strict pinned reference installation across
+MeshRenderer, Lua and other components. Full streaming requires cross-batch shared
+work, complete metadata/decoded/device accounting, range/chunk/LOD/mip/audio demand
+and measured fallback/pressure behavior. Independent hardware/audio/input/visual,
+clean-machine/legal and scale/soak gates are required before release certification.
+
+### Review-baseline summary (historical)
 
 | Area | Current foundation | Required production completion |
 |---|---|---|

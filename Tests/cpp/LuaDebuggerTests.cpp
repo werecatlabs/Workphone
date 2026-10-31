@@ -175,6 +175,87 @@ static void retainedDisconnectContract( const std::string &root )
 }
 #endif
 
+static void shutdownExecutorContracts( const std::string &root )
+{
+    using namespace workphone;
+    for( const bool paused : { false, true } )
+    {
+        LuaManager manager; manager.load( nullptr );
+        check( manager.isLoaded(), "Cannot create debugger shutdown VM" );
+        check( manager.startDebugger( 0, "shutdown-executor-contract-token", root.c_str() ),
+               "Cannot start debugger shutdown fixture" );
+        struct Probe
+        {
+            Clock::time_point deadline = Clock::now() + std::chrono::seconds( 4 );
+            std::atomic<bool> entered{ false }, paused{ false };
+        } probe;
+        auto state = manager.getLuaState();
+        lua_pushlightuserdata( state, &probe );
+        lua_pushcclosure( state, []( lua_State *vm ) -> int {
+            auto probe = static_cast<Probe *>( lua_touserdata( vm, lua_upvalueindex( 1 ) ) );
+            probe->entered = true;
+            // Bound a failing regression independently of debugger cancellation.
+            // Normal shutdown must complete well before this fallback fires.
+            if( Clock::now() >= probe->deadline )
+            {
+                lua_pushliteral( vm, "Debugger shutdown watchdog expired" );
+                return lua_error( vm );
+            }
+            return 0;
+        }, 1 );
+        lua_setglobal( state, "shutdownWatchdog" );
+        if( paused )
+        {
+            manager.setDebuggerPauseObserver( [&]( bool value ) { if( value ) probe.paused = true; } );
+            manager.setDebuggerPausePump( [&]() { return Clock::now() < probe.deadline; } );
+            manager.debuggerCommand( "pause" );
+        }
+        bool executed = true;
+        std::exception_ptr executorFailure;
+        std::thread executor( [&]() {
+            try { executed = manager.executeSource( "while true do shutdownWatchdog() end", "=shutdown-loop" ); }
+            catch( ... ) { executorFailure = std::current_exception(); }
+        } );
+        struct Join
+        {
+            std::thread &thread;
+            ~Join() { if( thread.joinable() ) thread.join(); }
+        } join{ executor };
+        while( !( paused ? probe.paused.load() : probe.entered.load() ) && Clock::now() < probe.deadline )
+            std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+        const bool entered = paused ? probe.paused.load() : probe.entered.load();
+        const auto before = Clock::now();
+        // Both calls originate outside the executor while it holds the manager
+        // lock. A full debugger cleanup before that lock would race live Lua;
+        // taking the lock before requestStop would deadlock the paused VM.
+        if( paused ) manager.unload( nullptr );
+        else manager.stopDebugger();
+        const auto elapsed = Clock::now() - before;
+        executor.join();
+        if( executorFailure ) std::rethrow_exception( executorFailure );
+        check( entered && !executed, "Debugger shutdown did not cancel its active Lua executor" );
+        check( elapsed < std::chrono::seconds( 2 ), "Debugger shutdown relied on the watchdog instead of its stop signal" );
+        if( paused )
+        {
+            check( !manager.isLoaded() && !manager.getLuaState(), "Paused VM unload did not retire the state" );
+            manager.load( nullptr );
+        }
+        else
+        {
+            const auto previous = manager.getLuaState();
+            Thread::setCurrentTask( TaskId::Application );
+            manager.reloadScripts(); manager.update();
+            check( !manager.getError() && manager.getLuaState() != previous &&
+                   manager.executeSource( "assert(6*7==42)", "=stopped-debugger-reload" ),
+                   "Ordinary reload rebound a stopped debugger's cancelling hook" );
+        }
+        check( manager.startDebugger( 0, "shutdown-executor-contract-token", root.c_str() ) &&
+               manager.executeSource( "assert(6*7==42)", "=shutdown-restart" ),
+               "A fresh debugger session retained a previous cancellation request" );
+        manager.stopDebugger(); manager.unload( nullptr );
+    }
+}
+
 int main( int argc, char **argv )
 {
     using namespace workphone;
@@ -568,6 +649,7 @@ int main( int argc, char **argv )
                    "LuaJIT stepping changed script results" );
             retainedDisconnectContract( root );
 #endif
+            shutdownExecutorContracts( root );
             manager.stopDebugger(); manager.unload( nullptr );
             std::puts( "Lua debugger integration: PASS" );
         }

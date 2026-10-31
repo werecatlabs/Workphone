@@ -139,7 +139,7 @@ namespace workphone
         int hookedThreads = LUA_NOREF;
         int originalPrint = LUA_NOREF;
         std::atomic<int> localAction{ 0 };
-        bool abortExecution = false;
+        std::atomic<bool> abortExecution{ false };
         std::string snapshot = "{}";
 
         static Impl *get( lua_State *state )
@@ -154,17 +154,17 @@ namespace workphone
         {
             if( auto self = get( state ) )
             {
-                if( self->suppress ) return;
+                const bool cancelling = self->stopping.load() || self->abortExecution.load();
+                if( self->suppress && !cancelling ) return;
                 if( self->hookedThreads != LUA_NOREF )
                 {
                     lua_rawgeti( state, LUA_REGISTRYINDEX, self->hookedThreads );
                     lua_pushthread( state ); lua_pushboolean( state, 1 ); lua_rawset( state, -3 ); lua_pop( state, 1 );
                 }
-                try { self->onHook( state, frame ); }
+                try { if( !cancelling ) self->onHook( state, frame ); }
                 catch( const std::exception & ) { self->closeClient = true; self->isPaused = false; }
-                if( self->abortExecution )
+                if( self->stopping.load() || self->abortExecution.exchange( false ) )
                 {
-                    self->abortExecution = false;
                     // All C++ frames with non-trivial locals have returned.
                     lua_pushliteral( state, "Lua execution cancelled by the debugger host" );
                     lua_error( state );
@@ -279,7 +279,8 @@ namespace workphone
             pauseRequested = breakOnException = false;
             clearStep();
             localMode = false;
-            abortExecution = false;
+            // Session/generation reset cannot erase a cross-thread stop request.
+            // start() clears cancellation only when opening a fresh session.
             breakpoints.clear(); breakpointIds.clear(); stopRules.clear(); pendingAttach.clear(); exceptionText.clear();
         }
         int depth( lua_State *state )
@@ -1248,7 +1249,8 @@ namespace workphone
             auto io = std::make_shared<boost::asio::io_context>();
             auto listener = std::make_unique<tcp::acceptor>( *io, tcp::endpoint( boost::asio::ip::address_v4::loopback(), port ) );
             listener->non_blocking( true ); m_impl->listeningPort = listener->local_endpoint().port();
-            m_impl->token = token; m_impl->root = root; m_impl->stopping = false;
+            m_impl->token = token; m_impl->root = root;
+            m_impl->abortExecution = false; m_impl->stopping = false;
             auto registered = std::move( m_impl->sources );
             m_impl->sources.clear(); m_impl->sourceBytes = 0;
             for( const auto &entry : registered ) source( entry.second.original, entry.second.text );
@@ -1312,9 +1314,17 @@ namespace workphone
 #endif
         }
     }
+    void LuaDebugger::requestStop() noexcept
+    {
+        // Do not touch Lua, join transport, or mutate executor-owned containers.
+        // Stopping stays latched so a generation reset or caught Lua error cannot
+        // allow a resumed infinite script to retain the manager's owner lock.
+        m_impl->abortExecution = true;
+        m_impl->stopping = true;
+    }
     void LuaDebugger::stop()
     {
-        m_impl->stopping = true;
+        requestStop();
         if( m_impl->network.joinable() ) m_impl->network.join();
         m_impl->reset(); bind( nullptr ); m_impl->listeningPort = 0;
         std::lock_guard<std::mutex> lock( m_impl->mutex ); m_impl->requests.clear(); m_impl->output.clear();

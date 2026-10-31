@@ -1092,6 +1092,8 @@ if (WP_EDITOR_TESTS)
         scene_render_asset_drop_test
         im_gui_drop_queue_delivers_distinct_gestures_test
         actor_prefab_test
+        cooked_scene_prefab_resource_test
+        ui_resource_package_test
         actor_addremove_test
         terrain_test
         ui_test

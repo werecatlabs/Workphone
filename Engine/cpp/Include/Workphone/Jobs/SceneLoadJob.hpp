@@ -42,6 +42,10 @@ namespace workphone
 
         void setDataStr( const String &dataStr );
 
+        /** Already decoded immutable actor document; configure before submission.
+         * The caller must validate/own the complete document before handing it off. */
+        void setPreparedData( SmartPtr<Properties> data );
+
         WP_CLASS_REGISTER_DECL;
 
     protected:

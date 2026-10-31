@@ -309,15 +309,17 @@ namespace workphone
              */
             SceneLoadingState getSceneLoadingState() const override;
 
-            u64 beginSceneLoad()
-            {
-                return ++m_loadGeneration;
-            }
+            u64 beginSceneLoad();
 
             u64 getLoadGeneration() const
             {
                 return m_loadGeneration.load();
             }
+
+            /** Restore readiness after an append rolled back to a previously ready
+             * actor graph. Does not emit successful-load callbacks. A superseding
+             * load generation or any state other than Failed is left untouched. */
+            bool restoreReadySceneAfterFailedAppend( u64 generation );
 
             /**
              * @brief Sorts the objects in memory for efficient access or rendering.

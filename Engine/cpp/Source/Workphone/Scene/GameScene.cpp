@@ -1630,6 +1630,28 @@ namespace workphone::scene
         return m_sceneLoadingState;
     }
 
+    u64 GameScene::beginSceneLoad()
+    {
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManager() : nullptr;
+        ScopedLock lock( manager );
+        return ++m_loadGeneration;
+    }
+
+    bool GameScene::restoreReadySceneAfterFailedAppend( u64 generation )
+    {
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManager() : nullptr;
+        if( !manager ) return false;
+        ScopedLock lock( manager );
+        if( !isLoaded() || getLoadGeneration() != generation ||
+            getSceneLoadingState() != SceneLoadingState::Failed ) return false;
+        // The caller retained its previous ready graph and the append job has
+        // retired only staged actors. Avoid replaying successful-load events.
+        m_sceneLoadingState = SceneLoadingState::Loaded;
+        return true;
+    }
+
     SmartPtr<Properties> GameScene::getProperties() const
     {
         auto properties = Resource<IGameScene>::getProperties();

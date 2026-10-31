@@ -9,6 +9,8 @@
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/ClawMesh.hpp>
+#include <WPGraphics/Resources/MeshResourceCompiler.hpp>
+#include "ClawSkeletonResourceContracts.hpp"
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <Workphone/Core/LogManagerDefault.hpp>
 #include <Workphone/System/Resource.hpp>
@@ -1057,17 +1059,79 @@ int main( int argc, char **argv )
 {
     try
     {
+        if(argc==4 && (std::strcmp(argv[1],"--skeleton-checked-package-consume")==0 ||
+                      std::strcmp(argv[1],"--skin-checked-package-consume")==0))
+        {
+            claw_texture_mip_contracts::Fixture graphics; graphics.initialize();
+            graphics.application->getFactoryManager()->load(nullptr);
+            auto timer=make_ptr<TimerMT>(); timer->load(nullptr); graphics.application->setTimer(timer);
+            auto states=make_ptr<StateManager>(); graphics.application->setStateManager(states); states->load(nullptr);
+            struct Cleanup { std::function<void()> run; ~Cleanup(){run();} } cleanup{[&] {
+                graphics.renderer->setRenderTarget(nullptr);
+                states->unload(nullptr); graphics.application->setStateManager(nullptr);
+                timer->unload(nullptr); graphics.application->setTimer(nullptr);
+            }};
+            ResourceSystem runtime(nullptr,nullptr); RuntimeResourceConfig config;
+            config.compiledRoot=argv[2]; config.manifestPath=(fs::u8path(argv[2])/"runtime.wprm").u8string().c_str(); config.target="pc";
+            String error; require(runtime.initializeRuntime(config,error),error);
+            auto loaded=runtime.loadUUID(argv[3],error); require(loaded!=nullptr,error);
+            if(std::strcmp(argv[1],"--skin-checked-package-consume")==0)
+                claw_skeleton_resource_contracts::consumeSkin(loaded);
+            else claw_skeleton_resource_contracts::consume(loaded);
+            return 0;
+        }
         if(argc==4 && std::strcmp(argv[1],"--mesh-checked-package-consume")==0)
         {
             claw_texture_mip_contracts::Fixture graphics; graphics.initialize();
+            graphics.application->getFactoryManager()->load(nullptr);
+            auto timer=make_ptr<TimerMT>(); timer->load(nullptr); graphics.application->setTimer(timer);
+            auto states=make_ptr<StateManager>(); graphics.application->setStateManager(states); states->load(nullptr);
+            struct Cleanup { std::function<void()> run; ~Cleanup(){run();} } cleanup{[&] {
+                graphics.renderer->setRenderTarget(nullptr);
+                states->unload(nullptr); graphics.application->setStateManager(nullptr);
+                timer->unload(nullptr); graphics.application->setTimer(nullptr);
+            }};
             ResourceSystem runtime(nullptr,nullptr); RuntimeResourceConfig config;
             config.compiledRoot=argv[2]; config.manifestPath=(fs::u8path(argv[2])/"runtime.wprm").u8string().c_str();
             config.target="pc"; String error; require(runtime.initializeRuntime(config,error),error.c_str());
             auto resource=runtime.loadUUID(argv[3],error); require(resource!=nullptr,error.c_str());
             ClawMesh mesh; require(mesh.loadResource(resource,error),error.c_str());
-            auto previous=mesh.getNativeMesh(); require(wp_graphics_mesh_get_vertex_count(previous)==3,"Cooked mesh geometry");
+            auto previous=mesh.getNativeMesh();
+            const bool bound=!resource->dependencies.empty();
+            require(wp_graphics_mesh_get_vertex_count(previous)==(bound?6:3),"Cooked mesh geometry");
+            auto previousMaterial=mesh.getMaterial(0);
+            if(bound) {
+                require(previousMaterial&&mesh.getMaterial(1)&&previousMaterial!=mesh.getMaterial(1),"Distinct material slots install");
+                auto target=make_ptr<ClawRenderTarget>(); target->setSize({128,128});
+                auto renderer=graphics.renderer; renderer->setRenderTarget(target); renderer->setViewport(nullptr);
+                renderer->setCamera(nullptr); renderer->disableShadows();
+                auto native=wp_renderer_get_dx11(renderer->getNativeRenderer()); claw_foliage_contracts::setup(native);
+                renderer->setSceneLighting(ColourF::White,{0,-1,0},ColourF::White,0);
+                renderer->clear(ColourF::Black); renderer->renderMesh(&mesh,Matrix4F::identity());
+                auto pixels=claw_foliage_contracts::pixels(native); size_t red=0,green=0;
+                for(size_t p=0;p<pixels.size();p+=4) {
+                    red+=pixels[p]>80&&pixels[p]>pixels[p+1]*2;
+                    green+=pixels[p+1]>80&&pixels[p+1]>pixels[p]*2;
+                }
+                require(red>40&&green>40,"Both typed mesh material/texture slots reach native pixels");
+                auto missing=std::make_shared<RuntimeResource>(*resource); missing->dependencies.clear();
+                require(!mesh.loadResource(missing,error)&&mesh.getNativeMesh()==previous&&mesh.getMaterial(0)==previousMaterial,
+                    "Missing material closure preserves the complete visible mesh");
+                require(!mesh.loadResource(resource,error,"wrong-target")&&mesh.getNativeMesh()==previous,
+                    "Wrong mesh target preserves installed geometry");
+                std::printf("PASS: source-free two-submesh materials reach pixels: red=%zu green=%zu\n",red,green);
+            }
             auto invalid=std::make_shared<RuntimeResource>(*resource); invalid->header.compilerVersion=0;
             require(!mesh.loadResource(invalid,error)&&mesh.getNativeMesh()==previous,"Failed mesh replacement retains geometry");
+            if(!bound) {
+                CookedMeshData decoded; require(MeshResourceCompiler::decode(*resource,decoded,error),error);
+                auto legacy=std::make_shared<RuntimeResource>(*resource); legacy->payload=std::move(decoded.geometry);
+                legacy->header.payloadSize=legacy->payload.size(); legacy->header.payloadHash=hashBytes(legacy->payload.data(),legacy->payload.size());
+                legacy->header.compilerVersion=combineHash(combineHash(combineHash(14695981039346656037ull,1),1),ResourceTypeID("mesh").value());
+                require(mesh.loadResource(legacy,error),"Legacy WPM1 typed packages remain installable");
+                legacy->header.installDependencies.push_back(ResourceID("data://unbound.matres"));
+                require(!mesh.loadResource(legacy,error),"Legacy mesh cannot smuggle unbound install dependencies");
+            }
             mesh.unload(nullptr); return 0;
         }
         if(argc==3 && std::strcmp(argv[1],"--foliage-source-export")==0)

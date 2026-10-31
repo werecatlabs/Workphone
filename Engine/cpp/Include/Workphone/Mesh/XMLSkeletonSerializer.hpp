@@ -8,6 +8,7 @@ class TiXmlElement;
 
 namespace workphone
 {
+    namespace resource { class SkeletonResourceCompiler; }
 
     /** Class for serializing a Skeleton to/from XML.
     @remarks
@@ -36,6 +37,9 @@ namespace workphone
         void exportSkeleton( const ISkeleton *pSkeleton, const String &filename );
 
     private:
+        friend class resource::SkeletonResourceCompiler;
+        // Called only after strict typed-resource validation; mutates a private candidate.
+        bool importSkeletonData(const String &,MeshSkeleton *,String &error);
         void writeSkeleton( const ISkeleton *pSkel, TiXmlElement *root );
         void writeBone( TiXmlElement *bonesElement, const IBone *pBone );
         void writeBoneParent( TiXmlElement *boneHierarchyNode, String boneName, String parentName );

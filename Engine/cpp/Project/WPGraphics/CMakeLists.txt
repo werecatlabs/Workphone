@@ -87,6 +87,8 @@ else ()
     add_library(WPGraphics SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+target_include_directories(WPGraphics PRIVATE ${WP_ROOT}/Dependencies/rapidjson/include)
+
 if (WIN32)
 target_link_options(WPGraphics PUBLIC 
 $<$<CONFIG:Release>:/LTCG>
@@ -115,6 +117,8 @@ target_link_libraries(WPGraphics WorkphoneGraphics)
 
 target_compile_definitions(WPGraphics PRIVATE FREEIMAGE_LIB)
 target_compile_definitions(WPGraphics PRIVATE WP_FOLIAGE_SOURCE_RESOURCES=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
+set_property(SOURCE ${WP_ROOT}/Engine/cpp/Source/WPGraphics/ClawMesh.cpp
+    APPEND PROPERTY COMPILE_DEFINITIONS WP_COOKED_MESH_MATERIALS=$<AND:$<BOOL:${WIN32}>,$<BOOL:${WP_BUILD_RENDERER_DX11}>>)
 if (TARGET FreeImage)
     add_dependencies(WPGraphics FreeImage)
 endif()

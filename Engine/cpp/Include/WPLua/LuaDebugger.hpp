@@ -16,6 +16,9 @@ namespace workphone
         ~LuaDebugger();
         bool start( lua_State *, unsigned short port, const std::string &token,
                     const std::string &sourceRoot, std::string &error );
+        // Thread-safe signal only. The VM executor must finish stop() cleanup
+        // after the interrupted Lua call has unwound and its owner lock is held.
+        void requestStop() noexcept;
         void stop();
         void bind( lua_State * );
         void poll();

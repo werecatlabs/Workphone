@@ -4,9 +4,13 @@
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourcePackageBuildProfile.hpp>
+#include <Workphone/System/SceneResourceCompiler.hpp>
+#include <Workphone/System/SkeletonResourceCompiler.hpp>
+#include <Workphone/System/UIResource.hpp>
 #include <WPGraphics/Resources/TerrainResource.hpp>
 #include <WPGraphics/Resources/FoliageResource.hpp>
 #include <WPGraphics/Resources/MeshResourceCompiler.hpp>
+#include <WPGraphics/Resources/SkinnedMeshResource.hpp>
 #if WP_PACKAGE_AUDIO
 #include <WPAudio/AudioResourceCompiler.hpp>
 #endif
@@ -244,10 +248,14 @@ namespace
         auto registry = std::make_shared<ResourceCompilerRegistry>();
         String error;
         if(!registry->registerCompiler(std::make_shared<render::GraphicsResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<SceneResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<SkeletonResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<ui::UIResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<LuaScriptCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::TerrainResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::FoliageResourceCompiler>(), &error) ||
-           !registry->registerCompiler(std::make_shared<render::MeshResourceCompiler>(), &error))
+           !registry->registerCompiler(std::make_shared<render::MeshResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::SkinnedMeshResourceCompiler>(), &error))
             throw std::runtime_error(error.c_str());
         auto resources = std::make_shared<ResourceSystem>(registry, std::make_shared<ResourceCompilationDatabase>());
 #if WP_PACKAGE_AUDIO

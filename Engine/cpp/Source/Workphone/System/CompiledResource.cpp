@@ -30,6 +30,7 @@ namespace workphone::resource
         constexpr char magic[4] = { 'W', 'P', 'R', 'S' };
         constexpr u32 maxResourceIdBytes = 1024 * 1024;
         constexpr u32 maxInstallDependencies = 4096;
+        constexpr u64 maxEncodedHeaderBytes = 8ull * 1024 * 1024;
         std::atomic<u64> temporaryFileCounter{ 0 };
 
         // Keep caller paths and container identities unchanged. Only absolute
@@ -99,9 +100,30 @@ namespace workphone::resource
             return true;
         }
 
+        bool validHeaderUTF8(const char *text,size_t size)
+        {
+            for(size_t at=0;at<size;) {
+                const auto lead=static_cast<unsigned char>(text[at++]);
+                if(lead<0x80) { if(!lead)return false; continue; }
+                unsigned count=0,code=0,minimum=0;
+                if(lead>=0xc2&&lead<=0xdf) {count=1;code=lead&31;minimum=0x80;}
+                else if(lead>=0xe0&&lead<=0xef) {count=2;code=lead&15;minimum=0x800;}
+                else if(lead>=0xf0&&lead<=0xf4) {count=3;code=lead&7;minimum=0x10000;}
+                else return false;
+                if(count>size-at)return false;
+                for(unsigned i=0;i<count;++i) {
+                    const auto next=static_cast<unsigned char>(text[at++]);
+                    if((next&0xc0)!=0x80)return false;
+                    code=(code<<6)|(next&63);
+                }
+                if(code<minimum||code>0x10ffff||(code>=0xd800&&code<=0xdfff))return false;
+            }
+            return true;
+        }
+
         bool writeString( std::ostream &stream, const String &value )
         {
-            if( value.size() > maxResourceIdBytes )
+            if( value.empty() || value.size() > maxResourceIdBytes || !validHeaderUTF8(value.data(),value.size()) )
             {
                 return false;
             }
@@ -110,10 +132,24 @@ namespace workphone::resource
                      stream.good() );
         }
 
-        bool readString( std::istream &stream, String &value )
+        struct HeaderReadBudget
+        {
+            u64 encodedRemaining = maxEncodedHeaderBytes;
+            u64 fileRemaining = 0;
+            bool fits(u64 bytes) const { return bytes<=encodedRemaining && bytes<=fileRemaining; }
+            bool consume(u64 bytes)
+            {
+                if(!fits(bytes)) return false;
+                encodedRemaining-=bytes; fileRemaining-=bytes; return true;
+            }
+        };
+
+        bool readString( std::istream &stream, String &value,HeaderReadBudget &budget,
+                         u32 maximumBytes=maxResourceIdBytes )
         {
             u32 size = 0;
-            if( !readLittleEndian( stream, size ) || size == 0 || size > maxResourceIdBytes )
+            if( !budget.consume(sizeof(u32)) || !readLittleEndian( stream, size ) || size == 0 ||
+                size > maximumBytes || !budget.consume(size) )
             {
                 return false;
             }
@@ -123,6 +159,7 @@ namespace workphone::resource
             {
                 return false;
             }
+            if(!validHeaderUTF8(buffer.data(),buffer.size())) return false;
             value = buffer.c_str();
             if( value.size() != buffer.size() )
             {
@@ -133,6 +170,18 @@ namespace workphone::resource
 
         bool writeHeader( std::ostream &stream, const CompiledResourceHeader &header )
         {
+            // Keep the writer's admitted envelope consistent with the reader.
+            u64 encodedBytes=4+2+2+5*8+4;
+            auto add=[&](u64 count) {
+                if(count>maxEncodedHeaderBytes-encodedBytes) return false;
+                encodedBytes+=count; return true;
+            };
+            auto addString=[&](const String &value) { return add(sizeof(u32)) && add(value.size()); };
+            if(!addString(header.resourceId.str())) return false;
+            for(const auto &dependency:header.installDependencies) if(!addString(dependency.str())) return false;
+            if(header.formatVersion>=2)
+                for(const auto &artifact:header.installArtifacts)
+                    if(!addString(artifact.path) || !add(2*sizeof(u64))) return false;
             stream.write( magic, sizeof( magic ) );
             if( !writeLittleEndian<u16>( stream, header.formatVersion ) ||
                 !writeLittleEndian<u16>( stream, 0 ) ||
@@ -173,6 +222,17 @@ namespace workphone::resource
                                    u64 &payloadOffset, String &error )
         {
             header = CompiledResourceHeader();
+            // Establish file and aggregate metadata bounds before any variable
+            // allocation. A tiny payload limit alone cannot bound its header.
+            const auto start=stream.tellg();
+            if(start<0) { error="Cannot locate compiled resource header"; return false; }
+            stream.seekg(0,std::ios::end); const auto end=stream.tellg();
+            stream.seekg(start);
+            HeaderReadBudget budget;
+            constexpr u64 fixedHeaderBytes=4+2+2+5*8+4;
+            if(!stream || end<start) { error="Cannot bound compiled resource header"; return false; }
+            budget.fileRemaining=static_cast<u64>(end-start);
+            if(!budget.consume(fixedHeaderBytes)) { error="Compiled resource fixed header is truncated"; return false; }
             char readMagic[4]{};
             stream.read( readMagic, sizeof( readMagic ) );
             if( !stream || !std::equal( std::begin( magic ), std::end( magic ), readMagic ) )
@@ -210,7 +270,7 @@ namespace workphone::resource
             }
 
             String resourceId;
-            if( !readString( stream, resourceId ) )
+            if( !readString( stream, resourceId,budget ) )
             {
                 error = "Compiled resource contains an invalid resource ID";
                 return false;
@@ -226,11 +286,16 @@ namespace workphone::resource
                 return false;
             }
 
+            // Each encoded ID needs at least its length word and one byte.
+            // V2 additionally requires one artifact string and two u64 hashes.
+            const u64 minimumDependencyBytes=formatVersion>=2 ? 26 : 5;
+            if(!budget.fits(u64(dependencyCount)*minimumDependencyBytes))
+            { error="Compiled resource dependencies exceed remaining header/file bounds"; return false; }
             header.installDependencies.reserve( dependencyCount );
             for( u32 i = 0; i < dependencyCount; ++i )
             {
                 String dependencyId;
-                if( !readString( stream, dependencyId ) )
+                if( !readString( stream, dependencyId,budget ) )
                 {
                     error = "Compiled resource contains an invalid install dependency";
                     return false;
@@ -246,11 +311,14 @@ namespace workphone::resource
 
             if( formatVersion >= 2 )
             {
+                if(!budget.fits(u64(dependencyCount)*21))
+                { error="Compiled resource artifact pins exceed remaining header/file bounds"; return false; }
                 header.installArtifacts.reserve( dependencyCount );
                 for( u32 i = 0; i < dependencyCount; ++i )
                 {
                     InstallDependencyArtifact artifact;
-                    if( !readString( stream, artifact.path ) || !validArtifactPath( artifact.path ) ||
+                    if( !readString( stream, artifact.path,budget,4096 ) || !validArtifactPath( artifact.path ) ||
+                        !budget.consume(2*sizeof(u64)) ||
                         !readLittleEndian( stream, artifact.sourceHash ) ||
                         !readLittleEndian( stream, artifact.payloadHash ) )
                     {
@@ -427,7 +495,12 @@ namespace workphone::resource
             return false;
         }
 
-        output << payload.rdbuf();
+        // Inserting an empty streambuf sets failbit even though an empty
+        // payload with the matching empty hash is a valid resource body.
+        if( header.payloadSize != 0 )
+        {
+            output << payload.rdbuf();
+        }
         output.flush();
         if( !output || payload.bad() )
         {

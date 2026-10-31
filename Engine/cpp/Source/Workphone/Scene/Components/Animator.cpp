@@ -1,5 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
+#if WP_TYPED_ANIMATION_RESOURCE
+#include <Workphone/System/SkeletonResourceCompiler.hpp>
+#endif
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Interface/Mesh/ISkeleton.hpp>
@@ -758,6 +761,30 @@ namespace workphone::scene
     Array<SmartPtr<IAnimation>> Animator::getAnimations() const
     {
         return m_animations;
+    }
+
+    bool Animator::loadResource(std::shared_ptr<const resource::RuntimeResource> resource,String &error)
+    {
+        error.clear();
+#if WP_TYPED_ANIMATION_RESOURCE
+        if(!resource) { error="Missing typed skeleton resource"; return false; }
+        if(m_animationGraph.isValid()) { error="Clear the current animation graph before installing a skeleton/clip set"; return false; }
+        try {
+            const auto epoch=sourceBudgetDenialCount();
+            auto candidate=workphone::resource::SkeletonResourceCompiler::decode(*resource,error);
+            if(!candidate) return false;
+            auto clips=makeSourceBudgetSnapshot(candidate->getAnimations());
+            auto editable=makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+            if(clips.empty()) { error="Typed skeleton resource has no playable clips"; return false; }
+            if(sourceBudgetDenialCount()!=epoch) { error="Animation installation memory budget exhausted"; return false; }
+            m_animations.swap(clips); m_animationClips.swap(editable); m_skeleton=candidate;
+            m_selectedAnimationIndex=0; m_animationTime=0; m_state=STATE_STOPPED;
+            m_animationCachePath.clear(); m_playbackStatus.clear(); m_lastIKSolveResults.clear();
+            return true;
+        } catch(const std::exception &failure) { error=failure.what(); return false; }
+#else
+        error="Typed animation resources are unavailable in this build"; return false;
+#endif
     }
 
     void Animator::setAnimations( const Array<SmartPtr<IAnimation>> &animations )

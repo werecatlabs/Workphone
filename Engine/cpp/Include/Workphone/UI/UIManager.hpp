@@ -1,5 +1,5 @@
-#ifndef __UIManager_h__
-#define __UIManager_h__
+#ifndef Workphone_UIManager_h__
+#define Workphone_UIManager_h__
 
 #include <Workphone/UI/UIElement.hpp>
 #include <Workphone/Interface/UI/IUIManager.hpp>
@@ -251,4 +251,4 @@ namespace workphone
     }  // end namespace ui
 }  // namespace workphone
 
-#endif  // UIManager_h__
+#endif  // Workphone_UIManager_h__

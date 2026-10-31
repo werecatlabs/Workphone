@@ -2,6 +2,9 @@
 #include <WPGraphics/ClawMesh.hpp>
 #if WP_FOLIAGE_SOURCE_RESOURCES
 #include <WPGraphics/Resources/MeshResourceCompiler.hpp>
+#include <WPGraphics/Resources/ClawMaterialResource.hpp>
+#include <WPGraphics/Resources/SkinnedMeshResource.hpp>
+#include <Workphone/System/SkeletonResourceCompiler.hpp>
 #endif
 #include <WPGraphics/ClawMaterial.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
@@ -12,6 +15,7 @@
 #include <workphone_graphics_renderer.h>
 #include "ClawAssetBudget.hpp"
 #include <limits>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
@@ -432,26 +436,126 @@ namespace workphone
             setLoadingState( LoadingState::Loaded );
         }
 
-        bool ClawMesh::loadResource(std::shared_ptr<const resource::RuntimeResource> resource,String &error)
+        bool ClawMesh::loadResource(std::shared_ptr<const resource::RuntimeResource> loadedResource,String &error,
+                                   const String &target,bool packagedBuild)
         {
 #if WP_FOLIAGE_SOURCE_RESOURCES
+            error.clear();
+            try {
             NativeMeshLifecycleLock lifecycleLock;
-            if(!resource) { error="Missing cooked mesh"; return false; }
-            if(!MeshResourceCompiler::validate(*resource,error)) return false;
-            auto candidate=wp_graphics_mesh_read_from_buffer_budgeted(resource->payload.data(),
-                static_cast<wp_u32>(resource->payload.size()),&asset_budget::meshMemoryCallbacks);
+            if(!loadedResource) { error="Missing cooked mesh"; return false; }
+            if(loadedResource->header.resourceType==resource::ResourceTypeID("skinres")) {
+                CookedSkinnedMeshData skin;
+                if(!SkinnedMeshResourceCompiler::decode(*loadedResource,skin,error)) return false;
+                if(skin.target!=target || skin.packagedBuild!=packagedBuild)
+                { error="Cooked skin target/build mode differs from its consumer"; return false; }
+                std::shared_ptr<const resource::RuntimeResource> meshResource,skeletonResource;
+                for(const auto &child:loadedResource->dependencies) if(child) {
+                    if(child->header.resourceId==skin.mesh) meshResource=child;
+                    if(child->header.resourceId==skin.skeleton) skeletonResource=child;
+                }
+                if(!meshResource || !skeletonResource) { error="Cooked skin requires its pinned mesh and skeleton children"; return false; }
+                // Stage a complete independent owner. Neither materials, geometry,
+                // bind vertices nor the rig can change this object on failure.
+                auto candidate=std::make_unique<ClawMesh>();
+                if(!candidate->loadResource(meshResource,error,target,packagedBuild)) return false;
+                auto rig=resource::SkeletonResourceCompiler::decode(*skeletonResource,error);
+                if(!rig) return false;
+                const auto count=wp_graphics_mesh_get_vertex_count(candidate->m_mesh);
+                const auto format=wp_graphics_mesh_get_vertex_format(candidate->m_mesh);
+                if(count!=skin.vertices.size() ||
+                   (format!=WORKPHONE_VERTEX_FORMAT_PNT && format!=WORKPHONE_VERTEX_FORMAT_PNTC))
+                { error="Cooked skin influence count or vertex format differs from its mesh"; return false; }
+                bool present[WP_SKIN_MAX_JOINTS]{};
+                for(const auto &bone:rig->getBones()) if(bone) present[bone->getBoneHandle()]=true;
+                for(const auto &vertex:skin.vertices) for(const auto joint:vertex.joints)
+                    if(!present[joint]) { error="Cooked skin references a missing rig joint"; return false; }
+                auto working=asset_budget::reserveCpuBytes(u64(count)*sizeof(wp_skin_vertex),true);
+                if(!working) { error="Cooked skin staging budget exhausted"; return false; }
+                Array<wp_skin_vertex> vertices(count);
+                const auto stride=wp_graphics_mesh_get_vertex_stride(candidate->m_mesh);
+                const auto bytes=static_cast<const u8*>(wp_graphics_mesh_get_vertices(candidate->m_mesh));
+                if(!bytes || stride<2*sizeof(wp_vec3f)) { error="Cooked skin has no native bind geometry"; return false; }
+                for(size_t index=0;index<count;++index) {
+                    auto &vertex=vertices[index];
+                    std::memcpy(&vertex.position,bytes+index*stride,sizeof(vertex.position));
+                    std::memcpy(&vertex.normal,bytes+index*stride+sizeof(vertex.position),sizeof(vertex.normal));
+                    for(size_t slot=0;slot<4;++slot) { vertex.joints[slot]=skin.vertices[index].joints[slot]; vertex.weights[slot]=skin.vertices[index].weights[slot]; }
+                }
+                if(!candidate->setSkinningData(vertices)) { error="Cooked native skin binding rejected"; return false; }
+                if(!candidate->applySkeletonPose(rig,error)) return false;
+                if(!prepareNativeGeometry(candidate->m_mesh)) { error="Cooked skin final GPU geometry staging rejected"; return false; }
+                // All fallible work is complete. Transfer the entire compatible
+                // owner set; the detached temporary retires the previous mesh.
+                std::swap(m_mesh,candidate->m_mesh);
+                m_subMaterials=std::move(candidate->m_subMaterials); m_material=candidate->m_material;
+                m_runtimeMaterials=std::move(candidate->m_runtimeMaterials);
+                m_poseSkeleton=std::move(candidate->m_poseSkeleton); m_poseBones=std::move(candidate->m_poseBones);
+                m_inverseBind=std::move(candidate->m_inverseBind); m_posePalette=std::move(candidate->m_posePalette);
+                m_skinVertices=std::move(candidate->m_skinVertices); m_skinInputBudget=std::move(candidate->m_skinInputBudget);
+                m_skinOutput=std::move(candidate->m_skinOutput); m_skinOutputBudget=std::move(candidate->m_skinOutputBudget);
+                m_materialName.clear(); m_subMaterialNames.clear(); m_meshName=std::move(candidate->m_meshName);
+                m_animationController=nullptr; m_skeleton=nullptr;
+                if(m_renderObject) {
+                    wp_graphics_object_set_submit_data(m_renderObject,this); wp_graphics_object_set_mesh(m_renderObject,m_mesh);
+                    wp_graphics_object_set_local_aabb(m_renderObject,wp_graphics_mesh_get_local_aabb(m_mesh));
+                    auto material=dynamic_pointer_cast<ClawMaterial>(getMaterial());
+                    wp_graphics_object_set_material(m_renderObject,material?material->getNativeMaterial():nullptr);
+                }
+                setLoadingState(LoadingState::Loaded); return true;
+            }
+            CookedMeshData decoded;
+            if(!MeshResourceCompiler::decode(*loadedResource,decoded,error)) return false;
+            if(!decoded.target.empty()&&(decoded.target!=target||decoded.packagedBuild!=packagedBuild))
+            { error="Cooked mesh target/build mode differs from its consumer"; return false; }
+            std::unique_ptr<wp_graphics_mesh,decltype(&destroyNativeMesh)> candidate(
+                wp_graphics_mesh_read_from_buffer_budgeted(decoded.geometry.data(),
+                    static_cast<wp_u32>(decoded.geometry.size()),&asset_budget::meshMemoryCallbacks),destroyNativeMesh);
             if(!candidate) { error="Cooked mesh decode budget exhausted"; return false; }
-            if(!prepareNativeGeometry(candidate))
-            { destroyNativeMesh(candidate); error="Cooked mesh upload failed"; return false; }
-            auto previous=m_mesh; m_mesh=candidate;
+            if(!prepareNativeGeometry(candidate.get())) { error="Cooked mesh upload failed"; return false; }
+            using MaterialCandidate=std::shared_ptr<const ClawMaterialResource::Candidate>;
+            auto retained=std::make_shared<std::vector<MaterialCandidate>>();
+            ConcurrentArray<SmartPtr<IMaterial>> slots;
+            try {
+                if(!decoded.materials.empty()) {
+#if WP_COOKED_MESH_MATERIALS
+                    auto app=core::IApplicationManager::instancePtr();
+                    auto graphics=app?app->getGraphicsSystemPtr():nullptr;
+                    auto renderer=graphics?dynamic_pointer_cast<ClawRendererDX11>(graphics->getRenderer()):nullptr;
+                    ClawMaterialResource bridge(nullptr,{},"",{},renderer,target,packagedBuild);
+                    std::map<String,MaterialCandidate> staged;
+                    for(const auto &id:decoded.materials) {
+                        auto found=staged.find(id.str());
+                        if(found==staged.end()) {
+                            std::shared_ptr<const resource::RuntimeResource> child;
+                            for(const auto &dependency:loadedResource->dependencies)
+                                if(dependency&&dependency->header.resourceId==id) { child=dependency; break; }
+                            auto material=bridge.stageRuntime(child,error); if(!material) return false;
+                            found=staged.emplace(id.str(),material).first; retained->push_back(material);
+                        }
+                        slots.push_back(found->second->material());
+                    }
+#else
+                    error="Cooked mesh materials require the Windows DX11 resource bridge"; return false;
+#endif
+                }
+            } catch(const std::exception &e) { error=e.what(); return false; }
+            auto previous=m_mesh; m_mesh=candidate.release();
+            m_subMaterials=std::move(slots);
+            m_material=m_subMaterials.empty()?SmartPtr<IMaterial>{}:m_subMaterials[0];
+            m_runtimeMaterials=std::move(retained);
+            m_materialName.clear(); m_subMaterialNames.clear();
             if(m_renderObject) {
                 wp_graphics_object_set_submit_data(m_renderObject,this);
                 wp_graphics_object_set_mesh(m_renderObject,m_mesh);
                 wp_graphics_object_set_local_aabb(m_renderObject,wp_graphics_mesh_get_local_aabb(m_mesh));
+                auto material=dynamic_pointer_cast<ClawMaterial>(getMaterial());
+                wp_graphics_object_set_material(m_renderObject,material?material->getNativeMaterial():nullptr);
             }
             clearSkinningData();
             destroyNativeMesh(previous);
             setLoadingState(LoadingState::Loaded); return true;
+            } catch(const std::exception &e) { error=e.what(); return false; }
 #else
             error="Cooked resource support is unavailable in this build"; return false;
 #endif
@@ -500,6 +604,8 @@ namespace workphone
             setLoadingState( LoadingState::Unloading );
 
             bindNativeRenderObject( nullptr );
+            if(m_runtimeMaterials) { m_subMaterials.clear(); m_material=nullptr; }
+            m_runtimeMaterials.reset();
 
             if( m_mesh )
             {
@@ -860,6 +966,13 @@ namespace workphone
                 error = "Claw skeletal playback requires a MeshSkeleton.";
                 return false;
             }
+            bool restoreBinding=false;
+            SmartPtr<ISkeleton> previousSkeleton;
+            Array<SmartPtr<IBone>> previousBones;
+            Array<wp_mat4f> previousInverse,previousPalette;
+            std::shared_ptr<const Array<wp_skin_vertex>> previousVertices;
+            Array<wp_skin_result> previousOutput;
+            StreamBudget previousInputBudget,previousOutputBudget;
             try
             {
                 auto model = []( SmartPtr<IBone> bone, bool binding ) {
@@ -877,10 +990,20 @@ namespace workphone
                             throw std::runtime_error( "Claw requires accessible bone binding poses" );
                         }
                         Matrix4F local;
+                        auto orientation = binding ? concrete->getBindingOrientation()
+                                                   : current->getOrientation();
+                        const auto norm = orientation.norm();
+                        if( !std::isfinite( norm ) || norm <= 1e-12 )
+                        {
+                            throw std::runtime_error( "Invalid skin bone quaternion" );
+                        }
+                        // Source validation accepts rounded unit quaternions.
+                        // Keep every local bind/pose transform rigid before the
+                        // native palette checks orthogonal, equally sized axes.
+                        orientation.normalise();
                         local.makeTransform(
                             binding ? concrete->getBindingPosition() : current->getPosition(),
-                            Vector3F( 1, 1, 1 ),
-                            binding ? concrete->getBindingOrientation() : current->getOrientation() );
+                            Vector3F( 1, 1, 1 ), orientation );
                         matrix = local * matrix;
                     }
                     return matrix;
@@ -896,9 +1019,16 @@ namespace workphone
                     }
                     return value;
                 };
-                if( m_poseSkeleton != skeleton || !hasSkinningData() )
+                const bool rebind=m_poseSkeleton!=skeleton || !hasSkinningData();
+                auto stagedBones=makeSourceBudgetSnapshot<SmartPtr<IBone>>();
+                auto stagedInverse=makeSourceBudgetSnapshot<wp_mat4f>();
+                auto stagedPalette=makeSourceBudgetSnapshot<wp_mat4f>();
+                const auto *boneView=&m_poseBones;
+                const auto *inverseView=&m_inverseBind;
+                if( rebind )
                 {
-                    auto bones = makeSourceBudgetSnapshot( rig->getBones() );
+                    stagedBones=makeSourceBudgetSnapshot( rig->getBones() );
+                    auto &bones=stagedBones;
                     size_t joints = 0;
                     for( const auto &bone : bones )
                     {
@@ -911,9 +1041,9 @@ namespace workphone
                     {
                         throw std::runtime_error( "Claw supports at most 256 skin joints" );
                     }
-                    auto inverse = makeSourceBudgetSnapshot<wp_mat4f>();
+                    auto &inverse=stagedInverse;
                     inverse.resize( joints );
-                    auto palette = makeSourceBudgetSnapshot<wp_mat4f>();
+                    auto &palette=stagedPalette;
                     palette.resize( joints );
                     for( auto &entry : inverse )
                     {
@@ -927,6 +1057,20 @@ namespace workphone
                                 nativeMatrix( model( bone, true ).inverse() );
                         }
                     }
+                    if(hasSkinningData())
+                    {
+                        // A cooked/native skin already owns immutable bind vertices
+                        // and weights. Rebinding its rig must not reopen authoring.
+                        bool present[WP_SKIN_MAX_JOINTS]{};
+                        for(const auto &bone:bones) if(bone) present[bone->getBoneHandle()]=true;
+                        for(const auto &vertex:*m_skinVertices)
+                            for(u32 slot=0;slot<WP_SKIN_INFLUENCES;++slot)
+                                if(vertex.weights[slot]>0 &&
+                                   (vertex.joints[slot]>=joints || !present[vertex.joints[slot]]))
+                                    throw std::runtime_error("Native skin references a bone missing from the new rig");
+                    }
+                    else
+                    {
                     const auto count = wp_graphics_mesh_get_vertex_count( m_mesh );
                     const auto stride = wp_graphics_mesh_get_vertex_stride( m_mesh );
                     const auto raw = static_cast<const u8 *>( wp_graphics_mesh_get_vertices( m_mesh ) );
@@ -1020,40 +1164,59 @@ namespace workphone
                             }
                         }
                     }
+                    // Legacy weight import stages its rig before it can clear the
+                    // existing bind state. Retain rollback storage until the new
+                    // pose has passed allocation/validation and changed geometry.
+                    previousSkeleton=m_poseSkeleton;
+                    previousBones=makeSourceBudgetSnapshot(m_poseBones);
+                    previousInverse=makeSourceBudgetSnapshot(m_inverseBind);
+                    previousPalette=makeSourceBudgetSnapshot(m_posePalette);
+                    previousVertices=m_skinVertices;
+                    previousOutput=makeSourceBudgetSnapshot(m_skinOutput);
+                    previousInputBudget=m_skinInputBudget; previousOutputBudget=m_skinOutputBudget;
+                    restoreBinding=true;
                     if( !setSkinningData( vertices ) )
                     {
                         throw std::runtime_error( "Skin binding admission or validation failed" );
                     }
-                    m_poseBones = std::move( bones );
-                    m_inverseBind = std::move( inverse );
-                    m_posePalette = std::move( palette );
-                    m_poseSkeleton = skeleton;
+                    }
+                    boneView=&stagedBones; inverseView=&stagedInverse;
                 }
-                for( const auto &bone : m_poseBones )
+                else stagedPalette.resize(m_posePalette.size());
+                for( const auto &bone : *boneView )
                 {
                     if( bone )
                     {
                         const auto handle = bone->getBoneHandle();
+                        if(handle>=stagedPalette.size() || handle>=inverseView->size())
+                            throw std::runtime_error("Skin rig handle changed outside its staged palette");
                         Matrix4F inverse;
                         for( u32 r = 0; r < 4; ++r )
                         {
                             for( u32 c = 0; c < 4; ++c )
                             {
-                                inverse[r][c] = m_inverseBind[handle].m[r][c];
+                                inverse[r][c] = (*inverseView)[handle].m[r][c];
                             }
                         }
-                        m_posePalette[handle] = nativeMatrix( model( bone, false ) * inverse );
+                        stagedPalette[handle] = nativeMatrix( model( bone, false ) * inverse );
                     }
                 }
-                if( !applySkinningPalette( m_posePalette ) )
+                if( !applySkinningPalette( stagedPalette ) )
                 {
-                    error = "Skin pose admission or validation failed; retaining previous geometry.";
-                    return false;
+                    throw std::runtime_error("Skin pose admission or validation failed; retaining previous geometry.");
                 }
+                if(rebind) { m_poseBones=std::move(stagedBones); m_inverseBind=std::move(stagedInverse); m_poseSkeleton=skeleton; }
+                m_posePalette=std::move(stagedPalette); restoreBinding=false;
                 return true;
             }
             catch( const std::exception &exception )
             {
+                if(restoreBinding) {
+                    m_poseSkeleton=previousSkeleton; m_poseBones.swap(previousBones);
+                    m_inverseBind.swap(previousInverse); m_posePalette.swap(previousPalette);
+                    m_skinVertices=std::move(previousVertices); m_skinOutput.swap(previousOutput);
+                    m_skinInputBudget=std::move(previousInputBudget); m_skinOutputBudget=std::move(previousOutputBudget);
+                }
                 error = String( "Skeletal playback: " ) + exception.what();
                 return false;
             }

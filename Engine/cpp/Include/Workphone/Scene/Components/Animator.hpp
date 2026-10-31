@@ -7,6 +7,7 @@
 #include <Workphone/Animation/IK/AnimationIKSystem.hpp>
 #include <Workphone/Interface/System/IFSM.hpp>
 #include <Workphone/Interface/System/IFSMListener.hpp>
+#include <memory>
 
 /**
  * @file Animator.hpp
@@ -14,6 +15,7 @@
  */
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; }
     namespace scene
     {
 
@@ -298,6 +300,10 @@ namespace workphone
              * @param animations New list of animations to use.
              */
             void setAnimations( const Array<SmartPtr<IAnimation>> &animations );
+            /** Owner-thread typed skeleton/clip installation. Stages an independent
+             * rig and clips before changing playback; failure preserves the old set.
+             * A live animation graph must be explicitly cleared before replacement. */
+            bool loadResource(std::shared_ptr<const resource::RuntimeResource>,String &error);
 
             /**
              * @brief Retrieve serialized properties for this component.

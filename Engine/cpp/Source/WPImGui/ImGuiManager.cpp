@@ -527,6 +527,15 @@ namespace workphone::ui
         }
     }
 
+    Array<SmartPtr<ISharedObject>> ImGuiManager::getChildObjects() const
+    {
+        ScopedLock lock(this);
+        Array<SmartPtr<ISharedObject>> result;
+        for(auto bucket:getElementsByType())
+            if(bucket)for(auto element:*bucket)if(element)result.push_back(element);
+        return result;
+    }
+
     SharedPtr<Array<SmartPtr<IUIElement>>> ImGuiManager::getElementsPtr( u32 type ) const
     {
         auto it = m_elements.find( type );

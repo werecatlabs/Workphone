@@ -9,6 +9,7 @@
 #include "LuaAudioContracts.hpp"
 #ifdef WP_LUA_ASSET_TESTS
 #include "LuaAssetContracts.hpp"
+#include "LuaRuntimeScriptComponentContracts.hpp"
 #endif
 extern "C" {
 #include <lauxlib.h>
@@ -185,6 +186,7 @@ int main()
             runLuaAudioContracts( manager );
 #ifdef WP_LUA_ASSET_TESTS
             runLuaAssetContracts( manager );
+            runLuaRuntimeScriptComponentContracts();
 #endif
             manager.unload( nullptr );
             std::puts( "Lua production runtime tests: PASS" );

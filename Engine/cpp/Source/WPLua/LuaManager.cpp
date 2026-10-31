@@ -5,6 +5,7 @@
 #include <WPLua/NullScriptObject.hpp>
 #include <WPLua/LuaObjectData.hpp>
 #include <WPLua/LuaScriptCompiler.hpp>
+#include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/System/IPlugin.hpp>
 #include <Workphone/Interface/System/IPluginManager.hpp>
@@ -69,7 +70,8 @@ namespace workphone
         {
             // Registry storage is shared with coroutines and works with Lua 5.1/LuaJIT.
             lua_pushlightuserdata( state, &managerRegistryKey );
-            lua_pushlightuserdata( state, manager );
+            if(manager)lua_pushlightuserdata( state, manager );
+            else lua_pushnil(state);
             lua_rawset( state, LUA_REGISTRYINDEX );
         }
         int scriptTraceback( lua_State *state )
@@ -188,12 +190,18 @@ namespace workphone
 
     bool LuaManager::startDebugger( u16 port, const String &token, const String &root )
     {
+        ScopedLock lock(this);
         std::string error;
         const bool result = m_debugger->start( getLuaState(), port, token.c_str(), root.c_str(), error );
         if( !result ) { m_lastDiagnostic = error.c_str(); setError( true ); }
         return result;
     }
-    void LuaManager::stopDebugger() { m_debugger->stop(); }
+    void LuaManager::stopDebugger()
+    {
+        m_debugger->requestStop();
+        ScopedLock lock(this);
+        m_debugger->stop();
+    }
     u16 LuaManager::getDebuggerPort() const { return m_debugger->port(); }
     bool LuaManager::isDebuggerPaused() const { return m_debugger->paused(); }
     void LuaManager::setDebuggerPausePump( std::function<bool()> pump ) { m_debugger->setPausePump( std::move( pump ) ); }
@@ -210,15 +218,19 @@ namespace workphone
 
     void LuaManager::load( SmartPtr<ISharedObject> data )
     {
+        ScopedLock lock( this );
         if( isLoaded() ) return;
+        if( getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading )
+        { m_lastDiagnostic="Lua lifecycle transition is already active";setError(true);return; }
+        if(m_runtimeScriptsMode && !m_runtimeScriptResources)
+        { m_lastDiagnostic="Remount runtime UUID resources before recreating the Lua VM";setError(true);return; }
         try
         {
             setLoadingState( LoadingState::Loading );
 
-            ScopedLock lock( this );
-
             createLuaState();
-            configureScriptResources( m_scriptCatalog, m_scriptResources, m_compiledScriptsOnly );
+            if( m_compiledScriptsOnly && !applyCompiledModulePolicy() )
+                throw std::runtime_error(m_lastDiagnostic.c_str());
             m_bReload = false;
 
             m_timeTaken = 0.0f;
@@ -230,7 +242,14 @@ namespace workphone
         }
         catch( std::exception &e )
         {
-            if( auto state = getLuaState() ) lua_close( state );
+            // Binding plugins/policy installation may have attached debugger
+            // hooks before initialization failed. Retire those on this executor.
+            m_debugger->stop();
+            if( auto state = getLuaState() )
+            {
+                bindStateManager(state,nullptr);
+                lua_close( state );
+            }
             m_luaState = nullptr;
             m_bError = true;
             m_lastDiagnostic = e.what();
@@ -241,11 +260,17 @@ namespace workphone
 
     void LuaManager::unload( SmartPtr<ISharedObject> data )
     {
+        // A paused executor owns the manager lock. Signal only; Lua hook/registry
+        // cleanup is performed after that executor unwinds and releases the lock.
+        m_debugger->requestStop();
+        ScopedLock lock( this );
+        if( getLoadingState()==LoadingState::Unloading ) return;
+        if( getLoadingState()==LoadingState::Loading )
+        { m_lastDiagnostic="Cannot unload Lua during reentrant initialization";setError(true);return; }
         if( isLoaded() )
         {
             setLoadingState( LoadingState::Unloading );
 
-            ScopedLock lock( this );
             m_debugger->stop();
 
             for( auto objectData : m_objectData )
@@ -291,6 +316,7 @@ namespace workphone
 
             setLoadingState( LoadingState::Unloaded );
         }
+        m_runtimeScriptResources.reset();
     }
 
     void LuaManager::setClassNames( const Array<String> &classNames )
@@ -349,6 +375,8 @@ namespace workphone
     void LuaManager::loadScript( const String &filename )
     {
         ScopedLock lock( this );
+        if( m_runtimeScriptsMode )
+        { m_lastDiagnostic="Runtime UUID scripts do not support loose file loading";setError(true);return; }
         if( !isLoaded() ) return;
         if( std::find( m_scripts.begin(), m_scripts.end(), filename ) != m_scripts.end() ) return;
         auto app = core::IApplicationManager::instancePtr();
@@ -618,6 +646,9 @@ namespace workphone
 
     void LuaManager::loadScripts( const Array<String> &scripts )
     {
+        ScopedLock lock( this );
+        if( m_runtimeScriptsMode )
+        { m_lastDiagnostic="Runtime UUID scripts do not support loose file loading";setError(true);return; }
         for( auto &script : scripts )
         {
             loadScript( script );
@@ -642,18 +673,61 @@ namespace workphone
                                                bool compiledOnly )
     {
         ScopedLock lock( this );
+        if( m_runtimeScriptsMode )
+        {
+            if(getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading)
+            { m_lastDiagnostic="Unload the runtime UUID VM before changing script resource policy";setError(true);return; }
+            // Leaving runtime mode is an explicit unloaded-VM policy operation.
+            m_runtimeScriptResources.reset();m_runtimeScriptsMode=false;
+        }
         m_scriptCatalog = catalog;
         m_scriptResources = resources;
         m_compiledScriptsOnly = compiledOnly;
-        if( compiledOnly && getLuaState() )
-            executeSource( "package.path=''; package.cpath=''; local loaders=package.searchers or package.loaders; "
-                           "package.searchers={loaders[1]}; package.loaders=package.searchers",
-                           "=compiled-module-policy" );
+        if( compiledOnly && getLuaState() ) applyCompiledModulePolicy();
+    }
+
+    bool LuaManager::applyCompiledModulePolicy()
+    {
+        String policy="package.path=''; package.cpath=''; local loaders=package.searchers or package.loaders; "
+                      "package.searchers={loaders[1]}; package.loaders=package.searchers";
+        if(m_runtimeScriptsMode)policy+="; loadfile=nil; dofile=nil; package.loadlib=nil";
+        return executeSource(policy,"=compiled-module-policy");
+    }
+
+    bool LuaManager::configureRuntimeScriptResources(const resource::RuntimeResourceConfig &config,String &error)
+    {
+        ScopedLock lock(this);error.clear();
+        if(getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading ||
+           getLoadingState()==LoadingState::Unloading || !m_objectData.empty() || !m_instances.empty())
+        { error="Runtime UUID resources require an unloaded fresh Lua VM";m_lastDiagnostic=error;setError(true);return false; }
+        try
+        {
+            auto candidate=std::make_shared<resource::ResourceSystem>(nullptr,nullptr);
+            auto bounded=config;
+            bounded.maxPayloadBytes=std::min<u64>(bounded.maxPayloadBytes,LuaScriptCompiler::maxSourceBytes);
+            bounded.maxClosurePayloadBytes=std::min<u64>(bounded.maxClosurePayloadBytes,64ull<<20);
+            bounded.maxClosureResources=std::min<u32>(bounded.maxClosureResources,256);
+            if(!candidate->initializeRuntime(bounded,error))
+            { m_lastDiagnostic=error;setError(true);return false; }
+            m_runtimeScriptResources=std::move(candidate);
+            m_runtimeScriptsMode=true;
+            m_scriptCatalog=nullptr;m_scriptResources.reset();m_compiledScriptsOnly=true;m_loadedScriptAssets.clear();
+            m_lastDiagnostic.clear();setError(false);return true;
+        }
+        catch(const std::exception &exception)
+        { error=exception.what();m_lastDiagnostic=error;setError(true);return false; }
     }
 
     bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
     {
         ScopedLock lock( this );
+        if(m_runtimeScriptsMode)
+        { m_lastDiagnostic="Runtime script resources must be loaded through their pinned UUID";setError(true);return false; }
+        return loadScriptResourceInternal(std::move(resource),sourceRoot);
+    }
+
+    bool LuaManager::loadScriptResourceInternal( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
+    {
         LuaScriptCompiler compiler;
         Array<ScriptPreload> entries;
         std::set<String> visited;
@@ -720,6 +794,21 @@ namespace workphone
             setError( true );
             return false;
         };
+        if(m_runtimeScriptsMode)
+        {
+            if(!isLoaded() || !m_runtimeScriptResources)return fail("Runtime script VM is not loaded or mounted");
+            String error;resource::ResourceID id;
+            if(!m_runtimeScriptResources->resolveRuntimeUUID(uuid,id,error))return fail(error);
+            if(id.type()!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
+            const auto identity=StringUtil::make_lower(uuid);
+            if(m_loadedScriptAssets.find(identity)!=m_loadedScriptAssets.end())
+            { m_lastDiagnostic.clear();setError(false);return true; }
+            auto compiled=m_runtimeScriptResources->loadUUID(identity,error);
+            if(!compiled)return fail(error);
+            if(compiled->header.resourceType!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
+            if(!loadScriptResourceInternal(compiled,{}))return false;
+            m_loadedScriptAssets[identity]=compiled->header.sourceHash;return true;
+        }
         auto catalog = m_scriptCatalog;
         if( !catalog )
         {
@@ -878,6 +967,9 @@ namespace workphone
 
     void LuaManager::reloadScripts()
     {
+        ScopedLock lock(this);
+        if(m_runtimeScriptsMode)
+        { m_bReload=false;m_lastDiagnostic="Runtime UUID scripts require a new VM for reload";setError(true);return; }
         auto app = core::IApplicationManager::instancePtr();
         auto settings = app ? app->getPlayerSettings() : nullptr;
         if( settings && !settings->getPropertyAsBool( "scripting.hotReload", true ) ) return;
@@ -902,7 +994,7 @@ namespace workphone
 
         auto luaState = luaL_newstate();
         if( !luaState ) throw std::runtime_error( "Could not allocate Lua state" );
-        setLuaState( luaState );
+        m_luaState = luaState;
         bindStateManager( luaState, this );
 
         luaL_openlibs( luaState );
@@ -1159,9 +1251,10 @@ namespace workphone
 
     void LuaManager::update()
     {
-        if( !isLoaded() || Thread::getCurrentTask() != TaskId::Application ) return;
-        m_debugger->poll();
+        if( Thread::getCurrentTask() != TaskId::Application ) return;
         ScopedLock lock( this );
+        if(!isLoaded())return;
+        m_debugger->poll();
         // Drain a snapshot, so a callback that enqueues work cannot starve the frame.
         SmartPtr<ISharedObject> object;
         auto unloadCount = m_unloadQueue.size();
@@ -1185,6 +1278,8 @@ namespace workphone
     void LuaManager::_reloadScripts()
     {
         ScopedLock lock( this );
+        if(m_runtimeScriptsMode)
+        { m_lastDiagnostic="Runtime UUID scripts require a new VM for reload";setError(true);return; }
         // Legacy raw pointers cannot be rebound without invalidating their callers.
         if( !m_instances.empty() )
         {
@@ -1460,6 +1555,9 @@ namespace workphone
 
     void LuaManager::setLuaState( lua_State *luaState )
     {
+        ScopedLock lock(this);
+        if(m_runtimeScriptsMode && luaState!=getLuaState())
+        { m_lastDiagnostic="Runtime UUID VM state cannot be replaced directly";setError(true);return; }
         m_luaState = luaState;
     }
 

@@ -452,4 +452,11 @@ namespace workphone
         m_dataStr = dataStr;
     }
 
+    void SceneLoadJob::setPreparedData( SmartPtr<Properties> data )
+    {
+        if( !data || m_prepared ) throw std::invalid_argument("Scene preparation is already sealed or empty");
+        m_preparedData = std::move(data);
+        m_prepared = true;
+    }
+
 }  //  namespace workphone

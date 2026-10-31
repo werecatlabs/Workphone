@@ -37,7 +37,8 @@ namespace workphone
             /** Rebuilds native geometry while keeping the render object attached. */
             void reload( SmartPtr<ISharedObject> data ) override;
             /** Owner-thread install; failure retains the previous mesh. */
-            bool loadResource(std::shared_ptr<const resource::RuntimeResource>, String &error);
+            bool loadResource(std::shared_ptr<const resource::RuntimeResource>, String &error,
+                              const String &target="pc", bool packagedBuild=true);
 
             /** Unloads the currently loaded mesh data. */
             void unload( SmartPtr<ISharedObject> data ) override;
@@ -131,6 +132,7 @@ namespace workphone
 
         protected:
             void clearSkinningData();
+            std::shared_ptr<const void> m_runtimeMaterials;
             SmartPtr<ISkeleton> m_poseSkeleton;
             Array<SmartPtr<IBone>> m_poseBones = makeSourceBudgetSnapshot<SmartPtr<IBone>>();
             Array<wp_mat4f> m_inverseBind = makeSourceBudgetSnapshot<wp_mat4f>();

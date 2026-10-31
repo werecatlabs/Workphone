@@ -68,6 +68,8 @@ namespace workphone
 
             /** @copydoc IUIManager::unload */
             void unload( SmartPtr<ISharedObject> data ) override;
+            /** Snapshot registered controls through the shared ownership API. */
+            Array<SmartPtr<ISharedObject>> getChildObjects() const override;
 
             /**
              * @brief Load a font for use by ImGui.

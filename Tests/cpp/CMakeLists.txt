@@ -554,6 +554,9 @@ if(TARGET Workphone)
     add_executable(WPAnimationCoreTests AnimationCoreTests.cpp
         ${WP_ROOT}/Tests/cpp/UnitTests/AnimationGraphTests.cpp ${WP_ROOT}/Tests/cpp/UnitTests/AnimationIKTests.cpp)
     target_compile_definitions(WPAnimationCoreTests PRIVATE BOOST_ALL_NO_LIB WIN32_LEAN_AND_MEAN)
+    if(WP_BUILD_RESOURCE_SYSTEM)
+        target_compile_definitions(WPAnimationCoreTests PRIVATE WP_ANIMATION_TYPED_RESOURCES=1)
+    endif()
     target_include_directories(WPAnimationCoreTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost ${WP_ROOT}/Tests/cpp/UnitTests)
     target_link_libraries(WPAnimationCoreTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)

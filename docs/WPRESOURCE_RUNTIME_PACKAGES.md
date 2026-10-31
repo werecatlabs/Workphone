@@ -129,7 +129,9 @@ catalog admission through the same saved profile request.
 ## Command-line resource directory packaging
 
 Build `WorkphoneResourcePackage` when Workphone, SQLite, WPGraphics and WPLua are
-enabled. It registers the existing graphics (`texres`/`matres`) and Lua compilers.
+enabled. It registers graphics (`texres`/`matres`), Lua, terrain, foliage, native
+mesh/skin, skeleton/clip, transform-only scene/prefab and bounded UI compilers,
+plus PCM audio when enabled. The supported subsets are described below.
 Provide an existing writable project catalog, its actual source root, a cooked
 root, a new destination, an explicit target and root asset UUIDs:
 
@@ -449,6 +451,36 @@ payloads. Owner threads choose which typed installer receives each result.
 This is whole-payload scheduling, not mesh LOD, texture mip, audio seeking or
 arbitrary chunk-range streaming.
 
+## Runtime Script component UUIDs
+
+Before loading a fresh `LuaManager`, call
+`configureRuntimeScriptResources(RuntimeResourceConfig, error)`. It creates a
+private source-free `ResourceSystem` mount with no catalog, compiler or index.
+Normal `scene::Script` components already persist `scriptAssetUuid` and
+`className`; their existing `loadScriptAsset` call now resolves the captured
+package UUID and installs its compiled Lua/module closure before construction.
+Missing and wrong-type UUIDs fail without catalog or loose-path fallback.
+
+Runtime mode disables filesystem module search, `loadfile`, `dofile` and native
+library loading. Loose-file/list loading, direct resource/state replacement,
+authoring retarget and hot reload are rejected while the VM is active. Explicit
+text/debug execution remains an API; this mode does not sandbox script code.
+Unload retires the VM and releases the mount. Reusing that manager requires an
+explicit runtime remount or an explicit authoring configuration while unloaded.
+The mount caps individual payloads to the Lua source limit, closures to 256
+resources and 64 MiB. Existing preload/source copies and Lua VM allocations are
+not fully charged to the shared residency scheduler.
+External debugger stop/unload signals cancellation before waiting for the Lua
+executor lock, then cleans hooks/registry on the retired executor boundary.
+Reentrant VM teardown from inside a Lua/native callback remains unsupported.
+
+The native regression constructs and updates an actual Script component through
+its UUID after removing source, catalog and compilation storage. It covers two
+fresh VM lifetimes, missing/wrong-type rejection, a catalog spy, retained component
+cleanup and preservation after rejected source/reload/retarget operations. Scene
+compilation still rejects component-bearing graphs until their UUID dependencies
+and pinned reference installation are integrated.
+
 ## Typed PCM audio
 
 The package tool registers `audio::AudioResourceCompiler` when WPAudio is built.
@@ -526,17 +558,101 @@ never overwritten. The compiler is a deterministic test family, so this proves
 process-death publication/reopen contracts rather than real importer crash safety,
 physical power-loss durability, staging reclamation or full-family certification.
 
-## Static mesh geometry
+## Native mesh geometry and typed materials
 
 Map a catalog mesh type to `mesh` to cook portable WPM1 static geometry. Inputs
 are limited to 64 MiB and validated with the existing budgeted native decoder.
-Empty/invalid geometry and nonzero legacy material IDs are rejected. Material
-bindings, Ogre import and skeletal dependencies require further typed integration.
+Empty/invalid geometry and subasset selectors are rejected. An optional adjacent
+`<file>.mesh.materials` file contains a JSON array of `matres` ResourceIDs in
+submesh order, for example `["data://paint.matres","data://glass.matres"]`.
+It is bounded to 64 KiB, 128 slots and 1024 bytes per ID; its slot count must match
+the mesh. These materials are compile/install dependencies. Its bytes, including
+absence, are captured with the request. Without a sidecar, all legacy native
+material IDs must be zero. Ogre geometry import remains unsupported here.
+The version-2 mesh envelope records target, package mode and ordered bindings;
+the earlier version-1 unbound WPM1 payload remains readable.
 `ClawMesh::loadResource` accepts a pinned runtime mesh on the owner thread,
-validates/decodes/uploads before replacing existing geometry, and preserves the
-previous mesh on failure. It performs no source-path fallback. This API and its
-source-free upload fixture do not establish whole-Editor mesh adoption or visual
-certification.
+validates/decodes/uploads and stages every pinned material before replacing
+geometry and slots together through the Windows DX11 resource bridge. Other
+builds report unavailable typed material installation. A failure preserves both
+previous owners. Materials,
+textures and programs remain retained with the mesh. It performs no source-path
+fallback. The source-free native fixture renders two material regions and reads
+their pixels; representative hardware and interactive Editor adoption remain open.
+
+## Skeletons, clips and native skinning
+
+Map the authored skeleton type to `skelres`. Its source uses the existing
+`XMLSkeletonSerializer` schema. The bounded subset supports ordered contiguous
+bone handles, parent hierarchy, position/quaternion transforms and linear clips
+with strictly ordered translation/quaternion keys. Limits are 2 MiB of XML,
+256 bones, 64 clips, 2048 tracks and 16384 keys. Linked rigs, base animations,
+axis-angle keys, nonunit scale, DTDs and unknown fields fail explicitly.
+`Animator::loadResource` installs a private skeleton and clips through the existing
+importer after complete validation. Clear an existing animation graph before
+using this entry point. Failed replacement retains the previous rig and clips.
+
+Map a skin descriptor to `skinres`. Its JSON schema is:
+
+```json
+{"version":1,"mesh":"data://character.mesh","skeleton":"data://rig.skelres",
+ "vertices":[{"joints":[0,0,0,0],"weights":[1,0,0,0]}]}
+```
+
+There must be one influence record per vertex in the referenced PNT/PNTC mesh,
+with exactly four joints and four finite weights in [0,1], summing to one within
+1e-5 before compiler normalization. Every joint slot, including zero-weight slots,
+must exist in the referenced rig. Limits are 8 MiB of source,
+65536 vertices, depth 8 and one million JSON tokens. Both children are pinned
+compile/install dependencies; the mesh retains its own material dependencies.
+`ClawMesh::loadResource` stages the full mesh, materials, bind vertices, rig and
+native CPU bind pose before replacing the previous set. Existing skin deformation is reused
+without reopening an authoring mesh. The native package fixture advances two
+independent Animators, checks deformed vertices and reads posed/rest pixels after
+source/catalog/cooking storage removal. Animation graphs, morphs, retargeting and
+full model import remain separate feature gates.
+
+## Transform-only scene and prefab graphs
+
+Map the authored types to `fbscene` or `prefab`. The compiler validates the actual
+Properties JSON schema and writes the existing `FBSCNBIN` binary representation.
+The initial supported subset contains actor identity, local transforms and nested
+actors. Components, external references, lighting and Editor camera state are
+rejected until captured UUID dependency resolution and their typed installers
+are integrated. Limits are 8 MiB of source, 4096 actors and depth 64, with canonical
+nonnil UUIDs, finite transforms and unit quaternions.
+
+`decodeActorGraphResource` retains a CPU admission lease in every decoded Properties
+node, including nodes retained beyond the graph wrapper. `installCookedSceneGraph`
+uses the existing `SceneLoadJob` append/rollback path and its captured load
+generation; failed append restores the previously ready scene. Prefabs use the
+existing `GamePrefab` and `createInstanceData` UUID remapping. Cloned nodes retain
+their own lease. Editor contracts cover hierarchy/transforms, remapped identities,
+rollback/readiness, stale generation rejection and escaped-node lifetimes. This
+does not provide arbitrary component-bearing Editor scene shipping.
+
+## Bounded native UI trees
+
+Map an authored UI descriptor to `uires`. Version-1 JSON contains `version` and
+`nodes`. Each flat node has `type` (`window`, `container`, `text` or `button`),
+unique nonzero integer `id`, `parent` (-1 for the first root, otherwise an earlier
+window/container index), `label`, two-number `position` and `size`, and boolean
+`visible`/`enabled`. Text and buttons may additionally specify `textSize`.
+Source/payload is limited to 64 KiB and 256 nodes. Unknown fields, scripts, images,
+font references, invalid UTF-8, ImGui `##` label escapes, duplicate interactive
+sibling labels, repeated window labels anywhere in the tree and colliding visible
+external window labels fail explicitly.
+
+The owner-thread installer creates hidden controls through the existing loaded
+UI manager, applies native properties, verifies registration and parent membership,
+then publishes the tree. Failed staging unregisters controls. Rejected publication
+hides/detaches the instance, retaining registrations for retry until destruction.
+Destruction unregisters the tree and releases its retained resource and
+conservative CPU metadata lease.
+Editor tests exercise the actual backend hierarchy, properties and cleanup;
+interactive input, visual layout and project-switch publication remain open.
+
+## Whole-payload residency and shared work
 
 `ResourcePayloadStream::setResidencyLimits(entries, payloadBytes)` enables an
 optional payload cache; `findResident(id)` returns its existing leased result.
@@ -544,8 +660,20 @@ Lookup updates eviction order. Quota eviction drops cache ownership while live
 consumers retain scheduler result reservations. New accepted reads evict cached
 ownership when result headroom is needed. Defaults disable caching. All cache
 operations are owner-thread operations. The quota counts payload bytes and
-entries; metadata accounting, coalescing and chunk/LOD/mip/audio residency remain
-open work.
+entries. Resident requests are delivered through the scheduler without a new
+payload reservation and retain the original physical lease. Matching resource
+and size-limit requests within one demand batch share one physical read and fan
+out logical job keys. Scheduler statistics count physical jobs. The stream retains
+charged pending-delivery metadata until take/cancel. Cancellation clears aliases;
+invalid demand preserves the previously accepted deliveries. Cached work runs
+ahead of cold work, including equal maximum priorities, to avoid result-pressure
+deadlock. Coalescing across concurrently active batches, complete object/header
+accounting and chunk/LOD/mip/audio residency remain open work.
+
+WPRS headers are capped at 8 MiB of encoded metadata and checked against actual
+remaining file bytes before string/vector allocation. Container strings and all
+ResourceIDs require valid UTF-8 without embedded NULs. This bounds parser input;
+it does not establish full runtime metadata accounting or authenticated packages.
 
 ## Validation boundary
 
@@ -558,8 +686,8 @@ with original source/cooked storage removed and read-only runtime byte preservat
 stale binding rejection and UUID-preserving authoring rename beside a pinned package.
 
 This resource-directory API does not complete interactive closure-preview
-acceptance, scene/mesh/animation/audio/UI typed consumer adoption, multi-mount precedence, asynchronous
-residency, full-family compiler interruption, interactive Editor acceptance
+acceptance, mixed-component scene and whole-Editor typed consumer adoption,
+multi-mount precedence, complete asynchronous residency, full-family compiler interruption, interactive Editor acceptance
 or representative hardware/full-family shipping application certification. The
 native package-job fixture separately exercises a source-free Lua consumer; that
 does not close the other typed-family or interactive release gates.

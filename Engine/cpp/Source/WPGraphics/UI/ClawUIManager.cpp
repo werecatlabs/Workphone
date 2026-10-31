@@ -570,6 +570,13 @@ namespace workphone::ui
         m_application = nullptr;
     }
 
+    Array<SmartPtr<ISharedObject>> ClawUIManager::getChildObjects() const
+    {
+        Array<SmartPtr<ISharedObject>> result;
+        for(auto element:m_elements.snapshot())if(element)result.push_back(element);
+        return result;
+    }
+
     SmartPtr<IUIElement> ClawUIManager::addElement( hash64 type )
     {
         auto applicationManager = core::IApplicationManager::instance();

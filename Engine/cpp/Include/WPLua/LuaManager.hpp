@@ -20,6 +20,7 @@
 namespace workphone
 {
     class LuaDebugger;
+    namespace resource { class ResourceSystem; struct RuntimeResourceConfig; }
 
     /**
      * @class LuaManager
@@ -341,6 +342,13 @@ namespace workphone
         void configureScriptResources( SmartPtr<AssetDatabaseManager> catalog,
                                        std::shared_ptr<resource::IResourceSystem> resources,
                                        bool compiledOnly = false );
+        /** Configure a private read-only UUID mount before loading a fresh VM.
+         * Runtime assets never consult the authoring catalog or loose loaders.
+         * Unload releases the mount but preserves runtime policy: remount before
+         * recreating the VM, or explicitly configure authoring while unloaded.
+         * Mount changes require unload/recreate; runtime reload is unavailable. */
+        bool configureRuntimeScriptResources( const resource::RuntimeResourceConfig &config,
+                                               String &error );
         bool loadScriptAsset( const String &uuid ) override;
         bool loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot = {} );
 
@@ -738,8 +746,12 @@ namespace workphone
         std::unique_ptr<LuaDebugger> m_debugger;
         SmartPtr<AssetDatabaseManager> m_scriptCatalog;
         std::shared_ptr<resource::IResourceSystem> m_scriptResources;
+        std::shared_ptr<resource::ResourceSystem> m_runtimeScriptResources;
+        bool m_runtimeScriptsMode = false;
         bool m_compiledScriptsOnly = false;
         Map<String, u64> m_loadedScriptAssets;
+        bool applyCompiledModulePolicy();
+        bool loadScriptResourceInternal(std::shared_ptr<const resource::RuntimeResource>,const String &sourceRoot);
         bool constructLua( const String &className, SmartPtr<ISharedObject> *owner,
                            luabind::object &result );
         bool invokeLua( luabind::object *receiver, const String &globalName,

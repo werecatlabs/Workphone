@@ -9,6 +9,25 @@ namespace workphone::resource
 {
     namespace
     {
+        bool validUTF8(const String &text)
+        {
+            for(size_t at=0;at<text.size();) {
+                const auto lead=static_cast<unsigned char>(text[at++]);
+                if(lead<0x80) {if(!lead)return false;continue;}
+                unsigned count=0,code=0,minimum=0;
+                if(lead>=0xc2&&lead<=0xdf){count=1;code=lead&31;minimum=0x80;}
+                else if(lead>=0xe0&&lead<=0xef){count=2;code=lead&15;minimum=0x800;}
+                else if(lead>=0xf0&&lead<=0xf4){count=3;code=lead&7;minimum=0x10000;}
+                else return false;
+                if(count>text.size()-at)return false;
+                for(unsigned i=0;i<count;++i) {
+                    const auto next=static_cast<unsigned char>(text[at++]);if((next&0xc0)!=0x80)return false;code=(code<<6)|(next&63);
+                }
+                if(code<minimum||code>0x10ffff||(code>=0xd800&&code<=0xdfff))return false;
+            }
+            return true;
+        }
+
         String toLower( String value )
         {
             std::transform( value.begin(), value.end(), value.begin(),
@@ -103,6 +122,13 @@ namespace workphone::resource
         {
             normalized.clear();
             type = ResourceTypeID();
+
+            // Every entry, including manifest-body IDs/artifact paths, shares
+            // this validation before normalization or filesystem conversion.
+            if(!validUTF8(input)) {
+                if(error)*error="Resource IDs require valid UTF-8 without embedded NUL";
+                return false;
+            }
 
             String value = input;
             std::replace( value.begin(), value.end(), '\\', '/' );

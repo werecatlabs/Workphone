@@ -28,3 +28,6 @@ struct AnimationRuntimeFixture
 };
 
 BOOST_GLOBAL_FIXTURE( AnimationRuntimeFixture );
+#if WP_ANIMATION_TYPED_RESOURCES
+#include "SkeletonResourceContracts.hpp"
+#endif

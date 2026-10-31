@@ -5,6 +5,24 @@ Scope: implementation started on 2026-10-10 against the production plan in
 This ledger records the integrity and cooking increments. The full plan and
 production release gates remain open.
 
+## Latest implemented scope (31 October 2026)
+
+Increments 33–35 below extend the existing resource pipeline. The current bounded
+subsets are distinct from completing each production-plan family:
+
+| Area | Implemented and tested | Still required for full scope |
+| --- | --- | --- |
+| Mesh/material/skin | WPM1 geometry, ordered typed materials, pinned skin weights/rig, native CPU deformation and rendered package pixels | Full model import, LODs and component/application adoption |
+| Skeleton/clip | Existing XML hierarchy and linear quaternion-interpolated clips, independent Animator installation | Graph/mask/retarget/morph formats and complete authoring integration |
+| Scene/prefab | Transform/identity graphs, existing binary serializer, generation-aware append/rollback and prefab UUID remap | Captured external UUID dependencies, components, nested overrides and strict runtime reference resolution |
+| UI | Window/container/text/button trees through existing native controls, owner publication and cleanup | Font/image/style/localization dependencies, visual/input and project-switch acceptance |
+| Script components | Private runtime UUID mount, compiled module closure, real Script construction/update with authoring storage absent | Mixed-component package bootstrap, reentrant VM teardown and full VM/preload residency accounting |
+| Payload streaming | Leased cache hits, within-batch shared reads, fanout/cancel cleanup and pressure progress | Cross-batch/per-request work, complete metadata/decoded/device accounting and chunk/LOD/mip/audio demand |
+
+Current-source validation and candidate evidence are recorded under
+[increment 35](#current-validation-for-increment-35). Release certification remains
+false; these changes do not close the complete R1/R2 plan.
+
 Foliage integration on 11 October adds compact target/resource cache directory
 keys to keep Windows artifact paths bounded for long logical IDs and generated
 species. Full identities and generation hashes remain validated in each header.
@@ -1768,6 +1786,191 @@ An overlapping build attempt hit a DLL write lock; the serialized final build
 succeeded (`resource-mesh-residency-final-build.log`). Earlier installed candidates predate these changes;
 they do not certify this mesh/residency increment. Packaging input fingerprints
 now include the mesh compiler and native consumer sources.
+
+## Increment 33: typed material meshes, skinning, actor graphs and UI
+
+The checked package registry now includes the existing mesh path with explicit
+typed material bindings, plus new bounded `skinres`, `skelres`, `fbscene`, `prefab`
+and `uires` compilers. These use normal captured inputs, immutable WPRS outputs,
+dependency pins, manifest UUIDs and checked catalog policy. The
+[runtime guide](WPRESOURCE_RUNTIME_PACKAGES.md) documents schemas and limits.
+
+- Mesh version 2 captures an optional `.mesh.materials` sidecar and pins ordered
+  material slots. `ClawMesh::loadResource` stages geometry, materials, textures and
+  programs together before replacing previous owners. Version-1 unbound WPM1
+  remains supported. A native package fixture renders two independently colored
+  submeshes after source/catalog/cooking-cache removal.
+- `skelres` validates the existing skeleton XML schema and imports self-contained
+  hierarchy and linear clips through `XMLSkeletonSerializer`. Animator installs a
+  private rig on success. Unsupported linked/base animation, scale and axis-angle
+  inputs fail explicitly. Key spacing must survive the native track's float-time
+  equality policy; validation cannot silently merge authored keys.
+- `skinres` pins a PNT/PNTC mesh and rig, validates finite normalized four-weight
+  influences against actual joint handles and vertex count, and uses existing
+  native deformation. ClawMesh stages the complete set before publication. Existing
+  bind vertices are reusable without reopening an authoring mesh. The native
+  fixture uses independent Animator instances and actual rest/posed pixel reads.
+- Transform/identity-only scene and prefab graphs compile actual Properties JSON
+  to the existing FBSCNBIN representation. Decoded and prefab-cloned nodes retain
+  CPU leases even when children outlive graph owners. Prepared graphs use the
+  existing SceneLoadJob generation/rollback path; failed append restores a previously
+  ready scene without accepting a superseding generation. Prefab instances use
+  existing UUID remapping. Components and external references are rejected.
+- Experimental UI resources stage actual window/container/text/button controls
+  through the loaded backend, validate registration/parent membership, apply
+  properties while hidden and publish on the owner thread. Unsupported fields,
+  references and ambiguous backend labels fail. Destruction unregisters/detaches
+  the tree. Editor contracts cover native hierarchy, properties and cleanup;
+  visual layout and mouse/keyboard behavior are separate gates.
+
+The package fixture creates real catalogs and exports every new family through
+the CLI, removes authoring data and verifies read-only package UUID closures.
+Native graphics/animation consumers run in separate processes; scene/prefab/UI
+consumers run in focused Editor contracts. These separate fixtures do not equal
+one complete component-bearing Editor shipping project.
+
+## Increment 34: shared payload delivery and bounded typed admission
+
+Resident payload requests now pass through the existing scheduler without a new
+payload allocation, retaining the original physical result lease. Repeated
+`(ResourceID, maximumPayloadBytes)` requests within one demand batch share one
+physical job and fan out caller keys. Pending fanout/delivery metadata retains a
+PendingCpu lease. Invalid replacement demand preserves accepted deliveries;
+cancellation clears aliases and metadata. Cached jobs precede cold work even when
+both have maximum priority, avoiding result-pressure deadlock. Statistics count
+physical jobs. Tests cover cold duplicate requests, resident hits with the artifact
+temporarily unavailable, original-owner identity, cancellation and a 1 KiB result
+budget with mixed cached/cold demand.
+
+WPRS read/write now enforce an 8 MiB aggregate encoded header cap and validate
+declared strings/vector counts against actual remaining bytes before allocation.
+Container strings and ResourceIDs reject malformed UTF-8 and embedded NULs, including
+IDs from manifest bodies. Typed mesh/skin/skeleton/scene/UI decoders verify sealed
+payload size/hash before parsing. Regressions distinguish integrity rejection from
+resealed malformed structures. Conservative WorkingCpu admission precedes skin
+dependency reads; retained scene/UI structures hold SourceCpu participation leases.
+The positive UTF-8 roundtrip exposed an existing empty-stream publication bug:
+copying a zero-byte stream set the writer failbit. The writer now skips that copy
+for a verified empty payload while preserving its size/hash contract.
+
+These are whole-payload and parser-admission improvements. Cross-batch in-flight
+coalescing, exact retained header/object accounting, unified decoded/GPU/audio
+residency, range/chunk/mesh-LOD/texture-mip/audio-seek requests, fallback residency
+and measured frame/underrun limits remain open. No total-RSS or full streaming
+completion is claimed.
+
+### Current validation for increments 33–34
+
+The final optimized Editor/cooker and native hosts rebuilt. All twelve release
+suites passed in 121.40 seconds (`project_x64/resource-all-typed-final-opt-tests.log`,
+machine-readable `resource-all-typed-final-opt-results.xml`). This includes the
+new nine-family checked-package fixture, animation contracts, catalog, graphics,
+Lua, runtime resources, writer/index/process-crash publication, PackageEditor,
+owned package jobs and CLI. The earlier failed Unicode/empty-payload result is
+retained in `resource-all-typed-opt-tests.log`; the final pass supersedes it.
+Debug rebuilt the matching Editor/cooker and hosts, then passed all fourteen
+selected suites in 230.30 seconds: the same twelve release suites plus
+`Editor.cooked_scene_prefab_resource_test` (12.65 s) and
+`Editor.ui_resource_package_test` (11.75 s). Evidence:
+`resource-all-typed-final-debug-tests.log` / `resource-all-typed-final-debug-results.xml`.
+Full native output is retained in `resource-all-typed-final-opt-report.log` and
+`resource-all-typed-final-debug-report.log`. The family draws identify Microsoft
+Basic Render Driver, vendor 1414/device 008c, driver 10.0.19041.7802; this is software
+DX11 evidence, not representative hardware certification.
+
+The fresh installed candidate passed all six installer/startup/relocated-profile
+checks with `validationPassed=true`, `releaseCertified=false`, unchanged read-only
+payload, zero captured-input drift and matching hashes for all twelve built and
+installed executable/DLL files. Runtime/symbol archives and evidence are retained
+at `C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-domain-families-final-candidate-20261031/`.
+Driver log: `project_x64/resource-domain-final-installed-validation.log`;
+independent hash verification: `resource-domain-final-input-module-verification.json`.
+Interactive, clean-machine and legal flags remain false. This candidate covers
+increments 33–34; later source changes require matching rebuilt evidence.
+
+### Remaining full-family integration
+
+Mixed-component scene shipping requires a captured authored AssetUUID-to-ResourceID
+resolver during compilation, strict pinned runtime reference resolution and typed
+branches in existing component installers. MeshRenderer still has legacy authoring
+paths, and the mixed-component bootstrap must adopt explicit runtime Lua configuration.
+Guessing paths from UUIDs would bypass
+the package admission contract, so unsupported component graphs fail compilation.
+The new typed APIs do not close that integration, arbitrary model/animation/UI
+authoring, project-switch publication, hardware/audio/input/visual acceptance,
+clean-machine/legal, large-project/soak or the full R1/R2 release gates.
+
+## Increment 35: real Script components through package UUIDs
+
+`LuaManager::configureRuntimeScriptResources` configures a private immutable mount
+before VM startup, independent of catalog, compiler and compilation-index services.
+The existing Script component's `scriptAssetUuid` load now resolves through that
+mount before class construction. Wrong-type/missing UUIDs never fall back to the
+catalog. Module search is compiled-only; direct file/list/resource/state replacement,
+active authoring retarget and runtime hot reload fail with diagnostics. Unload
+releases the mount but latches runtime mode: plain subsequent load fails until an
+explicit runtime remount or unloaded authoring reconfiguration.
+
+The native fixture compiles a real Lua/module closure, exports UUIDs, removes all
+authoring storage and makes the package read-only. It creates an actual Script
+component, constructs its Lua instance and checks update results. It exercises
+missing/wrong-type IDs with a catalog spy, uppercase UUID reuse, rejected active
+retarget/source/reload/state injection, component teardown and same-manager remount.
+
+Lua load/unload, debugger start and update/poll now serialize their state checks
+with the manager lock. External stop/unload first sends a signal-only atomic
+debugger cancellation, then retires hooks and registry references after the executor
+releases that lock. Regressions distinguish running-loop and paused-executor
+cancellation from an independent watchdog, and check restart and normal reload
+after debugger stop. Failed initialization unbinds debugger/state metadata before
+closing a partially created VM.
+
+This closes an actual runtime Script UUID consumer boundary; scene compilation
+still rejects component graphs. Explicit text/debug execution remains available.
+Reentrant VM teardown from inside a Lua/native callback, complete Lua VM/preload/
+debugger-source residency accounting and full mixed-family application bootstrap
+remain open.
+
+### Current validation for increment 35
+
+The final optimized Editor/cooker and affected Lua clients rebuilt. All six focused
+Lua/runtime/debugger/terrain/vehicle checks passed in 7.56 seconds. The broader
+final optimized run passed all seventeen suites in 150.51 seconds
+(`project_x64/resource-runtime-script-final-opt-tests.log`, JUnit
+`resource-runtime-script-final-opt-results.xml`, full output
+`resource-runtime-script-final-opt-report.log`). The initial native Script fixture
+omitted the application timer required by Transform; CDB identified that exact
+boundary. TimerMT initialization/lifetime now follows the existing engine path.
+The earlier failure and stack remain in `resource-runtime-script-focused-opt-tests.log`
+and `resource-runtime-script-crash-stack.log`; tests and timeouts were preserved.
+Matching Debug Editor/cooker and all affected hosts rebuilt, then passed all
+nineteen selected suites in 229.34 seconds, including the same seventeen suites
+plus the scene/prefab and UI Editor cases. Logs/JUnit/full native output:
+`resource-runtime-script-final-debug-tests.log`,
+`resource-runtime-script-final-debug-results.xml` and
+`resource-runtime-script-final-debug-report.log`.
+The full Debug Editor aggregate then passed **97/97 cases and 1,912,515 assertions**
+in 801.38 seconds, within its unchanged 900-second timeout and without concurrent
+builds/package compression. Detailed output/JUnit:
+`resource-all-typed-editor-final-tests.log`,
+`resource-all-typed-editor-final-report.log` and
+`resource-all-typed-editor-final-results.xml`. This is automated software/backend
+lifecycle coverage; it does not establish live visual/input or device acceptance.
+
+The fresh candidate including these Lua changes passed six installed/relocated
+checks with `validationPassed=true`, `releaseCertified=false`, unchanged read-only
+payload and matching hashes for all twelve built/installed modules. Captured source
+inputs have zero drift. Evidence and runtime/symbol archives:
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-runtime-script-final-candidate-20261031/`.
+Driver/hash logs: `resource-runtime-script-final-installed-validation.log` and
+`resource-runtime-script-final-input-module-verification.json`. This candidate
+supersedes the increments-33–34 candidate for current source.
+
+Live Windows device inventory lists only Microsoft Basic Display Adapter and no
+Win32_SoundDevice entries (`project_x64/resource-release-host-inventory.json`).
+This host does not supply representative GPU or audible-device certification.
+Interactive, clean-machine and legal flags remain false; the full-family scene,
+residency and other R1/R2 gates listed above remain open.
 
 ## Next implementation gates
 

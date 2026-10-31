@@ -1,5 +1,6 @@
 #ifndef WP_RESOURCE_RUNTIME_CONTRACTS_HPP
 #define WP_RESOURCE_RUNTIME_CONTRACTS_HPP
+#include "CompiledResourceHeaderContracts.hpp"
 
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
@@ -174,6 +175,7 @@ namespace resource_runtime_contracts
     inline void run()
     {
         Fixture fixture;
+        compiled_resource_header_contracts::run(fixture.root);
         const auto source = fixture.root / "source";
         const auto cooked = fixture.root / "cooked";
         const auto relocated = fixture.root / "relocated";
