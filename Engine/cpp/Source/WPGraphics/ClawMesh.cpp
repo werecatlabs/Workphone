@@ -1,5 +1,8 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawMesh.hpp>
+#if WP_FOLIAGE_SOURCE_RESOURCES
+#include <WPGraphics/Resources/MeshResourceCompiler.hpp>
+#endif
 #include <WPGraphics/ClawMaterial.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <Workphone/Workphone.hpp>
@@ -427,6 +430,31 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loaded );
+        }
+
+        bool ClawMesh::loadResource(std::shared_ptr<const resource::RuntimeResource> resource,String &error)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            NativeMeshLifecycleLock lifecycleLock;
+            if(!resource) { error="Missing cooked mesh"; return false; }
+            if(!MeshResourceCompiler::validate(*resource,error)) return false;
+            auto candidate=wp_graphics_mesh_read_from_buffer_budgeted(resource->payload.data(),
+                static_cast<wp_u32>(resource->payload.size()),&asset_budget::meshMemoryCallbacks);
+            if(!candidate) { error="Cooked mesh decode budget exhausted"; return false; }
+            if(!prepareNativeGeometry(candidate))
+            { destroyNativeMesh(candidate); error="Cooked mesh upload failed"; return false; }
+            auto previous=m_mesh; m_mesh=candidate;
+            if(m_renderObject) {
+                wp_graphics_object_set_submit_data(m_renderObject,this);
+                wp_graphics_object_set_mesh(m_renderObject,m_mesh);
+                wp_graphics_object_set_local_aabb(m_renderObject,wp_graphics_mesh_get_local_aabb(m_mesh));
+            }
+            clearSkinningData();
+            destroyNativeMesh(previous);
+            setLoadingState(LoadingState::Loaded); return true;
+#else
+            error="Cooked resource support is unavailable in this build"; return false;
+#endif
         }
 
         void ClawMesh::reload( SmartPtr<ISharedObject> data )

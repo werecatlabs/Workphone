@@ -526,6 +526,27 @@ never overwritten. The compiler is a deterministic test family, so this proves
 process-death publication/reopen contracts rather than real importer crash safety,
 physical power-loss durability, staging reclamation or full-family certification.
 
+## Static mesh geometry
+
+Map a catalog mesh type to `mesh` to cook portable WPM1 static geometry. Inputs
+are limited to 64 MiB and validated with the existing budgeted native decoder.
+Empty/invalid geometry and nonzero legacy material IDs are rejected. Material
+bindings, Ogre import and skeletal dependencies require further typed integration.
+`ClawMesh::loadResource` accepts a pinned runtime mesh on the owner thread,
+validates/decodes/uploads before replacing existing geometry, and preserves the
+previous mesh on failure. It performs no source-path fallback. This API and its
+source-free upload fixture do not establish whole-Editor mesh adoption or visual
+certification.
+
+`ResourcePayloadStream::setResidencyLimits(entries, payloadBytes)` enables an
+optional payload cache; `findResident(id)` returns its existing leased result.
+Lookup updates eviction order. Quota eviction drops cache ownership while live
+consumers retain scheduler result reservations. New accepted reads evict cached
+ownership when result headroom is needed. Defaults disable caching. All cache
+operations are owner-thread operations. The quota counts payload bytes and
+entries; metadata accounting, coalescing and chunk/LOD/mip/audio residency remain
+open work.
+
 ## Validation boundary
 
 `WPResourceTests` covers deterministic v3 export, invalid/duplicate/aliased/outside-

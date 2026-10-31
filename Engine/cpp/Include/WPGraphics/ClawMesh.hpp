@@ -13,6 +13,7 @@ struct wp_graphics_object;
 
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; }
     class StreamBudgetLease;
     namespace render
     {
@@ -35,6 +36,8 @@ namespace workphone
 
             /** Rebuilds native geometry while keeping the render object attached. */
             void reload( SmartPtr<ISharedObject> data ) override;
+            /** Owner-thread install; failure retains the previous mesh. */
+            bool loadResource(std::shared_ptr<const resource::RuntimeResource>, String &error);
 
             /** Unloads the currently loaded mesh data. */
             void unload( SmartPtr<ISharedObject> data ) override;

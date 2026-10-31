@@ -6,6 +6,7 @@
 #include <Workphone/System/ResourcePackageBuildProfile.hpp>
 #include <WPGraphics/Resources/TerrainResource.hpp>
 #include <WPGraphics/Resources/FoliageResource.hpp>
+#include <WPGraphics/Resources/MeshResourceCompiler.hpp>
 #if WP_PACKAGE_AUDIO
 #include <WPAudio/AudioResourceCompiler.hpp>
 #endif
@@ -245,7 +246,8 @@ namespace
         if(!registry->registerCompiler(std::make_shared<render::GraphicsResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<LuaScriptCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::TerrainResourceCompiler>(), &error) ||
-           !registry->registerCompiler(std::make_shared<render::FoliageResourceCompiler>(), &error))
+           !registry->registerCompiler(std::make_shared<render::FoliageResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::MeshResourceCompiler>(), &error))
             throw std::runtime_error(error.c_str());
         auto resources = std::make_shared<ResourceSystem>(registry, std::make_shared<ResourceCompilationDatabase>());
 #if WP_PACKAGE_AUDIO

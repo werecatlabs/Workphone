@@ -1725,6 +1725,50 @@ clean-machine and legal flags remain false; the complete required-family Editor
 shipping fixture, hardware/audio validation, scale/soak and other gates below
 remain open.
 
+## Increment 32: static mesh packages and payload residency
+
+The package registry now includes `MeshResourceCompiler` for bounded, nonempty
+WPM1 static `.mesh` geometry. It uses the existing native decoder with shared
+CPU allocation callbacks. The initial format rejects nonzero legacy material
+IDs: those require explicit typed material bindings before they can ship.
+Ogre import, skinned meshes, skeletons/clips/graphs, scene/prefab and UI typed
+closures remain open. This compiler does not silently package their raw inputs.
+
+`ClawMesh::loadResource` installs directly from a pinned runtime resource on its
+owner thread, without source/filesystem fallback. Validation and native upload
+finish before replacing existing geometry; failed versions retain the old mesh.
+Native geometry and GPU storage retain the existing allocation/retirement budgets.
+Resource-disabled builds return explicit unavailability. The source-free package
+fixture now resolves a mesh UUID, uploads its three vertices and verifies failed
+replacement retention after deleting sources, catalog and cooking cache. This
+is geometry installation coverage, not a rendered mesh/material visual gate.
+Malformed meshes and unresolved material IDs must fail without a published
+package directory.
+
+`ResourcePayloadStream` now has optional owner-thread entry/payload-byte limits,
+least-recently-used lookup and eviction. Cached results retain their original
+scheduler leases; dropping cache ownership preserves live consumer references.
+Admitted I/O evicts cache ownership when necessary to leave result headroom.
+A 1 KiB scheduler regression verifies subsequent reads complete under cache
+pressure. Defaults preserve the previous uncached behavior. Header/object memory
+is not part of this payload quota. Automatic request coalescing, full metadata
+accounting, chunk/LOD/mip/audio-seek demand and subsystem residency publication
+remain open; this increment does not close full streaming/residency.
+
+The optimized build and four focused suites passed (`resource-mesh-residency-tests.log`).
+The strengthened package rejection run passed in 17.76 seconds
+(`resource-mesh-negative-tests.log`), and final resource/cache-pressure contracts
+passed in 3.47 seconds (`resource-residency-pressure-tests.log`). All four focused
+Debug suites passed in 90.40 seconds (`resource-mesh-residency-debug-tests.log`).
+Final batched-pressure resource contracts passed in optimized (3.38 s) and Debug
+(4.16 s), recorded in `resource-residency-batch-tests.log` and
+`resource-residency-batch-debug-tests.log`. Those checks also verify that cached
+completed reads cannot starve the remaining reads in one admitted demand batch.
+An overlapping build attempt hit a DLL write lock; the serialized final build
+succeeded (`resource-mesh-residency-final-build.log`). Earlier installed candidates predate these changes;
+they do not certify this mesh/residency increment. Packaging input fingerprints
+now include the mesh compiler and native consumer sources.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add

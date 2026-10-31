@@ -516,6 +516,7 @@ namespace
         auto scheduler=std::make_shared<WorldStreamingScheduler>();
         auto stream=ResourcePayloadStream::create(runtime,scheduler,{},error);
         require(stream!=nullptr,error.c_str());
+        stream->setResidencyLimits(2,1024*1024);
         ResourceID selected;
         require(stream->resolveUUID("35d8e41d-e0e5-43fe-9013-5bc80c42c401",selected,error)&&selected==id,
             "Stream demand resolves UUIDs through its own immutable mount");
@@ -528,6 +529,33 @@ namespace
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         require(ready.key==19&&ready.resource&&!ready.resource->payload.empty()&&ready.resource->dependencies.empty(),
             "Shared scheduler delivers a shallow source-free payload");
+        require(stream->findResident(id)==ready.resource && stream->residentPayloadBytes()==ready.resource->payload.size(),
+            "Resident cache reuses the exact leased immutable payload");
+        stream->setResidencyLimits(0,0);
+        require(!stream->findResident(id) && !stream->residentPayloadBytes() && ready.resource,
+            "Quota eviction releases cache ownership while retaining a live consumer");
+        {
+            WorldStreamLimits tiny; tiny.bytes[size_t(StreamMemoryClass::ResultCpu)]=1024;
+            auto service=std::make_shared<WorldStreamingScheduler>(tiny);
+            auto resident=ResourcePayloadStream::create(runtime,service,{},error);
+            require(resident!=nullptr,error.c_str()); resident->setResidencyLimits(2,1024);
+            for(u64 key : {30ull,31ull}) {
+                require(resident->replace({{key,id,1024,0}},error),error.c_str());
+                ResourcePayloadResult value;
+                const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+                while(!resident->take(value)&&std::chrono::steady_clock::now()<until)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                require(value.key==key&&value.resource,"Cache pressure must admit subsequent payload reads");
+            }
+            require(resident->replace({{32,id,1024,0},{33,id,1024,0}},error),error.c_str());
+            size_t received=0; const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(received<2 && std::chrono::steady_clock::now()<until) {
+                ResourcePayloadResult value;
+                if(resident->take(value)) { require(value.resource!=nullptr,"Batched cache pressure read succeeds"); ++received; }
+                else std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(received==2,"Cached results must not starve the remainder of an admitted batch");
+        }
         require(!stream->replace({{20,id,9ull<<20,0}},error)&&!error.empty(),"Demand above producer residency budget is rejected");
         Array<ResourcePayloadDemand> oversized;
         for(u32 key=0;key<257;++key) oversized.push_back({100+key,id,1024,0});

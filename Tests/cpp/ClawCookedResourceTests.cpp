@@ -1057,6 +1057,19 @@ int main( int argc, char **argv )
 {
     try
     {
+        if(argc==4 && std::strcmp(argv[1],"--mesh-checked-package-consume")==0)
+        {
+            claw_texture_mip_contracts::Fixture graphics; graphics.initialize();
+            ResourceSystem runtime(nullptr,nullptr); RuntimeResourceConfig config;
+            config.compiledRoot=argv[2]; config.manifestPath=(fs::u8path(argv[2])/"runtime.wprm").u8string().c_str();
+            config.target="pc"; String error; require(runtime.initializeRuntime(config,error),error.c_str());
+            auto resource=runtime.loadUUID(argv[3],error); require(resource!=nullptr,error.c_str());
+            ClawMesh mesh; require(mesh.loadResource(resource,error),error.c_str());
+            auto previous=mesh.getNativeMesh(); require(wp_graphics_mesh_get_vertex_count(previous)==3,"Cooked mesh geometry");
+            auto invalid=std::make_shared<RuntimeResource>(*resource); invalid->header.compilerVersion=0;
+            require(!mesh.loadResource(invalid,error)&&mesh.getNativeMesh()==previous,"Failed mesh replacement retains geometry");
+            mesh.unload(nullptr); return 0;
+        }
         if(argc==3 && std::strcmp(argv[1],"--foliage-source-export")==0)
         {
             using namespace cooked_foliage_contracts;
