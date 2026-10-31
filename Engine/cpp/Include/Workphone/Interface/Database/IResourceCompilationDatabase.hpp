@@ -5,6 +5,7 @@
 #include <Workphone/WorkphoneConfig.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <stdexcept>
 
 namespace workphone::resource
 {
@@ -13,6 +14,17 @@ namespace workphone::resource
     {
         String target;
         bool packagedBuild = false;
+        String buildKey;
+
+        /** SQLite binds the full byte length. NUL separates the legacy target
+         * from the optional canonical key without aliases or a schema rewrite. */
+        String indexTarget() const
+        {
+            if(target.find('\0')!=String::npos)
+                throw std::invalid_argument("Compilation target contains NUL");
+            if(buildKey.empty()) return target;
+            String result=target; result.push_back('\0'); result+=buildKey; return result;
+        }
     };
 
     /** Durable metadata for a successfully compiled resource. */

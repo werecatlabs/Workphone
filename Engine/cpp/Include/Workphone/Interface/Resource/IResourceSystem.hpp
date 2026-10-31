@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/Resource/IResourceCompilerRegistry.hpp>
 #include <Workphone/System/CompiledResource.hpp>
+#include <Workphone/System/ResourceBuildProfile.hpp>
 
 #include <memory>
 
@@ -15,6 +16,7 @@ namespace workphone::resource
         String databasePath;
         String target = "pc";
         u64 maxRuntimePayloadBytes = 1024ull * 1024ull * 1024ull;
+        ResourceBuildProfile buildProfile;
     };
 
     struct WPCore_API CompilationOptions

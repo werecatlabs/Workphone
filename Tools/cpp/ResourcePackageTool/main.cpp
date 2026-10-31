@@ -3,6 +3,9 @@
 #include <Workphone/Database/CatalogResourceAdapter.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#if WP_PACKAGE_AUDIO
+#include <WPAudio/AudioResourceCompiler.hpp>
+#endif
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPLua/LuaScriptCompiler.hpp>
 #include <WPSQLite/WPSQLite.hpp>
@@ -176,6 +179,10 @@ namespace
            !registry->registerCompiler(std::make_shared<LuaScriptCompiler>(), &error))
             throw std::runtime_error(error.c_str());
         auto resources = std::make_shared<ResourceSystem>(registry, std::make_shared<ResourceCompilationDatabase>());
+#if WP_PACKAGE_AUDIO
+        if(!registry->registerCompiler(std::make_shared<audio::AudioResourceCompiler>(),&error))
+            throw std::runtime_error(error.c_str());
+#endif
         ResourceSystemConfig config;
         config.sourceRoot = args[1];
         config.compiledRoot = args[3];

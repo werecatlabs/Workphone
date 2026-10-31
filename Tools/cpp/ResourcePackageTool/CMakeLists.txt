@@ -6,6 +6,11 @@ target_link_libraries(WorkphoneResourcePackage PRIVATE
     $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPSQLite>
     $<TARGET_LINKER_FILE:WPGraphics> $<TARGET_LINKER_FILE:WPLua>)
 add_dependencies(WorkphoneResourcePackage Workphone WPSQLite WPGraphics WPLua)
+if(TARGET WPAudio)
+    target_compile_definitions(WorkphoneResourcePackage PRIVATE WP_PACKAGE_AUDIO=1)
+    target_link_libraries(WorkphoneResourcePackage PRIVATE $<TARGET_LINKER_FILE:WPAudio>)
+    add_dependencies(WorkphoneResourcePackage WPAudio)
+endif()
 set_target_properties(WorkphoneResourcePackage PROPERTIES FOLDER Tools/Cpp)
 if(TARGET Editor)
     add_dependencies(Editor WorkphoneResourcePackage)

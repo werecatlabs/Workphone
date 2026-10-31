@@ -3,6 +3,7 @@
 
 #include <WPAudio/WPAudioPrerequisites.hpp>
 #include <Workphone/Sound/Sound.hpp>
+#include <Workphone/System/CompiledResource.hpp>
 
 // Keep Windows SDK declarations out of this public, cross-platform header.
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
@@ -29,6 +30,9 @@ namespace workphone
         void unload( SmartPtr<ISharedObject> data ) override;
         void reload( SmartPtr<ISharedObject> data ) override;
         bool hasReloadError() const;
+        /** Control thread only. Uses the existing clip cache and voice lifecycle;
+         * no filesystem fallback. Unload an existing voice before changing assets. */
+        bool loadResource(std::shared_ptr<const resource::RuntimeResource> resource);
 
         void play() override;
         void pause() override;
@@ -64,6 +68,7 @@ namespace workphone
         // Platform SDK types and owned audio data live entirely in the .cpp.
         PlatformSoundState *m_platformSoundState = nullptr;
         bool m_reloadFailed = false;
+        std::shared_ptr<const resource::RuntimeResource> m_cookedResource;
     };
 }  // namespace workphone
 

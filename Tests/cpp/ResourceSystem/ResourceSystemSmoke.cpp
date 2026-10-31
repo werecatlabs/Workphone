@@ -1,6 +1,7 @@
 #include "../ResourceRuntimeContracts.hpp"
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
+#include <Workphone/System/ResourcePayloadStream.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
 
 #include <algorithm>
@@ -10,6 +11,11 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <set>
+#include <thread>
+#if WP_RESOURCE_AUDIO_CONTRACTS
+#include <WPAudio/AudioResourceCompiler.hpp>
+#endif
 #include <stdexcept>
 
 namespace
@@ -413,6 +419,147 @@ namespace
         for(const auto &root:compiler->roots)
             require(!fs::exists(root),"Successful and failed builds must clean up their private snapshots");
     }
+    void audioContracts(const fs::path &root)
+    {
+#if WP_RESOURCE_AUDIO_CONTRACTS
+        fs::create_directories(root/"source");
+        std::string wave="RIFF"; wave.append("\x28\0\0\0",4); wave+="WAVEfmt ";
+        wave.append("\x10\0\0\0\x01\0\x01\0\x40\x1f\0\0\x80\x3e\0\0\x02\0\x10\0",20);
+        wave+="data"; wave.append("\x04\0\0\0\0\0\xff\x7f",8);
+        writeFile(root/"source"/"tone.wav",wave);
+        auto registry=std::make_shared<ResourceCompilerRegistry>(); String error;
+        require(registry->registerCompiler(std::make_shared<audio::AudioResourceCompiler>(),&error),error.c_str());
+        ResourceSystem system(registry,std::make_shared<ResourceCompilationDatabase>());
+        ResourceSystemConfig config; config.sourceRoot=(root/"source").u8string().c_str();
+        config.compiledRoot=(root/"cooked").u8string().c_str(); config.target="audio";
+        require(system.initialize(config,error),error.c_str());
+        CompilationOptions options; options.packagedBuild=true; const ResourceID id("data://tone.wav");
+        require(system.compile(id,options).succeeded(),"Native PCM16 compiler accepts valid WAVE");
+        writeFile(root/"source"/"broken.wav","malformed WAVE input");
+        require(!system.compile(ResourceID("data://broken.wav"),options).succeeded(),"Malformed audio fails compilation");
+        const auto package=root/"package";
+        require(system.writeRuntimePackage(package.u8string().c_str(),{id},{},error),error.c_str());
+        system.shutdown(); fs::rename(root/"source",root/"hidden-source"); fs::rename(root/"cooked",root/"hidden-cooked");
+        ResourceSystem runtime(nullptr,nullptr); RuntimeResourceConfig mount;
+        mount.compiledRoot=package.u8string().c_str(); mount.manifestPath=(package/"runtime.wprm").u8string().c_str(); mount.target="audio";
+        require(runtime.initializeRuntime(mount,error),error.c_str());
+        auto clip=runtime.load(id,error);
+        require(clip!=nullptr,error.c_str());
+        const bool audioValid=audio::AudioResourceCompiler::validate(*clip,error);
+        require(audioValid,std::string(error.c_str())+"; type="+clip->header.resourceType.str().c_str()+
+            "; version="+std::to_string(clip->header.compilerVersion)+"; bytes="+std::to_string(clip->payload.size()));
+        RuntimeResource corrupt=*clip; corrupt.payload[0]=0;
+        require(!audio::AudioResourceCompiler::validate(corrupt,error),"Typed consumer rejects malformed audio");
+        corrupt=*clip; corrupt.header.compilerVersion=2;
+        require(!audio::AudioResourceCompiler::validate(corrupt,error),"Typed consumer rejects unknown versions");
+#endif
+    }
+
+    void buildProfileContracts(const fs::path &root)
+    {
+        class ProfileProbe final : public IResourceCompiler
+        {
+        public:
+            String name() const override { return "ProfileContextProbe"; }
+            Array<CompilerOutput> outputs() const override { return {{ResourceTypeID("txtres"),1}}; }
+            bool getDependencies(const CompileContext &context,DependencySet &dependencies,String &) const override
+            {
+                if(context.resourceId==ResourceID("data://asset.txtres"))
+                    dependencies.installDependencies.push_back(ResourceID("data://child.txtres"));
+                return true;
+            }
+            CompilationStatus compile(const CompileContext &context,std::ostream &output,Array<String>&) const override
+            { output << "profile=" << context.buildProfile.key(); return CompilationStatus::Success; }
+        };
+        fs::create_directories(root/"source");
+        writeFile(root/"source"/"asset.txtres","profile payload\n");
+        writeFile(root/"source"/"child.txtres","child payload\n");
+        auto registry=std::make_shared<ResourceCompilerRegistry>(); String error;
+        require(registry->registerCompiler(std::make_shared<ProfileProbe>(),&error),error.c_str());
+        ResourceSystemConfig config;
+        config.sourceRoot=(root/"source").u8string().c_str();
+        config.compiledRoot=(root/"cooked").u8string().c_str(); config.target="profiles";
+        const ResourceID id("data://asset.txtres");
+        std::vector<String> paths;
+        fs::path childArtifact;
+        for(int pass : {0,1,2,3,0,1,2,3})
+        {
+            config.buildProfile={};
+            if(pass) { config.buildProfile.profile="shipping"; config.buildProfile.toolchain=pass==3?"encoder-2":"encoder-1";
+                config.buildProfile.settings["quality"]=pass==2?"high":"low"; }
+            auto database=std::make_shared<ResourceCompilationDatabase>(); ResourceSystem system(registry,database);
+            require(system.initialize(config,error),error.c_str());
+            const auto report=system.compile(id);
+            require(report.succeeded(),"Profile compilation succeeds");
+            auto loaded=system.load(id,error);
+            const std::string expected="profile="+std::string(config.buildProfile.key().c_str());
+            require(loaded && std::string(reinterpret_cast<const char*>(loaded->payload.data()),loaded->payload.size())==expected,
+                "Compiler receives the captured effective build profile");
+            if(paths.size()<4) { require(report.status!=CompilationStatus::UpToDate,"New profile cooks separately"); paths.push_back(report.outputPath); }
+            else require(report.status==CompilationStatus::UpToDate && report.outputPath==paths[pass],"Profile survives restart without recooking");
+            CompiledResourceRecord record;
+            require(database->getRecord(id.str(),{config.target,false,config.buildProfile.key()},record)&&
+                fs::equivalent(fs::u8path(config.compiledRoot.c_str())/fs::u8path(record.outputPath.c_str()),fs::u8path(report.outputPath.c_str())),
+                "Explicit index lookup selects the full profile");
+            if(pass==0) {
+                require(database->getRecord("data://child.txtres",{config.target,false,{}},record)&&record.isValid(),"Child generation is indexed");
+                childArtifact=fs::u8path(config.compiledRoot.c_str())/fs::u8path(record.outputPath.c_str());
+            }
+            require(system.writeRuntimeManifest((root/("manifest-"+std::to_string(pass)+".wprm")).u8string().c_str(),{id},
+                {{"35d8e41d-e0e5-43fe-9013-5bc80c42c401",id}},error),error.c_str());
+            system.shutdown();
+        }
+        require(std::set<String>(paths.begin(),paths.end()).size()==4,"Settings and toolchain artifact variants coexist");
+        RuntimeResourceConfig runtime;
+        runtime.compiledRoot=config.compiledRoot; runtime.target=config.target;
+        runtime.manifestPath=(root/"manifest-0.wprm").u8string().c_str();
+        auto scheduler=std::make_shared<WorldStreamingScheduler>();
+        auto stream=ResourcePayloadStream::create(runtime,scheduler,{},error);
+        require(stream!=nullptr,error.c_str());
+        ResourceID selected;
+        require(stream->resolveUUID("35d8e41d-e0e5-43fe-9013-5bc80c42c401",selected,error)&&selected==id,
+            "Stream demand resolves UUIDs through its own immutable mount");
+        fs::rename(root/"source",root/"source-unavailable");
+        fs::rename(childArtifact,fs::path(childArtifact.wstring()+L".unavailable"));
+        require(stream->replace({{19,id,1024*1024,0}},error),error.c_str());
+        ResourcePayloadResult ready;
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(!stream->take(ready)&&std::chrono::steady_clock::now()<deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(ready.key==19&&ready.resource&&!ready.resource->payload.empty()&&ready.resource->dependencies.empty(),
+            "Shared scheduler delivers a shallow source-free payload");
+        require(!stream->replace({{20,id,9ull<<20,0}},error)&&!error.empty(),"Demand above producer residency budget is rejected");
+        Array<ResourcePayloadDemand> oversized;
+        for(u32 key=0;key<257;++key) oversized.push_back({100+key,id,1024,0});
+        const auto generation=stream->stats().generation;
+        require(!stream->replace(oversized,error)&&stream->stats().generation==generation,
+            "Oversized demand batches are rejected before preparation without replacing accepted demand");
+        require(!stream->replace({{20,ResourceID("data://"+String(1100,'a')+".txtres"),1024,0}},error),
+            "Oversized pending identity metadata is rejected before queueing");
+        require(stream->replace({{21,ResourceID("data://absent.txtres"),1024*1024,0}},error),error.c_str());
+        ResourcePayloadResult missing;
+        const auto missingDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(!stream->take(missing)&&std::chrono::steady_clock::now()<missingDeadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(missing.key==21&&!missing.resource&&!missing.error.empty(),"Missing pinned resources report worker failures");
+        require(stream->replace({{22,id,1024*1024,0}},error),error.c_str());
+        stream->cancel();
+        stream->drain(); stream.reset();
+        require(scheduler->stats().used[size_t(StreamMemoryClass::ResultCpu)]!=0,
+            "Caller-held result retains its memory reservation after stream destruction");
+        ready={};
+        require(scheduler->stats().used[size_t(StreamMemoryClass::ResultCpu)]==0,
+            "Last consumer releases stream residency reservation");
+        ResourceBuildProfile left,right;
+        left.profile=right.profile="shipping"; left.toolchain=right.toolchain="tools";
+        left.settings={{"a","b:c"},{"d","e"}}; right.settings={{"a","b"},{"c:d","e"}};
+        require(left.key()!=right.key(),"Length framing prevents setting aliases");
+        right=left; right.toolchain="tools-next";
+        require(left.key()!=right.key(),"Toolchain identity participates in key");
+        config.buildProfile.profile="missing-toolchain"; config.buildProfile.toolchain.clear();
+        ResourceSystem rejected(registry,std::make_shared<ResourceCompilationDatabase>());
+        require(!rejected.initialize(config,error)&&!error.empty(),"Incomplete profiles fail before cooking");
+    }
 }  // namespace
 
 int main(int argc, char **argv)
@@ -469,6 +616,8 @@ int main(int argc, char **argv)
         variantDatabaseContracts(root / "variant-contracts.sqlite");
         batchDatabaseContracts(root / "batch-contracts.sqlite");
         containerPinContracts(root);
+        buildProfileContracts(root/"profile-contracts");
+        audioContracts(root/"audio-contracts");
 
         writeFile( source / "dependency.txtres",
                    "data=data://data/shared.txt\n"

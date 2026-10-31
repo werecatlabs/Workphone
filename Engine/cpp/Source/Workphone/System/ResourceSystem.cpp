@@ -887,19 +887,21 @@ namespace workphone::resource
 
         CompilationVariant variant( bool packaged ) const
         {
-            return { config.target, packaged };
+            return { config.target, packaged, config.buildProfile.key() };
         }
 
         String variantArtifactNamespace( bool packaged ) const
         {
+            // The full profile participates in the generation hash and index.
+            // Reuse the bounded directory layout rather than extending Windows paths.
             return artifactNamespace( config.target ) + ( packaged ? "package/" : "editor/" );
         }
 
         bool matchesVariantArtifact( const String &path, bool packaged ) const
         {
             return path.find( variantArtifactNamespace( packaged ) ) == 0 ||
-                   path.find( legacyArtifactNamespace( config.target ) +
-                              ( packaged ? "package/" : "editor/" ) ) == 0;
+                   (config.buildProfile.key().empty() && path.find( legacyArtifactNamespace( config.target ) +
+                              ( packaged ? "package/" : "editor/" ) ) == 0);
         }
 
         static String variantResourceKey( const String &id, bool packaged )
@@ -1013,6 +1015,7 @@ namespace workphone::resource
             context.compiledRoot = pathString( compiledRoot );
             context.target = config.target;
             context.packagedBuild = options.packagedBuild;
+            context.buildProfile = config.buildProfile;
             if( resourceId.str().size() > 1024 || config.target.size() > 128 )
             {
                 return fail( "Resource identity or target exceeds artifact namespace limits" );
@@ -1170,6 +1173,11 @@ namespace workphone::resource
             sourceHash = hashString( "captured-build-inputs-v1", sourceHash );
             sourceHash = combineHash( sourceHash, CompiledResourceHeader::currentFormatVersion );
             sourceHash = combineHash( sourceHash, compilerVersion );
+            const auto compilerName=compiler->name(), profileKey=config.buildProfile.key();
+            sourceHash = combineHash( sourceHash, compilerName.size() );
+            sourceHash = hashString( compilerName, sourceHash );
+            sourceHash = combineHash( sourceHash, profileKey.size() );
+            sourceHash = hashString( profileKey, sourceHash );
             sourceHash = hashString( config.target, sourceHash );
             sourceHash = combineHash( sourceHash, options.packagedBuild ? 1u : 0u );
             sourceHash = combineHash( sourceHash, sourceFileHash );
@@ -1354,7 +1362,7 @@ namespace workphone::resource
             header.installArtifacts = std::move( installArtifacts );
 
             String relativeArtifact =
-                artifactNamespace( config.target ) + ( options.packagedBuild ? "package/" : "editor/" ) +
+                variantArtifactNamespace( options.packagedBuild ) +
                 compactResourceKey( resourceId.str() ) + "/" + std::to_string( sourceHash ).c_str() +
                 "-" + std::to_string( payloadHash ).c_str() + ".wprs";
             if( !resolveUnderRoot( compiledRoot, "data://" + relativeArtifact, false, outputPath,
@@ -1820,11 +1828,14 @@ namespace workphone::resource
         }
         if( !m_impl->registry || !m_impl->database || config.sourceRoot.empty() ||
             config.compiledRoot.empty() || config.target.empty() || config.target.size() > 128 ||
-            config.maxRuntimePayloadBytes == 0 )
+            config.maxRuntimePayloadBytes == 0 || config.target.find('\0')!=String::npos )
         {
             error = "Resource system configuration is incomplete";
             return false;
         }
+
+        try { (void)config.buildProfile.key(); }
+        catch(const std::exception &exception) { error=exception.what(); return false; }
 
         std::error_code filesystemError;
         fs::path source = fs::canonical( fs::u8path( config.sourceRoot.c_str() ), filesystemError );

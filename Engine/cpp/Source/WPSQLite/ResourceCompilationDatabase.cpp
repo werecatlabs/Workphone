@@ -61,7 +61,8 @@ namespace workphone::resource
 
         bool bindVariant( sqlite3_stmt *statement, int index, const CompilationVariant *variant )
         {
-            return !variant || (bindText(statement,index,variant->target) &&
+            if(variant && variant->target.find('\0')!=String::npos) return false;
+            return !variant || (bindText(statement,index,variant->indexTarget()) &&
                 sqlite3_bind_int(statement,index+1,variant->packagedBuild ? 1 : 0)==SQLITE_OK);
         }
 
@@ -404,8 +405,8 @@ namespace workphone::resource
         std::set<std::tuple<String,String,bool>> identities;
         for(const auto &compilation : compilations)
         {
-            if(!compilation.record.isValid() || !identities.emplace(compilation.record.resourceId,
-                compilation.variant.target,compilation.variant.packagedBuild).second)
+            if(!compilation.record.isValid() || compilation.variant.target.find('\0')!=String::npos || !identities.emplace(compilation.record.resourceId,
+                compilation.variant.indexTarget(),compilation.variant.packagedBuild).second)
             {
                 m_impl->setError("Compilation batch contains an invalid or duplicate variant record");
                 return false;

@@ -2,6 +2,7 @@
 #define IResourceCompiler_h__
 
 #include <Workphone/System/ResourceID.hpp>
+#include <Workphone/System/ResourceBuildProfile.hpp>
 #include <Workphone/Core/Array.hpp>
 
 #include <ostream>
@@ -57,6 +58,7 @@ namespace workphone::resource
          * Compile receives a snapshot sourcePath/sourceRoot and no callback.
          */
         std::function<bool( const String &, bool, String &, String & )> snapshotInput;
+        ResourceBuildProfile buildProfile;
     };
 
     /** Base interface implemented by format-specific resource compilers. */

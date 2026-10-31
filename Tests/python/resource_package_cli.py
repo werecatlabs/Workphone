@@ -8,6 +8,7 @@ import uuid
 import json
 import shutil
 import os
+import wave
 from contextlib import closing
 from resource_package_history import check_history
 
@@ -51,6 +52,29 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
                                 capture_output=True, text=True, env=child_environment)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result
+
+    # Real typed audio admission, cooking and source-free UUID mounting.
+    audio_id = str(uuid.uuid4())
+    audio_script_id = str(uuid.uuid4())
+    audio_source = source / "tone.wav"
+    with wave.open(str(audio_source), "wb") as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(2)
+        clip.setframerate(8000)
+        clip.writeframes(b"\0\0\xff\x7f")
+    with closing(sqlite3.connect(catalog)) as db, db:
+        db.execute("INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,'sound','file',?)", (audio_id, "tone.wav", "tone.wav"))
+        db.execute("INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,'script','file',?)", (audio_script_id, "audio.lua", "audio.lua"))
+    (source / "audio.lua").write_text("return true\n", encoding="utf-8")
+    (source / "audio.lua.deps").write_text("data://tone.wav\n", encoding="utf-8")
+    audio_output = root / "audio-package"
+    invoke([source, catalog, root / "audio-cooked", audio_output, "pc", "--map", "sound=wav",
+            "--map", "script=lua", "--root", audio_script_id])
+    audio_source.unlink()
+    (source / "audio.lua").unlink()
+    (source / "audio.lua.deps").unlink()
+    shutil.rmtree(root / "audio-cooked")
+    invoke(["--verify", audio_output, "pc", audio_script_id, audio_id])
 
     # Recovery archives only valid, project-bound captured requests; everything
     # ambiguous is preserved with diagnostics, and no authoring database is opened.

@@ -1,6 +1,7 @@
 #include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/WPAudioSound.hpp>
 #include <WPAudio/SharedClipCache.hpp>
+#include <WPAudio/AudioResourceCompiler.hpp>
 #include <Workphone/Sound/SoundManager.hpp>
 #include <Workphone/Workphone.hpp>
 
@@ -39,18 +40,9 @@ namespace workphone
 
         audio::SharedClipCache<WavData> clipCache;
 
-        bool readWav( IStream *stream, WavData &wav )
+        template<class Bytes>
+        bool readWavBytes( const Bytes &bytes, WavData &wav )
         {
-            if( !stream || !stream->isOpen() || stream->size() > 64u * 1024u * 1024u ||
-                stream->size() < 12 || !stream->seek( 0 ) )
-            {
-                return false;
-            }
-            std::vector<u8> bytes( stream->size() );
-            if( stream->read( bytes.data(), bytes.size() ) != bytes.size() )
-            {
-                return false;
-            }
             wp_audio_wav_info info{};
             info.size = sizeof( info );
             if( wp_audio_wav_inspect( bytes.data(), bytes.size(), &info ) != WP_AUDIO_OK )
@@ -83,6 +75,13 @@ namespace workphone
             wav.blockAlign = info.block_align;
             wav.bitsPerSample = info.bits_per_sample;
             return true;
+        }
+
+        bool readWav(IStream *stream,WavData &wav)
+        {
+            if(!stream || !stream->isOpen() || stream->size()>64u*1024u*1024u || stream->size()<12 || !stream->seek(0)) return false;
+            std::vector<u8> bytes(stream->size());
+            return stream->read(bytes.data(),bytes.size())==bytes.size() && readWavBytes(bytes,wav);
         }
 
         SmartPtr<IStream> openAudioStream( const String &filename )
@@ -232,14 +231,14 @@ namespace workphone
         setLoadingState( LoadingState::Loading );
         auto filePath = getFilePath();
         const auto originalFilePath = filePath;
-        if( StringUtil::isNullOrEmpty( filePath ) )
+        if( !m_cookedResource && StringUtil::isNullOrEmpty( filePath ) )
         {
             setLoadingState( LoadingState::Error );
             return;
         }
 
         auto applicationManager = core::IApplicationManager::instance();
-        if( applicationManager )
+        if( applicationManager && !m_cookedResource )
         {
             if( auto fileSystem = applicationManager->getFileSystem() )
             {
@@ -293,12 +292,23 @@ namespace workphone
         return m_reloadFailed;
     }
 
+    bool WPAudioSound::loadResource(std::shared_ptr<const resource::RuntimeResource> resource)
+    {
+        String error;
+        if(isLoaded() || !resource || !audio::AudioResourceCompiler::validate(*resource,error)) return false;
+        m_cookedResource=std::move(resource);
+        load(nullptr);
+        if(!isLoaded()) m_cookedResource.reset();
+        return isLoaded();
+    }
+
     void WPAudioSound::unload( SmartPtr<ISharedObject> data )
     {
         (void)data;
         setLoadingState( LoadingState::Unloading );
         unloadPlatformSound();
         Sound::stop();
+        m_cookedResource.reset();
         setLoadingState( LoadingState::Unloaded );
     }
 
@@ -313,9 +323,9 @@ namespace workphone
 
         try
         {
-            auto stream = openAudioStream( filename );
+            auto stream = m_cookedResource ? SmartPtr<IStream>() : openAudioStream( filename );
             auto candidate = std::make_shared<WavData>();
-            if( !readWav( stream.get(), *candidate ) )
+            if( !(m_cookedResource ? readWavBytes(m_cookedResource->payload,*candidate) : readWav( stream.get(), *candidate )) )
             {
                 delete state;
                 return false;

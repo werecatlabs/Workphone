@@ -371,6 +371,66 @@ owner-process kill. The separate publication test described below covers process
 termination inside the real resource pipeline. Orphan cooking/staging artifact
 reclamation, power-loss durability and hostile filesystem races remain open.
 
+## Profile-aware build identity
+
+Native callers can set `ResourceSystemConfig::buildProfile` before initialization.
+It captures a profile name, toolchain identity and sorted effective settings. A
+nonempty profile requires both identities; fields are bounded to 4096 bytes and
+settings to 64 entries. Length framing prevents delimiter aliases. Initialization
+copies the profile; compilers receive it in both dependency scanning and cooking.
+The toolchain identity must identify the actual cooker/encoder revision (for
+example its binary digest); the caller resolves that identity and effective
+settings. This API does not discover external tools or implement format options.
+
+Index lookup includes the full canonical profile key. SQLite schema 3 remains
+compatible: the internal target column stores target, a NUL separator and the key
+for profiled records, using explicit-length bindings. Unprofiled targets contain
+no separator and retain their old namespace. Treat this column as an opaque
+index key, not a display label. Compiler name/version, target, build mode, profile,
+captured source inputs and dependency generations participate in the generation
+hash. Artifacts keep the existing compact directory layout for Windows path limits.
+Changing compiler-name hashing causes a one-time authoring recook; existing pinned
+packages remain readable. All DLL consumers must be rebuilt with matching headers.
+Editor profile authoring and persisted package-profile settings are separate work;
+version-1 package JSON continues to select the unprofiled namespace.
+
+## Scheduled runtime payload reads
+
+`ResourcePayloadStream` combines the read-only `ResourceSystem::loadPayload` path
+with the existing `WorldStreamingScheduler`. Creation owns a private immutable
+runtime mount, preventing queued work from retargeting a project reopen. Owner
+threads replace demand and take results; worker callbacks perform verified reads
+without constructing scene, graphics or audio objects. Each demand names a resource,
+job key, priority and maximum payload size. Scheduler admission bounds pending,
+active, ready, working and result payload reservations. UUIDs resolve through that
+same private mount, without a catalog lookup. Pending identities are limited to
+1024 bytes and charged to pending admission. Returned resources alias the result
+reservation, including after stream destruction, until the last consumer
+releases them. Invalid/oversized demand is rejected; missing or corrupt pinned
+resources return errors. Cancellation is checked before and after a read, and
+stale generations are suppressed by the shared scheduler. It cannot interrupt a
+blocked filesystem call. Limits cover payload reservations, not total process RSS.
+Reads are shallow and do not enter the complete-closure cache or retain child
+payloads. Owner threads choose which typed installer receives each result.
+This is whole-payload scheduling, not mesh LOD, texture mip, audio seeking or
+arbitrary chunk-range streaming.
+
+## Typed PCM audio
+
+The package tool registers `audio::AudioResourceCompiler` when WPAudio is built.
+Map the catalog's sound type to `wav`. Version 1 cooks validated, nonempty mono
+or stereo PCM16 WAVE at 8–192 kHz, up to 64 MiB, into a normal pinned WPRS member.
+Malformed/unsupported audio fails compilation. Raw WAVE bytes are retained for the
+existing native decoder; no new catalog, codec cache or voice system is introduced.
+`AudioResourceCompiler::validate` checks runtime type/version and WAVE structure.
+On the sound control thread, `WPAudioSound::loadResource` takes a cooked resource,
+uses the existing clip cache and voice lifecycle, and skips all filesystem fallback.
+Unload an existing sound before changing assets. Device creation failure returns
+false; successful cooking/validation does not establish audible playback.
+The CLI fixture includes a Lua root with a WAV install dependency and removes
+their authoring inputs/cook cache before UUID mounting. Other audio codecs, long
+clip streaming, Editor sound authoring and the other typed families remain open.
+
 ## Diagnostic budgets and completed-job history
 
 Windows jobs drain child stdout/stderr through a private pipe into the exclusive

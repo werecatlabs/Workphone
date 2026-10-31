@@ -259,7 +259,9 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
             assert(#self.controlBindings == 132)
             assert(self.capabilities.cloudSave == true)
             assert(self.cloudSaveControl:isEnabled())
-            assert(self.reloadRendererButton:isEnabled())
+            -- Device recreation is explicitly unavailable in the current window;
+            -- the supported Apply/Save bridge below must remain functional.
+            assert(not self.reloadRendererButton:isEnabled())
             self.projectNameControl:setText("Applied through Lua controls")
             self.companyControl:setText("")
             self.masterVolumeControl:setValue(25)

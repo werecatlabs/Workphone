@@ -10,6 +10,11 @@ target_link_libraries(WPResourceTests PRIVATE
     $<TARGET_LINKER_FILE:WPSQLite>
     $<TARGET_LINKER_FILE:Workphone>)
 add_dependencies(WPResourceTests WPSQLite Workphone)
+if(TARGET WPAudio)
+    target_compile_definitions(WPResourceTests PRIVATE WP_RESOURCE_AUDIO_CONTRACTS=1)
+    target_link_libraries(WPResourceTests PRIVATE $<TARGET_LINKER_FILE:WPAudio>)
+    add_dependencies(WPResourceTests WPAudio)
+endif()
 
 set_target_properties(WPResourceTests PROPERTIES FOLDER Tests/Cpp)
 if (WIN32)

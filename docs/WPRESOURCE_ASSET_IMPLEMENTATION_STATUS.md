@@ -1520,6 +1520,109 @@ failed explicitly, and Debug installation was rejected. Loaded runtime hashes
 match the matching current built modules. Driver log:
 `project_x64/resource-package-release-final-installed-tests.log`.
 
+## Increment 27: Native profile/toolchain build identities (31 October 2026)
+
+`ResourceSystemConfig::buildProfile` captures a profile, toolchain identity and
+sorted effective settings. Length-framed keys reject missing identities, embedded
+NUL and oversized fields/settings. Compiler contexts receive the captured profile.
+Index operations use the complete canonical key beside target/mode; explicit-length
+SQLite bindings preserve an opaque target/key separator without changing schema 3
+or selecting another profile. Default profiles retain legacy target namespaces.
+Compiler name and profile key are length-framed in generation hashing; source and
+dependency hashes, target, mode and compiler/container versions remain included.
+Generation paths keep their compact layout instead of adding long profile folders.
+
+Native contracts cook and reopen default, low/high settings and a second toolchain
+against one index, verify compiler-visible settings, coexistence and UpToDate reuse,
+reject incomplete profiles and check delimiter aliases. External tool identities
+and resolved settings must still be supplied by their owners. Package JSON v1 and
+PackageEditor still select the default profile: persisted profile/toolchain controls,
+automatic binary fingerprint ownership and authored revision fences remain open.
+
+## Increment 28: Scheduled pinned payload reads (31 October 2026)
+
+`ResourcePayloadStream` uses the existing ResourceSystem shallow reader and
+WorldStreamingScheduler, with no additional worker pool. It owns an immutable
+read-only mount; owner threads submit demand and consume results. Requests reserve
+working/result payload bytes, reject invalid/oversized demand and publish explicit
+worker errors. Cancelled generations cannot publish ready results. Aliased shared
+results retain their ResultCpu leases after stream destruction until the last
+caller releases them. Cancellation is checked at read boundaries, not inside
+blocked filesystem calls; payload budgets do not claim to cap total process RSS.
+
+Contracts hide authored sources and a child artifact after mounting, then deliver
+the parent without reading child payloads. They also cover missing pinned resources,
+budget denial, cancellation/drain and caller-held reservation lifetime. Existing
+typed foliage compilers (`folspec`, `folpage`, `folworld`) and their domain streaming
+remain in place and use the same scheduler. This generic adapter is whole-payload
+preparation; additional typed owner-thread installation, LOD/mip/chunk streaming,
+audio seeking, residency policy and Editor integration remain open.
+
+## Increment 29: Typed PCM audio cooking and native consumption (31 October 2026)
+
+The existing package tool now registers WPAudio's PCM WAVE compiler when that
+module is built. Catalog `sound=wav` mappings use the same policy/UUID admission
+and immutable directory export as Lua/graphics. Version 1 supports nonempty
+mono/stereo PCM16, 8–192 kHz, up to 64 MiB. Unsupported/malformed input fails.
+The native sound API accepts cooked resources through `WPAudioSound::loadResource`,
+uses the existing validated decoder, clip cache and voice lifecycle, and skips all
+filesystem fallback. A source-free streamed resource can retain its payload lease
+through that consumer. Device failure remains a false/Error result, not a playback
+pass. Other codecs, native device playback and Editor sound workflow acceptance
+remain open.
+
+Native tests compile/export/mount audio with authoring and cooked cache unavailable,
+validate the typed payload and reject corruption/unknown versions. A real CLI test
+exports a Lua root with a WAV install dependency, removes their authored inputs and
+the cooking cache, then mounts both UUIDs. The first native run caught a literal
+version comparison: the consumer now uses the composed `versionFor` contract rather
+than the output version number. The CLI fixture also supplies canonical kind/path
+identity fields after catalog migration; production guards were not weakened.
+
+The full optimized Editor/runtime set and test hosts rebuilt. All ten optimized
+release suites passed in 130.99 seconds (`project_x64/resource-families-opt-tests.log`).
+Earlier diagnostic failures remain in `resource-families-first-contracts.log`,
+`resource-families-contract-diagnostic.log` and `resource-families-focused-tests.log`;
+the current pass supersedes them. Debug and installed-package results are recorded
+separately as they complete. This does not close the full declared typed-family,
+BuildKey, streaming or shipping-certification matrix.
+
+The finalized stream header also bounds pending identity size and demand count
+before callback allocation, preserves accepted demand on rejection and resolves
+UUIDs through its own immutable mount. Final native resource contracts passed in
+RelWithDebInfo (5.78 s; `resource-families-final-opt-contracts.log`) and Debug
+(7.18 s; `resource-families-debug-focused.log`).
+
+Current installed validation passed with `validationPassed=true` and
+`releaseCertified=false`. Runtime/symbol archives, payload/module hashes and six
+installer/startup/relocated-CLI checks are retained at
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-families-release-candidate-20261031/`.
+Driver log: `project_x64/resource-families-current-installed-tests.log`. Current
+packaging-input hashes and matching built/installed module hashes agree. The
+earlier `resource-families-buildkeys-streaming-validation-20261031` candidate passed
+before the final stream-header tightening. The subsequent
+`resource-families-buildkeys-streaming-final-validation-20261031` attempt correctly
+failed its input-change guard and is retained as failed evidence; use the current
+release-candidate directory instead. Interactive input, real device playback,
+representative hardware, clean-machine/legal, scale/soak and full-family release
+certification remain open.
+
+All ten Debug release suites passed in the broader run, but its Editor aggregate
+reached the unchanged 900-second timeout. The log exposed a stale Project Settings
+fixture asserting renderer reload was enabled even though the production window
+explicitly labels device reload unavailable. The fixture now requires that control
+to stay disabled and retains all Apply/Save assertions. The focused native bridge
+test passed in 14.71 seconds within its existing 90-second timeout
+(`project_x64/resource-families-settings-focused.log`). Original aggregate evidence
+is retained in `project_x64/resource-families-debug-tests.log`; the final aggregate
+rerun is recorded separately in `project_x64/resource-families-editor-final-all.log`.
+That final aggregate passed 95/95 cases and 1,325,411 assertions in 862.81 seconds
+within the unchanged 900-second timeout. The detailed report is retained in
+`project_x64/resource-families-editor-final-report.log`. Thus all ten release
+suites passed in both configurations, and the corrected aggregate Editor suite
+passed separately. The fixture change affects Debug tests only; the validated
+installed runtime and its source-input/module hashes remain unchanged.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -1532,7 +1635,7 @@ the same immutable resource pipeline.
 1. Finish the first integrity slice: authored numeric-root UUID mapping, immutable
    metadata migration, full-project reference coverage, asset-operation retention
    and conflict resolution UI.
-2. Extend target/mode indexing to full profile/toolchain BuildKeys, authored
+2. Extend native profile/toolchain BuildKeys to persisted package/Editor controls, authored
    revision fences and generation recovery/retention on top of captured inputs,
    complete-request index transactions and immutable artifacts. Certify
    importer-specific interruption and power-loss publication.
