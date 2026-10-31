@@ -16,7 +16,10 @@ namespace workphone
     {
         class AssetDatabaseEditorApplication;
         class AssetDatabaseEditorMainWindow;
+        
     }
+
+    class AssetDatabaseWindow;
 }
 
 #endif  // AssetDatabaseEditorPrerequisites_h__

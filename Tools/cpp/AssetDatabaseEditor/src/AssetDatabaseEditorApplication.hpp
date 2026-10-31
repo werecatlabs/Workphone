@@ -50,6 +50,7 @@ namespace workphone
 
         protected:
             SmartPtr<AssetDatabaseEditorMainWindow> m_mainWindow;
+            SmartPtr<AssetDatabaseWindow> m_assetDatabaseWindow;
             SmartPtr<ui::IUIApplication> m_application;
         };
     }  // namespace adbeditor

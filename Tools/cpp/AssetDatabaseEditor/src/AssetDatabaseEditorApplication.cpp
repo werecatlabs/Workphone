@@ -9,6 +9,7 @@
 #include <AssetDatabaseEditorPrerequisites.hpp>
 #include <AssetDatabaseEditorApplication.hpp>
 #include <ui/AssetDatabaseEditorMainWindow.hpp>
+#include "AssetDatabaseWindow.hpp"
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::adbeditor
@@ -37,8 +38,11 @@ namespace workphone::adbeditor
         // (UIManager, AssetDatabaseManager, ...) is available.
         core::Application::load( data );
 
-        m_mainWindow = workphone::make_ptr<AssetDatabaseEditorMainWindow>();
-        m_mainWindow->load( data );
+        //m_mainWindow = workphone::make_ptr<AssetDatabaseEditorMainWindow>();
+        //m_mainWindow->load( data );
+
+        m_assetDatabaseWindow = workphone::make_ptr<AssetDatabaseWindow>();
+        m_assetDatabaseWindow->load( data );
 
         setLoadingState( LoadingState::Loaded );
     }
