@@ -13,6 +13,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <stdexcept>
+#include <cstdio>
 
 namespace claw_texture_retirement_budget_contracts
 {
@@ -30,6 +31,18 @@ namespace claw_texture_retirement_budget_contracts
         u64 original = scheduler->stats().limits[source];
         u64 used() const { return scheduler->stats().used[source]; }
         u64 gpuUsed() const { return scheduler->stats().used[gpu]; }
+        u64 leaseSourceMetadata( StreamMemoryClass category ) const
+        {
+            const auto before = used();
+            String error;
+            auto probe = scheduler->reserve(category,0,error);
+            require(probe != nullptr,"texture retirement lease metadata probe is admitted");
+            const auto during = used();
+            require(during >= before,"lease metadata probe cannot release existing Source storage");
+            probe.reset();
+            require(used() == before,"lease metadata probe physically retires before the residency baseline");
+            return during-before;
+        }
         void set( u64 value )
         {
             String error;
@@ -133,6 +146,7 @@ namespace claw_texture_retirement_budget_contracts
     inline void ordinaryPixels()
     {
         Capacity budget;
+        const auto pixelLeaseMetadata = budget.leaseSourceMetadata(StreamMemoryClass::SourceCpu);
         Manager manager;
         warm(manager);
         const auto baseline = budget.used();
@@ -154,9 +168,15 @@ namespace claw_texture_retirement_budget_contracts
         budget.set(resident);
         const auto epoch = sourceBudgetDenialCount();
         manager.destroyResource(texture);
+        std::printf( "Ordinary texture retirement: resident=%llu after=%llu pixelLease=%llu denials=%llu state=%u candidates=%llu snapshot=%u\n",
+            static_cast<unsigned long long>(resident), static_cast<unsigned long long>(budget.used()),
+            static_cast<unsigned long long>(pixels.size()+4096+pixelLeaseMetadata),
+            static_cast<unsigned long long>(sourceBudgetDenialCount()-epoch),
+            static_cast<unsigned>(texture->getLoadingState()),
+            static_cast<unsigned long long>(manager.count()), static_cast<unsigned>(snapshot->bgra[1]) );
         require( sourceBudgetDenialCount() > epoch && texture->getLoadingState() == LoadingState::Unloaded &&
                  manager.count() == 0 && !manager.getByName("retirement-pixels") &&
-                 budget.used() == resident - (pixels.size() + 4096) && snapshot->bgra[1] == 37,
+                 budget.used() == resident - (pixels.size() + 4096 + pixelLeaseMetadata) && snapshot->bgra[1] == 37,
                  "full-cap notification denial cannot strand ordinary pixels or a ghost manager candidate" );
         texture = nullptr;
         alias = nullptr;
@@ -171,6 +191,9 @@ namespace claw_texture_retirement_budget_contracts
     template<class Fixture> inline void retainedCookedOwners( Fixture &fixture )
     {
         Capacity budget;
+        // A native GPU owner retains its lease/control-block Source storage in
+        // addition to the separately accounted physical GPU pixel bytes.
+        const auto gpuLeaseMetadata = budget.leaseSourceMetadata(StreamMemoryClass::Gpu);
         Manager manager;
         warm(manager);
         const auto baseline = budget.used();
@@ -209,14 +232,19 @@ namespace claw_texture_retirement_budget_contracts
         texture = nullptr;
         require( budget.used() == resident, "a retained wrapper alias keeps authored cooked CPU storage charged" );
         alias = nullptr;
-        require( budget.used() == baseline + snapshotBytes && snapshot->bgra[0] == 211 &&
+        std::printf("Cooked wrapper retirement: after=%llu baseline=%llu snapshot=%llu gpuLeaseMetadata=%llu gpu=%llu gpuBaseline=%llu\n",
+            static_cast<unsigned long long>(budget.used()),static_cast<unsigned long long>(baseline),
+            static_cast<unsigned long long>(snapshotBytes),static_cast<unsigned long long>(gpuLeaseMetadata),
+            static_cast<unsigned long long>(budget.gpuUsed()),
+            static_cast<unsigned long long>(gpuBaseline));
+        require( budget.used() == baseline + snapshotBytes + gpuLeaseMetadata && snapshot->bgra[0] == 211 &&
                  budget.gpuUsed() == gpuBaseline + 16,
                  "final wrapper retirement leaves only the escaped CPU snapshot and physical native GPU owners" );
         view.Reset();
-        require( budget.gpuUsed() == gpuBaseline + 16,
+        require( budget.gpuUsed() == gpuBaseline + 16 && budget.used() == baseline + snapshotBytes + gpuLeaseMetadata,
                  "a native resource reference retains GPU admission after the final view release" );
         resource.Reset();
-        require( budget.gpuUsed() == gpuBaseline,
+        require( budget.gpuUsed() == gpuBaseline && budget.used() == baseline + snapshotBytes,
                  "the final native resource release retires its physical GPU reservation" );
         budget.set(budget.used());
         snapshot.reset();

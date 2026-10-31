@@ -1,11 +1,10 @@
 #ifndef _UVLookup_H
 #define _UVLookup_H
 
-#include <FBMesh/FBMeshPrerequisites.hpp>
-#include <Workphone/Interface/Memory/ISharedObject.hpp>
-#include "Workphone/Core/Grid2.hpp"
-#include "Workphone/Core/StringTypes.hpp"
-#include "Workphone/Math/Vector2.hpp"
+#include <Workphone/Core/Array.hpp>
+#include <Workphone/Core/Grid2.hpp>
+#include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/Math/Vector2.hpp>
 
 namespace workphone
 {

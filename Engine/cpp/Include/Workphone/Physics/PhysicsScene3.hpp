@@ -13,6 +13,8 @@
 #define WP_CPHYSICSSCENE_H
 
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 

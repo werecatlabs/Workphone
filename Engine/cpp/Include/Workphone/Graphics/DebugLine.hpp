@@ -8,6 +8,7 @@
  */
 #ifndef __Render_DebugLine_h__
 #define __Render_DebugLine_h__
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/Graphics/IDebugLine.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>

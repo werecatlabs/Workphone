@@ -1,5 +1,7 @@
 #ifndef __VehicleComponent_h__
 #define __VehicleComponent_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <Workphone/Interface/Vehicle/IVehicle.hpp>
 #include <Workphone/Interface/Vehicle/IVehicleComponent.hpp>

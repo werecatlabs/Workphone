@@ -2,6 +2,7 @@
 #define UIWindowStateData_h__
 
 #include <Workphone/State/States/StateData.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Interface/UI/IUIMenu.hpp>
 
 namespace workphone

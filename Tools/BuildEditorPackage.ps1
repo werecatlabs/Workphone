@@ -53,13 +53,13 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/WPLuaBind/Bindings/SystemBind.cpp',
     'Engine/cpp/Project/WPLuaBind/CMakeLists.txt',
     'bin/Media/Scripts/Lua/Editor/PackageEditor.lua','Tests/python/resource_package_cli.py',
-    'Tests/python/resource_package_history.py') | ForEach-Object {
+    'Tests/python/resource_package_history.py','Tools/AuditEditorPackage.ps1') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
 $evidence['packagingInputs'] = @($inputs)
 $noticeInstaller='CMake/InstallWorkphoneEditorNotices.cmake'
 $noticeSources=@($noticeInstaller)
-$noticeSources+=@([regex]::Matches((Get-Content (Join-Path $repo $noticeInstaller) -Raw),'"(Dependencies/[^"|]+)\|([^"|]+)"') |
+$noticeSources+=@([regex]::Matches((Get-Content (Join-Path $repo $noticeInstaller) -Raw),'"((?:Dependencies|Engine)/[^"|]+)\|([^"|]+)"') |
     ForEach-Object { $_.Groups[1].Value })
 $evidence.packagingInputs+=@($noticeSources | ForEach-Object {
     [ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash}
@@ -102,6 +102,7 @@ try {
         releaseCertified = $false; licenseAuditComplete = $false; plugins = $plugins
         requiredRuntime = 'Windows x64 and Microsoft Visual C++ x64 release Redistributable'
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'package-info.json') -Encoding utf8
+    & (Join-Path $PSScriptRoot 'AuditEditorPackage.ps1') -PackageRoot $stage -OutputPath (Join-Path $output 'dependency-media-audit.json') -BuildDirectory $build
     $payload = Get-Payload $stage
     $evidence['payload'] = $payload
     $archive = Join-Path $output 'WorkphoneEditor-Windows-x64.zip'
@@ -201,7 +202,7 @@ try {
     $symbolArchive = Join-Path $output 'WorkphoneEditorSymbols-Windows-x64.zip'
     Compress-Archive -Path (Join-Path $symbols '*') -DestinationPath $symbolArchive -CompressionLevel Fastest
     $evidence['symbols'] = [ordered]@{ path = $symbolArchive; sha256 = (Get-FileHash $symbolArchive).Hash; payload = (Get-Payload $symbols) }
-    foreach ($inputFile in $inputs) {
+    foreach ($inputFile in $evidence.packagingInputs) {
         if ((Get-FileHash -LiteralPath (Join-Path $repo $inputFile.path)).Hash -ne $inputFile.sha256) { throw "Packaging input changed during validation: $($inputFile.path)" }
     }
     $evidence['validationPassed'] = $true

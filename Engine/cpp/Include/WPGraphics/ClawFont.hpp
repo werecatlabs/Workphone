@@ -1,5 +1,6 @@
 #ifndef __CFontWPGraphics_h__
 #define __CFontWPGraphics_h__
+#include <WorkphoneCore/workphone_types.h>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/Font.hpp>

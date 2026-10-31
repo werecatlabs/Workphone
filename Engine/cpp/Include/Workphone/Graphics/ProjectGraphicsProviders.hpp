@@ -1,4 +1,5 @@
 #pragma once
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>

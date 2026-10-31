@@ -1,5 +1,6 @@
 #ifndef GenericPoolData_h__
 #define GenericPoolData_h__
+#include <Workphone/WorkphonePrerequisites.hpp>
 
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Deque.hpp>

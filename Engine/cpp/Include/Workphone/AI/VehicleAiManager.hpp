@@ -1,5 +1,6 @@
 #ifndef CVehicleAiManager_h__
 #define CVehicleAiManager_h__
+#include <Workphone/Memory/SharedPtr.hpp>
 
 #include <memory>
 

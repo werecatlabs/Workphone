@@ -1,5 +1,6 @@
 #ifndef WPClawFoliageWorld_h__
 #define WPClawFoliageWorld_h__
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/FoliagePageStream.hpp>
 #include <Workphone/Math/Matrix4.hpp>

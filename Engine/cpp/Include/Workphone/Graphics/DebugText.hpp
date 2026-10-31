@@ -1,5 +1,6 @@
 #ifndef __Render_DebugText_h__
 #define __Render_DebugText_h__
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/Graphics/IDebugText.hpp>
 

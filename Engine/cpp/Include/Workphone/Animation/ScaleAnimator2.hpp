@@ -3,6 +3,7 @@
 
 #include <Workphone/Animation/Animator.hpp>
 #include <Workphone/Math/Vector2.hpp>
+#include <algorithm>
 
 namespace workphone
 {
@@ -63,14 +64,14 @@ namespace workphone
 
     template <class T>
     ScaleAnimator2<T>::ScaleAnimator2( T *object, f32 animationLength,
-                                       const Vector2<real_Num> &startScale = Vector2<real_Num>::UNIT,
-                                       const Vector2<real_Num> &endScale = Vector2<real_Num>::UNIT ) :
-        m_animationLength( animationLength ),
-        m_animationTime( 0.0f ),
+                                       const Vector2<real_Num> &startScale,
+                                       const Vector2<real_Num> &endScale ) :
         m_start( startScale ),
         m_end( endScale ),
         m_object( object )
     {
+        setAnimationLength( animationLength );
+        setAnimationTime( 0.0f );
     }
 
     template <class T>
@@ -81,11 +82,15 @@ namespace workphone
     template <class T>
     void ScaleAnimator2<T>::update()
     {
-        m_animationTime += dt;
-        MathF::clamp( m_animationTime, 0.0f, 1.0f );
-        Vector2<real_Num> scale =
-            m_start + ( m_end - m_start ) * ( m_animationTime * 1.0f / m_animationLength );
-        m_object->setScale( scale );
+        if( !isPlaying() )
+            return;
+        Animator::update();
+        if( !m_object )
+            return;
+        const auto length = getAnimationLength();
+        const auto progress = length > 0.0f ? std::clamp( getAnimationTime() / length, 0.0f, 1.0f ) :
+                                               ( isReverse() ? 0.0f : 1.0f );
+        m_object->setScale( m_start + ( m_end - m_start ) * real_Num( progress ) );
     }
 }  // namespace workphone
 

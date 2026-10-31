@@ -1,5 +1,7 @@
 #ifndef ComponentEventListener_h__
 #define ComponentEventListener_h__
+#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/Scene/IComponentEventListener.hpp>
 

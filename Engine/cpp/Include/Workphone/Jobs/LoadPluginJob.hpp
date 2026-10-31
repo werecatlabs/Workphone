@@ -1,5 +1,6 @@
 #ifndef LoadPluginJob_h__
 #define LoadPluginJob_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/System/Job.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>

@@ -1,5 +1,6 @@
 #ifndef __FiniteStateMachineListener_h__
 #define __FiniteStateMachineListener_h__
+#include <Workphone/Memory/WeakPtr.hpp>
 
 #include <Workphone/Interface/System/IFSMListener.hpp>
 

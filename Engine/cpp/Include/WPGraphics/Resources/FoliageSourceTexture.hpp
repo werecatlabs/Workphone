@@ -1,5 +1,6 @@
 #ifndef WPFoliageSourceTexture_h__
 #define WPFoliageSourceTexture_h__
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <memory>

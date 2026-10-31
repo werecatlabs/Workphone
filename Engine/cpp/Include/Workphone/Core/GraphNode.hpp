@@ -1,5 +1,6 @@
 #ifndef GraphNode_h__
 #define GraphNode_h__
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>

@@ -1,5 +1,6 @@
 #ifndef BillboardRenderer_h__
 #define BillboardRenderer_h__
+#include <Workphone/Core/Properties.hpp>
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Graphics/IParticleRenderer.hpp>

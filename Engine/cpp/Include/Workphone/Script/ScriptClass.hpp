@@ -1,6 +1,7 @@
 #ifndef ScriptClass_h__
 #define ScriptClass_h__
 
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Interface/Script/IScriptClass.hpp>
 #include <Workphone/Core/Array.hpp>
 

@@ -4,6 +4,7 @@
 #include <Workphone/State/States/StateData.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/Core/FixedString.hpp>
 
 namespace workphone
 {

@@ -4,6 +4,7 @@
 #include <WPGraphics/UI/ClawUIManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/StateManager.hpp>
 #include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Interface/UI/IUILayoutWindow.hpp>
 #include <Workphone/Interface/UI/IUIImage.hpp>
@@ -23,13 +24,25 @@ struct Services
         application = make_ptr<core::ApplicationManager>();
         core::IApplicationManager::setInstance( application );
         application->setFactoryManager( make_ptr<FactoryManager>() );
+        states = make_ptr<StateManager>();
+        application->setStateManager( states );
+        states->load( nullptr );
+        require( states->isLoaded(), "UI RTT fixture StateManager must load" );
         Thread::setCurrentTask( TaskId::Render );
     }
 
     ~Services()
     {
-        application->setRenderUI( nullptr );
+        {
+            auto ui = application->getRenderUI();
+            if( ui )
+                ui->unload( nullptr );
+            application->setRenderUI( nullptr );
+        }
         application->setGraphicsSystem( nullptr );
+        states->unload( nullptr );
+        application->setStateManager( nullptr );
+        states = nullptr;
         application->setFactoryManager( nullptr );
         core::IApplicationManager::setInstance( previousApplication );
         Thread::setCurrentTask( previousTask );
@@ -37,6 +50,7 @@ struct Services
 
     SmartPtr<core::IApplicationManager> previousApplication;
     SmartPtr<core::ApplicationManager> application;
+    SmartPtr<StateManager> states;
     TaskId previousTask;
 };
 

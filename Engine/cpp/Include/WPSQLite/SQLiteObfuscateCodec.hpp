@@ -2,7 +2,7 @@
 #define SQLiteObfuscateCodec_h__
 
 #include <Workphone/WorkphoneConfig.hpp>
-#include <sqlite3.h>
+#include <WPSQLite/extern/sqlite3.h>
 #include <array>
 
 namespace workphone

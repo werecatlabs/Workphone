@@ -1,6 +1,8 @@
 #ifndef PhysicsSpring_h__
 #define PhysicsSpring_h__
 
+#include <Workphone/System/RttiClassDefinition.hpp>
+
 #include <Workphone/Interface/Physics/IPhysicsSpring.hpp>
 
 namespace workphone

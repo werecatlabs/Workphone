@@ -1,5 +1,6 @@
 #ifndef _INetworkManager_H
 #define _INetworkManager_H
+#include <Workphone/Interface/Net/IPacket.hpp>
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>

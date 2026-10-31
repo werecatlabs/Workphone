@@ -8,6 +8,11 @@ This candidate supports Windows x64, the producing MSVC compiler version, C++17
 and the release DLL CRT. Debug consumers are rejected because this distribution
 does not contain matching Debug DLLs. The package records the DLL's compile
 definitions, including its string, pointer, atomic and precision configuration.
+It also exports the actual five `WORKPHONE_INCLUDE_*` native UI definitions and
+requires the Core C library and Graphics adapter to agree. These affect structures
+embedded in exported C++ classes. The installed consumer constructs and destroys
+the real UI context in guarded caller storage and checks its font and by-value
+colour/vector interfaces.
 The examples embed `WorkphoneCppSDK_WINDOWS_MANIFEST` for Windows long-path
 awareness, as do the packaged Editor and resource CLI. Consumer applications
 using deep cooked paths should embed that manifest or declare the same setting
@@ -29,16 +34,19 @@ implementation sources before building, rejects source drift before installation
 and checks the same hashes again after the relocated consumers finish.
 
 The validator builds the installed authoring example with `CPP_SDK_BUILD_COOKER=ON`.
-It generates an original 4x4 TGA and material/texture descriptors in private scratch,
-assigns durable catalog UUIDs and Runtime shipping policies, and uses the existing
-GraphicsResourceCompiler and catalog-checked package exporter. Only `runtime.wprm`
-and its two pinned WPRS containers enter `share/WorkphoneCppSDK/content`; the private
+It generates an original 4x4 TGA, material/texture descriptors, a 3x3 terrain and a
+small foliage world in private scratch, assigns durable catalog UUIDs and Runtime
+shipping policies, and uses the existing GraphicsResourceCompiler,
+TerrainResourceCompiler, FoliageResourceCompiler and catalog-checked package
+exporter. Only `runtime.wprm` and its six pinned WPRS containers enter
+`share/WorkphoneCppSDK/content`; the private
 sources, catalog and compilation index are deleted before archiving. The generated
 sample uses the repository's Workphone license and no imported media.
 
-The runtime example constructs `ResourceSystem(nullptr, nullptr)`, resolves both
-UUIDs from the relocated manifest, decodes the typed material and all three exact
-texture mips, checks shared dependency identity, and retains resources across
+The runtime example constructs `ResourceSystem(nullptr, nullptr)` and resolves
+material, texture, terrain, foliage-world, species and page UUIDs from the relocated
+manifest. It checks exact material values, texture mips, terrain heights/holes/tiles,
+foliage species LODs and page instances, shared dependency identity, and resources across
 shutdown. It needs no application manager, compiler registry or SQLite plugin.
 `Tools/ValidateCookedCppContent.ps1` checks each build in fresh restricted processes,
 including missing/corrupt manifest, wrong target and missing/corrupt root/dependency
@@ -73,3 +81,29 @@ when configuring a copied sample. Validator-produced ZIPs already contain it.
 The installed examples test real exported APIs without initializing an Editor or
 graphics device. They do not certify all public headers,
 optional plugin SDKs, interactive rendering, licensing or clean-machine support.
+
+`find_package` supports the explicit `Core`, `Graphics` and `SQLite` components.
+An unavailable required component fails configuration; an optional component is
+reported unavailable. Runtime plugin DLLs in the Editor package do not imply SDK
+headers or link targets for those plugins. The validator preserves the producing
+Visual Studio instance/toolset when configuring consumers, so a newly installed
+compiler cannot silently change the tested ABI.
+
+The installed `share/WorkphoneCppSDK/header-check` project and
+`Tools/ValidateCppSDKHeaders.ps1` compile each supported header separately without
+a PCH. `-Exhaustive` audits every installed engine header candidate and records
+individual diagnostics for legacy headers that cannot stand alone. Include
+fragments and PCH files require their owning translation units. A passing required
+surface does not certify the entire legacy header tree; consult
+`fullPublicSurfacePassed` and the per-header inventory.
+Only the two Apple-specific `Core/iOS/macUtils.hpp` and `Core/OSX/macUtils.hpp`
+headers are omitted from this Windows SDK; the installed exclusion manifest
+records their platform requirements. Header checks also compile and run explicit
+instantiations of all four position/scale animator templates and AtomicString,
+including playback timing, pause/reverse/loop, zero-duration/null targets and
+concurrent string snapshots.
+
+The sample covers every format provided by the current graphics compilers:
+`texres`, `matres`, `terrain`, `folworld`, `folspec` and `folpage`. It does not add
+a new mesh/skeleton/clip compiler or an audio SDK. The native WPM1 mesh sample and
+the checked package CLI retain their separate distribution/typed-family evidence.

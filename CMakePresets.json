@@ -337,7 +337,7 @@
       "configuration": "Debug",
       "filter": {
         "include": {
-          "name": "^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation)\\.|^WPResourceTests$"
+          "name": "^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation|WPResource)\\.|^WPResourceTests$"
         }
       },
       "output": {
@@ -353,7 +353,7 @@
       "configuration": "RelWithDebInfo",
       "filter": {
         "include": {
-          "name": "^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation)\\.|^WPResourceTests$"
+          "name": "^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation|WPResource)\\.|^WPResourceTests$"
         }
       },
       "output": {

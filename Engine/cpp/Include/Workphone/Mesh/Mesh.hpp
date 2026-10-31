@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone

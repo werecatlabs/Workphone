@@ -1,5 +1,7 @@
 #ifndef FSMListenerT_h__
 #define FSMListenerT_h__
+#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <Workphone/Interface/System/IFSMListener.hpp>
 #include <Workphone/Interface/System/IFSM.hpp>

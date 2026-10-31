@@ -1,5 +1,6 @@
 #ifndef WORKPHONE_INTERACTION_BACKEND_PROVIDERS_HPP
 #define WORKPHONE_INTERACTION_BACKEND_PROVIDERS_HPP
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 namespace workphone

@@ -3,6 +3,7 @@
 
 #include <Workphone/Animation/Animator.hpp>
 #include <Workphone/Math/Vector2.hpp>
+#include <algorithm>
 
 namespace workphone
 {
@@ -61,18 +62,17 @@ namespace workphone
 
     template <class T>
     PositionAnimator2<T>::PositionAnimator2() :
-        m_animationLength( 1.0f ),
-        m_animationTime( 0.0f ),
         m_start( Vector2<real_Num>::UNIT ),
         m_end( Vector2<real_Num>::UNIT ),
         m_object( nullptr )
     {
+        setAnimationLength( 1.0f );
     }
 
     template <class T>
     PositionAnimator2<T>::PositionAnimator2( T *object, f32 animationLength,
-                                             const Vector2<real_Num> &start = Vector2<real_Num>::UNIT,
-                                             const Vector2<real_Num> &end = Vector2<real_Num>::UNIT ) :
+                                             const Vector2<real_Num> &start,
+                                             const Vector2<real_Num> &end ) :
         m_start( start ),
         m_end( end ),
         m_object( object )
@@ -89,40 +89,27 @@ namespace workphone
     template <class T>
     void PositionAnimator2<T>::update()
     {
-        if( m_isPlaying )
-        {
-            m_animationTime += dt * ( 1.0f / m_animationLength );
-            m_animationTime = MathF::clamp( m_animationTime, 0.0f, 1.0f );
-            if( m_loop && m_animationTime == 1.0f )
-            {
-                m_animationTime = 0.0f;
-            }
-
-            Vector2<real_Num> position;
-            if( !m_reverse )
-            {
-                position = m_start + ( m_end - m_start ) * m_animationTime;
-            }
-            else
-            {
-                position = m_end + ( m_start - m_end ) * m_animationTime;
-            }
-
-            m_object->setPosition( position );
-        }
+        if( !isPlaying() )
+            return;
+        Animator::update();
+        if( !m_object )
+            return;
+        const auto length = getAnimationLength();
+        const auto progress = length > 0.0f ? std::clamp( getAnimationTime() / length, 0.0f, 1.0f ) :
+                                               ( isReverse() ? 0.0f : 1.0f );
+        m_object->setPosition( m_start + ( m_end - m_start ) * real_Num( progress ) );
     }
 
     template <class T>
     void PositionAnimator2<T>::start()
     {
         Animator::start();
-        m_animationTime = 0.0f;
     }
 
     template <class T>
     bool PositionAnimator2<T>::isFinished() const
     {
-        return m_animationTime >= ( 1.0 - MathF::epsilon() );
+        return Animator::isFinished();
     }
 
     template <class T>

@@ -1,5 +1,6 @@
 #ifndef RunCommandJob_h__
 #define RunCommandJob_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/System/Job.hpp>
 

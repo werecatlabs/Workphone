@@ -1,5 +1,6 @@
 #ifndef TimerCPU_h__
 #define TimerCPU_h__
+#include <Workphone/Core/Deque.hpp>
 
 #include <Workphone/System/Timer.hpp>
 #include <deque>

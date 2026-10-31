@@ -1,5 +1,6 @@
 #ifndef WP_ClawFoliageBatch_hpp
 #define WP_ClawFoliageBatch_hpp
+#include <Workphone/Memory/SmartPtr.hpp>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Math/Matrix4.hpp>

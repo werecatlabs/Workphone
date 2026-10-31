@@ -8,7 +8,7 @@ $run = Join-Path $repo ('project_graphics_sdk/cpp-sdk-validation-' + [guid]::New
 $external = Join-Path ([IO.Path]::GetTempPath()) ('Workphone Cpp SDK é ' + [guid]::NewGuid().ToString('N'))
 $stage = Join-Path $run 'WorkphoneCppSDK'
 $report = [ordered]@{schemaVersion=3;validationPassed=$false;releaseCertified=$false
-    scope='Windows x64 C++17 installed Core/Claw typed material/schema/publication/record consumer and catalog-cooked material/texture runtime closure; release DLL CRT'
+    scope='Windows x64 C++17 installed Core/Claw/SQLite and six graphics cooked families; standalone supported headers; release DLL CRT'
     buildSkipped=[bool]$SkipBuild;incrementalBuild=(-not [bool]$SkipBuild);externalDirectory=$external}
 $report['windowsLongPathsEnabled']=Get-ItemPropertyValue 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $run,$external | Out-Null
@@ -31,6 +31,13 @@ function Assert-InputHashes([object[]]$Inputs) {
             throw "Input changed: $($inputEntry.path)"
         }
     }
+}
+function Get-ProjectDefinitions([string]$RelativeProject) {
+    $path=Join-Path $build $RelativeProject
+    [xml]$project=Get-Content -LiteralPath $path -Raw
+    $groups=@($project.Project.ItemDefinitionGroup | Where-Object { $_.Condition -like '*RelWithDebInfo|x64*' })
+    if($groups.Count -ne 1) { throw "Cannot identify producing release definitions: $path" }
+    @(([string]$groups[0].ClCompile.PreprocessorDefinitions -split ';') | Where-Object { $_ -and $_ -notlike '%(*)' } | Sort-Object -Unique)
 }
 function Invoke-IsolatedTool([string]$Label, [string]$Executable, [string[]]$Arguments, [string]$BinDirectory) {
     $start = [Diagnostics.ProcessStartInfo]::new($Executable)
@@ -62,9 +69,11 @@ try {
         (Join-Path $repo 'Engine/cpp/Source/Workphone'),
         (Join-Path $repo 'Engine/cpp/Source/WPGraphics'),
         (Join-Path $repo 'Engine/c/Include'), (Join-Path $repo 'Engine/c/Source'),
-        (Join-Path $repo 'Engine/cpp/Source/WPSQLite'), (Join-Path $repo 'Tests/CppSDKConsumer') -Recurse -File)
+        (Join-Path $repo 'Engine/cpp/Source/WPSQLite'), (Join-Path $repo 'Tests/CppSDKConsumer'),
+        (Join-Path $repo 'Tests/CppSDKHeaders') -Recurse -File)
     $inputFiles += @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWorkphoneCppSDK.cmake','CMake/WorkphoneCppSDKConfig.cmake.in',
         'CMake/InstallWorkphoneEditor.cmake','CMake/InstallWorkphoneEditorNotices.cmake','Tools/ValidateCppSDK.ps1','Tools/ValidateCookedCppContent.ps1',
+        'Tools/ValidateCppSDKHeaders.ps1','Tools/AuditEditorPackage.ps1',
         'docs/WPGRAPHICS_CPP_SDK.md','docs/WPGRAPHICS_EDITOR_PACKAGE.md',
         'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp','Engine/cpp/Source/Workphone/System/CompiledResource.cpp',
         'Engine/cpp/Source/Workphone/System/ResourceCompilerRegistry.cpp',
@@ -72,7 +81,7 @@ try {
         'Engine/cpp/Source/Workphone/Database/AssetPackagePolicy.cpp','Engine/cpp/Project/Workphone/CMakeLists.txt',
         'Engine/cpp/Project/WPGraphics/CMakeLists.txt','Engine/cpp/Project/WPSQLite/CMakeLists.txt') |
         ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_) }
-    $noticeEntries=[regex]::Matches((Get-Content (Join-Path $repo 'CMake/InstallWorkphoneEditorNotices.cmake') -Raw),'"(Dependencies/[^"|]+)\|([^"|]+)"')
+    $noticeEntries=[regex]::Matches((Get-Content (Join-Path $repo 'CMake/InstallWorkphoneEditorNotices.cmake') -Raw),'"((?:Dependencies|Engine)/[^"|]+)\|([^"|]+)"')
     $inputFiles += @($noticeEntries | ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_.Groups[1].Value) })
     $report['inputs'] = @($inputFiles | Sort-Object FullName -Unique | ForEach-Object {
         [ordered]@{path=$_.FullName;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
@@ -84,8 +93,44 @@ try {
     # Reject a concurrent source edit before spending time packaging a binary
     # whose inputs no longer match this run. Check again after all consumers.
     Assert-InputHashes $report.inputs
+    $producingCache=@{}
+    foreach($line in Get-Content -LiteralPath (Join-Path $build 'CMakeCache.txt')) {
+        if($line -match '^([^#/][^:]*):[^=]+=(.*)$') { $producingCache[$Matches[1]]=$Matches[2] }
+    }
+    $consumerGenerator=@('-G',$producingCache['CMAKE_GENERATOR'])
+    $headerToolchain=@{Generator=$producingCache['CMAKE_GENERATOR']}
+    if($producingCache['CMAKE_GENERATOR_INSTANCE']) {
+        $consumerGenerator+="-DCMAKE_GENERATOR_INSTANCE=$($producingCache['CMAKE_GENERATOR_INSTANCE'])"
+        $headerToolchain['GeneratorInstance']=$producingCache['CMAKE_GENERATOR_INSTANCE']
+    }
+    if($producingCache['CMAKE_GENERATOR_TOOLSET']) {
+        $consumerGenerator+=@('-T',$producingCache['CMAKE_GENERATOR_TOOLSET'])
+        $headerToolchain['Toolset']=$producingCache['CMAKE_GENERATOR_TOOLSET']
+    }
+    $report['consumerGeneratorArguments']=$consumerGenerator
     Invoke-Checked 'install-runtime' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneEditor','--prefix',$stage)
     Invoke-Checked 'install-sdk' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneCppSDK','--prefix',$stage)
+    $installedConfig=Get-Content -LiteralPath (Join-Path $stage 'lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake') -Raw
+    $interfaceMatch=[regex]::Match($installedConfig,'INTERFACE_COMPILE_DEFINITIONS\s+"([^"]+)"')
+    if(-not $interfaceMatch.Success) { throw 'Installed public definitions are absent' }
+    $interfaceDefinitions=@($interfaceMatch.Groups[1].Value -split ';' | Sort-Object -Unique)
+    $publicPattern='(WP_|^ENABLE_PTR_RTTI=|^BOOST_ALL_NO_LIB|^_ENABLE_ATOMIC_ALIGNMENT_FIX)'
+    $coreDefinitions=Get-ProjectDefinitions 'Engine/cpp/Project/Workphone/Workphone.vcxproj'
+    $expectedPublic=@($coreDefinitions | Where-Object { $_ -match $publicPattern -and $_ -notmatch '_EXPORTS($|=)' })
+    $installedPublic=@($interfaceDefinitions | Where-Object { $_ -match $publicPattern -and $_ -notmatch '_EXPORTS($|=)' })
+    if(-not $expectedPublic.Count -or (Compare-Object $expectedPublic $installedPublic)) { throw 'Installed C++ ABI definitions differ from the producing Workphone project' }
+    $nativeDefinitions=@($interfaceDefinitions | Where-Object { $_ -match '^WORKPHONE_INCLUDE_' })
+    $nativeProjects=@('Engine/c/Project/WorkphoneCore/WorkphoneCore.vcxproj','Engine/cpp/Project/WPGraphics/WPGraphics.vcxproj')
+    foreach($project in $nativeProjects) {
+        $expectedNative=@(Get-ProjectDefinitions $project | Where-Object { $_ -match '^WORKPHONE_INCLUDE_' })
+        if(-not $expectedNative.Count -or (Compare-Object $expectedNative $nativeDefinitions)) { throw "Installed native layout definitions differ from producing project: $project" }
+    }
+    $report['abi']=[ordered]@{validationPassed=$true;publicDefinitions=$installedPublic;nativeLayoutDefinitions=$nativeDefinitions;
+        installedConfigSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake')).Hash;
+        producingProjects=@(@('Engine/cpp/Project/Workphone/Workphone.vcxproj')+$nativeProjects | ForEach-Object {
+            [ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $build $_)).Hash}
+        })}
+    Copy-Item -LiteralPath (Join-Path $build 'cpp-sdk/RelWithDebInfo/native-public-definitions.txt') -Destination $run
     $report['dependencyNotices']=@($noticeEntries | ForEach-Object {
         $source=$_.Groups[1].Value; $name='licenses/'+$_.Groups[2].Value
         $hash=(Get-FileHash -LiteralPath (Join-Path $repo $source)).Hash
@@ -106,14 +151,14 @@ try {
     # its checked cooked closure into the distribution. Authoring state is private.
     $bootstrap=Join-Path $external 'authoring-build'
     $content=Join-Path $stage 'share/WorkphoneCppSDK/content'
-    Invoke-Checked 'cooker-configure' @('-S',(Join-Path $stage 'share/WorkphoneCppSDK/sample'),'-B',$bootstrap,
-        '-A','x64',"-DCMAKE_PREFIX_PATH=$stage",'-DCPP_SDK_BUILD_COOKER=ON')
+    Invoke-Checked 'cooker-configure' (@('-S',(Join-Path $stage 'share/WorkphoneCppSDK/sample'),'-B',$bootstrap,
+        '-A','x64',"-DCMAKE_PREFIX_PATH=$stage",'-DCPP_SDK_BUILD_COOKER=ON')+$consumerGenerator)
     Invoke-Checked 'cooker-build' @('--build',$bootstrap,'--config','RelWithDebInfo','--parallel','4')
     $authoring=Join-Path $run 'sample-authoring'
     $cooking=Invoke-IsolatedTool 'cook-sample' (Join-Path $bootstrap 'RelWithDebInfo/cpp-sdk-cook-sample.exe') @($content,$authoring) (Join-Path $stage 'bin')
-    if($cooking.stdout -notlike '*catalogAdmission=passed*') { throw 'Cooker did not confirm checked catalog admission' }
+    if($cooking.stdout -notlike '*catalogAdmission=passed*' -or $cooking.stdout -notlike '*packageResources=6*' -or $cooking.stdout -notlike '*packageFiles=7*') { throw 'Cooker did not confirm the complete six-resource checked catalog closure' }
     $contentFiles=Get-Payload $content
-    if($contentFiles.Count -ne 3 -or @($contentFiles | Where-Object { $_.path -notmatch '\.(wprs|wprm)$' }).Count) { throw 'Unexpected files in cooked runtime sample' }
+    if($contentFiles.Count -ne 7 -or @($contentFiles | Where-Object { $_.path -notmatch '\.(wprs|wprm)$' }).Count) { throw 'Unexpected files in cooked runtime sample' }
     # Delete only this run's generated source/catalog/cooking scratch after the
     # producer exits. No source root or authoring database remains for runtime use.
     $ownedRun=[IO.Path]::GetFullPath($run).TrimEnd('\')+'\'
@@ -122,7 +167,11 @@ try {
     if(Test-Path -LiteralPath $authoring) { throw 'Private authoring inputs remain' }
     $report['cookedContent']=[ordered]@{files=$contentFiles;catalogAdmissionPassed=$true;authoringInputsRemoved=$true
         materialUUID='2a6d7957-45ab-4bbb-9d96-91f7a9c1a001';textureUUID='2a6d7957-45ab-4bbb-9d96-91f7a9c1a002';
+        terrainUUID='2a6d7957-45ab-4bbb-9d96-91f7a9c1a003';foliageWorldUUID='2a6d7957-45ab-4bbb-9d96-91f7a9c1a004';
+        foliageSpeciesUUID='2a6d7957-45ab-4bbb-9d96-91f7a9c1a005';foliagePageUUID='2a6d7957-45ab-4bbb-9d96-91f7a9c1a006';
+        families=@('texres','matres','terrain','folworld','folspec','folpage');
         target='installed-cpp-sample';producer=$cooking}
+    & (Join-Path $PSScriptRoot 'AuditEditorPackage.ps1') -PackageRoot $stage -OutputPath (Join-Path $run 'dependency-media-audit.json') -BuildDirectory $build
     $payload = Get-Payload $stage
     $report['payload'] = $payload
     $archive = Join-Path $run 'WorkphoneCppSDK-Windows-x64.zip'
@@ -140,15 +189,16 @@ try {
     Get-ChildItem -LiteralPath $extracted -File -Recurse | ForEach-Object { $_.IsReadOnly=$true }
     $consumerBuild = Join-Path $external 'consumer-build'
     $extractedContent=Join-Path $extracted 'share/WorkphoneCppSDK/content'
-    Invoke-Checked 'consumer-configure' @('-S',$sample,'-B',$consumerBuild,'-A','x64',"-DCMAKE_PREFIX_PATH=$extracted", "-DCPP_SDK_CONTENT_DIRECTORY=$extractedContent")
-    & cmake -S $sample -B (Join-Path $external 'rejected-debug-consumer') -A x64 "-DCMAKE_PREFIX_PATH=$extracted" '-DCMAKE_CONFIGURATION_TYPES=Debug' *> (Join-Path $run 'reject-debug-consumer.log')
+    Invoke-Checked 'consumer-configure' (@('-S',$sample,'-B',$consumerBuild,'-A','x64',"-DCMAKE_PREFIX_PATH=$extracted", "-DCPP_SDK_CONTENT_DIRECTORY=$extractedContent")+$consumerGenerator)
+    & cmake -S $sample -B (Join-Path $external 'rejected-debug-consumer') -A x64 "-DCMAKE_PREFIX_PATH=$extracted" '-DCMAKE_CONFIGURATION_TYPES=Debug' @consumerGenerator *> (Join-Path $run 'reject-debug-consumer.log')
     if ($LASTEXITCODE -eq 0 -or (Get-Content (Join-Path $run 'reject-debug-consumer.log') -Raw) -notlike '*contains release CRT DLLs*') { throw 'Debug consumer was not rejected for the expected reason' }
     $report['debugConsumerRejected'] = $true
-    & cmake -S $sample -B (Join-Path $external 'rejected-static-crt') -A x64 "-DCMAKE_PREFIX_PATH=$extracted" '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' *> (Join-Path $run 'reject-static-crt.log')
+    & cmake -S $sample -B (Join-Path $external 'rejected-static-crt') -A x64 "-DCMAKE_PREFIX_PATH=$extracted" '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' @consumerGenerator *> (Join-Path $run 'reject-static-crt.log')
     if ($LASTEXITCODE -eq 0 -or (Get-Content (Join-Path $run 'reject-static-crt.log') -Raw) -notlike '*requires CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL*') { throw 'Static CRT consumer was not rejected for the expected reason' }
     $report['staticCrtConsumerRejected'] = $true
     $results = [Collections.Generic.List[object]]::new()
     $cookedResults = [Collections.Generic.List[object]]::new()
+    $headerResults = [Collections.Generic.List[object]]::new()
     foreach ($config in @('RelWithDebInfo','Release')) {
         Invoke-Checked "consumer-build-$config" @('--build',$consumerBuild,'--config',$config,'--parallel','4')
         $exe = Join-Path $consumerBuild "$config/cpp-sdk-consumer.exe"
@@ -175,6 +225,7 @@ try {
         if ($out -notlike '*material layouts/typed handles/schema migration, immutable publication, backend record generations*') {
             throw "Installed material API contract evidence missing: $config"
         }
+        if ($out -notlike '*native UI layout passed*') { throw "Installed native UI layout contract evidence missing: $config" }
         $modules = @($out -split '\r?\n' | Where-Object { $_.StartsWith('module=') } | ForEach-Object { $_.Substring(7).Trim() })
         foreach ($module in $modules) {
             if ($module -ieq $exe) { continue }
@@ -187,15 +238,19 @@ try {
             if (-not ($modules | Where-Object { [IO.Path]::GetFileName($_) -ieq $required })) { throw "Required DLL not observed: $required" }
         }
         $results.Add([ordered]@{configuration=$config;exitCode=$process.ExitCode;executableSha256=(Get-FileHash $exe).Hash;
-            materialContractsPassed=$true;loadedModules=$modules})
+            materialContractsPassed=$true;nativeUiLayoutPassed=$true;loadedModules=$modules})
         & ctest --test-dir $consumerBuild -C $config --output-on-failure --output-junit (Join-Path $run "consumer-$config.xml") *> (Join-Path $run "consumer-$config.log")
         if ($LASTEXITCODE -ne 0) { throw "Consumer CTest failed: $config" }
         $cookedResult = & (Join-Path $PSScriptRoot 'ValidateCookedCppContent.ps1') -Executable (Join-Path $consumerBuild "$config/cpp-sdk-cooked-consumer.exe") `
-            -ContentDirectory $extractedContent -SdkRoot $extracted -EvidenceDirectory (Join-Path $run "cooked-$config") -Configuration $config
+            -ContentDirectory $extractedContent -SdkRoot $extracted -EvidenceDirectory (Join-Path $run "cooked-$config") -Configuration $config -ExpectedArtifactCount 6
         $cookedResults.Add($cookedResult)
+        $headerResult = & (Join-Path $PSScriptRoot 'ValidateCppSDKHeaders.ps1') -SdkRoot $extracted `
+            -EvidenceDirectory (Join-Path $run "headers-$config") -Configuration $config @headerToolchain
+        $headerResults.Add($headerResult)
     }
     $report['consumerResults']=$results.ToArray()
     $report['cookedConsumerResults']=$cookedResults.ToArray()
+    $report['headerResults']=$headerResults.ToArray()
     Assert-InputHashes $report.inputs
     $after = Get-Payload $extracted
     if (($payload | ConvertTo-Json -Depth 4 -Compress) -ne ($after | ConvertTo-Json -Depth 4 -Compress)) { throw 'SDK payload changed during validation' }

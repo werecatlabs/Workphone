@@ -1,5 +1,6 @@
 #ifndef ClawGraphicsPipeline_h__
 #define ClawGraphicsPipeline_h__
+#include <WorkphoneCore/workphone_types.h>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/GraphicsPipeline.hpp>

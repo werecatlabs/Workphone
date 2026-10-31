@@ -3,7 +3,8 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Atomics/AtomicNumber.hpp>
-#include <Workphone/Core/StringBase.hpp>
+#include <Workphone/Core/StringTypes.hpp>
+#include <atomic>
 
 namespace workphone
 {

@@ -1,5 +1,6 @@
 #ifndef __Render_DebugCircle_h__
 #define __Render_DebugCircle_h__
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/Graphics/IDebugCircle.hpp>
 

@@ -1,5 +1,6 @@
 #ifndef Profile_h__
 #define Profile_h__
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/System/IProfile.hpp>
 #include <Workphone/Core/Array.hpp>

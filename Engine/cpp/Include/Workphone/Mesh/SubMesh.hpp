@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/ISubMesh.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 
 namespace workphone

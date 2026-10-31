@@ -6,6 +6,8 @@
 #ifndef WORKPHONE_MATRIX_H
 #define WORKPHONE_MATRIX_H
 
+#include "workphone_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

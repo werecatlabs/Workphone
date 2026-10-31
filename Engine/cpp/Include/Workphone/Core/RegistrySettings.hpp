@@ -5,7 +5,7 @@
 #include <Workphone/Core/StringTypes.hpp>
 
 #ifdef WP_PLATFORM_WIN32
-#    include <minwindef.h>
+#    include <windows.h>
 #endif
 
 namespace workphone

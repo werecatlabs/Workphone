@@ -673,6 +673,10 @@ if(WP_INSTALL_EDITOR_PACKAGE)
     include(CMake/InstallWorkphoneEditor.cmake)
 endif()
 
+if(WP_BUILD_TESTS)
+    include(CMake/GraphicsValidationTargets.cmake)
+endif()
+
 
 
 

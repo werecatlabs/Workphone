@@ -1,5 +1,6 @@
 #ifndef UnloadPluginJob_h__
 #define UnloadPluginJob_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/System/Job.hpp>
 

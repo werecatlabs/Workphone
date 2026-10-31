@@ -1,5 +1,6 @@
 #ifndef WP_MATERIAL_PROGRAM_DX11_HPP
 #define WP_MATERIAL_PROGRAM_DX11_HPP
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <WPGraphics/MaterialProgramBinding.hpp>
 #include <memory>
 struct wp_renderer_dx11;

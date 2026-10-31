@@ -1,5 +1,6 @@
 #ifndef __ParticleEmitter_h__
 #define __ParticleEmitter_h__
+#include <Workphone/Memory/WeakPtr.hpp>
 
 #include <Workphone/Interface/Graphics/IParticleEmitter.hpp>
 #include <Workphone/Interface/Graphics/IParticleSystem.hpp>

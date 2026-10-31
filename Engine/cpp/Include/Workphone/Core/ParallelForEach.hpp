@@ -1,5 +1,6 @@
 #ifndef ParallelForEach_h__
 #define ParallelForEach_h__
+#include <iterator>
 
 #include <Workphone/WorkphoneTypes.hpp>
 

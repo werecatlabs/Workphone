@@ -16,7 +16,24 @@ set(_wp_editor_notice_entries
     "Dependencies/tinyxml/readme.txt|TinyXML-readme-and-license.txt"
     "Dependencies/zlib/include/zlib.h|zlib-notice-source-zlib.h"
     "Dependencies/minizip/include/unzip.h|MiniZip-notice-source-unzip.h"
-    "Dependencies/luabind/inc/luabind/luabind.hpp|Luabind-notice-source-luabind.hpp")
+    "Dependencies/luabind/inc/luabind/luabind.hpp|Luabind-notice-source-luabind.hpp"
+    "Dependencies/FreeImage/Source/LibJPEG/README|FreeImage-LibJPEG-README"
+    "Dependencies/FreeImage/Source/LibTIFF4/tiff.h|FreeImage-LibTIFF-notice-source-tiff.h"
+    "Dependencies/FreeImage/Source/LibRawLite/LICENSE.CDDL|FreeImage-LibRaw-LICENSE.CDDL"
+    "Dependencies/FreeImage/Source/LibRawLite/LICENSE.LGPL|FreeImage-LibRaw-LICENSE.LGPL"
+    "Dependencies/FreeImage/Source/ZLib/zlib.h|FreeImage-ZLib-notice-source-zlib.h"
+    "Dependencies/lua_cjson/src/lua_cjson.c|LuaCJSON-notice-source-lua_cjson.c"
+    "Dependencies/utf8/source/utf8.h|UTF8CPP-notice-source-utf8.h"
+    "Dependencies/zzip/include/zzip/lib.h|ZZipLib-notice-source-lib.h"
+    "Engine/cpp/Source/WPAssimp/Extern/assimp/Common/Importer.h|Assimp-notice-source-Importer.h"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/Open3DGC/o3dgcCommon.h|Assimp-Open3DGC-notice-source-o3dgcCommon.h"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/openddlparser/LICENSE|Assimp-OpenDDLParser-LICENSE"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/poly2tri/LICENSE|Assimp-Poly2Tri-LICENSE"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/clipper/License.txt|Assimp-Clipper-License.txt"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/pugixml/readme.txt|Assimp-PugiXML-readme-and-license.txt"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/zip/UNLICENSE|Assimp-Zip-UNLICENSE"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/utf8cpp/doc/LICENSE|Assimp-UTF8CPP-LICENSE"
+    "Engine/cpp/Source/WPAssimp/Extern/contrib/rapidjson/license.txt|Assimp-RapidJSON-license.txt")
 
 foreach(_wp_editor_notice_entry IN LISTS _wp_editor_notice_entries)
     string(REPLACE "|" ";" _wp_editor_notice_fields "${_wp_editor_notice_entry}")

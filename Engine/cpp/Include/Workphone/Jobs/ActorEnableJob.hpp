@@ -1,5 +1,6 @@
 #ifndef ActorEnableJob_h__
 #define ActorEnableJob_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/System/Job.hpp>
 

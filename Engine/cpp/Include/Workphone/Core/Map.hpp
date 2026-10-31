@@ -1,5 +1,6 @@
 #ifndef WORKPHONE_MAP_HPP
 #define WORKPHONE_MAP_HPP
+#include <Workphone/WorkphoneEnums.hpp>
 
 #include <algorithm>
 #include <cassert>

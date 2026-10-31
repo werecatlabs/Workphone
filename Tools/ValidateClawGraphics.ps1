@@ -10,13 +10,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'TerrainValidationEvidence.ps1')
+. (Join-Path $PSScriptRoot 'GraphicsValidationEvidence.ps1')
 $buildPath = if ([System.IO.Path]::IsPathRooted($BuildDirectory)) { [System.IO.Path]::GetFullPath($BuildDirectory) } else { [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $BuildDirectory)) }
 if (-not $CTestExecutable) {
     $installedCTest = Join-Path $env:ProgramFiles 'CMake/bin/ctest.exe'
     $CTestExecutable = if (Test-Path -LiteralPath $installedCTest) { $installedCTest } else { (Get-Command ctest -ErrorAction Stop).Source }
 }
 $CTestExecutable = (Get-Command $CTestExecutable -ErrorAction Stop).Source
-$selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation)\.|^WPResourceTests$'
+$selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation|WPResource)\.|^WPResourceTests$'
 $requiredTests = @(
     'WPAnimation.core_contracts', 'WPAnimation.import_contracts',
     'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
@@ -33,8 +34,14 @@ $requiredTests = @(
     'WorkphoneAssets.catalog_contracts', 'WPGraphics.claw_production_render', 'WPGraphics.cooked_material_resource',
     'WPGraphics.claw_lifecycle_soak',
     'WPGraphics.claw_text_contract', 'WPGraphics.claw_dx11_targets',
-    'WPGraphics.claw_ui_destruction', 'WPResourceTests'
+    'WPGraphics.claw_ui_destruction', 'WPResourceTests',
+    'WPResource.publication_crash', 'WPResource.writer_lease', 'WPResource.index_migration',
+    'WPGraphics.material_retirement_soak'
 )
+if (Select-String -LiteralPath (Join-Path $buildPath 'CMakeCache.txt') -Pattern '^WP_BUILD_TOOLS:BOOL=ON$' -Quiet) {
+    $requiredTests += @('WorkphoneAssets.package_editor_workflow', 'WorkphoneAssets.typed_package_families',
+        'WorkphoneAssets.package_jobs', 'WorkphoneAssets.package_cli')
+}
 if ($TerrainOnly) {
     $requiredTests = @(
         'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
@@ -56,18 +63,21 @@ $evidencePath = Join-Path $buildPath "$reportPrefix-$Configuration-evidence.json
 # Preserve executable identities across the run. A concurrent build must not turn
 # an old execution into evidence for a newly replaced executable.
 $binaryBefore = @{}
+$validationSourceBefore = Get-GraphicsValidationSourceSnapshot $repositoryRoot
 $terrainSourceBefore = if ($TerrainOnly) { Get-TerrainSourceSnapshot $repositoryRoot } else { $null }
-$runtimeDirectories = @($inventory.tests | Where-Object { $_.command } | ForEach-Object { Split-Path $_.command[0] -Parent } | Sort-Object -Unique)
+$commandExecutables = @($inventory.tests | ForEach-Object { $_.command } |
+    Where-Object { [IO.Path]::IsPathRooted($_) -and [IO.Path]::GetExtension($_) -in @('.exe','.dll') } | Sort-Object -Unique)
+$missingExecutables = @($commandExecutables | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+if ($missingExecutables.Count) { throw "Required test executable inputs are missing: $($missingExecutables -join ', '). Rebuild the baseline first." }
+$runtimeDirectories = @($commandExecutables | ForEach-Object { Split-Path $_ -Parent } | Sort-Object -Unique)
 $runtimeBefore = @{}
 foreach ($directory in $runtimeDirectories) {
     foreach ($library in (Get-ChildItem -LiteralPath $directory -Filter '*.dll' -File)) {
         $runtimeBefore[$library.FullName] = (Get-FileHash -LiteralPath $library.FullName -Algorithm SHA256).Hash
     }
 }
-foreach ($test in $inventory.tests) {
-    if ($test.command -and (Test-Path -LiteralPath $test.command[0])) {
-        $binaryBefore[$test.command[0]] = (Get-FileHash -LiteralPath $test.command[0] -Algorithm SHA256).Hash
-    }
+foreach ($executable in $commandExecutables) {
+    $binaryBefore[$executable] = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
 }
 # Do not accidentally certify an old report if this CTest invocation fails.
 if (Test-Path -LiteralPath $reportPath) { Remove-Item -LiteralPath $reportPath }
@@ -265,6 +275,12 @@ $runtimeLibraries = @(foreach ($directory in $runtimeDirectories) {
 })
 $changedLibraries = @($runtimeLibraries | Where-Object { $runtimeBefore[$_.path] -ne $_.sha256 } | ForEach-Object { $_.path })
 $changedLibraries += @($runtimeBefore.Keys | Where-Object { $_ -notin $runtimeLibraries.path })
+$changedExecutableInputs = @($commandExecutables | Where-Object {
+    -not (Test-Path -LiteralPath $_ -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash -ne $binaryBefore[$_]
+})
+$validationSourceAfter = Get-GraphicsValidationSourceSnapshot $repositoryRoot
+$changedValidationSources = @(Compare-GraphicsValidationSourceSnapshots $validationSourceBefore $validationSourceAfter)
 $terrainSourceAfter = if ($TerrainOnly) { Get-TerrainSourceSnapshot $repositoryRoot } else { $null }
 $changedSources = if ($TerrainOnly) { @(Compare-TerrainSourceSnapshots $terrainSourceBefore $terrainSourceAfter) } else { @() }
 $results = @($report.testsuite.testcase | ForEach-Object {
@@ -288,6 +304,10 @@ $evidence = [ordered]@{
     terrainSourceBefore = $terrainSourceBefore.sha256; terrainSourceAfter = $terrainSourceAfter.sha256
     changedTerrainSources = @($changedSources)
     runtimeLibraries = $runtimeLibraries; changedRuntimeLibraries = @($changedLibraries)
+    executableInputs = @($commandExecutables | ForEach-Object { [ordered]@{path=$_;sha256=$binaryBefore[$_]} })
+    changedExecutableInputs = $changedExecutableInputs
+    sourceInputs = @($validationSourceBefore.Keys | Sort-Object | ForEach-Object { [ordered]@{path=$_;sha256=$validationSourceBefore[$_]} })
+    changedSourceInputs = $changedValidationSources
     ctestVersion = (& $CTestExecutable --version | Select-Object -First 1)
     generator = $cache['CMAKE_GENERATOR']; generatorInstance = $cache['CMAKE_GENERATOR_INSTANCE']
     architecture = $cache['CMAKE_GENERATOR_PLATFORM']; staticLibraries = $cache['WP_STATIC_LIB']; staticCrt = $cache['WP_STATIC_LINK_CRT']
@@ -297,8 +317,8 @@ $evidence = [ordered]@{
     testExitCode = $testExit; requiredTests = $requiredTests; requireExternalAssets = [bool]$RequireExternalAssets
     crashCaptureEnabled = [bool]$crashDumpPath; crashDumpPath = $crashDumpPath
     crashDumpAvailable = [bool]($crashDumpPath -and (Test-Path -LiteralPath $crashDumpPath))
-    coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0)
-    validationPassed = ($testExit -eq 0 -and $unexpectedSkips.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0)
+    coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0 -and $changedExecutableInputs.Count -eq 0 -and $changedValidationSources.Count -eq 0)
+    validationPassed = ($testExit -eq 0 -and $unexpectedSkips.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0 -and $changedExecutableInputs.Count -eq 0 -and $changedValidationSources.Count -eq 0)
     releaseCertified = $false
     ciWorkflowAvailable = (Test-Path -LiteralPath (Join-Path $repositoryRoot '.github/workflows/graphics-contracts.yml'))
 }

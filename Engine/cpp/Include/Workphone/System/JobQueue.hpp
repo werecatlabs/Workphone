@@ -1,5 +1,7 @@
 #ifndef __JobQueue_h__
 #define __JobQueue_h__
+#include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "target": "Windows x64 MSVC",
+  "scope": "Foreign platform headers retained in source and omitted from this Windows SDK",
+  "headers": [
+    { "header": "Workphone/Core/iOS/macUtils.hpp", "reason": "Requires Apple CoreFoundation and iOS platform APIs" },
+    { "header": "Workphone/Core/OSX/macUtils.hpp", "reason": "Requires Apple CoreFoundation and macOS platform APIs" }
+  ]
+}

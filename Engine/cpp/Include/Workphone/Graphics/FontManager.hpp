@@ -1,5 +1,6 @@
 #ifndef FontManager_h__
 #define FontManager_h__
+#include <Workphone/Core/ConcurrentArray.hpp>
 
 #include <Workphone/Interface/Graphics/IFontManager.hpp>
 

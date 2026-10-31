@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][string]$ContentDirectory,
     [Parameter(Mandatory)][string]$SdkRoot,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
-    [Parameter(Mandatory)][string]$Configuration
+    [Parameter(Mandatory)][string]$Configuration,
+    [ValidateRange(1,1024)][int]$ExpectedArtifactCount = 6
 )
 $ErrorActionPreference = 'Stop'
 $evidence = [IO.Path]::GetFullPath($EvidenceDirectory)
@@ -28,7 +29,8 @@ $report = [ordered]@{
     schemaVersion = 1
     validationPassed = $false
     releaseCertified = $false
-    scope = 'Installed C++ cooked material/texture runtime; fresh restricted processes and integrity rejection'
+    scope = 'Installed C++ cooked graphics runtime; fresh restricted processes and integrity rejection'
+    expectedArtifactCount = $ExpectedArtifactCount
     configuration = $Configuration
     startedUtc = [DateTime]::UtcNow.ToString('o')
     cases = $cases
@@ -174,8 +176,8 @@ try {
     }
     $allFiles = @(Get-ChildItem -LiteralPath $good -File -Recurse -Force)
     $artifacts = @($allFiles | Where-Object Extension -ieq '.wprs' | Sort-Object FullName)
-    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf) -or $artifacts.Count -ne 2 -or $allFiles.Count -ne 3) {
-        throw 'Cooked sample must contain runtime.wprm and exactly two WPRS artifacts.'
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf) -or $artifacts.Count -ne $ExpectedArtifactCount -or $allFiles.Count -ne ($ExpectedArtifactCount + 1)) {
+        throw "Cooked sample must contain runtime.wprm and exactly $ExpectedArtifactCount WPRS artifacts."
     }
     if ($evidence -ieq $good -or $evidence.StartsWith($good.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) -or
         $good.StartsWith($evidence.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {

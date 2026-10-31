@@ -1,5 +1,6 @@
 #ifndef Editor_h__
 #define Editor_h__
+#include <Workphone/Core/ConcurrentArray.hpp>
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>

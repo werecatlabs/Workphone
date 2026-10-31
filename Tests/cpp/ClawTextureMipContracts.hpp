@@ -351,6 +351,8 @@ namespace claw_texture_mip_contracts
         auto scheduler = WorldStreamingScheduler::shared();
         const auto source = size_t( StreamMemoryClass::SourceCpu );
         const auto gpu = size_t( StreamMemoryClass::Gpu );
+        const auto gpuLeaseMetadata = claw_texture_retirement_budget_contracts::Capacity{}
+                                          .leaseSourceMetadata( StreamMemoryClass::Gpu );
         const auto baseline = scheduler->stats();
         auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
         String error;
@@ -395,13 +397,19 @@ namespace claw_texture_mip_contracts
             require( scheduler->stats().used[gpu] == resident.used[gpu],
                      "wrapper unload must keep GPU budget while a native view/resource survives" );
         }
-        require( scheduler->stats().used[source] == baseline.used[source],
-                 "texture destruction must release retained source storage" );
+        std::printf( "Texture/native owner retirement: source=%llu baseline=%llu gpuLeaseMetadata=%llu\n",
+            static_cast<unsigned long long>(scheduler->stats().used[source]),
+            static_cast<unsigned long long>(baseline.used[source]),
+            static_cast<unsigned long long>(gpuLeaseMetadata) );
+        require( scheduler->stats().used[source] == baseline.used[source] + gpuLeaseMetadata,
+                 "texture destruction releases CPU pixels while its retained native GPU owner keeps lease metadata charged" );
         retainedView.Reset();
-        require( scheduler->stats().used[gpu] == baseline.used[gpu] + 16,
+        require( scheduler->stats().used[gpu] == baseline.used[gpu] + 16 &&
+                     scheduler->stats().used[source] == baseline.used[source] + gpuLeaseMetadata,
                  "a retained native texture resource must retain the GPU lease after its view dies" );
         retainedResource.Reset();
-        require( scheduler->stats().used[gpu] == baseline.used[gpu],
+        require( scheduler->stats().used[gpu] == baseline.used[gpu] &&
+                     scheduler->stats().used[source] == baseline.used[source],
                  "the last native resource release must return its GPU capacity" );
 
         class BudgetMesh final : public ClawMesh
@@ -695,6 +703,22 @@ namespace claw_texture_mip_contracts
             String error;
             require( scheduler->setBudget( StreamMemoryClass::SourceCpu, bytes, error ), "byte staging limit applies" );
         };
+        // The scheduler independently admits its lease/control-block storage
+        // before the requested payload. Measure that real allocation rather
+        // than encoding the allocator's private layout in this boundary test.
+        const auto leaseMetadataBytes = [&]() -> u64
+        {
+            const auto before = scheduler->stats().used[source];
+            String error;
+            auto probe = scheduler->reserve( StreamMemoryClass::SourceCpu, 0, error );
+            require( probe != nullptr, "byte staging must admit its lease metadata probe" );
+            const auto during = scheduler->stats().used[source];
+            require( during >= before, "lease metadata probe cannot reduce retained source storage" );
+            probe.reset();
+            require( scheduler->stats().used[source] == before,
+                     "lease metadata probe must physically retire before the pixel baseline" );
+            return during - before;
+        }();
         auto first = makeSourceBudgetSnapshot<u8>();
         first.resize( 16, 0 );
         auto replacement = makeSourceBudgetSnapshot<u8>();
@@ -727,8 +751,9 @@ namespace claw_texture_mip_contracts
                  scheduler->stats().used[source] == resident && oldPixels->bgra[1] == 47,
                  "Source denial is returned through ITexture and preserves dimensions, owners and residency" );
         // Existing Claw pixel leases include their 4096-byte cache metadata
-        // reservation. Both complete generations overlap until commit.
-        const auto candidateBytes = replacement.size() + 4096;
+        // reservation, plus independently charged lease storage. Both complete
+        // generations overlap until commit.
+        const auto candidateBytes = replacement.size() + 4096 + leaseMetadataBytes;
         limit( resident + candidateBytes - 1 );
         require( !bridge.copyByteData( replacement, {2,2}, error ) &&
                  scheduler->stats().used[source] == resident && view(texture) == oldView.Get(),

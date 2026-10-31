@@ -1,5 +1,6 @@
 #ifndef __CParticleSystem_h__
 #define __CParticleSystem_h__
+#include <Workphone/Interface/IBuildDirector.hpp>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/ParticleSystem.hpp>

@@ -1,6 +1,7 @@
 #ifndef ScriptFunction_h__
 #define ScriptFunction_h__
 
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Script/IScriptFunction.hpp>
 

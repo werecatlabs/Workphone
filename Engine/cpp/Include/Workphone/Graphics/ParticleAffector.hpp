@@ -1,5 +1,6 @@
 #ifndef ParticleAffector_h__
 #define ParticleAffector_h__
+#include <Workphone/Memory/WeakPtr.hpp>
 
 #include <Workphone/Interface/Graphics/IParticleAffector.hpp>
 #include <Workphone/Interface/Graphics/IParticleSystem.hpp>

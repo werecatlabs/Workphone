@@ -1,5 +1,6 @@
 #ifndef _WPGraphics_COverlayElement_H
 #define _WPGraphics_COverlayElement_H
+#include <Workphone/Core/ConcurrentArray.hpp>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/Graphics/IOverlayElement.hpp>

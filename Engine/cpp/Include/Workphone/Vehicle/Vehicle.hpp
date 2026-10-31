@@ -1,5 +1,6 @@
 #ifndef __VehicleController_h__
 #define __VehicleController_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/Interface/Vehicle/IVehicle.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
@@ -351,7 +352,7 @@ namespace workphone
              * @brief Queue a world-space torque to be applied to a vehicle body.
              *
              * @param bodyIdx Index of the body (implementation-specific).
-             * @param Torque Torque vector in world coordinates (N·m).
+             * @param Torque Torque vector in world coordinates (Nï¿½m).
              */
             void addTorque( s32 bodyIdx, const Vector3<real_Num> &torque ) override;
 
@@ -531,7 +532,7 @@ namespace workphone
             /**
              * @brief Internal helper: apply a world-space torque to the chassis.
              *
-             * @param torque Torque vector in world coordinates (N·m).
+             * @param torque Torque vector in world coordinates (Nï¿½m).
              */
             void addTorque( const Vector3<real_Num> &torque );
 
@@ -573,7 +574,7 @@ namespace workphone
             /** @brief Accumulated world-space force for this simulation frame (Newtons). */
             Vector3<real_Num> m_force = Vector3<real_Num>::zero();
 
-            /** @brief Accumulated world-space torque for this simulation frame (N·m). */
+            /** @brief Accumulated world-space torque for this simulation frame (Nï¿½m). */
             Vector3<real_Num> m_torque = Vector3<real_Num>::zero();
 
             /** @brief Optional drag force applied to the vehicle each frame. */

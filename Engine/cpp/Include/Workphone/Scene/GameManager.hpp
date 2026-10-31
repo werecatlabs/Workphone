@@ -1,5 +1,6 @@
 #ifndef __WP_CSceneManager_h__
 #define __WP_CSceneManager_h__
+#include <Workphone/Interface/System/IFSMManager.hpp>
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Thread/Thread.hpp>

@@ -1,5 +1,6 @@
 #ifndef WP_OBJECT_OBSERVER_HPP
 #define WP_OBJECT_OBSERVER_HPP
+#include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
 #include <memory>
 

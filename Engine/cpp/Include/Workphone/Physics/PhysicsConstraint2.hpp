@@ -2,6 +2,7 @@
 #define PhysicsConstraint2_h__
 
 #include <Workphone/Interface/Physics/IPhysicsConstraint2.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 namespace workphone
 {
@@ -9,7 +10,7 @@ namespace workphone
     {
 
         template <class T>
-        class WPCore_API PhysicsConstraint2 : public T
+        class PhysicsConstraint2 : public T
         {
         public:
             PhysicsConstraint2();

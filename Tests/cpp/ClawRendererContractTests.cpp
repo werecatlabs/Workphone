@@ -10,6 +10,7 @@
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/StateManager.hpp>
 #include <Workphone/Input/InputEvent.hpp>
 #include <Workphone/Input/MouseState.hpp>
 #include <Workphone/Input/KeyboardState.hpp>
@@ -28,6 +29,7 @@
 #include <cstdio>
 #include <memory>
 #include <limits>
+#include <stdexcept>
 
 namespace
 {
@@ -194,20 +196,60 @@ namespace
     {
     public:
         void invalidate() override {}
+        bool handleStateMessage( const workphone::SmartPtr<workphone::IStateMessage> & ) override
+        {
+            return false;
+        }
         workphone::Vector2F getPosition() const override { return { 100.0f, 50.0f }; }
         workphone::Vector2F getSize() const override { return { 256.0f, 64.0f }; }
+    };
+
+    struct UiServices
+    {
+        UiServices() : previousApplication( workphone::core::IApplicationManager::instance() ),
+                       previousTask( workphone::Thread::getCurrentTask() )
+        {
+            using namespace workphone;
+            application = make_ptr<core::ApplicationManager>();
+            core::IApplicationManager::setInstance( application );
+            application->setFactoryManager( make_ptr<FactoryManager>() );
+            states = make_ptr<StateManager>();
+            application->setStateManager( states );
+            states->load( nullptr );
+            if( !states->isLoaded() )
+                throw std::runtime_error( "UI input fixture StateManager failed to load" );
+            application->setGraphicsSystem( make_ptr<render::ClawHammerSystem>() );
+            Thread::setCurrentTask( TaskId::Render );
+        }
+
+        ~UiServices()
+        {
+            application->setSceneRenderWindow( nullptr );
+            application->setGraphicsSystem( nullptr );
+            states->unload( nullptr );
+            application->setStateManager( nullptr );
+            states = nullptr;
+            application->setFactoryManager( nullptr );
+            workphone::core::IApplicationManager::setInstance( previousApplication );
+            workphone::Thread::setCurrentTask( previousTask );
+        }
+
+        workphone::SmartPtr<workphone::core::IApplicationManager> previousApplication;
+        workphone::SmartPtr<workphone::core::ApplicationManager> application;
+        workphone::SmartPtr<workphone::StateManager> states;
+        workphone::TaskId previousTask;
     };
 
     bool testUiInput()
     {
         using namespace workphone;
-        auto application = make_ptr<core::ApplicationManager>();
-        core::IApplicationManager::setInstance( application );
-        application->setFactoryManager( make_ptr<FactoryManager>() );
-        const auto previousTask = Thread::getCurrentTask();
+        UiServices services;
+        auto application = services.application;
         bool ok = true;
         {
             ui::ClawUIManager manager;
+            ok &= check( manager.getStateContext() && manager.getStateContext()->isLoaded(),
+                         "UI input fixture must own a loaded state context" );
             auto *ctx = manager.getContext();
             auto mouse = make_ptr<MouseState>();
             auto event = make_ptr<InputEvent>();
@@ -289,10 +331,6 @@ namespace
                              ctx->input.keyboard.text_len == 1,
                          "backspace must be an editing key, not a text character" );
         }
-        Thread::setCurrentTask( previousTask );
-        application->setSceneRenderWindow( nullptr );
-        application->setFactoryManager( nullptr );
-        core::IApplicationManager::setInstance( nullptr );
         return ok;
     }
     bool testToggleSwitch()
@@ -300,11 +338,9 @@ namespace
         using namespace workphone;
         using ToggleType = ui::IUIToggle::ToggleType;
         using ToggleState = ui::IUIToggle::ToggleState;
-        auto application = make_ptr<core::ApplicationManager>();
-        core::IApplicationManager::setInstance( application );
-        application->setFactoryManager( make_ptr<FactoryManager>() );
+        UiServices services;
+        auto application = services.application;
         application->setSceneRenderWindow( make_ptr<InputSceneWindow>() );
-        application->setGraphicsSystem( make_ptr<render::ClawHammerSystem>() );
         bool ok = true;
         {
             ui::ClawUIWorkphoneContext context;
@@ -391,10 +427,6 @@ namespace
             ok &= check( checkbox.circles == 0 && checkbox.tracks == 0 && radio.circles == 2,
                          "checkbox and radio types must retain their distinct rendering" );
         }
-        application->setSceneRenderWindow( nullptr );
-        application->setGraphicsSystem( nullptr );
-        application->setFactoryManager( nullptr );
-        core::IApplicationManager::setInstance( nullptr );
         return ok;
     }
 }  // namespace

@@ -3,6 +3,7 @@
 
 #include "Workphone/Animation/Animator.hpp"
 #include <Workphone/Math/Vector3.hpp>
+#include <algorithm>
 
 namespace workphone
 {
@@ -57,14 +58,14 @@ namespace workphone
 
     template <class T>
     PositionAnimator3<T>::PositionAnimator3(
-        T *object, f32 animationLength, const Vector3<real_Num> &startScale = Vector3<real_Num>::unit(),
-        const Vector3<real_Num> &endScale = Vector3<real_Num>::unit() ) :
-        m_animationLength( animationLength ),
-        m_animationTime( 0.0f ),
+        T *object, f32 animationLength, const Vector3<real_Num> &startScale,
+        const Vector3<real_Num> &endScale ) :
         m_start( startScale ),
         m_end( endScale ),
         m_object( object )
     {
+        setAnimationLength( animationLength );
+        setAnimationTime( 0.0f );
     }
 
     template <class T>
@@ -75,26 +76,27 @@ namespace workphone
     template <class T>
     void PositionAnimator3<T>::update()
     {
-        if( m_isPlaying )
-        {
-            m_animationTime += dt * ( 1.0f / m_animationLength );
-            m_animationTime = MathF::clamp( m_animationTime, 0.0f, 1.0f );
-            Vector3<real_Num> position = m_start + ( m_end - m_start ) * m_animationTime;
-            m_object->setPosition( position );
-        }
+        if( !isPlaying() )
+            return;
+        Animator::update();
+        if( !m_object )
+            return;
+        const auto length = getAnimationLength();
+        const auto progress = length > 0.0f ? std::clamp( getAnimationTime() / length, 0.0f, 1.0f ) :
+                                               ( isReverse() ? 0.0f : 1.0f );
+        m_object->setPosition( m_start + ( m_end - m_start ) * real_Num( progress ) );
     }
 
     template <class T>
     void PositionAnimator3<T>::start()
     {
         Animator::start();
-        m_animationTime = 0.0f;
     }
 
     template <class T>
     bool PositionAnimator3<T>::isFinished() const
     {
-        return m_animationTime >= ( 1.0 - MathF::epsilon() );
+        return Animator::isFinished();
     }
 }  // namespace workphone
 

@@ -4,7 +4,11 @@
 #include "workphone_config.h"
 
 #ifndef NULL
-#    define NULL ( (void *)0 )
+#    ifdef __cplusplus
+#        define NULL 0
+#    else
+#        define NULL ( (void *)0 )
+#    endif
 #endif
 
 #define WORKPHONE_UNDEFINED ( -1.0f )

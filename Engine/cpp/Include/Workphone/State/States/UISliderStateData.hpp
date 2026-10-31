@@ -2,6 +2,7 @@
 #define UISliderStateData_h__
 
 #include <Workphone/State/States/StateData.hpp>
+#include <Workphone/Core/FixedString.hpp>
 
 namespace workphone
 {

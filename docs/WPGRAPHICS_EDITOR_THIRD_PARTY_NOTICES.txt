@@ -5,6 +5,13 @@ Other available notices are distributed as separate files in licenses/.
 The install also retains full bundled FreeImage/codecs, TinyXML, zlib,
 MiniZip and Luabind notice sources; filenames are declared in
 CMake/InstallWorkphoneEditorNotices.cmake.
+The install additionally retains the bundled JPEG/TIFF/LibRaw/codec-zlib,
+Lua CJSON, UTF8CPP, ZZipLib and Assimp/contributor notice source files.
+Multiple upstream licensing alternatives are preserved as supplied; this
+inventory does not select an alternative or determine redistribution terms.
+ZZipLib's local header references LGPL/MPL alternatives without reproducing
+their full terms. Native File Dialog has no standalone license text in its
+local dependency directory. These and per-media permissions require review.
 The complete dependency and media license audit remains outstanding.
 
 Copyright (C) 1994-2025 Lua.org, PUC-Rio.

@@ -5,6 +5,7 @@
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/ColourF.hpp>
+#include <Workphone/Core/FixedString.hpp>
 
 namespace workphone
 {

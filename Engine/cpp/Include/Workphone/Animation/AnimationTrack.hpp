@@ -1,5 +1,6 @@
 #ifndef CAnimationTrack_h__
 #define CAnimationTrack_h__
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <Workphone/Interface/Animation/IAnimationTrack.hpp>
 #include <Workphone/Animation/AnimationKeyFrame.hpp>

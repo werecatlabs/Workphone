@@ -1,5 +1,6 @@
 #ifndef __Lightmap_H__
 #define __Lightmap_H__
+#include <Workphone/Memory/SharedPtr.hpp>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/Graphics/ILightmap.hpp>

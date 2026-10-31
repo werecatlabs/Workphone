@@ -1,5 +1,6 @@
 #ifndef _VectorUtil_H
 #define _VectorUtil_H
+#include <Workphone/Math/Vector3.hpp>
 
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Math/Vector2.hpp>

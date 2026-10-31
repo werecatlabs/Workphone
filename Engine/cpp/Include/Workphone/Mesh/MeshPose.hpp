@@ -4,6 +4,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Mesh/IMeshPose.hpp>
 #include <Workphone/Core/HashMap.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 

@@ -1,7 +1,7 @@
 #ifndef Sound3Fake_h__
 #define Sound3Fake_h__
 
-#include <Workphone/Test/FBTestPrerequisites.hpp>
+#include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Sound/ISound.hpp>
 

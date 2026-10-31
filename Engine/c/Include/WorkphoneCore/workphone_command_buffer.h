@@ -3,6 +3,10 @@
 
 #include "workphone_math.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct wp_command_buffer
 {
     struct wp_buffer *base;
@@ -58,5 +62,9 @@ WORKPHONE_API void wp_draw_text( struct wp_command_buffer *, struct wp_rect, con
 WORKPHONE_API void wp_push_scissor( struct wp_command_buffer *, struct wp_rect );
 WORKPHONE_API void wp_push_custom( struct wp_command_buffer *, struct wp_rect,
                                    wp_command_custom_callback, wp_handle usr );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // workphone_command_buffer_h__

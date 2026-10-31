@@ -1,6 +1,7 @@
 #ifndef ScriptEvent_h__
 #define ScriptEvent_h__
 
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Interface/Script/IScriptEvent.hpp>
 
 namespace workphone

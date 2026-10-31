@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Math/Matrix4.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 
 namespace workphone
 {

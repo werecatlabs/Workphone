@@ -1,5 +1,6 @@
 #ifndef WPFoliageResource_h__
 #define WPFoliageResource_h__
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <Workphone/Graphics/FoliagePageStream.hpp>
 #include <Workphone/System/ResourceSystem.hpp>

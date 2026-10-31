@@ -1,5 +1,6 @@
 #ifndef __FolderListing_h__
 #define __FolderListing_h__
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/IO/IFolderExplorer.hpp>
 #include <Workphone/Core/Array.hpp>

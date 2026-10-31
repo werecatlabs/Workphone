@@ -1,5 +1,6 @@
 #ifndef ComponentEvent_h__
 #define ComponentEvent_h__
+#include <Workphone/Core/FixedString.hpp>
 
 #include <Workphone/Interface/Scene/IComponentEvent.hpp>
 

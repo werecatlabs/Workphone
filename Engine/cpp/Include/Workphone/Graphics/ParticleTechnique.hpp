@@ -1,5 +1,6 @@
 #ifndef ParticleTechnique_h__
 #define ParticleTechnique_h__
+#include <Workphone/Memory/WeakPtr.hpp>
 
 #include <Workphone/Interface/Graphics/IParticleTechnique.hpp>
 #include <Workphone/Interface/Graphics/IParticleSystem.hpp>

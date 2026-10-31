@@ -1,5 +1,6 @@
 #ifndef UITextEntry_h__
 #define UITextEntry_h__
+#include <Workphone/Interface/Graphics/IMaterial.hpp>
 
 #include <Workphone/UI/UIElement.hpp>
 #include <Workphone/Interface/UI/IUITextEntry.hpp>

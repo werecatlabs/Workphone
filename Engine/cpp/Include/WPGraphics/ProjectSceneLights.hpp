@@ -1,4 +1,5 @@
 #pragma once
+#include <Workphone/Memory/SmartPtr.hpp>
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 namespace workphone::render
 {

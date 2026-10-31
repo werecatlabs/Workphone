@@ -2,6 +2,7 @@
 #define PhysicsShape2_h__
 
 #include <Workphone/Interface/Physics/IPhysicsShape2.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 

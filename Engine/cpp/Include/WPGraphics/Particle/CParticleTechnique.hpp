@@ -1,5 +1,6 @@
 #ifndef ParticleTechnique_h__
 #define ParticleTechnique_h__
+#include <Workphone/Core/Properties.hpp>
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/Graphics/IParticleTechnique.hpp>

@@ -2,6 +2,7 @@
 #define StateMessageAttributes_h__
 
 #include <Workphone/State/Messages/StateMessage.hpp>
+#include <Workphone/Math/Vector4.hpp>
 
 namespace workphone
 {

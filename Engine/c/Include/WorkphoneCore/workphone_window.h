@@ -2,6 +2,7 @@
 #define workphone_window_h__
 
 #include "workphone_command_buffer.h"
+#include "workphone_menu.h"
 
 #ifndef WORKPHONE_WINDOW_MAX_NAME
 #    define WORKPHONE_WINDOW_MAX_NAME 64

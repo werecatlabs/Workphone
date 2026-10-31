@@ -1,5 +1,6 @@
 #ifndef AtomicFixedString_h__
 #define AtomicFixedString_h__
+#include <atomic>
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Atomics/AtomicNumber.hpp>

@@ -2,6 +2,7 @@
 #define StateMessagePair_h__
 
 #include <Workphone/State/Messages/StateMessage.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 namespace workphone
 {

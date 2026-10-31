@@ -1,5 +1,6 @@
 #ifndef ThreadPoolStandard_h__
 #define ThreadPoolStandard_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Thread/Thread.hpp>

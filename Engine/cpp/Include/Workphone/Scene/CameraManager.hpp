@@ -1,5 +1,6 @@
 #ifndef __CameraManager_H
 #define __CameraManager_H
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Scene/ICameraManager.hpp>

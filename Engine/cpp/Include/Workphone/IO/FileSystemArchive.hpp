@@ -1,5 +1,6 @@
 #ifndef CFileSystemArchive_h__
 #define CFileSystemArchive_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/Interface/IO/IArchive.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>

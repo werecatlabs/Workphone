@@ -4,6 +4,8 @@
 #include <Workphone/State/States/StateData.hpp>
 #include <Workphone/Math/Vector2.hpp>
 #include <Workphone/Core/ColourF.hpp>
+#include <Workphone/Core/FixedString.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 namespace workphone
 {

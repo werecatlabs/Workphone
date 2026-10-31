@@ -3,6 +3,7 @@
 
 #include <Workphone/State/States/StateData.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 
 namespace workphone

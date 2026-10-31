@@ -1,5 +1,6 @@
 #ifndef TimerWin_h__
 #define TimerWin_h__
+#include <Workphone/Core/Deque.hpp>
 
 #include <Workphone/System/Timer.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>

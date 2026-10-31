@@ -1,5 +1,6 @@
 #ifndef StateQueueStandard_h__
 #define StateQueueStandard_h__
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
