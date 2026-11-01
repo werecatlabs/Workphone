@@ -6,6 +6,7 @@
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; struct RuntimeResource; }
     namespace scene
     {
 
@@ -84,6 +85,8 @@ namespace workphone
              * @param data Data used to initialize the component (can be null).
              */
             void load( SmartPtr<ISharedObject> data ) override;
+            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            void updateFlags(u32 flags,u32 oldFlags) override;
 
             /**
              * @copydoc Component::unload
@@ -303,6 +306,12 @@ namespace workphone
 
             /** Renderer particle system handle (may be null). */
             SmartPtr<render::IParticleSystem> m_particleSystem;
+            void loadRuntimeParticle(SmartPtr<ISharedObject>);
+            void setRuntimeParticleProperties(SmartPtr<Properties>);
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
+            std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;
+            String m_runtimeParticleUuid;
+            bool m_runtimeAssetsMode=false,m_runtimeWantsPlay=false,m_runtimePaused=false;
 
             /** Renderer graphics object (container for GPU resources). */
             SmartPtr<render::IGraphicsObject> m_graphicsObject;

@@ -84,13 +84,20 @@ the [runtime guide](WPRESOURCE_RUNTIME_PACKAGES.md) defines supported schemas.
 Increment 35 adds an explicit private runtime UUID mount in LuaManager, exercised
 by an actual Script component after source/catalog/index removal. External debugger
 stop/unload signals cancellation before waiting for the executing VM, then retires
-VM hooks under its owner lock. This does not add component-bearing scene cooking.
+VM hooks under its owner lock.
 
-The declared R1/R2 scope remains open. Component-bearing Editor scenes still need
-captured UUID dependency discovery and strict pinned reference installation across
-MeshRenderer, Lua and other components. Full streaming requires cross-batch shared
-work, complete metadata/decoded/device accounting, range/chunk/LOD/mip/audio demand
-and measured fallback/pressure behavior. Independent hardware/audio/input/visual,
+Increments 36–37 add a captured catalog UUID map to build inputs and strict pinned
+installation for mixed Mesh, MeshRenderer, Animator and Script scene/prefab graphs.
+The actual Editor has an explicit source-free runtime-package bootstrap with a
+private Script VM. Shared mounts now coalesce physical reads across requesters and
+demand changes, and assemble complete dependency closures asynchronously. Synchronous
+and asynchronous resource nodes retain source-memory admission independently;
+manifest, queue, traversal and cache metadata also participate in shared budgets.
+
+The declared R1/R2 scope remains open. Scene cooking still rejects unsupported
+component families and arbitrary authored reference schemas. Full streaming requires
+complete decoded/device accounting, range/chunk/LOD/mip/audio demand and measured
+fallback/pressure behavior. Independent hardware/audio/input/visual,
 clean-machine/legal and scale/soak gates are required before release certification.
 
 ### Review-baseline summary (historical)

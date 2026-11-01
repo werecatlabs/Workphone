@@ -1,5 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/UI/ClawUIButton.hpp>
+#include <WPGraphics/ClawFont.hpp>
 #include <WPGraphics/UI/ClawUILayout.hpp>
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <Workphone/Workphone.hpp>
@@ -33,6 +34,7 @@ namespace workphone::ui
         }
 
         setLoadingState( LoadingState::Unloading );
+        {ScopedLock lock(this);m_runtimeFont=nullptr;}
         ClawUIElement<IUIButton>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
@@ -56,6 +58,9 @@ namespace workphone::ui
     {
         return m_textSize;
     }
+    bool ClawUIButton::setRuntimeFont(SmartPtr<render::IFont> font)
+    {if(font){auto native=dynamic_pointer_cast<render::ClawFont>(font);if(!native||!font->isLoaded()||!native->retainRuntimeFont()||!native->getNativeFont())return false;}ScopedLock lock(this);m_runtimeFont=std::move(font);return true;}
+    SmartPtr<render::IFont> ClawUIButton::getRuntimeFont() const{ScopedLock lock(this);return m_runtimeFont;}
 
     bool ClawUIButton::isSimpleButton() const
     {
@@ -152,12 +157,12 @@ namespace workphone::ui
         frame_retention::retainFontOwner( this );
         // Commands retain their font pointer until conversion, so each button
         // owns its descriptor instead of borrowing a stack or shared style font.
-        if( !m_drawFont )
-        {
-            m_drawFont = std::make_unique<wp_user_font>();
-        }
-        *m_drawFont = *ctx->style.font;
-        const auto label = localizeProjectText( getLabel() );
+        auto font=getRuntimeFont();auto native=font?dynamic_pointer_cast<render::ClawFont>(font):nullptr;
+        if(font&&(!native||!native->getNativeFont()))return;
+        auto drawFont=std::allocate_shared<wp_user_font>(SourceBudgetAllocator<wp_user_font>{});
+        *drawFont=native?native->getNativeFont()->handle:*ctx->style.font;m_drawFont=drawFont;
+        frame_retention::retainSnapshot(drawFont);if(font){frame_retention::retainResource(font);frame_retention::retainSnapshot(font->retainRuntimeFont());}
+        const auto label = m_runtimeLiteralText?getLabel():localizeProjectText( getLabel() );
         const auto nativeLabel = reinterpret_cast<const wp_c8 *>( label.c_str() );
         auto textHeight = MathF::min( MathF::max( getTextSize(), 1.0f ),
                                       MathF::max( bounds.h - style.padding.y * 2.0f, 1.0f ) );

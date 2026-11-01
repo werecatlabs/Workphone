@@ -1,7 +1,12 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
 #if WP_TYPED_ANIMATION_RESOURCE
 #include <Workphone/System/SkeletonResourceCompiler.hpp>
+#include <Workphone/System/AnimationResourceCompiler.hpp>
+#include <Workphone/System/RetargetResourceCompiler.hpp>
+#include <Workphone/System/MorphResource.hpp>
+#include <Workphone/System/RigResourceCompiler.hpp>
 #endif
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Animation/IAnimation.hpp>
@@ -227,8 +232,32 @@ namespace workphone::scene
 
     Animator::Animator() = default;
 
+    void Animator::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    {
+        if(!context || !context->resolve || isLoaded() || m_animationGraph.isValid() ||
+           getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading ||
+           (m_runtimeAssets && m_runtimeAssets!=context))
+            throw std::runtime_error("Animator runtime assets require an unloaded component, resolver and no graph");
+        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+    }
+
+    bool Animator::loadRuntimeAnimation(const String &uuid,String &error)
+    {
+        if(!m_runtimeAssets){error="Animator requires its captured runtime asset context";return false;}
+        try {
+            std::shared_ptr<const resource::RuntimeResource> resource;
+            if(!uuid.empty())resource=m_runtimeAssets->resolve(uuid,error);
+            else if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())resource=mesh->getRuntimeSkeletonResource();
+            if(!resource){if(error.empty())error="Animator requires a captured skeleton/clip UUID";return false;}
+            String identity=uuid;
+            if(resource!=m_runtimeAnimation && !loadResource(resource,error))return false;
+            m_animationAssetUuid=std::move(identity);m_runtimeAnimation=std::move(resource);return true;
+        }catch(const std::exception &failure){error=failure.what();return false;}
+    }
+
     void Animator::load( SmartPtr<ISharedObject> data )
     {
+        if(m_runtimeAssetsMode && !m_runtimeAssets)throw std::runtime_error("Animator runtime assets must be reconfigured before load");
         setLoadingState( LoadingState::Loading );
         Component::load( data );
 
@@ -247,6 +276,7 @@ namespace workphone::scene
 
     void Animator::unload( SmartPtr<ISharedObject> data )
     {
+        m_runtimeAnimation.reset();m_runtimeAssets.reset();
         // Loading-state changes commit before optional notification admission.
         // A refused notification must not strand this generation's IK owners.
         try
@@ -267,6 +297,7 @@ namespace workphone::scene
         retiredClips.swap( m_animationClips );
         auto retiredSkeleton = m_skeleton;
         m_skeleton = nullptr;
+        clearAnimationGraph();
         m_state = STATE_STOPPED;
 
         // Cleanup FSM
@@ -451,6 +482,14 @@ namespace workphone::scene
 
     void Animator::onUpdate()
     {
+#if WP_TYPED_ANIMATION_RESOURCE
+        if(m_runtimeAnimation&&m_runtimeAnimation->header.resourceType==resource::ResourceTypeID("amorph")){
+            auto actor=getActor();auto renderer=actor?actor->getComponent<MeshRenderer>():nullptr;auto mesh=renderer?renderer->getGraphicsObjectByType<render::IGraphicsMesh>():nullptr;String error;
+            if(!mesh||!mesh->applyMorphAnimation(m_runtimeAnimation,m_animationTime,m_animationWeight,m_animationScale,error,
+                m_runtimeAssets?m_runtimeAssets->target:String("pc"),m_runtimeAssets?m_runtimeAssets->packagedBuild:true))m_playbackStatus=error.empty()?"Morph playback requires its loaded native MeshRenderer":error;
+            else m_playbackStatus.clear();return;
+        }
+#endif
         // Capture and admit every IK output/command before clip sampling can
         // write to the skeleton. The prepared pass performs no further growth.
         auto preparedIK = m_ikSystem.prepareSolve( m_skeleton.get() );
@@ -768,16 +807,77 @@ namespace workphone::scene
         error.clear();
 #if WP_TYPED_ANIMATION_RESOURCE
         if(!resource) { error="Missing typed skeleton resource"; return false; }
-        if(m_animationGraph.isValid()) { error="Clear the current animation graph before installing a skeleton/clip set"; return false; }
         try {
             const auto epoch=sourceBudgetDenialCount();
+            const bool replacesCookedRig=m_runtimeAnimation&&m_runtimeAnimation->header.resourceType==workphone::resource::ResourceTypeID("arig");
+            if(resource->header.resourceType==workphone::resource::ResourceTypeID("arig")){
+                workphone::resource::RigAnimationResource decoded;
+                if(!workphone::resource::RigResourceCompiler::decode(*resource,decoded,error))return false;
+                if(m_runtimeAssetsMode)if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())if(auto bound=mesh->getRuntimeSkeletonResource()){
+                    const auto &expected=bound->header;const auto &actual=decoded.rig->header;
+                    if(expected.resourceId!=actual.resourceId||expected.compilerVersion!=actual.compilerVersion||expected.sourceHash!=actual.sourceHash||expected.payloadHash!=actual.payloadHash||expected.payloadSize!=actual.payloadSize){error="IK rig differs from its Mesh sibling's captured target generation";return false;}}
+                animation::AnimationGraphInstance graph;
+                if(!decoded.graph.getStates().empty()){
+                    if(!graph.setDefinition(decoded.graph)){error="IK rig animation graph is invalid";return false;}
+                    for(const auto &parameter:decoded.parameters)if(parameter.boolean)graph.setBoolParameter(parameter.name,parameter.booleanValue);else graph.setFloatParameter(parameter.name,parameter.value);
+                }
+                auto editable=makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+                if(sourceBudgetDenialCount()!=epoch){error="IK rig installation memory budget exhausted";return false;}
+                m_animationGraph=graph;std::swap(m_ikSystem,decoded.ik);m_animations.swap(decoded.clips);m_animationClips.swap(editable);m_skeleton=std::move(decoded.skeleton);m_runtimeAnimation=resource;
+                m_selectedAnimationIndex=0;m_animationTime=0;m_state=STATE_STOPPED;m_animationCachePath.clear();m_playbackStatus.clear();m_lastIKSolveResults.clear();return true;
+            }
+            if(resource->header.resourceType==workphone::resource::ResourceTypeID("amorph")){
+                if(m_animationGraph.isValid()){error="Clear the current animation graph before installing a morph clip";return false;}
+                workphone::resource::MorphClipInfo info;if(!workphone::resource::MorphResourceCodec::describe(*resource,info,error))return false;
+                auto actor=getActor();auto renderer=actor?actor->getComponent<MeshRenderer>():nullptr;auto mesh=renderer?renderer->getGraphicsObjectByType<render::IGraphicsMesh>():nullptr;
+                if(!mesh){error="Morph animation requires its already-loaded sibling MeshRenderer";return false;}
+                if(m_runtimeAssetsMode)if(auto sibling=actor->getComponent<Mesh>())if(auto bound=sibling->getRuntimeResource()){
+                    const auto &expected=bound->header;const auto &actual=resource->dependencies[0]->header;
+                    if(expected.resourceId!=actual.resourceId||expected.compilerVersion!=actual.compilerVersion||expected.sourceHash!=actual.sourceHash||expected.payloadHash!=actual.payloadHash||expected.payloadSize!=actual.payloadSize){error="Morph base differs from its Mesh sibling's captured generation";return false;}}
+                auto native=make_ptr<workphone::Animation>();native->setName(info.clip);native->setLength(info.duration);auto clips=makeSourceBudgetSnapshot<SmartPtr<IAnimation>>();clips.push_back(native);auto editable=makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+                if(sourceBudgetDenialCount()!=epoch){error="Morph animation installation memory budget exhausted";return false;}
+                if(!mesh->applyMorphAnimation(resource,0,1,1,error,m_runtimeAssets?m_runtimeAssets->target:String("pc"),m_runtimeAssets?m_runtimeAssets->packagedBuild:true))return false;
+                // Native geometry and every Core owner were staged before this
+                // non-allocating publication of timing/control state.
+                if(replacesCookedRig)m_ikSystem.clear();m_animations.swap(clips);m_animationClips.swap(editable);m_skeleton=nullptr;m_runtimeAnimation=resource;
+                m_selectedAnimationIndex=0;m_animationTime=0;m_state=STATE_STOPPED;m_animationCachePath.clear();m_playbackStatus.clear();m_lastIKSolveResults.clear();return true;
+            }
+            if(resource->header.resourceType==workphone::resource::ResourceTypeID("aretgt")){
+                workphone::resource::RetargetAnimationResource decoded;
+                if(!workphone::resource::RetargetResourceCompiler::decode(*resource,decoded,error))return false;
+                if(m_runtimeAssetsMode)if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())if(auto bound=mesh->getRuntimeSkeletonResource()){
+                    const auto &expected=bound->header;const auto &actual=decoded.targetRig->header;
+                    if(expected.resourceId!=actual.resourceId||expected.compilerVersion!=actual.compilerVersion||expected.sourceHash!=actual.sourceHash||expected.payloadHash!=actual.payloadHash||expected.payloadSize!=actual.payloadSize){
+                        error="Retarget target rig differs from its Mesh sibling's captured rig generation";return false;}}
+                auto clips=makeSourceBudgetSnapshot(decoded.clips);auto editable=makeSourceBudgetSnapshot<SmartPtr<Animation>>();animation::AnimationGraphInstance emptyGraph;
+                if(clips.empty()||sourceBudgetDenialCount()!=epoch){error="Retarget installation memory budget exhausted";return false;}
+                m_animationGraph=emptyGraph;if(replacesCookedRig)m_ikSystem.clear();m_animations.swap(clips);m_animationClips.swap(editable);m_skeleton=std::move(decoded.skeleton);m_runtimeAnimation.reset();
+                m_selectedAnimationIndex=0;m_animationTime=0;m_state=STATE_STOPPED;m_animationCachePath.clear();m_playbackStatus.clear();m_lastIKSolveResults.clear();return true;
+            }
+            if(resource->header.resourceType==workphone::resource::ResourceTypeID("agraph")){
+                workphone::resource::AnimationGraphResource decoded;
+                if(!workphone::resource::AnimationResourceCompiler::decodeGraph(*resource,decoded,error))return false;
+                if(m_runtimeAssetsMode)if(auto actor=getActor())if(auto mesh=actor->getComponent<Mesh>())if(auto bound=mesh->getRuntimeSkeletonResource()){
+                    const auto &expected=bound->header;const auto &actual=decoded.rig->header;
+                    if(expected.resourceId!=actual.resourceId||expected.compilerVersion!=actual.compilerVersion||expected.sourceHash!=actual.sourceHash||expected.payloadHash!=actual.payloadHash||expected.payloadSize!=actual.payloadSize){
+                        error="Animation graph rig differs from its Mesh sibling's captured rig generation";return false;}}
+                auto clips=makeSourceBudgetSnapshot(decoded.skeleton->getAnimations());auto editable=makeSourceBudgetSnapshot<SmartPtr<Animation>>();
+                animation::AnimationGraphInstance graph(decoded.definition);
+                for(const auto &parameter:decoded.parameters)if(parameter.boolean)graph.setBoolParameter(parameter.name,parameter.booleanValue);else graph.setFloatParameter(parameter.name,parameter.value);
+                if(!graph.isValid()||sourceBudgetDenialCount()!=epoch){error="Animation graph installation memory budget exhausted";return false;}
+                // Graph assignment stages its complete copy and swaps atomically.
+                // All following ownership transfers are non-allocating.
+                m_animationGraph=graph;if(replacesCookedRig)m_ikSystem.clear();m_animations.swap(clips);m_animationClips.swap(editable);m_skeleton=std::move(decoded.skeleton);m_runtimeAnimation.reset();
+                m_selectedAnimationIndex=0;m_animationTime=0;m_state=STATE_STOPPED;m_animationCachePath.clear();m_playbackStatus.clear();m_lastIKSolveResults.clear();return true;
+            }
+            if(m_animationGraph.isValid()) { error="Clear the current animation graph before installing a skeleton/clip set"; return false; }
             auto candidate=workphone::resource::SkeletonResourceCompiler::decode(*resource,error);
             if(!candidate) return false;
             auto clips=makeSourceBudgetSnapshot(candidate->getAnimations());
             auto editable=makeSourceBudgetSnapshot<SmartPtr<Animation>>();
             if(clips.empty()) { error="Typed skeleton resource has no playable clips"; return false; }
             if(sourceBudgetDenialCount()!=epoch) { error="Animation installation memory budget exhausted"; return false; }
-            m_animations.swap(clips); m_animationClips.swap(editable); m_skeleton=candidate;
+            if(replacesCookedRig)m_ikSystem.clear();m_animations.swap(clips); m_animationClips.swap(editable); m_skeleton=candidate;m_runtimeAnimation.reset();
             m_selectedAnimationIndex=0; m_animationTime=0; m_state=STATE_STOPPED;
             m_animationCachePath.clear(); m_playbackStatus.clear(); m_lastIKSolveResults.clear();
             return true;
@@ -830,6 +930,7 @@ namespace workphone::scene
 
     bool Animator::restoreRuntimeAnimations()
     {
+        if(m_runtimeAssetsMode){String error;const auto loaded=loadRuntimeAnimation(m_animationAssetUuid,error);if(!loaded)m_playbackStatus=error;return loaded;}
         auto actors = animationActors( getActor() );
         auto cacheKey =
             m_animationCachePath.empty() ? legacyAnimationCache( actors ) : m_animationCachePath;
@@ -1028,6 +1129,7 @@ namespace workphone::scene
 
         properties->setProperty( animationTimeStr, m_animationTime );
         properties->setProperty( "animationCachePath", m_animationCachePath );
+        properties->setProperty("animationAssetUuid",m_animationAssetUuid,Properties::resourceStr);
         properties->setProperty( "playbackStatus", m_playbackStatus, true );
         properties->setProperty( animationSpeedStr, m_animationSpeed );
         properties->setProperty( animationWeightStr, m_animationWeight );
@@ -1080,6 +1182,18 @@ namespace workphone::scene
         if( !properties )
         {
             return;
+        }
+
+        // Authoring retains the typed reference for save/recook. Preview still
+        // follows the existing authoring animation path; only a captured runtime
+        // context may resolve and install this UUID.
+        String authoredAssetUuid;
+        if(!m_runtimeAssetsMode){authoredAssetUuid=m_animationAssetUuid;properties->getPropertyValue("animationAssetUuid",authoredAssetUuid);}
+        if(m_runtimeAssetsMode){
+            String uuid=m_animationAssetUuid,cache,error;
+            properties->getPropertyValue("animationAssetUuid",uuid);properties->getPropertyValue("animationCachePath",cache);
+            if(!cache.empty())throw std::runtime_error("Runtime Animator forbids authoring animation caches");
+            if(!loadRuntimeAnimation(uuid,error))throw std::runtime_error(error.c_str());
         }
 
         properties->getPropertyValue( "animationCachePath", m_animationCachePath );
@@ -1238,6 +1352,7 @@ namespace workphone::scene
         }
 
         Component::setProperties( properties );
+        if(!m_runtimeAssetsMode)m_animationAssetUuid.swap(authoredAssetUuid);
         restoreApply.committed = true;
         restoreIK.committed = true;
         restoreClips.committed = true;
@@ -1263,7 +1378,11 @@ namespace workphone::scene
 
     bool Animator::setAnimationGraph( const animation::AnimationGraphDefinition &definition )
     {
-        return m_animationGraph.setDefinition( definition );
+        if(!m_animationGraph.setDefinition(definition))return false;
+#if WP_TYPED_ANIMATION_RESOURCE
+        if(m_runtimeAnimation&&(m_runtimeAnimation->header.resourceType==resource::ResourceTypeID("amorph")||m_runtimeAnimation->header.resourceType==resource::ResourceTypeID("arig"))){if(m_runtimeAnimation->header.resourceType==resource::ResourceTypeID("arig"))m_ikSystem.clear();m_runtimeAnimation.reset();}
+#endif
+        return true;
     }
 
     void Animator::clearAnimationGraph()

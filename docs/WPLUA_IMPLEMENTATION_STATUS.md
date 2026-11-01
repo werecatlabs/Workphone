@@ -6,7 +6,7 @@ Updated 31 October 2026. This records the implemented foundation, not certificat
 
 Lua source is cataloged as a `ScriptAsset` with a durable UUID and asset type `script`. Import/reimport only records source metadata; it does not execute the file. Existing catalog entries retain their UUID. `ResourceDatabase::loadResource` resolves script metadata by UUID or path without requiring a renderer. Metadata remains separate from a VM and a live script instance.
 
-Register `workphone::LuaScriptCompiler` in the existing `resource::ResourceCompilerRegistry`, initialize `resource::ResourceSystem` with project source and compiled roots, and call `LuaManager::configureScriptResources(catalog, resources)`. Load an asset with `loadScriptAsset(uuid)`. This configuration is explicit; project startup does not yet automatically construct and configure the compilation service.
+Register `workphone::LuaScriptCompiler` in the existing `resource::ResourceCompilerRegistry`, initialize `resource::ResourceSystem` with project source and compiled roots, and call `LuaManager::configureScriptResources(catalog, resources)`. Load an asset with `loadScriptAsset(uuid)`. This catalog-backed authoring configuration is explicit. Packaged scene startup uses the captured runtime context described below.
 
 The compiler validates syntax without opening libraries or executing source, removes a UTF-8 BOM, preserves shebang line numbers, and produces a versioned resource containing portable source. Individual source payloads are limited to 8 MiB. This is an immutable source payload rather than cross-version Lua bytecode.
 
@@ -23,9 +23,33 @@ For catalog-backed compiled asset execution, call `configureScriptResources(cata
 
 For source-free packages, call `LuaManager::configureRuntimeScriptResources(RuntimeResourceConfig, error)` before loading a fresh VM, then use `loadScriptAsset(uuid)`. The manager owns a private immutable UUID mount with no catalog, compiler or compilation index. Missing/wrong-type UUIDs fail without authoring lookup; UUID case aliases execute the asset only once. Runtime mode caps payloads to 8 MiB and closures to 256 resources/64 MiB. It disables filesystem module search, `loadfile`, `dofile` and native library loading, and rejects loose-file/list loading, direct resource/state replacement, active authoring retarget and hot reload.
 
-Unload releases the private mount and preserves runtime policy: plain subsequent `load` fails until an explicit runtime remount or an explicit authoring configuration while unloaded. Explicit text/debug execution and existing native bindings remain available; this mode is not a security sandbox. Lua VM, preload and debugger-source copies are not yet fully charged to shared residency. See [runtime package usage](WPRESOURCE_RUNTIME_PACKAGES.md#runtime-script-component-uuids).
+Unload releases the private mount and preserves runtime policy: plain subsequent `load` fails until an explicit runtime remount or an explicit authoring configuration while unloaded. Explicit text/debug execution and existing native bindings remain available; this mode is not a security sandbox. Runtime VMs now reserve a 32-MiB `SourceCpu` bootstrap envelope before binding initialization, then admit allocation growth while the previous block remains live. GC/free/close release managed storage; native source/preload/debugger-text owners carry conservative retained admission. Cached entry trampolines avoid allocating a LuaJIT closure before the protected call. Authoring keeps its existing allocator. Native extension/JIT/FFI storage outside Lua's allocator and native driver pools remain outside this managed accounting. See [runtime package usage](WPRESOURCE_RUNTIME_PACKAGES.md#runtime-script-component-uuids).
 
-Script components persist `scriptAssetUuid` alongside `className`, including deserialization before actor attachment/runtime startup and partial property updates. An asset-backed component loads the asset before constructing its class. This existing native consumer now works through the source-free UUID mount. Existing components with no asset UUID continue to use already loaded global classes. Cooked scene compilation still rejects component-bearing graphs; automatic project/package startup and a dedicated Editor asset picker remain open.
+Script components persist `scriptAssetUuid` alongside `className`, including deserialization before actor attachment/runtime startup and partial property updates. An asset-backed component loads the asset before constructing its class. This existing native consumer works through either the source-free UUID mount or a pinned runtime resolver. Authoring components with no asset UUID continue to use already loaded global classes. A dedicated Editor asset picker remains open.
+
+## Captured mixed-scene runtime contexts
+
+`SceneResourceCompiler` now accepts a bounded component-bearing scene/prefab subset. Authored asset UUIDs are captured as typed ResourceIDs during compilation and become declared compile/install dependencies. The runtime context resolves only that pinned closure; missing, wrong-type or undeclared references cannot fall back to the authoring database. Contexts are assigned before component loading or property callbacks.
+
+The supported component set is deliberately limited:
+
+| Component | Captured properties and existing runtime path |
+| --- | --- |
+| `Mesh` | `Mesh Resource` selects `mesh` or `skinres`; optional `Skeleton` selects `skelres`. Retains the cooked inputs without creating an authoring mesh resource; nonempty `Mesh Path` is rejected. |
+| `MeshRenderer` | `meshAssetUuid`, or its `Mesh` sibling, selects the existing native mesh/material/skin installer. Opt-in static `streamMesh` uses verified ranges with an existing LODGroup fallback. Failed decode/upload preserves the previous native owner set. |
+| `Animator` | `animationAssetUuid`, or its `Mesh` sibling's `Skeleton`, installs an independent typed rig/clip set and uses existing playback and CPU skin publication. Authoring animation-cache paths are rejected. |
+| `Script` | `scriptAssetUuid` and `className` load the captured Lua closure and construct the ordinary component instance through its context's private VM. |
+| `Material`, `Skybox` | Captured material and six texture UUIDs stage through existing native graphics owners, including sparse mip tails. |
+| `Camera`, `Light` | Validated inline native fields; staged cameras cannot reset a previously published rig before commit. |
+| `AudioEmitter` | Captured `Sound` UUID creates an independent native voice; large PCM16 uses the bounded range/ring path. Device unavailability is explicit. |
+| `UIComponent` | Captured `uiAssetUuid` stages and replaces a native document under its owned host. |
+| `LODGroup` | Graph-local renderer UUIDs use the existing selector/hysteresis, with a ready non-streamed coarsest level. |
+
+`RuntimeAssetContext` retains the captured resolver and a backend-compatible private script manager when scripts are needed. `prepareRuntimeAssetScripts` creates that VM through the installed script backend; it does not replace the Editor's authoring VM. Script lookup uses the component's context before project-manager routing. Components and prefab instances sharing a context share Lua class globals, while retaining their own script objects; animation rigs remain independent. Prefab remapping changes actor/component identities and preserves external asset UUIDs.
+
+Graph installation uses the existing `SceneLoadJob` append/rollback path, with scene-generation and strict UUID resolution checks. Failed asset/class installation retires staged actors and returns its native diagnostic. Typed UUID collisions reject even for existing perpetual actors while playing. Arbitrary native side effects executed by Lua module bodies or constructors still cannot be rolled back; initialization must remain declarative until publication. Other component families, embedded animation graphs/IK/clip authoring groups and broad authoring-scene compatibility remain separate adoption work. Unsupported properties fail explicitly rather than silently loading authoring files.
+
+The product Editor now accepts `--runtime-scene-package DIR --runtime-scene-uuid UUID`, with optional `--runtime-scene-target pc`. Its startup requests an asynchronous resource closure with native sparse-leaf loaders, then installs the captured scene on the existing owner path. Project/scene changes and request generations fence publication, and teardown tracks the loaded roots by UUID and actor slot. `--runtime-scene-validate` runs bounded startup and emits the structured bootstrap report, including separate resident/streamed mesh counts; its validation process has a 30-second startup watchdog. This is an implemented entry point, not current shipping or live Editor certification. The scene compiler limits source to 8 MiB, 4096 Properties nodes and depth 64; the startup closure is capped at 256 resources and 64 MiB of retained data, with 8 MiB per ordinary payload. Sparse loaders admit bounded metadata/bootstrap instead of full logical payloads, subject to their native format limits.
 
 ## Runtime and reload
 
@@ -63,9 +87,36 @@ The VSIX packages a .NET Framework 4.8 stdio adapter and registers Workphone Lua
 
 ## Validation
 
+### Current component/streaming increment
+
+The final default-Lua source passed **17/17 optimized** checks in **138.95 seconds**
+and **21/21 Debug** checks in **285.11 seconds**. Runtime allocation tests exercise
+bootstrap denial, real allocation replacement pressure, protected script OOM,
+GC, preload retry and strict VM/source retirement against a prewarmed shared
+String-pool baseline. The final scene case passed 212 assertions, including
+constructor diagnostics and rollback. The fresh relocated candidate passed seven
+checks, with 210 inputs without drift and twelve matching built/installed modules.
+The source-free product scenes construct their private Script VMs with 12 DX11
+or 10 Software components and an unloaded streamed high LOD. The full Editor
+aggregate passed **99/99 cases and 1,860,255 assertions in 824.01 seconds** within
+its unchanged 900-second timeout. Candidate inputs and module hashes matched again
+after the aggregate.
+See [resource increments 38–41](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md#validation-for-increments-3841).
+
+LuaJIT pressure/backend and live Editor/IDE acceptance have not been repeated.
+Native extension/JIT/FFI storage outside Lua's allocator, reentrant VM teardown,
+native side-effect rollback, representative hardware/audio, scale/soak and full
+shipping certification remain open.
+
+### Earlier mixed-scene increment
+
+The final default-Lua source set rebuilt both configurations and passed 17/17 optimized suites (141.52 seconds) and 19/19 Debug suites (274.84 seconds). These cover offline mixed scenes, private Script VM construction/update, independent prefab instances, failed-install rollback and separate raw/derived resource retirement. The full Debug Editor aggregate passed 97/97 cases and 1,840,929 assertions in 828.97 seconds within its unchanged 900-second timeout. The fresh installed candidate passed seven checks, including actual textured DX11 and material-free Software Editor launches with source/catalog/index removed, clean unsupported-material/missing-UUID failures and unchanged read-only packages. Its 151 captured inputs have zero drift and all twelve built/installed modules match, rechecked after the aggregate. Evidence is in [resource increments 36–37](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md#validation-for-increments-3637). LuaJIT/live debugger, representative hardware/audio, full VM/preload residency, scale/soak and shipping certification remain open.
+
+The LuaJIT matrix and live Editor/IDE, representative graphics/audio hardware, gameplay Play/Stop and clean-machine gates have not been repeated for these changes. Lua VM/preload/debugger-source residency and native side-effect rollback remain open. The dated evidence below applies to earlier source sets.
+
 ### Source-free Script components, 31 October 2026
 
-On the default bundled Lua backend, the final RelWithDebInfo selection passed 17/17 suites in 150.51 seconds and Debug passed 19/19 in 229.34 seconds. These include the real Script consumer and running/paused debugger cancellation regressions; the Debug selection also includes cooked scene/prefab and UI Editor cases. The Script fixture removes source, catalog and cooking storage, makes the package read-only, constructs and updates an actual component, rejects fallback/retarget/reload routes, and explicitly remounts a fresh VM on the same manager after teardown.
+Historical source set, before the mixed-scene/context/bootstrap changes above: on the default bundled Lua backend, the then-final RelWithDebInfo selection passed 17/17 suites in 150.51 seconds and Debug passed 19/19 in 229.34 seconds. These include the real Script consumer and running/paused debugger cancellation regressions; the Debug selection also includes cooked scene/prefab and UI Editor cases. The Script fixture removes source, catalog and cooking storage, makes the package read-only, constructs and updates an actual component, rejects fallback/retarget/reload routes, and explicitly remounts a fresh VM on the same manager after teardown.
 
 The fresh installed/relocated candidate passed six checks with unchanged read-only payload, zero captured-source drift and matching hashes for twelve modules. `validationPassed=true` and `releaseCertified=false`. Exact logs, JUnit/full output, the corrected fixture's initial timer failure and candidate hashes are retained in the [resource release ledger, increment 35](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md#increment-35-real-script-components-through-package-uuids).
 
@@ -92,7 +143,7 @@ The completed step-fixed session also verified these controls against the real E
 
 The Render-origin gate retained `deferredRenderCallbackActive=true`, frozen engine/fixed clocks, zero deltas, zero executor workers, disabled simulation and held input/audio throughout. The earlier 145-frame evidence remains at `project_luajit/lua-debugger-remaining-20261029/final-render-origin-redraw.json`. Physical Visual Studio F10 remains unverified: the latest injected F10 did not dispatch an IDE step command or advance pause sequence 11, and the separate manual check has no confirmed result. The passing IDE step commands and Editor F10 result do not establish that physical IDE shortcut. These are native widget-state and presentation-counter checks; rendered pixels and pointer hit targets are not certified.
 
-The current release-gate CTest selection passed 10/10 for LuaJIT and 9/9 for standard Lua. Logs are `project_luajit/lua-remaining-20261029-release-gate-ctest.log` and `project_x64/lua-remaining-20261029-release-gate-ctest.log`; they include debugger/runtime/panel, deferred Editor dispatch, native ImGui input/placement, paused Claw frames/game UI and audio adapter checks. Live launch, breakpoint, watch, stepping, reattach, close and strict redraw evidence is in `project_luajit/lua-debugger-remaining-20261029-step-fixed`. The packaged adapter fixture passes against the current executable in `Tools/csharp/LuaDebugAdapter/bin/Release/net48`; the old loose `project_x64/vsix/bin/WorkphoneLuaDebugAdapter.exe` predates this work and is not the adapter installed in VSIX 0.3.1.
+The 29 October release-gate CTest selection passed 10/10 for LuaJIT and 9/9 for standard Lua. Logs are `project_luajit/lua-remaining-20261029-release-gate-ctest.log` and `project_x64/lua-remaining-20261029-release-gate-ctest.log`; they include debugger/runtime/panel, deferred Editor dispatch, native ImGui input/placement, paused Claw frames/game UI and audio adapter checks. Live launch, breakpoint, watch, stepping, reattach, close and strict redraw evidence is in `project_luajit/lua-debugger-remaining-20261029-step-fixed`. The packaged adapter fixture passed against that run's executable in `Tools/csharp/LuaDebugAdapter/bin/Release/net48`; the old loose `project_x64/vsix/bin/WorkphoneLuaDebugAdapter.exe` predates that work and is not the adapter installed in VSIX 0.3.1.
 
 A later LuaJIT cleanup fix restores the normal count-hook interval of 1000 on explicit DAP disconnect, even while the client retains its TCP connection. Its regression inspects both the main thread and a coroutine before another Lua line or transport teardown can restore the interval incidentally. Both Editor/DLL configurations rebuilt successfully, and focused debugger integration passed again (LuaJIT 6.00 seconds, standard Lua 4.86 seconds); logs use the `lua-remaining-20261029-disconnect-link` prefix in each build directory. A fresh session on the final linked LuaJIT DLL passed VSIX launch/attach, line 240 to 250 stepping and the strict paused gate across another 68 native/button redraws. Native close exited with code 0, removed the endpoint and returned the IDE to Design mode. The isolated IDE line-ending preference was restored and owned launch credentials were removed. Evidence uses `final-linked-*.json` in the step-fixed workspace.
 

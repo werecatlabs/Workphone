@@ -2,8 +2,10 @@
 #include <WPAudio/WPAudioSound.hpp>
 #include <WPAudio/SharedClipCache.hpp>
 #include <WPAudio/AudioResourceCompiler.hpp>
+#include <WPAudio/AudioResourceStream.hpp>
 #include <Workphone/Sound/SoundManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -28,9 +30,12 @@ namespace workphone
     namespace
     {
         constexpr u16 WavFormatPcm = 1;
+        void audioFailure(String &error,const char *message) noexcept
+        {try{error=message;}catch(...){try{error="Audio operation failed";}catch(...){error.clear();}}}
 
         struct WavData
         {
+            StreamBudget admission;
             std::vector<u8> format;
             std::vector<u8> samples;
             u16 formatTag = 0, channels = 0;
@@ -49,6 +54,10 @@ namespace workphone
             {
                 return false;
             }
+            String budgetError;
+            wav.admission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,
+                u64(info.data_bytes)+4096,budgetError);
+            if(!wav.admission)return false;
             // Native WAVEFORMATEX is 18 bytes even for a 16-byte PCM fmt chunk.
             wav.format.assign( 18, 0 );
             auto field16 = [&]( size_t offset, u16 value ) {
@@ -104,17 +113,35 @@ namespace workphone
 
     struct WPAudioSound::PlatformSoundState
     {
+        StreamBudget admission;
         std::shared_ptr<const WavData> wav;
+        std::unique_ptr<audio::AudioResourceStream> range;
         std::atomic_bool playing{ false };
         std::atomic_bool loop{ false };
         bool paused = false;
+        bool preserveStart=false;
+        u64 startFrame=0;
 
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         bool streaming = false;
         std::atomic_size_t streamCursor{ 0 };
         size_t streamBlockBytes = 0;
+        void applyMix(f32 gain,f32 pan)
+        {
+            sourceVoice->SetVolume(gain);const auto channels=range?range->blockAlign()/2:wav?wav->channels:0;
+            if(channels&&channels<=2){const float left=std::sqrt(std::clamp(1.0f-pan,0.0f,1.0f)),right=std::sqrt(std::clamp(1.0f+pan,0.0f,1.0f));
+                const float mono[]={left,right},stereo[]={left,0,0,right};sourceVoice->SetOutputMatrix(nullptr,channels,2,channels==1?mono:stereo);}
+        }
         bool submitStreamBlock()
         {
+            if(range){
+                const auto block=range->ring().acquire(static_cast<u32>(streamBlockBytes));if(!block.bytes||!block.size)return false;
+                XAUDIO2_BUFFER next{};next.AudioBytes=block.size;next.pAudioData=block.bytes;
+                if(block.slot<audio::AudioPcmRing::slotCount)next.pContext=reinterpret_cast<void*>(block.slot+1);
+                // The range ring owns completion. A submitted native EOS flag
+                // would become stale if looping changes before this block ends.
+                const bool submitted=SUCCEEDED(sourceVoice->SubmitSourceBuffer(&next));range->ring().submitted(block,submitted);return submitted;
+            }
             size_t begin = streamCursor.load();
             size_t end;
             for( ;; )
@@ -153,8 +180,11 @@ namespace workphone
             {
             }
 
-            void STDMETHODCALLTYPE OnBufferEnd( void * ) override
+            void STDMETHODCALLTYPE OnBufferEnd( void *context ) override
             {
+                if(owner->range&&context){const auto slot=reinterpret_cast<uintptr_t>(context)-1;
+                    if(slot<audio::AudioPcmRing::slotCount){const bool final=owner->range->ring().slot(slot).dataEnd&&!owner->loop;
+                        owner->range->ring().complete(slot,final);if(final)owner->playing=false;}}
                 if( owner->streaming && owner->playing ) owner->submitStreamBlock();
             }
 
@@ -292,37 +322,107 @@ namespace workphone
         return m_reloadFailed;
     }
 
-    bool WPAudioSound::loadResource(std::shared_ptr<const resource::RuntimeResource> resource)
+    std::shared_ptr<const resource::RuntimeResource> WPAudioSound::captureRuntimeResourceSnapshot(
+        std::shared_ptr<const resource::RuntimeResource> resource,std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
+    {return audio::AudioResourceStream::capture(std::move(resource),std::move(mount),error);}
+
+    bool WPAudioSound::loadResource(std::shared_ptr<const resource::RuntimeResource> resource,
+        std::shared_ptr<resource::ResourcePayloadMount> mount)
     {
         String error;
-        if(isLoaded() || !resource || !audio::AudioResourceCompiler::validate(*resource,error)) return false;
-        m_cookedResource=std::move(resource);
+        if(isLoaded()||!resource)return false;
+        auto snapshot=captureRuntimeResourceSnapshot(std::move(resource),mount,error);if(!snapshot)return false;
+        m_cookedResource=std::move(snapshot);m_runtimeMount=std::move(mount);
         load(nullptr);
-        if(!isLoaded()) m_cookedResource.reset();
+        if(!isLoaded()){m_cookedResource.reset();m_runtimeMount.reset();}
         return isLoaded();
     }
 
     void WPAudioSound::unload( SmartPtr<ISharedObject> data )
     {
         (void)data;
-        setLoadingState( LoadingState::Unloading );
+        try{setLoadingState( LoadingState::Unloading );}catch(const std::bad_alloc&){}
         unloadPlatformSound();
         Sound::stop();
         m_cookedResource.reset();
-        setLoadingState( LoadingState::Unloaded );
+        m_runtimeMount.reset();
+        try{setLoadingState( LoadingState::Unloaded );}catch(const std::bad_alloc&){}
+    }
+
+    void WPAudioSound::update()
+    {if(auto state=m_platformSoundState)if(state->range)state->range->process(state->loop);}
+
+    bool WPAudioSound::seekFrames(u64 frame,String &error) try
+    {
+        error.clear();auto state=m_platformSoundState;if(!state){error="Cannot seek an unloaded sound";return false;}
+#if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
+        if(state->range&&!state->range->owner()){error="PCM seek requires its audio control owner";return false;}
+        const auto alignment=state->range?state->range->blockAlign():state->wav?state->wav->blockAlign:0;
+        const auto count=state->range?state->range->frames():alignment?state->wav->samples.size()/alignment:0;
+        if(!alignment||frame>count){error="PCM seek frame is outside the clip";return false;}
+        auto scratch=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,65536,error);if(!scratch)return false;
+        auto gain=getVolume(),pan=getPan();if(auto manager=workphone::dynamic_pointer_cast<SoundManager>(getOwner()))manager->getMixParameters(this,gain,pan);
+        void *object=nullptr;if(auto manager=getOwner())manager->_getObject(&object);auto engine=static_cast<IXAudio2*>(object);
+        IXAudio2SourceVoice *candidate=nullptr;
+        const auto format=state->range?state->range->format():state->wav->format.data();
+        if(!engine||FAILED(engine->CreateSourceVoice(&candidate,reinterpret_cast<const WAVEFORMATEX*>(format),0,XAUDIO2_DEFAULT_FREQ_RATIO,&state->callback))){error="Native audio seek voice staging failed";return false;}
+        const bool resume=state->playing.load();state->playing=false;
+        if(state->sourceVoice){state->sourceVoice->Stop(0);state->sourceVoice->DestroyVoice();}
+        state->sourceVoice=candidate;state->startFrame=frame;state->preserveStart=true;state->paused=false;
+        if(state->range){if(!state->range->reset(frame,error))return false;state->range->process(state->loop);}
+        else {state->streamCursor=frame*alignment;state->buffer.PlayBegin=static_cast<UINT32>(frame);}
+        state->applyMix(gain,pan);if(resume&&frame<count)play();return true;
+#else
+        (void)frame;error="Frame seeking is unavailable on this native audio backend";return false;
+#endif
+    }
+    catch(const std::exception &failure){audioFailure(error,failure.what());return false;}
+    u64 WPAudioSound::getPlaybackFrame() const
+    {
+        const auto state=m_platformSoundState;if(!state)return 0;
+        if(state->range)return state->range->ring().stats().position/state->range->blockAlign();
+#if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
+        if(state->sourceVoice&&state->wav&&state->wav->blockAlign){XAUDIO2_VOICE_STATE value{};state->sourceVoice->GetState(&value);
+            const auto frames=state->wav->samples.size()/state->wav->blockAlign;const auto at=state->startFrame+value.SamplesPlayed;
+            return state->loop&&frames?at%frames:std::min<u64>(at,frames);}
+#endif
+        return 0;
+    }
+    WPAudioSound::StreamingStats WPAudioSound::getStreamingStats() const
+    {
+        StreamingStats out;const auto state=m_platformSoundState;if(!state||!state->range)return out;
+        const auto stats=state->range->ring().stats();out.streamed=true;out.finished=stats.finished;
+        out.residentPcmBytes=state->range->residentBytes();out.submittedBytes=stats.submitted;out.completedBytes=stats.completed;
+        out.underruns=stats.underruns;out.silenceBytes=stats.silenceBytes;out.readFailures=state->range->readFailures();out.admissionFailures=state->range->admissionFailures();return out;
     }
 
     bool WPAudioSound::loadPlatformSound( const String &filename )
     {
+        String admissionError;
+        u64 voiceBytes=65536;
+#if defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
+        if(m_cookedResource)voiceBytes+=m_cookedResource->payload.size();
+#endif
+        auto voiceAdmission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,voiceBytes,admissionError);
+        if(!voiceAdmission)return false;
         auto state = new( std::nothrow ) PlatformSoundState();
         if( !state )
         {
             return false;
         }
+        state->admission=std::move(voiceAdmission);
         state->loop = getLoop();
 
         try
         {
+            if(m_cookedResource&&m_cookedResource->streamData){
+                state->range=audio::AudioResourceStream::create(m_cookedResource,m_runtimeMount,admissionError);
+                if(!state->range){delete state;return false;}
+            }else {
+            StreamBudget working;
+            if(m_cookedResource){String error;working=WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::WorkingCpu,u64(m_cookedResource->payload.size())+65536,error);
+                if(!working){delete state;return false;}}
             auto stream = m_cookedResource ? SmartPtr<IStream>() : openAudioStream( filename );
             auto candidate = std::make_shared<WavData>();
             if( !(m_cookedResource ? readWavBytes(m_cookedResource->payload,*candidate) : readWav( stream.get(), *candidate )) )
@@ -343,12 +443,19 @@ namespace workphone
                 delete state;
                 return false;
             }
+            }
         }
         catch( const std::bad_alloc & )
         {
             delete state;
             return false;
         }
+        auto candidateGain=getVolume(),candidatePan=getPan();
+        try{if(auto manager=workphone::dynamic_pointer_cast<SoundManager>(getOwner()))manager->getMixParameters(this,candidateGain,candidatePan);
+#if !defined WP_PLATFORM_WIN32
+            if(auto owner=getOwner())candidateGain*=owner->isMute()?0.0f:owner->getVolume();
+#endif
+        }catch(const std::exception&){delete state;return false;}
 
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         void *audioObject = nullptr;
@@ -359,24 +466,24 @@ namespace workphone
         auto xAudio2 = static_cast<IXAudio2 *>( audioObject );
         if( !xAudio2 ||
             FAILED( xAudio2->CreateSourceVoice(
-                &state->sourceVoice, reinterpret_cast<const WAVEFORMATEX *>( state->wav->format.data() ),
+                &state->sourceVoice, reinterpret_cast<const WAVEFORMATEX *>( state->range?state->range->format():state->wav->format.data() ),
                 0, XAUDIO2_DEFAULT_FREQ_RATIO, &state->callback ) ) )
         {
             delete state;
             return false;
         }
 
-        state->buffer.AudioBytes = static_cast<UINT32>( state->wav->samples.size() );
-        state->buffer.pAudioData = state->wav->samples.data();
+        state->buffer.AudioBytes = state->wav?static_cast<UINT32>( state->wav->samples.size() ):0;
+        state->buffer.pAudioData = state->wav?state->wav->samples.data():nullptr;
         state->buffer.Flags = XAUDIO2_END_OF_STREAM;
         state->buffer.LoopCount = state->loop ? XAUDIO2_LOOP_INFINITE : 0;
         if( auto manager = workphone::dynamic_pointer_cast<SoundManager>( getOwner() ) )
         {
-            state->streaming = manager->isStreamingEnabled();
+            state->streaming = bool(state->range)||manager->isStreamingEnabled();
             state->streamBlockBytes = static_cast<size_t>( manager->getPlaybackBufferFrames() ) *
-                                      state->wav->channels * state->wav->bitsPerSample / 8;
+                                      (state->range?state->range->blockAlign():state->wav->channels*state->wav->bitsPerSample/8);
             state->streamBlockBytes = std::max<size_t>( state->streamBlockBytes,
-                                                       state->wav->channels * state->wav->bitsPerSample / 8 );
+                                                       state->range?state->range->blockAlign():state->wav->channels*state->wav->bitsPerSample/8 );
         }
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
         if( state->wav->formatTag != WavFormatPcm )
@@ -507,9 +614,16 @@ namespace workphone
 
         // Publish only after parsing, budget admission and native voice creation
         // succeed. Existing clones keep the previous immutable generation pinned.
+#if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
+        state->applyMix(candidateGain,candidatePan);
+#elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
+        AudioQueueSetParameter(state->queue,kAudioQueueParam_Volume,candidateGain);
+#elif defined WP_PLATFORM_ANDROID
+        const auto gain=candidateGain<=0.0f?SL_MILLIBEL_MIN:static_cast<SLmillibel>(2000.0f*std::log10(candidateGain));
+        (*state->volume)->SetVolumeLevel(state->volume,gain);
+#endif
         unloadPlatformSound();
         m_platformSoundState = state;
-        setVolume( getVolume() );
         return true;
     }
 
@@ -558,6 +672,11 @@ namespace workphone
         }
         if( auto manager = workphone::dynamic_pointer_cast<SoundManager>( getOwner() ) )
             if( !manager->admitVoice( this ) ) return;
+        if(state->range){
+            if(!state->range->owner())return;
+            if(state->range->ring().stats().finished){String error;if(!seekFrames(0,error))return;state=m_platformSoundState;}
+            state->range->process(state->loop);
+        }
 
         // Set this before starting the native backend because very short buffers can invoke
         // their completion callback before the start call returns.
@@ -566,13 +685,14 @@ namespace workphone
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         XAUDIO2_VOICE_STATE voiceState = {};
         state->sourceVoice->GetState( &voiceState );
-        if( voiceState.BuffersQueued == 0 && state->streaming ) state->streamCursor = 0;
+        if( voiceState.BuffersQueued == 0 && state->streaming && !state->range&&!state->preserveStart ) state->streamCursor = 0;
         if( voiceState.BuffersQueued == 0 && ( state->streaming ? !state->submitStreamBlock() :
             FAILED( state->sourceVoice->SubmitSourceBuffer( &state->buffer ) ) ) )
         {
             state->playing = false;
             return;
         }
+        state->preserveStart=false;
         if( FAILED( state->sourceVoice->Start( 0 ) ) )
         {
             state->playing = false;
@@ -636,6 +756,7 @@ namespace workphone
     void WPAudioSound::stop()
     {
         auto state = m_platformSoundState;
+        if(state&&state->range){state->playing=false;String error;(void)seekFrames(0,error);Sound::stop();return;}
         if( state )
         {
             state->playing = false;
@@ -677,16 +798,7 @@ namespace workphone
         }
 #endif
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
-        state->sourceVoice->SetVolume( effectiveGain );
-        if( state->wav && state->wav->channels <= 2 )
-        {
-            const float left = std::sqrt( std::clamp( 1.0f - effectivePan, 0.0f, 1.0f ) );
-            const float right = std::sqrt( std::clamp( 1.0f + effectivePan, 0.0f, 1.0f ) );
-            const float mono[] = { left, right };
-            const float stereo[] = { left, 0, 0, right };
-            state->sourceVoice->SetOutputMatrix( nullptr, state->wav->channels, 2,
-                                                state->wav->channels == 1 ? mono : stereo );
-        }
+        state->applyMix(effectiveGain,effectivePan);
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
         AudioQueueSetParameter( state->queue, kAudioQueueParam_Volume, effectiveGain );
 #elif defined WP_PLATFORM_ANDROID

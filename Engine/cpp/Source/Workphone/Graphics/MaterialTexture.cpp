@@ -101,6 +101,10 @@ namespace workphone::render
 
     void MaterialTexture::unload( SmartPtr<ISharedObject> data )
     {
+        // A queued upload can keep this facade alive after its material graph.
+        // Retire the weak material link while that owner is still alive, even
+        // when preserving an unresolved authoring name cannot be admitted.
+        m_material = nullptr;
         try
         {
             const auto &loadingState = getLoadingState();
@@ -122,6 +126,7 @@ namespace workphone::render
         {
             WP_LOG_EXCEPTION( e );
         }
+        m_parent = nullptr;
     }
 
     auto MaterialTexture::getTextureName() const -> String
@@ -214,6 +219,8 @@ namespace workphone::render
         // the pass owner. Capture before changing identity/context membership.
         m_texture = getTexture();
         MaterialNode<IMaterialTexture>::setParent( parent );
+        // Reparenting/detaching can evict a queued unit from its former graph.
+        // Its material weak link must follow the new parent at that boundary.
         SmartPtr<ITexture> current;
         if( auto pass = dynamic_pointer_cast<MaterialPass>( parent ) )
         {

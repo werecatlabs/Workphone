@@ -6,9 +6,11 @@
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/Parameter.hpp>
 #include <functional>
+#include <memory>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; }
 
     /**
      * @brief Interface for a script manager responsible for loading, executing, and managing scripts and
@@ -26,6 +28,14 @@ namespace workphone
          * @brief Virtual destructor.
          */
         ~IScriptManager() override;
+        /** Fresh-VM, immutable runtime closure configuration. Unsupported script
+         * backends fail explicitly; source loaders are never used as fallback. */
+        virtual bool configureRuntimeResourceResolver(
+            std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,
+            String &error) { error="Runtime resource closures are unavailable in this script backend";return false; }
+        virtual SmartPtr<IScriptManager> createRuntimeInstance(
+            std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,
+            String &error) { error="Private runtime instances are unavailable in this script backend";return nullptr; }
 
         /**
          * @brief Loads a script file.

@@ -10,6 +10,7 @@
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
 
 #if WP_EDITOR_TESTS
+#include "../../../../../Tests/cpp/RuntimeUIAssetContracts.hpp"
 #include <boost/test/unit_test.hpp>
 #include <algorithm>
 #include <filesystem>
@@ -149,5 +150,11 @@ BOOST_AUTO_TEST_CASE(ui_resource_package_test)
     unsupported->setLoadingState(LoadingState::Unloaded);unsupported=nullptr;
     text=nullptr;children.clear();instance.reset();BOOST_CHECK(host->getChildren().empty());
     manager->removeElement(host);host=nullptr;BOOST_CHECK_EQUAL(manager->getChildObjects().size(),baseline);
+}
+BOOST_AUTO_TEST_CASE(ui_asset_dependencies_test)
+{
+    UIResourceEditor application;application.app.setActiveThreads(0);application.app.load(nullptr);
+    UIResourceDirectory folder;fs::create_directories(folder.root);
+    runtime_ui_asset_contracts::run(core::IApplicationManager::instancePtr(),folder.root);
 }
 #endif

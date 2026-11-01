@@ -54,6 +54,9 @@ namespace workphone
          */
         bool runtimeBinding( const Request &request, resource::RuntimeResourceBinding &binding,
                              String &error ) const;
+        /** Capture mapped file identities in one catalog admission. Reinitialize
+         * a build service with this immutable map before compiling scene roots. */
+        bool captureAssetBindings(std::map<String,resource::ResourceID> &bindings,String &error) const;
         /** Export a project-only package with a catalog UUID and shipping policy
          * check for every pinned install member. Holds catalog/SQLite mutation
          * admission through publication. Requires a writable project catalog and

@@ -1,5 +1,5 @@
-#ifndef _WP_GUIElement_H
-#define _WP_GUIElement_H
+#ifndef WP_IMGUI_ELEMENT_HPP
+#define WP_IMGUI_ELEMENT_HPP
 
 #include <Workphone/Interface/UI/IUIElement.hpp>
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>

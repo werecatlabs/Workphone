@@ -17,6 +17,7 @@ namespace workphone::resource
         String target = "pc";
         u64 maxRuntimePayloadBytes = 1024ull * 1024ull * 1024ull;
         ResourceBuildProfile buildProfile;
+        std::map<String,ResourceID> assetBindings;
     };
 
     struct WPCore_API CompilationOptions

@@ -468,8 +468,16 @@ int wmain(int argc, wchar_t **argv)
         // Deliberately blocking test child: the production job still owns its
         // process handles, inheritance restrictions and Windows Job Object.
         const auto snapshot = fs::path(argv[2]);
-        std::ofstream pid(snapshot.parent_path().parent_path().parent_path() / "crash-child.pid");
-        pid << GetCurrentProcessId(); pid.close();
+        const auto marker=snapshot.parent_path().parent_path().parent_path() / "crash-child.pid";
+        auto pendingMarker=marker;pendingMarker+=".tmp";
+        {
+            std::ofstream pid(pendingMarker,std::ios::trunc);
+            pid << GetCurrentProcessId();pid.close();
+            if(!pid)return 19;
+        }
+        // Existence is the parent's readiness signal. Publish only a closed,
+        // complete PID file so it cannot observe an empty/partial process ID.
+        fs::rename(pendingMarker,marker);
         const auto name = snapshot.stem().u8string();
         if(name == "d08c0000-0000-4000-8000-000000000003" || name == "d08c0000-0000-4000-8000-000000000004")
         {

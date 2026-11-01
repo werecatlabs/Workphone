@@ -1,6 +1,12 @@
 #include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/WPAudioManager.hpp>
 #include <WPAudio/WPAudioSound.hpp>
+#include <WPAudio/AudioResourceStream.hpp>
+#include <WPAudio/AudioOwnerDispatch.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
 #include <WPAudio/WPAudioSoundListener.hpp>
 #include <WPAudio/WPAudio.hpp>
 #include <Workphone/WorkphoneInterface.hpp>
@@ -35,6 +41,7 @@ namespace workphone
 {
     struct WPAudioManager::PlatformAudioState
     {
+        std::shared_ptr<audio::AudioOwnerDispatch> dispatch;
 #if defined WP_PLATFORM_WIN32
         bool ownsComInitialization = false;
 
@@ -66,6 +73,7 @@ namespace workphone
 
     void WPAudioManager::load( SmartPtr<ISharedObject> data )
     {
+        ScopedLock lock(this);
         if( isLoaded() )
         {
             return;
@@ -84,16 +92,19 @@ namespace workphone
         }
 
         setLoadingState( LoadingState::Loaded );
+        m_controlOwner=std::this_thread::get_id();
     }
 
     void WPAudioManager::unload( SmartPtr<ISharedObject> data )
     {
+        ScopedLock lock(this);
         if( getLoadingState() == LoadingState::Unloaded )
         {
             return;
         }
 
         setLoadingState( LoadingState::Unloading );
+        if(m_platformAudioState&&m_platformAudioState->dispatch)m_platformAudioState->dispatch->cancel();
 
         removeAll();
         SoundManager::unload( data );
@@ -117,6 +128,8 @@ namespace workphone
         {
             return false;
         }
+        try{state->dispatch=std::allocate_shared<audio::AudioOwnerDispatch>(SourceBudgetAllocator<audio::AudioOwnerDispatch>{});}
+        catch(const std::bad_alloc&){delete state;return false;}
 
         m_platformAudioState = state;
 
@@ -322,10 +335,14 @@ namespace workphone
 
     SmartPtr<Properties> WPAudioManager::getProperties() const
     {
+        ScopedLock lock(this);
         auto properties = SoundManager::getProperties();
         properties->setProperty( "active.sound.sampleRate", m_activeSampleRate );
         properties->setProperty( "active.sound.outputDevice", m_activeOutputDevice );
         properties->setProperty( "active.sound.backend", m_activeBackend );
+        if(m_platformAudioState&&m_platformAudioState->dispatch){auto &dispatch=*m_platformAudioState->dispatch;
+            properties->setProperty("active.sound.ownerUpdatePending",dispatch.pending());
+            properties->setProperty("active.sound.ownerUpdates",dispatch.executed());properties->setProperty("active.sound.ownerUpdateRefusals",dispatch.refused());}
         return properties;
     }
 
@@ -337,6 +354,7 @@ namespace workphone
         {
             return;
         }
+        if(state->dispatch)state->dispatch->cancel();
 
 #if defined WP_PLATFORM_WIN32
 #    if WP_USE_XAUDIO2
@@ -400,7 +418,15 @@ namespace workphone
 
     void WPAudioManager::update()
     {
+        ScopedLock lock(this);
         if( m_debuggerSuspended ) return;
+        if(m_platformAudioState&&m_platformAudioState->dispatch&&!m_platformAudioState->dispatch->owner()){
+            auto app=core::IApplicationManager::instancePtr();auto tasks=app?app->getTaskManager():nullptr;
+            auto primary=tasks?tasks->getTask(TaskId::Primary):nullptr;
+            SmartPtr<WPAudioManager> self(this);auto gate=m_platformAudioState->dispatch;String error;
+            gate->request(primary,[self,gate]() mutable {ScopedLock lock(self);if(self->m_platformAudioState&&self->m_platformAudioState->dispatch==gate&&gate->owner())self->update();},error);
+            return;
+        }
         SoundManager::update();
 
         // Update all active sounds (e.g., check playback state, handle streaming, etc.)
@@ -413,6 +439,31 @@ namespace workphone
             }
         }
     }
+
+    SmartPtr<ISound> WPAudioManager::createRuntimeSound(
+        std::shared_ptr<const resource::RuntimeResource> resource,String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount)
+    {
+        ScopedLock lock(this);
+        error.clear();
+        if(!isLoaded()||!m_platformAudioState){error="Runtime audio output device is unavailable";return nullptr;}
+        if(m_controlOwner!=std::this_thread::get_id()){error="Runtime audio installation requires the audio control owner";return nullptr;}
+        SmartPtr<WPAudioSound> candidate;
+        try {
+            candidate=make_ptr<WPAudioSound>();candidate->setOwner(this);candidate->setLoop(false);
+            if(!candidate->loadResource(std::move(resource),std::move(mount))){error="Cooked audio validation, residency admission or native voice creation failed";candidate->unload(nullptr);candidate->setOwner(nullptr);return nullptr;}
+            m_sounds.push_back(candidate);return candidate;
+        }catch(const std::exception &failure){
+            if(candidate){candidate->unload(nullptr);candidate->setOwner(nullptr);}error=failure.what();return nullptr;
+        }
+    }
+    std::shared_ptr<const resource::RuntimeResource> WPAudioManager::captureRuntimeResourceSnapshot(
+        std::shared_ptr<const resource::RuntimeResource> resource,
+        std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
+    {return WPAudioSound::captureRuntimeResourceSnapshot(std::move(resource),std::move(mount),error);}
+    std::shared_ptr<resource::ResourceLeafProviderFactory> WPAudioManager::createRuntimeLeafProviderFactory(
+        std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
+    {return audio::AudioResourceStream::leafProviderFactory(std::move(mount),error);}
 
     bool WPAudioManager::setDebuggerSuspended( bool suspended )
     {

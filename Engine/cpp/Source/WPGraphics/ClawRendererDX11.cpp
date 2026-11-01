@@ -645,14 +645,19 @@ namespace workphone::render
         wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_LEQUAL );
         wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
         void *texture = nullptr;
+        SmartPtr<ITexture> particleTexture;
         if( material )
         {
-            SmartPtr<ITexture> fallback;
-            auto input = particleState ? particleState->textures[0].get()
-                                       : ( fallback = material->getTexture( 0 ) ).get();
-            if( input )
+            particleTexture=particleState?particleState->textures[0]:nullptr;
+            // A freshly staged typed material can have a pending native surface
+            // before its first immutable pass snapshot has been published.
+            // Retain the actual captured binding through every particle batch.
+            if(!particleTexture)particleTexture=material->getTexture(0);
+            if(auto nativeTexture=dynamic_pointer_cast<ClawTexture>(particleTexture))
+                texture=nativeTexture->getNativeTextureView(wp_renderer_get_dx11(m_renderer));
+            else if( particleTexture )
             {
-                input->getTextureFinal( &texture );
+                particleTexture->getTextureFinal( &texture );
             }
         }
         wp_renderer_set_texture_native( m_renderer, texture );

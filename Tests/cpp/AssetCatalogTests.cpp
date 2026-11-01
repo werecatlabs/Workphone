@@ -1112,6 +1112,9 @@ namespace
 #include "AssetReferenceGraphContracts.hpp"
 #include "AssetImportSchedulingContracts.hpp"
 #include "CatalogSnapshotBudgetContracts.hpp"
+#ifdef WP_CATALOG_RESOURCE_SYSTEM_TESTS
+#    include "AssetUIReferenceContracts.hpp"
+#endif
 
 int main()
 {
@@ -1150,6 +1153,9 @@ int main()
             maintenanceContracts(folder);
             fileOperationContracts(folder);
             assetReferenceGraphContracts(folder);
+#ifdef WP_CATALOG_RESOURCE_SYSTEM_TESTS
+            assetUIReferenceContracts(folder);
+#endif
             std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "
                          "binary-safe asset operations, conflict-aware undo and interrupted-operation recovery\n";
             std::cout << "PASS: catalog identity, parameter binding, scoped deletion, rollback, "

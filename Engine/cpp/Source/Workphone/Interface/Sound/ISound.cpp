@@ -25,4 +25,6 @@ namespace workphone
     }
 
     ISound::~ISound() = default;
+    bool ISound::seekFrames(u64,String &error){error="Seeking is unsupported by this sound backend";return false;}
+    u64 ISound::getPlaybackFrame() const {return 0;}
 }  // namespace workphone

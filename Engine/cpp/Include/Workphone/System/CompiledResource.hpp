@@ -41,11 +41,18 @@ namespace workphone::resource
         bool isValid() const;
     };
 
+    /** In-memory native streaming metadata. Complete container readers leave this
+     * empty; typed backends validate their own snapshot before using sparse data. */
+    struct WPCore_API RuntimeResourceStreamData
+    {
+        virtual ~RuntimeResourceStreamData()=default;
+    };
     struct WPCore_API RuntimeResource
     {
         CompiledResourceHeader header;
         Array<u8> payload;
         Array<std::shared_ptr<const RuntimeResource>> dependencies;
+        std::shared_ptr<const RuntimeResourceStreamData> streamData;
     };
 
     /** Portable, bounds-checked reader/writer for the compiled resource container. */
@@ -64,6 +71,16 @@ namespace workphone::resource
 
         static bool read( const String &path, RuntimeResource &resource, String &error,
                           u64 maxPayloadBytes = 1024ull * 1024ull * 1024ull );
+        /** A captured manifest may impose a tighter header allocation envelope. */
+        static bool read( const String &path, RuntimeResource &resource, String &error,
+                          u64 maxPayloadBytes, u64 maxEncodedHeaderBytes );
+        static bool buildChunkHashes(const String &path,CompiledResourceHeader &header,
+                                     u32 chunkBytes,Array<u64> &hashes,String &error);
+        /** Checks bounded header/file/range shape and the supplied independent
+         * corruption pin; callers must obtain that pin from a verified manifest. */
+        static bool readPinnedRange(const String &path,CompiledResourceHeader &header,
+                                    u64 offset,u64 length,u64 expectedHash,Array<u8> &bytes,
+                                    String &error,u64 maxEncodedHeaderBytes=8ull<<20);
     };
 }  // namespace workphone::resource
 

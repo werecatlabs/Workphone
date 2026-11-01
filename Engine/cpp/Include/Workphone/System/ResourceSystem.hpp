@@ -5,6 +5,8 @@
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
 #include <functional>
 
+namespace workphone { class StreamBudgetLease; class WorldStreamingScheduler; }
+
 namespace workphone::resource
 {
     /** Durable authored identity mapped to one member of a pinned install closure. */
@@ -18,6 +20,7 @@ namespace workphone::resource
     {
         String sourceRoot, target;
         Array<ResourceID> resources;
+        std::shared_ptr<const std::map<String,ResourceID>> capturedAssetBindings;
     };
 
     struct WPCore_API RuntimePackagePreviewEntry
@@ -55,6 +58,42 @@ namespace workphone::resource
         u32 maxDependencyDepth = 64;
     };
 
+    /** Ordered package composition. Earlier entries have higher precedence.
+     * Changed fingerprints may shadow only under PreferEarlier; every visible
+     * parent's dependency pins must still match the selected complete variant. */
+    enum class RuntimeMountCollisionPolicy { Reject, IdenticalOnly, PreferEarlier };
+    struct WPCore_API RuntimeResourceMountConfig
+    {
+        String name;
+        RuntimeResourceConfig config;
+    };
+    struct WPCore_API RuntimeResourceProvenance
+    {
+        std::shared_ptr<StreamBudgetLease> admission;
+        ResourceID resourceId;
+        String mountName,compiledRoot,manifestPath;
+        u64 manifestSourceHash=0,manifestPayloadHash=0;
+        u32 precedence=0,shadowedMounts=0,manifestVersion=0;
+    };
+
+    /** Manifest-sealed corruption-check directory; hashes are not authentication. */
+    struct WPCore_API RuntimeResourceRangeInfo
+    {
+        std::shared_ptr<StreamBudgetLease> admission;
+        CompiledResourceHeader header;
+        u32 manifestVersion=0,chunkBytes=65536;
+        u64 chunkCount=0,metadataBytes=0;
+        bool independentlyVerified=false;
+    };
+    struct WPCore_API RuntimeResourceChunk
+    {
+        std::shared_ptr<StreamBudgetLease> admission;
+        ResourceID resourceId;
+        u64 offset=0,payloadSize=0,hash=0,payloadBytesRead=0;
+        bool legacyWholePayloadFallback=false;
+        Array<u8> bytes;
+    };
+
     /**
      * Dependency-aware build and runtime resource service.
      *
@@ -81,6 +120,21 @@ namespace workphone::resource
         bool initialize( const ResourceSystemConfig &config, String &error ) override;
         /** Requires no source tree, compiler registry or compilation database. Never writes. */
         bool initializeRuntime( const RuntimeResourceConfig &config, String &error );
+        /** Adopt dedicated manifest admissions held by a shared streaming mount.
+         * Nonnull leases must have the correct class and sufficient bytes; an
+         * omitted admission is reserved internally before parsing. */
+        bool initializeRuntime(const RuntimeResourceConfig &,String &error,
+            std::shared_ptr<StreamBudgetLease> manifestAdmission,
+            std::shared_ptr<StreamBudgetLease> workingAdmission = {});
+        /** Captures 1..32 named packages once. No mount mutation or source
+         * fallback; rejected composition leaves this instance uninitialized. */
+        static bool compositionMemoryRequirements(const Array<RuntimeResourceMountConfig> &,
+            u64 &sourceBytes,u64 &workingBytes,String &error);
+        bool initializeRuntimeComposition(const Array<RuntimeResourceMountConfig> &,
+            RuntimeMountCollisionPolicy,String &error,std::shared_ptr<StreamBudgetLease> sourceAdmission={},
+            std::shared_ptr<StreamBudgetLease> workingAdmission={});
+        bool runtimeProvenance(const ResourceID &,RuntimeResourceProvenance &,String &error,
+            std::shared_ptr<WorldStreamingScheduler> admissionScheduler={}) const;
 
         /** Export the committed cooked install closure, pinning hashes, versions and target.
          * Roots must first pass compile() (including UpToDate) in this authoring session.
@@ -135,12 +189,24 @@ namespace workphone::resource
          */
         std::shared_ptr<const RuntimeResource> loadPayload( const ResourceID &, String &error,
                                                             u64 maximumPayloadBytes = 1024ull << 20 );
+        /** Runtime-only admission plan from the captured manifest. Metadata is a
+         * conservative allowance for retained header/object storage and bounded
+         * reader temporaries; outputs reset on failure. Does not open artifacts. */
+        bool payloadMemoryRequirements( const ResourceID &, u64 &payloadBytes,
+                                        u64 &metadataBytes, String &error ) const;
+        bool resourceInfo(const ResourceID &,RuntimeResourceRangeInfo &,String &error) const;
+        /** V4 verifies one chunk against its manifest pin. Earlier manifests
+         * validate the complete payload before slicing; no unchecked ranges. */
+        std::shared_ptr<const RuntimeResourceChunk> loadChunk(const ResourceID &,u64 index,String &error,
+                                                            bool workingAlreadyAdmitted=false);
         void unload( const ResourceID &resourceId ) override;
         void clearRuntimeCache() override;
 
         std::shared_ptr<IResourceCompilerRegistry> registry() const override;
 
     private:
+        bool initializeRuntimeBounded(const RuntimeResourceConfig &,String &,
+            std::shared_ptr<StreamBudgetLease>,std::shared_ptr<StreamBudgetLease>,u64 maximumContainerBytes);
         bool writeRuntimePackageImpl( const String &, const Array<ResourceID> &,
                                       const Array<RuntimeResourceBinding> &,
                                       const RuntimePackageResolver &, String &,

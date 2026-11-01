@@ -2,6 +2,7 @@
 #define _IUITEXT_H
 
 #include <Workphone/Interface/UI/IUIElement.hpp>
+#include <Workphone/Interface/Graphics/IFont.hpp>
 
 namespace workphone
 {
@@ -54,6 +55,10 @@ namespace workphone
              * @return The current text of the element.
              */
             virtual String getText() const = 0;
+            /** Captured runtime labels bypass authoring localization lookups. */
+            virtual bool setRuntimeLiteralText(bool enabled){return !enabled;}
+            virtual bool setRuntimeFont(SmartPtr<render::IFont> font){return !font;}
+            virtual SmartPtr<render::IFont> getRuntimeFont() const{return nullptr;}
 
             /**
              * @brief Sets the size of the text.

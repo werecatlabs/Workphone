@@ -6,6 +6,20 @@
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Jobs/CameraManagerReset.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
+#include <Workphone/System/RuntimeAssetContext.hpp>
+#include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include <Workphone/Scene/Components/Material.hpp>
+#include <Workphone/Scene/Components/Skybox.hpp>
+#include <Workphone/Scene/Components/Camera.hpp>
+#include <Workphone/Scene/Components/Light.hpp>
+#include <Workphone/Scene/Components/AudioEmitter.hpp>
+#include <Workphone/Scene/Components/UI/UIComponent.hpp>
+#include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Scene/Components/Animator.hpp>
+#include <Workphone/Scene/Components/Script.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/ParticleSystem.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -509,7 +523,7 @@ namespace workphone::scene
     }
 
     Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors( const Array<SmartPtr<Properties>> &data,
-                                                                SmartPtr<IGameScene> target )
+        SmartPtr<IGameScene> target,std::shared_ptr<const resource::RuntimeAssetContext> runtimeAssets )
     {
         if( activeBatch )
         {
@@ -648,11 +662,13 @@ namespace workphone::scene
                 Properties::exchangeObjectResolver( std::move( previous ) );
                 activeBatch = nullptr;
             }
-        } scope{ Properties::exchangeObjectResolver(
-            [&batch]( const String &uuid ) -> SmartPtr<ISharedObject> {
+        } scope{ Properties::exchangeObjectResolver( {} ) };
+        Properties::exchangeObjectResolver(
+            [&batch, &scope]( const String &uuid ) -> SmartPtr<ISharedObject> {
                 auto it = batch.objects.find( uuid );
-                return it == batch.objects.end() ? nullptr : it->second;
-            } ) };
+                if( it != batch.objects.end() ) return it->second;
+                return scope.previous ? scope.previous( uuid ) : nullptr;
+            } );
 
         activeBatch = &batch;
         try
@@ -670,15 +686,55 @@ namespace workphone::scene
                 actor->setScene( target );
                 loadFromData( actor, properties, true );
             }
+            // Seal every component before the first load/property callback can
+            // reach a sibling. Native initialization can publish component events.
+            if(runtimeAssets)for(const auto &entry:batch.components) {
+                    if(auto component=workphone::dynamic_pointer_cast<Mesh>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<MeshRenderer>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Animator>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Script>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Material>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Skybox>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Camera>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<Light>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<AudioEmitter>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<UIComponent>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<LODGroup>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<TerrainSystem>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<ParticleSystem>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+            }
+            if(runtimeAssets){auto rank=[](const SmartPtr<IComponent> &component){
+                    if(dynamic_pointer_cast<Mesh>(component))return 0;
+                    if(dynamic_pointer_cast<MeshRenderer>(component))return 1;
+                    if(dynamic_pointer_cast<Animator>(component))return 3;
+                    if(dynamic_pointer_cast<Script>(component))return 4;
+                    return 2;};
+                std::stable_sort(batch.components.begin(),batch.components.end(),[&](const ComponentData &a,const ComponentData &b){return rank(a.first)<rank(b.first);});}
             for( const auto &entry : batch.components )
             {
                 checkCurrent();
                 manager->loadObject( entry.first, entry.second, false );
-                if( entry.first->getLoadingState() == LoadingState::Error )
+                if( entry.first->getLoadingState() == LoadingState::Error || runtimeAssets&&!entry.first->isLoaded() )
                 {
                     throw std::runtime_error( "Component initialization failed" );
                 }
             }
+            if(runtimeAssets)
+            {
+                // Minimal cooked documents may omit the authored FSM state.
+                // Enter the application's normal mode before publication so
+                // scene flag changes reach native visibility/playback handlers.
+                // Explicit serialized states retain their existing semantics.
+                const auto mode=core::IApplicationManager::instancePtr()->isPlaying()
+                    ? IComponent::State::Play : IComponent::State::Edit;
+                for(const auto &entry:batch.components)if(!entry.second->hasProperty("state"))
+                {
+                    auto component=entry.first;
+                    component->setState(mode);
+                }
+            }
+            if(runtimeAssets)for(const auto &entry:batch.components)
+                if(auto group=workphone::dynamic_pointer_cast<LODGroup>(entry.first))group->finalizeRuntimeLOD();
             checkCurrent();
             return roots;
         }

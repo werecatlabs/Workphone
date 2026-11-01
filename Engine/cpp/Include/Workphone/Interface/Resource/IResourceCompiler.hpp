@@ -8,6 +8,7 @@
 #include <ostream>
 #include <map>
 #include <functional>
+#include <memory>
 
 namespace workphone::resource
 {
@@ -59,6 +60,9 @@ namespace workphone::resource
          */
         std::function<bool( const String &, bool, String &, String & )> snapshotInput;
         ResourceBuildProfile buildProfile;
+        /** Detached canonical authored UUID -> exact ResourceID mapping captured
+         * for this build. Compilers may not infer paths or consult a catalog. */
+        std::shared_ptr<const std::map<String,ResourceID>> assetBindings;
     };
 
     /** Base interface implemented by format-specific resource compilers. */

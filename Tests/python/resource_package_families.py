@@ -23,7 +23,7 @@ def run(executable, args):
 
 with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
     root = pathlib.Path(temporary)
-    for family in ("terrain", "foliage", "mesh", "mesh_materials", "skeleton", "skin", "scene", "prefab", "ui"):
+    for family in ("terrain", "foliage", "mesh", "mesh_materials", "skeleton", "skin", "scene", "prefab", "ui", "mixed_scene", "mixed_prefab"):
         folder = root / family
         folder.mkdir()
         if family == "terrain":
@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
             run(host, ["--foliage-source-export", source])
             root_name, target = "forest.folworld", "windows-dx11-dds-bgra8-v1"
             extensions = {"folworld", "folpage", "folspec", "texres"}
-        elif family in ("skeleton", "skin"):
+        elif family in ("skeleton", "skin", "mixed_scene", "mixed_prefab"):
             source=folder / "authoring"; source.mkdir()
             root_name,target,extensions="rig.skelres","pc",{"skelres"}
             (source / root_name).write_text('<skeleton><bones><bone id="0" name="Root"><position x="0" y="0" z="0"/>'
@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
                 '<keyframe time="0"><translate x="0" y="0" z="0"/></keyframe>'
                 '<keyframe time="1"><translate x="2" y="0" z="0"/></keyframe>'
                 '</keyframes></track></tracks></animation></animations></skeleton>')
-            if family == "skin":
+            if family in ("skin", "mixed_scene", "mixed_prefab"):
                 root_name="character.skinres"; extensions={"skinres","mesh","skelres","matres","texres"}
                 positions=[(-.2,-.2),(.2,-.2),(0,.2)]
                 mesh=struct.pack('<4s7I6f',b'WPM1',1,3,1,0,3,3,1,-.2,-.2,.5,.2,.2,.5)
@@ -61,6 +61,13 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
                 (source / 'leaf.tga').write_bytes(header+bytes([0,255,0,255])*4)
                 (source / 'leaf.texres').write_text(json.dumps(dict(version=1,source='data://leaf.tga',mipFilter='colour',atlasColumns=1,alphaCutoff=.5)))
                 (source / 'surface.matres').write_text(json.dumps(dict(version=1,baseColour=[1,1,1,1],metalness=0,roughness=1,baseColourTexture='data://leaf.texres')))
+                if family.startswith("mixed_"):
+                    extension="fbscene" if family=="mixed_scene" else "prefab"
+                    root_name="mixed."+extension;extensions.update({extension,"lua"})
+                    (source/root_name).write_text('{}')
+                    (source/'Helper.lua').write_text('return {amount=42}')
+                    (source/'Actor.lua.deps').write_text('data://Helper.lua\n')
+                    (source/'Actor.lua').write_text("local helper=require('Helper'); class 'MixedActor'; function MixedActor:__init(owner) self.owner=owner end; function MixedActor:update() mixedTicks=(mixedTicks or 0)+helper.amount end")
         elif family in ("scene", "prefab"):
             source=folder / "authoring"; source.mkdir()
             extension="fbscene" if family=="scene" else "prefab"
@@ -98,6 +105,16 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
                         metalness=0,roughness=1,baseColourTexture='data://'+color+'.texres')))
         entries = [(str(uuid.uuid4()), p.relative_to(source).as_posix(), p.suffix[1:])
                    for p in source.rglob("*") if p.is_file() and p.suffix[1:] in extensions]
+        if family.startswith("mixed_"):
+            bindings={path:identity for identity,path,kind in entries}
+            def component(name, **properties):
+                return dict(handle_name='component',componentType='workphone::scene::'+name,
+                    uuid=str(uuid.uuid4()),children=[],**properties)
+            actor=dict(handle_name='actors',uuid=str(uuid.uuid4()),name='MixedActor',children=[
+                component('Mesh',**{'Mesh Resource':bindings['character.skinres'],'Skeleton':bindings['rig.skelres']}),
+                component('MeshRenderer'),component('Animator',autoPlay='false',animationTime='0.25'),
+                component('Script',scriptAssetUuid=bindings['Actor.lua'],className='MixedActor',updateInEditMode='true')])
+            (source/root_name).write_text(json.dumps(dict(children=[actor]) if family=='mixed_scene' else actor))
         root_uuid = next(identity for identity, path, kind in entries if path == root_name)
         catalog = folder / "catalog.db"
         with closing(sqlite3.connect(catalog)) as db, db:
@@ -109,6 +126,18 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
         for extension in sorted(extensions):
             args += ["--map", extension + "=" + extension]
         run(tool, args)
+        if family.startswith("mixed_"):
+            original=(source/root_name).read_bytes()
+            for wrong in (str(uuid.uuid4()),bindings['surface.matres']):
+                graph=json.loads(original)
+                owner=graph['children'][0] if family=='mixed_scene' else graph
+                owner['children'][0]['Mesh Resource']=wrong
+                (source/root_name).write_text(json.dumps(graph))
+                rejected=list(args);rejected[3]=folder/'rejected-mixed-package'
+                failure=subprocess.run([str(tool),*map(str,rejected)],cwd=tool.parent,
+                    capture_output=True,text=True,timeout=90)
+                assert failure.returncode != 0 and not rejected[3].exists(), (failure.stdout,failure.stderr)
+            (source/root_name).write_bytes(original)
         if family == "mesh":
             original=(source / root_name).read_bytes()
             for corrupt in (b"broken", original[:-4]+struct.pack('<I',99)):
@@ -155,7 +184,7 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
                 run(host, ["--skeleton-checked-package-consume", package, root_uuid])
             elif family == "skin":
                 run(host, ["--skin-checked-package-consume", package, root_uuid])
-            elif family in ("scene", "prefab", "ui"):
+            elif family in ("scene", "prefab", "ui", "mixed_scene", "mixed_prefab"):
                 pass  # Real Editor consumers have separate native test cases.
             else:
                 run(host, ["--mesh-checked-package-consume", package, root_uuid])
@@ -163,5 +192,5 @@ with tempfile.TemporaryDirectory(prefix="wp-typed-packages-") as temporary:
         finally:
             for path in before:
                 (package / path).chmod(0o666)
-        boundary="source-free UUID closure; native Editor installation tested separately" if family in ("scene","prefab","ui") else "read-only source-free native consumer"
+        boundary="source-free UUID closure; native Editor installation tested separately" if family in ("scene","prefab","ui","mixed_scene","mixed_prefab") else "read-only source-free native consumer"
         print(f"PASS: checked {family} {boundary}")

@@ -10,6 +10,7 @@
 #ifdef WP_LUA_ASSET_TESTS
 #include "LuaAssetContracts.hpp"
 #include "LuaRuntimeScriptComponentContracts.hpp"
+#include "LuaRuntimeMemoryContracts.hpp"
 #endif
 extern "C" {
 #include <lauxlib.h>
@@ -187,6 +188,7 @@ int main()
 #ifdef WP_LUA_ASSET_TESTS
             runLuaAssetContracts( manager );
             runLuaRuntimeScriptComponentContracts();
+            runLuaRuntimeMemoryContracts();
 #endif
             manager.unload( nullptr );
             std::puts( "Lua production runtime tests: PASS" );

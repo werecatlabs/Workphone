@@ -5,9 +5,11 @@
 #include <Workphone/Core/StringPool.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Thread/Thread.hpp>
+#include <memory>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; class ResourcePayloadMount; class ResourceLeafProviderFactory; }
     namespace render
     {
         class IGraphicsPipeline;
@@ -23,6 +25,21 @@ namespace workphone
         class WPCore_API IGraphicsSystem : public ISharedObject
         {
         public:
+            virtual std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeLeafProviderFactory(
+                std::shared_ptr<resource::ResourcePayloadMount>,String &error);
+            /** Create independently owned native assets from a pinned package.
+             * Unsupported backends fail explicitly without source lookup. */
+            virtual SmartPtr<IMaterial> createRuntimeMaterial(
+                std::shared_ptr<const resource::RuntimeResource> resource,String &error,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={});
+            virtual SmartPtr<ITexture> createRuntimeTexture(
+                std::shared_ptr<const resource::RuntimeResource> resource,String &error,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={});
+            virtual std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
+                std::shared_ptr<const resource::RuntimeResource>,std::shared_ptr<resource::ResourcePayloadMount>,String &error);
+            virtual SmartPtr<IFont> createRuntimeFont(
+                std::shared_ptr<const resource::RuntimeResource>,String &error,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={});
             /** Optional live pipeline for editor inspection. */
             virtual SmartPtr<IGraphicsPipeline> getGraphicsPipeline() const;
 

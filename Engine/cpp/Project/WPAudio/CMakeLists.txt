@@ -2,7 +2,7 @@ project(WPAudio)
 
 # define header and source files for the library
 file(GLOB_RECURSE HEADER_FILES "../../Include/WPAudio/*.hpp")
-file(GLOB_RECURSE SOURCE_FILES "../../Source/WPAudio/*.cpp")
+file(GLOB_RECURSE SOURCE_FILES CONFIGURE_DEPENDS "../../Source/WPAudio/*.cpp")
 
 if (UNIX)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)

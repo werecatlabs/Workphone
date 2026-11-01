@@ -2,6 +2,9 @@
 #include <Workphone/Animation/AnimationGraph.hpp>
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Interface/Mesh/ISkeleton.hpp>
+#include <Workphone/Interface/Mesh/IGraphicsBone.hpp>
+#include <Workphone/Animation/ActorAnimationTrack.hpp>
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -96,7 +99,7 @@ namespace workphone::animation
     AnimationGraphDefinition::AnimationGraphDefinition( const AnimationGraphDefinition &other ) :
         m_clips( makeSourceBudgetSnapshot( other.m_clips ) ),
         m_states( makeSourceBudgetSnapshot( other.m_states ) ),
-        m_initialState( other.m_initialState )
+        m_initialState( other.m_initialState ),m_boneMask(other.m_boneMask)
     {
         m_transitions.reserve( other.m_transitions.capacity() );
         for( const auto &transition : other.m_transitions )
@@ -128,6 +131,7 @@ namespace workphone::animation
         m_transitions.swap( other.m_transitions );
         m_poseNodes.swap( other.m_poseNodes );
         m_initialState.swap( other.m_initialState );
+        m_boneMask.swap(other.m_boneMask);
     }
 
     bool AnimationGraphDefinition::addClip( const AnimationGraphClip &clip )
@@ -256,6 +260,7 @@ namespace workphone::animation
         m_transitions = makeSourceBudgetSnapshot<AnimationGraphTransition>();
         m_poseNodes = makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
         m_initialState.release();
+        IAnimationState::BoneBlendMask{}.swap(m_boneMask);
     }
 
     const AnimationGraphClip *AnimationGraphDefinition::findClip( const String &id ) const
@@ -375,6 +380,13 @@ namespace workphone::animation
     {
         return m_poseNodes;
     }
+
+    bool AnimationGraphDefinition::setBoneBlendMask(const IAnimationState::BoneBlendMask &mask)
+    {
+        if(mask.size()>256||std::any_of(mask.begin(),mask.end(),[](f32 value){return !std::isfinite(value)||value<0||value>1;}))return false;
+        auto candidate=mask;m_boneMask.swap(candidate);return true;
+    }
+    const IAnimationState::BoneBlendMask &AnimationGraphDefinition::getBoneBlendMask() const{return m_boneMask;}
 
     AnimationGraphInstance::AnimationGraphInstance( const AnimationGraphDefinition &definition )
     {
@@ -606,7 +618,20 @@ namespace workphone::animation
 
     void AnimationGraphInstance::apply( ISkeleton *skeleton, f32 scale, f32 globalWeight ) const
     {
+        if(!std::isfinite(scale)||!std::isfinite(globalWeight)||globalWeight<=0)return;
         globalWeight = std::clamp( globalWeight, 0.0f, 1.0f );
+        if(skeleton&&!m_definition.getBoneBlendMask().empty()){
+            // Masked graph output is evaluated from binding pose each frame,
+            // rather than repeatedly blending toward an unmasked full pose.
+            // Resolve every target before mutating any bone.
+            std::array<SmartPtr<IBone>,256> targets{};
+            for(const auto &clip:m_definition.getClips()){auto source=clip.animation;if(!source)continue;
+                for(const auto &pair:source->_getNodeTrackList())if(auto track=dynamic_cast<ActorAnimationTrack*>(pair.second)){
+                    if(track->getActor())continue;
+                    auto name=track->getPropertyName();if(name.empty())if(auto bound=track->getBone())name=bound->getName();
+                    if(!name.empty())if(auto target=skeleton->getBone(name))if(target->getBoneHandle()<targets.size())targets[target->getBoneHandle()]=target;}}
+            for(auto &target:targets)if(target)target->reset();
+        }
         for( const auto &sample : m_samples )
         {
             const auto effectiveWeight = sample.weight * globalWeight;
@@ -621,7 +646,8 @@ namespace workphone::animation
 
             if( skeleton )
             {
-                animation->apply( skeleton, sample.time, effectiveWeight, scale );
+                const auto &mask=m_definition.getBoneBlendMask();
+                animation->apply( skeleton, sample.time, effectiveWeight,mask.empty()?nullptr:&mask,scale );
             }
             else
             {

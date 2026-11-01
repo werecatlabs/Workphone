@@ -2,6 +2,8 @@
 #include <WPGraphics/Resources/FoliageResource.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/Resources/ClawTextureStream.hpp>
+#include <Workphone/System/ResourcePayloadStream.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
@@ -913,6 +915,7 @@ namespace workphone::render
     namespace
     {
         using Reserve = std::function<StreamBudget( StreamMemoryClass, u64, String & )>;
+        using CapturedLoad = std::function<std::shared_ptr<const resource::RuntimeResource>(const resource::ResourceID &,u64,String &)>;
 
         struct ResourceOwner
         {
@@ -968,20 +971,20 @@ namespace workphone::render
         }
 
         std::shared_ptr<const DecodedFoliageWorld> decodeWorld(
-            std::shared_ptr<resource::ResourceSystem> system, const resource::ResourceID &id,
+            const CapturedLoad &load, const resource::ResourceID &id,
             const String &target, bool packaged, const FoliageDecodeOptions &options,
             const Reserve &reserve, const StreamCancellation &cancel, String &error )
         {
             try
             {
                 check(
-                    system && id.type() == resource::ResourceTypeID( "folworld" ) && !id.isSubResource(),
+                    bool(load) && id.type() == resource::ResourceTypeID( "folworld" ) && !id.isSubResource(),
                     "Foliage decode requires a world resource and resource system" );
                 check( options.maximumSourceBytes >= metadataLimit + ( 20ull << 20 ) &&
                            options.maximumResultBytes >= 4096 &&
                            options.maximumWorkingBytes >= 1ull << 20,
                        "Foliage decode budgets are too small" );
-                auto root = loadResource( *system, id, metadataLimit, reserve, error );
+                auto root = load( id, metadataLimit, error );
                 if( !root )
                 {
                     return {};
@@ -1010,7 +1013,7 @@ namespace workphone::render
                         "Foliage species exceeds source budget" );
                     check( p.bytes <= options.maximumWorkingBytes / 64,
                            "Foliage species JSON exceeds decode scratch budget" );
-                    auto raw = loadResource( *system, p.id, p.bytes, reserve, error );
+                    auto raw = load( p.id, p.bytes, error );
                     if( !raw )
                     {
                         return {};
@@ -1036,19 +1039,20 @@ namespace workphone::render
                         auto existing = result->textures.find( texturePin.id.str() );
                         if( existing == result->textures.end() )
                         {
-                            check( texturePin.bytes <= graphicsTextureByteLimit + 4096 &&
-                                       sourceBytes + texturePin.bytes <= options.maximumSourceBytes,
+                            check( texturePin.bytes <= graphicsTextureByteLimit + 4096,
                                    "Foliage texture exceeds source budget" );
-                            check( texturePin.bytes <= options.maximumWorkingBytes / 2,
-                                   "Foliage texture exceeds decode scratch budget" );
                             auto textureResource =
-                                loadResource( *system, texturePin.id, texturePin.bytes, reserve, error );
+                                load( texturePin.id, texturePin.bytes, error );
                             if( !textureResource )
                             {
                                 return {};
                             }
                             matches( *textureResource, texturePin );
-                            const auto textureResident = texturePin.bytes + 16384;
+                            const bool sparse=isRuntimeTextureSnapshot(*textureResource);
+                            check(sparse||texturePin.bytes<=options.maximumWorkingBytes/2,"Foliage texture exceeds decode scratch budget");
+                            const auto sourceExtent=sparse?8192:texturePin.bytes;
+                            check(sourceBytes+sourceExtent<=options.maximumSourceBytes,"Foliage texture exceeds source budget");
+                            const auto textureResident = (sparse?0:texturePin.bytes) + 16384;
                             check( textureResident <= options.maximumResultBytes - residentBytes,
                                    "Foliage textures exceed resident CPU budget" );
                             auto textureBudget =
@@ -1058,13 +1062,13 @@ namespace workphone::render
                                 return {};
                             }
                             CookedTextureData texture;
-                            checked( decodeCookedTexture( *textureResource, texture, error ), error );
+                            checked(sparse?describeRuntimeTextureSnapshot(*textureResource,texture,error):decodeCookedTexture(*textureResource,texture,error), error );
                             check( texture.target == target && texture.packagedBuild == packaged &&
                                        textureBytes( texture ) <= textureResident,
                                    "Invalid foliage texture target or resident size" );
                             result->retainedBudgets.push_back( std::move( textureBudget ) );
                             residentBytes += textureResident;
-                            sourceBytes += texturePin.bytes;
+                            sourceBytes += sourceExtent;
                             result->retainedResources.push_back( textureResource );
                             existing =
                                 result->textures.emplace( texturePin.id.str(), std::move( texture ) )
@@ -1102,9 +1106,9 @@ namespace workphone::render
                 }
                 // Only directory/species are retained here. Each demand opens exactly
                 // one pinned page container, validates it, then retires its raw bytes.
-                result->source.load = [system, definition = result->source.snapshot,
+                result->source.load = [load, definition = result->source.snapshot,
                                        envelope = std::move( envelope ),
-                                       directory = std::move( directory ), target, packaged, reserve](
+                                       directory = std::move( directory ), target, packaged](
                                           FoliageCellKey key, const StreamCancellation &cancel,
                                           String &error ) -> std::shared_ptr<const FoliagePageData> {
                     try
@@ -1117,7 +1121,7 @@ namespace workphone::render
                         }
                         const auto &p = findPin( envelope, found->second.id );
                         check( p.bytes <= pageLimit, "Cooked foliage page exceeds byte limit" );
-                        auto raw = loadResource( *system, p.id, p.bytes, reserve, error );
+                        auto raw = load( p.id, p.bytes, error );
                         if( !raw )
                         {
                             return {};
@@ -1191,7 +1195,8 @@ namespace workphone::render
         {
             return {};
         }
-        return decodeWorld( std::move( system ), id, target, packaged, options, reserve,
+        CapturedLoad load=[system,reserve](const auto &id,u64 bytes,String &failure){if(!system){failure="Missing foliage resource system";return std::shared_ptr<const resource::RuntimeResource>{};}return loadResource(*system,id,bytes,reserve,failure);};
+        return decodeWorld( load, id, target, packaged, options, reserve,
                             StreamCancellation( {} ), error );
     }
 
@@ -1220,8 +1225,8 @@ namespace workphone::render
             {
                 return result;
             }
-            auto decoded =
-                decodeWorld( system, id, target, packaged, options, reserve, cancel, result.error );
+            CapturedLoad load=[system,reserve](const auto &id,u64 bytes,String &failure){return loadResource(*system,id,bytes,reserve,failure);};
+            auto decoded = decodeWorld( load, id, target, packaged, options, reserve, cancel, result.error );
             if( cancel.cancelled() )
             {
                 return WorldStreamResult{};
@@ -1236,8 +1241,69 @@ namespace workphone::render
         return producer.replace( { request }, error );
     }
 
+    std::shared_ptr<const DecodedFoliageWorld> decodeCookedFoliageWorld(
+        std::shared_ptr<const resource::RuntimeResource> root,std::shared_ptr<resource::ResourcePayloadMount> mount,
+        const String &target,bool packaged,String &error,const FoliageDecodeOptions &options)
+    {
+        error.clear();try {
+            check(root&&root->header.resourceType==resource::ResourceTypeID("folworld"),"Captured foliage requires a folworld root");
+            auto scheduler=WorldStreamingScheduler::shared();
+            Reserve reserve=[scheduler](auto kind,u64 bytes,String &failure){return scheduler->reserve(kind,bytes,failure);};
+            auto scratch=reserve(StreamMemoryClass::WorkingCpu,options.maximumWorkingBytes,error);if(!scratch)return {};
+            struct Captured final : SourceBudgetObject {
+                using Value=std::pair<const resource::ResourceID,std::shared_ptr<const resource::RuntimeResource>>;
+                std::map<resource::ResourceID,std::shared_ptr<const resource::RuntimeResource>,std::less<resource::ResourceID>,SourceBudgetAllocator<Value>> resources;
+                std::shared_ptr<resource::ResourcePayloadMount> mount;
+            };
+            auto captured=std::allocate_shared<Captured>(SourceBudgetAllocator<Captured>{});captured->mount=mount;
+            Array<std::shared_ptr<const resource::RuntimeResource>> pending{Allocator<std::shared_ptr<const resource::RuntimeResource>>(sourceBudget)};pending.push_back(root);
+            u64 bytes=0;
+            while(!pending.empty()){
+                auto value=std::move(pending.back());pending.pop_back();
+                check(value&&value->header.isValid()&&!value->header.resourceId.isSubResource(),"Invalid captured foliage dependency header");
+                const auto &header=value->header;const auto found=captured->resources.find(header.resourceId);
+                if(found!=captured->resources.end()){
+                    const auto &prior=found->second->header;
+                    check(prior.compilerVersion==header.compilerVersion&&prior.sourceHash==header.sourceHash&&prior.payloadHash==header.payloadHash&&prior.payloadSize==header.payloadSize,"Conflicting captured foliage generations");continue;
+                }
+                check(captured->resources.size()<65536,"Captured foliage closure exceeds its resource bound");
+                const auto type=header.resourceType;
+                check(type==resource::ResourceTypeID("folworld")||type==resource::ResourceTypeID("folspec")||type==resource::ResourceTypeID("folpage")||type==resource::ResourceTypeID("texres"),"Unsupported captured foliage dependency family");
+                check(value->dependencies.size()==header.installDependencies.size(),"Captured foliage closure is incomplete");
+                for(size_t i=0;i<value->dependencies.size();++i){const auto &child=value->dependencies[i];
+                    check(child&&child->header.resourceId==header.installDependencies[i],"Captured foliage dependency identity mismatch");
+                    if(header.formatVersion>=2)check(child->header.sourceHash==header.installArtifacts[i].sourceHash&&child->header.payloadHash==header.installArtifacts[i].payloadHash,"Captured foliage dependency generation mismatch");
+                    pending.push_back(child);
+                }
+                u64 metadata=4096;for(const auto &id:header.installDependencies)metadata+=id.str().size()+sizeof(resource::ResourceID)+64;
+                for(const auto &artifact:header.installArtifacts)metadata+=artifact.path.size()+sizeof(resource::InstallDependencyArtifact)+64;
+                if(mount){resource::RuntimeResourceRangeInfo info;if(!mount->resourceInfo(header.resourceId,info,error))throw std::runtime_error(error.c_str());
+                    check(info.header.compilerVersion==header.compilerVersion&&info.header.sourceHash==header.sourceHash&&info.header.payloadHash==header.payloadHash&&info.header.payloadSize==header.payloadSize,"Captured foliage mount generation mismatch");metadata=std::max(metadata,info.metadataBytes);}
+                const bool paged=mount&&type==resource::ResourceTypeID("folpage");const auto payload=paged?0:value->payload.size();
+                check(payload<=options.maximumSourceBytes-bytes,"Captured foliage source exceeds its byte bound");bytes+=payload;
+                auto budget=reserve(StreamMemoryClass::SourceCpu,metadata+payload+1024,error);if(!budget)return {};
+                struct Owner {StreamBudget budget;resource::RuntimeResource value;};auto owner=std::make_shared<Owner>();owner->budget=std::move(budget);owner->value.header=header;
+                if(!paged){owner->value.payload=value->payload;owner->value.streamData=value->streamData;}
+                captured->resources.emplace(header.resourceId,std::shared_ptr<const resource::RuntimeResource>(owner,&owner->value));
+            }
+            const auto id=root->header.resourceId;root.reset();pending.clear();
+            CapturedLoad load=[captured](const resource::ResourceID &id,u64 limit,String &failure)->std::shared_ptr<const resource::RuntimeResource>{
+                auto found=captured->resources.find(id);if(found==captured->resources.end()){failure="Resource is outside the captured foliage closure";return {};}
+                const auto &value=found->second;
+                if(value->header.payloadSize>limit){failure="Captured foliage payload exceeds its read bound";return {};}
+                if(id.type()!=resource::ResourceTypeID("folpage")||!captured->mount)return value;
+                auto page=captured->mount->loadPinnedPayload(id,failure,limit);if(!page)return {};
+                const auto &a=value->header,&b=page->header;
+                if(a.compilerVersion!=b.compilerVersion||a.sourceHash!=b.sourceHash||a.payloadHash!=b.payloadHash||a.payloadSize!=b.payloadSize){failure="Captured foliage page generation mismatch";return {};}
+                return page;
+            };
+            return decodeWorld(load,id,target,packaged,options,reserve,StreamCancellation({}),error);
+        }catch(const std::exception &failure){error=failure.what();return {};}
+    }
+
     std::shared_ptr<const CookedFoliageCandidate> stageCookedFoliageWorld(
-        ClawRendererDX11 &renderer, std::shared_ptr<const DecodedFoliageWorld> decoded, String &error )
+        ClawRendererDX11 &renderer, std::shared_ptr<const DecodedFoliageWorld> decoded, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount )
     {
         error.clear();
         try
@@ -1251,7 +1317,8 @@ namespace workphone::render
             u64 cpuBytes = 4096;
             for( const auto &entry : decoded->textures )
             {
-                checked( validateCookedTextureData( entry.second, error ), error );
+                const auto raw=std::find_if(decoded->retainedResources.begin(),decoded->retainedResources.end(),[&](const auto &value){return value&&value->header.resourceId.str()==entry.first;});
+                if(raw==decoded->retainedResources.end()||!isRuntimeTextureSnapshot(**raw))checked( validateCookedTextureData( entry.second, error ), error );
                 cpuBytes += entry.first.capacity() + sizeof( BudgetedFoliageTexture ) + 512;
             }
             auto scheduler = WorldStreamingScheduler::shared();
@@ -1265,7 +1332,8 @@ namespace workphone::render
             for( const auto &entry : decoded->textures )
             {
                 auto texture = make_ptr<BudgetedFoliageTexture>( StreamBudget{}, cpu );
-                const auto ok = entry.second.ddsBytes.empty()
+                const auto raw=std::find_if(decoded->retainedResources.begin(),decoded->retainedResources.end(),[&](const auto &value){return value&&value->header.resourceId.str()==entry.first;});
+                const auto ok = raw!=decoded->retainedResources.end()&&isRuntimeTextureSnapshot(**raw)?texture->loadRuntimeStream(*raw,mount,entry.second.target,entry.second.packagedBuild,native,error):entry.second.ddsBytes.empty()
                                     ? texture->uploadCookedMips(
                                           entry.second.levels, entry.second.mipSettings, native, error )
                                     : uploadCookedDds( texture.get(), entry.second, native, error );

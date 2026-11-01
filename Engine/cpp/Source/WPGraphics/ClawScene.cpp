@@ -7,6 +7,9 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawFoliageBatch.hpp>
 #include <WPGraphics/ClawFoliageWorld.hpp>
+#if WP_FOLIAGE_SOURCE_RESOURCES
+#include <WPGraphics/Resources/FoliageResource.hpp>
+#endif
 #include <chrono>
 #include <map>
 #include <set>
@@ -30,6 +33,9 @@
 #include <WPGraphics/Jobs/SceneNodeCullJob.hpp>
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/State/States/CameraStateData.hpp>
+#include <Workphone/State/States/GraphicsObjectData.hpp>
+#include <Workphone/State/States/State.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_scenenode.h"
@@ -491,8 +497,35 @@ namespace workphone
             {
                 auto camera = factoryManager->make_ptr<ClawCamera>();
                 camera->setCreator( this );
+                // Claw's projection setters write directly to wp_camera, but
+                // visibility/target/post-processing use the existing state
+                // records inherited from GraphicsCamera/GraphicsObject.
+                auto context=getGraphicsObjectContext(ClawCamera::typeInfo());
+                if(!context||!context->isLoaded())throw std::runtime_error("Claw camera requires its loaded scene state context");
+                auto objectState=factoryManager->make_ptr<State>();
+                auto cameraState=factoryManager->make_ptr<State>();
+                auto objectData=factoryManager->make_ptr<GraphicsObjectData>();
+                auto cameraData=factoryManager->make_ptr<CameraStateData>();
+                if(!objectState||!cameraState||!objectData||!cameraData)throw std::bad_alloc();
+                objectData->flags=BitUtil::setFlagValue(objectData->flags,IGraphicsObject::visibleFlag,false);
+                objectState->setId(camera->getId());objectState->setOwner(camera);objectState->setData(objectData);
+                cameraState->setId(camera->getId());cameraState->setOwner(camera);cameraState->setData(cameraData);
+                struct StagedCameraStates
+                {
+                    SmartPtr<IStateContext> context;SmartPtr<IState> object,camera;
+                    bool objectAdded=false,cameraAdded=false,committed=false;
+                    ~StagedCameraStates(){if(!committed){
+                        if(cameraAdded)context->removeState(camera);
+                        if(objectAdded)context->removeState(object);
+                        camera->setStateContext(nullptr);object->setStateContext(nullptr);
+                    }}
+                } staged{context,objectState,cameraState};
+                context->addState(objectState);staged.objectAdded=true;
+                context->addState(cameraState);staged.cameraAdded=true;
+                camera->setStateContext(context);
                 graphicsSystem->loadObject( camera, true );
                 m_cameras.push_back( camera );
+                staged.committed=true;
                 return camera;
             }
             if( id == IGraphicsLight::typeInfo() )
@@ -700,6 +733,13 @@ namespace workphone
                 }
                 m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
             }
+            if(auto camera=dynamic_pointer_cast<IGraphicsCamera>(object))
+            {
+                ScopedLock cameraLock(&m_cameras,true);
+                m_cameras.erase(std::remove(m_cameras.begin(),m_cameras.end(),camera),m_cameras.end());
+            }
+            if(auto terrain=dynamic_pointer_cast<ClawTerrain>(object))
+                if(m_foliageWorlds)m_foliageWorlds->terrains.erase(terrain.get());
             return true;
         }
 
@@ -1530,6 +1570,9 @@ namespace workphone
                         if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
                         {
                             const auto snapshot = terrain->getFoliageSnapshot();
+#if WP_FOLIAGE_SOURCE_RESOURCES
+                            const auto cooked=terrain->getRuntimeFoliageCandidate();
+#endif
                             if( !snapshot )
                             {
                                 continue;
@@ -1550,6 +1593,9 @@ namespace workphone
                             if( attached.world->source().get() != snapshot.get() )
                             {
                                 if( !observeFoliage(
+#if WP_FOLIAGE_SOURCE_RESOURCES
+                                        cooked?attached.world->setSource(cooked->source,cooked->resolver,foliageError):
+#endif
                                         attached.world->setSource( snapshot, {}, foliageError ) ) )
                                 {
                                     continue;
@@ -1863,7 +1909,8 @@ namespace workphone
 
                         SmartPtr<IMaterial> material;
 
-                        if( !StringUtil::isNullOrEmpty( paticlesMaterialName ) )
+                        if(particles->usesRuntimeResources())material=particles->getRuntimeMaterial();
+                        else if( !StringUtil::isNullOrEmpty( paticlesMaterialName ) )
                         {
                             material = dynamic_pointer_cast<IMaterial>(
                                 materials->getByName( particles->getMaterialName() ) );

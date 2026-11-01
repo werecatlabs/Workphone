@@ -9,6 +9,7 @@ namespace workphone
 {
     namespace ui
     {
+        class ImGuiRuntimeFont;
         class ImGuiText : public ImGuiElement<IUIText>
         {
         public:
@@ -16,6 +17,7 @@ namespace workphone
             ~ImGuiText() override;
 
             void update() override;
+            void unload(SmartPtr<ISharedObject>) override;
 
             /** @copydoc IUIText::setText */
             void setText( const String &text ) override;
@@ -28,6 +30,9 @@ namespace workphone
 
             /** @copydoc IUIText::setTextSize */
             void setTextSize( f32 textSize ) override;
+            bool setRuntimeLiteralText(bool enabled) override{m_runtimeLiteralText=enabled;return true;}
+            bool setRuntimeFont(SmartPtr<render::IFont>) override;
+            SmartPtr<render::IFont> getRuntimeFont() const override;
 
             /** @copydoc IUIText::getTextSize */
             f32 getTextSize() const override;
@@ -59,6 +64,8 @@ namespace workphone
 
             /** Long text string for texts exceeding the fixed buffer size. */
             String m_longText;
+            atomic_bool m_runtimeLiteralText=false;
+            std::shared_ptr<ImGuiRuntimeFont> m_runtimeFont;
         };
     }  // end namespace ui
 }  // namespace workphone

@@ -8,6 +8,7 @@
 #include <Workphone/Animation/AnimationEventTimeline.hpp>
 #include <Workphone/Animation/AnimationSyncTrack.hpp>
 #include <Workphone/Animation/AnimationGraphNodes.hpp>
+#include <Workphone/Interface/Animation/IAnimationState.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <map>
 
@@ -113,6 +114,9 @@ namespace workphone::animation
         bool removePoseNode( const String &id );
         const AnimationGraphPoseNodeDefinition *findPoseNode( const String &id ) const;
         const Array<AnimationGraphPoseNodeDefinition> &getPoseNodes() const;
+        /** Optional per-bone output weights, indexed by the target rig handle. */
+        bool setBoneBlendMask(const IAnimationState::BoneBlendMask &);
+        const IAnimationState::BoneBlendMask &getBoneBlendMask() const;
 
     private:
         Array<AnimationGraphClip> m_clips = makeSourceBudgetSnapshot<AnimationGraphClip>();
@@ -122,6 +126,7 @@ namespace workphone::animation
         Array<AnimationGraphPoseNodeDefinition> m_poseNodes =
             makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
         String m_initialState;
+        IAnimationState::BoneBlendMask m_boneMask;
     };
 
     struct WPCore_API AnimationGraphSample

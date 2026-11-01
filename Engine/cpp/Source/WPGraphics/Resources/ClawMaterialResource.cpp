@@ -1,5 +1,6 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/Resources/ClawMaterialResource.hpp>
+#include <WPGraphics/Resources/ClawTextureStream.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/ClawMaterialTechnique.hpp>
 #include <WPGraphics/ClawMaterialPass.hpp>
@@ -23,6 +24,7 @@ namespace workphone::render
         SmartPtr<ClawTexture> normalTexture;
         SmartPtr<ClawTexture> ormTexture;
         std::shared_ptr<const resource::RuntimeResource> resource;
+        std::shared_ptr<resource::ResourcePayloadMount> mount;
         CatalogResourceAdapter::Request request;
         bool runtime = false;
         std::shared_ptr<const int> publisher;
@@ -198,7 +200,8 @@ namespace workphone::render
     }
 
     std::shared_ptr<const ClawMaterialResource::Candidate> ClawMaterialResource::stageRuntime(
-        std::shared_ptr<const resource::RuntimeResource> resource, String &error )
+        std::shared_ptr<const resource::RuntimeResource> resource, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount )
     {
         error.clear();
         if( !m_data->checkOwner( error ) )
@@ -215,6 +218,7 @@ namespace workphone::render
         candidate->ticket = ++m_data->ticket;
         candidate->device = m_data->device();
         candidate->runtime = true;
+        candidate->mount=std::move(mount);
         candidate->resource = std::move( resource );
         if( !candidate->resource || !candidate->device )
         {
@@ -258,6 +262,11 @@ namespace workphone::render
                     if( !dependency || dependency->header.resourceId != id )
                     {
                         continue;
+                    }
+                    if(candidate->mount&&isRuntimeTextureSnapshot(*dependency)) {
+                        auto uploaded=make_ptr<ClawTexture>();
+                        if(!uploaded->loadRuntimeStream(dependency,candidate->mount,m_data->target,m_data->packagedBuild,m_data->activeRenderer(),error))return false;
+                        destination=uploaded;return true;
                     }
                     CookedTextureData texture;
                     if( !decodeCookedTexture( *dependency, texture, error ) )

@@ -41,6 +41,9 @@ namespace workphone
          * @brief Virtual destructor.
          */
         ~ISound() override;
+        /** Optional native stream control; serialized by the sound control owner. */
+        virtual bool seekFrames(u64 frame,String &error);
+        virtual u64 getPlaybackFrame() const;
 
         /**
          * @brief Starts playback of the sound.

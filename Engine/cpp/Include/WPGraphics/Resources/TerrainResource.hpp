@@ -8,6 +8,8 @@
 #include <Workphone/System/CompiledResource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 
+namespace workphone::resource { class ResourcePayloadMount; }
+
 namespace workphone::render
 {
     inline constexpr u64 terrainResourceByteLimit = 256ull * 1024ull * 1024ull;
@@ -67,7 +69,8 @@ namespace workphone::render
     /** GPU-only owner stage; consumes a sealed worker decode without repeating
      * height/tile description or texture payload decoding on the render thread. */
     WPGraphics_API std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
-        ClawRendererDX11 &, std::shared_ptr<const DecodedCookedTerrain>, String &error );
+        ClawRendererDX11 &, std::shared_ptr<const DecodedCookedTerrain>, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount = {} );
 
     /** Immutable validated CPU preparation. May be decoded on a worker; no device,
      * application services or source tree are required. */
@@ -98,7 +101,8 @@ namespace workphone::render
         CookedTerrainCandidate( std::shared_ptr<const DecodedCookedTerrain>,
                                 ClawTerrainMaterial::TextureResolver );
         friend std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
-            ClawRendererDX11 &, std::shared_ptr<const DecodedCookedTerrain>, String & );
+            ClawRendererDX11 &, std::shared_ptr<const DecodedCookedTerrain>, String &,
+            std::shared_ptr<resource::ResourcePayloadMount> );
     };
 
     /** Source-free, render-owner staging. Decode and upload the entire layer closure
@@ -106,6 +110,7 @@ namespace workphone::render
      * it owns the uploaded ClawTextures and immutable cooked dependency handles. */
     WPGraphics_API std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
         ClawRendererDX11 &renderer, std::shared_ptr<const resource::RuntimeResource> resource,
-        const String &target, bool packagedBuild, String &error );
+        const String &target, bool packagedBuild, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount = {} );
 }  // namespace workphone::render
 #endif

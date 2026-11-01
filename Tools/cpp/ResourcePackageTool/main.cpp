@@ -7,10 +7,17 @@
 #include <Workphone/System/SceneResourceCompiler.hpp>
 #include <Workphone/System/SkeletonResourceCompiler.hpp>
 #include <Workphone/System/UIResource.hpp>
+#include <Workphone/System/UIAssetResource.hpp>
+#include <Workphone/System/AnimationResourceCompiler.hpp>
+#include <Workphone/System/RetargetResourceCompiler.hpp>
+#include <Workphone/System/RigResourceCompiler.hpp>
 #include <WPGraphics/Resources/TerrainResource.hpp>
 #include <WPGraphics/Resources/FoliageResource.hpp>
 #include <WPGraphics/Resources/MeshResourceCompiler.hpp>
 #include <WPGraphics/Resources/SkinnedMeshResource.hpp>
+#include <WPGraphics/Resources/FontResourceCompiler.hpp>
+#include <WPGraphics/Resources/ParticleResource.hpp>
+#include <WPGraphics/Resources/MorphResourceCompiler.hpp>
 #if WP_PACKAGE_AUDIO
 #include <WPAudio/AudioResourceCompiler.hpp>
 #endif
@@ -250,10 +257,17 @@ namespace
         if(!registry->registerCompiler(std::make_shared<render::GraphicsResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<SceneResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<SkeletonResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<AnimationResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<RetargetResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<RigResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<ui::UIResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<ui::UIAssetResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<LuaScriptCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::TerrainResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::FoliageResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::FontResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::ParticleResourceCompiler>(), &error) ||
+           !registry->registerCompiler(std::make_shared<render::MorphResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::MeshResourceCompiler>(), &error) ||
            !registry->registerCompiler(std::make_shared<render::SkinnedMeshResourceCompiler>(), &error))
             throw std::runtime_error(error.c_str());
@@ -276,6 +290,10 @@ namespace
         if(!resources->initialize(config, error))
             throw std::runtime_error(error.c_str());
         CatalogResourceAdapter adapter(catalog, resources, config.sourceRoot, mappings);
+        if(!adapter.captureAssetBindings(config.assetBindings,error))
+            throw std::runtime_error(error.c_str());
+        resources->shutdown();
+        if(!resources->initialize(config,error))throw std::runtime_error(error.c_str());
         Array<CatalogResourceAdapter::Request> roots;
         // Resolve every root before cooking so malformed identities fail early.
         for(const auto &uuid : uuids)

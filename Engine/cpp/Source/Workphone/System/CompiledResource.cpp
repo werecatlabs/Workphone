@@ -219,7 +219,8 @@ namespace workphone::resource
         }
 
         bool readHeaderFromStream( std::istream &stream, CompiledResourceHeader &header,
-                                   u64 &payloadOffset, String &error )
+                                   u64 &payloadOffset, String &error,
+                                   u64 maximumHeaderBytes=maxEncodedHeaderBytes )
         {
             header = CompiledResourceHeader();
             // Establish file and aggregate metadata bounds before any variable
@@ -229,6 +230,7 @@ namespace workphone::resource
             stream.seekg(0,std::ios::end); const auto end=stream.tellg();
             stream.seekg(start);
             HeaderReadBudget budget;
+            budget.encodedRemaining=std::min(maximumHeaderBytes,maxEncodedHeaderBytes);
             constexpr u64 fixedHeaderBytes=4+2+2+5*8+4;
             if(!stream || end<start) { error="Cannot bound compiled resource header"; return false; }
             budget.fileRemaining=static_cast<u64>(end-start);
@@ -583,8 +585,54 @@ namespace workphone::resource
         return true;
     }
 
+    bool CompiledResourceIO::buildChunkHashes(const String &path,CompiledResourceHeader &header,
+                                             u32 chunkBytes,Array<u64> &hashes,String &error)
+    {
+        hashes=makeSourceBudgetSnapshot<u64>();
+        if(chunkBytes!=65536){error="Unsupported resource chunk size";return false;}
+        const auto inputPath=fileSystemIOPath(std::filesystem::u8path(path.c_str()));
+        std::ifstream input(inputPath,std::ios::binary);u64 payloadOffset=0;
+        if(!input){error="Cannot open chunk source";return false;}
+        if(!readHeaderFromStream(input,header,payloadOffset,error))return false;
+        std::error_code ec;const auto fileBytes=std::filesystem::file_size(inputPath,ec);
+        if(ec||fileBytes<payloadOffset||fileBytes-payloadOffset!=header.payloadSize){error="Chunk source container size mismatch";return false;}
+        const auto count=header.payloadSize/chunkBytes+(header.payloadSize%chunkBytes!=0);
+        if(count>(1u<<20)){error="Resource chunk directory exceeds its limit";return false;}
+        hashes.reserve(static_cast<size_t>(count));char buffer[65536];u64 remaining=header.payloadSize,whole=14695981039346656037ull;
+        while(remaining) {
+            const auto length=std::min<u64>(remaining,chunkBytes);input.read(buffer,static_cast<std::streamsize>(length));
+            if(!input){hashes.clear();error="Chunk source payload is truncated";return false;}
+            hashes.push_back(hashBytes(buffer,static_cast<size_t>(length)));whole=hashBytes(buffer,static_cast<size_t>(length),whole);remaining-=length;
+        }
+        if(whole!=header.payloadHash){hashes.clear();error="Chunk source full payload hash mismatch";return false;}return true;
+    }
+
+    bool CompiledResourceIO::readPinnedRange(const String &path,CompiledResourceHeader &header,
+                                            u64 offset,u64 length,u64 expectedHash,Array<u8> &bytes,
+                                            String &error,u64 maximumHeaderBytes)
+    {
+        bytes.clear();const auto inputPath=fileSystemIOPath(std::filesystem::u8path(path.c_str()));
+        std::ifstream input(inputPath,std::ios::binary);u64 payloadOffset=0;
+        if(!input){error="Cannot open pinned chunk";return false;}
+        if(!readHeaderFromStream(input,header,payloadOffset,error,maximumHeaderBytes))return false;
+        std::error_code ec;const auto fileBytes=std::filesystem::file_size(inputPath,ec);
+        if(ec||fileBytes<payloadOffset||fileBytes-payloadOffset!=header.payloadSize||offset>header.payloadSize||
+            !length||length>65536||offset%65536||length!=std::min<u64>(65536,header.payloadSize-offset)||
+            offset>u64(std::numeric_limits<std::streamoff>::max())||payloadOffset>u64(std::numeric_limits<std::streamoff>::max())-offset)
+        {error="Invalid pinned resource chunk range or container size";return false;}
+        input.seekg(static_cast<std::streamoff>(payloadOffset+offset));bytes.resize(static_cast<size_t>(length));
+        input.read(reinterpret_cast<char*>(bytes.data()),static_cast<std::streamsize>(length));
+        if(!input||hashBytes(bytes.data(),bytes.size())!=expectedHash){bytes.clear();error="Resource chunk corruption check failed";return false;}return true;
+    }
+
     bool CompiledResourceIO::read( const String &path, RuntimeResource &resource, String &error,
                                    u64 maxPayloadBytes )
+    {
+        return read(path,resource,error,maxPayloadBytes,maxEncodedHeaderBytes);
+    }
+
+    bool CompiledResourceIO::read( const String &path, RuntimeResource &resource, String &error,
+                                   u64 maxPayloadBytes, u64 maximumHeaderBytes )
     {
         resource = RuntimeResource();
         const auto inputPath = fileSystemIOPath( std::filesystem::u8path( path.c_str() ) );
@@ -596,7 +644,7 @@ namespace workphone::resource
         }
 
         u64 payloadOffset = 0;
-        if( !readHeaderFromStream( stream, resource.header, payloadOffset, error ) )
+        if( !readHeaderFromStream( stream, resource.header, payloadOffset, error, maximumHeaderBytes ) )
         {
             return false;
         }

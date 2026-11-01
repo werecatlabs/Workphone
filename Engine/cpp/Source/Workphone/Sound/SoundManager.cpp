@@ -162,8 +162,7 @@ namespace workphone
     {
         if( auto sound = workphone::dynamic_pointer_cast<ISound>( resource ) )
         {
-            const auto registered = m_sounds.snapshot();
-            if( std::find( registered.begin(), registered.end(), sound ) == registered.end() )
+            if( std::find( m_sounds.begin(), m_sounds.end(), sound ) == m_sounds.end() )
             {
                 return;
             }

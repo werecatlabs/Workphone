@@ -118,6 +118,9 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            // Preserve the actual backend/resource failure for the concrete
+            // renderer's loading policy and the scene's transactional rollback.
+            throw;
         }
     }
 

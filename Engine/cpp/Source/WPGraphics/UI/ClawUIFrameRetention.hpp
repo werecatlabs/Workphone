@@ -1,30 +1,28 @@
 #pragma once
 
+#include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
 #include <Workphone/Interface/UI/IUIElement.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
+#include <memory>
 
 namespace workphone::ui::frame_retention
 {
-    inline thread_local Array<SmartPtr<IUIElement>> *currentOwners = nullptr;
-
-    class Scope
+    class WPGraphics_API Scope
     {
     public:
-        explicit Scope( Array<SmartPtr<IUIElement>> &owners ) : previous( currentOwners )
-        {
-            currentOwners = &owners;
-        }
-        ~Scope() { currentOwners = previous; }
+        explicit Scope( Array<SmartPtr<ISharedObject>> &owners,Array<std::shared_ptr<const void>> &snapshots );
+        ~Scope();
         Scope( const Scope & ) = delete;
         Scope &operator=( const Scope & ) = delete;
 
     private:
-        Array<SmartPtr<IUIElement>> *previous;
+        Array<SmartPtr<ISharedObject>> *previous;
+        Array<std::shared_ptr<const void>> *previousSnapshots;
     };
 
-    inline void retainFontOwner( IUIElement *owner )
-    {
-        if( currentOwners ) currentOwners->push_back( SmartPtr<IUIElement>( owner ) );
-    }
+    WPGraphics_API void retainFontOwner( IUIElement *owner );
+    WPGraphics_API void retainResource(SmartPtr<ISharedObject> owner);
+    WPGraphics_API void retainSnapshot(std::shared_ptr<const void> owner);
 }

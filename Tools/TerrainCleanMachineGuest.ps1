@@ -29,8 +29,10 @@ function Get-CleanInventory([string]$Root) {
 }
 function Assert-CleanInventory($Expected, [string]$Root) {
     $actual = @(Get-CleanInventory $Root)
-    $expectedSorted = @($Expected | Sort-Object path | ForEach-Object { [ordered]@{path=$_.path.Replace('\','/');bytes=$_.bytes;sha256=$_.sha256} })
-    $actualSorted = @($actual | Sort-Object path)
+    # PS5.1's named-property sorter does not read OrderedDictionary keys as
+    # properties. Evaluate the path explicitly for both inventory entry shapes.
+    $expectedSorted = @($Expected | Sort-Object { [string]$_.path } | ForEach-Object { [ordered]@{path=$_.path.Replace('\','/');bytes=$_.bytes;sha256=$_.sha256} })
+    $actualSorted = @($actual | Sort-Object { [string]$_.path })
     Assert-Clean (($expectedSorted | ConvertTo-Json -Depth 4 -Compress) -ceq ($actualSorted | ConvertTo-Json -Depth 4 -Compress)) 'Installed package inventory/bytes changed.'
 }
 function ConvertTo-WindowsArgument([string]$Value) {

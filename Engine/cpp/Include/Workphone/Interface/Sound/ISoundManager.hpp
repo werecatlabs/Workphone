@@ -4,6 +4,9 @@
 #include <Workphone/Interface/System/IResourceManager.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Math/Vector3.hpp>
+#include <memory>
+
+namespace workphone::resource { struct RuntimeResource; class ResourcePayloadMount; class ResourceLeafProviderFactory; }
 
 namespace workphone
 {
@@ -39,6 +42,17 @@ namespace workphone
          * @brief Virtual destructor for ISoundManager.
          */
         ~ISoundManager() override;
+
+        /** Control-owner only. Creates an independent, registered voice from a
+         * pinned cooked asset, with no authoring/file fallback. */
+        virtual SmartPtr<ISound> createRuntimeSound(
+            std::shared_ptr<const resource::RuntimeResource> resource, String &error,
+            std::shared_ptr<resource::ResourcePayloadMount> mount={});
+        virtual std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
+            std::shared_ptr<const resource::RuntimeResource> resource,
+            std::shared_ptr<resource::ResourcePayloadMount> mount,String &error);
+        virtual std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeLeafProviderFactory(
+            std::shared_ptr<resource::ResourcePayloadMount> mount,String &error);
 
         /**
          * @brief Adds a 3D sound listener to the sound manager.

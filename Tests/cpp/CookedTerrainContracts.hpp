@@ -278,6 +278,11 @@ namespace cooked_terrain_contracts
         auto loaded = runtime.load( id, error );
         require( loaded && loaded->dependencies.size() == 13,
                  "Source-free terrain must install all twelve layer textures and the detail normal: " + error );
+        // Keep only immutable container inputs alive throughout the derived
+        // decode/terrain/GPU lifetime check. RuntimeResource cannot own any of
+        // those native objects, so this pin cannot conceal their retirement.
+        auto inputOwner=loaded;
+        runtime.clearRuntimeCache(); // Exclude weak-cache metadata from that interval.
         auto scheduler = WorldStreamingScheduler::shared();
         WorldStreamProducerLimits producerLimits;
         producerLimits.maximumPending = producerLimits.maximumActive = producerLimits.maximumReady = 1;
@@ -541,10 +546,8 @@ namespace cooked_terrain_contracts
         claw_texture_mip_contracts::completeGpuWork( retirementContext );
         // Colour-transfer contracts use the suite's 128x128 target and camera.
         colourTransfer( renderer );
-        // SourceCpu now includes retained container/object bookkeeping as well
-        // as payload leases. Unload retires runtime resources, while the terrain
-        // object may retain empty container capacity for reuse. End the actual
-        // owners' lifetimes before asserting complete source retirement.
+        // Raw input and mount ownership remain constant across this exact
+        // comparison. End the actual derived owners, including spare capacity.
         renderer.setCamera( nullptr );
         renderer.setRenderTarget( nullptr );
         terrain = nullptr;
@@ -575,6 +578,23 @@ namespace cooked_terrain_contracts
                      budgetBefore.used[size_t(StreamMemoryClass::SourceCpu)] &&
                      scheduler->stats().used[gpuClass] == beforeUpload.used[gpuClass],
                  "last cooked texture/terrain destruction must release shared decode/source/GPU budgets" );
+        const auto beforeInputRelease=scheduler->stats();
+        std::weak_ptr<const RuntimeResource> rawInput=inputOwner;
+        inputOwner.reset();
+        const auto afterInputRelease=scheduler->stats();
+        require(rawInput.expired() &&
+                    afterInputRelease.used[size_t(StreamMemoryClass::SourceCpu)]<beforeInputRelease.used[size_t(StreamMemoryClass::SourceCpu)] &&
+                    afterInputRelease.used[size_t(StreamMemoryClass::ResultCpu)]==retiredBudgets.used[size_t(StreamMemoryClass::ResultCpu)] &&
+                    afterInputRelease.used[gpuClass]==retiredBudgets.used[gpuClass],
+                "raw terrain input payload/header admissions must retire independently of derived GPU/decode owners");
+        rawInput.reset();
+        const auto beforeMountRelease=scheduler->stats();
         runtime.shutdown();
+        const auto afterMountRelease=scheduler->stats();
+        require(!runtime.isInitialized() &&
+                    afterMountRelease.used[size_t(StreamMemoryClass::SourceCpu)]<beforeMountRelease.used[size_t(StreamMemoryClass::SourceCpu)] &&
+                    afterMountRelease.used[size_t(StreamMemoryClass::ResultCpu)]==retiredBudgets.used[size_t(StreamMemoryClass::ResultCpu)] &&
+                    afterMountRelease.used[gpuClass]==retiredBudgets.used[gpuClass],
+                "runtime terrain mount admission must retire separately after its raw input owners");
     }
 }  // namespace cooked_terrain_contracts

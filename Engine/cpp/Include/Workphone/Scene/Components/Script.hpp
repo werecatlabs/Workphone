@@ -6,6 +6,7 @@
 
 namespace workphone
 {
+    namespace resource { struct RuntimeAssetContext; }
     namespace scene
     {
 
@@ -300,6 +301,9 @@ namespace workphone
             /// Durable source-asset identity. Empty retains legacy globally loaded classes.
             String getScriptAssetUuid() const;
             void setScriptAssetUuid( const String &uuid );
+            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context);
+            SmartPtr<IScriptManager> getRuntimeScriptManager() const;
+            bool hasRuntimeAssets() const;
 
             /**
              * @brief Generates the component.
@@ -334,6 +338,8 @@ namespace workphone
             bool m_updateInEditMode = false;  ///< Whether the component updates in edit mode.
             String m_className;               ///< Name of the script class.
             String m_scriptAssetUuid;
+            std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
+            bool m_runtimeAssetsMode=false;
             SmartPtr<IScriptClass> m_scriptClass;  ///< Script class associated with this component.
             SmartPtr<IScriptInvoker> m_invoker;    ///< Used to call script functions.
             SmartPtr<IScriptReceiver> m_receiver;  ///< Used to receive script calls.

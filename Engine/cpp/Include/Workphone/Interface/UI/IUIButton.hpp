@@ -2,6 +2,7 @@
 #define __IUIButton_H
 
 #include <Workphone/Interface/UI/IUIElement.hpp>
+#include <Workphone/Interface/Graphics/IFont.hpp>
 
 namespace workphone
 {
@@ -43,6 +44,9 @@ namespace workphone
              * @return The label text as a string
              */
             String getLabel() const override = 0;
+            virtual bool setRuntimeLiteralText(bool enabled){return !enabled;}
+            virtual bool setRuntimeFont(SmartPtr<render::IFont> font){return !font;}
+            virtual SmartPtr<render::IFont> getRuntimeFont() const{return nullptr;}
 
             /**
              * @brief Sets the label text of the button

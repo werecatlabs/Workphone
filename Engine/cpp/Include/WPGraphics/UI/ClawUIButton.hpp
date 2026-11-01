@@ -37,6 +37,9 @@ namespace workphone
             void setPosition( const Vector2F &position ) override;
 
             void setTextSize( f32 textSize ) override;
+            bool setRuntimeLiteralText(bool enabled) override{m_runtimeLiteralText=enabled;return true;}
+            bool setRuntimeFont(SmartPtr<render::IFont>) override;
+            SmartPtr<render::IFont> getRuntimeFont() const override;
             f32 getTextSize() const override;
 
             bool isSimpleButton() const;
@@ -54,6 +57,7 @@ namespace workphone
 
         protected:
             String m_defaultMaterial;
+            atomic_bool m_runtimeLiteralText=false;
             String m_hoverMaterial;
             f32 m_textSize = 12.0f;
             bool m_isSimpleButton = true;
@@ -62,7 +66,8 @@ namespace workphone
             ColourF m_hoverColour = ColourF::White;
             ColourF m_activeColour = ColourF::White;
             ColourF m_disabledColour = ColourF::White;
-            std::unique_ptr<wp_user_font> m_drawFont;
+            std::shared_ptr<wp_user_font> m_drawFont;
+            SmartPtr<render::IFont> m_runtimeFont;
         };
     }  // end namespace ui
 }  // namespace workphone

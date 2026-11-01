@@ -57,10 +57,12 @@ namespace workphone::render
     {
         try
         {
-            auto passes = getPasses();
-            for( auto &pass : passes )
+            // Use the admitted child inventory: queued descendants must lose
+            // owner links even if allocating a teardown snapshot is denied.
+            for( auto child : m_children )
             {
-                if( pass )
+                auto pass=workphone::dynamic_pointer_cast<IMaterialPass>(child);
+                if( pass&&(!pass->getParentPtr()||pass->getParentPtr()==this) )
                 {
                     pass->unload( nullptr );
                 }
@@ -72,6 +74,8 @@ namespace workphone::render
         {
             WP_LOG_EXCEPTION( e );
         }
+        m_material = nullptr;
+        m_parent = nullptr;
     }
 
     auto MaterialTechnique::getScheme() const -> hash32
@@ -139,12 +143,7 @@ namespace workphone::render
 
     void MaterialTechnique::addPass( SmartPtr<IMaterialPass> pass )
     {
-        if( pass )
-        {
-            pass->setMaterial( getMaterial() );
-            pass->setParent( this );
-        }
-        m_children.push_back( pass );
+        addChild(pass);
 
         // Authored graphs may assemble passes before attaching the technique to
         // a material (including catalog document serialization).
@@ -156,6 +155,8 @@ namespace workphone::render
 
     void MaterialTechnique::removePass( SmartPtr<IMaterialPass> pass )
     {
+        if(pass&&std::find(m_children.begin(),m_children.end(),pass)!=m_children.end()&&
+            (!pass->getParentPtr()||pass->getParentPtr()==this))pass->setParent(nullptr);
         m_children.erase( std::remove( m_children.begin(), m_children.end(), pass ), m_children.end() );
         if( auto material = getMaterial() )
         {
@@ -165,7 +166,7 @@ namespace workphone::render
 
     void MaterialTechnique::removePasses()
     {
-        m_children.clear();
+        removeAllChildren();
         if( auto material = getMaterial() )
         {
             material->setPass( nullptr );
@@ -190,15 +191,9 @@ namespace workphone::render
 
     void MaterialTechnique::setPasses( Array<SmartPtr<IMaterialPass>> passes )
     {
-        m_children = { passes.begin(), passes.end() };
-        for( auto pass : passes )
-        {
-            if( pass )
-            {
-                pass->setMaterial( getMaterial() );
-                pass->setParent( this );
-            }
-        }
+        Array<SmartPtr<IMaterialNode>> nodes{Allocator<SmartPtr<IMaterialNode>>(sourceBudget)};
+        nodes.reserve(passes.size());for(auto pass:passes)nodes.push_back(pass);
+        setChildren(nodes);
         if( auto material = getMaterial() )
         {
             material->setPass( nullptr );
