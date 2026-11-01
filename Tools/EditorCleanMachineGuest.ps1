@@ -10,6 +10,7 @@ $PayloadRoot=$requestedPayload; $EvidenceRoot=$requestedEvidence
 $ProvisionProvidedPrerequisite=[switch]$requestedProvision
 $script:runs=New-Object 'Collections.Generic.List[object]'
 $passed=$false; $failure=$null; $baseline=$null; $inventoryVerified=$false; $guestIdentity=$false; $moduleInventory=@()
+$fixtureReplay=[pscustomobject]@{typedFixtureCoverage=$false;fixtures=@();immutableInputsVerified=$false}
 $prerequisites=[ordered]@{baselineProbePassed=$false;baselineLoaderCode=$null;missingDllObserved=$false
     providedInstallerRun=$false;installedAfterBaseline=$false;postProvisionProbePassed=$false;rebootRequired=$false}
 $manifest=Get-Content -LiteralPath (Join-Path $PayloadRoot 'candidate-manifest.json') -Raw | ConvertFrom-Json
@@ -29,6 +30,13 @@ try {
     $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'baseline-environment.json') -Encoding UTF8
     Assert-Clean ((Get-CleanHash $PSCommandPath) -eq $manifest.guestRunnerSha256 -and
         (Get-CleanHash (Join-Path $PSScriptRoot 'TerrainCleanMachineGuest.ps1')) -eq $manifest.commonRunnerSha256) 'Guest tooling differs from the pinned kit.'
+    $fixtures=@();if($manifest.PSObject.Properties['sourceFreeFixtures']){$fixtures=@($manifest.sourceFreeFixtures)}
+    if($fixtures.Count){
+        Assert-Clean ($manifest.PSObject.Properties['resourceFixtureRunnerSha256'] -and
+            (Get-CleanHash (Join-Path $PSScriptRoot 'EditorResourceFixtureReplay.ps1')) -eq $manifest.resourceFixtureRunnerSha256) 'Fixture replay runner differs from its pin.'
+        . (Join-Path $PSScriptRoot 'EditorResourceFixtureReplay.ps1') -LibraryOnly
+        foreach($entry in $fixtures){[void](Assert-EditorResourceFixture $entry (Get-ContainedPath (Join-Path $PayloadRoot 'ResourceFixtures') $entry.name))}
+    }
     $archive=Join-Path $PayloadRoot $manifest.archiveFileName
     Assert-Clean ((Get-CleanHash $archive) -eq $manifest.archiveSha256) 'Archive hash mismatch.'
     Assert-Clean (-not(Test-Path -LiteralPath $work)) 'Fresh guest workspace already exists.'
@@ -84,6 +92,10 @@ try {
         [ordered]@{path=$path;sha256=Get-CleanHash $path}
     })
     foreach($plugin in $manifest.plugins){Assert-Clean (@($modules | Where-Object {[IO.Path]::GetFileName($_) -ieq ($plugin+'.dll')}).Count -eq 1) "Configured plugin was not loaded: $plugin"}
+    if($fixtures.Count){
+        $fixtureWork=Join-Path $work 'resource-fixture-work';New-Item -ItemType Directory -Path $fixtureWork | Out-Null
+        $fixtureReplay=Invoke-EditorResourceFixtureReplay $install (Join-Path $PayloadRoot 'ResourceFixtures') $fixtures $fixtureWork
+    }
     $negative=Join-Path $work 'missing-media'; Copy-Item -LiteralPath $install -Destination $negative -Recurse
     Get-ChildItem -LiteralPath $negative -Recurse -File | ForEach-Object {$_.IsReadOnly=$false}
     $missingPath=Get-ContainedPath $negative 'Media/Scripts/Lua/Editor/Editor.lua'
@@ -102,6 +114,7 @@ try {
         guestRunnerSha256=Get-CleanHash $PSCommandPath;commonRunnerSha256=Get-CleanHash (Join-Path $PSScriptRoot 'TerrainCleanMachineGuest.ps1')
         environmentKind='WindowsSandbox';guestIdentityVerified=$guestIdentity;environment=$baseline;baselineEnvironmentSha256=$baselineHash
         prerequisites=$prerequisites;runs=@($script:runs.ToArray());loadedModules=$moduleInventory
+        resourceFixtureReplay=$fixtureReplay
         loadedModuleReportSha256=$moduleHash;installRoot=$install;windowsRoot=$env:WINDIR
         installedInventoryUnchanged=$inventoryVerified;guestValidationPassed=$passed;failure=$failure
         cleanMachineAcceptanceRequiresHostReconciliation=$true;interactiveEditorVerified=$false;hardwareAcceptanceVerified=$false

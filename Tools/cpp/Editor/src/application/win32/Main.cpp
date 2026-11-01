@@ -108,7 +108,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
         {
             if( strcmp( argv[i], "--help" ) == 0 || strcmp( argv[i], "-h" ) == 0 )
             {
-                printf( "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke] [--validation-capture-directory PATH] [--runtime-scene-package PATH --runtime-scene-uuid UUID [--runtime-scene-target pc] [--runtime-scene-validate]]\n" );
+                printf( "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke] [--validation-capture-directory PATH] [--runtime-scene-package PATH --runtime-scene-uuid UUID [--runtime-scene-target pc] [--runtime-scene-overlay PATH ...] [--runtime-scene-collisions reject|identical|prefer-earlier] [--runtime-scene-validate]]\n" );
                 return EXIT_SUCCESS;
             }
         }
@@ -146,7 +146,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
         {
             auto app = workphone::make_ptr<editor::PackagedEditorApplication>();
             const bool runtimeSceneValidation=!package.runtimeScenePackage.empty()&&(package.runtimeSceneValidate||package.smoke);
-            if(!package.runtimeScenePackage.empty())app->configureRuntimeScenePackage(package.runtimeScenePackage.u8string().c_str(),package.runtimeSceneUuid.c_str(),package.runtimeSceneTarget.c_str());
+            if(!package.runtimeScenePackage.empty()){workphone::Array<workphone::String> directories;for(const auto &path:package.runtimeSceneOverlays)directories.push_back(path.u8string().c_str());directories.push_back(package.runtimeScenePackage.u8string().c_str());app->configureRuntimeScenePackages(directories,package.runtimeSceneUuid.c_str(),package.runtimeSceneTarget.c_str(),package.runtimeSceneCollisions.c_str());}
             app->validationCapture.configure( package.validationCaptureDirectory );
             if( !package.root.empty() )
             {

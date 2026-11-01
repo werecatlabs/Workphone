@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Skybox.hpp>
+#include "../RuntimeSceneMembership.hpp"
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
@@ -107,7 +108,8 @@ namespace workphone::scene
 
                         if( auto actor = getActorPtr() )
                         {
-                            auto visible = isEnabled() && actor->isEnabledInScene();
+                            auto visible = isEnabled() && actor->isEnabledInScene()&&
+                                (!m_runtimeAssetsMode||detail::runtimeActorPublished(getActor()));
                             m_skybox->setVisible( visible );
                         }
                     }
@@ -202,6 +204,7 @@ namespace workphone::scene
 
     void Skybox::updateFlags( u32 flags, u32 oldFlags )
     {
+        if(m_runtimeAssetsMode){updateVisibility();return;}
         auto actor = getActorPtr();
         if( !actor )
         {
@@ -488,7 +491,8 @@ namespace workphone::scene
                     auto smgr = graphicsSystem->getGraphicsScene();
                     WP_ASSERT( smgr );
 
-                    auto visible = actor->isVisible();
+                    auto visible = actor->isVisible()&&(!m_runtimeAssetsMode||
+                        (isEnabled()&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor)));
                     auto skyboxMaterial = getMaterial();
                     auto distance = getDistance();
 
@@ -626,7 +630,8 @@ namespace workphone::scene
                         auto smgr = graphicsSystem->getGraphicsScenePtr();
                         WP_ASSERT( smgr );
 
-                        auto visible = actor->isEnabledInScene();
+                        auto visible = actor->isEnabledInScene()&&(!m_runtimeAssetsMode||
+                            (isEnabled()&&detail::runtimeActorPublished(getActor())));
                         auto distance = getDistance();
 
                         if( auto skybox = getSkybox() )
@@ -862,6 +867,8 @@ namespace workphone::scene
 
     void Skybox::updateVisibility()
     {
+        if(m_runtimeAssetsMode){auto actor=getActor();if(auto skybox=getSkybox())skybox->setVisible(
+            isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor));return;}
         if( auto actor = getActorPtr() )
         {
             auto enabled = isEnabled() && actor->isEnabledInScene();
@@ -943,7 +950,8 @@ namespace workphone::scene
                             auto smgr = graphicsSystem->getGraphicsScenePtr();
                             WP_ASSERT( smgr );
 
-                            auto visible = actor->isEnabledInScene();
+                            auto visible = actor->isEnabledInScene()&&(!owner->m_runtimeAssetsMode||
+                                (owner->isEnabled()&&detail::runtimeActorPublished(owner->getActor())));
                             auto distance = owner->getDistance();
 
                             if( auto skybox = owner->getSkyboxPtr() )

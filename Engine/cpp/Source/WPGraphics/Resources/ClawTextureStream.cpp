@@ -119,10 +119,19 @@ namespace workphone::render
     {
         output=CookedTextureData{};error.clear();try {const auto plan=std::dynamic_pointer_cast<const Plan>(value.streamData);
             require(plan&&matches(*plan,value),"Unrecognized or mismatched sparse runtime texture plan");
-            output.target=plan->target;output.packagedBuild=plan->packaged;output.mipSettings=plan->settings;output.storageFormat=plan->format;return true;
+            output.target=plan->target;output.packagedBuild=plan->packaged;output.mipSettings=plan->settings;output.storageFormat=plan->format;
+            output.levels.resize(plan->count);for(u32 i=0;i<plan->count;++i){output.levels[i].width=plan->mips[i].width;output.levels[i].height=plan->mips[i].height;}return true;
         }catch(const std::exception &failure){error=failure.what();return false;}
     }
 
+    bool sampleRuntimeTextureSnapshotBGRA(const resource::RuntimeResource &value,u32 x,u32 y,std::array<u8,4> &output,String &error)
+    {
+        output={};error.clear();try {const auto plan=std::dynamic_pointer_cast<const Plan>(value.streamData);
+            require(plan&&matches(*plan,value)&&!plan->wholeLegacy&&plan->format==0&&plan->count==1,"Texture sample requires a private one-mip portable snapshot");
+            const auto &mip=plan->mips[0];require(x<mip.width&&y<mip.height&&plan->bootstrap.size()==u64(mip.width)*mip.height*4,"Texture sample exceeds its verified bootstrap");
+            const auto offset=(u64(y)*mip.width+x)*4;for(size_t channel=0;channel<4;++channel)output[channel]=plan->bootstrap[size_t(offset)+channel];return true;
+        }catch(const std::exception &failure){error=failure.what();return false;}
+    }
     std::shared_ptr<const resource::RuntimeResource> snapshotRuntimeTexture(std::shared_ptr<const resource::RuntimeResource> value,
         std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
     {

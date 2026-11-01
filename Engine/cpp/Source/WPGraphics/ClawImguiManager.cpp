@@ -1,5 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawImguiManager.hpp>
+#include "ClawImGuiFrameRecovery.hpp"
 #include <WPGraphics/ClawUiSettings.hpp>
 #include <WPImGui/WPImGui.hpp>
 #include <Workphone/Workphone.hpp>
@@ -7,6 +8,7 @@
 #include <workphone_graphics_renderer_dx11.h>
 
 #include "imgui.h"
+#include "imgui_internal.h"
 
 #if defined WP_PLATFORM_WIN32
 #    include "backends/imgui_impl_win32.h"
@@ -29,6 +31,50 @@ namespace workphone
 
     namespace render
     {
+        void detail::discardInterruptedImGuiFrame(ClawImguiManager &backend)
+        {
+            ScopedLock lock(&backend,true);
+            auto *context=ImGui::GetCurrentContext();
+            if(!context||context->IO.BackendRendererUserData!=&backend)return;
+            if(context->WithinFrameScope)
+            {
+                // Application callbacks have unwound before entry. Recover
+                // their unmatched Begin/Push calls using this ImGui version's
+                // internal recovery path, while old font/atlas pins still live.
+                // Its window recovery closes a global tab bar using the current
+                // window, which may be an inner child rather than the tab's
+                // owner. This frame is discarded, so retire that layout stack
+                // directly; per-window recovery will unwind its ID scopes.
+                context->CurrentTabBar=nullptr;
+                context->CurrentTabBarStack.resize(0);
+                while(context->CurrentWindowStack.Size>0)
+                {
+                    const auto fontDepth=context->CurrentWindowStack.back().StackSizesOnBegin.SizeOfFontStack;
+                    while(context->FontStack.Size>fontDepth)ImGui::PopFont();
+                    ImGui::ErrorCheckEndWindowRecover(nullptr,nullptr);
+                    // EndTable may have closed its own child window. Unwind
+                    // fonts against the now-current owner's saved depth too.
+                    const auto recoveredFontDepth=context->CurrentWindowStack.back().StackSizesOnBegin.SizeOfFontStack;
+                    while(context->FontStack.Size>recoveredFontDepth)ImGui::PopFont();
+                    if(context->CurrentWindowStack.Size==1)break;
+                    if(context->CurrentWindow->Flags&ImGuiWindowFlags_ChildWindow)ImGui::EndChild();
+                    else ImGui::End();
+                }
+                ImGui::EndFrame();
+            }
+            // Discard every borrowed SRV/font command before a subsequent
+            // NewFramePre callback may retire its immutable resource owners.
+            for(auto *window:context->Windows)window->DrawList->_ClearFreeMemory();
+            for(auto *viewport:context->Viewports)
+            {
+                for(auto *draw:viewport->DrawLists)if(draw)draw->_ClearFreeMemory();
+                viewport->DrawDataP.Clear();viewport->DrawDataBuilder.Clear();
+            }
+            // This setter only resets frame accounting for the same renderer;
+            // it does not swap devices, recreate a context or release pins.
+            backend.setRenderer(backend.getRenderer());
+        }
+
         namespace
         {
             std::atomic<bool> uiSettingsPersistence{ true };

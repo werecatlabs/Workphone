@@ -46,7 +46,7 @@ namespace workphone::resource
             std::shared_ptr<ResourceLeafProviderFactory> cloneForRequest(const ResourceID &,String &error) override
             {error.clear();return std::make_shared<SceneLeaves>(m_graphics,m_audio,m_mount);}
             bool handles(const ResourceID &id) const override
-            {return m_meshes.count(id)||(m_graphics&&m_graphics->handles(id))||(m_audio&&m_audio->handles(id));}
+            {return id.type()==ResourceTypeID("folpage")||m_meshes.count(id)||(m_graphics&&m_graphics->handles(id))||(m_audio&&m_audio->handles(id));}
             bool observeResourceReady(const std::shared_ptr<const RuntimeResource> &value,String &error) override
             {
                 if(!value){error="Missing runtime resource";return false;}
@@ -64,7 +64,7 @@ namespace workphone::resource
                 const RuntimeResourceRangeInfo &info,s32 priority,String &error) override
             {
                 try {
-                    if(m_meshes.count(id))return std::make_shared<MeshMetadataLeaf>(info,mount,error);
+                    if(id.type()==ResourceTypeID("folpage")||m_meshes.count(id))return std::make_shared<MeshMetadataLeaf>(info,mount,error);
                     if(m_graphics&&m_graphics->handles(id))return m_graphics->create(std::move(mount),id,info,priority,error);
                     if(m_audio&&m_audio->handles(id))return m_audio->create(std::move(mount),id,info,priority,error);
                     error="No native sparse provider for resource";return {};

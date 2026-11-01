@@ -3,6 +3,7 @@
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
+#include <Workphone/Interface/Graphics/IFont.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 
@@ -28,6 +29,9 @@ namespace workphone::render
     SmartPtr<ITexture> IGraphicsSystem::createRuntimeTexture(
         std::shared_ptr<const resource::RuntimeResource>,String &error,const String &,bool,std::shared_ptr<resource::ResourcePayloadMount>)
     {error="Typed runtime textures are unavailable in this graphics backend";return nullptr;}
+    SmartPtr<IFont> IGraphicsSystem::createRuntimeFont(std::shared_ptr<const resource::RuntimeResource>,String &error,
+        const String &,bool,std::shared_ptr<resource::ResourcePayloadMount>)
+    {error="Typed runtime fonts are unavailable in this graphics backend";return nullptr;}
 
     void IGraphicsSystem::setRendererType( RenderApi )
     {

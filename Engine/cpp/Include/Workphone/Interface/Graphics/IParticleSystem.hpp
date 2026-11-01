@@ -3,9 +3,11 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsObject.hpp>
+#include <memory>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; class ResourcePayloadMount; }
     namespace render
     {
 
@@ -40,6 +42,8 @@ namespace workphone
              * @brief Virtual destructor.
              */
             ~IParticleSystem() override;
+            virtual bool loadRuntimeResource(std::shared_ptr<const resource::RuntimeResource>,
+                std::shared_ptr<resource::ResourcePayloadMount>,const String &,bool,String &error);
 
             /**
              * @brief Sets the fast forward time and interval for the particle system.

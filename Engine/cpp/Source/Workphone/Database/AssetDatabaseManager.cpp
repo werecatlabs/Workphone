@@ -4,6 +4,9 @@
 #include <Workphone/Database/AssetReferenceGraph.hpp>
 #include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Database/AssetDocumentInventory.hpp>
+#if WP_TYPED_UI_RESOURCE
+#include <Workphone/System/UIResource.hpp>
+#endif
 #include "AssetPackagePolicyInternal.hpp"
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
@@ -2607,8 +2610,17 @@ namespace workphone
             return result;
         }
 
-        SmartPtr<Properties> parseReferenceDocument( const Array<u8> &bytes )
+        SmartPtr<Properties> parseReferenceDocument( const Array<u8> &bytes,const String &sourcePath )
         {
+            if(StringUtil::make_lower(std::filesystem::u8path(sourcePath.c_str()).extension().u8string().c_str())==".uires")
+            {
+#if WP_TYPED_UI_RESOURCE
+                String error;auto result=ui::UIResourceCompiler::sourceReferenceProperties(bytes,error);
+                if(!result)throw std::runtime_error(error.c_str());return result;
+#else
+                throw std::runtime_error("Typed UI reference discovery is unavailable in this build");
+#endif
+            }
             if( PropertiesBinarySerializer::hasBinaryHeader( bytes.data(), bytes.size() ) )
             {
                 auto result = make_ptr<Properties>();
@@ -2749,7 +2761,7 @@ namespace workphone
             {
                 throw std::runtime_error( "Reindex source changed while reading" );
             }
-            auto serialized = parseReferenceDocument( bytes );
+            auto serialized = parseReferenceDocument( bytes,source.path );
             CatalogTransaction transaction( *catalog );
             AssetReferenceSave save;
             if( !transaction.active() || !session.isCurrent( catalog ) ||
@@ -2808,7 +2820,7 @@ namespace workphone
             const auto extension = StringUtil::make_lower( path.extension().u8string().c_str() );
             return extension == ".fbscene" || extension == ".fbscenebin" || extension == ".fbscenexml" ||
                    extension == ".prefab" || extension == ".fbprefab" || extension == ".resource" ||
-                   extension == ".mat" || extension == ".material";
+                   extension == ".mat" || extension == ".material" || extension == ".uires";
         }
 
         class DocumentScanBudgetExceeded : public std::runtime_error
@@ -3085,7 +3097,7 @@ namespace workphone
                         }
                         auto bytes = readInventoryDocument( file, budget );
                         entry.digest = referenceDigest( bytes.data(), bytes.size() );
-                        auto serialized = parseReferenceDocument( bytes );
+                        auto serialized = parseReferenceDocument( bytes,entry.path );
                         AssetReferenceSave save;
                         if( !beginReferenceSave( catalog, entry.path, serialized, bytes, save, error,
                                                  media, false, true ) )
@@ -3196,7 +3208,7 @@ namespace workphone
                 {
                     throw std::runtime_error( "Document changed during batch reindex" );
                 }
-                auto serialized = parseReferenceDocument( bytes );
+                auto serialized = parseReferenceDocument( bytes,entry.path );
                 AssetReferenceSave save;
                 if( !beginReferenceSave( catalog, entry.path, serialized, bytes, save, error, media,
                                          false ) ||

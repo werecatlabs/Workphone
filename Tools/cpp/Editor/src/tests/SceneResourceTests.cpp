@@ -24,6 +24,8 @@
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include "../../../../../Tests/cpp/RuntimeSceneGraphicsComponentContracts.hpp"
 #include "../../../../../Tests/cpp/RuntimeMeshLODContracts.hpp"
+#include "../../../../../Tests/cpp/RuntimeTerrainComponentContracts.hpp"
+#include "../../../../../Tests/cpp/RuntimeParticleComponentContracts.hpp"
 #include <WPLua/LuaScriptCompiler.hpp>
 #include <workphone_graphics_mesh.h>
 #include <workphone_graphics_renderer.h>
@@ -120,8 +122,9 @@ BOOST_AUTO_TEST_CASE(cooked_scene_prefab_resource_test)
     auto sceneResource=runtime.loadUUID("357261b5-3e87-48d2-a3c1-2ba952c53df1",error);
     BOOST_REQUIRE(sceneResource);
     auto legacyVersion=[](const ResourceTypeID &type){return combineHash(combineHash(combineHash(14695981039346656037ull,1),1),type.value());};
+    for(u64 revision:{1ull,2ull,3ull})
     {
-        auto legacy=std::make_shared<RuntimeResource>(*sceneResource);legacy->header.compilerVersion=legacyVersion(ResourceTypeID("fbscene"));
+        auto legacy=std::make_shared<RuntimeResource>(*sceneResource);legacy->header.compilerVersion=combineHash(combineHash(combineHash(14695981039346656037ull,1),revision),ResourceTypeID("fbscene").value());
         auto graph=decodeActorGraphResource(legacy,error);BOOST_REQUIRE_MESSAGE(graph,error);BOOST_REQUIRE_MESSAGE(installCookedSceneGraph(graph,target,error),error);
         auto actor=target->findActorByName("CookedGraphRoot");BOOST_REQUIRE(actor);BOOST_CHECK(actor->getLocalPosition()==Vector3<real_Num>(2,3,4));manager->destroyActor(actor);
     }
@@ -245,11 +248,13 @@ BOOST_AUTO_TEST_CASE(cooked_scene_prefab_resource_test)
         for(size_t pixel=0;pixel<4;++pixel){image.push_back(0);image.push_back(char(255));image.push_back(0);image.push_back(char(255));}
         writeMixed("leaf.tga",image);writeMixed("leaf.texres",R"({"version":1,"source":"data://leaf.tga","mipFilter":"colour","atlasColumns":1,"alphaCutoff":0.5})");
         writeMixed("surface.matres",R"({"version":1,"baseColour":[1,1,1,1],"metalness":0,"roughness":1,"baseColourTexture":"data://leaf.texres"})");
+        runtime_terrain_component_contracts::writeSources(source,ResourceID("data://leaf.texres"));runtime_particle_component_contracts::writeSources(source);
         writeMixed("Helper.lua","return {amount=42}");writeMixed("Actor.lua.deps","data://Helper.lua\n");
         writeMixed("Actor.lua","local helper=require('Helper'); mixedLoads=(mixedLoads or 0)+1; class 'MixedCookedActor'; function MixedCookedActor:__init(owner) self.owner=owner end; function MixedCookedActor:update() mixedTicks=(mixedTicks or 0)+helper.amount end");
         const String skinUuid="82d11978-21eb-4618-b0cb-000000000001",rigUuid="82d11978-21eb-4618-b0cb-000000000002",luaUuid="82d11978-21eb-4618-b0cb-000000000003";
         const String materialUuid="82d11978-21eb-4618-b0cb-000000000004",textureUuid="82d11978-21eb-4618-b0cb-000000000005";
         const String highUuid="82d11978-21eb-4618-b0cb-000000000006",coarseUuid="82d11978-21eb-4618-b0cb-000000000007";
+        const String terrainUuid="82d11978-21eb-4618-b0cb-000000000008",foliageUuid="82d11978-21eb-4618-b0cb-000000000009",particleUuid="82d11978-21eb-4618-b0cb-000000000012";
         auto actorData=make_ptr<Properties>();actorData->setName("actors");actorData->setProperty("uuid",StringUtil::getUUID());actorData->setProperty("name","MixedCookedActor");
         auto component=[&](const String &type){auto value=make_ptr<Properties>();value->setName("component");value->setProperty("componentType","workphone::scene::"+type);value->setProperty("uuid",StringUtil::getUUID());actorData->addChild(value);return value;};
         auto meshData=component("Mesh");meshData->setProperty("Mesh Resource",skinUuid);meshData->setProperty("Skeleton",rigUuid);
@@ -270,6 +275,9 @@ BOOST_AUTO_TEST_CASE(cooked_scene_prefab_resource_test)
         auto groupData=make_ptr<Properties>();groupData->setName("component");groupData->setProperty("componentType","workphone::scene::LODGroup");groupData->setProperty("uuid",StringUtil::getUUID());groupData->setProperty("lodLevels",2u);groupData->setProperty("size",2.f);
         for(size_t i=0;i<2;++i){auto level=make_ptr<Properties>();level->setName("lodLevel");level->setProperty("screenRelativeHeight",i?.0f:.5f);level->setProperty("fadeTransitionWidth",0.f);level->setProperty("renderers",StringUtil::toString(Array<String>{lodRenderers[i]}));groupData->addChild(level);}
         lodActor->addChild(groupData);document->addChild(lodActor);
+        auto domainActor=make_ptr<Properties>();domainActor->setName("actors");domainActor->setProperty("uuid",StringUtil::getUUID());domainActor->setProperty("name","PackagedDomains");
+        auto terrainData=make_ptr<Properties>();terrainData->setName("component");terrainData->setProperty("uuid",StringUtil::getUUID());terrainData->setProperty("componentType","workphone::scene::TerrainSystem");terrainData->setProperty("Enabled",true);terrainData->setProperty("terrainAssetUuid",terrainUuid);terrainData->setProperty("foliageWorldAssetUuid",foliageUuid);domainActor->addChild(terrainData);
+        auto particleData=make_ptr<Properties>();particleData->setName("component");particleData->setProperty("uuid",StringUtil::getUUID());particleData->setProperty("componentType","workphone::scene::ParticleSystem");particleData->setProperty("Enabled",true);particleData->setProperty("particleAssetUuid",particleUuid);particleData->setProperty("playOnLoad",false);domainActor->addChild(particleData);document->addChild(domainActor);
         writeMixed("mixed.fbscene",DataUtil::toString(document.get(),true));writeMixed("mixed.prefab",DataUtil::toString(actorData.get(),true));
         {
             SceneResourceCompiler compiler;CompileContext probe;probe.resourceId=ResourceID("data://mixed.fbscene");probe.sourcePath=(source/"mixed.fbscene").u8string().c_str();DependencySet dependencies;
@@ -278,12 +286,13 @@ BOOST_AUTO_TEST_CASE(cooked_scene_prefab_resource_test)
             BOOST_CHECK(!compiler.getDependencies(probe,dependencies,error));
         }
         auto registry=std::make_shared<ResourceCompilerRegistry>();
-        for(const auto &compiler:Array<std::shared_ptr<IResourceCompiler>>{std::make_shared<SceneResourceCompiler>(),std::make_shared<GraphicsResourceCompiler>(),std::make_shared<MeshResourceCompiler>(),std::make_shared<SkinnedMeshResourceCompiler>(),std::make_shared<SkeletonResourceCompiler>(),std::make_shared<LuaScriptCompiler>()})
+        for(const auto &compiler:Array<std::shared_ptr<IResourceCompiler>>{std::make_shared<SceneResourceCompiler>(),std::make_shared<GraphicsResourceCompiler>(),std::make_shared<MeshResourceCompiler>(),std::make_shared<SkinnedMeshResourceCompiler>(),std::make_shared<SkeletonResourceCompiler>(),std::make_shared<LuaScriptCompiler>(),std::make_shared<render::TerrainResourceCompiler>(),std::make_shared<render::FoliageResourceCompiler>(),std::make_shared<render::ParticleResourceCompiler>()})
             BOOST_REQUIRE_MESSAGE(registry->registerCompiler(compiler,&error),error);
         const ResourceID mixedId("data://mixed.fbscene"),mixedPrefabId("data://mixed.prefab");
         ResourceSystemConfig config;config.sourceRoot=source.u8string().c_str();config.compiledRoot=(mixed/"authoring"/"compiled").u8string().c_str();config.target="pc";
         config.assetBindings={{skinUuid,ResourceID("data://character.skinres")},{rigUuid,ResourceID("data://rig.skelres")},{luaUuid,ResourceID("data://Actor.lua")},{materialUuid,ResourceID("data://surface.matres")},{textureUuid,ResourceID("data://leaf.texres")}};
         config.assetBindings.emplace(highUuid,ResourceID("data://high.mesh"));config.assetBindings.emplace(coarseUuid,ResourceID("data://coarse.mesh"));
+        config.assetBindings.emplace(terrainUuid,ResourceID("data://ground.terrain"));config.assetBindings.emplace(foliageUuid,ResourceID("data://forest.folworld"));config.assetBindings.emplace(particleUuid,ResourceID("data://effect.partres"));
         {
             ResourceSystem author(registry,std::make_shared<ResourceCompilationDatabase>());BOOST_REQUIRE_MESSAGE(author.initialize(config,error),error);
             CompilationOptions options;options.packagedBuild=true;
@@ -305,12 +314,16 @@ BOOST_AUTO_TEST_CASE(cooked_scene_prefab_resource_test)
         class DatabaseSpy final : public ResourceDatabase {public:size_t lookups=0;SmartPtr<ISharedObject> getObject(const workphone::UUID &id) override {++lookups;return ResourceDatabase::getObject(id);}};
         auto database=app->getResourceDatabase();auto spy=make_ptr<DatabaseSpy>();app->setResourceDatabase(spy);
         struct DatabaseScope { SmartPtr<core::IApplicationManager> app;SmartPtr<IResourceDatabase> previous;~DatabaseScope(){app->setResourceDatabase(previous);} } databaseScope{app,database};
-        runtime_scene_graphics_component_contracts::run(app,context,materialUuid,textureUuid,luaUuid);
+        runtime_scene_graphics_component_contracts::run(app,context,materialUuid,textureUuid,luaUuid,coarseUuid);
         runtime_mesh_lod_contracts::run(app,context,highUuid,coarseUuid);
+        runtime_terrain_component_contracts::run(app,context,terrainUuid,foliageUuid,textureUuid,luaUuid);
+        runtime_particle_component_contracts::run(app,context,particleUuid,textureUuid,luaUuid);
         BOOST_REQUIRE_MESSAGE(installCookedSceneGraph(mixedGraph,target,context,error),error);BOOST_CHECK(app->getScriptManager()==authoringVM);
         auto actor=target->findActorByName("MixedCookedActor");BOOST_REQUIRE(actor);
         auto rendererComponent=actor->getComponent<scene::MeshRenderer>();auto animator=actor->getComponent<scene::Animator>();auto script=actor->getComponent<scene::Script>();BOOST_REQUIRE(rendererComponent&&animator&&script);
         auto nativeMesh=dynamic_pointer_cast<ClawMesh>(rendererComponent->getGraphicsObject());BOOST_REQUIRE(nativeMesh&&nativeMesh->hasSkinningData()&&nativeMesh->getMaterial(0));
+        BOOST_REQUIRE_MESSAGE(rendererComponent->getState()==scene::IComponent::State::Edit,"Runtime components without a serialized mode must inherit the Editor lifecycle state");
+        BOOST_REQUIRE_MESSAGE(nativeMesh->isVisible(),"Published runtime MeshRenderer must expose its native mesh before the skin pixel draw");
         auto vertices=[&](){return static_cast<const wp_graphics_mesh_vertex_pnt *>(wp_graphics_mesh_get_vertices(nativeMesh->getNativeMesh()));};
         BOOST_CHECK_CLOSE(animator->getSkeleton()->getBone("Root")->getPosition().x,.5f,.001f);BOOST_CHECK_CLOSE(vertices()[0].position.x,.3f,.001f);
         script->update();
@@ -328,9 +341,9 @@ BOOST_AUTO_TEST_CASE(cooked_scene_prefab_resource_test)
         auto incomplete=std::make_shared<RuntimeResource>(*cooked);incomplete->dependencies.clear();BOOST_CHECK(!decodeActorGraphResource(incomplete,error));
         {
             auto properties=make_ptr<Properties>();BOOST_REQUIRE(PropertiesBinarySerializer::deserialize(cooked->payload,*properties,&error));
-            auto roots=properties->getChildrenByName("actors");BOOST_REQUIRE_EQUAL(roots.size(),2);auto replacement=scene::GameActorUtil::createInstanceData(roots.front());
+            auto roots=properties->getChildrenByName("actors");BOOST_REQUIRE_EQUAL(roots.size(),3);auto replacement=scene::GameActorUtil::createInstanceData(roots.front());
             for(auto component:replacement->getChildren())if(component->getProperty("componentType")=="workphone::scene::Script")component->setProperty("className","MissingCookedClass");
-            auto failedData=make_ptr<Properties>();failedData->addChild(replacement);failedData->addChild(scene::GameActorUtil::createInstanceData(roots[1]));auto failed=std::make_shared<RuntimeResource>(*cooked);failed->payload=PropertiesBinarySerializer::serialize(*failedData);failed->header.payloadSize=failed->payload.size();failed->header.payloadHash=hashBytes(failed->payload.data(),failed->payload.size());
+            auto failedData=make_ptr<Properties>();failedData->addChild(replacement);for(size_t i=1;i<roots.size();++i)failedData->addChild(scene::GameActorUtil::createInstanceData(roots[i]));auto failed=std::make_shared<RuntimeResource>(*cooked);failed->payload=PropertiesBinarySerializer::serialize(*failedData);failed->header.payloadSize=failed->payload.size();failed->header.payloadHash=hashBytes(failed->payload.data(),failed->payload.size());
             auto failedGraph=decodeActorGraphResource(failed,error);BOOST_REQUIRE_MESSAGE(failedGraph,error);auto failedContext=createActorGraphRuntimeContext(failedGraph,"pc",true,error,mount);BOOST_REQUIRE_MESSAGE(failedContext,error);
             BOOST_CHECK(!installCookedSceneGraph(failedGraph,target,failedContext,error));BOOST_CHECK(error.find("MissingCookedClass")!=String::npos);BOOST_CHECK(target->getSceneLoadingState()==scene::IGameScene::SceneLoadingState::Loaded);BOOST_CHECK_EQUAL(target->getActors().size(),retainedActors);BOOST_CHECK(target->findActorByName("MixedCookedActor")==actor);
         }

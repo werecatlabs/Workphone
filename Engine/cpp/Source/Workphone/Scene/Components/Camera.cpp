@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
+#include "../RuntimeSceneMembership.hpp"
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
@@ -406,7 +407,7 @@ namespace workphone::scene
         // camera manager here would change last-good camera flags/targets even
         // if a later component constructor rejects this append.
         const auto actor=getActor();
-        const bool mayResetManager=!m_runtimeAssetsMode||(actor&&actor->getFlag(IGameActor::ActorFlagInScene));
+        const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(actor);
 
         if( wasEnabled != enabled&&mayResetManager )
         {
@@ -421,7 +422,8 @@ namespace workphone::scene
 
         if( m_camera )
         {
-            m_camera->setVisible( m_isActive );
+            m_camera->setVisible( m_isActive&&(!m_runtimeAssetsMode||
+                (isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor))) );
             m_camera->setAutoAspectRatio( true );
         }
 
@@ -435,7 +437,8 @@ namespace workphone::scene
             vp->setAutoUpdated( m_autoUpdated );
             vp->setShadowsEnabled( m_enableShadows );
             vp->setVisibilityMask( m_visibilityMask );
-            vp->setActive( m_isActive );
+            vp->setActive( m_isActive&&(!m_runtimeAssetsMode||
+                (isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor))) );
         }
 
         updateSmoothTransformState();
@@ -776,7 +779,9 @@ namespace workphone::scene
                     vp->setAutoUpdated( m_autoUpdated );
                     vp->setShadowsEnabled( m_enableShadows );
                     vp->setVisibilityMask( m_visibilityMask );
-                    vp->setActive( m_isActive );
+                    auto actor=getActor();
+                    vp->setActive( m_isActive&&(!m_runtimeAssetsMode||
+                        (isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor))) );
 
                     m_viewport = vp;
                 }
@@ -974,7 +979,7 @@ namespace workphone::scene
                 auto taskManager = applicationManager->getTaskManagerPtr();
                 auto factoryManager = applicationManager->getFactoryManagerPtr();
                 auto cameraManager = applicationManager->getCameraManager();
-                const bool mayResetManager=!m_runtimeAssetsMode||BitUtil::getFlagValue(flags,IGameActor::ActorFlagInScene)||BitUtil::getFlagValue(oldFlags,IGameActor::ActorFlagInScene);
+                const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(getActor())||BitUtil::getFlagValue(oldFlags,IGameActor::ActorFlagInScene);
 
                 if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagInScene ) !=
                     BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagInScene ) )
@@ -1033,7 +1038,7 @@ namespace workphone::scene
         WP_ASSERT( smgr );
 
         auto cameraManager = applicationManager->getCameraManager();
-        const auto actor=getActor();const bool mayResetManager=!m_runtimeAssetsMode||(actor&&actor->getFlag(IGameActor::ActorFlagInScene));
+        const auto actor=getActor();const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(actor);
 
         switch( eventType )
         {
@@ -1123,6 +1128,7 @@ namespace workphone::scene
 
     void Camera::updateActiveState( bool active )
     {
+        if(m_runtimeAssetsMode){auto actor=getActor();active=active&&isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor);}
 #if 0
         auto applicationManager = core::IApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );

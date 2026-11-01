@@ -101,6 +101,67 @@ compiler or SQLite database. A previously exported UUID remains pinned to its ol
 generation after an authoring rename or recook; a new binding can retain that UUID
 while selecting the new logical path.
 
+## Named read-only package composition
+
+`RuntimeResourceMountConfig` pairs a unique bounded `name` with an ordinary
+`RuntimeResourceConfig`. `ResourcePayloadMount::createComposition(packages,
+policy, scheduler, producerLimits, error)` captures an ordered set of 1–32
+packages; earlier entries have higher precedence. The lower-level
+`ResourceSystem::initializeRuntimeComposition` uses the same private immutable
+runtime readers. This adds routing to the existing resource service, without a
+second asset store, source lookup or writable catalog.
+
+Collision policy is explicit:
+
+- `Reject` rejects every repeated ResourceID or canonical UUID, including exact
+  duplicate entries.
+- `IdenticalOnly` merges repeated ResourceIDs only when their compiler version,
+  type, source/payload hashes, payload size and dependency IDs match. Repeated
+  UUIDs must resolve to the same ResourceID.
+- `PreferEarlier` selects the first ResourceID/UUID contribution and permits
+  changed leaf payload generations. Type/compiler-version conflicts still fail.
+
+All package configs must name the same target. Distinct UUID aliases for one
+ResourceID fail under every policy. Before publication, every selected parent's
+dependency header must exactly match the dependency generation in that parent's
+original captured package. A patch that shadows a texture while leaving a
+selected old parent pinned to different bytes therefore fails composition. A
+complete compatible replacement can succeed. Native typed decoders still check
+the target/build mode carried inside their family payloads; mount capture does
+not decode every body or infer unsupported build variants.
+
+UUID resolution uses the merged canonical index and then the same selected
+ResourceID route as direct payload, complete DAG and verified range reads.
+Dependency reads follow that route, even when the parent's package contains its
+own duplicate file. A missing/corrupt selected artifact fails; the loader never
+tries a lower-precedence package as an implicit fallback.
+`provenance(id, output, error)` reports the selected resource's label, precedence,
+shadow count, source directory/manifest, manifest version and captured manifest
+hashes. These FNV fingerprints are corruption/generation checks, not authentication.
+
+The sum of contributed entries, including duplicates, is capped at 65,536;
+contributed v4 chunk-directory entries are capped at 1,048,576. Capture admits
+retained manifest/routing/configuration storage and bounded parsing/index scratch
+before copying; observed file bounds prevent later manifest growth exceeding that
+admission. Numeric runtime limits take the minimum across packages. Rejected
+composition publishes no mount and releases its admissions.
+
+Owner views share the exact composite reader and its retained leases, never
+reparse any manifest path. A new composition is a new captured generation.
+Existing views keep their old pins after a manifest is replaced; required old
+artifact files must remain available, and changed bytes fail verification.
+Requester cancellation, shared dependency reads, chunk residency and escaped
+result leases use the existing transport boundaries. `loadPinnedPayload(id,
+error, maximumPayloadBytes)` is a worker-safe synchronous shallow read with an
+explicit cap and retained Source admission. It never pumps an owner queue;
+product UI work should continue to use the asynchronous stream.
+
+Rebuilt contracts cover cross-package dependency routing, lower-package
+corruption, ResourceID/UUID policies, incompatible compiler/parent generations,
+coalescing/cancellation, ranges, old owner views and lease retirement. They passed
+the current Debug and optimized gates summarized under [Validation boundary](#validation-boundary);
+the [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md) records the evidence.
+
 ## Catalog-admitted export and shipping policy
 
 Use `CatalogResourceAdapter::writeRuntimePackage(directory, roots, error)` with
@@ -533,8 +594,10 @@ fallback; a nonnull opaque marker does not imply that every payload is sparse.
 
 Filesystem cancellation is checked before and after a payload read; it cannot
 interrupt a blocked filesystem call. Native range consumers use the separate
-chunk transport below. The new cold-provider/native integration is source work
-pending rebuilt validation; prior whole-payload evidence does not certify it.
+chunk transport below. Cold-provider/native integration passed the current
+rebuilt gates recorded in the [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md).
+That evidence is separate from the prior whole-payload fixture results and does
+not certify every format, production scale or physical device.
 
 ## Verified chunk ranges and native residency
 
@@ -635,7 +698,7 @@ false; successful cooking/validation does not establish audible playback.
 The prior CLI fixture includes a Lua root with a WAV install dependency and removes
 their authoring inputs/cook cache before UUID mounting.
 
-New source adds v4 large-PCM cold metadata walking and a native range-fed ring.
+The v4 large-PCM path adds cold metadata walking and a native range-fed ring.
 The walker checks bounded RIFF chunk headers and PCM format/alignment while skipping
 sample bodies, then retains at most 128 KiB of bootstrap samples. Playback uses
 eight fixed 64-KiB PCM slots plus a preallocated silence block. Only the control
@@ -644,8 +707,10 @@ slots without allocating or performing I/O. Seek quiesces the native voice, canc
 old requests and uses new request identities; late results cannot populate reset
 slots. Small/legacy clips keep their prior complete verified path. Other codecs,
 clips above the declared 64-MiB limit, and audible-device certification remain
-outside this increment. The new cold/ring/seek contracts are pending rebuilt
-validation, not covered by the earlier whole-WAV fixture's pass.
+outside this increment. Cold/ring/seek and owner-dispatch contracts passed the
+current rebuilt gates recorded in the [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md).
+The host has no audio output device: offline callback/ring execution and explicit
+device-unavailable behavior do not establish audible playback acceptance.
 
 ## Diagnostic budgets and completed-job history
 
@@ -759,8 +824,9 @@ compile/install dependencies; the mesh retains its own material dependencies.
 native CPU bind pose before replacing the previous set. Existing skin deformation is reused
 without reopening an authoring mesh. The native package fixture advances two
 independent Animators, checks deformed vertices and reads posed/rest pixels after
-source/catalog/cooking storage removal. Animation graphs, morphs, retargeting and
-full model import remain separate feature gates.
+source/catalog/cooking storage removal. That historical fixture predates the
+typed graph, mask, retarget, IK-rig and static morph additions described below.
+Full model import remains a separate feature gate.
 
 ## Mixed scene and prefab graphs
 
@@ -768,10 +834,10 @@ Map the authored types to `fbscene` or `prefab`. The compiler validates the actu
 Properties JSON schema and writes the existing `FBSCNBIN` binary representation.
 The source subset contains actor identity, transforms, nested actors and bounded
 Mesh, MeshRenderer, Animator, Script, Material, Skybox, Camera, Light, AudioEmitter,
-UIComponent and LODGroup components. Current compiler output version 3 extends the
-prior four-component version-2 subset; arbitrary components/properties remain
-rejected. New component/native acceptance is pending this increment's rebuilt
-validation. Limits are 8 MiB of source,
+UIComponent, LODGroup, TerrainSystem and ParticleSystem components. Current compiler
+output version 4 extends the eleven-component version-3 subset; arbitrary
+components/properties remain rejected. Configuration-specific acceptance is
+recorded in the implementation ledger. Limits are 8 MiB of source,
 4096 total groups and depth 64, with canonical
 nonnil UUIDs, finite transforms and unit quaternions.
 
@@ -785,7 +851,7 @@ rollback/readiness, stale generation rejection and escaped-node lifetimes. This
 does not provide arbitrary component-bearing Editor scene shipping.
 
 Output version 2 introduced authored UUID resolution through captured `assetBindings`
-and current version 3 retains it. It
+and current version 4 retains it. It
 stores typed ResourceIDs on the existing UUID Property's `compiledResourceId`
 attribute. The CLI captures mapped files under catalog admission before cooking;
 publication rejects UUID/resource remapping. Native callers provide a canonical
@@ -837,6 +903,67 @@ Destruction unregisters the tree and releases its retained resource and
 conservative CPU metadata lease.
 Editor tests exercise the actual backend hierarchy, properties and cleanup;
 interactive input, visual layout and project-switch publication remain open.
+
+## Bounded baked bitmap fonts
+
+The graphics `FontResourceCompiler` produces `.fontres` version 1 from an explicit
+baked bitmap descriptor. Its required JSON fields are `version:1`, a typed
+`atlas` ResourceID ending in `.texres`, integer `whitePixel:[x,y]`, numeric `height`,
+`ascent` and `descent`, an integer fallback codepoint, and `glyphs`. Each glyph has
+`codepoint`, `advance`, `bounds:[x0,y0,x1,y1]` and `uv:[u0,v0,u1,v1]`. Glyphs are
+sorted unique Unicode scalars from U+0020 through U+10FFFF, excluding surrogates.
+The fallback must exist with visible geometry and positive advance. Unknown or
+duplicate fields, invalid UTF-8/NUL, nonfinite/out-of-range metrics, reversed UVs
+or bounds, inconsistent texel extents and missing dependencies reject explicitly.
+
+Source and cooked payloads are capped at 256 KiB and 4096 glyphs. Line height is
+1–1024 pixels. The atlas is exactly one portable BGRA level, at most 1024×1024,
+with mip filtering disabled and one atlas column. Its target/build mode and
+source/payload/compiler generation are pinned as one compile/install dependency.
+Glyph `bounds` use y-down pixel offsets from the top of the text line, already
+including the baking ascent offset; runtime adds no second baseline translation.
+Ascent/descent remain line metrics, and intentional overhangs are allowed.
+The `whitePixel` coordinate must sample an opaque white BGRA texel; this provides
+the utility sample needed by native button/background geometry. Mipped/DDS/SDF
+fonts, raw TTF parsing/baking, host-font fallback, kerning and text shaping are
+outside this format.
+
+`decodeCookedFont` validates the outer payload hash/size, structural table bounds,
+glyph semantics and exact installed atlas pins before exposing metrics. A private
+one-mip texture snapshot is accepted only through the native snapshot descriptor
+and verified bootstrap sampler; arbitrary `streamData` is rejected. Full legacy
+texture fallback remains subject to its existing checked whole-read policy.
+
+`IGraphicsSystem::createRuntimeFont` installs an independently owned `IFont` from
+the pinned resource. Claw uses the existing `ClawFont`/`wp_font` glyph, range,
+width/query and native texture paths. Runtime fonts do not reopen authoring font
+paths, including after unload. `IUIText`/`IUIButton::setRuntimeFont` bind captured
+per-control fonts; unsupported backends return false. Native glyph storage and
+ImGui's dense lookup tables reserve retained Source storage before copying.
+Atlas textures retain their existing CPU/GPU admissions.
+
+ImGui adapters use private native font metrics over the same atlas texture and
+existing text/button draws. They restore the atlas utility UV and draw flags after
+each scope. This build's 16-bit `ImWchar` rejects fonts containing non-BMP glyphs;
+the Claw font path supports the format's Unicode scalar range. Captured literal
+text bypasses authoring localization.
+
+Claw frame retention pins each emitted font descriptor, immutable glyph snapshot
+and actual image texture until conversion/submission and `wp_clear`. Partial
+recording failure discards commands before those pins retire. ImGui context frame
+hooks retain actual old font/atlas/image owners through submission and release
+them on the next frame or context shutdown. Removing, unloading or retargeting a
+control therefore cannot retire its queued old assets. Native lifecycle changes
+still require the backend's owner/render-fence contract; these admissions are not
+a complete process/driver-memory cap.
+
+Rebuilt contracts include source-free export/decode, strict corruption and
+white-texel checks, native glyph/fallback metrics, Source/GPU pressure, actual Claw
+and ImGui atlas draws/readback, Unicode backend rejection and frame retirement.
+The ImGui portion is enabled only when that target is present. These checks passed
+the current gates recorded in the [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md).
+They use the recorded software-rendered DX11/WARP device; interactive typography,
+visual acceptance and representative hardware remain open.
 
 ## Whole-payload residency and shared work
 
@@ -893,9 +1020,111 @@ soak and hardware certification remain open.
 `WPResourceTests` exercises persistent shared reads, independent cancellation and
 priority changes, full-queue reconciliation, cancellation at the source-allocation
 cap, closure limits, asynchronous assembly cancellation and escaped-node leases.
-Those contracts do not certify the remaining native residency integrations.
+These core contracts complement the separate native residency gates below;
+unsupported consumers and representative scale remain outside their coverage.
 
 ## Validation boundary
+
+The broad selections passed **23/23 Debug** checks in **293.43 s** and
+**18/18 optimized** checks in **142.93 s** before the final authoring-persistence
+fixes. They cover package composition,
+cold providers and verified ranges, PCM ring/seek/owner dispatch, baked fonts and
+frame retention, and typed graph/mask/retarget/IK-rig/static morph consumption.
+Separate DX11 target checks passed in both configurations (**12.04 s** and
+**11.42 s**), and three repeated mixed-scene runs passed in **54.33 s**.
+The [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md) owns the
+final metrics and `resource-domains-green-debug-*` / `resource-domains-green-opt-*`
+evidence paths.
+
+Both configurations rebuilt after those final fixes. The affected selections
+passed **3/3 Debug** checks in **43.66 s** and **2/2 optimized** checks in
+**17.23 s**, including serialized authoring UUID/streaming fields, partial edits
+and explicit clears, without activating runtime residency from authoring metadata.
+Evidence uses `resource-domains-authoring-debug-*` and
+`resource-domains-authoring-opt-*`.
+
+The final frozen-source Debug `Editor.all` aggregate passed **100/100 cases** and
+**1,907,473 assertions** in **824.66 s**, within the unchanged 900-second timeout
+(`resource-domains-editor-all-authoring-final-*`). The fresh relocated candidate
+at `project_graphics_sdk/rd306c-20261101/` passed **8** checks; **306** captured
+inputs have zero drift and **12** built/installed modules match. Stock PowerShell
+5.1 prepared `project_graphics_sdk/ek306c-20261101/`, then its native host-only
+replay passed **9** process checks, including **15** typed UUIDs and mixed scenes
+with all overlay policies. Installed payload/fixture bytes remained unchanged.
+Its result is `host-replay/result.json`; the source/module receipt is
+`project_x64/resource-domains-verified-input-module-verification.json`.
+These native gates do not establish interactive authoring/input, audible playback,
+production-scale residency, physical hardware acceptance or whole-plan shipping
+certification. Windows Sandbox is absent/disabled on this host; no fresh guest ran,
+and clean-machine, guest-identity, legal and release-certified flags remain false.
+
+### Current typed scene and UI contract
+
+The current scene/prefab compiler output is revision 4. It adds the existing
+`TerrainSystem` and `ParticleSystem` consumers to the previous eleven component
+types. Terrain uses required `terrainAssetUuid` and optional
+`foliageWorldAssetUuid`; particles use required `particleAssetUuid`. Animator's
+`animationAssetUuid` selects a typed skeleton/clip, graph, retarget, static morph
+or bounded IK-rig resource. The binary decoder retains independent revision
+1/2/3 compatibility fingerprints and rejects newer fields/families under older
+ABIs. Revision 1 remains transform-only. Unknown component families fail cooking.
+Mesh and MeshRenderer load before Animator, and Script constructors run after
+native components have staged. Whole-scene publication still follows the existing
+append/rollback path.
+
+Terrain and foliage publication callbacks retain a standard shared publication-owner
+token plus native identity, without an engine weak reference to pooled component
+storage. `TerrainSystem` unload/destruction revokes that token before component
+locks and waits for entered callbacks; native Terrain unload clears both gates.
+Within the existing owner/render-fence contract, queued native retirement can
+therefore release retained callback copies without touching a retired component
+slot. This closes the lifetime boundary identified by the terrain teardown CDB
+trace; it does not relax owner-thread publication requirements.
+When a component omits `state`, runtime loading adopts Edit or Play from the
+application before publication, using the existing component FSM. Explicit
+serialized states remain unchanged. Claw camera allocation/clone/removal uses
+per-camera records in the existing scene context, so visibility and typed camera
+settings no longer silently disappear.
+
+UI source revision 2 extends the bounded revision 1 controls with images and
+captured dependencies. Root fields `styleAssetUuid`, `localizationAssetUuid` and
+`locale` are optional. Image nodes require `textureAssetUuid`; text and button
+nodes may select `fontAssetUuid`, `styleClass` and `localeKey`. UUIDs resolve only
+through the captured catalog map. Every selected font, texture, style and locale
+asset becomes an exact compile/install dependency. The compiled UI ABI is revision
+2; legacy revision 1 payloads and fingerprints remain accepted. The 64-KiB source
+and payload, 256-node and 32-level bounds remain unchanged.
+
+`.uistyle` revision 1 contains `version` and `styles`: each style supplies a unique
+`name`, four finite colour channels in [0,1] and `textSize` in (0,256]. At most
+256 styles are accepted. `.locres` revision 1 supplies `version`, a declared
+`fallback` locale and `locales`, an object mapping locale tags to key/text objects.
+It accepts at most 32 locales, 1024 entries per locale and 4096 total entries.
+Keys are bounded to 256 UTF-8 bytes and nonempty translations to 4096. Source and
+compiled style/locale descriptors are each bounded to one MiB. Duplicate or
+unknown fields, invalid UTF-8 and nonfinite values fail closed. Both formats use
+validated typed binary records rather than runtime JSON interpretation.
+
+UI installation resolves the chosen locale then its declared fallback before
+creating controls. A missing key in both, missing style, wrong dependency, native
+font/image failure, duplicate translated button label or budget denial preserves
+the prior tree. Captured text bypasses authoring localization. `setLocale` stages
+and replaces the complete tree using the same immutable assets, preserving the
+explicit active/visible state. It requires the creating physical UI owner.
+Descriptor scratch and retained control estimates obey both the shared physical
+ledger and a separately captured mount scheduler. Native font/texture admission
+and frame-retention rules above still apply.
+
+Runtime `UIComponent` also accepts `uiLocale`. Unpublished or removed actors keep
+their UI hidden and input disabled; published nested actors follow consistent
+loaded scene ancestry. Add/remove/re-add and enabled transitions update activation.
+Creation, replacement and retirement pause the render task before taking the
+graphics lock, including the host container's retirement. Raw `.uires` discovery
+uses the same strict source parser to populate durable UUID references in the
+existing catalog graph. It never imports targets or rewrites source bytes.
+Terrain/particle saved properties likewise retain resource metadata for where-used
+and required-reference deletion checks. Additional raw descriptor discovery and
+interactive authoring remain separate from these runtime adapters.
 
 Prior rebuilt `WPResourceTests` evidence covers deterministic v3 export,
 invalid/duplicate/aliased/outside-
@@ -906,9 +1135,9 @@ with original source/cooked storage removed and read-only runtime byte preservat
 `WorkphoneAssets.catalog_contracts` covers the real catalog-to-package UUID bridge,
 stale binding rejection and UUID-preserving authoring rename beside a pinned package.
 
-Final configuration-specific manifest-v4/chunk and sparse-provider results are
-tracked in the implementation ledger: **17/17 optimized** and **21/21 Debug**
-checks passed on the frozen source. Their cases include requested/unrequested corruption,
+Earlier configuration-specific manifest-v4/chunk and sparse-provider results are
+preserved in the implementation ledger: **17/17 optimized** and **21/21 Debug**
+checks passed on that earlier frozen source. Their cases include requested/unrequested corruption,
 legacy whole-verified fallback, exact owner views after manifest replacement,
 unaligned/shared ranges, upfront reservations, priority eviction, cold sparse
 bootstrap, dynamic fallback admission and request-scoped provider replacement.
@@ -925,7 +1154,7 @@ CLI probe pass with one actor, four components, one Script and one Mesh;
 it also rejected a missing UUID and preserved the package bytes. This establishes
 that bounded bootstrap and its failure/preservation behavior.
 
-The current relocated product probe loads four actors, 12 components on DX11
+The earlier relocated product probe loaded four actors, 12 components on DX11
 or 10 on Software, one private Script VM, two resident native meshes and one
 unloaded streamed high mesh. Structured failures cover unsupported Software
 materials, missing UUIDs and this host's unavailable audio output. Seven installed
@@ -934,8 +1163,107 @@ drift and 12 matching built/installed modules. Full Editor aggregate evidence an
 candidate paths are recorded under resource increments 38–41 in the ledger.
 
 Arbitrary component graphs, whole-Editor authoring and typed consumer adoption,
-interactive closure-preview acceptance, multi-mount precedence, additional native
+interactive closure-preview acceptance, multi-mount production certification, additional native
 streaming formats/consumer adoption and full-family compiler interruption remain
 open. Interactive visual/input/audio
 acceptance, representative hardware and
 full-family shipping application certification remain separate release gates.
+
+### Typed animation families: current bounded contract
+
+The checked compiler registry now includes `.agraph`/`.amask`
+(`AnimationResourceCompiler`), `.aretgt` (`RetargetResourceCompiler`), `.arig`
+(`RigResourceCompiler`) and `.amorph` (`render::MorphResourceCompiler`). They emit
+typed binary records and reuse the existing native animation, skeleton, two-bone
+IK and Claw mesh systems. `Animator.animationAssetUuid` selects the graph,
+retarget, IK-rig or morph root through its captured runtime context. Runtime
+installation never opens an authoring path or catalog. Each Animator owns its
+native rig, graph parameters, playback state and IK constraints independently.
+
+| Format | Supported semantics | Descriptor bounds |
+| --- | --- | --- |
+| `agraph` | Pinned `skelres`, optional compatible `amask`, native clip aliases, typed bool/float parameters, states/transitions and clip/blend1d/selector pose nodes | 256 KiB source/payload; 64 aliases/parameters, 128 states/nodes, 256 transitions, 16 children/node, depth 32, 8 conditions/transition |
+| `amask` | Pinned `skelres`, default weight plus named bone overrides; native full handle-indexed output weights in [0,1] | 256 KiB source/payload; at most 256 named bones |
+| `aretgt` | Explicit local bind-space transfer from one pinned `skelres` to another using native transform tracks/keys | 256 KiB source/payload; 64 selected clips, 256 bone mappings, 2048 output tracks, 16384 keys |
+| `arig` | One pinned `skelres`, `agraph` or `aretgt`, followed by native two-bone IK | 64 KiB source/payload; 1–32 constraints; compiled proof closure at most 8 nodes, depth 4 and 8 MiB payload |
+| `amorph` | Sparse additive position/normal targets and linearly interpolated weight vectors on one exact static PNT/PNTC `mesh` | 4 MiB source, 2 MiB payload; 16 targets, 256 keys, 65536 aggregate sparse deltas, one million base vertices |
+
+All JSON recipes use `version: 1` and reject unknown, missing or duplicate fields,
+nonfinite values, NULs and malformed UTF-8. Animation names use printable ASCII
+within 128 bytes; dependency IDs are canonical roots within 1024 bytes. Graph
+states must be reachable from `initialState`; pose references and clips must be
+used and acyclic. Cyclic state transitions remain valid. Blend ranges tile
+strictly adjacent intervals and conditions must match declared parameter types.
+Mask application resets the targeted native bones to binding pose before blending,
+so partial weights do not accumulate drift across frames.
+
+A mask source has exactly `version`, `rig`, `defaultWeight` and `bones`; each bone
+has `bone` and `weight`. A graph uses `version`, `rig`, `initialState`, `clips`,
+`parameters`, `states` and `transitions`, with optional `mask` and `nodes`.
+The complete graph recipe is exercised in `Tests/cpp/AnimationResourceContracts.hpp`.
+
+Retarget source has exactly `version`, `source`, `target`, `clips` and `bones`.
+Each clip maps `source` to `target`; each bone maps `source` to `target` with
+`translationScale` in (0,1000]. Every animated source bone must map. Immediate
+source parents must map to immediate target parents, or both mapped bones must
+be roots. Positions transfer as target binding position plus scaled source
+binding delta; rotations transfer as target binding orientation multiplied by
+inverse source binding orientation and source key orientation. Output positions
+must remain finite within ±1e6 and quaternions normalize safely. Nonunit scale
+channels, missing mappings, alias collisions and incompatible topology fail.
+
+An IK-rig source is, for example:
+
+```json
+{"version":1,"animation":"data://motion.agraph","constraints":[
+ {"id":"Reach","effector":"Hand","targetPosition":[1,1,0],
+  "targetRotation":[1,0,0,0],"pole":[0,0,1],"weight":1,
+  "chainRotationWeight":0,"blendMode":"effector",
+  "matchTargetOrientation":false,"enabled":true}]}
+```
+
+Quaternions use WXYZ. IDs/effectors must be unique; every effector needs an existing
+immediate two-bone chain with nondegenerate binding segments. Targets and poles
+are finite within ±1e6, both weights are in [0,1], and `blendMode` is `effector`
+or `pose`. Recursive `arig` inputs are rejected. Compilation validates the native
+solver against an independent candidate, using captured dependency artifacts and
+contained version-2 transitive pins. Runtime installation verifies the actual
+target rig generation against a bound Mesh sibling. Targets remain editable per
+Animator through the existing IK API; changing animation family retires the
+previous cooked rig's constraints.
+
+A static morph source is, for example:
+
+```json
+{"version":1,"mesh":"data://base.mesh","clip":"Face","duration":1,
+ "targets":[{"id":"Smile","deltas":[
+  {"vertex":0,"position":[0,0.2,0],"normal":[0.1,0,0]}]}],
+ "keys":[{"time":0,"weights":[0]},{"time":1,"weights":[1]}]}
+```
+
+Sparse indices are strictly increasing per target and must fit the decoded base.
+Position deltas are finite within ±1e6 and normal deltas within ±2.
+Every key contains one weight in [0,1] per target; keys cover exactly [0,duration],
+are strictly separated in float time, and duration is in (0,86400]. The compiler
+records base ID/compiler/source/payload pins plus native topology and complete
+binding-vertex signatures. It checks key output bounds and rejects normal
+degeneracy within interpolation intervals. Runtime sampling uses immutable binding
+vertices, normalizes output normals and fences external native geometry changes.
+Playback weight is in [0,1] and position scale in [0,1000].
+Candidate native buffers and GPU admission complete before publication, preserving
+indices, submeshes, material ownership, UVs and colors. Working/Source/GPU denial,
+corrupt records or mismatched generations preserve the previous native mesh.
+Clones share immutable plans/binding bytes and own independent deformation state.
+Skinned bases and combined skin/morph deformation are explicitly unsupported.
+
+Scratch admissions, Source-budgeted native owners and retained snapshots
+participate in the existing shared scheduler. Claw native geometry/GPU leases use
+the shared physical ledger; this is not a per-mount native quota or process-RSS
+claim. These formats do not implement humanoid retargeting, a new IK solver,
+arbitrary authoring animation graphs or full model import. Graph/mask, retarget,
+IK-rig and native morph contracts passed the current Debug/optimized gates under
+[Validation boundary](#validation-boundary), with exact evidence in the
+[implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md). Those tests
+cover independent instances, semantic/corruption rejection and budget/last-good
+behavior; representative hardware, combined skinned morphs and full application
+shipping acceptance remain separate gates. Earlier pass counts remain historical.

@@ -126,20 +126,36 @@ namespace workphone
 
         SmartPtr<IGraphicsObject> ClawCamera::clone( const String &name ) const
         {
-            auto camera = workphone::make_ptr<ClawCamera>();
-            camera->setFOVy( getFOVy() );
-            camera->setNearClipDistance( getNearClipDistance() );
-            camera->setFarClipDistance( getFarClipDistance() );
-            camera->setAspectRatio( getAspectRatio() );
-            camera->setAutoAspectRatio( getAutoAspectRatio() );
-            camera->setLodBias( getLodBias() );
-            camera->setRenderUI( getRenderUI() );
-            camera->setScreenWidth( getScreenWidth() );
-            camera->setScreenHeight( getScreenHeight() );
-            camera->setVisible( isVisible() );
-            camera->setCastShadows( getCastShadows() );
-            camera->setVisibilityFlags( getVisibilityFlags() );
-            return camera;
+            auto creator=getCreator();if(!creator)return nullptr;
+            SmartPtr<IGraphicsCamera> camera;
+            try
+            {
+                // Reuse the creator's existing camera/context lifecycle. A raw
+                // constructor has no inherited visibility/camera state records.
+                camera=creator->addGraphicsObjectByType<IGraphicsCamera>();if(!camera)return nullptr;
+                if(!name.empty())camera->setName(name);
+                camera->setFOVy( getFOVy() );
+                camera->setNearClipDistance( getNearClipDistance() );
+                camera->setFarClipDistance( getFarClipDistance() );
+                camera->setAspectRatio( getAspectRatio() );
+                camera->setAutoAspectRatio( getAutoAspectRatio() );
+                camera->setLodBias( getLodBias() );
+                camera->setRenderUI( getRenderUI() );
+                camera->setScreenWidth( getScreenWidth() );
+                camera->setScreenHeight( getScreenHeight() );
+                camera->setTargetTexture(getTargetTexture());
+                camera->setPostProcessSettings(getPostProcessSettings());
+                camera->setCompositeLayers(getCompositeLayers());
+                camera->setVisible( isVisible() );
+                camera->setCastShadows( getCastShadows() );
+                camera->setVisibilityFlags( getVisibilityFlags() );
+                return camera;
+            }
+            catch(...)
+            {
+                if(camera){try{camera->unload(nullptr);}catch(...){}try{creator->removeGraphicsObject(camera);}catch(...){}}
+                return nullptr;
+            }
         }
     }  // namespace render
 }  // namespace workphone

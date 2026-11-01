@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <vector>
 #include <stdexcept>
 #include <Windows.h>
 #include <TlHelp32.h>
@@ -51,7 +52,9 @@ namespace workphone::editor
         bool smoke = false;
         std::filesystem::path validationCaptureDirectory;
         std::filesystem::path runtimeScenePackage;
+        std::vector<std::filesystem::path> runtimeSceneOverlays;
         std::string runtimeSceneUuid,runtimeSceneTarget="pc";
+        std::string runtimeSceneCollisions="reject";
         bool runtimeSceneValidate=false;
 
         EditorPackage( int argc, char **argv )
@@ -66,7 +69,9 @@ namespace workphone::editor
             for( int i = 1; i < argc; ++i )
             {
                 const std::string argument = argv[i];
-                if(argument=="--runtime-scene-package"||argument=="--runtime-scene-uuid"||argument=="--runtime-scene-target")
+                if(argument=="--runtime-scene-overlay"||argument=="--runtime-scene-collisions")
+                {if(++i==argc)throw std::runtime_error("Missing runtime mount argument");if(argument=="--runtime-scene-overlay"){if(runtimeSceneOverlays.size()>=31)throw std::runtime_error("Runtime scene supports at most31 overlays");runtimeSceneOverlays.emplace_back(argv[i]);}else runtimeSceneCollisions=argv[i];}
+                else if(argument=="--runtime-scene-package"||argument=="--runtime-scene-uuid"||argument=="--runtime-scene-target")
                 {
                     if(++i==argc)throw std::runtime_error("Missing runtime scene argument");
                     if(argument=="--runtime-scene-package")runtimeScenePackage=argv[i];
@@ -89,6 +94,9 @@ namespace workphone::editor
             if(runtimeScenePackage.empty()!=runtimeSceneUuid.empty()||(runtimeSceneValidate&&runtimeScenePackage.empty()))
                 throw std::runtime_error("Runtime scene startup requires both --runtime-scene-package and --runtime-scene-uuid");
             if(!runtimeScenePackage.empty())runtimeScenePackage=std::filesystem::canonical(runtimeScenePackage);
+            if(!runtimeSceneOverlays.empty()&&runtimeScenePackage.empty())throw std::runtime_error("Runtime overlays require a base package");
+            for(auto &path:runtimeSceneOverlays)path=std::filesystem::canonical(path);
+            if(runtimeSceneCollisions!="reject"&&runtimeSceneCollisions!="identical"&&runtimeSceneCollisions!="prefer-earlier")throw std::runtime_error("Unknown runtime package collision policy");
             if( !installed && !explicitRoot && !smoke && workspace.empty() )
             {
                 // Development plugin/media paths are relative to the executable,

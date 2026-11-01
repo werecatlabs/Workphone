@@ -16,6 +16,7 @@ namespace workphone
 
     namespace ui
     {
+        class ImGuiRuntimeFont;
         class ImGuiButton : public ImGuiElement<IUIButton>
         {
         public:
@@ -46,6 +47,9 @@ namespace workphone
             void setLabel( const String &label ) override;
 
             void setTextSize( f32 textSize ) override;
+            bool setRuntimeLiteralText(bool enabled) override{m_runtimeLiteralText=enabled;return true;}
+            bool setRuntimeFont(SmartPtr<render::IFont>) override;
+            SmartPtr<render::IFont> getRuntimeFont() const override;
             f32 getTextSize() const override;
 
             SmartPtr<Properties> getProperties() const override;
@@ -57,7 +61,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            AtomicObject<FixedString<128>> m_label;
+            AtomicObject<String> m_label;
+            atomic_bool m_runtimeLiteralText=false;
+            std::shared_ptr<ImGuiRuntimeFont> m_runtimeFont;
             atomic_f32 m_textSize = 14.0f;
             atomic_u32 m_keyboardShortcut = 0;
             int m_shortcutFrame = -1;

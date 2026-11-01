@@ -5,23 +5,24 @@ Scope: implementation started on 2026-10-10 against the production plan in
 This ledger records the integrity and cooking increments. The full plan and
 production release gates remain open.
 
-## Latest implemented scope (31 October 2026)
+## Latest implemented scope (1 November 2026)
 
-Increments 33–41 below extend the existing resource pipeline. Increments 38–41
-have rebuilt optimized/Debug matrix and relocated-candidate evidence below.
+Increments 33–46 below extend the existing resource pipeline. Increments 38–41
+have earlier rebuilt optimized/Debug matrix and relocated-candidate evidence below.
+Validation of the new increments is tracked separately from that earlier candidate.
 The current bounded
 subsets are distinct from completing each production-plan family:
 
-| Area | Implemented and tested | Still required for full scope |
+| Area | Implemented scope | Still required for full scope |
 | --- | --- | --- |
 | Mesh/material/skin | WPM1 geometry, ordered typed materials, pinned skin weights/rig, native CPU deformation, static streamed LOD fallback and rendered package pixels | Full model import, imported/skinned LOD variants and complete format adoption |
-| Skeleton/clip | Existing XML hierarchy and linear quaternion-interpolated clips, independent Animator installation | Graph/mask/retarget/morph formats and complete authoring integration |
-| Scene/prefab | Captured UUIDs and native Mesh/MeshRenderer/Animator/Script/Material/Skybox/Camera/Light/AudioEmitter/UIComponent/LODGroup installation; strict graph-local LOD references, append/rollback and prefab remap | Other component/domain families, arbitrary authored reference schemas and nested overrides |
-| UI | Window/container/text/button trees through existing native controls, owner publication and cleanup | Font/image/style/localization dependencies, visual/input and project-switch acceptance |
+| Skeleton/clip | XML hierarchy/clips plus typed graph/mask, local-bind retarget, native two-bone IK-rig and static PNT/PNTC morph resources; independent Animator owners | Complete domain authoring, humanoid retargeting and combined skinned morph support |
+| Scene/prefab | Thirteen native component families including TerrainSystem/ParticleSystem; UUID and graph-local LOD references, append/rollback and prefab remap; staged/nested/removed visibility | Other component/domain families, arbitrary authored reference schemas and nested overrides |
+| UI | Native window/container/text/button/image trees with pinned bitmap fonts, textures, styles/localization, transactional locale replacement and retained frame assets | Full domain authoring, typography/visual/input and project-switch acceptance |
 | Script components | Private runtime UUID mount or captured resolver, compiled module closure, per-graph VM, managed heap/source admission and real construction/update after authoring storage removal | Reentrant VM teardown, optional LuaJIT pressure acceptance and allocations outside the Lua allocator |
-| Payload streaming | Explicit captured mounts, cross-request work, manifest-v4 verified chunks, async sparse-leaf closure loading, native mip/static-LOD/PCM demand and fallback, CPU/native owner leases | Broad pressure/scale/soak and device certification, further native streaming formats; unsupported legacy encodings retain explicit whole-resource policy |
+| Payload streaming | Explicit captured mounts and named composition, cross-request work, manifest-v4 verified chunks, async sparse-leaf closure loading, native mip/static-LOD/PCM and lazy foliage-page demand, CPU/native owner leases | Broad pressure/scale/soak and device certification, further native streaming formats; unsupported legacy encodings retain explicit whole-resource policy |
 
-Current implementation is recorded under increments 36–41. Validation for those
+Current implementation is recorded under increments 36–46. Validation for those
 increments is recorded separately below; increment 35's candidate predates them. Release certification remains
 false; these changes do not close the complete R1/R2 plan.
 
@@ -2252,6 +2253,224 @@ and legal flags remain false. Refreshed inventory lists only Microsoft Basic
 Display Adapter and no sound devices (`resource-families-streaming-host-inventory.json`).
 These gates do not certify representative GPU/audio hardware, live visual/input
 behavior, broad scale/soak, other component/domain formats or the full R1/R2 plan.
+
+## Increment 42: named runtime package composition
+
+`ResourceSystem` and `ResourcePayloadMount` capture up to 32 ordered named
+packages through their existing readers, producers and owner views. Explicit
+Reject, IdenticalOnly and PreferEarlier policies govern ResourceID/UUID overlap.
+The chosen parent's dependency pins must still match the selected child; typed
+ABI conflicts and UUID aliases fail closed. Routing, provenance, generation
+retention and CPU admission remain part of the immutable captured mount.
+
+The product Editor accepts repeatable `--runtime-scene-overlay` arguments and
+`--runtime-scene-collisions reject|identical|prefer-earlier`. Its structured report
+records selected root provenance and overlap count. The source-free product probe
+checks default rejection, identical/preferred overlap and preservation of both
+read-only packages. This does not implement an overlay-authoring UI or certify
+production patch delivery.
+
+## Increment 43: terrain, foliage, particles and native publication
+
+The scene/prefab output ABI is revision 4, with native `TerrainSystem` and
+`ParticleSystem` adapters alongside the previous eleven component families.
+Terrain binds `terrainAssetUuid` and optional `foliageWorldAssetUuid`; particles
+bind `particleAssetUuid`. Existing terrain/foliage and particle rendering,
+simulation, materials and lifecycle paths perform installation. Foliage page
+bodies remain cold until requested from the captured package, with exact pins
+and bounded worker reads. Runtime source/template paths are rejected.
+
+Actual `toData` round trips retain canonical capital `Enabled` and resource
+metadata, then cook and reload with authored files removed. Runtime UI, terrain,
+particles, meshes, lights, skyboxes and cameras now use consistent published
+scene ancestry. Staged/removed actors remain inactive; valid nested actors do not
+require a root-only membership bit. Native tests cover publication, ancestry,
+disable/re-enable, removal/restoration and direct actor retirement.
+
+Cooked components without an authored FSM state adopt the application's Edit or
+Play mode before commit; explicit states remain intact. This allows publication
+callbacks to activate their native owners while staged actors remain hidden.
+Claw camera factories now provide their existing visibility/camera state records;
+scene-owned clones have independent records, and removal retires only their own
+inventory entries. Terrain staging scratch retires before foliage decoding asks
+for its working allowance. Particle draws retain and resolve the captured native
+texture even before the legacy material pass snapshot is published; teardown
+retains its creator until scene inventory removal.
+
+MeshRenderer authoring serialization now retains `meshAssetUuid` and `streamMesh`
+through reopen, including unrelated partial property updates and explicit clear/
+false values. Persisted authoring metadata cannot activate runtime LOD residency;
+only the captured runtime mode enables that path. Renderer initialization also
+propagates the original backend/resource exception, so an unavailable DX11 pass
+retains its actionable capability diagnostic through scene bootstrap.
+
+Terrain and foliage publication callbacks retain independent revocable owner
+tokens. Component unload revokes them before component locks and pooled storage
+retirement, then clears both native gates. A queued native terrain may outlive
+its component without invoking or destroying a weak pointer into reclaimed
+component storage. The regression destroys the component before releasing the
+queued native owner and checks its actual retired resources.
+
+The decoder retains independent historical revision 1/2/3 fingerprints and rejects
+newer component/Animator/UI fields under older ABIs. Resource-OFF builds retain
+explicit unavailable stubs. Native geometry/simulation budgets remain on the
+shared physical scheduler; a custom mount is not a universal per-mount native
+quota. Water remains unavailable because no native water pass exists.
+
+## Increment 44: typed animation families
+
+The existing Animator/evaluator/skeleton/IK/mesh paths now install `.agraph`,
+`.amask`, `.aretgt`, `.arig` and `.amorph` resources. Graphs carry bounded clips,
+parameters, states, transitions, selectors and one-dimensional blends. Bone masks
+reach actual per-bone evaluation. Retargeting transfers explicit one-to-one
+local-bind-space keys. IK rigs clone the existing post-animation two-bone solver
+and support pinned skeleton, graph or retarget inputs. Static morphs stage native
+PNT/PNTC geometry, preserve submeshes/materials/UVs/index width, and hold live plus
+candidate CPU/GPU admission before publication.
+
+Tests exercise actual independent Animator/mesh owners, source-free containers,
+strict pins, corruption, topology/normal validation, native pose results, clone
+independence and last-good pressure rejection. The native run exposed and fixed
+an unqualified graph binding helper intercepted by `std::bind`; semantic cooking
+and decoding now call the intended native binding function. A null evaluator
+cannot count as successful installation. Humanoid solving, arbitrary animation
+authoring and combined skinned morphs remain outside these formats.
+Cloning a morph after an external native topology edit now rejects the stale
+binding instead of stamping it with the clone's fresh generation.
+
+Authoring Animator properties now preserve `animationAssetUuid` through actual
+serialization and reopen. Partial property updates retain an omitted identity;
+an explicit empty value clears it. This persists the typed binding for cooking;
+typed preview still requires its declared integration. Runtime UUID resolution
+and rejection of authoring caches remain strict.
+
+## Increment 45: captured UI assets and frame ownership
+
+UI source/payload revision 2 adds image nodes and captured font, texture, style
+and localization UUID dependencies while retaining revision 1 decoding. `.uistyle`
+and `.locres` use bounded typed binary records, not runtime JSON passthrough.
+Installation resolves styles and locale/fallback text before native publication;
+invalid translations, duplicate translated button labels, missing assets and
+admission denial preserve the ready tree. Locale changes replace the entire
+captured generation and retain explicit active/visible state.
+
+`.fontres` installs an explicit baked bitmap atlas through Claw's native font
+and private ImGui adapters. Glyph bounds are top-of-line pixel offsets; a checked
+opaque white texel supplies native utility sampling. Unknown font formats and
+unsupported Unicode/backend combinations report failure. Native fonts and actual
+image resources remain pinned through frame conversion/submission, including
+control unload or retargeting. The real DLL factory creates Claw widgets, and
+frame retention has a single DLL-owned TLS implementation.
+
+A UI recording exception now recovers/discards incomplete ImGui commands while
+their owners remain pinned, then permits an ordinary next frame. Final C callback
+diagnostics also remain nonthrowing under SourceCpu denial. The pressure fixture
+requires a real allocation refusal and native rendering after recovery.
+Recovery also handles an open outer tab/item with an interrupted child window;
+the discarded frame cannot close a tab against the child's unrelated ID stack.
+
+Raw `.uires` discovery shares the strict compiler parser with the catalog's
+existing reference graph, providing canonical where-used and required-reference
+deletion checks. Terrain/particle saved properties likewise carry resource
+metadata. Remaining raw descriptor discovery and full authoring integration stay
+separate gates. UI scratch/control ownership obeys both shared admission and a
+separately captured mount scheduler; unrelated backend/process allocations are
+not represented as a complete memory ceiling.
+
+## Increment 46: replayable clean-machine fixtures
+
+Successful relocated probes can retain only the verified runtime packages and
+bounded descriptors, after removing authored files, cook caches and catalogs.
+Package evidence pins complete size/SHA256 inventories. Clean-machine preparation
+verifies and copies those exact inputs and pins a shared native replay helper.
+The guest replays extended typed UUID verification, DX11/Software mixed scenes,
+overlay policies and explicit unavailable/error outcomes without Python.
+
+The same helper has a separate host-only report with fresh-guest and release
+flags false. Legacy evidence without retained fixtures keeps narrower startup
+coverage. Pure helper checks reject byte tampering and unpinned authored members;
+an empty legacy replay cannot claim typed coverage. Preparing a kit or passing
+host replay does not establish an executed fresh guest, hardware or legal gate.
+
+Stock Windows PowerShell inventory comparison explicitly sorts each file's path,
+including ordered dictionaries; unchanged installed bytes cannot fail because of
+PowerShell 5.1 dictionary sorting. Exact case-sensitive path/size/SHA256 comparison
+still rejects changed bytes, extra members and missing/duplicate pins. Ten pure
+comparison checks passed. Kit Launch also preserves its original pinned Sandbox
+configuration and derives a separately pinned configuration with the current
+payload/evidence host folders. Collect validates both configurations, policies,
+command and recorded mappings, with legacy launch-record compatibility. Twelve
+pure PowerShell 5.1 relocation/tampering checks passed without a guest launch.
+Receipts are retained in
+`project_x64/clean-inventory-ps5-305416d893cb4eb4b3d7db4766e5c7ed-retry1/result.json`,
+`project_x64/editor-kit-relocation-5d88e3d511bc4e3fba7dcdbcb68c3dfa/result.json`
+and `project_x64/resource-domains-kit-ps51-contracts.json` (all four script parsers
+and an empty legacy replay). These are tooling checks, not guest execution.
+
+### Validation for increments 42–46
+
+Before the final authoring-persistence fixes, the rebuilt optimized matrix passed
+**18/18** checks in **142.93 seconds**, and Debug passed **23/23** in
+**293.43 seconds**. Evidence prefixes are
+`project_x64/resource-domains-green-opt-` and `resource-domains-green-debug-`,
+with `tests.log`, `report.log` and `results.xml`. This includes actual native font/morph consumers,
+graph/mask/retarget/IK owners, composition/reference contracts, process recovery
+and the new extended cooker gate (10 roots, 15 closure UUIDs, five rejected inputs
+and source-free read-only verification). Native graphics used Microsoft Basic
+Render Driver, not representative GPU hardware.
+
+The mixed-scene test passed three consecutive runs in **54.33 seconds**, including
+queued native retirement after component destruction. Evidence prefix:
+`project_x64/resource-domains-lifetime-retirement-repeat-debug-`. The existing DX11
+target regression passed in Debug (**12.04 seconds**) and optimized
+(**11.42 seconds**), with prefixes `resource-domains-dx11-debug-` and
+`resource-domains-dx11-opt-`. Test timeouts and fixtures were not reduced.
+
+Both configurations rebuilt after the final Animator/MeshRenderer persistence
+fixes. All affected Debug checks passed (**3/3**, **43.66 seconds**), and optimized
+passed (**2/2**, **17.23 seconds**). They include the actual serialized authoring
+round trips, partial edits/clears, runtime-mode isolation, typed animation and
+native cooked graphics; Debug also reruns the complete mixed-scene contract.
+Evidence prefixes: `project_x64/resource-domains-authoring-debug-` and
+`resource-domains-authoring-opt-`. The stage record is
+`project_x64/resource-domains-authoring-final-state.json`.
+
+The final frozen-source Debug `Editor.all` aggregate passed **100/100 cases** and
+**1,907,473/1,907,473 assertions** in **824.66 seconds**, within its unchanged
+900-second timeout. Evidence prefix:
+`project_x64/resource-domains-editor-all-authoring-final-` (`tests.log`,
+`report.log`, `results.xml`). Timed-loop assertion totals vary between runs.
+Earlier aggregate/candidate evidence remains preserved under its original names.
+
+The fresh relocated candidate at
+`project_graphics_sdk/rd306c-20261101/editor-package-evidence.json` passed all
+**8** package checks. All **306** captured inputs (271 explicit inputs and 35
+notice inputs) have zero drift, and all **12** selected built/installed runtime
+modules match. The source-input audit covers every one of the **131** changed
+engine/test/tool files without missing, duplicate or absent inputs. Receipts:
+`project_x64/resource-domains-verified-input-module-verification.json` and
+`project_x64/resource-domains-source-inventory.json`. Runtime ZIP SHA256:
+`43A29E1CC8D8491E7149ACEC350D697FF3D246AC238764FD0106C036628F1130`.
+The runtime archive is 51,182,500 bytes; symbols are separately archived.
+
+Stock Windows PowerShell **5.1.19041.7802** prepared the pinned kit at
+`project_graphics_sdk/ek306c-20261101/`. Its exact native replay helper then passed
+all **9** host-only process checks, including **15** source-free typed UUIDs,
+mixed DX11/Software scenes, all three overlay policies, explicit Software
+capability/missing-UUID failures and explicit audio-device unavailability.
+Installed payload and fixture bytes remained unchanged. Result:
+`project_graphics_sdk/ek306c-20261101/host-replay/result.json`.
+The final post-replay input/module verification also passed. Consolidated stage
+record: `project_x64/resource-domains-authoring-final-package-state.json`.
+
+Preparation captured Windows 10 Pro build 19045 on the BOCHS virtual machine;
+Windows Sandbox is absent and its optional feature is disabled. No host feature,
+prerequisite or guest was changed/launched. Kit/replay evidence preserves
+`cleanMachineExecuted=false`, `guestIdentityVerified=false` and
+`releaseCertified=false`; the candidate also preserves interactive/clean-machine/
+license flags as false. Native rendering used Microsoft Basic Render Driver.
+Fresh-guest, physical GPU, audible audio, interactive Editor/project-switch,
+legal, scale/soak and complete R1/R2 family/authoring/cache/patch gates remain open.
 
 ## Next implementation gates
 

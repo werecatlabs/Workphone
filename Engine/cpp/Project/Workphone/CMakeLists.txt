@@ -19,7 +19,12 @@ if (NOT WP_BUILD_RESOURCE_SYSTEM)
         ResourceID
         SkeletonResourceCompiler
         SceneResourceCompiler
+        AnimationResourceCompiler
+        RetargetResourceCompiler
+        RigResourceCompiler
+        MorphResource
         UIResource
+        UIAssetResource
         ResourceSystem
         RuntimeSceneLeafFactory)
     foreach(_resource_file IN LISTS _RESOURCE_SYSTEM_FILES)
@@ -34,6 +39,11 @@ set_property(SOURCE ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/Anim
                     ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/AudioEmitter.cpp
                     ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/UI/UIComponent.cpp
     APPEND PROPERTY COMPILE_DEFINITIONS WP_TYPED_ANIMATION_RESOURCE=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
+set_property(SOURCE ${WP_ROOT}/Engine/cpp/Source/Workphone/Database/AssetDatabaseManager.cpp
+    APPEND PROPERTY COMPILE_DEFINITIONS WP_TYPED_UI_RESOURCE=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
+set_property(SOURCE ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/Terrain/TerrainRuntime.cpp
+                    ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/ParticleRuntime.cpp
+    APPEND PROPERTY COMPILE_DEFINITIONS WP_TYPED_DOMAIN_RESOURCE=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
 
 set(WP_HEADER_REL_PATH "${WP_ROOT}/Engine/cpp/Include/Workphone")
 set(WP_SOURCE_REL_PATH "${WP_ROOT}/Engine/cpp/Source/Workphone")

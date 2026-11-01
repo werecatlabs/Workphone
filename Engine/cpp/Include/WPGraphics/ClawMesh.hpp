@@ -112,6 +112,8 @@ namespace workphone
             /** Assigns a skeleton for skeletal animation. */
             void setSkeleton( SmartPtr<IGraphicsSkeleton> skeleton ) override;
             bool applySkeletonPose( SmartPtr<ISkeleton> skeleton, String &error ) override;
+            bool applyMorphAnimation(std::shared_ptr<const resource::RuntimeResource>,
+                f32 time,f32 weight,f32 scale,String &error,const String &target="pc",bool packagedBuild=true) override;
 
             /** Initial CPU deformation path; call from the mesh-owning render thread.
              * Joint palettes are model-space current_joint * inverse_bind. */
@@ -133,6 +135,14 @@ namespace workphone
 
         protected:
             void clearSkinningData();
+            struct RuntimeMeshIdentity;
+            struct RuntimeMorphState;
+            static std::shared_ptr<const RuntimeMeshIdentity> captureRuntimeGeometry(
+                const resource::RuntimeResource &,wp_graphics_mesh *,String &error);
+            static std::shared_ptr<RuntimeMorphState> cloneRuntimeMorphState(
+                const std::shared_ptr<RuntimeMorphState> &,wp_graphics_mesh *,String &error);
+            std::shared_ptr<const RuntimeMeshIdentity> m_runtimeGeometry;
+            std::shared_ptr<RuntimeMorphState> m_runtimeMorph;
             std::shared_ptr<const void> m_runtimeMaterials;
             SmartPtr<ISkeleton> m_poseSkeleton;
             Array<SmartPtr<IBone>> m_poseBones = makeSourceBudgetSnapshot<SmartPtr<IBone>>();

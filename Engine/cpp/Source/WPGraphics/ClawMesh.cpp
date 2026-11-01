@@ -4,6 +4,7 @@
 #include <WPGraphics/Resources/MeshResourceCompiler.hpp>
 #include <WPGraphics/Resources/ClawMaterialResource.hpp>
 #include <WPGraphics/Resources/SkinnedMeshResource.hpp>
+#include <WPGraphics/Resources/MorphResourceCompiler.hpp>
 #include <Workphone/System/SkeletonResourceCompiler.hpp>
 #endif
 #include <WPGraphics/ClawMaterial.hpp>
@@ -38,6 +39,31 @@ namespace workphone
     namespace render
     {
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMesh, GraphicsMesh );
+
+#if WP_FOLIAGE_SOURCE_RESOURCES
+        struct ClawMesh::RuntimeMeshIdentity
+        {
+            StreamBudget admission;
+            resource::MorphClipInfo info;
+            u64 compilerVersion=0,sourceHash=0,payloadHash=0,payloadSize=0;
+        };
+        struct ClawMesh::RuntimeMorphState
+        {
+            struct Bind
+            {
+                StreamBudget admission;
+                Array<u8> vertices;
+            };
+            StreamBudget admission;
+            resource::ResourceID id;
+            u64 compilerVersion=0,sourceHash=0,payloadHash=0,payloadSize=0,generation=0;
+            std::shared_ptr<const resource::MorphClipData> clip;
+            std::shared_ptr<const Bind> bind;
+        };
+#else
+        struct ClawMesh::RuntimeMeshIdentity {};
+        struct ClawMesh::RuntimeMorphState {};
+#endif
 
         namespace
         {
@@ -424,6 +450,7 @@ namespace workphone
             }
 
             m_mesh = loadedMesh;
+            m_runtimeMorph.reset();m_runtimeGeometry.reset();
 
             if( m_renderObject )
             {
@@ -434,6 +461,156 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loaded );
+        }
+
+        std::shared_ptr<const ClawMesh::RuntimeMeshIdentity> ClawMesh::captureRuntimeGeometry(
+            const resource::RuntimeResource &input,wp_graphics_mesh *mesh,String &error)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            try {
+                auto admission=asset_budget::reserveCpuBytes(8192+u64(input.header.resourceId.str().size())*8,false);
+                if(!admission){error="Runtime mesh identity source budget exhausted";return {};}
+                auto identity=std::make_shared<RuntimeMeshIdentity>();identity->admission=std::move(admission);
+                identity->info.mesh=input.header.resourceId;
+                identity->compilerVersion=input.header.compilerVersion;identity->sourceHash=input.header.sourceHash;
+                identity->payloadHash=input.header.payloadHash;identity->payloadSize=input.header.payloadSize;
+                // Other native formats remain valid meshes, but cannot become
+                // morph bases. Morph admission checks the nonzero signatures.
+                String unsupported;
+                MorphResourceCompiler::signature(mesh,identity->info,unsupported);
+                return identity;
+            }catch(const std::exception &failure){error=failure.what();return {};}
+#else
+            error="Cooked morph support is unavailable";return {};
+#endif
+        }
+
+        std::shared_ptr<ClawMesh::RuntimeMorphState> ClawMesh::cloneRuntimeMorphState(
+            const std::shared_ptr<RuntimeMorphState> &source,wp_graphics_mesh *mesh,String &error)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            if(!source)return {};
+            try {
+                auto admission=asset_budget::reserveCpuBytes(8192+u64(source->id.str().size())*8,false);
+                if(!admission){error="Morph instance source budget exhausted";return {};}
+                auto result=std::make_shared<RuntimeMorphState>(*source);result->admission=std::move(admission);
+                result->generation=wp_graphics_mesh_get_content_generation(mesh);return result;
+            }catch(const std::exception &failure){error=failure.what();return {};}
+#else
+            error="Cooked morph support is unavailable";return {};
+#endif
+        }
+
+        bool ClawMesh::applyMorphAnimation(std::shared_ptr<const resource::RuntimeResource> input,
+            f32 time,f32 weight,f32 scale,String &error,const String &target,bool packagedBuild)
+        {
+            error.clear();
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            try {
+                NativeMeshLifecycleLock lifecycleLock;
+                if(!input||!m_mesh||!m_runtimeGeometry){error="Morph requires an installed pinned native mesh";return false;}
+                if(hasSkinningData()){error="Skinned morph composition is unsupported";return false;}
+                if(!std::isfinite(time)||!std::isfinite(weight)||weight<0||weight>1||!std::isfinite(scale)||scale<0||scale>1000)
+                {error="Invalid bounded morph playback values";return false;}
+                const auto &root=input->header;
+                if(root.resourceId.str().size()>1024||root.installDependencies.size()!=1||root.installArtifacts.size()>1||
+                   root.installDependencies[0].str().size()>1024||(!root.installArtifacts.empty()&&root.installArtifacts[0].path.size()>4096)||
+                   !root.isValid()||root.resourceType!=resource::ResourceTypeID("amorph")||root.resourceId.type()!=root.resourceType||root.resourceId.isSubResource()||
+                   input->payload.size()>resource::MorphResourceCodec::maximumPayloadBytes||root.payloadSize!=input->payload.size()||
+                   resource::hashBytes(input->payload.data(),input->payload.size())!=root.payloadHash||input->dependencies.size()!=1||!input->dependencies.front())
+                {error="Morph payload or pinned base is invalid";return false;}
+                const auto &pinned=input->dependencies.front()->header;
+                if(root.installDependencies[0]!=pinned.resourceId||pinned.resourceType!=resource::ResourceTypeID("mesh")||
+                   (root.formatVersion>=2&&(root.installArtifacts[0].sourceHash!=pinned.sourceHash||root.installArtifacts[0].payloadHash!=pinned.payloadHash))||
+                   pinned.resourceId!=m_runtimeGeometry->info.mesh||pinned.compilerVersion!=m_runtimeGeometry->compilerVersion||
+                   pinned.sourceHash!=m_runtimeGeometry->sourceHash||pinned.payloadHash!=m_runtimeGeometry->payloadHash||pinned.payloadSize!=m_runtimeGeometry->payloadSize)
+                {error="Morph dependency generation differs from the installed base";return false;}
+                const bool same=m_runtimeMorph&&m_runtimeMorph->id==root.resourceId&&m_runtimeMorph->compilerVersion==root.compilerVersion&&
+                    m_runtimeMorph->sourceHash==root.sourceHash&&m_runtimeMorph->payloadHash==root.payloadHash&&m_runtimeMorph->payloadSize==root.payloadSize;
+                if(m_runtimeMorph&&m_runtimeMorph->generation!=wp_graphics_mesh_get_content_generation(m_mesh))
+                {error="Morph base geometry was externally modified";return false;}
+                auto staged=m_runtimeMorph;
+                if(!same) {
+                    auto admission=asset_budget::reserveCpuBytes(8192+u64(root.resourceId.str().size())*8,false);
+                    if(!admission){error="Morph instance source budget exhausted";return false;}
+                    auto clip=std::make_shared<resource::MorphClipData>();MorphResourceCompiler compiler;
+                    if(!resource::MorphResourceCodec::decode(*input,compiler.versionFor(resource::ResourceTypeID("amorph")),*clip,error))return false;
+                    if(clip->info.target!=target||clip->info.packagedBuild!=packagedBuild){error="Morph target/build mode differs from its consumer";return false;}
+                    const auto &base=m_runtimeGeometry->info;const auto &dependency=input->dependencies.front()->header;
+                    if(base.mesh!=clip->info.mesh||dependency.resourceId!=base.mesh||dependency.compilerVersion!=m_runtimeGeometry->compilerVersion||
+                       dependency.sourceHash!=m_runtimeGeometry->sourceHash||dependency.payloadHash!=m_runtimeGeometry->payloadHash||dependency.payloadSize!=m_runtimeGeometry->payloadSize||
+                       !base.topologyHash||!base.bindHash||base.topologyHash!=clip->info.topologyHash||base.bindHash!=clip->info.bindHash||
+                       base.vertices!=clip->info.vertices||base.format!=clip->info.format)
+                    {error="Morph base generation, topology or bind vertices differ from the installed mesh";return false;}
+                    std::shared_ptr<const RuntimeMorphState::Bind> bind=m_runtimeMorph?m_runtimeMorph->bind:nullptr;
+                    if(!bind) {
+                        resource::MorphClipInfo current;
+                        if(!MorphResourceCompiler::signature(m_mesh,current,error))return false;
+                        if(current.topologyHash!=base.topologyHash||current.bindHash!=base.bindHash){error="Installed morph base was modified before binding";return false;}
+                        const auto bytes=u64(base.vertices)*wp_graphics_mesh_get_vertex_stride(m_mesh);
+                        auto bindAdmission=asset_budget::reserveCpuBytes(bytes+4096,false);
+                        if(!bindAdmission){error="Morph bind vertex source budget exhausted";return false;}
+                        auto owned=std::make_shared<RuntimeMorphState::Bind>();owned->admission=std::move(bindAdmission);owned->vertices.resize(size_t(bytes));
+                        std::memcpy(owned->vertices.data(),wp_graphics_mesh_get_vertices(m_mesh),owned->vertices.size());bind=std::move(owned);
+                    }
+                    // Validate complete authored key intervals against original
+                    // bind vertices, even when replacing a deformed instance.
+                    std::unique_ptr<wp_graphics_mesh,decltype(&destroyNativeMesh)> sampleBase(asset_budget::createMesh(),destroyNativeMesh);
+                    if(!sampleBase||!wp_graphics_mesh_set_vertices(sampleBase.get(),static_cast<wp_vertex_format>(base.format),bind->vertices.data(),base.vertices))
+                    {error="Morph semantic bind staging budget exhausted";return false;}
+                    if(!MorphResourceCompiler::validateSamples(sampleBase.get(),*clip,error))return false;
+                    staged=std::make_shared<RuntimeMorphState>();staged->admission=std::move(admission);staged->id=root.resourceId;
+                    staged->compilerVersion=root.compilerVersion;staged->sourceHash=root.sourceHash;staged->payloadHash=root.payloadHash;staged->payloadSize=root.payloadSize;
+                    staged->clip=std::move(clip);staged->bind=std::move(bind);
+                }
+                if(staged->clip->info.target!=target||staged->clip->info.packagedBuild!=packagedBuild)
+                {error="Morph target/build mode differs from its consumer";return false;}
+                const auto count=staged->clip->info.vertices;const auto stride=wp_graphics_mesh_get_vertex_stride(m_mesh);
+                const auto bytes=u64(count)*stride;
+                if(bytes!=staged->bind->vertices.size()){error="Morph native vertex layout changed";return false;}
+                auto working=asset_budget::reserveCpuBytes(bytes+4096,true);if(!working){error="Morph frame working budget exhausted";return false;}
+                auto weights=makeSourceBudgetSnapshot<f32>();if(!resource::MorphResourceCodec::weights(*staged->clip,time,weights,error))return false;
+                Array<u8> vertices(static_cast<size_t>(bytes));std::memcpy(vertices.data(),staged->bind->vertices.data(),vertices.size());
+                for(size_t i=0;i<weights.size();++i) {
+                    const auto amount=double(weights[i])*weight;if(amount==0)continue;
+                    for(const auto &delta:staged->clip->targets[i].deltas) {
+                        float values[6];auto vertex=vertices.data()+size_t(delta.vertex)*stride;std::memcpy(values,vertex,sizeof(values));
+                        values[0]+=float(amount*scale*delta.position.X());values[1]+=float(amount*scale*delta.position.Y());values[2]+=float(amount*scale*delta.position.Z());
+                        values[3]+=float(amount*delta.normal.X());values[4]+=float(amount*delta.normal.Y());values[5]+=float(amount*delta.normal.Z());std::memcpy(vertex,values,sizeof(values));
+                    }
+                }
+                for(u32 i=0;i<count;++i) {
+                    float values[6];auto vertex=vertices.data()+size_t(i)*stride;std::memcpy(values,vertex,sizeof(values));double normal=0;
+                    for(const auto value:values)if(!std::isfinite(value)||std::abs(value)>1000000){error="Morph sample produced an unbounded vertex";return false;}
+                    for(size_t j=3;j<6;++j)normal+=double(values[j])*values[j];
+                    if(normal<=1e-12){error="Morph sample produced a degenerate normal";return false;}
+                    const auto length=std::sqrt(normal);for(size_t j=3;j<6;++j)values[j]=float(values[j]/length);std::memcpy(vertex,values,sizeof(values));
+                }
+                std::unique_ptr<wp_graphics_mesh,decltype(&destroyNativeMesh)> candidate(asset_budget::createMesh(),destroyNativeMesh);
+                if(!candidate||!wp_graphics_mesh_set_vertices(candidate.get(),wp_graphics_mesh_get_vertex_format(m_mesh),vertices.data(),count))
+                {error="Morph native vertex staging budget exhausted";return false;}
+                const auto indices=wp_graphics_mesh_get_index_count(m_mesh);
+                if(indices) {
+                    const auto copied=wp_graphics_mesh_get_index_format(m_mesh)==WORKPHONE_INDEX_FORMAT_UINT16?
+                        wp_graphics_mesh_set_indices_u16(candidate.get(),static_cast<const uint16_t*>(wp_graphics_mesh_get_indices(m_mesh)),indices):
+                        wp_graphics_mesh_set_indices_u32(candidate.get(),static_cast<const wp_u32*>(wp_graphics_mesh_get_indices(m_mesh)),indices);
+                    if(!copied){error="Morph native index staging budget exhausted";return false;}
+                }
+                wp_graphics_mesh_set_primitive_type(candidate.get(),wp_graphics_mesh_get_primitive_type(m_mesh));
+                for(s32 i=0;i<wp_graphics_mesh_get_submesh_count(m_mesh);++i){const auto section=wp_graphics_mesh_get_submesh(m_mesh,i);
+                    if(!section||wp_graphics_mesh_add_submesh(candidate.get(),section->index_start,section->index_count,section->material_id)<0)
+                    {error="Morph native submesh staging budget exhausted";return false;}}
+                wp_graphics_mesh_compute_aabb(candidate.get());
+                if(!prepareNativeGeometry(candidate.get())){error="Morph GPU staging budget exhausted";return false;}
+                const auto generation=wp_graphics_mesh_get_content_generation(candidate.get());
+                // No allocation or metadata copies follow native publication.
+                auto previous=m_mesh;m_mesh=candidate.release();staged->generation=generation;m_runtimeMorph=std::move(staged);
+                if(m_renderObject){wp_graphics_object_set_mesh(m_renderObject,m_mesh);wp_graphics_object_set_local_aabb(m_renderObject,wp_graphics_mesh_get_local_aabb(m_mesh));}
+                destroyNativeMesh(previous);return true;
+            }catch(const std::exception &failure){error=failure.what();return false;}
+#else
+            error="Cooked morph support is unavailable";return false;
+#endif
         }
 
         bool ClawMesh::loadResource(std::shared_ptr<const resource::RuntimeResource> loadedResource,String &error,
@@ -494,6 +671,7 @@ namespace workphone
                 m_inverseBind=std::move(candidate->m_inverseBind); m_posePalette=std::move(candidate->m_posePalette);
                 m_skinVertices=std::move(candidate->m_skinVertices); m_skinInputBudget=std::move(candidate->m_skinInputBudget);
                 m_skinOutput=std::move(candidate->m_skinOutput); m_skinOutputBudget=std::move(candidate->m_skinOutputBudget);
+                m_runtimeGeometry.reset();m_runtimeMorph.reset();
                 m_materialName.clear(); m_subMaterialNames.clear(); m_meshName=std::move(candidate->m_meshName);
                 m_animationController=nullptr; m_skeleton=nullptr;
                 if(m_renderObject) {
@@ -540,7 +718,9 @@ namespace workphone
 #endif
                 }
             } catch(const std::exception &e) { error=e.what(); return false; }
+            auto identity=captureRuntimeGeometry(*loadedResource,candidate.get(),error);if(!identity)return false;
             auto previous=m_mesh; m_mesh=candidate.release();
+            m_runtimeGeometry=std::move(identity);m_runtimeMorph.reset();
             m_subMaterials=std::move(slots);
             m_material=m_subMaterials.empty()?SmartPtr<IMaterial>{}:m_subMaterials[0];
             m_runtimeMaterials=std::move(retained);
@@ -601,6 +781,7 @@ namespace workphone
         {
             NativeMeshLifecycleLock lifecycleLock;
             clearSkinningData();
+            m_runtimeMorph.reset();m_runtimeGeometry.reset();
             setLoadingState( LoadingState::Unloading );
 
             bindNativeRenderObject( nullptr );
@@ -872,6 +1053,7 @@ namespace workphone
             m_skinVertices = std::move( bind );
             m_skinOutputBudget = std::move( outputBudget );
             m_skinOutput = std::move( validated );
+            m_runtimeMorph.reset();
             return true;
         }
 
@@ -1264,6 +1446,7 @@ namespace workphone
             clearSkinningData();
             auto previous = m_mesh;
             m_mesh = candidate.release();
+            m_runtimeMorph.reset();m_runtimeGeometry.reset();
             wp_graphics_mesh_compute_aabb( m_mesh );
             destroyNativeMesh( previous );
             if( m_renderObject )
@@ -1279,6 +1462,11 @@ namespace workphone
         SmartPtr<IGraphicsObject> ClawMesh::clone( const String &name ) const
         {
             NativeMeshLifecycleLock lifecycleLock;
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            // A clone must not bless external edits with a fresh generation
+            // while retaining the original morph's pinned bind/topology state.
+            if(m_runtimeMorph&&(!m_mesh||m_runtimeMorph->generation!=wp_graphics_mesh_get_content_generation(m_mesh)))return nullptr;
+#endif
             auto mesh = workphone::make_ptr<ClawMesh>();
             mesh->setMeshName( name.empty() ? getMeshName() : name );
             mesh->setProgressiveMeshOptions( getProgressiveMeshOptions() );
@@ -1346,7 +1534,12 @@ namespace workphone
                 {
                     return nullptr;
                 }
+                String morphError;
+                auto morph=cloneRuntimeMorphState(m_runtimeMorph,candidate.get(),morphError);
+                if(m_runtimeMorph&&!morph)return nullptr;
                 mesh->m_mesh = candidate.release();
+                mesh->m_runtimeGeometry=m_runtimeGeometry;mesh->m_runtimeMorph=std::move(morph);
+                mesh->m_runtimeMaterials=m_runtimeMaterials;
                 auto outputBudget = asset_budget::reserveCpuBytes(
                     static_cast<u64>( m_skinOutput.size() ) * sizeof( wp_skin_result ), false );
                 if( !m_skinOutput.empty() && !outputBudget )

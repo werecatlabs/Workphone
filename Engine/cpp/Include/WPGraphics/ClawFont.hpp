@@ -11,6 +11,7 @@ struct wp_font;
 struct wp_font_atlas;
 struct wp_font_glyph;
 struct wp_baked_font;
+namespace workphone::resource {class ResourcePayloadMount;}
 
 namespace workphone
 {
@@ -24,6 +25,7 @@ namespace workphone
             Alpha8, /**< 8-bit alpha texture */
             RGBA32  /**< 32-bit RGBA texture */
         };
+        struct CookedFontData;
 
         /**
          * @brief Concrete Font implementation for the WPGraphics/ClawHammer renderer.
@@ -184,6 +186,15 @@ namespace workphone
 
             /** @brief Get the native C font atlas structure. */
             struct wp_font_atlas *getNativeAtlas();
+            bool loadRuntimeFont(const CookedFontData &,SmartPtr<ITexture>,String &error,
+                std::shared_ptr<resource::ResourcePayloadMount> mount={});
+            bool getRuntimeMetrics(BakedFontInfo &,u32 &fallback) const override;
+            u32 getRuntimeGlyphCount() const override;
+            bool getRuntimeGlyphAt(u32,FontGlyphInfo &) const override;
+            SmartPtr<ITexture> getRuntimeAtlas() const override;
+            std::shared_ptr<const void> retainRuntimeFont() const override;
+            std::shared_ptr<StreamBudgetLease> reserveRuntimeFontStorage(u64,String &) const override;
+            bool getRuntimeWhitePixelUV(Vector2F &) const override;
 
             WP_CLASS_REGISTER_DECL;
 
@@ -198,6 +209,7 @@ namespace workphone
 
             struct Impl;
             std::unique_ptr<Impl> m_impl;
+            bool m_runtimeBound=false;
         };
     }  // end namespace render
 }  // namespace workphone

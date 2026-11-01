@@ -86,7 +86,7 @@ namespace workphone::resource
         const String bindingAttribute="compiledResourceId";
         String componentName(const String &name)
         {
-            for(const auto &supported:Array<String>{"Mesh","MeshRenderer","Animator","Script","Material","Skybox","Camera","Light","AudioEmitter","UIComponent","LODGroup"})
+            for(const auto &supported:Array<String>{"Mesh","MeshRenderer","Animator","Script","Material","Skybox","Camera","Light","AudioEmitter","UIComponent","LODGroup","TerrainSystem","ParticleSystem"})
                 if(name==supported||name=="workphone::scene::"+supported||name=="fb::scene::"+supported)
                     return supported;
             throw std::runtime_error("Unsupported cooked component type: "+std::string(name.c_str()));
@@ -100,11 +100,16 @@ namespace workphone::resource
                    (component=="Material"&&field=="Material")||
                    (component=="AudioEmitter"&&field=="Sound")||
                    (component=="UIComponent"&&field=="uiAssetUuid")||
+                   (component=="TerrainSystem"&&(field=="terrainAssetUuid"||field=="foliageWorldAssetUuid"))||
+                   (component=="ParticleSystem"&&field=="particleAssetUuid")||
                    (component=="Skybox"&&(field=="Front"||field=="Back"||field=="Up"||field=="Down"||field=="Right"||field=="Left"));
         }
         bool assetType(const String &component,const String &field,const ResourceTypeID &type)
         {
-            if(component=="Mesh"&&field=="Skeleton"||component=="Animator"&&field=="animationAssetUuid")return type==ResourceTypeID("skelres");
+            if(component=="Mesh"&&field=="Skeleton")return type==ResourceTypeID("skelres");
+            if(component=="Animator"&&field=="animationAssetUuid")return type==ResourceTypeID("skelres")||type==ResourceTypeID("agraph")||type==ResourceTypeID("aretgt")||type==ResourceTypeID("amorph")||type==ResourceTypeID("arig");
+            if(component=="TerrainSystem")return type==ResourceTypeID(field=="terrainAssetUuid"?"terrain":"folworld");
+            if(component=="ParticleSystem")return type==ResourceTypeID("partres");
             if(component=="Script"&&field=="scriptAssetUuid")return type==ResourceTypeID("lua");
             if(component=="Material")return type==ResourceTypeID("matres");
             if(component=="Skybox")return type==ResourceTypeID("texres");
@@ -151,7 +156,10 @@ namespace workphone::resource
             }
             if(component=="UIComponent") {
                 if(key=="runtimeUIDiagnostic")return;
+                if(key=="uiLocale"){require(value.size()<=35&&value.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")==String::npos,"Invalid cooked UI locale tag");return;}
             }
+            if(component=="TerrainSystem"&&key=="showWireframe"){boolean(value);return;}
+            if(component=="ParticleSystem"&&key=="playOnLoad"){boolean(value);return;}
             if(component=="LODGroup") {
                 if(key=="localReferencePoint"){vector(value,3);return;}
                 if(key=="size"||key=="lodBias"){bounded(.000001,10000000);return;}
@@ -298,6 +306,8 @@ namespace workphone::resource
                 }
                 if(component=="Skybox")for(const auto face:{"Front","Back","Up","Down","Right","Left"})
                     require(!result->getProperty(face).empty(),"Cooked Skybox requires six typed face UUIDs");
+                if(component=="TerrainSystem")require(!result->getProperty("terrainAssetUuid").empty(),"Cooked TerrainSystem requires terrainAssetUuid");
+                if(component=="ParticleSystem")require(!result->getProperty("particleAssetUuid").empty(),"Cooked ParticleSystem requires particleAssetUuid");
                 if(component=="Camera") {
                     const auto nearValue=result->getProperty("nearClip"),farValue=result->getProperty("farClip");
                     require((farValue.empty()?1000.:std::stod(farValue.c_str()))>(nearValue.empty()?.1:std::stod(nearValue.c_str())),"Cooked Camera farClip must exceed nearClip");
@@ -535,7 +545,7 @@ namespace workphone::resource
         bool requiresScripts=false;
     };
     String SceneResourceCompiler::name() const { return "WorkphoneActorGraphBinary"; }
-    Array<CompilerOutput> SceneResourceCompiler::outputs() const { return {{ResourceTypeID("fbscene"),3},{ResourceTypeID("prefab"),3}}; }
+    Array<CompilerOutput> SceneResourceCompiler::outputs() const { return {{ResourceTypeID("fbscene"),4},{ResourceTypeID("prefab"),4}}; }
     bool SceneResourceCompiler::getDependencies(const CompileContext &context,DependencySet &dependencies,String &error) const
     { error.clear();try { const auto parsed=source(context);std::set<ResourceID> unique;for(const auto &binding:parsed.bindings)if(unique.insert(binding.second).second){dependencies.compileDependencies.push_back(CompileDependency::resource(binding.second));dependencies.installDependencies.push_back(binding.second);}return true; }catch(const std::exception &e){error=e.what();return false;} }
     CompilationStatus SceneResourceCompiler::compile(const CompileContext &context,std::ostream &output,Array<String> &messages) const
@@ -549,9 +559,11 @@ namespace workphone::resource
             require(resource!=nullptr,"Missing cooked actor graph"); const auto type=resource->header.resourceType; const SceneResourceCompiler compiler;
             const auto legacyVersion=combineHash(combineHash(combineHash(14695981039346656037ull,1),1),type.value());
             const bool legacy=resource->header.compilerVersion==legacyVersion;
-            const auto mixedVersion=combineHash(combineHash(combineHash(14695981039346656037ull,2),1),type.value());
+            const auto mixedVersion=combineHash(combineHash(combineHash(14695981039346656037ull,1),2),type.value());
             const bool mixed=resource->header.compilerVersion==mixedVersion;
-            require(resource->header.isValid()&&(type==ResourceTypeID("fbscene")||type==ResourceTypeID("prefab"))&&!resource->header.resourceId.isSubResource()&&resource->header.resourceId.type()==type&&(legacy||mixed||resource->header.compilerVersion==compiler.versionFor(type)),"Unsupported cooked actor graph header/type/version/selector");
+            const auto composedVersion=combineHash(combineHash(combineHash(14695981039346656037ull,1),3),type.value());
+            const bool composed=resource->header.compilerVersion==composedVersion;
+            require(resource->header.isValid()&&(type==ResourceTypeID("fbscene")||type==ResourceTypeID("prefab"))&&!resource->header.resourceId.isSubResource()&&resource->header.resourceId.type()==type&&(legacy||mixed||composed||resource->header.compilerVersion==compiler.versionFor(type)),"Unsupported cooked actor graph header/type/version/selector");
             if(legacy)require(resource->header.installDependencies.empty()&&resource->dependencies.empty(),"Legacy actor graphs cannot bind typed dependencies");
             require(resource->header.installDependencies.size()==resource->dependencies.size(),"Cooked graph dependency closure is incomplete");
             const auto &bytes=resource->payload;
@@ -576,6 +588,11 @@ namespace workphone::resource
                     for(const auto &child:node->getChildren())self(self,child);
                 };check(check,data);
             }
+            if(composed||mixed){auto check=[&](auto &&self,const SmartPtr<Properties> &node)->void {
+                    if(node->hasProperty("componentType")){const auto name=componentName(node->getProperty("componentType"));require(name!="TerrainSystem"&&name!="ParticleSystem","Legacy component schema cannot contain new domain components");require(name!="UIComponent"||!node->hasProperty("uiLocale"),"Legacy UI schema cannot select a locale");
+                        if(name=="Animator"){const ResourceID id(node->getPropertyObject("animationAssetUuid").getAttribute(bindingAttribute));require(!id.isValid()||id.type()==ResourceTypeID("skelres"),"Legacy Animator schema requires skelres");}}
+                    for(const auto &child:node->getChildren())self(self,child);
+                };check(check,data);}
             rapidjson::Document doc; asJSON(*data,doc,doc.GetAllocator());size_t nodes=0;std::set<String> identities;
             auto result=std::make_shared<CookedActorGraph>();result->resource=std::move(resource);result->metadataBudget=retained;result->scene=type==ResourceTypeID("fbscene");result->data=parseNode(doc,result->scene?Role::Scene:Role::Actor,0,nodes,identities,retained,true);
             inspectRelationships(result->data);
@@ -675,7 +692,7 @@ namespace workphone::resource
                 bool changed=false;Array<std::shared_ptr<const RuntimeResource>> children;
                 children.reserve(input->dependencies.size());
                 for(const auto &dependency:input->dependencies){auto child=self(self,dependency,depth+1);changed|=child!=dependency;children.push_back(std::move(child));}
-                const bool sparseMesh=streamed.count(input->header.resourceId)!=0;
+                const bool sparseMesh=streamed.count(input->header.resourceId)!=0||input->header.resourceType==ResourceTypeID("folpage");
                 if(!changed&&!sparseMesh){visiting.erase(input.get());snapshots.emplace(input.get(),input);return input;}
                 u64 bytes=sizeof(RuntimeResource)+(sparseMesh?0:input->payload.size())+8192;
                 for(const auto &id:input->header.installDependencies)bytes+=256+4*id.str().size();

@@ -1,6 +1,7 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiImage.hpp>
 #include <WPImGui/ImGuiApplication.hpp>
+#include <WPImGui/ImGuiRuntimeFont.hpp>
 #include <Workphone/Workphone.hpp>
 #include <imgui.h>
 
@@ -31,6 +32,7 @@ namespace workphone::ui
 
             if( iTexture != nullptr )
             {
+                retainImGuiFrameResource(texture);
                 ImGui::Image( iTexture, ImVec2( size.x, size.y ) );
 
                 auto dropTarget = getDropTarget();

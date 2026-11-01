@@ -3,6 +3,7 @@
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/Resources/ClawTextureStream.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <workphone_graphics_renderer.h>
@@ -225,7 +226,7 @@ namespace workphone::render
             String error;
             require( dependency.header.resourceId == id && dependency.dependencies.empty(),
                      "Cooked terrain texture identity/closure mismatch" );
-            if( !decodeCookedTexture( dependency, texture, error ) )
+            if( !(isRuntimeTextureSnapshot(dependency)?describeRuntimeTextureSnapshot(dependency,texture,error):decodeCookedTexture(dependency,texture,error)) )
             {
                 throw std::runtime_error( error.c_str() );
             }
@@ -480,7 +481,7 @@ namespace workphone::render
             for( const auto &dependency : resource->dependencies )
             {
                 CookedTextureData texture;
-                if( !decodeCookedTexture( *dependency, texture, error ) )
+                if( !(isRuntimeTextureSnapshot(*dependency)?describeRuntimeTextureSnapshot(*dependency,texture,error):decodeCookedTexture(*dependency,texture,error)) )
                 {
                     return {};
                 }
@@ -606,7 +607,8 @@ namespace workphone::render
     }
 
     std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
-        ClawRendererDX11 &renderer, std::shared_ptr<const DecodedCookedTerrain> decoded, String &error )
+        ClawRendererDX11 &renderer, std::shared_ptr<const DecodedCookedTerrain> decoded, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount )
     {
         error.clear();
         try
@@ -639,8 +641,11 @@ namespace workphone::render
                 const auto &dependency = decoded->resource->dependencies[i];
                 const auto &decodedTexture = decoded->textures[i];
                 auto texture = make_ptr<BudgetedTerrainTexture>( StreamBudget{}, cpuBudget );
-                if( !texture->uploadCookedMips( decodedTexture.levels, decodedTexture.mipSettings,
-                                                native, error ) )
+                const bool installed=isRuntimeTextureSnapshot(*dependency)?
+                    texture->loadRuntimeStream(dependency,mount,decoded->data.target,decoded->data.packagedBuild,native,error):
+                    decodedTexture.ddsBytes.empty()?texture->uploadCookedMips(decodedTexture.levels,decodedTexture.mipSettings,native,error):
+                    uploadCookedDds(texture.get(),decodedTexture,native,error);
+                if( !installed )
                 {
                     return {};
                 }
@@ -669,10 +674,11 @@ namespace workphone::render
 
     std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
         ClawRendererDX11 &renderer, std::shared_ptr<const resource::RuntimeResource> resource,
-        const String &target, bool packagedBuild, String &error )
+        const String &target, bool packagedBuild, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount )
     {
         auto decoded =
             decodeCookedTerrainResource( std::move( resource ), target, packagedBuild, error );
-        return decoded ? stageCookedTerrainMaterial( renderer, std::move( decoded ), error ) : nullptr;
+        return decoded ? stageCookedTerrainMaterial( renderer, std::move( decoded ), error, std::move(mount) ) : nullptr;
     }
 }  // namespace workphone::render

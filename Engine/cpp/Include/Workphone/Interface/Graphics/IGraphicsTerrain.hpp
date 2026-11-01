@@ -6,9 +6,11 @@
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Math/Ray3.hpp>
 #include <Workphone/Math/Transform3.hpp>
+#include <memory>
 
 namespace workphone
 {
+    namespace resource { struct RuntimeResource; class ResourcePayloadMount; }
     namespace render
     {
 
@@ -60,6 +62,14 @@ namespace workphone
              * @brief Virtual destructor.
              */
             ~IGraphicsTerrain() override;
+
+            /** Stage a captured typed terrain and optional paged foliage closure.
+             * Unsupported backends fail without opening authoring files. */
+            virtual bool loadRuntimeResource(
+                std::shared_ptr<const resource::RuntimeResource> terrain,
+                std::shared_ptr<const resource::RuntimeResource> foliage,
+                std::shared_ptr<resource::ResourcePayloadMount> mount,
+                const String &target, bool packagedBuild, String &error );
 
             /**
              * @brief Gets the world transform of the terrain.

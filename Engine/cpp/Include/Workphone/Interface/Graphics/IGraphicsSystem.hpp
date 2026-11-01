@@ -37,6 +37,9 @@ namespace workphone
                 const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={});
             virtual std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
                 std::shared_ptr<const resource::RuntimeResource>,std::shared_ptr<resource::ResourcePayloadMount>,String &error);
+            virtual SmartPtr<IFont> createRuntimeFont(
+                std::shared_ptr<const resource::RuntimeResource>,String &error,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={});
             /** Optional live pipeline for editor inspection. */
             virtual SmartPtr<IGraphicsPipeline> getGraphicsPipeline() const;
 

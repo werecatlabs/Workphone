@@ -309,6 +309,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void updateVisibility() override;
             /**
              * @brief Handles finite-state-machine events specific to the component.
              *

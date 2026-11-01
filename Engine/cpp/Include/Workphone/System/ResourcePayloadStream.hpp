@@ -71,6 +71,49 @@ namespace workphone::resource
         }
         ResourcePayloadMount(const ResourcePayloadMount &)=delete;
         ResourcePayloadMount &operator=(const ResourcePayloadMount &)=delete;
+        const RuntimeResourceConfig &runtimeLimits() const{return m_runtimeLimits;}
+        std::function<StreamBudget(StreamMemoryClass,u64,String &)> budgetAllocator() const{return m_producer->budgetAllocator();}
+        static std::shared_ptr<ResourcePayloadMount> createComposition(const Array<RuntimeResourceMountConfig> &packages,
+            RuntimeMountCollisionPolicy policy,std::shared_ptr<WorldStreamingScheduler> scheduler,
+            const WorldStreamProducerLimits &limits,String &error)
+        {
+            error.clear();try {
+                if(!scheduler){error="Composed resource mount requires a scheduler";return {};}
+                u64 source=0,scratch=0;if(!ResourceSystem::compositionMemoryRequirements(packages,source,scratch,error))return {};
+                auto retained=scheduler->reserve(StreamMemoryClass::SourceCpu,source,error);if(!retained)return {};
+                auto working=scheduler->reserve(StreamMemoryClass::WorkingCpu,scratch,error);if(!working)return {};
+                auto result=std::shared_ptr<ResourcePayloadMount>(new ResourcePayloadMount);result->m_metadata=std::move(retained);
+                result->m_scheduler=std::move(scheduler);result->m_owner=std::this_thread::get_id();result->m_read=std::make_shared<ResourceSystem>(nullptr,nullptr);
+                if(!result->m_read->initializeRuntimeComposition(packages,policy,error,result->m_metadata,working))return {};
+                result->m_producer=result->m_scheduler->createProducer(limits,error);if(!result->m_producer)return {};
+                result->m_limits=limits;result->m_maximumLogical=result->m_scheduler->stats().maximumPending;
+                result->m_maximumWork=std::min(limits.maximumPending,result->m_maximumLogical);result->m_runtimeLimits=packages.front().config;
+                for(const auto &package:packages){const auto &config=package.config;
+                    result->m_runtimeLimits.maxPayloadBytes=std::min(result->m_runtimeLimits.maxPayloadBytes,config.maxPayloadBytes);
+                    result->m_runtimeLimits.maxClosurePayloadBytes=std::min(result->m_runtimeLimits.maxClosurePayloadBytes,config.maxClosurePayloadBytes);
+                    result->m_runtimeLimits.maxClosureResources=std::min(result->m_runtimeLimits.maxClosureResources,config.maxClosureResources);
+                    result->m_runtimeLimits.maxDependencyDepth=std::min(result->m_runtimeLimits.maxDependencyDepth,config.maxDependencyDepth);}
+                return result;
+            }catch(const std::exception &failure){try{error=failure.what();}catch(...){error.clear();}return {};}
+        }
+        bool provenance(const ResourceID &id,RuntimeResourceProvenance &value,String &error) const
+        {return m_read->runtimeProvenance(id,value,error,m_scheduler);}
+        /** Immutable generation read for existing CPU stream workers. Does not
+         * access/pump owner queues; callers must provide an explicit payload cap. */
+        std::shared_ptr<const RuntimeResource> loadPinnedPayload(const ResourceID &id,String &error,u64 maximumPayloadBytes) const
+        {
+            try {
+                error.clear();if(!maximumPayloadBytes){error="Pinned payload read requires an explicit nonzero byte cap";return {};}
+                u64 payload=0,metadata=0;if(!m_read->payloadMemoryRequirements(id,payload,metadata,error))return {};
+                if(payload>maximumPayloadBytes||metadata>std::numeric_limits<u64>::max()-payload){error="Pinned payload exceeds its explicit read allowance";return {};}
+                auto retained=m_scheduler->reserve(StreamMemoryClass::SourceCpu,payload+metadata,error);if(!retained)return {};
+                auto scratch=m_scheduler->reserve(StreamMemoryClass::WorkingCpu,payload+metadata,error);if(!scratch)return {};
+                struct Owned {StreamBudget admission;std::shared_ptr<const RuntimeResource> resource;};
+                auto owner=std::allocate_shared<Owned>(SourceBudgetAllocator<Owned>{});owner->admission=std::move(retained);
+                owner->resource=m_read->loadPayload(id,error,maximumPayloadBytes);if(!owner->resource)return {};
+                return std::shared_ptr<const RuntimeResource>(owner,owner->resource.get());
+            }catch(const std::exception &failure){try{error=failure.what();}catch(...){error.clear();}return {};}
+        }
         bool resourceInfo(const ResourceID &id,RuntimeResourceRangeInfo &info,String &error) const
         {
             try {

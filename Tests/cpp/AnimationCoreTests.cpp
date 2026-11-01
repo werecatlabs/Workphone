@@ -30,4 +30,7 @@ struct AnimationRuntimeFixture
 BOOST_GLOBAL_FIXTURE( AnimationRuntimeFixture );
 #if WP_ANIMATION_TYPED_RESOURCES
 #include "SkeletonResourceContracts.hpp"
+#include "AnimationResourceContracts.hpp"
+#include "RetargetResourceContracts.hpp"
+#include "RigResourceContracts.hpp"
 #endif

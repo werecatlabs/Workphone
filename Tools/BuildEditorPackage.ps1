@@ -52,6 +52,8 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/Workphone/Scene/Components/Mesh.cpp',
     'Engine/cpp/Include/Workphone/Scene/Components/MeshRenderer.hpp',
     'Engine/cpp/Source/Workphone/Scene/Components/MeshRenderer.cpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/Renderer.hpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/Renderer.cpp',
     'Engine/cpp/Source/Workphone/Script/ProjectScriptPolicy.cpp',
     'Engine/cpp/Include/Workphone/Core/Properties.hpp',
     'Engine/cpp/Source/Workphone/Core/Properties.cpp',
@@ -72,6 +74,10 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/WPGraphics/Resources/SkinnedMeshResource.cpp',
     'Engine/cpp/Include/WPGraphics/ClawMesh.hpp',
     'Engine/cpp/Source/WPGraphics/ClawMesh.cpp',
+    'Engine/cpp/Include/WPGraphics/ClawCamera.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawCamera.cpp',
+    'Engine/cpp/Include/WPGraphics/ClawRendererDX11.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawRendererDX11.cpp',
     'Engine/cpp/Include/Workphone/System/SceneResourceCompiler.hpp',
     'Engine/cpp/Source/Workphone/System/SceneResourceCompiler.cpp',
     'Engine/cpp/Include/Workphone/Jobs/SceneLoadJob.hpp',
@@ -173,7 +179,97 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Tools/cpp/Editor/src/tests/AudioRuntimeStreamTests.cpp',
     'Tools/cpp/Editor/src/tests/RuntimeMediaComponentTests.cpp',
     'Tests/cpp/LuaRuntimeTests.cpp',
-    'Tests/cpp/LuaRuntimeMemoryContracts.hpp') | ForEach-Object {
+    'Tests/cpp/LuaRuntimeMemoryContracts.hpp',
+    'Engine/cpp/Include/WPGraphics/ClawFont.hpp',
+    'Engine/cpp/Include/WPGraphics/ClawTerrain.hpp',
+    'Engine/cpp/Include/WPGraphics/Particle/CParticleSystem.hpp',
+    'Engine/cpp/Include/WPGraphics/Resources/FontResourceCompiler.hpp',
+    'Engine/cpp/Include/WPGraphics/Resources/MorphResourceCompiler.hpp',
+    'Engine/cpp/Include/WPGraphics/Resources/ParticleResource.hpp',
+    'Engine/cpp/Include/WPGraphics/UI/ClawUIButton.hpp',
+    'Engine/cpp/Include/WPGraphics/UI/ClawUIText.hpp',
+    'Engine/cpp/Include/WPImGui/ImGuiButton.hpp',
+    'Engine/cpp/Include/WPImGui/ImGuiRuntimeFont.hpp',
+    'Engine/cpp/Include/WPImGui/ImGuiText.hpp',
+    'Engine/cpp/Include/Workphone/Animation/AnimationGraph.hpp',
+    'Engine/cpp/Include/Workphone/Interface/Graphics/IFont.hpp',
+    'Engine/cpp/Include/Workphone/Interface/Graphics/IGraphicsTerrain.hpp',
+    'Engine/cpp/Include/Workphone/Interface/Graphics/IParticleSystem.hpp',
+    'Engine/cpp/Include/Workphone/Interface/UI/IUIButton.hpp',
+    'Engine/cpp/Include/Workphone/Interface/UI/IUIText.hpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/ParticleSystem.hpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/Terrain/TerrainSystem.hpp',
+    'Engine/cpp/Include/Workphone/System/AnimationResourceCompiler.hpp',
+    'Engine/cpp/Include/Workphone/System/MorphResource.hpp',
+    'Engine/cpp/Include/Workphone/System/RetargetResourceCompiler.hpp',
+    'Engine/cpp/Include/Workphone/System/UIAssetResource.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawFont.cpp',
+    'Engine/cpp/Source/WPGraphics/ClawScene.cpp',
+    'Engine/cpp/Source/WPGraphics/ClawTerrain.cpp',
+    'Engine/cpp/Source/WPGraphics/Particle/CParticleSystem.cpp',
+    'Engine/cpp/Source/WPGraphics/Particle/ClawParticleSimulation.cpp',
+    'Engine/cpp/Source/WPGraphics/Resources/FontResourceCompiler.cpp',
+    'Engine/cpp/Source/WPGraphics/Resources/MorphResourceCompiler.cpp',
+    'Engine/cpp/Source/WPGraphics/Resources/ParticleResource.cpp',
+    'Engine/cpp/Source/WPGraphics/UI/ClawUIButton.cpp',
+    'Engine/cpp/Source/WPGraphics/UI/ClawUIFrameRetention.hpp',
+    'Engine/cpp/Source/WPGraphics/UI/ClawUIImage.cpp',
+    'Engine/cpp/Source/WPGraphics/UI/ClawUIText.cpp',
+    'Engine/cpp/Source/WPImGui/ImGuiButton.cpp',
+    'Engine/cpp/Source/WPImGui/ImGuiImage.cpp',
+    'Engine/cpp/Source/WPImGui/ImGuiRuntimeFont.cpp',
+    'Engine/cpp/Source/WPImGui/ImGuiText.cpp',
+    'Engine/cpp/Source/Workphone/Animation/Animation.cpp',
+    'Engine/cpp/Source/Workphone/Animation/AnimationGraph.cpp',
+    'Engine/cpp/Source/Workphone/Database/AssetDatabaseManager.cpp',
+    'Engine/cpp/Source/Workphone/Interface/Graphics/IFont.cpp',
+    'Engine/cpp/Source/Workphone/Interface/Graphics/IGraphicsTerrain.cpp',
+    'Engine/cpp/Include/Workphone/Graphics/Terrain.hpp',
+    'Engine/cpp/Source/Workphone/Graphics/Terrain.cpp',
+    'Engine/cpp/Source/Workphone/Interface/Graphics/IParticleSystem.cpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/ParticleRuntime.cpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/ParticleSystem.cpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/Terrain/TerrainRuntime.cpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/Terrain/TerrainSystem.cpp',
+    'Engine/cpp/Source/Workphone/System/AnimationResourceCompiler.cpp',
+    'Engine/cpp/Source/Workphone/System/MorphResource.cpp',
+    'Engine/cpp/Source/Workphone/System/RetargetResourceCompiler.cpp',
+    'Engine/cpp/Source/Workphone/System/UIAssetResource.cpp',
+    'Tests/cpp/AnimationCoreTests.cpp',
+    'Tests/cpp/AnimationResourceContracts.hpp',
+    'Tests/cpp/FontResourceContracts.hpp',
+    'Tests/cpp/ResourceMountCompositionContracts.hpp',
+    'Tests/cpp/RetargetResourceContracts.hpp',
+    'Tests/cpp/RuntimeComponentMetadataContracts.hpp',
+    'Tests/cpp/RuntimeParticleComponentContracts.hpp',
+    'Tests/cpp/RuntimeTerrainComponentContracts.hpp',
+    'Tests/cpp/RuntimeUIAssetContracts.hpp',
+    'Tools/cpp/Editor/src/tests/UIResourceTests.cpp',
+    'Engine/cpp/Include/Workphone/Animation/IK/AnimationIKSystem.hpp',
+    'Engine/cpp/Include/Workphone/Animation/IK/TwoBoneIK.hpp',
+    'Engine/cpp/Include/Workphone/Graphics/Font.hpp',
+    'Engine/cpp/Include/Workphone/System/RigResourceCompiler.hpp',
+    'Engine/cpp/Project/WPImGui/CMakeLists.txt',
+    'Engine/cpp/Source/WPGraphics/ClawAssetBudget.hpp',
+    'Engine/cpp/Source/Workphone/Animation/IK/AnimationIKSystem.cpp',
+    'Engine/cpp/Source/Workphone/Animation/IK/TwoBoneIK.cpp',
+    'Engine/cpp/Source/Workphone/Graphics/Font.cpp',
+    'Engine/cpp/Source/Workphone/System/RigResourceCompiler.cpp',
+    'Tests/cpp/AssetCatalogTests.cpp',
+    'Tests/cpp/AssetUIReferenceContracts.hpp',
+    'Tests/cpp/CMakeLists.txt',
+    'Tests/cpp/ClawMorphResourceContracts.hpp',
+    'Tests/cpp/RigResourceContracts.hpp',
+    'Engine/cpp/Include/WPImGui/ImGuiElement.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawImGuiFrameRecovery.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawImguiManager.cpp',
+    'Engine/cpp/Source/Workphone/Scene/RuntimeSceneMembership.hpp',
+    'Tests/cpp/RuntimeSceneMembershipContracts.hpp',
+    'Tests/python/resource_package_extended_families.py',
+    'Tools/ValidateEditorCleanMachine.ps1',
+    'Tools/EditorCleanMachineGuest.ps1',
+    'Tools/EditorResourceFixtureReplay.ps1',
+    'Tools/TerrainCleanMachineGuest.ps1') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
 $evidence['packagingInputs'] = @($inputs)
@@ -296,10 +392,19 @@ try {
     & $python (Join-Path $repo 'Tests/python/resource_package_cli.py') (Join-Path $root 'bin/WorkphoneResourcePackage.exe') *> (Join-Path $output 'relocated-resource-package.log')
     $checks.Add([ordered]@{ name = 'relocated-resource-package-profiles'; exitCode = $LASTEXITCODE })
     if ($LASTEXITCODE -ne 0) { throw 'Relocated resource package CLI validation failed' }
+    $extendedFixture = Join-Path $output 'source-free-extended'
+    & $python (Join-Path $repo 'Tests/python/resource_package_extended_families.py') (Join-Path $root 'bin/WorkphoneResourcePackage.exe') --retain-fixture $extendedFixture *> (Join-Path $output 'relocated-extended-resource-package.log')
+    $checks.Add([ordered]@{ name = 'relocated-extended-typed-families'; exitCode = $LASTEXITCODE })
+    if ($LASTEXITCODE -ne 0) { throw 'Relocated extended typed resource validation failed' }
     Invoke-Editor 'startup' 0 'Editor package startup and teardown passed'
-    & $python (Join-Path $repo 'Tests/python/resource_mixed_scene_runtime.py') (Join-Path $root 'bin/Editor.exe') (Join-Path $root 'bin/WorkphoneResourcePackage.exe') *> (Join-Path $output 'relocated-mixed-scene-runtime.log')
+    $mixedFixture = Join-Path $output 'source-free-mixed'
+    & $python (Join-Path $repo 'Tests/python/resource_mixed_scene_runtime.py') (Join-Path $root 'bin/Editor.exe') (Join-Path $root 'bin/WorkphoneResourcePackage.exe') --retain-fixture $mixedFixture *> (Join-Path $output 'relocated-mixed-scene-runtime.log')
     $checks.Add([ordered]@{name='relocated-mixed-scene-runtime';exitCode=$LASTEXITCODE})
     if($LASTEXITCODE -ne 0){throw 'Relocated product Editor mixed scene validation failed'}
+    $evidence['sourceFreeFixtures'] = @(
+        [ordered]@{name='extended-typed';directory=$extendedFixture;files=(Get-Payload $extendedFixture)},
+        [ordered]@{name='mixed-scene';directory=$mixedFixture;files=(Get-Payload $mixedFixture)}
+    )
     # Remove a required media input in this task-owned extracted copy, then restore.
     $media = Join-Path $root 'Media/Scripts/Lua/Editor/Editor.lua'
     [IO.File]::Move($media, "$media.hidden")

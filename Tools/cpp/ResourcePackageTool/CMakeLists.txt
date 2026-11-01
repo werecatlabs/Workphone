@@ -31,6 +31,11 @@ if(BUILD_TESTING)
     endif()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME WorkphoneAssets.extended_package_families
+            COMMAND "${Python3_EXECUTABLE}" "${WP_ROOT}/Tests/python/resource_package_extended_families.py"
+                "$<TARGET_FILE:WorkphoneResourcePackage>")
+        set_tests_properties(WorkphoneAssets.extended_package_families PROPERTIES
+            TIMEOUT 90 RUN_SERIAL TRUE LABELS "resource;package;animation;ui;graphics")
         if(TARGET WPGraphicsCookedResourceTests)
             add_test(NAME WorkphoneAssets.typed_package_families
                 COMMAND "${Python3_EXECUTABLE}" "${WP_ROOT}/Tests/python/resource_package_families.py"

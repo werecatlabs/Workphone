@@ -58,6 +58,7 @@ namespace workphone::resource
         {
             struct Chunks {u32 bytes=resourceChunkBytes;Array<u64> hashes=makeSourceBudgetSnapshot<u64>();};
             u32 version=0;
+            u64 sourceHash=0,payloadHash=0;
             String target;
             Array<ResourceID> roots;
             std::map<String, CompiledResourceHeader> resources;
@@ -280,6 +281,7 @@ namespace workphone::resource
                 error = "Unsupported runtime manifest container";
                 return false;
             }
+            manifest.sourceHash=container.header.sourceHash;manifest.payloadHash=container.header.payloadHash;
             std::string bytes( container.payload.begin(), container.payload.end() );
             std::istringstream input( bytes, std::ios::binary );
             u64 version = 0;
@@ -1570,11 +1572,49 @@ namespace workphone::resource
             bool packagedBuild = false;
         };
 
+        std::shared_ptr<const RuntimeResource> loadComposedNode(const ResourceID &id,LoadRequest &request,
+            String &error,const InstallDependencyArtifact *parentPin,bool shallow,u64 payloadLimit)
+        {
+            const auto route=runtimeRoutes.find(id.str());
+            if(route==runtimeRoutes.end()){error="Resource is absent from the captured package composition";return {};}
+            auto reader=runtimeLayers[route->second.layer].reader;
+            const auto &pin=runtimeManifest.resources.at(id.str());
+            if(parentPin&&(parentPin->sourceHash!=pin.sourceHash||parentPin->payloadHash!=pin.payloadHash))
+            {error="Selected package dependency differs from its parent's captured pin";return {};}
+            if(shallow)return reader->loadPayload(id,error,std::min(payloadLimit,std::min(runtimeConfig.maxPayloadBytes,runtimeConfig.maxClosurePayloadBytes)));
+            if(request.stack.count(id.str())||request.stack.size()>=runtimeConfig.maxDependencyDepth)
+            {error="Composed runtime dependency cycle or depth limit";return {};}
+            const auto previous=request.completed.find(id.str());
+            if(previous!=request.completed.end()){
+                if(request.stack.size()+request.subtreeDepth.at(id.str())>runtimeConfig.maxDependencyDepth)
+                {error="Composed runtime shared subtree exceeds depth limit";return {};}
+                return previous->second;
+            }
+            if(request.completed.size()+request.stack.size()>=runtimeConfig.maxClosureResources||
+                pin.payloadSize>runtimeConfig.maxPayloadBytes||pin.payloadSize>runtimeConfig.maxClosurePayloadBytes-request.payloadBytes)
+            {error="Composed runtime closure exceeds its configured limits";return {};}
+            u64 payload=0,metadata=0;if(!reader->payloadMemoryRequirements(id,payload,metadata,error))return {};
+            u64 retained=metadata;if(!addAdmissionBytes(retained,payload,error))return {};
+            auto temporary=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,retained,error);if(!temporary)return {};
+            auto scratch=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,retained,error);if(!scratch)return {};
+            auto raw=reader->loadPayload(id,error,std::min(payloadLimit,runtimeConfig.maxPayloadBytes));if(!raw)return {};
+            auto admission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,retained,error);if(!admission)return {};
+            auto owner=std::allocate_shared<AdmittedRuntimeResource>(SourceBudgetAllocator<AdmittedRuntimeResource>{});
+            owner->admission=std::move(admission);owner->value.header=raw->header;owner->value.payload=raw->payload;
+            raw.reset();temporary.reset();scratch.reset();request.payloadBytes+=pin.payloadSize;request.stack.insert(id.str());
+            struct Guard {std::set<String> &stack;const String &id;~Guard(){stack.erase(id);}} guard{request.stack,id.str()};
+            owner->value.dependencies.reserve(pin.installDependencies.size());u32 height=1;
+            for(const auto &child:pin.installDependencies){auto value=loadComposedNode(child,request,error,nullptr,false,payloadLimit);if(!value)return {};
+                height=std::max(height,1+request.subtreeDepth.at(child.str()));owner->value.dependencies.push_back(std::move(value));}
+            auto value=std::shared_ptr<const RuntimeResource>(owner,&owner->value);request.completed.emplace(id.str(),value);request.subtreeDepth[id.str()]=height;return value;
+        }
+
         std::shared_ptr<const RuntimeResource> loadNode(
             const ResourceID &resourceId, LoadRequest &request, String &error,
             const InstallDependencyArtifact *parentPin = nullptr, bool shallow = false,
             u64 payloadLimit = 1024ull << 20 )
         {
+            if(!runtimeLayers.empty())return loadComposedNode(resourceId,request,error,parentPin,shallow,payloadLimit);
             // Traversal keys/maps can outlive individual reader scratch. The
             // retained per-node allowance covers completed-map ownership; this
             // working lease covers the active recursion frame before any copy.
@@ -1882,6 +1922,7 @@ namespace workphone::resource
             {
                 return nullptr;
             }
+            if(!runtimeLayers.empty())return loaded;
             std::unique_lock<std::shared_mutex> cacheLock( cacheMutex );
             for( const auto &entry : request.completed )
             {
@@ -1900,6 +1941,10 @@ namespace workphone::resource
         RuntimeResourceConfig runtimeConfig;
         StreamBudget runtimeManifestAdmission;
         RuntimeManifest runtimeManifest;
+        struct RuntimeLayer {String name;std::shared_ptr<ResourceSystem> reader;};
+        struct RuntimeRoute {u32 layer=0,shadowed=0;};
+        std::vector<RuntimeLayer> runtimeLayers;
+        std::map<String,RuntimeRoute> runtimeRoutes;
         std::map<String, CompilationReport> verifiedBuilds;
         fs::path sourceRoot;
         fs::path compiledRoot;
@@ -2083,6 +2128,10 @@ namespace workphone::resource
 
     bool ResourceSystem::initializeRuntime(const RuntimeResourceConfig &config,String &error,
         std::shared_ptr<StreamBudgetLease> manifestAdmission,std::shared_ptr<StreamBudgetLease> workingAdmission)
+    {return initializeRuntimeBounded(config,error,std::move(manifestAdmission),std::move(workingAdmission),maximumManifestBytes+(8ull<<20));}
+
+    bool ResourceSystem::initializeRuntimeBounded(const RuntimeResourceConfig &config,String &error,
+        std::shared_ptr<StreamBudgetLease> manifestAdmission,std::shared_ptr<StreamBudgetLease> workingAdmission,u64 maximumContainerBytes)
     {
         error.clear();
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
@@ -2116,7 +2165,7 @@ namespace workphone::resource
         }
         std::error_code manifestError;
         const auto manifestBytes=fs::file_size(fileSystemIOPath(fs::u8path(config.manifestPath.c_str())),manifestError);
-        if(manifestError || manifestBytes>maximumManifestBytes+(8ull<<20))
+        if(manifestError || manifestBytes>std::min(maximumContainerBytes,maximumManifestBytes+(8ull<<20)))
         {error="Cannot bound runtime manifest storage before admission";return false;}
         const u64 admissionBytes=65536+12*manifestBytes;
         if((manifestAdmission && (manifestAdmission->memoryClass()!=StreamMemoryClass::SourceCpu || manifestAdmission->bytes()<admissionBytes)) ||
@@ -2144,6 +2193,114 @@ namespace workphone::resource
         return true;
         }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return false;}
     }
+
+    bool ResourceSystem::compositionMemoryRequirements(const Array<RuntimeResourceMountConfig> &layers,
+        u64 &source,u64 &working,String &error)
+    try {
+        source=0;working=0;error.clear();
+        if(layers.empty()||layers.size()>32){error="Runtime composition requires 1..32 named packages";return false;}
+        std::set<String> names;u64 bytes=0,configuration=0;
+        for(const auto &layer:layers){
+            if(layer.name.empty()||layer.name.size()>128||layer.name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. ")!=String::npos||!names.insert(layer.name).second)
+            {error="Runtime package labels must be unique bounded printable names";return false;}
+            if(layer.config.compiledRoot.size()>(1u<<20)||layer.config.manifestPath.size()>(1u<<20)||layer.config.target.size()>128)
+            {error="Runtime package configuration strings exceed their limits";return false;}
+            configuration+=8*u64(layer.name.size()+layer.config.compiledRoot.size()+layer.config.manifestPath.size()+layer.config.target.size());
+            std::error_code ec;const auto size=fs::file_size(fileSystemIOPath(fs::u8path(layer.config.manifestPath.c_str())),ec);
+            if(ec||size>maximumManifestBytes+(8ull<<20)){error="Cannot bound a composed runtime manifest";return false;}
+            if(!addAdmissionBytes(bytes,size,error))return false;
+        }
+        source=65536+65536*layers.size()+24*bytes+configuration;working=65536+12*bytes;return true;
+    }catch(const std::exception &failure){source=0;working=0;runtimeReadFailure(error,failure.what());return false;}
+
+    bool ResourceSystem::initializeRuntimeComposition(const Array<RuntimeResourceMountConfig> &layers,
+        RuntimeMountCollisionPolicy policy,String &error,std::shared_ptr<StreamBudgetLease> sourceAdmission,
+        std::shared_ptr<StreamBudgetLease> workingAdmission)
+    try {
+        error.clear();std::unique_lock<std::shared_mutex> operation(m_impl->operationMutex);std::lock_guard<std::mutex> state(m_impl->stateMutex);
+        if(m_impl->initialized){error="Resource system is already initialized";return false;}
+        if(policy!=RuntimeMountCollisionPolicy::Reject&&policy!=RuntimeMountCollisionPolicy::IdenticalOnly&&policy!=RuntimeMountCollisionPolicy::PreferEarlier)
+        {error="Invalid runtime package collision policy";return false;}
+        u64 source=0,working=0;if(!compositionMemoryRequirements(layers,source,working,error))return false;
+        if((sourceAdmission&&(sourceAdmission->memoryClass()!=StreamMemoryClass::SourceCpu||sourceAdmission->bytes()<source))||
+           (workingAdmission&&(workingAdmission->memoryClass()!=StreamMemoryClass::WorkingCpu||workingAdmission->bytes()<working)))
+        {error="Composed manifest admission is insufficient or has the wrong class";return false;}
+        if(!sourceAdmission){sourceAdmission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,source,error);if(!sourceAdmission)return false;}
+        if(!workingAdmission){workingAdmission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,working,error);if(!workingAdmission)return false;}
+        RuntimeManifest merged;merged.target=layers.front().config.target;
+        std::vector<Impl::RuntimeLayer> captured;captured.reserve(layers.size());std::map<String,Impl::RuntimeRoute> routes;
+        auto limits=layers.front().config;u64 entries=0,chunks=0,observedBytes=0,observedConfiguration=0;std::set<String> roots;
+        for(size_t index=0;index<layers.size();++index){const auto &layer=layers[index];
+            if(layer.config.target!=merged.target){error="Composed package targets differ";return false;}
+            observedConfiguration+=8*u64(layer.name.size()+layer.config.compiledRoot.size()+layer.config.manifestPath.size()+layer.config.target.size());
+            std::error_code ec;const auto size=fs::file_size(fileSystemIOPath(fs::u8path(layer.config.manifestPath.c_str())),ec);
+            if(ec||size>maximumManifestBytes+(8ull<<20)||!addAdmissionBytes(observedBytes,size,error)||
+                65536+65536*layers.size()+24*observedBytes+observedConfiguration>source||65536+12*observedBytes>working)
+            {error="Composed manifests changed beyond their admitted storage bounds";return false;}
+            auto reader=std::make_shared<ResourceSystem>(nullptr,nullptr);
+            if(!reader->initializeRuntimeBounded(layer.config,error,sourceAdmission,workingAdmission,size))return false;
+            const auto &manifest=reader->m_impl->runtimeManifest;
+            if(manifest.resources.size()>maximumManifestResources-entries){error="Composed package entry count exceeds its bound";return false;}entries+=manifest.resources.size();
+            for(const auto &directory:manifest.chunks){if(directory.second.hashes.size()>maximumManifestChunks-chunks){error="Composed chunk directory count exceeds its bound";return false;}chunks+=directory.second.hashes.size();}
+            captured.push_back({layer.name,reader});
+            limits.maxPayloadBytes=std::min(limits.maxPayloadBytes,layer.config.maxPayloadBytes);limits.maxClosurePayloadBytes=std::min(limits.maxClosurePayloadBytes,layer.config.maxClosurePayloadBytes);
+            limits.maxClosureResources=std::min(limits.maxClosureResources,layer.config.maxClosureResources);limits.maxDependencyDepth=std::min(limits.maxDependencyDepth,layer.config.maxDependencyDepth);
+            for(const auto &entry:manifest.resources){const auto old=routes.find(entry.first);
+                if(old!=routes.end()){
+                    const auto &selected=merged.resources.at(entry.first);
+                    if(policy==RuntimeMountCollisionPolicy::Reject||selected.compilerVersion!=entry.second.compilerVersion||selected.resourceType!=entry.second.resourceType||
+                        (policy==RuntimeMountCollisionPolicy::IdenticalOnly&&!sameRuntimeHeader(selected,entry.second,false)))
+                    {error="Runtime ResourceID collision or incompatible variant: "+entry.first;return false;}
+                    ++old->second.shadowed;
+                }else{routes.emplace(entry.first,Impl::RuntimeRoute{u32(index),0});merged.resources.emplace(entry.first,entry.second);}
+            }
+            for(const auto &binding:manifest.bindings){const auto old=merged.bindings.find(binding.first);
+                if(old!=merged.bindings.end()){
+                    if(policy==RuntimeMountCollisionPolicy::Reject||(policy==RuntimeMountCollisionPolicy::IdenticalOnly&&old->second!=binding.second))
+                    {error="Runtime UUID collision: "+binding.first;return false;}
+                    const auto &selected=merged.resources.at(old->second.str());const auto &candidate=manifest.resources.at(binding.second.str());
+                    if(selected.resourceType!=candidate.resourceType||selected.compilerVersion!=candidate.compilerVersion)
+                    {error="Runtime UUID collision has incompatible typed variants: "+binding.first;return false;}
+                }else merged.bindings.emplace(binding.first,binding.second);
+            }
+            for(const auto &root:manifest.roots)if(roots.insert(root.str()).second)merged.roots.push_back(root);
+        }
+        std::set<String> boundResources;for(const auto &binding:merged.bindings)if(!boundResources.insert(binding.second.str()).second)
+        {error="Composed packages alias one ResourceID under different UUIDs";return false;}
+        for(const auto &route:routes){const auto &origin=captured[route.second.layer].reader->m_impl->runtimeManifest;
+            for(const auto &child:merged.resources.at(route.first).installDependencies){const auto selected=merged.resources.find(child.str());const auto expected=origin.resources.find(child.str());
+                if(selected==merged.resources.end()||expected==origin.resources.end()||!sameRuntimeHeader(selected->second,expected->second,false))
+                {error="Composed dependency generation conflicts with its parent's package pin: "+child.str();return false;}
+            }
+        }
+        m_impl->runtimeConfig=std::move(limits);m_impl->runtimeManifest=std::move(merged);m_impl->runtimeManifestAdmission=std::move(sourceAdmission);
+        m_impl->runtimeLayers=std::move(captured);m_impl->runtimeRoutes=std::move(routes);m_impl->sourceRoot.clear();m_impl->compiledRoot.clear();m_impl->runtimeOnly=true;m_impl->initialized=true;return true;
+    }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return false;}
+
+    bool ResourceSystem::runtimeProvenance(const ResourceID &id,RuntimeResourceProvenance &output,String &error,
+        std::shared_ptr<WorldStreamingScheduler> scheduler) const
+    try {
+        error.clear();std::shared_lock<std::shared_mutex> operation(m_impl->operationMutex);
+        if(!m_impl->initialized||!m_impl->runtimeOnly||!id.isValid()||!m_impl->runtimeManifest.resources.count(id.str()))
+        {error="Provenance requires a resource in the captured runtime mount";return false;}
+        const auto route=m_impl->runtimeRoutes.find(id.str());
+        if(route!=m_impl->runtimeRoutes.end()){
+            RuntimeResourceProvenance result;const auto &layer=m_impl->runtimeLayers[route->second.layer];
+            if(!layer.reader->runtimeProvenance(id,result,error,std::move(scheduler)))return false;result.mountName=layer.name;result.precedence=route->second.layer;result.shadowedMounts=route->second.shadowed;
+            std::swap(output,result);return true;
+        }
+        RuntimeResourceProvenance result;const auto &config=m_impl->runtimeConfig;
+        const u64 bytes=8192+8*(4*u64(m_impl->compiledRoot.native().size())+u64(config.manifestPath.size())+u64(id.str().size()));
+        auto shared=WorldStreamingScheduler::shared();if(!scheduler)scheduler=shared;
+        auto captured=scheduler->reserve(StreamMemoryClass::SourceCpu,bytes,error);if(!captured)return false;
+        if(scheduler!=shared){struct Admissions {StreamBudget captured,physical;};auto owner=std::allocate_shared<Admissions>(SourceBudgetAllocator<Admissions>{});
+            owner->captured=std::move(captured);owner->physical=shared->reserve(StreamMemoryClass::SourceCpu,bytes,error);if(!owner->physical)return false;
+            result.admission=StreamBudget(owner,owner->captured.get());}
+        else result.admission=std::move(captured);
+        result.resourceId=id;result.mountName="default";result.compiledRoot=pathString(m_impl->compiledRoot);result.manifestPath=config.manifestPath;
+        result.manifestVersion=m_impl->runtimeManifest.version;result.manifestSourceHash=m_impl->runtimeManifest.sourceHash;result.manifestPayloadHash=m_impl->runtimeManifest.payloadHash;
+        std::swap(output,result);return true;
+    }catch(const std::exception &failure){runtimeReadFailure(error,failure.what());return false;}
 
     bool ResourceSystem::writeRuntimeManifest( const String &path, const Array<ResourceID> &roots,
                                                String &error )
@@ -2710,6 +2867,7 @@ namespace workphone::resource
         }
         m_impl->runtimeManifest = RuntimeManifest();
         m_impl->runtimeManifestAdmission.reset();
+        m_impl->runtimeRoutes.clear();m_impl->runtimeLayers.clear();
         m_impl->verifiedBuilds.clear();
         m_impl->sourceRoot.clear();
         m_impl->capturedAssetBindings.reset();
@@ -2940,6 +3098,8 @@ namespace workphone::resource
             {error="Payload admission requires an initialized runtime mount and valid identity";return false;}}
         const auto entry=m_impl->runtimeManifest.resources.find(id.str());
         if(entry==m_impl->runtimeManifest.resources.end()) {error="Resource is not present in the runtime manifest";return false;}
+        const auto route=m_impl->runtimeRoutes.find(id.str());
+        if(route!=m_impl->runtimeRoutes.end())return m_impl->runtimeLayers[route->second.layer].reader->payloadMemoryRequirements(id,payloadBytes,metadataBytes,error);
         u64 encoded=0;if(!runtimeHeaderEnvelope(m_impl->runtimeManifest,entry->second,encoded,error))return false;
         // Eight-MiB encoded and 4096-dependency limits make this arithmetic
         // bounded; the allowance covers normalization/set/vector copies as well
@@ -2955,6 +3115,8 @@ namespace workphone::resource
         if(!m_impl->initialized||!m_impl->runtimeOnly||!id.isValid()){runtimeReadFailure(error,"Range metadata requires a runtime mount");return false;}
         const auto found=m_impl->runtimeManifest.resources.find(id.str());
         if(found==m_impl->runtimeManifest.resources.end()){runtimeReadFailure(error,"Range resource is absent from manifest");return false;}
+        const auto route=m_impl->runtimeRoutes.find(id.str());
+        if(route!=m_impl->runtimeRoutes.end())return m_impl->runtimeLayers[route->second.layer].reader->resourceInfo(id,output,error);
         u64 envelope=0;if(!runtimeHeaderEnvelope(m_impl->runtimeManifest,found->second,envelope,error))return false;
         result.metadataBytes=headerMemoryAllowance(envelope,found->second.installDependencies.size());
         result.admission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,result.metadataBytes,error);if(!result.admission)return false;
@@ -2970,6 +3132,8 @@ namespace workphone::resource
         if(!m_impl->initialized||!m_impl->runtimeOnly||!id.isValid()){runtimeReadFailure(error,"Chunk read requires a runtime mount");return {};}
         const auto &manifest=m_impl->runtimeManifest;const auto found=manifest.resources.find(id.str());
         if(found==manifest.resources.end()){runtimeReadFailure(error,"Chunk resource is absent from manifest");return {};}
+        const auto route=m_impl->runtimeRoutes.find(id.str());
+        if(route!=m_impl->runtimeRoutes.end())return m_impl->runtimeLayers[route->second.layer].reader->loadChunk(id,index,error,workingAlreadyAdmitted);
         const auto &pin=found->second;const u64 count=pin.payloadSize/resourceChunkBytes+(pin.payloadSize%resourceChunkBytes!=0);
         if(index>=count){runtimeReadFailure(error,"Chunk index exceeds pinned payload");return {};}
         const auto offset=index*resourceChunkBytes,length=std::min<u64>(resourceChunkBytes,pin.payloadSize-offset);

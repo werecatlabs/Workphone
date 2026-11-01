@@ -433,7 +433,7 @@ namespace workphone
             struct RuntimeUIState;
             std::shared_ptr<RuntimeUIState> m_runtimeUI;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
-            String m_uiAssetUuid,m_runtimeDiagnostic;
+            String m_uiAssetUuid,m_uiLocale,m_runtimeDiagnostic;
             bool m_runtimeAssetsMode=false;
             /**
              * @brief Handles the specified event type and updates the UIComponent.

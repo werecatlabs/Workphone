@@ -463,6 +463,10 @@ namespace workphone::editor
     {
         struct Root { UUID identity;SmartPtr<scene::IGameActor> actor;u32 slot=0; };
         String directory,uuid,target,error,projectPath,projectDirectory,projectFile;
+        Array<String> directories;
+        resource::RuntimeMountCollisionPolicy collisionPolicy=resource::RuntimeMountCollisionPolicy::Reject;
+        String rootMount;
+        u32 rootShadows=0;
         std::thread::id owner;
         std::chrono::steady_clock::time_point started;
         std::shared_ptr<resource::ResourcePayloadMount> mount;
@@ -479,13 +483,20 @@ namespace workphone::editor
     };
 
     void EditorApplication::configureRuntimeScenePackage(const String &directory,const String &uuid,const String &target)
+    {configureRuntimeScenePackages(Array<String>{directory},uuid,target);}
+    void EditorApplication::configureRuntimeScenePackages(const Array<String> &directories,const String &uuid,const String &target,const String &collisionPolicy)
     {
         if(isLoaded())throw std::logic_error("Configure runtime scene startup before loading the Editor");
-        if(directory.empty()||uuid.size()!=36||target.empty()||target.size()>128)throw std::invalid_argument("Runtime scene requires package directory, canonical UUID and target");
+        if(directories.empty()||directories.size()>32||uuid.size()!=36||target.empty()||target.size()>128)throw std::invalid_argument("Runtime scene requires 1-32 package directories, canonical UUID and target");
         auto staged=std::make_unique<RuntimeSceneBootstrap>();
-        const auto path=std::filesystem::canonical(std::filesystem::u8path(directory.c_str()));
-        if(!std::filesystem::is_directory(path)||!std::filesystem::is_regular_file(path/"runtime.wprm"))throw std::invalid_argument("Runtime scene package manifest is missing");
-        staged->directory=path.u8string().c_str();staged->uuid=uuid;staged->target=target;staged->owner=std::this_thread::get_id();m_runtimeScene=std::move(staged);
+        if(collisionPolicy=="reject")staged->collisionPolicy=resource::RuntimeMountCollisionPolicy::Reject;
+        else if(collisionPolicy=="identical")staged->collisionPolicy=resource::RuntimeMountCollisionPolicy::IdenticalOnly;
+        else if(collisionPolicy=="prefer-earlier")staged->collisionPolicy=resource::RuntimeMountCollisionPolicy::PreferEarlier;
+        else throw std::invalid_argument("Unknown runtime package collision policy");
+        std::set<String> paths;for(const auto &directory:directories){const auto path=std::filesystem::canonical(std::filesystem::u8path(directory.c_str()));
+            if(!std::filesystem::is_directory(path)||!std::filesystem::is_regular_file(path/"runtime.wprm"))throw std::invalid_argument("Runtime scene package manifest is missing");
+            const String canonical=path.u8string().c_str();if(!paths.insert(StringUtil::make_lower(canonical)).second)throw std::invalid_argument("Duplicate runtime scene package directory");staged->directories.push_back(canonical);}
+        staged->directory=staged->directories.front();staged->uuid=uuid;staged->target=target;staged->owner=std::this_thread::get_id();m_runtimeScene=std::move(staged);
     }
     bool EditorApplication::runtimeSceneComplete() const {return m_runtimeScene&&m_runtimeScene->complete;}
     bool EditorApplication::runtimeSceneSucceeded() const {return m_runtimeScene&&m_runtimeScene->succeeded;}
@@ -497,6 +508,7 @@ namespace workphone::editor
             {"uuid",state.uuid.c_str()},{"target",state.target.c_str()},{"roots",state.roots.size()},
             {"actors",state.actors},{"components",state.components},{"scripts",state.scripts},{"meshes",state.meshes},
             {"residentMeshes",state.residentMeshes},{"streamingMeshes",state.streamingMeshes},
+            {"mountCount",state.directories.size()},{"rootMount",state.rootMount.c_str()},{"rootShadowedMounts",state.rootShadows},
             {"streamGeneration",state.requestGeneration},{"diagnostic",state.error.c_str()}}).c_str();
     }
     void EditorApplication::retireRuntimeSceneBootstrap() noexcept
@@ -534,7 +546,11 @@ namespace workphone::editor
             resource::RuntimeResourceConfig config;config.compiledRoot=state.directory;config.manifestPath=(std::filesystem::u8path(state.directory.c_str())/"runtime.wprm").u8string().c_str();config.target=state.target;
             config.maxPayloadBytes=1ull<<30;config.maxClosurePayloadBytes=64ull<<20;config.maxClosureResources=256;config.maxDependencyDepth=64;
             WorldStreamProducerLimits limits;limits.maximumPending=256;limits.maximumActive=2;limits.maximumReady=16;limits.maximumReadyBytes=32ull<<20;
-            String error;state.mount=resource::ResourcePayloadMount::create(config,WorldStreamingScheduler::shared(),limits,error);
+            String error;if(state.directories.size()==1)state.mount=resource::ResourcePayloadMount::create(config,WorldStreamingScheduler::shared(),limits,error);
+            if(state.directories.size()>1){Array<resource::RuntimeResourceMountConfig> packages;packages.reserve(state.directories.size());
+                state.mount.reset();for(size_t i=0;i<state.directories.size();++i){auto layer=config;layer.compiledRoot=state.directories[i];layer.manifestPath=(std::filesystem::u8path(layer.compiledRoot.c_str())/"runtime.wprm").u8string().c_str();
+                    packages.push_back({i+1==state.directories.size()?String("base"):String("overlay-")+StringUtil::toString(i),std::move(layer)});}
+                state.mount=resource::ResourcePayloadMount::createComposition(packages,state.collisionPolicy,WorldStreamingScheduler::shared(),limits,error);}
             if(!state.mount)throw std::runtime_error(error.c_str());
             auto leaves=resource::createRuntimeSceneLeafFactory(state.mount,error);if(!leaves)throw std::runtime_error(error.c_str());
             state.stream=resource::ResourceClosureStream::create(state.mount,error,std::move(leaves));
@@ -557,6 +573,7 @@ namespace workphone::editor
             resource::ResourcePayloadResult result;if(!state.stream->take(result))return;
             if(result.key!=1||result.generation!=state.requestGeneration)throw std::runtime_error("Runtime scene closure result was superseded");
             if(!result.resource)throw std::runtime_error(result.error.empty()?"Runtime scene closure is unavailable":result.error.c_str());
+            if(state.directories.size()>1){resource::RuntimeResourceProvenance provenance;if(!state.mount->provenance(result.resource->header.resourceId,provenance,state.error))throw std::runtime_error(state.error.c_str());state.rootMount=provenance.mountName;state.rootShadows=provenance.shadowedMounts;}else state.rootMount="base";
             String error;auto graph=resource::decodeActorGraphResource(result.resource,error);if(!graph)throw std::runtime_error(error.c_str());
             auto context=resource::createActorGraphRuntimeContext(graph,state.target,true,error,state.mount);if(!context)throw std::runtime_error(error.c_str());
             auto working=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,result.resource->payload.size()*48+(1ull<<20),error);

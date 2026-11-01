@@ -43,6 +43,8 @@ namespace workphone
             SmartPtr<ITexture> createRuntimeTexture(
                 std::shared_ptr<const resource::RuntimeResource>,String &,
                 const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
+            SmartPtr<IFont> createRuntimeFont(std::shared_ptr<const resource::RuntimeResource>,String &,
+                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
             /**
              * @class StateListener
              * @brief Listener for handling state changes within the ClawHammerSystem.

@@ -18,6 +18,8 @@
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/ParticleSystem.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -698,7 +700,16 @@ namespace workphone::scene
                     if(auto component=workphone::dynamic_pointer_cast<AudioEmitter>(entry.first))component->configureRuntimeAssets(runtimeAssets);
                     if(auto component=workphone::dynamic_pointer_cast<UIComponent>(entry.first))component->configureRuntimeAssets(runtimeAssets);
                     if(auto component=workphone::dynamic_pointer_cast<LODGroup>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<TerrainSystem>(entry.first))component->configureRuntimeAssets(runtimeAssets);
+                    if(auto component=workphone::dynamic_pointer_cast<ParticleSystem>(entry.first))component->configureRuntimeAssets(runtimeAssets);
             }
+            if(runtimeAssets){auto rank=[](const SmartPtr<IComponent> &component){
+                    if(dynamic_pointer_cast<Mesh>(component))return 0;
+                    if(dynamic_pointer_cast<MeshRenderer>(component))return 1;
+                    if(dynamic_pointer_cast<Animator>(component))return 3;
+                    if(dynamic_pointer_cast<Script>(component))return 4;
+                    return 2;};
+                std::stable_sort(batch.components.begin(),batch.components.end(),[&](const ComponentData &a,const ComponentData &b){return rank(a.first)<rank(b.first);});}
             for( const auto &entry : batch.components )
             {
                 checkCurrent();
@@ -706,6 +717,20 @@ namespace workphone::scene
                 if( entry.first->getLoadingState() == LoadingState::Error || runtimeAssets&&!entry.first->isLoaded() )
                 {
                     throw std::runtime_error( "Component initialization failed" );
+                }
+            }
+            if(runtimeAssets)
+            {
+                // Minimal cooked documents may omit the authored FSM state.
+                // Enter the application's normal mode before publication so
+                // scene flag changes reach native visibility/playback handlers.
+                // Explicit serialized states retain their existing semantics.
+                const auto mode=core::IApplicationManager::instancePtr()->isPlaying()
+                    ? IComponent::State::Play : IComponent::State::Edit;
+                for(const auto &entry:batch.components)if(!entry.second->hasProperty("state"))
+                {
+                    auto component=entry.first;
+                    component->setState(mode);
                 }
             }
             if(runtimeAssets)for(const auto &entry:batch.components)

@@ -12,4 +12,13 @@ namespace workphone::render
 
     IGraphicsTerrain::~IGraphicsTerrain() = default;
 
+    bool IGraphicsTerrain::loadRuntimeResource(
+        std::shared_ptr<const resource::RuntimeResource>,
+        std::shared_ptr<const resource::RuntimeResource>,
+        std::shared_ptr<resource::ResourcePayloadMount>,const String &,bool,String &error)
+    {
+        error="This graphics backend does not support captured terrain resources";
+        return false;
+    }
+
 }  // namespace workphone::render

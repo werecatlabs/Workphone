@@ -19,6 +19,7 @@ namespace workphone
         class ClawRendererDX11;
         class ClawTerrainMaterial;
         class CookedTerrainCandidate;
+        struct CookedFoliageCandidate;
         struct ClawTerrainTileState;
 
         struct ClawTerrainResidency
@@ -134,6 +135,10 @@ namespace workphone
             bool applyCookedTerrain( const TerrainData &, ClawTerrainMaterial::TextureResolver,
                                      String &error );
             bool applyCookedTerrain( std::shared_ptr<const CookedTerrainCandidate>, String &error );
+            bool loadRuntimeResource(std::shared_ptr<const resource::RuntimeResource>,
+                std::shared_ptr<const resource::RuntimeResource>,std::shared_ptr<resource::ResourcePayloadMount>,
+                const String &,bool,String &error) override;
+            std::shared_ptr<const CookedFoliageCandidate> getRuntimeFoliageCandidate() const;
             /** Bounds apply independently to active and staged generations. */
             bool setTerrainResidencyLimits( u32 tiles, u64 bytes, u32 uploadsPerUpdate, String & );
 
@@ -153,6 +158,7 @@ namespace workphone
             mutable TerrainSnapshot m_renderSnapshot;
             std::unique_ptr<ClawTerrainTileState> m_tiles;
             std::unique_ptr<ClawTerrainMaterial> m_terrainMaterial;
+            std::shared_ptr<const CookedFoliageCandidate> m_runtimeFoliage;
         };
 
     }  // namespace render

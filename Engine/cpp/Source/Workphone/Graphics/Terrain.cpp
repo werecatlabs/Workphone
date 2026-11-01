@@ -459,6 +459,11 @@ namespace workphone::render
     void Terrain::unload( SmartPtr<ISharedObject> data )
     {
         std::lock_guard<std::recursive_mutex> publication( m_foliagePublicationMutex );
+        m_foliagePublicationGate = {};
+        {
+            std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+            m_terrainPublicationGate = {};
+        }
         {
             std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
             m_activeFoliage = {};

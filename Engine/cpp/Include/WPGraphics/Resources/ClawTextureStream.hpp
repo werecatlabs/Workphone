@@ -3,6 +3,7 @@
 #include <Workphone/System/CompiledResource.hpp>
 #include <Workphone/Math/Vector2.hpp>
 #include <memory>
+#include <array>
 
 struct wp_renderer_dx11;
 namespace workphone::resource { class ResourcePayloadMount; class ResourceLeafProviderFactory; }
@@ -19,6 +20,8 @@ namespace workphone::render
     WPGraphics_API bool isRuntimeTextureSnapshot(const resource::RuntimeResource &);
     /** Strict private-plan semantic description; contains no pixel/DDS bytes. */
     WPGraphics_API bool describeRuntimeTextureSnapshot(const resource::RuntimeResource &,CookedTextureData &,String &error);
+    /** Strict private one-mip portable bootstrap sample; no file/device I/O. */
+    WPGraphics_API bool sampleRuntimeTextureSnapshotBGRA(const resource::RuntimeResource &,u32 x,u32 y,std::array<u8,4> &,String &error);
     WPGraphics_API std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeTextureLeafProviderFactory(
         std::shared_ptr<resource::ResourcePayloadMount>,String &error);
 

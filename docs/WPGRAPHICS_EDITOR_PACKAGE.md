@@ -34,6 +34,35 @@ before archiving and preserve `dependency-media-audit.json` outside the payload.
 The inventory is evidence of bytes and provenance; its `openReviewItems` identify
 permission and redistribution questions that still require review.
 
+The product Editor also accepts a checked source-free scene package:
+
+```powershell
+bin/Editor.exe --interactive --workspace <writable-workspace> --dx11 `
+  --runtime-scene-package <runtime-package> --runtime-scene-uuid <scene-uuid> `
+  --runtime-scene-target pc --runtime-scene-validate
+```
+
+`--runtime-scene-validate` exits after the bounded load/lifecycle probe and emits
+one `RuntimeSceneBootstrap=` JSON report. Omit it for the ordinary interactive
+session. Repeat `--runtime-scene-overlay <directory>` to place up to 31 named
+layers before the base package; earlier overlays win. Duplicate resources/UUIDs
+fail by default. `--runtime-scene-collisions identical` accepts only identical
+overlap, while `prefer-earlier` explicitly selects the earlier compatible variant.
+Selected parent and dependency generations must still agree. The report includes
+mount count, selected root mount and shadowed-mount count. See the
+[runtime package contracts](WPRESOURCE_RUNTIME_PACKAGES.md) for bounds and native
+family support.
+
+The package driver additionally runs the extended typed-family cooker probe from
+the relocated installation. It cooks graph/mask, retarget, IK-rig, static morph,
+font/style/localization/UI and particle roots with a declared build profile, checks
+invalid inputs, removes source/catalog/build storage, and verifies immutable
+read-only package bytes. This is a cooker/closure gate; actual native consumers,
+interactive behavior and device certification require their separate evidence.
+Successful runs retain only the verified runtime packages and bounded fixture
+descriptors under `source-free-extended` and `source-free-mixed` beside the archive.
+The package evidence pins their complete SHA256/size inventories.
+
 Prepare a portable clean-Windows validation kit with stock Windows PowerShell:
 
 ```powershell
@@ -49,6 +78,20 @@ real Editor/Lua/plugin startup, module provenance, immutable files and missing
 media rejection. Preparation does not establish a guest pass. An explicitly
 provided Microsoft-signed redistributable can be provisioned inside the guest;
 the tools do not enable host features or install host prerequisites.
+
+Launch supports moving the prepared kit to another host or directory. It preserves
+the pinned `WorkphoneEditor.wsb` and creates `WorkphoneEditor.launch.wsb` with the
+current payload/evidence host folders. All other policies and the guest command
+remain identical. The launch record pins both configurations and the actual
+mappings; Collect verifies those recorded mappings even after evidence relocation.
+
+When the accepted evidence contains the retained fixtures, Prepare verifies and
+copies their exact inventories. The guest additionally replays native extended
+UUID verification, DX11/Software mixed scenes and overlay policies without Python
+or authoring storage. `Tools/EditorResourceFixtureReplay.ps1` can exercise that
+same replay on the host against a prepared kit; its report explicitly records
+host-only execution and does not satisfy fresh-guest acceptance. Older candidate
+reports without retained fixtures keep their narrower startup coverage.
 
 `Tools/ValidateGraphicsReleaseEvidence.ps1` consolidates the SDK, Editor and
 graphics reports, rechecks their current inputs and archive identities, and

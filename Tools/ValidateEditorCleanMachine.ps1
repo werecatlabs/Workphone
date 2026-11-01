@@ -11,6 +11,7 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $requestedProvision=[bool]$ProvisionProvidedPrerequisite
 . (Join-Path $PSScriptRoot 'TerrainCleanMachineGuest.ps1') -LibraryOnly
+. (Join-Path $PSScriptRoot 'EditorResourceFixtureReplay.ps1') -LibraryOnly
 $ProvisionProvidedPrerequisite=[switch]$requestedProvision
 $kit=[IO.Path]::GetFullPath($KitDirectory)
 $payload=Join-Path $kit 'payload'; $evidence=Join-Path $kit 'evidence'
@@ -41,6 +42,55 @@ function Write-EditorSandbox([bool]$Provision) {
 </Configuration>
 "@ | Set-Content -LiteralPath (Join-Path $kit 'WorkphoneEditor.wsb') -Encoding UTF8
 }
+function Read-EditorSandbox([string]$Path) {
+    $settings=New-Object Xml.XmlReaderSettings
+    $settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit;$settings.XmlResolver=$null
+    $reader=[Xml.XmlReader]::Create($Path,$settings)
+    try{$document=New-Object Xml.XmlDocument;$document.PreserveWhitespace=$true;$document.XmlResolver=$null;$document.Load($reader);return ,$document}
+    finally{$reader.Dispose()}
+}
+function Get-EditorRelocatedSandbox($Original,[string]$PayloadPath,[string]$EvidencePath) {
+    $document=$Original.CloneNode($true)
+    $mapped=@($document.SelectNodes('/Configuration/MappedFolders/MappedFolder'))
+    Assert-Clean ($document.DocumentElement.Name -ceq 'Configuration' -and $mapped.Count -eq 2) 'Prepared Sandbox mappings changed.'
+    $destinations=@('C:\WorkphoneEditorPayload','C:\WorkphoneEditorEvidence');$readOnly=@('true','false')
+    $hostPaths=@([IO.Path]::GetFullPath($PayloadPath),[IO.Path]::GetFullPath($EvidencePath))
+    for($index=0;$index -lt 2;++$index){
+        $entry=@($mapped | Where-Object {$_.SandboxFolder -ceq $destinations[$index]})
+        Assert-Clean ($entry.Count -eq 1 -and $entry[0].ReadOnly -ceq $readOnly[$index] -and
+            @($entry[0].SelectNodes('HostFolder')).Count -eq 1 -and
+            @($entry[0].SelectNodes('SandboxFolder')).Count -eq 1 -and
+            @($entry[0].SelectNodes('ReadOnly')).Count -eq 1 -and
+            @($entry[0].SelectNodes('*')).Count -eq 3) 'Prepared Sandbox mapping policy changed.'
+        $entry[0].SelectSingleNode('HostFolder').InnerText=$hostPaths[$index]
+    }
+    return ,$document
+}
+function New-EditorLaunchSandbox([string]$OriginalPath,[string]$LaunchPath,[string]$PayloadPath,[string]$EvidencePath,[string]$OriginalSha256) {
+    Assert-Clean ((Get-CleanHash $OriginalPath) -eq $OriginalSha256) 'Sandbox configuration changed.'
+    Assert-Clean (-not(Test-Path -LiteralPath $LaunchPath)) 'A launch configuration already exists; prepare a fresh kit.'
+    $document=Get-EditorRelocatedSandbox (Read-EditorSandbox $OriginalPath) $PayloadPath $EvidencePath
+    $document.Save($LaunchPath)
+    Assert-Clean ((Get-CleanHash $OriginalPath) -eq $OriginalSha256) 'Prepared Sandbox configuration was modified.'
+    return [pscustomobject]@{fileName=[IO.Path]::GetFileName($LaunchPath);sha256=Get-CleanHash $LaunchPath
+        preparedSha256=$OriginalSha256;payloadHostPath=[IO.Path]::GetFullPath($PayloadPath);evidenceHostPath=[IO.Path]::GetFullPath($EvidencePath)}
+}
+function Assert-EditorLaunchConfiguration($Prepared,$Launch,[string]$KitRoot) {
+    $originalPath=Join-Path $KitRoot 'WorkphoneEditor.wsb'
+    Assert-Clean ((Get-CleanHash $originalPath) -eq $Prepared.sandboxConfigurationSha256) 'Prepared Sandbox configuration changed.'
+    if($Launch.PSObject.Properties['configurationFileName']){
+        Assert-Clean ($Launch.configurationFileName -ceq 'WorkphoneEditor.launch.wsb' -and
+            $Launch.preparedConfigurationSha256 -eq $Prepared.sandboxConfigurationSha256) 'Derived Sandbox configuration identity changed.'
+        $launchPath=Get-ContainedPath $KitRoot $Launch.configurationFileName
+        Assert-Clean ((Get-CleanHash $launchPath) -eq $Launch.configurationSha256) 'Derived Sandbox configuration changed.'
+        $expected=Get-EditorRelocatedSandbox (Read-EditorSandbox $originalPath) $Launch.payloadHostPath $Launch.evidenceHostPath
+        $actual=Read-EditorSandbox $launchPath
+        Assert-Clean ($expected.DocumentElement.OuterXml -ceq $actual.DocumentElement.OuterXml) 'Derived Sandbox policies, command or mappings changed.'
+    }else{
+        # Existing launch records used the original prepared configuration.
+        Assert-Clean ($Launch.configurationSha256 -eq $Prepared.sandboxConfigurationSha256) 'Launch Sandbox configuration changed.'
+    }
+}
 if($Mode -eq 'Prepare'){
     Assert-Clean ($ArchivePath -and $PackageEvidencePath) 'Prepare requires the candidate archive and its package evidence.'
     Assert-Clean (-not(Test-Path -LiteralPath $kit)) 'Choose a fresh kit directory; earlier evidence is preserved.'
@@ -52,7 +102,7 @@ if($Mode -eq 'Prepare'){
     Assert-Clean (@($accepted.payload | Where-Object path -eq 'bin/Editor.exe').Count -eq 1) 'Candidate does not contain the Editor runtime.'
     New-Item -ItemType Directory -Path $kit,$payload,$evidence | Out-Null
     Copy-Item -LiteralPath $archive -Destination (Join-Path $payload 'WorkphoneEditor.zip')
-    foreach($name in @('EditorCleanMachineGuest.ps1','TerrainCleanMachineGuest.ps1')){
+    foreach($name in @('EditorCleanMachineGuest.ps1','TerrainCleanMachineGuest.ps1','EditorResourceFixtureReplay.ps1')){
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $payload
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $kit
     }
@@ -72,11 +122,34 @@ if($Mode -eq 'Prepare'){
             signerThumbprint=$signature.SignerCertificate.Thumbprint;fileVersion=$version.FileVersion}
     }
     Assert-Clean (-not $ProvisionProvidedPrerequisite -or $prerequisite) 'Provisioning requires an explicitly supplied signed prerequisite.'
+    $fixturePins=@();$fixtureNames=@{}
+    if($accepted.PSObject.Properties['sourceFreeFixtures']){
+        Assert-Clean (@($accepted.sourceFreeFixtures).Count -le 2) 'Too many retained source-free fixtures.'
+        foreach($entry in @($accepted.sourceFreeFixtures)){
+            Assert-Clean ($entry.name -in @('mixed-scene','extended-typed') -and -not $fixtureNames.ContainsKey($entry.name)) 'Unknown or duplicate retained fixture name.'
+            $fixtureNames[$entry.name]=$true;$source=(Resolve-Path -LiteralPath $entry.directory).Path
+            $descriptor=Assert-EditorResourceFixture $entry $source
+            $destination=Get-ContainedPath (Join-Path $payload 'ResourceFixtures') $entry.name
+            New-Item -ItemType Directory -Path $destination -Force | Out-Null
+            foreach($file in $entry.files){
+                $target=Get-ContainedPath $destination $file.path
+                New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
+                Copy-Item -LiteralPath (Get-ContainedPath $source $file.path) -Destination $target
+                (Get-Item -LiteralPath $target).IsReadOnly=$true
+            }
+            [void](Assert-EditorResourceFixture $entry $source)
+            $copied=Assert-EditorResourceFixture $entry $destination
+            Assert-Clean (($descriptor | ConvertTo-Json -Depth 12 -Compress) -ceq ($copied | ConvertTo-Json -Depth 12 -Compress)) 'Copied fixture descriptor changed.'
+            $fixturePins+=@([ordered]@{name=$entry.name;files=@($entry.files);descriptor=$descriptor})
+        }
+    }
     $manifest=[ordered]@{schema='workphone.editor-clean-machine-candidate.v1';runId=[guid]::NewGuid().ToString('N')
         preparedAtUtc=[DateTime]::UtcNow.ToString('o');archiveFileName='WorkphoneEditor.zip';archiveSha256=$ExpectedArchiveSha256
         acceptedPackageReportSha256=Get-CleanHash $packageReport;expectedFiles=@($accepted.payload);plugins=@($accepted.plugins)
         guestRunnerSha256=Get-CleanHash (Join-Path $payload 'EditorCleanMachineGuest.ps1')
         commonRunnerSha256=Get-CleanHash (Join-Path $payload 'TerrainCleanMachineGuest.ps1')
+        resourceFixtureRunnerSha256=Get-CleanHash (Join-Path $payload 'EditorResourceFixtureReplay.ps1')
+        sourceFreeFixtures=$fixturePins
         prerequisite=$prerequisite;provisionProvidedPrerequisite=[bool]$ProvisionProvidedPrerequisite}
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip=[IO.Compression.ZipFile]::OpenRead($archive); $observed=@{}
@@ -102,7 +175,7 @@ if($Mode -eq 'Prepare'){
     Write-EditorJson ([ordered]@{schema='workphone.editor-clean-machine-kit.v1';runId=$manifest.runId;archiveSha256=$ExpectedArchiveSha256
         manifestSha256=Get-CleanHash $candidatePath;guestRunnerSha256=$manifest.guestRunnerSha256;commonRunnerSha256=$manifest.commonRunnerSha256
         sandboxConfigurationSha256=Get-CleanHash (Join-Path $kit 'WorkphoneEditor.wsb');preparedOnly=$true;guestLaunched=$false
-        cleanMachineExecuted=$false;cleanMachineValidationPassed=$false;licenseAuditComplete=$false;releaseCertified=$false}) (Join-Path $kit 'kit-evidence.json')
+        cleanMachineExecuted=$false;cleanMachineValidationPassed=$false;typedFixturesPrepared=@($fixturePins | ForEach-Object {$_.name});typedFixtureCoverage=$false;licenseAuditComplete=$false;releaseCertified=$false}) (Join-Path $kit 'kit-evidence.json')
     @"
 Workphone Editor offline clean-Windows kit
 
@@ -112,9 +185,17 @@ directory is mapped writable. Networking, vGPU and clipboard are disabled.
 The guest checks loader prerequisites, headless Editor/Lua teardown, required
 plugins, missing-media rejection and immutable installed hashes. It does not
 certify interactive authoring, physical graphics hardware or media permissions.
+Retained source-free fixtures, when supplied by passing package evidence, are
+pinned under payload/ResourceFixtures. Native extended UUID verification and
+mixed DX11/Software/overlay replay need no Python in the guest. A prepared kit
+does not establish that these guest processes have run or passed.
 
 On a host where Windows Sandbox is ALREADY enabled, with no existing session:
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ValidateEditorCleanMachine.ps1 -Mode Launch -KitDirectory . -ExpectedArchiveSha256 $ExpectedArchiveSha256
+The whole unlaunched kit may be copied to another host/path. Launch preserves
+the pinned WorkphoneEditor.wsb and creates WorkphoneEditor.launch.wsb with only
+the current payload/evidence host mappings changed. Its separate hash is pinned
+in the launch record; every Sandbox policy and the guest command stay unchanged.
 After evidence\guest-complete.txt appears:
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ValidateEditorCleanMachine.ps1 -Mode Collect -KitDirectory . -ExpectedArchiveSha256 $ExpectedArchiveSha256
 
@@ -134,6 +215,11 @@ Assert-Clean ($manifest.schema -eq 'workphone.editor-clean-machine-candidate.v1'
 Assert-Clean ((Get-CleanHash (Join-Path $payload $manifest.archiveFileName)) -eq $ExpectedArchiveSha256 -and
     (Get-CleanHash (Join-Path $payload 'EditorCleanMachineGuest.ps1')) -eq $manifest.guestRunnerSha256 -and
     (Get-CleanHash (Join-Path $payload 'TerrainCleanMachineGuest.ps1')) -eq $manifest.commonRunnerSha256) 'Prepared payload or runners changed.'
+$fixtures=@();if($manifest.PSObject.Properties['sourceFreeFixtures']){$fixtures=@($manifest.sourceFreeFixtures)}
+if($manifest.PSObject.Properties['resourceFixtureRunnerSha256']){
+    Assert-Clean ((Get-CleanHash (Join-Path $payload 'EditorResourceFixtureReplay.ps1')) -eq $manifest.resourceFixtureRunnerSha256) 'Prepared fixture replay runner changed.'
+}
+foreach($entry in $fixtures){[void](Assert-EditorResourceFixture $entry (Get-ContainedPath (Join-Path $payload 'ResourceFixtures') $entry.name))}
 if($Mode -eq 'Launch'){
     Assert-Clean (-not(Test-Path -LiteralPath (Join-Path $kit 'host-launch.json'))) 'A launch record already exists; prepare a fresh kit.'
     $facts=Get-EditorHostCapability
@@ -143,12 +229,14 @@ if($Mode -eq 'Launch'){
     Assert-Clean (@(Get-Process WindowsSandbox -ErrorAction SilentlyContinue).Count -eq 0 -and
         @(Get-ChildItem -LiteralPath $evidence -Force).Count -eq 0) 'A fresh Sandbox session and empty evidence directory are required.'
     Assert-Clean ((Get-CleanHash (Join-Path $kit 'WorkphoneEditor.wsb')) -eq $prepared.sandboxConfigurationSha256) 'Sandbox configuration changed.'
+    $configuration=New-EditorLaunchSandbox (Join-Path $kit 'WorkphoneEditor.wsb') (Join-Path $kit 'WorkphoneEditor.launch.wsb') $payload $evidence $prepared.sandboxConfigurationSha256
     $launch=[ordered]@{runId=$manifest.runId;environmentKind='WindowsSandbox';machineGuid=$facts.machineGuid;computerName=$facts.computerName
-        manifestSha256=Get-CleanHash $candidatePath;configurationSha256=$prepared.sandboxConfigurationSha256;freshSessionChecked=$true
+        manifestSha256=Get-CleanHash $candidatePath;configurationFileName=$configuration.fileName;configurationSha256=$configuration.sha256
+        preparedConfigurationSha256=$configuration.preparedSha256;payloadHostPath=$configuration.payloadHostPath;evidenceHostPath=$configuration.evidenceHostPath;freshSessionChecked=$true
         networking='Disable';vGPU='Disable';launchedAtUtc=[DateTime]::UtcNow.ToString('o')}
     Write-EditorJson $launch (Join-Path $payload 'launch-host.json')
     $style='Hidden';if($VisibleSandbox){$style='Normal'}
-    $process=Start-Process -FilePath "$env:WINDIR\System32\WindowsSandbox.exe" -ArgumentList (ConvertTo-WindowsArgument (Join-Path $kit 'WorkphoneEditor.wsb')) -WindowStyle $style -PassThru
+    $process=Start-Process -FilePath "$env:WINDIR\System32\WindowsSandbox.exe" -ArgumentList (ConvertTo-WindowsArgument (Join-Path $kit $configuration.fileName)) -WindowStyle $style -PassThru
     $launch['processId']=$process.Id;Write-EditorJson $launch (Join-Path $kit 'host-launch.json')
     Write-Output "Sandbox launch requested; collect after the matching completion marker: $kit"
     return
@@ -156,7 +244,8 @@ if($Mode -eq 'Launch'){
 $launch=Get-Content -LiteralPath (Join-Path $kit 'host-launch.json') -Raw | ConvertFrom-Json
 $resultPath=Join-Path $evidence 'guest-result.json';$result=Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
 Assert-Clean ($launch.runId -eq $manifest.runId -and $launch.freshSessionChecked -and $launch.networking -eq 'Disable' -and $launch.vGPU -eq 'Disable' -and
-    $launch.manifestSha256 -eq (Get-CleanHash $candidatePath) -and $launch.configurationSha256 -eq (Get-CleanHash (Join-Path $kit 'WorkphoneEditor.wsb'))) 'Launch identity/configuration is inconsistent.'
+    $launch.manifestSha256 -eq (Get-CleanHash $candidatePath)) 'Launch identity/configuration is inconsistent.'
+Assert-EditorLaunchConfiguration $prepared $launch $kit
 Assert-Clean ((Get-Content -LiteralPath (Join-Path $evidence 'guest-complete.txt') -Raw).Trim() -eq $manifest.runId -and
     $result.schema -eq 'workphone.editor-clean-machine-guest.v1' -and $result.runId -eq $manifest.runId -and
     $result.archiveSha256 -eq $ExpectedArchiveSha256 -and $result.candidateManifestSha256 -eq $launch.manifestSha256 -and
@@ -169,6 +258,7 @@ Assert-Clean ((Get-CleanHash $baselinePath) -eq $result.baselineEnvironmentSha25
 $baseline=Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
 Assert-Clean (($baseline | ConvertTo-Json -Depth 12 -Compress) -ceq ($result.environment | ConvertTo-Json -Depth 12 -Compress)) 'Guest baseline differs between reports.'
 $expectedNames=@('baseline-loader-probe','editor-startup','missing-media')
+$expectedNames+=@(Get-EditorResourceFixtureRunNames $fixtures)
 if($result.prerequisites.providedInstallerRun){$expectedNames+=@('provided-prerequisite-install','post-provision-loader-probe')}
 Assert-Clean ((@($result.runs.name | Sort-Object) -join "`n") -ceq (@($expectedNames | Sort-Object) -join "`n")) 'Guest process set changed.'
 foreach($run in $result.runs){
@@ -176,9 +266,35 @@ foreach($run in $result.runs){
     Assert-Clean (-not $run.timedOut -and -not $run.error -and $run.watchdogSeconds -eq $watchdog -and
         (Get-CleanHash (Get-ContainedPath $evidence $run.logFile)) -eq $run.logSha256) "Guest process/log failed: $($run.name)"
     $log=Get-Content -LiteralPath (Get-ContainedPath $evidence $run.logFile) -Raw
-    if($run.name -eq 'missing-media'){Assert-Clean ($run.exitCode -eq 1 -and $log -match 'Editor package media is missing') 'Missing-media rejection changed.'}
+    if($run.name -like 'mixed-scene-*'){
+        $mixed=@($fixtures | Where-Object name -eq 'mixed-scene');Assert-Clean ($mixed.Count -eq 1) 'Mixed scene result has no pinned fixture.'
+        $descriptor=$mixed[0].descriptor;$wrapped=[pscustomobject]@{entry=$run;output=$log}
+        if($run.name -in @('mixed-scene-dx11','mixed-scene-software')){
+            $kind=$run.name.Substring('mixed-scene-'.Length);Assert-EditorFixtureLoaded $wrapped $descriptor.scenes.$kind.expected 1 'base' 0
+        }elseif($run.name -in @('mixed-scene-overlay-identical','mixed-scene-overlay-prefer-earlier')){
+            Assert-EditorFixtureLoaded $wrapped $descriptor.scenes.dx11.expected 2 'overlay-0' 1
+        }else{
+            $bootstrap=Get-EditorFixtureBootstrap $wrapped
+            if($run.name -eq 'mixed-scene-audio' -and $run.exitCode -eq 0){Assert-EditorFixtureLoaded $wrapped $descriptor.scenes.audio.expected 1 'base' 0}
+            else{
+                Assert-Clean ($run.exitCode -eq 1 -and $bootstrap.status -ceq 'failed') 'Native scene rejection did not fail as expected.'
+                if($run.name -eq 'mixed-scene-overlay-reject'){Assert-Clean ($bootstrap.mountCount -eq 2 -and $bootstrap.diagnostic -match 'collision') 'Overlay collision rejection changed.'}
+                elseif($run.name -eq 'mixed-scene-software-material'){Assert-Clean ($bootstrap.diagnostic -cmatch 'active DX11') 'Software capability rejection changed.'}
+                elseif($run.name -eq 'mixed-scene-audio'){Assert-Clean ($bootstrap.diagnostic -clike '*Runtime audio output device is unavailable*') 'Audio failed for an unexpected cause.'}
+                elseif($run.name -eq 'mixed-scene-missing-uuid'){Assert-Clean ($bootstrap.diagnostic -cmatch 'UUID') 'Missing scene UUID rejection changed.'}
+                else{throw 'Unexpected retained scene process.'}
+            }
+        }
+    }
+    elseif($run.name -eq 'missing-media'){Assert-Clean ($run.exitCode -eq 1 -and $log -match 'Editor package media is missing') 'Missing-media rejection changed.'}
     elseif($run.name -eq 'editor-startup'){Assert-Clean ($run.exitCode -eq 0 -and $log -match 'Editor package startup and teardown passed' -and $log -notmatch 'stack traceback:|No matching overload found') 'Editor smoke failed.'}
     elseif($run.name -ne 'baseline-loader-probe' -or $result.prerequisites.baselineProbePassed){Assert-Clean ($run.exitCode -eq 0) 'Prerequisite/loader process failed.'}
+}
+if($fixtures.Count){
+    Assert-Clean ($result.PSObject.Properties['resourceFixtureReplay'] -and $result.resourceFixtureReplay.typedFixtureCoverage -and
+        $result.resourceFixtureReplay.immutableInputsVerified -and
+        (@($result.resourceFixtureReplay.fixtures.name | Sort-Object) -join "`n") -ceq (@($fixtures.name | Sort-Object) -join "`n") -and
+        -not @($result.resourceFixtureReplay.fixtures | Where-Object {-not $_.validationPassed}).Count) 'Guest retained resource fixture coverage is incomplete.'
 }
 $modulePath=Join-Path $evidence 'editor-loaded-modules.txt'
 Assert-Clean ((Get-CleanHash $modulePath) -eq $result.loadedModuleReportSha256) 'Guest module inventory changed.'
@@ -198,5 +314,6 @@ Assert-Clean ($result.prerequisites.baselineProbePassed -or ($result.prerequisit
 Write-EditorJson ([ordered]@{schema='workphone.editor-clean-machine-acceptance.v1';recordedAtUtc=[DateTime]::UtcNow.ToString('o')
     runId=$manifest.runId;archiveSha256=$ExpectedArchiveSha256;guestResultSha256=Get-CleanHash $resultPath
     cleanMachineValidationPassed=$true;environmentKind='fresh Windows Sandbox';interactiveEditorVerified=$false
+    typedFixtureCoverage=($fixtures.Count -gt 0);sourceFreeFixtureNames=@($fixtures | ForEach-Object {$_.name})
     hardwareAcceptanceVerified=$false;licenseAuditComplete=$false;releaseCertified=$false}) (Join-Path $kit 'clean-machine-acceptance.json')
 Write-Output "Fresh guest headless Editor acceptance reconciled: $kit/clean-machine-acceptance.json"

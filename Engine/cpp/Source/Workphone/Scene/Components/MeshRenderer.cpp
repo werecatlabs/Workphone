@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
+#include "../RuntimeSceneMembership.hpp"
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
@@ -49,12 +50,12 @@ namespace workphone::scene
 
     MeshRenderer::~MeshRenderer() = default;
 
-    bool MeshRenderer::isRuntimeLODStreamed() const{return m_streamMesh;}
+    bool MeshRenderer::isRuntimeLODStreamed() const{return m_runtimeAssetsMode&&m_streamMesh;}
     bool MeshRenderer::hasRuntimeLODResidency() const{return getGraphicsObject()!=nullptr;}
     String MeshRenderer::runtimeLODError() const{return m_runtimeLOD?m_runtimeLOD->error:String();}
     bool MeshRenderer::prepareRuntimeLOD(String &error,s32 priority)
     {
-        error.clear();if(!m_streamMesh)return hasRuntimeLODResidency();
+        error.clear();if(!isRuntimeLODStreamed())return hasRuntimeLODResidency();
         if(hasRuntimeLODResidency())return true;
         try {
             if(!m_runtimeAssets||!m_runtimeAssets->mount||!m_runtimeResource||!m_runtimeResource->payload.empty()||
@@ -90,7 +91,7 @@ namespace workphone::scene
     }
     void MeshRenderer::releaseRuntimeLOD()
     {
-        if(!m_streamMesh)return;
+        if(!isRuntimeLODStreamed())return;
         m_runtimeLOD.reset();
         auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystemPtr():nullptr;auto scene=graphics?graphics->getGraphicsScenePtr():nullptr;
         if(!scene)return;
@@ -163,6 +164,17 @@ namespace workphone::scene
         Renderer::updateFlags( flags, oldFlags );
     }
 
+    void MeshRenderer::updateVisibility()
+    {
+        if(!m_runtimeAssetsMode){Renderer::updateVisibility();return;}
+        if(auto object=getGraphicsObject())
+        {
+            auto actor=getActor();
+            object->setVisible(isEnabled()&&actor&&actor->isEnabledInScene()&&
+                isLODVisible()&&detail::runtimeActorPublished(actor));
+        }
+    }
+
     void MeshRenderer::load( SmartPtr<ISharedObject> data )
     {
         try
@@ -196,7 +208,7 @@ namespace workphone::scene
 
     void MeshRenderer::unload( SmartPtr<ISharedObject> data )
     {
-        if(m_streamMesh)releaseRuntimeLOD();
+        if(isRuntimeLODStreamed())releaseRuntimeLOD();
         m_runtimeResource.reset();m_runtimeAssets.reset();
         try
         {
@@ -305,6 +317,13 @@ namespace workphone::scene
                 m_runtimeResource=resource;m_streamMesh=true;setLODVisible(false);
             }else {if(m_streamMesh)throw std::runtime_error("Runtime streamed mesh mode cannot be downgraded");if(!installRuntimeMesh(resource,error))throw std::runtime_error(error.c_str());}
             m_meshAssetUuid=std::move(uuid);
+        }
+        else if(properties)
+        {
+            // Authoring roundtrips preserve captured bindings as metadata;
+            // runtime configuration alone enables the native residency path.
+            properties->getPropertyValue("meshAssetUuid",m_meshAssetUuid);
+            properties->getPropertyValue("streamMesh",m_streamMesh);
         }
         Renderer::setProperties( properties );
 
@@ -502,6 +521,7 @@ namespace workphone::scene
                                          SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
                                          SmartPtr<IEvent> event )
     {
+        if(m_runtimeAssetsMode&&eventValue==visibilityChanged){updateVisibility();return {};}
         if( eventValue == IEvent::meshLoaded && object && object->isDerived<IMeshResource>() )
         {
             if( auto actor = getActorPtr() )

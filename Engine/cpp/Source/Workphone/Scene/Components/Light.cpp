@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Light.hpp>
+#include "../RuntimeSceneMembership.hpp"
 #include <Workphone/Scene/Transform.hpp>
 #include <Workphone/Interface/Graphics/IDebug.hpp>
 #include <Workphone/Interface/Graphics/IDebugLine.hpp>
@@ -77,7 +78,7 @@ namespace workphone::scene
                 if( auto light = smgr->addGraphicsObjectByType<render::IGraphicsLight>() )
                 {
                     setLight( light );
-                    if(m_runtimeAssetsMode){light->load(nullptr);void *native=nullptr;light->_getObject(&native);if(!native)throw std::runtime_error("Cannot allocate native runtime light");}
+                    if(m_runtimeAssetsMode){light->setVisible(false);light->load(nullptr);light->setVisible(false);void *native=nullptr;light->_getObject(&native);if(!native)throw std::runtime_error("Cannot allocate native runtime light");}
                     light->setName( name );
 
                     light->setType( m_lightType );
@@ -106,6 +107,7 @@ namespace workphone::scene
             sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,
                                                    this );
             setLoadingState( LoadingState::Loaded );
+            if(m_runtimeAssetsMode)setVisible(true);
         }
         catch( std::exception &e )
         {
@@ -179,6 +181,7 @@ namespace workphone::scene
 
     void Light::updateFlags( u32 flags, u32 oldFlags )
     {
+        if(m_runtimeAssetsMode){setVisible(true);if(auto node=getSceneNode())node->makeDirty();return;}
         if( auto actor = getActor() )
         {
             auto applicationManager = core::IApplicationManager::instance();
@@ -223,6 +226,12 @@ namespace workphone::scene
                 }
             }
         }
+    }
+
+    void Light::updateVisibility()
+    {
+        if(m_runtimeAssetsMode)setVisible(true);
+        else Component::updateVisibility();
     }
 
     Array<SmartPtr<ISharedObject>> Light::getChildObjects() const
@@ -292,7 +301,8 @@ namespace workphone::scene
         if( auto light = getLight() )
         {
             auto actor = getActor();
-            auto visible = isEnabled() && actor && actor->isEnabledInScene();
+            auto visible = isEnabled() && actor && actor->isEnabledInScene()&&
+                (!m_runtimeAssetsMode||detail::runtimeActorPublished(actor));
 
             light->setVisible( visible );
             light->setDiffuseColour( m_diffuseColour );
@@ -628,6 +638,7 @@ namespace workphone::scene
 
     void Light::setVisible( bool visible )
     {
+        if(m_runtimeAssetsMode){auto actor=getActor();visible=visible&&isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor);}
         if( m_light )
         {
             m_light->setVisible( visible );

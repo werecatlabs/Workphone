@@ -3,6 +3,8 @@
 #include <WPGraphics/Resources/ClawMaterialResource.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/Resources/ClawTextureStream.hpp>
+#include <WPGraphics/Resources/FontResourceCompiler.hpp>
+#include <WPGraphics/ClawFont.hpp>
 #include <WPGraphics/MaterialProgramReloadDX11.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
@@ -15,6 +17,7 @@
 #include <WPGraphics/ClawGraphicsPipeline.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawImguiManager.hpp>
+#include "ClawImGuiFrameRecovery.hpp"
 #include <WPGraphics/ClawMaterial.hpp>
 #include <WPGraphics/ClawMaterialManager.hpp>
 #include <WPGraphics/ClawMaterialPass.hpp>
@@ -37,6 +40,7 @@
 #include <WPImGui/WPImGui.hpp>
 #include <Workphone/Workphone.hpp>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <optional>
 
@@ -101,6 +105,22 @@ namespace workphone
             }catch(const std::exception &failure){error=failure.what();return nullptr;}
 #else
             return IGraphicsSystem::createRuntimeTexture(std::move(resource),error,target,packagedBuild,std::move(mount));
+#endif
+        }
+        SmartPtr<IFont> ClawHammerSystem::createRuntimeFont(std::shared_ptr<const resource::RuntimeResource> value,String &error,
+            const String &target,bool packagedBuild,std::shared_ptr<resource::ResourcePayloadMount> mount)
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            error.clear();try {
+                if(!value){error="Runtime font requires its pinned resource";return nullptr;}
+                CookedFontData data;if(!decodeCookedFont(*value,data,error))return nullptr;
+                if(data.target!=target||data.packagedBuild!=packagedBuild){error="Runtime font target/build mismatch";return nullptr;}
+                auto atlas=createRuntimeTexture(value->dependencies[0],error,target,packagedBuild,mount);if(!atlas)return nullptr;
+                auto font=make_ptr<ClawFont>();if(!font->loadRuntimeFont(data,std::move(atlas),error,std::move(mount)))return nullptr;
+                font->setFontType("Bitmap");font->setFontSize(u32(std::lround(data.height)));font->setFontSource(value->header.resourceId.str());return font;
+            }catch(const std::exception &failure){try{error=failure.what();}catch(...){error.clear();}return nullptr;}
+#else
+            return IGraphicsSystem::createRuntimeFont(std::move(value),error,target,packagedBuild,std::move(mount));
 #endif
         }
         namespace
@@ -1419,13 +1439,21 @@ namespace workphone
                     if( pass.window && owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
                     {
                         owner->m_imguiManager->newFrame();
-                        if( auto app = core::IApplicationManager::instancePtr() )
-                            if( auto ui = app->getUI() )
-                                if( auto application = ui->getApplication() )
-                                {
-                                    RenderPhaseProfile timing( owner->m_uiBuildProfile, "Editor UI build" );
-                                    application->update();
-                                }
+                        try
+                        {
+                            if( auto app = core::IApplicationManager::instancePtr() )
+                                if( auto ui = app->getUI() )
+                                    if( auto application = ui->getApplication() )
+                                    {
+                                        RenderPhaseProfile timing( owner->m_uiBuildProfile, "Editor UI build" );
+                                        application->update();
+                                    }
+                        }
+                        catch(...)
+                        {
+                            detail::discardInterruptedImGuiFrame(*owner->m_imguiManager);
+                            throw;
+                        }
                         RenderPhaseProfile timing( owner->m_uiSubmitProfile, "UI submission" );
                         owner->m_imguiManager->render();
                     }
@@ -1465,12 +1493,12 @@ namespace workphone
             catch( const std::exception &e )
             {
                 pass.failed = true;
-                WP_LOG_EXCEPTION( e );
+                try { WP_LOG_EXCEPTION( e ); } catch( ... ) {}
             }
             catch( ... )
             {
                 pass.failed = true;
-                WP_LOG_ERROR( "Unknown exception in graphics frame adapter." );
+                try { WP_LOG_ERROR( "Unknown exception in graphics frame adapter." ); } catch( ... ) {}
             }
         }
 

@@ -65,6 +65,7 @@ namespace workphone
             /** Explicit source-free scene startup. Configure before load; the
              * primary iterate owner transports and commits one pinned closure. */
             void configureRuntimeScenePackage(const String &directory,const String &uuid,const String &target="pc");
+            void configureRuntimeScenePackages(const Array<String> &directories,const String &uuid,const String &target,const String &collisionPolicy="reject");
             bool runtimeSceneComplete() const;
             bool runtimeSceneSucceeded() const;
             String runtimeSceneDiagnostic() const;

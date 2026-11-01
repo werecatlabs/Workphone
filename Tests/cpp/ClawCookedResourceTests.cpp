@@ -24,6 +24,8 @@
 #include "ClawTextureMipContracts.hpp"
 #include "DX11TestEvidence.hpp"
 #include "GraphicsResourceCompilerContracts.hpp"
+#include "FontResourceContracts.hpp"
+#include "ClawMorphResourceContracts.hpp"
 #include <array>
 #include <cstring>
 #include <cstdlib>
@@ -1192,6 +1194,8 @@ int main( int argc, char **argv )
         Fixture fixture;
         fixture.initialize();
         claw_queued_material_node_contracts::run(fixture.graphics.graphics);
+        font_resource_contracts::run(fixture);
+        claw_morph_resource_contracts::run(fixture);
         if( programRetirement ) { cooked_material_shader_contracts::run( fixture, retirementCycles, true ); return 0; }
         claw_cooked_material_retirement_contracts::run( fixture, retirementCycles ? retirementCycles : 32 );
         if( retirementCycles ) return 0;

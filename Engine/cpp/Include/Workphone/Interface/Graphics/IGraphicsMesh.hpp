@@ -124,6 +124,10 @@ namespace workphone
             /** Publish a sampled CPU skeleton to this mesh. Unsupported backends
              * report an explicit error; rejected staging preserves geometry. */
             virtual bool applySkeletonPose( SmartPtr<ISkeleton> skeleton, String &error );
+            /** Sample a pinned static-mesh morph clip on this serialized native
+             * owner. Unsupported/skinned bindings fail without changing geometry. */
+            virtual bool applyMorphAnimation(std::shared_ptr<const resource::RuntimeResource>,
+                f32 time,f32 weight,f32 scale,String &error,const String &target="pc",bool packagedBuild=true);
 
             /** Install a pinned cooked mesh/skin on the serialized graphics owner.
              * Unsupported backends return false; failed staging retains old data. */

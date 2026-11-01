@@ -1,4 +1,5 @@
 #pragma once
+#include "RuntimeSceneMembershipContracts.hpp"
 #include <Workphone/Scene/Components/AudioEmitter.hpp>
 #include <Workphone/Scene/Components/UI/UIComponent.hpp>
 #include <Workphone/Sound/SoundManager.hpp>
@@ -9,6 +10,9 @@
 #include <Workphone/Interface/UI/IUIText.hpp>
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>
 #include <Workphone/Interface/UI/IUIWindow.hpp>
+#include <Workphone/Interface/Scene/IGameManager.hpp>
+#include <Workphone/Interface/Scene/IGameActor.hpp>
+#include <Workphone/Interface/Scene/IGameScene.hpp>
 #include <WPAudio/WPAudioManager.hpp>
 #include <WPAudio/AudioResourceCompiler.hpp>
 #include <filesystem>
@@ -105,9 +109,22 @@ namespace runtime_media_component_contracts
         refused=false;try{first->load(nullptr);}catch(const std::exception&){refused=true;}check(refused,"Runtime audio unload latch must reject plain authoring reload");
         first=nullptr;second=nullptr;
         auto manager=app->getRenderUI();check(manager&&manager->isLoaded(),"Runtime component test requires the real native UI manager");const auto before=manager->getChildObjects().size();
-        auto component=make_ptr<scene::UIComponent>();component->configureRuntimeAssets(context);auto properties=make_ptr<Properties>();properties->setProperty("uiAssetUuid",uiId);component->setProperties(properties);
+        auto game=app->getGameManager();auto ownerScene=game?game->getCurrentScene():nullptr;
+        check(game&&ownerScene&&ownerScene->isLoaded(),"Runtime UI membership requires the existing loaded Editor scene");
+        auto actor=game->createActor();check(actor!=nullptr,"Runtime UI membership actor must allocate");
+        struct RetireActor {SmartPtr<scene::IGameManager> game;SmartPtr<scene::IGameActor> actor;~RetireActor(){if(actor)game->destroyActor(actor);}} retireActor{game,actor};
+        auto component=make_ptr<scene::UIComponent>();component->configureRuntimeAssets(context);actor->addComponentInstance(component);
+        auto properties=make_ptr<Properties>();properties->setProperty("uiAssetUuid",uiId);properties->setProperty("state",static_cast<s32>(scene::IComponent::State::Edit));component->load(properties);
         auto host=component->getElement();check(host&&host->getChildren().size()==1,"Runtime UI must publish under its registered native host");
-        auto document=host->getChildren()[0];check(document->getChildren().size()==1&&document->isVisible(),"Runtime UI document controls must be live and visible");
+        auto document=host->getChildren()[0];check(document->getChildren().size()==1&&!document->isVisible()&&!document->isEnabled(),"Unpublished runtime UI must remain hidden and input-disabled");
+        ownerScene->addActor(actor);check(document->isVisible()&&document->isEnabled(),"Actual scene publication must activate runtime UI");
+        runtime_scene_membership_contracts::nested(game,actor,[&](bool visible){check(document->isVisible()==visible&&document->isEnabled()==visible,"Nested runtime UI visibility/input must follow its published scene ancestor");});
+        actor->setEnabled(false);check(!document->isVisible()&&!document->isEnabled(),"Disabled runtime actors must hide and disable their UI");
+        actor->setEnabled(true);check(document->isVisible()&&document->isEnabled(),"Re-enabled scene actors must restore authored UI flags");
+        component->setEnabled(false);check(document->isVisible()&&!document->isEnabled(),"Disabled runtime UI components must disable native input");
+        component->setEnabled(true);check(document->isVisible()&&document->isEnabled(),"Re-enabled runtime components must restore native input");
+        ownerScene->removeActor(actor);check(!document->isVisible()&&!document->isEnabled(),"Removing a loaded actor must hide and disable its retained UI");
+        ownerScene->addActor(actor);check(document->isVisible()&&document->isEnabled(),"Republishing the same loaded actor must reactivate its retained UI");
         auto text=dynamic_pointer_cast<ui::IUIText>(document->getChildren()[0]);check(text&&text->getText()=="First generation","Runtime UI must consume typed control data");text=nullptr;
         const auto installed=manager->getChildObjects().size();properties->setProperty("uiAssetUuid",String("missing"));refused=false;
         try{component->setProperties(properties);}catch(const std::exception&){refused=true;}
@@ -118,7 +135,8 @@ namespace runtime_media_component_contracts
         component->setVisible(false);check(!document->isVisible(),"Runtime UI visibility must reach native document controls");component->setVisible(true);check(document->isVisible(),"Runtime UI visibility must restore authored visible controls");
         const auto foreign=std::async(std::launch::async,[component,properties]() mutable {try{component->setProperties(properties);return false;}catch(const std::exception&){return true;}}).get();
         check(foreign&&host->getChildren()[0]==document,"UI replacement on another physical owner must be rejected before native mutation");
-        document=nullptr;host=nullptr;component->unload(nullptr);check(!component->getElement()&&manager->getChildObjects().size()==before,"Runtime UI retirement must remove every native registration");
+        document=nullptr;host=nullptr;game->destroyActor(actor);retireActor.actor=nullptr;actor=nullptr;
+        check(!component->getElement()&&manager->getChildObjects().size()==before,"Actor destruction without an external graphics fence must retire the runtime UI document and host");
         refused=false;try{component->load(nullptr);}catch(const std::exception&){refused=true;}check(refused,"Runtime UI unload latch must reject plain authoring reload");component=nullptr;
         auto editorUI=app->getUI();check(editorUI&&editorUI->isLoaded(),"Window publication requires the Editor's native ImGui manager");
         const auto editorBefore=editorUI->getChildObjects().size();auto windowHost=editorUI->addElement(ui::IUIWindow::typeInfo());

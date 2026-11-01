@@ -1,5 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/UI/ClawUIManager.hpp>
+#include <exception>
 #include <WPGraphics/UI/ClawUIAnimatedMaterial.hpp>
 #include <WPGraphics/UI/ClawUICursor.hpp>
 #include <WPGraphics/UI/ClawUIBar.hpp>
@@ -39,6 +40,25 @@
 
 namespace workphone::ui
 {
+    namespace frame_retention
+    {
+        namespace
+        {
+            thread_local Array<SmartPtr<ISharedObject>> *currentOwners=nullptr;
+            thread_local Array<std::shared_ptr<const void>> *currentSnapshots=nullptr;
+        }
+        Scope::Scope(Array<SmartPtr<ISharedObject>> &owners,Array<std::shared_ptr<const void>> &snapshots):
+            previous(currentOwners),previousSnapshots(currentSnapshots)
+        {currentOwners=&owners;currentSnapshots=&snapshots;}
+        Scope::~Scope(){currentOwners=previous;currentSnapshots=previousSnapshots;}
+        void retainFontOwner(IUIElement *owner)
+        {if(currentOwners)currentOwners->push_back(SmartPtr<ISharedObject>(owner));}
+        void retainResource(SmartPtr<ISharedObject> owner)
+        {if(currentOwners&&owner)currentOwners->push_back(std::move(owner));}
+        void retainSnapshot(std::shared_ptr<const void> owner)
+        {if(currentSnapshots&&owner)currentSnapshots->push_back(std::move(owner));}
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone, ClawUIManager, IUIManager );
 
     ClawUIManager::ClawUIManager() : m_itemInFocus( nullptr )
@@ -426,8 +446,14 @@ namespace workphone::ui
         const auto frameElements = getElements();
         // A widget published after the inventory snapshot can still join this
         // draw. Font emitters retain their actual owners in the same frame.
-        Array<SmartPtr<IUIElement>> drawnFontOwners;
-        frame_retention::Scope retainDrawnFonts( drawnFontOwners );
+        auto drawnFontOwners=makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
+        auto drawnSnapshots=makeSourceBudgetSnapshot<std::shared_ptr<const void>>();
+        frame_retention::Scope retainDrawnFonts( drawnFontOwners,drawnSnapshots );
+        struct DiscardPartialFrame
+        {
+            wp_context *context;bool &inputOpen;int exceptions=std::uncaught_exceptions();
+            ~DiscardPartialFrame(){if(std::uncaught_exceptions()>exceptions){if(context->current)wp_end(context);wp_clear(context);wp_input_begin(context);inputOpen=true;}}
+        } discardPartial{ctx,m_inputFrameOpen};
 
         if( m_inputFrameOpen )
         {

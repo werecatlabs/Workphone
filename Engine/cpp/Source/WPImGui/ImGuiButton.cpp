@@ -1,5 +1,6 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiButton.hpp>
+#include <WPImGui/ImGuiRuntimeFont.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/System/ProjectLocalization.hpp>
 #include <imgui.h>
@@ -94,6 +95,7 @@ namespace workphone::ui
 
     void ImGuiButton::unload( SmartPtr<ISharedObject> data )
     {
+        m_runtimeFont.reset();
         ImGuiElement<IUIButton>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
@@ -101,8 +103,9 @@ namespace workphone::ui
     void ImGuiButton::update()
     {
         if( !isVisible() ) return;
+        ImGuiRuntimeFontScope runtimeFont(m_runtimeFont,getTextSize());if(!runtimeFont.valid())return;
         const auto sourceLabel = getLabel();
-        auto label = localizeProjectText( sourceLabel );
+        auto label = m_runtimeLiteralText?sourceLabel:localizeProjectText( sourceLabel );
         if( sourceLabel.size() >= 4 && sourceLabel[0] == '@' && sourceLabel[1] == '{' && sourceLabel.back() == '}' )
             label += "###" + sourceLabel;
         if( StringUtil::isNullOrEmpty( label ) )
@@ -112,7 +115,9 @@ namespace workphone::ui
 
         auto enabled = isEnabled();
         ImGui::BeginDisabled( !enabled );
+        if(m_runtimeLiteralText)ImGui::PushID(this);
         auto pressed = ImGui::Button( label.c_str() );
+        if(m_runtimeLiteralText)ImGui::PopID();
         ImGui::EndDisabled();
 
         const u32 shortcut = m_keyboardShortcut;
@@ -167,6 +172,10 @@ namespace workphone::ui
             }
         }
     }
+
+    bool ImGuiButton::setRuntimeFont(SmartPtr<render::IFont> font)
+    {if(!font){m_runtimeFont.reset();return true;}String error;auto candidate=ImGuiRuntimeFont::create(std::move(font),error);if(!candidate)return false;m_runtimeFont=std::move(candidate);return true;}
+    SmartPtr<render::IFont> ImGuiButton::getRuntimeFont() const{return m_runtimeFont?m_runtimeFont->source():nullptr;}
 
     String ImGuiButton::getLabel() const
     {

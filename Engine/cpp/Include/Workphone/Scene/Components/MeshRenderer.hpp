@@ -124,6 +124,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void updateVisibility() override;
             bool installRuntimeMesh(std::shared_ptr<const resource::RuntimeResource>,String &error);
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
             std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;

@@ -441,7 +441,10 @@ if (WP_BUILD_TESTS)
                 set_tests_properties(WPGraphics.material_cpu_profile_contract PROPERTIES
                     LABELS "graphics;material;cpu;dx11" TIMEOUT 60)
                 add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
-                target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB FREEIMAGE_LIB)
+                target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB FREEIMAGE_LIB
+                    WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR WORKPHONE_INCLUDE_FONT_BAKING
+                    WORKPHONE_INCLUDE_DEFAULT_FONT WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
+                    WORKPHONE_INCLUDE_STANDARD_IO)
                 target_include_directories(WPGraphicsCookedResourceTests PRIVATE
                     ${WP_ROOT}/Dependencies/FreeImage/Source
                     ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost
@@ -450,6 +453,18 @@ if (WP_BUILD_TESTS)
                     ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
                 target_link_libraries(WPGraphicsCookedResourceTests PRIVATE
                     WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11 d3dcompiler)
+                if(TARGET WPImGui)
+                    # Internal manager lifecycle is exercised beside its own
+                    # ImGui context, as in WPGraphicsClawDX11TargetTests.
+                    target_sources(WPGraphicsCookedResourceTests PRIVATE
+                        ${WP_ROOT}/Engine/cpp/Source/WPGraphics/ClawImguiManager.cpp)
+                    target_link_libraries(WPGraphicsCookedResourceTests PRIVATE WPImGui)
+                    target_include_directories(WPGraphicsCookedResourceTests PRIVATE ${WP_ROOT}/Dependencies/imgui)
+                    target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE
+                        WP_FONT_IMGUI_CONTRACTS=1 WP_IMGUI_PRIVATE_CONTRACT_HOST)
+                else()
+                    target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE WP_FONT_IMGUI_CONTRACTS=0)
+                endif()
                 if(TARGET WPProcedural)
                     target_link_libraries(WPGraphicsCookedResourceTests PRIVATE WPProcedural)
                     target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE WP_COOKED_PROCEDURAL=1)

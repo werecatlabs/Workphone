@@ -5,7 +5,7 @@
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
 #include <functional>
 
-namespace workphone { class StreamBudgetLease; }
+namespace workphone { class StreamBudgetLease; class WorldStreamingScheduler; }
 
 namespace workphone::resource
 {
@@ -58,6 +58,24 @@ namespace workphone::resource
         u32 maxDependencyDepth = 64;
     };
 
+    /** Ordered package composition. Earlier entries have higher precedence.
+     * Changed fingerprints may shadow only under PreferEarlier; every visible
+     * parent's dependency pins must still match the selected complete variant. */
+    enum class RuntimeMountCollisionPolicy { Reject, IdenticalOnly, PreferEarlier };
+    struct WPCore_API RuntimeResourceMountConfig
+    {
+        String name;
+        RuntimeResourceConfig config;
+    };
+    struct WPCore_API RuntimeResourceProvenance
+    {
+        std::shared_ptr<StreamBudgetLease> admission;
+        ResourceID resourceId;
+        String mountName,compiledRoot,manifestPath;
+        u64 manifestSourceHash=0,manifestPayloadHash=0;
+        u32 precedence=0,shadowedMounts=0,manifestVersion=0;
+    };
+
     /** Manifest-sealed corruption-check directory; hashes are not authentication. */
     struct WPCore_API RuntimeResourceRangeInfo
     {
@@ -108,6 +126,15 @@ namespace workphone::resource
         bool initializeRuntime(const RuntimeResourceConfig &,String &error,
             std::shared_ptr<StreamBudgetLease> manifestAdmission,
             std::shared_ptr<StreamBudgetLease> workingAdmission = {});
+        /** Captures 1..32 named packages once. No mount mutation or source
+         * fallback; rejected composition leaves this instance uninitialized. */
+        static bool compositionMemoryRequirements(const Array<RuntimeResourceMountConfig> &,
+            u64 &sourceBytes,u64 &workingBytes,String &error);
+        bool initializeRuntimeComposition(const Array<RuntimeResourceMountConfig> &,
+            RuntimeMountCollisionPolicy,String &error,std::shared_ptr<StreamBudgetLease> sourceAdmission={},
+            std::shared_ptr<StreamBudgetLease> workingAdmission={});
+        bool runtimeProvenance(const ResourceID &,RuntimeResourceProvenance &,String &error,
+            std::shared_ptr<WorldStreamingScheduler> admissionScheduler={}) const;
 
         /** Export the committed cooked install closure, pinning hashes, versions and target.
          * Roots must first pass compile() (including UpToDate) in this authoring session.
@@ -178,6 +205,8 @@ namespace workphone::resource
         std::shared_ptr<IResourceCompilerRegistry> registry() const override;
 
     private:
+        bool initializeRuntimeBounded(const RuntimeResourceConfig &,String &,
+            std::shared_ptr<StreamBudgetLease>,std::shared_ptr<StreamBudgetLease>,u64 maximumContainerBytes);
         bool writeRuntimePackageImpl( const String &, const Array<ResourceID> &,
                                       const Array<RuntimeResourceBinding> &,
                                       const RuntimePackageResolver &, String &,

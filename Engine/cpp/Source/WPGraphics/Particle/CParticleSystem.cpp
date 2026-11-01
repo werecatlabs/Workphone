@@ -44,6 +44,7 @@ namespace workphone
 
         void CParticleSystem::update()
         {
+            if(m_runtimeResourcesMode&&!m_isVisible)return;
             // GraphicsScene advances particles during preparation, before all view draws.
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
@@ -161,6 +162,7 @@ namespace workphone
 
         void CParticleSystem::setTemplateName( const String &templateName )
         {
+            if(m_runtimeResourcesMode&&!templateName.empty())throw std::runtime_error("Captured particles do not load authoring templates");
             m_templateName = templateName;
         }
 
@@ -257,8 +259,14 @@ namespace workphone
             return m_materialName;
         }
 
+        SmartPtr<IMaterial> CParticleSystem::getRuntimeMaterial() const
+        {
+            return m_runtimeMaterial;
+        }
+
         void CParticleSystem::setMaterialName( const String &materialName, s32 index /*= -1*/ )
         {
+            if(m_runtimeResourcesMode&&!materialName.empty())throw std::runtime_error("Captured particles do not resolve named authoring materials");
             m_materialName = materialName;
         }
 
