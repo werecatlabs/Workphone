@@ -108,6 +108,18 @@ namespace workphone::render
         }
     }
 
+    bool ClawMaterialDrawRecords::StorageResource::do_is_equal(
+        const std::pmr::memory_resource &other ) const noexcept
+    {
+        return this == &other;
+    }
+
+    ClawMaterialDrawRecords::StorageResource::StorageResource( StorageCounters &counters, bool cache ) :
+        m_counters( counters ),
+        m_cache( cache )
+    {
+    }
+
     u32 ClawMaterialDrawRecords::captureMaterial( SmartPtr<IMaterial> material )
     {
         if( auto found = m_materials.find( material.get() ); found != m_materials.end() )
@@ -411,4 +423,50 @@ namespace workphone::render
         }
         return &record;
     }
+
+    u64 ClawMaterialDrawRecords::getPersistentTableIdentity() const
+    {
+        return m_preparedRecords.getIdentity();
+    }
+
+    u64 ClawMaterialDrawRecords::getPersistentStorageBytes() const
+    {
+        return m_preparedRecords.getStorageBytes();
+    }
+
+    u64 ClawMaterialDrawRecords::getPeakStorageBytes() const
+    {
+        return m_storage.peak;
+    }
+
+    u64 ClawMaterialDrawRecords::getRetainedStorageBytes() const
+    {
+        return m_storage.bytes;
+    }
+
+    u64 ClawMaterialDrawRecords::getStorageAllocationCount() const
+    {
+        return m_storage.allocations;
+    }
+
+    u64 ClawMaterialDrawRecords::getPreparationCount() const
+    {
+        return m_preparations;
+    }
+
+    size_t ClawMaterialDrawRecords::getMeshCount() const
+    {
+        return m_meshes.size();
+    }
+
+    size_t ClawMaterialDrawRecords::getBindingCount() const
+    {
+        return m_bindings.size();
+    }
+
+    size_t ClawMaterialDrawRecords::getRecordCount() const
+    {
+        return m_records.size();
+    }
+
 }  // namespace workphone::render

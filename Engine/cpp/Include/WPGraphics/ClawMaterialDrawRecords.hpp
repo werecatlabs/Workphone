@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory_resource>
+
 struct wp_graphics_cull_result;
 
 namespace workphone::render
@@ -43,6 +44,7 @@ namespace workphone::render
         ~ClawMaterialDrawRecords();
         ClawMaterialDrawRecords( const ClawMaterialDrawRecords & ) = delete;
         ClawMaterialDrawRecords &operator=( const ClawMaterialDrawRecords & ) = delete;
+
         void capture( ClawMesh *mesh );
         void seal( ClawMaterialRenderCache *cache = nullptr );
         /** Reorder a private view before publication. Unknown/mixed materials,
@@ -56,25 +58,13 @@ namespace workphone::render
         bool valid( const Binding &, const ClawMesh *, u32 sections ) const;
         const Record *get( const Binding &, u32 section ) const;
 
-        size_t getRecordCount() const
-        {
-            return m_records.size();
-        }
+        size_t getRecordCount() const;
 
-        size_t getBindingCount() const
-        {
-            return m_bindings.size();
-        }
+        size_t getBindingCount() const;
 
-        size_t getMeshCount() const
-        {
-            return m_meshes.size();
-        }
+        size_t getMeshCount() const;
 
-        u64 getPreparationCount() const
-        {
-            return m_preparations;
-        }
+        u64 getPreparationCount() const;
 
         /** Actual vector capacity bytes for records/owners/section indices.
          * Excludes lookup maps, snapshots/resources and allocator bookkeeping. */
@@ -82,31 +72,16 @@ namespace workphone::render
 
         /** Table storage only, including pool metadata and lookup maps. Counts
          * actual upstream requests; excludes resource objects and allocator overhead. */
-        u64 getStorageAllocationCount() const
-        {
-            return m_storage.allocations;
-        }
+        u64 getStorageAllocationCount() const;
 
-        u64 getRetainedStorageBytes() const
-        {
-            return m_storage.bytes;
-        }
+        u64 getRetainedStorageBytes() const;
 
-        u64 getPeakStorageBytes() const
-        {
-            return m_storage.peak;
-        }
+        u64 getPeakStorageBytes() const;
 
         // Shared table bytes: deduplicate by table identity when summing views.
-        u64 getPersistentStorageBytes() const
-        {
-            return m_preparedRecords.getStorageBytes();
-        }
+        u64 getPersistentStorageBytes() const;
 
-        u64 getPersistentTableIdentity() const
-        {
-            return m_preparedRecords.getIdentity();
-        }
+        u64 getPersistentTableIdentity() const;
 
     private:
         struct Owner
@@ -126,11 +101,7 @@ namespace workphone::render
         class StorageResource final : public std::pmr::memory_resource
         {
         public:
-            StorageResource( StorageCounters &counters, bool cache ) :
-                m_counters( counters ),
-                m_cache( cache )
-            {
-            }
+            StorageResource( StorageCounters &counters, bool cache );
 
             ~StorageResource() override;
 
@@ -148,10 +119,7 @@ namespace workphone::render
             void *do_allocate( size_t bytes, size_t alignment ) override;
             void do_deallocate( void *pointer, size_t bytes, size_t alignment ) override;
 
-            bool do_is_equal( const std::pmr::memory_resource &other ) const noexcept override
-            {
-                return this == &other;
-            }
+            bool do_is_equal( const std::pmr::memory_resource &other ) const noexcept override;
         };
 
         // Resources outlive their containers and the lazy node pool. Typed

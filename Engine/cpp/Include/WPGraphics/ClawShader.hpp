@@ -10,6 +10,7 @@ namespace workphone
 {
     namespace render
     {
+
         /**
          * @class ClawShader
          * @brief Production-ready shader implementation bridging the engine's Shader base class
@@ -136,6 +137,7 @@ namespace workphone
 
         protected:
             wp_shader *m_shader;  ///< Owned underlying Claw shader handle.
+            
             // An extra reference to the last successful default-compiler blob;
             // no second payload copy. The C descriptor can outlive this wrapper.
             void *m_compiledBlob = nullptr;

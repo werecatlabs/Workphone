@@ -24,6 +24,7 @@ namespace workphone
 {
     namespace render
     {
+
         /**
          * DirectX 12 renderer implementing IRenderer3.
          *

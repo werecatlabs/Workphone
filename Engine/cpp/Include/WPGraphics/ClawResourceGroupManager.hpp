@@ -9,6 +9,7 @@ namespace workphone
 {
     namespace render
     {
+
         /**
          * @class ClawResourceGroupManager
          * @brief Minimal resource group manager for the ClawHammer backend.

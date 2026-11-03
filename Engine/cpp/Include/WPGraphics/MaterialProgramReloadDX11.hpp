@@ -1,5 +1,6 @@
 #ifndef WP_MATERIAL_PROGRAM_RELOAD_DX11_HPP
 #define WP_MATERIAL_PROGRAM_RELOAD_DX11_HPP
+
 #include <WPGraphics/MaterialProgramDX11.hpp>
 
 namespace workphone::render

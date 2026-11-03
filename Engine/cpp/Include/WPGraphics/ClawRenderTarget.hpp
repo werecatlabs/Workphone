@@ -11,6 +11,7 @@ namespace workphone
 {
     namespace render
     {
+
         /**
          * @class ClawRenderTarget
          * @brief Production-ready render target implementation for the Claw graphics backend.
