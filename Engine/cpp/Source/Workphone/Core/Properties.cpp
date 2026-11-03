@@ -37,7 +37,7 @@ namespace workphone
     {
         thread_local Properties::ObjectResolver loadObjectResolver;
         thread_local bool allowObjectDatabaseFallback = true;
-    }
+    }  // namespace
 
     Properties::ObjectResolver Properties::exchangeObjectResolver( ObjectResolver resolver )
     {
@@ -79,11 +79,18 @@ namespace workphone
             if( !resource && allowObjectDatabaseFallback )
             {
                 auto applicationManager = core::IApplicationManager::instancePtr();
-                auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
-                if( resourceDatabase ) resource = resourceDatabase->getObject( StringUtil::parseUUID( uuid ) );
+                auto resourceDatabase =
+                    applicationManager ? applicationManager->getResourceDatabase() : nullptr;
+                if( resourceDatabase )
+                {
+                    resource = resourceDatabase->getObject( StringUtil::parseUUID( uuid ) );
+                }
             }
             if( !resource && !allowObjectDatabaseFallback )
-                throw std::runtime_error( "Unresolved cooked property reference: " + std::string( uuid.c_str() ) );
+            {
+                throw std::runtime_error( "Unresolved cooked property reference: " +
+                                          std::string( uuid.c_str() ) );
+            }
             if( resource )
             {
                 value.push_back( resource );
@@ -130,11 +137,18 @@ namespace workphone
         if( !resource && allowObjectDatabaseFallback )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
-            if( resourceDatabase ) resource = resourceDatabase->getObject( uuid );
+            auto resourceDatabase =
+                applicationManager ? applicationManager->getResourceDatabase() : nullptr;
+            if( resourceDatabase )
+            {
+                resource = resourceDatabase->getObject( uuid );
+            }
         }
         if( !resource && !allowObjectDatabaseFallback )
-            throw std::runtime_error( "Unresolved cooked property reference: " + std::string( sUUID.c_str() ) );
+        {
+            throw std::runtime_error( "Unresolved cooked property reference: " +
+                                      std::string( sUUID.c_str() ) );
+        }
         if( resource )
         {
             auto typeManager = TypeManager::instance();
@@ -161,7 +175,10 @@ namespace workphone
                 assignValue = true;
             }
             if( !allowObjectDatabaseFallback && ( !assignValue || !value ) )
-                throw std::runtime_error( "Cooked property reference has the wrong native type: " + std::string( sUUID.c_str() ) );
+            {
+                throw std::runtime_error( "Cooked property reference has the wrong native type: " +
+                                          std::string( sUUID.c_str() ) );
+            }
         }
         return true;
     }
@@ -405,10 +422,8 @@ namespace workphone
     {
         if( this != &other )
         {
-            auto properties = makeSourceBudgetSnapshot( other.m_properties );
-            auto children = makeSourceBudgetSnapshot( other.m_children );
-            m_properties.swap( properties );
-            m_children.swap( children );
+            m_properties = other.m_properties;
+            m_children = other.m_children;
         }
 
         return *this;
@@ -421,7 +436,7 @@ namespace workphone
 
     auto Properties::getChildren() const -> Array<SmartPtr<Properties>>
     {
-        return m_children;
+        return m_children.snapshot();
     }
 
     void Properties::addChild( const SmartPtr<Properties> &properties )
@@ -556,13 +571,12 @@ namespace workphone
 
     void Properties::setPropertiesAsArray( const Array<Property> &array )
     {
-        auto candidate = makeSourceBudgetSnapshot( array );
-        m_properties.swap( candidate );
+        m_properties = { array.begin(), array.end() };
     }
 
     auto Properties::getPropertiesAsArray() const -> Array<Property>
     {
-        return m_properties;
+        return m_properties.snapshot();
     }
 
     auto Properties::getProperty( const String &name, String defaultValue ) const -> String
@@ -1595,7 +1609,10 @@ namespace workphone
 
     auto Properties::getPropertyValue( const String &name, SmartPtr<ISharedObject> &value ) const -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1619,7 +1636,10 @@ namespace workphone
     auto Properties::getPropertyValue( const String &name, SmartPtr<render::IMaterial> &value ) const
         -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1652,7 +1672,10 @@ namespace workphone
     auto Properties::getPropertyValue( const String &name, SmartPtr<render::ITexture> &value ) const
         -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1685,7 +1708,10 @@ namespace workphone
     auto Properties::getPropertyValue( const String &name, SmartPtr<scene::IGameActor> &value ) const
         -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1718,7 +1744,10 @@ namespace workphone
     auto Properties::getPropertyValue( const String &name, SmartPtr<scene::IComponent> &value ) const
         -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1750,7 +1779,10 @@ namespace workphone
 
     auto Properties::getPropertyValue( const String &name, SmartPtr<IMeshResource> &value ) const -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1782,7 +1814,10 @@ namespace workphone
 
     auto Properties::getPropertyValue( const String &name, SmartPtr<ISound> &value ) const -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyAsType( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyAsType( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );
@@ -1815,7 +1850,10 @@ namespace workphone
     auto Properties::getPropertyValue( const String &name,
                                        Array<SmartPtr<scene::IComponent>> &value ) const -> bool
     {
-        if( loadObjectResolver || !allowObjectDatabaseFallback ) return getPropertyValue<scene::IComponent>( name, value );
+        if( loadObjectResolver || !allowObjectDatabaseFallback )
+        {
+            return getPropertyValue<scene::IComponent>( name, value );
+        }
         if( hasProperty( name ) )
         {
             const auto &property = getPropertyObject( name );

@@ -10,14 +10,15 @@
  * child property groups, enabling complex configuration and serialization scenarios.
  */
 
-#ifndef _FBProperties_H
-#define _FBProperties_H
-#include <functional>
+#ifndef __WP_Properties_H
+#define __WP_Properties_H
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Core/Property.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
+#include <functional>
 
 namespace workphone
 {
@@ -1016,12 +1017,12 @@ namespace workphone
         /**
          * @brief The array containing all properties in this group.
          */
-        Array<Property> m_properties = makeSourceBudgetSnapshot<Property>();
+        ConcurrentArray<Property> m_properties;
 
         /**
          * @brief Array of child property groups, allowing for hierarchical property organization.
          */
-        Array<SmartPtr<Properties>> m_children = makeSourceBudgetSnapshot<SmartPtr<Properties>>();
+        ConcurrentArray<SmartPtr<Properties>> m_children;
     };
 
     template <class T>
@@ -1078,4 +1079,4 @@ namespace workphone
     }
 }  // namespace workphone
 
-#endif
+#endif // __WP_Properties_H
