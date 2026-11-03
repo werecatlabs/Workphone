@@ -414,11 +414,13 @@ namespace workphone
             {
                 return false;
             }
+
             const auto now = detail::MaterialResidencyRetry::Clock::now();
             if( automatic && !m_residencyRetry.ready( now ) )
             {
                 return false;
             }
+
             try
             {
                 s32 materialWeakOwners = 0;
@@ -439,6 +441,7 @@ namespace workphone
                         }
                     }
                 }
+
                 const auto techniques = getTechniques();
                 for( const auto &technique : techniques )
                 {
@@ -454,6 +457,7 @@ namespace workphone
                     {
                         return false;
                     }
+
                     if( technique->getMaterial().get() == this )
                     {
                         ++materialWeakOwners;
@@ -462,6 +466,7 @@ namespace workphone
                     {
                         return false;
                     }
+
                     s32 techniqueWeakOwners = 0;
                     const auto passes = technique->getPasses();
                     for( const auto &pass : passes )
@@ -470,12 +475,14 @@ namespace workphone
                         {
                             continue;
                         }
+
                         const s32 passOwners = 2 + ( m_pass.get() == pass.get() );
                         if( pass->isLoadLocked() || !pass->isEnabled() ||
                             pass->getReferences() != passOwners )
                         {
                             return false;
                         }
+
                         if( pass->getMaterial().get() == this )
                         {
                             ++materialWeakOwners;
@@ -484,6 +491,7 @@ namespace workphone
                         {
                             return false;
                         }
+
                         if( pass->getParentPtr() == technique.get() )
                         {
                             ++techniqueWeakOwners;
@@ -492,11 +500,13 @@ namespace workphone
                         {
                             return false;
                         }
+
                         auto concretePass = dynamic_cast<MaterialPass *>( pass.get() );
                         if( !concretePass )
                         {
                             return false;
                         }
+
                         s32 passWeakOwners = 0;
                         if( auto context = pass->getStateContext() )
                         {
@@ -514,6 +524,7 @@ namespace workphone
                             }
                             passWeakOwners += 2;
                         }
+
                         const auto units = concretePass->getMaterializedTextureUnits();
                         for( const auto &unit : units )
                         {
@@ -547,6 +558,7 @@ namespace workphone
                                 return false;
                             }
                         }
+
                         if( pass->getWeakReferences() != passWeakOwners )
                         {
                             return false;
@@ -557,10 +569,12 @@ namespace workphone
                         return false;
                     }
                 }
+
                 if( getWeakReferences() != materialWeakOwners )
                 {
                     return false;
                 }
+
                 // Dirty or temporarily unreloadable materials must remain resident.
                 // Recheck their complete document periodically, rather than rebuilding
                 // it every frame. Forced sweeps bypass this delay for admission/retry.
@@ -572,10 +586,12 @@ namespace workphone
                 {
                     return false;
                 }
+
                 if( authoringDocument() != m_residentDocument )
                 {
                     return false;
                 }
+
                 auto application = core::IApplicationManager::instance();
                 auto files = application->getFileSystem();
                 // Only probe the filesystem for a graph we can actually retire.
@@ -585,10 +601,12 @@ namespace workphone
                 {
                     source = files->open( getFilePath(), true, false, false, true, true );
                 }
+
                 if( !source || !source->size() || source->size() > ( 1ull << 20 ) )
                 {
                     return false;
                 }
+
                 // All serialized authoring values still match the reload source.
                 // Independently retained draw snapshots keep their own textures
                 // and SourceCpu reservations through their final reader.

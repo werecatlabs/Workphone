@@ -51,10 +51,7 @@ namespace workphone
 
             /** Destination for the derived bundled-media index. Installed
              * applications override this to keep the media tree read-only. */
-            virtual String getMediaCatalogPath( const String &mediaRoot ) const
-            {
-                return mediaRoot + "/.workphone/media-assets.db";
-            }
+            virtual String getMediaCatalogPath( const String &mediaRoot ) const;
 
             /**
              * @brief Loads the editor application.
@@ -64,13 +61,16 @@ namespace workphone
             bool createScriptManager() override;
             /** Explicit source-free scene startup. Configure before load; the
              * primary iterate owner transports and commits one pinned closure. */
-            void configureRuntimeScenePackage(const String &directory,const String &uuid,const String &target="pc");
-            void configureRuntimeScenePackages(const Array<String> &directories,const String &uuid,const String &target,const String &collisionPolicy="reject");
+            void configureRuntimeScenePackage( const String &directory, const String &uuid,
+                                               const String &target = "pc" );
+            void configureRuntimeScenePackages( const Array<String> &directories, const String &uuid,
+                                                const String &target,
+                                                const String &collisionPolicy = "reject" );
             bool runtimeSceneComplete() const;
             bool runtimeSceneSucceeded() const;
             String runtimeSceneDiagnostic() const;
             String runtimeSceneReport() const;
-            void cancelRuntimeSceneStartup(const String &reason);
+            void cancelRuntimeSceneStartup( const String &reason );
 
             /**
              * @brief Unloads the editor application.
@@ -125,19 +125,6 @@ namespace workphone
              */
             void stopPlayMode();
 
-            /**
-             * @brief Gets the ui camera for the application.
-             */
-            //SmartPtr<render::IGraphicsCamera> getUiCamera() const;
-
-            /**
-             * @brief Sets the ui camera for the application.
-             */
-            //void setUiCamera( SmartPtr<render::IGraphicsCamera> camera );
-
-            //SmartPtr<render::IGraphicsSceneNode> getUiCameraSceneNode() const;
-            //void setUiCameraSceneNode( SmartPtr<render::IGraphicsSceneNode> sceneNode );
-
             SmartPtr<render::IGraphicsCamera> getCamera() const;
             void setCamera( SmartPtr<render::IGraphicsCamera> camera );
 
@@ -158,23 +145,9 @@ namespace workphone
             SmartPtr<Properties> getProperties() const override;
             void setProperties( SmartPtr<Properties> properties ) override;
 
-            /**
-             * @brief Gets the rtt viewport.
-             * @return The rtt viewport.
-             */
-            //SmartPtr<render::IViewport> getRttViewport() const;
-
-            /**
-             * @brief Sets the rtt viewport.
-             * @param rttViewport The editor manager to set.
-             */
-            //void setRttViewport( SmartPtr<render::IViewport> rttViewport );
-
             WP_CLASS_REGISTER_DECL;
 
         private:
-            struct RuntimeSceneBootstrap;
-            std::unique_ptr<RuntimeSceneBootstrap> m_runtimeScene;
             void startRuntimeSceneBootstrap();
             void updateRuntimeSceneBootstrap();
             void retireRuntimeSceneBootstrap() noexcept;
@@ -256,7 +229,6 @@ namespace workphone
             void loadDebug( SmartPtr<ISharedObject> data );
             void loadEditor( SmartPtr<ISharedObject> data );
 
-        private:
             void loadSettings();
 
             void createLogManager() override;
@@ -293,6 +265,9 @@ namespace workphone
             void createPlugins() override;
 
             void createDebugText();
+
+            struct RuntimeSceneBootstrap;
+            std::unique_ptr<RuntimeSceneBootstrap> m_runtimeScene;
 
             size_t m_windowHandle = 0;
 
