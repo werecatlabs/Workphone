@@ -31,6 +31,14 @@ if(TARGET Workphone AND TARGET WPVehiclePhysics)
     target_include_directories(VehicleFlightInputTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
     target_link_libraries(VehicleFlightInputTests PRIVATE Workphone WPVehiclePhysics)
+    if(WIN32)
+        foreach(vehicle_test IN ITEMS HelicopterControllerTests VehicleFlightInputTests)
+            target_link_directories(${vehicle_test} PRIVATE
+                ${WP_ROOT}/Dependencies/lib/windows/boost
+                ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        endforeach()
+    endif()
     set_target_properties(VehicleFlightInputTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPVehicle.flight_input COMMAND VehicleFlightInputTests)
     set_tests_properties(WPVehicle.flight_input PROPERTIES LABELS "vehicle;input;headless" TIMEOUT 30)
