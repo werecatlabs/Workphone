@@ -31,6 +31,21 @@ namespace
         void invalidate() override {}
         Vector2F getPosition() const override { return Vector2F::zero(); }
         Vector2F getSize() const override { return { 1280.0f, 720.0f }; }
+
+        void handleEvent( const SmartPtr<IEvent> &event ) override
+        {
+            throw std::logic_error( "The method or operation is not implemented." );
+        }
+
+        bool handleStateChanged( SmartPtr<IState> &state ) override
+        {
+            throw std::logic_error( "The method or operation is not implemented." );
+        }
+
+        bool handleStateMessage( const SmartPtr<IStateMessage> &message ) override
+        {
+            throw std::logic_error( "The method or operation is not implemented." );
+        }
     };
 
     class SceneInputListener : public IEventListener
