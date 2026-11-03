@@ -175,74 +175,34 @@ int main( int argc, char *argv[] )
 {
     using namespace workphone;
 
-    TypeManager *typeManager = nullptr;
-    bool ownsTypeManager = false;
-    SmartPtr<HelloWorld> app;
-
-    auto unloadApplication = [&app]() {
-        if( app )
-        {
-            if( app->getLoadingState() != LoadingState::Unloaded )
-            {
-                app->unload( nullptr );
-            }
-
-            WP_ASSERT( app->getLoadingState() == LoadingState::Unloaded );
-            app = nullptr;
-        }
-
-        core::IApplicationManager::setInstance( nullptr );
-    };
-
-    auto unloadTypeManager = [&typeManager, &ownsTypeManager]() {
-        if( ownsTypeManager && typeManager )
-        {
-            typeManager->unload();
-            delete typeManager;
-            TypeManager::setInstance( nullptr );
-            typeManager = nullptr;
-            ownsTypeManager = false;
-        }
-    };
+    SharedPtr<TypeManager> typeManager;
 
     try
     {
-        typeManager = TypeManager::instance();
-        if( !typeManager )
-        {
-            typeManager = new TypeManager;
-            typeManager->load();
-            TypeManager::setInstance( typeManager );
-            ownsTypeManager = true;
-        }
+        typeManager = workphone::make_shared<TypeManager>();
+        typeManager->load();
+        TypeManager::setInstance( typeManager.get() );
 
-        app = workphone::make_ptr<HelloWorld>();
-        app->setActiveThreads( 4 );
+        auto app = workphone::make_ptr<HelloWorld>();
+        app->setActiveThreads( 0 );
         app->load( nullptr );
         app->run();
+        app->unload( nullptr );
+        app = nullptr;
 
-        unloadApplication();
-        unloadTypeManager();
+        typeManager->unload();
+        TypeManager::setInstance( nullptr );
     }
     catch( Exception &e )
     {
-        unloadApplication();
-        unloadTypeManager();
-
         MessageBoxUtil::show( e.what() );
     }
     catch( std::exception &e )
     {
-        unloadApplication();
-        unloadTypeManager();
-
         MessageBoxUtil::show( e.what() );
     }
     catch( ... )
     {
-        unloadApplication();
-        unloadTypeManager();
-
         MessageBoxUtil::show( "Unknown error" );
     }
 

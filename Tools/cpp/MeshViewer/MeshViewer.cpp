@@ -2627,6 +2627,7 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLin
         if( !typeManager )
         {
             typeManager = new TypeManager;
+            typeManager->load();
             TypeManager::setInstance( typeManager );
         }
 
@@ -2682,6 +2683,7 @@ int main( int argc, char *argv[] )
         if( !typeManager )
         {
             typeManager = new TypeManager;
+            typeManager->load();
             TypeManager::setInstance( typeManager );
         }
 
