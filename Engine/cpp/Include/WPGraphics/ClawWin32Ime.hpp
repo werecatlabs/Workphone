@@ -23,12 +23,19 @@ namespace workphone::render::detail
 
     inline LONG platformImeCoordinate( float value )
     {
-        if( !std::isfinite( value ) ) return 0;
+        if( !std::isfinite( value ) )
+        {
+            return 0;
+        }
         const auto coordinate = static_cast<double>( value );
         if( coordinate <= static_cast<double>( ( std::numeric_limits<LONG>::min )() ) )
+        {
             return ( std::numeric_limits<LONG>::min )();
+        }
         if( coordinate >= static_cast<double>( ( std::numeric_limits<LONG>::max )() ) )
+        {
             return ( std::numeric_limits<LONG>::max )();
+        }
         return static_cast<LONG>( coordinate );
     }
 
@@ -36,18 +43,27 @@ namespace workphone::render::detail
     {
         DWORD processId = 0;
         if( !hwnd || !GetWindowThreadProcessId( hwnd, &processId ) ||
-            processId != GetCurrentProcessId() ) return false;
+            processId != GetCurrentProcessId() )
+        {
+            return false;
+        }
         const auto message = platformImeMessage( visible );
         return message && PostMessageW( hwnd, message, static_cast<WPARAM>( x ),
-                                       static_cast<LPARAM>( y ) ) != FALSE;
+                                        static_cast<LPARAM>( y ) ) != FALSE;
     }
 
     inline bool handlePlatformImeMessage( HWND hwnd, UINT message, WPARAM x, LPARAM y )
     {
         const auto shown = platformImeMessage( true );
         const auto hidden = platformImeMessage( false );
-        if( !message || ( message != shown && message != hidden ) ) return false;
-        if( GetWindowThreadProcessId( hwnd, nullptr ) != GetCurrentThreadId() ) return false;
+        if( !message || ( message != shown && message != hidden ) )
+        {
+            return false;
+        }
+        if( GetWindowThreadProcessId( hwnd, nullptr ) != GetCurrentThreadId() )
+        {
+            return false;
+        }
 
         // These APIs may synchronously send window messages. Execute them only
         // on the HWND owner, outside the render thread's GraphicsSystem lock.

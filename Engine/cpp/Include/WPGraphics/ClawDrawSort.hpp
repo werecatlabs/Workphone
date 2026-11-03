@@ -8,7 +8,10 @@ namespace workphone::render
 {
     enum class ClawDrawSortStrategy : uint32_t
     {
-        QueueOrder, FrontToBack, MaterialFirst, DepthBuckets
+        QueueOrder,
+        FrontToBack,
+        MaterialFirst,
+        DepthBuckets
     };
 
     /** Numeric owner-thread sort keys. Depth is positive camera-forward distance
@@ -25,49 +28,82 @@ namespace workphone::render
     inline bool validDrawSort( ClawDrawSortStrategy strategy, double bucketSize )
     {
         return strategy >= ClawDrawSortStrategy::QueueOrder &&
-            strategy <= ClawDrawSortStrategy::DepthBuckets &&
-            std::isfinite( bucketSize ) && bucketSize > 0;
+               strategy <= ClawDrawSortStrategy::DepthBuckets && std::isfinite( bucketSize ) &&
+               bucketSize > 0;
     }
 
-    inline void sortDrawKeys( ClawDrawSortKey *keys, size_t count,
-                              ClawDrawSortStrategy strategy, double bucketSize = 10.0 )
+    inline void sortDrawKeys( ClawDrawSortKey *keys, size_t count, ClawDrawSortStrategy strategy,
+                              double bucketSize = 10.0 )
     {
-        if( !validDrawSort( strategy, bucketSize ) || strategy == ClawDrawSortStrategy::QueueOrder ) return;
+        if( !validDrawSort( strategy, bucketSize ) || strategy == ClawDrawSortStrategy::QueueOrder )
+        {
+            return;
+        }
         // Compute once per key instead of dividing/flooring in O(n log n)
         // comparisons. This costs one scalar per key in the reused workspace.
         if( strategy == ClawDrawSortStrategy::DepthBuckets )
+        {
             for( size_t index = 0; index < count; ++index )
+            {
                 if( !keys[index].barrier && std::isfinite( keys[index].depth ) )
+                {
                     keys[index].bucket = std::floor( keys[index].depth / bucketSize );
+                }
+            }
+        }
         size_t begin = 0;
         while( begin < count )
         {
             // Nonfinite depths must not enter a floating-point comparator.
-            if( keys[begin].barrier || !std::isfinite( keys[begin].depth ) ) { ++begin; continue; }
+            if( keys[begin].barrier || !std::isfinite( keys[begin].depth ) )
+            {
+                ++begin;
+                continue;
+            }
             auto end = begin + 1;
             while( end < count && !keys[end].barrier && std::isfinite( keys[end].depth ) &&
-                   keys[end].queue == keys[begin].queue && keys[end].zOrder == keys[begin].zOrder ) ++end;
+                   keys[end].queue == keys[begin].queue && keys[end].zOrder == keys[begin].zOrder )
+            {
+                ++end;
+            }
             std::sort( keys + begin, keys + end, [=]( const auto &a, const auto &b ) {
-                if( a.transparent != b.transparent ) return !a.transparent;
+                if( a.transparent != b.transparent )
+                {
+                    return !a.transparent;
+                }
                 if( a.transparent )
                 {
-                    if( a.depth != b.depth ) return a.depth > b.depth;
+                    if( a.depth != b.depth )
+                    {
+                        return a.depth > b.depth;
+                    }
                 }
                 else
                 {
                     if( strategy == ClawDrawSortStrategy::FrontToBack && a.depth != b.depth )
+                    {
                         return a.depth < b.depth;
+                    }
                     if( strategy == ClawDrawSortStrategy::DepthBuckets )
                     {
-                        if( a.bucket != b.bucket ) return a.bucket < b.bucket;
+                        if( a.bucket != b.bucket )
+                        {
+                            return a.bucket < b.bucket;
+                        }
                     }
-                    if( a.material != b.material ) return a.material < b.material;
-                    if( a.depth != b.depth ) return a.depth < b.depth;
+                    if( a.material != b.material )
+                    {
+                        return a.material < b.material;
+                    }
+                    if( a.depth != b.depth )
+                    {
+                        return a.depth < b.depth;
+                    }
                 }
                 return a.index < b.index;
             } );
             begin = end;
         }
     }
-}
+}  // namespace workphone::render
 #endif

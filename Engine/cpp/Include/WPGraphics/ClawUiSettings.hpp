@@ -9,4 +9,4 @@ namespace workphone::render
      * settings disk reads/writes and removes its default log file destination.
      * Existing contexts are unchanged. */
     WPGraphics_API void setClawUiSettingsPersistence( bool enabled );
-}
+}  // namespace workphone::render

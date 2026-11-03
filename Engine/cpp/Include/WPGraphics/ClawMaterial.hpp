@@ -75,18 +75,18 @@ namespace workphone
 
             // Owning-thread installation; packs a candidate before replacing the
             // current attachment. Draw records retain immutable prior values.
-            void setRuntimeProgram(MaterialProgramDX11::Ptr program,
-                std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
+            void setRuntimeProgram( MaterialProgramDX11::Ptr program,
+                                    std::shared_ptr<MaterialProgramResourcesDX11> resources = {} );
             // Subscribes to automatic transactional reload before publication
             // capture. A null coordinator explicitly retires the attachment.
-            void setRuntimeReload(MaterialProgramReloadDX11::Ptr reload,
-                std::shared_ptr<MaterialProgramResourcesDX11> resources = {});
-            void copyRuntimeShaderTo(ClawMaterial &target) const;
+            void setRuntimeReload( MaterialProgramReloadDX11::Ptr reload,
+                                   std::shared_ptr<MaterialProgramResourcesDX11> resources = {} );
+            void copyRuntimeShaderTo( ClawMaterial &target ) const;
             bool requestRuntimeShaderReload();
-            bool requestRuntimeShaderFiles(const String &vertexFile,const String &pixelFile);
-            bool setRuntimeShaderWatching(bool enabled);
+            bool requestRuntimeShaderFiles( const String &vertexFile, const String &pixelFile );
+            bool setRuntimeShaderWatching( bool enabled );
             SmartPtr<Properties> getRuntimeShaderReloadStatus() const;
-            static void processRuntimeShaderReloads(ClawRendererDX11 &renderer);
+            static void processRuntimeShaderReloads( ClawRendererDX11 &renderer );
             bool hasRuntimeProgram() const;
             MaterialProgramDX11::PublicationPtr getRuntimePublication();
 

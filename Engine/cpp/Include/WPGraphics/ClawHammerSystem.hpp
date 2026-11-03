@@ -34,17 +34,23 @@ namespace workphone
         {
         public:
             std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeLeafProviderFactory(
-                std::shared_ptr<resource::ResourcePayloadMount>,String &) override;
+                std::shared_ptr<resource::ResourcePayloadMount>, String & ) override;
             std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
-                std::shared_ptr<const resource::RuntimeResource>,std::shared_ptr<resource::ResourcePayloadMount>,String &) override;
+                std::shared_ptr<const resource::RuntimeResource>,
+                std::shared_ptr<resource::ResourcePayloadMount>, String & ) override;
             SmartPtr<IMaterial> createRuntimeMaterial(
-                std::shared_ptr<const resource::RuntimeResource>,String &,
-                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
+                std::shared_ptr<const resource::RuntimeResource>, String &, const String &target = "pc",
+                bool packagedBuild = true,
+                std::shared_ptr<resource::ResourcePayloadMount> mount = {} ) override;
             SmartPtr<ITexture> createRuntimeTexture(
-                std::shared_ptr<const resource::RuntimeResource>,String &,
-                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
-            SmartPtr<IFont> createRuntimeFont(std::shared_ptr<const resource::RuntimeResource>,String &,
-                const String &target="pc",bool packagedBuild=true,std::shared_ptr<resource::ResourcePayloadMount> mount={}) override;
+                std::shared_ptr<const resource::RuntimeResource>, String &, const String &target = "pc",
+                bool packagedBuild = true,
+                std::shared_ptr<resource::ResourcePayloadMount> mount = {} ) override;
+            SmartPtr<IFont> createRuntimeFont(
+                std::shared_ptr<const resource::RuntimeResource>, String &, const String &target = "pc",
+                bool packagedBuild = true,
+                std::shared_ptr<resource::ResourcePayloadMount> mount = {} ) override;
+
             /**
              * @class StateListener
              * @brief Listener for handling state changes within the ClawHammerSystem.
@@ -181,10 +187,13 @@ namespace workphone
                 u64 candidates = 0, mainVisible = 0, transformDispatches = 0;
                 u64 cullPublicationBytesSum = 0, cullViewBytesSum = 0;
                 u64 cullCaptureNs = 0, cullTransformNs = 0, cullBoundsNs = 0;
-                u64 cullGroupsNs = 0, cullViewNs = 0, cullVisibilityNs = 0, cullSortNs = 0, cullPublishNs = 0;
-                u64 materialRecords = 0, materialBindings = 0, materialMeshes = 0, materialPreparations = 0;
+                u64 cullGroupsNs = 0, cullViewNs = 0, cullVisibilityNs = 0, cullSortNs = 0,
+                    cullPublishNs = 0;
+                u64 materialRecords = 0, materialBindings = 0, materialMeshes = 0,
+                    materialPreparations = 0;
                 u64 materialStorageAllocations = 0, materialStorageReusedViews = 0;
-                u64 materialDenseCapacityBytesSum = 0, materialRetainedBytesSum = 0, materialPeakBytesMax = 0;
+                u64 materialDenseCapacityBytesSum = 0, materialRetainedBytesSum = 0,
+                    materialPeakBytesMax = 0;
                 // One renderer-owned persistent table, charged once after the frame.
                 u64 cachePreparationsLifetime = 0, cacheStorageAllocationsLifetime = 0;
                 u64 directStorageAllocationsLifetime = 0, cacheStorageBytes = 0;
@@ -193,7 +202,8 @@ namespace workphone
                 u64 dx11FramesLifetime = 0, dx11DrawsLifetime = 0, dx11TrianglesLifetime = 0;
                 u64 dx11MaterialUploadsLifetime = 0, dx11TransformUploadsLifetime = 0;
                 u64 dx11StateBindingsLifetime = 0, dx11InstancesLifetime = 0, dx11GpuSamplesLifetime = 0;
-                u64 dx11PresentAttemptsLifetime = 0, dx11PresentOccludedLifetime = 0, dx11PresentFailuresLifetime = 0;
+                u64 dx11PresentAttemptsLifetime = 0, dx11PresentOccludedLifetime = 0,
+                    dx11PresentFailuresLifetime = 0;
                 f64 dx11IntervalMs = 0, dx11P95IntervalMs = 0, dx11CpuFrameMs = 0;
                 f64 dx11PresentMs = 0, dx11GpuFrameMs = 0;
             };

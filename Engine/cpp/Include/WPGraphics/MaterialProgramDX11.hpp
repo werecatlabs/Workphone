@@ -4,6 +4,7 @@
 #include <WPGraphics/MaterialProgramBinding.hpp>
 #include <memory>
 struct wp_renderer_dx11;
+
 namespace workphone::render
 {
     /** Owning-thread resource adapter. Return a borrowed SRV (Texture/Buffer) or
@@ -15,8 +16,8 @@ namespace workphone::render
     {
     public:
         virtual ~MaterialProgramResourcesDX11() = default;
-        virtual bool Resolve(MaterialShaderParameterType type, MaterialResourceHandle handle,
-                             void *&native) = 0;
+        virtual bool Resolve( MaterialShaderParameterType type, MaterialResourceHandle handle,
+                              void *&native ) = 0;
     };
 
     /** Numeric resource-owner table. Texture views are queried from the engine
@@ -29,10 +30,11 @@ namespace workphone::render
     public:
         MaterialProgramResourceTableDX11();
         ~MaterialProgramResourceTableDX11() override;
-        void SetTexture(MaterialResourceHandle, SmartPtr<ITexture>);
-        void SetBuffer(MaterialResourceHandle, void *srv);
-        void SetSampler(MaterialResourceHandle, void *sampler);
-        bool Resolve(MaterialShaderParameterType, MaterialResourceHandle, void *&) override;
+        void SetTexture( MaterialResourceHandle, SmartPtr<ITexture> );
+        void SetBuffer( MaterialResourceHandle, void *srv );
+        void SetSampler( MaterialResourceHandle, void *sampler );
+        bool Resolve( MaterialShaderParameterType, MaterialResourceHandle, void *& ) override;
+
     private:
         struct Data;
         std::unique_ptr<Data> m_data;
@@ -49,42 +51,51 @@ namespace workphone::render
     {
     public:
         using Ptr = std::shared_ptr<MaterialProgramDX11>;
-        struct Bytecode { const void *data = nullptr; size_t size = 0; };
+
+        struct Bytecode
+        {
+            const void *data = nullptr;
+            size_t size = 0;
+        };
+
         class WPGraphics_API Publication
         {
         public:
             ~Publication();
-            Publication(const Publication &) = delete;
-            Publication &operator=(const Publication &) = delete;
-            bool Bind(wp_renderer_dx11 *, bool instanced) const;
-            void Unbind(wp_renderer_dx11 *) const;
+            Publication( const Publication & ) = delete;
+            Publication &operator=( const Publication & ) = delete;
+            bool Bind( wp_renderer_dx11 *, bool instanced ) const;
+            void Unbind( wp_renderer_dx11 * ) const;
+
         private:
             friend class MaterialProgramDX11;
             struct Data;
             // Aliases the enclosing Data allocation; its shared control block
             // owns both this view and the immutable packed payload.
             Data *m_data;
-            explicit Publication(Data *);
+            explicit Publication( Data * );
         };
+
         using PublicationPtr = std::shared_ptr<const Publication>;
-        static Ptr Create(void *device, MaterialShaderParameterLayout::Ptr layout,
-                          wp_shader_program *program, u64 deviceGeneration,
-                          Bytecode pixel, Bytecode vertex, String &error,
-                          const MaterialProgramReflectionSelection *pixelSelection = nullptr,
-                          const MaterialProgramReflectionSelection *vertexSelection = nullptr);
+        static Ptr Create( void *device, MaterialShaderParameterLayout::Ptr layout,
+                           wp_shader_program *program, u64 deviceGeneration, Bytecode pixel,
+                           Bytecode vertex, String &error,
+                           const MaterialProgramReflectionSelection *pixelSelection = nullptr,
+                           const MaterialProgramReflectionSelection *vertexSelection = nullptr );
         ~MaterialProgramDX11();
-        PublicationPtr Capture(const MaterialShaderParametersInstance &,
-                               std::shared_ptr<MaterialProgramResourcesDX11>) const;
+        PublicationPtr Capture( const MaterialShaderParametersInstance &,
+                                std::shared_ptr<MaterialProgramResourcesDX11> ) const;
         bool IsCurrent() const;
-        bool IsCurrent(const MaterialShaderParameterLayout::Ptr &) const;
+        bool IsCurrent( const MaterialShaderParameterLayout::Ptr & ) const;
+
     private:
         friend class MaterialProgramReloadDX11;
         friend class ClawMaterialResource;
-        void retainDefinitionOwner(std::shared_ptr<const void>);
-        bool matchesDevice(void *) const;
+        void retainDefinitionOwner( std::shared_ptr<const void> );
+        bool matchesDevice( void * ) const;
         MaterialProgramDX11();
         struct Data;
         std::unique_ptr<Data> m_data;
     };
-}
+}  // namespace workphone::render
 #endif

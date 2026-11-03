@@ -173,14 +173,16 @@ namespace workphone
             /** Borrow the scene publication; false rejects stale/foreign/changed section bindings. */
             bool renderMeshRecords( ClawMesh *, const Matrix4F &, const ClawMaterialDrawRecords &,
                                     const ClawMaterialDrawRecords::Binding &,
-                                    const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
+                                    const wp_mat4f *view = nullptr,
+                                    const wp_mat4f *projection = nullptr );
 
             /** Resolve generation-qualified records in the renderer's persistent CPU table. */
             void prepareMaterialRecords( ClawMaterialDrawRecords & );
 
             struct MaterialRecordStatistics
             {
-                u64 preparations = 0, storageBytes = 0, storageAllocations = 0, directStorageAllocations = 0;
+                u64 preparations = 0, storageBytes = 0, storageAllocations = 0,
+                    directStorageAllocations = 0;
                 u32 slots = 0, resident = 0;
             };
 

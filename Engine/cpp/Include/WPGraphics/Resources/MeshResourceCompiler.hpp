@@ -11,9 +11,10 @@ namespace workphone::render
         Array<u8> geometry;
         Array<resource::ResourceID> materials;
         String target;
-        bool packagedBuild=false;
+        bool packagedBuild = false;
         StreamBudget budget;
     };
+
     /** WPM1 geometry plus optional .mesh.materials JSON array of matres IDs,
      * ordered by submesh. Each bound slot becomes a typed install dependency. */
     class WPGraphics_API MeshResourceCompiler final : public resource::IResourceCompiler
@@ -21,10 +22,11 @@ namespace workphone::render
     public:
         String name() const override;
         Array<resource::CompilerOutput> outputs() const override;
-        bool getDependencies(const resource::CompileContext &,resource::DependencySet &,String &) const override;
-        resource::CompilationStatus compile(const resource::CompileContext &, std::ostream &,
-                                             Array<String> &) const override;
-        static bool validate(const resource::RuntimeResource &, String &error);
-        static bool decode(const resource::RuntimeResource &, CookedMeshData &, String &error);
+        bool getDependencies( const resource::CompileContext &, resource::DependencySet &,
+                              String & ) const override;
+        resource::CompilationStatus compile( const resource::CompileContext &, std::ostream &,
+                                             Array<String> & ) const override;
+        static bool validate( const resource::RuntimeResource &, String &error );
+        static bool decode( const resource::RuntimeResource &, CookedMeshData &, String &error );
     };
-}
+}  // namespace workphone::render

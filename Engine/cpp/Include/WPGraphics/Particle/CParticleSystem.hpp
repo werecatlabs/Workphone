@@ -29,9 +29,15 @@ namespace workphone
             void update() override;
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
-            bool loadRuntimeResource(std::shared_ptr<const resource::RuntimeResource>,
-                std::shared_ptr<resource::ResourcePayloadMount>,const String &,bool,String &error) override;
-            bool usesRuntimeResources() const{return m_runtimeResourcesMode;}
+            bool loadRuntimeResource( std::shared_ptr<const resource::RuntimeResource>,
+                                      std::shared_ptr<resource::ResourcePayloadMount>, const String &,
+                                      bool, String &error ) override;
+
+            bool usesRuntimeResources() const
+            {
+                return m_runtimeResourcesMode;
+            }
+
             SmartPtr<IMaterial> getRuntimeMaterial() const;
             void setState( ParticleSystemState state ) override;
             ParticleSystemState getState() const override;
@@ -162,7 +168,7 @@ namespace workphone
             String m_materialName;
             bool m_customSimulationSettings = false;
             bool m_runtimeResourcesMode = false;
-            StreamBudget m_runtimeSimulationBudget,m_runtimeComputeBudget;
+            StreamBudget m_runtimeSimulationBudget, m_runtimeComputeBudget;
             std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;
             SmartPtr<IMaterial> m_runtimeMaterial;
             u32 m_visibilityFlags = 0xFFFFFFFFu;

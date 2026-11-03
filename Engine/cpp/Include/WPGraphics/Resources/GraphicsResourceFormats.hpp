@@ -23,7 +23,7 @@ namespace workphone::render
         String target;
         bool packagedBuild = false;
         std::vector<u8> ddsBytes;
-        u32 storageFormat = 0; // v2 per-asset native encoding; target identity remains unchanged.
+        u32 storageFormat = 0;  // v2 per-asset native encoding; target identity remains unchanged.
     };
 
     /** Exact versioned target profiles; zero denotes the existing portable BGRA
@@ -56,9 +56,10 @@ namespace workphone::render
     {
         String name;
         MaterialShaderParameterType type = MaterialShaderParameterType::Scalar;
-        std::array<u32,16> words{};
+        std::array<u32, 16> words{};
         CookedMaterialTextureReference texture;
     };
+
     struct CookedMaterialShaderData
     {
         String shaderID;
@@ -66,8 +67,13 @@ namespace workphone::render
         Array<CookedMaterialShaderParameter> parameters;
         std::vector<u8> vertexDXBC, pixelDXBC;
         MaterialProgramReflectionSelection vertexSelection, pixelSelection;
-        bool present() const { return !shaderID.empty(); }
+
+        bool present() const
+        {
+            return !shaderID.empty();
+        }
     };
+
     inline constexpr u32 graphicsMaterialShaderByteLimit = 4u * 1024u * 1024u;
 
     /** Normal maps require Normal filtering and linear storage; packed ORM maps
@@ -109,11 +115,13 @@ namespace workphone::render
     // Cold installation/compiler helper. The supplied program must be empty.
     // Resource handles are generated locally from parameter indices, never read
     // from the cooked payload. Callers retain durable resource owners separately.
-    WPGraphics_API bool populateCookedMaterialShader(const CookedMaterialShaderData &shader,
-        MaterialShaderParametersInstance &values, wp_shader_program *program, String &error);
+    WPGraphics_API bool populateCookedMaterialShader( const CookedMaterialShaderData &shader,
+                                                      MaterialShaderParametersInstance &values,
+                                                      wp_shader_program *program, String &error );
     // Validates authored shader fields before dependency cooking; durable texture
     // generation pins are added by the compiler and mandatory in cooked payloads.
-    WPGraphics_API bool validateCookedMaterialShaderRecipe(const CookedMaterialShaderData &, String &error);
+    WPGraphics_API bool validateCookedMaterialShaderRecipe( const CookedMaterialShaderData &,
+                                                            String &error );
 }  // namespace workphone::render
 
 #endif

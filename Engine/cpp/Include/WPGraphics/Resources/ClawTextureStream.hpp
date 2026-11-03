@@ -6,7 +6,13 @@
 #include <array>
 
 struct wp_renderer_dx11;
-namespace workphone::resource { class ResourcePayloadMount; class ResourceLeafProviderFactory; }
+
+namespace workphone::resource
+{
+    class ResourcePayloadMount;
+    class ResourceLeafProviderFactory;
+}  // namespace workphone::resource
+
 namespace workphone::render
 {
     struct CookedTextureData;
@@ -16,20 +22,23 @@ namespace workphone::render
      * unmipped legacy payloads explicitly retain their ordinary complete node. */
     WPGraphics_API std::shared_ptr<const resource::RuntimeResource> snapshotRuntimeTexture(
         std::shared_ptr<const resource::RuntimeResource>,
-        std::shared_ptr<resource::ResourcePayloadMount>,String &error);
-    WPGraphics_API bool isRuntimeTextureSnapshot(const resource::RuntimeResource &);
+        std::shared_ptr<resource::ResourcePayloadMount>, String &error );
+    WPGraphics_API bool isRuntimeTextureSnapshot( const resource::RuntimeResource & );
     /** Strict private-plan semantic description; contains no pixel/DDS bytes. */
-    WPGraphics_API bool describeRuntimeTextureSnapshot(const resource::RuntimeResource &,CookedTextureData &,String &error);
+    WPGraphics_API bool describeRuntimeTextureSnapshot( const resource::RuntimeResource &,
+                                                        CookedTextureData &, String &error );
     /** Strict private one-mip portable bootstrap sample; no file/device I/O. */
-    WPGraphics_API bool sampleRuntimeTextureSnapshotBGRA(const resource::RuntimeResource &,u32 x,u32 y,std::array<u8,4> &,String &error);
-    WPGraphics_API std::shared_ptr<resource::ResourceLeafProviderFactory> createRuntimeTextureLeafProviderFactory(
-        std::shared_ptr<resource::ResourcePayloadMount>,String &error);
+    WPGraphics_API bool sampleRuntimeTextureSnapshotBGRA( const resource::RuntimeResource &, u32 x,
+                                                          u32 y, std::array<u8, 4> &, String &error );
+    WPGraphics_API std::shared_ptr<resource::ResourceLeafProviderFactory>
+    createRuntimeTextureLeafProviderFactory( std::shared_ptr<resource::ResourcePayloadMount>,
+                                             String &error );
 
     struct RuntimeTextureStreamState
     {
-        u32 firstMip=0,requestedMip=0,mipCount=0;
-        u64 residentCpuBytes=0,residentGpuBytes=0;
-        bool pending=false,failed=false;
+        u32 firstMip = 0, requestedMip = 0, mipCount = 0;
+        u64 residentCpuBytes = 0, residentGpuBytes = 0;
+        bool pending = false, failed = false;
     };
 
     /** Native render-owner state. Calls require the existing graphics lifecycle
@@ -40,19 +49,20 @@ namespace workphone::render
     public:
         static std::unique_ptr<ClawTextureStream> create(
             std::shared_ptr<const resource::RuntimeResource>,
-            std::shared_ptr<resource::ResourcePayloadMount>,const String &target,bool packagedBuild,
-            wp_renderer_dx11 *,String &error);
+            std::shared_ptr<resource::ResourcePayloadMount>, const String &target, bool packagedBuild,
+            wp_renderer_dx11 *, String &error );
         ~ClawTextureStream();
-        bool setDemand(u32 firstMip,s32 priority,s32 residencyPriority,String &error);
-        bool process(wp_renderer_dx11 *,String &error);
-        void *view(wp_renderer_dx11 *,s32 textureQuality,u32 maximumSize,String &error);
+        bool setDemand( u32 firstMip, s32 priority, s32 residencyPriority, String &error );
+        bool process( wp_renderer_dx11 *, String &error );
+        void *view( wp_renderer_dx11 *, s32 textureQuality, u32 maximumSize, String &error );
         void unload();
         Vector2I originalSize() const;
         Vector2I residentSize() const;
         RuntimeTextureStreamState state() const;
+
     private:
         struct Data;
-        explicit ClawTextureStream(std::unique_ptr<Data>);
+        explicit ClawTextureStream( std::unique_ptr<Data> );
         std::unique_ptr<Data> m_data;
     };
-}
+}  // namespace workphone::render

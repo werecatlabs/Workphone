@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 struct wp_renderer;
+
 namespace workphone::render
 {
     /** Render-owner, bounded 256x256 conventional-Z snapshot. GPU multisampling
@@ -17,9 +18,10 @@ namespace workphone::render
         ~ClawDepthReadback();
         Surface surface( wp_renderer *renderer ) const;
         bool read( wp_renderer *renderer, std::vector<float> &depth, unsigned &width, unsigned &height );
+
     private:
         struct Native;
         std::unique_ptr<Native> m_native;
     };
-}
+}  // namespace workphone::render
 #endif

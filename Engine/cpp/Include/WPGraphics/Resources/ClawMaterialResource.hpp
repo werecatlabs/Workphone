@@ -6,7 +6,11 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <Workphone/Database/CatalogResourceAdapter.hpp>
 
-namespace workphone::resource { class ResourcePayloadMount; }
+namespace workphone::resource
+{
+    class ResourcePayloadMount;
+}
+
 namespace workphone::render
 {
     /** Render-owner bridge for one catalog material. All calls, and final releases
@@ -49,7 +53,7 @@ namespace workphone::render
          * Uses the same typed dependency validation and transactional GPU construction. */
         std::shared_ptr<const Candidate> stageRuntime(
             std::shared_ptr<const resource::RuntimeResource> resource, String &error,
-            std::shared_ptr<resource::ResourcePayloadMount> mount={} );
+            std::shared_ptr<resource::ResourcePayloadMount> mount = {} );
         bool publish( std::shared_ptr<const Candidate> candidate, String &error );
         bool reload( const String &uuid, String &error, bool force = false );
         std::shared_ptr<const Candidate> current() const;
@@ -57,7 +61,7 @@ namespace workphone::render
 
     private:
         std::shared_ptr<const Candidate> prepare( std::shared_ptr<Candidate::Data> candidate,
-                                                 String &error );
+                                                  String &error );
         struct Data;
         std::unique_ptr<Data> m_data;
     };

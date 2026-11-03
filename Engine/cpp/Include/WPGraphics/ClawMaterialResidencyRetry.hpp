@@ -28,4 +28,4 @@ namespace workphone::render::detail
     private:
         Clock::time_point m_nextAttempt{};
     };
-}
+}  // namespace workphone::render::detail

@@ -8,7 +8,10 @@
 #include <Workphone/System/CompiledResource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 
-namespace workphone::resource { class ResourcePayloadMount; }
+namespace workphone::resource
+{
+    class ResourcePayloadMount;
+}
 
 namespace workphone::render
 {

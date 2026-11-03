@@ -13,9 +13,11 @@ namespace workphone::render
     public:
         String name() const override;
         Array<resource::CompilerOutput> outputs() const override;
-        bool getDependencies(const resource::CompileContext &,resource::DependencySet &,String &) const override;
-        resource::CompilationStatus compile(const resource::CompileContext &,std::ostream &,Array<String> &) const override;
-        static bool signature(wp_graphics_mesh *,resource::MorphClipInfo &,String &);
-        static bool validateSamples(wp_graphics_mesh *,const resource::MorphClipData &,String &);
+        bool getDependencies( const resource::CompileContext &, resource::DependencySet &,
+                              String & ) const override;
+        resource::CompilationStatus compile( const resource::CompileContext &, std::ostream &,
+                                             Array<String> & ) const override;
+        static bool signature( wp_graphics_mesh *, resource::MorphClipInfo &, String & );
+        static bool validateSamples( wp_graphics_mesh *, const resource::MorphClipData &, String & );
     };
-}
+}  // namespace workphone::render

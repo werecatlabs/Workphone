@@ -86,8 +86,9 @@ namespace workphone::render
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        hash32 m_scheme = 0;                      ///< Scheme hash identifier for this technique.
-        SourceBudgetArray<SmartPtr<IMaterialPass>> m_passes;  ///< Collection of passes for this technique.
+        hash32 m_scheme = 0;  ///< Scheme hash identifier for this technique.
+        SourceBudgetArray<SmartPtr<IMaterialPass>>
+            m_passes;  ///< Collection of passes for this technique.
     };
 }  // namespace workphone::render
 

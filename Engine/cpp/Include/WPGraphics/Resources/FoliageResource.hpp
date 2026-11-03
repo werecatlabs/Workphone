@@ -6,7 +6,10 @@
 #include <Workphone/System/ResourceSystem.hpp>
 #include <map>
 
-namespace workphone::resource { class ResourcePayloadMount; }
+namespace workphone::resource
+{
+    class ResourcePayloadMount;
+}
 
 namespace workphone::render
 {
@@ -63,8 +66,9 @@ namespace workphone::render
     /** Captured closure decode. World/species stay immutable; page bodies are
      * opened only by the existing page worker against the captured mount pins. */
     WPGraphics_API std::shared_ptr<const DecodedFoliageWorld> decodeCookedFoliageWorld(
-        std::shared_ptr<const resource::RuntimeResource>,std::shared_ptr<resource::ResourcePayloadMount>,
-        const String &target,bool packagedBuild,String &error,const FoliageDecodeOptions &options = {} );
+        std::shared_ptr<const resource::RuntimeResource>,
+        std::shared_ptr<resource::ResourcePayloadMount>, const String &target, bool packagedBuild,
+        String &error, const FoliageDecodeOptions &options = {} );
     WPGraphics_API bool queueCookedFoliageWorld( WorldStreamProducer &,
                                                  std::shared_ptr<resource::ResourceSystem>,
                                                  const resource::ResourceID &, const String &target,

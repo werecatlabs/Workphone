@@ -110,14 +110,20 @@ namespace workphone
              * @brief Registers the class with the runtime type system.
              */
             WP_CLASS_REGISTER_DECL;
-            bool setRuntimeLiteralText(bool enabled) override{m_runtimeLiteralText=enabled;return true;}
-            bool setRuntimeFont(SmartPtr<render::IFont>) override;
+
+            bool setRuntimeLiteralText( bool enabled ) override
+            {
+                m_runtimeLiteralText = enabled;
+                return true;
+            }
+
+            bool setRuntimeFont( SmartPtr<render::IFont> ) override;
             SmartPtr<render::IFont> getRuntimeFont() const override;
 
         private:
             std::shared_ptr<wp_user_font> m_drawFont;
             SmartPtr<render::IFont> m_runtimeFont;
-            atomic_bool m_runtimeLiteralText=false;
+            atomic_bool m_runtimeLiteralText = false;
             String m_text;                 ///< Cached text content.
             f32 m_textSize = 12.0f;        ///< Cached text size in pixels.
             u8 m_verticalAlignment = 0;    ///< Cached vertical alignment value.

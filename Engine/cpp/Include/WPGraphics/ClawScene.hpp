@@ -74,7 +74,7 @@ namespace workphone
 
             SmartPtr<ISharedObject> addGraphicsObjectByTypeId( hash_type id ) override;
             bool removeGraphicsObject( SmartPtr<ISharedObject> object ) override;
-            
+
             SmartPtr<IGraphicsSceneNode> addSceneNode( const String &name ) override;
             SmartPtr<IGraphicsSceneNode> addSceneNode() override;
 
@@ -131,23 +131,23 @@ namespace workphone
              * assignments retain prepared jobs; invalid policies are rejected.
              * QueueOrder preserves existing ordering. Bucket size is world units. */
             bool setDrawSortStrategy( ClawDrawSortStrategy strategy, double bucketSize = 10.0 );
-            
+
             ClawDrawSortStrategy getDrawSortStrategy() const;
-            
+
             double getDrawSortBucketSize() const;
 
             /** False and zeroed when unprofiled, failed or retired. Stale jobs
              * still describe elapsed work, without certifying draw validity. */
             bool getPreparedTiming( PreparationTiming & ) const;
-            
+
             /** Disjoint native main preparation phases; false/zero when unavailable. */
             bool getPreparedPhaseTiming( wp_graphics_cull_timing_stats * ) const;
-            
+
             bool validateRenderJobs() const;
-            
+
             /** Actual transform dispatches for the prepared pass; derived views add none. */
             u32 getPreparedTransformDispatchCount() const;
-            
+
             /** Owner-only copied main-view preparation work. Transform counters
              * describe the shared publication once, excluding the derived shadow
              * view. Optional outputs are zeroed after retirement; stale prepared
@@ -155,7 +155,7 @@ namespace workphone
             bool getPreparedJobStatistics( wp_transform_job_stats *, wp_graphics_cull_bounds_stats *,
                                            wp_u32 *candidates, wp_u32 *visible,
                                            wp_graphics_cull_sort_stats *sort = nullptr ) const;
-            
+
             /** Copied main-view cull array bytes; shared publication counted once.
              * False and zeroed after retirement, without certifying draw validity. */
             bool getPreparedStorageStatistics( wp_graphics_cull_storage_stats * ) const;
@@ -264,11 +264,11 @@ namespace workphone
             std::unique_ptr<FoliageWorldState> m_foliageWorlds;
 
             std::unique_ptr<OcclusionHistory> m_occlusionHistory;
-            
+
             // Empty retired storage, never in-flight resources or draw records.
             std::unique_ptr<ClawMaterialDrawRecords> m_materialRecordWorkspace;
             ClawDrawSortStrategy m_drawSortStrategy = ClawDrawSortStrategy::QueueOrder;
-            
+
             u64 m_occlusionFrame = 0;
 
             f64 m_drawSortBucketSize = 10.0;

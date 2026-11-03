@@ -37,8 +37,14 @@ namespace workphone
             void setPosition( const Vector2F &position ) override;
 
             void setTextSize( f32 textSize ) override;
-            bool setRuntimeLiteralText(bool enabled) override{m_runtimeLiteralText=enabled;return true;}
-            bool setRuntimeFont(SmartPtr<render::IFont>) override;
+
+            bool setRuntimeLiteralText( bool enabled ) override
+            {
+                m_runtimeLiteralText = enabled;
+                return true;
+            }
+
+            bool setRuntimeFont( SmartPtr<render::IFont> ) override;
             SmartPtr<render::IFont> getRuntimeFont() const override;
             f32 getTextSize() const override;
 
@@ -57,7 +63,7 @@ namespace workphone
 
         protected:
             String m_defaultMaterial;
-            atomic_bool m_runtimeLiteralText=false;
+            atomic_bool m_runtimeLiteralText = false;
             String m_hoverMaterial;
             f32 m_textSize = 12.0f;
             bool m_isSimpleButton = true;
