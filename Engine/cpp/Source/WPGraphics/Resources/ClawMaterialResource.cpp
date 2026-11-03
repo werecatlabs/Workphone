@@ -218,7 +218,7 @@ namespace workphone::render
         candidate->ticket = ++m_data->ticket;
         candidate->device = m_data->device();
         candidate->runtime = true;
-        candidate->mount=std::move(mount);
+        candidate->mount = std::move( mount );
         candidate->resource = std::move( resource );
         if( !candidate->resource || !candidate->device )
         {
@@ -263,10 +263,17 @@ namespace workphone::render
                     {
                         continue;
                     }
-                    if(candidate->mount&&isRuntimeTextureSnapshot(*dependency)) {
-                        auto uploaded=make_ptr<ClawTexture>();
-                        if(!uploaded->loadRuntimeStream(dependency,candidate->mount,m_data->target,m_data->packagedBuild,m_data->activeRenderer(),error))return false;
-                        destination=uploaded;return true;
+                    if( candidate->mount && isRuntimeTextureSnapshot( *dependency ) )
+                    {
+                        auto uploaded = make_ptr<ClawTexture>();
+                        if( !uploaded->loadRuntimeStream( dependency, candidate->mount, m_data->target,
+                                                          m_data->packagedBuild,
+                                                          m_data->activeRenderer(), error ) )
+                        {
+                            return false;
+                        }
+                        destination = uploaded;
+                        return true;
                     }
                     CookedTextureData texture;
                     if( !decodeCookedTexture( *dependency, texture, error ) )

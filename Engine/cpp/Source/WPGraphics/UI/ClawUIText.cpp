@@ -31,7 +31,10 @@ namespace workphone::ui
         }
 
         setLoadingState( LoadingState::Unloading );
-        {ScopedLock lock(this);m_runtimeFont=nullptr;}
+        {
+            ScopedLock lock( this );
+            m_runtimeFont = nullptr;
+        }
         ClawUIElement<IUIText>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
@@ -97,9 +100,28 @@ namespace workphone::ui
     {
         return ClawUIElement<IUIText>::handleStateChanged( state );
     }
-    bool ClawUIText::setRuntimeFont(SmartPtr<render::IFont> font)
-    {if(font){auto native=dynamic_pointer_cast<render::ClawFont>(font);if(!native||!font->isLoaded()||!native->retainRuntimeFont()||!native->getNativeFont())return false;}ScopedLock lock(this);m_runtimeFont=std::move(font);return true;}
-    SmartPtr<render::IFont> ClawUIText::getRuntimeFont() const{ScopedLock lock(this);return m_runtimeFont;}
+
+    bool ClawUIText::setRuntimeFont( SmartPtr<render::IFont> font )
+    {
+        if( font )
+        {
+            auto native = dynamic_pointer_cast<render::ClawFont>( font );
+            if( !native || !font->isLoaded() || !native->retainRuntimeFont() ||
+                !native->getNativeFont() )
+            {
+                return false;
+            }
+        }
+        ScopedLock lock( this );
+        m_runtimeFont = std::move( font );
+        return true;
+    }
+
+    SmartPtr<render::IFont> ClawUIText::getRuntimeFont() const
+    {
+        ScopedLock lock( this );
+        return m_runtimeFont;
+    }
 
     void ClawUIText::draw( struct wp_context *ctx )
     {
@@ -108,7 +130,7 @@ namespace workphone::ui
             return;
         }
 
-        const auto text = m_runtimeLiteralText?getText():localizeProjectText( getText() );
+        const auto text = m_runtimeLiteralText ? getText() : localizeProjectText( getText() );
         if( text.empty() )
         {
             wp_spacing( ctx, 1 );
@@ -124,11 +146,21 @@ namespace workphone::ui
         frame_retention::retainFontOwner( this );
         // Commands retain their font pointer until conversion. Keep a per-element
         // font descriptor alive, sharing the atlas while honoring the requested size.
-        auto font=getRuntimeFont();auto native=font?dynamic_pointer_cast<render::ClawFont>(font):nullptr;
-        if(font&&(!native||!native->getNativeFont()))return;
-        auto drawFont=std::allocate_shared<wp_user_font>(SourceBudgetAllocator<wp_user_font>{});
-        *drawFont=native?native->getNativeFont()->handle:*ctx->style.font;m_drawFont=drawFont;
-        frame_retention::retainSnapshot(drawFont);if(font){frame_retention::retainResource(font);frame_retention::retainSnapshot(font->retainRuntimeFont());}
+        auto font = getRuntimeFont();
+        auto native = font ? dynamic_pointer_cast<render::ClawFont>( font ) : nullptr;
+        if( font && ( !native || !native->getNativeFont() ) )
+        {
+            return;
+        }
+        auto drawFont = std::allocate_shared<wp_user_font>( SourceBudgetAllocator<wp_user_font>{} );
+        *drawFont = native ? native->getNativeFont()->handle : *ctx->style.font;
+        m_drawFont = drawFont;
+        frame_retention::retainSnapshot( drawFont );
+        if( font )
+        {
+            frame_retention::retainResource( font );
+            frame_retention::retainSnapshot( font->retainRuntimeFont() );
+        }
         auto lines = StringUtil::split( text, "\n" );
         if( lines.empty() )
         {

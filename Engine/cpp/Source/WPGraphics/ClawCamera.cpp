@@ -126,14 +126,25 @@ namespace workphone
 
         SmartPtr<IGraphicsObject> ClawCamera::clone( const String &name ) const
         {
-            auto creator=getCreator();if(!creator)return nullptr;
+            auto creator = getCreator();
+            if( !creator )
+            {
+                return nullptr;
+            }
             SmartPtr<IGraphicsCamera> camera;
             try
             {
                 // Reuse the creator's existing camera/context lifecycle. A raw
                 // constructor has no inherited visibility/camera state records.
-                camera=creator->addGraphicsObjectByType<IGraphicsCamera>();if(!camera)return nullptr;
-                if(!name.empty())camera->setName(name);
+                camera = creator->addGraphicsObjectByType<IGraphicsCamera>();
+                if( !camera )
+                {
+                    return nullptr;
+                }
+                if( !name.empty() )
+                {
+                    camera->setName( name );
+                }
                 camera->setFOVy( getFOVy() );
                 camera->setNearClipDistance( getNearClipDistance() );
                 camera->setFarClipDistance( getFarClipDistance() );
@@ -143,17 +154,33 @@ namespace workphone
                 camera->setRenderUI( getRenderUI() );
                 camera->setScreenWidth( getScreenWidth() );
                 camera->setScreenHeight( getScreenHeight() );
-                camera->setTargetTexture(getTargetTexture());
-                camera->setPostProcessSettings(getPostProcessSettings());
-                camera->setCompositeLayers(getCompositeLayers());
+                camera->setTargetTexture( getTargetTexture() );
+                camera->setPostProcessSettings( getPostProcessSettings() );
+                camera->setCompositeLayers( getCompositeLayers() );
                 camera->setVisible( isVisible() );
                 camera->setCastShadows( getCastShadows() );
                 camera->setVisibilityFlags( getVisibilityFlags() );
                 return camera;
             }
-            catch(...)
+            catch( ... )
             {
-                if(camera){try{camera->unload(nullptr);}catch(...){}try{creator->removeGraphicsObject(camera);}catch(...){}}
+                if( camera )
+                {
+                    try
+                    {
+                        camera->unload( nullptr );
+                    }
+                    catch( ... )
+                    {
+                    }
+                    try
+                    {
+                        creator->removeGraphicsObject( camera );
+                    }
+                    catch( ... )
+                    {
+                    }
+                }
                 return nullptr;
             }
         }

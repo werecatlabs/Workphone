@@ -4,8 +4,8 @@
 #include <WPGraphics/ClawTerrainMaterial.hpp>
 #include "ClawTerrainTilesState.hpp"
 #if WP_FOLIAGE_SOURCE_RESOURCES
-#include <WPGraphics/Resources/TerrainResource.hpp>
-#include <WPGraphics/Resources/FoliageResource.hpp>
+#    include <WPGraphics/Resources/TerrainResource.hpp>
+#    include <WPGraphics/Resources/FoliageResource.hpp>
 #endif
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_terrain.h"
@@ -86,39 +86,103 @@ namespace workphone
             return m_runtimeFoliage;
         }
 
-        bool ClawTerrain::loadRuntimeResource(std::shared_ptr<const resource::RuntimeResource> terrain,
-            std::shared_ptr<const resource::RuntimeResource> foliage,std::shared_ptr<resource::ResourcePayloadMount> mount,
-            const String &target,bool packaged,String &error)
+        bool ClawTerrain::loadRuntimeResource( std::shared_ptr<const resource::RuntimeResource> terrain,
+                                               std::shared_ptr<const resource::RuntimeResource> foliage,
+                                               std::shared_ptr<resource::ResourcePayloadMount> mount,
+                                               const String &target, bool packaged, String &error )
         {
 #if WP_FOLIAGE_SOURCE_RESOURCES
-            error.clear();try {
-                auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystem():nullptr;
-                auto renderer=graphics?dynamic_pointer_cast<ClawRendererDX11>(graphics->getRenderer()):nullptr;
-                if(!renderer||!renderer->isLoaded()){error="Captured terrain requires an active DX11 renderer";return false;}
-                if(!terrain){error="Captured terrain resource is missing";return false;}
-                u64 scratchBytes=65536+8*terrain->payload.size();
-                for(const auto &texture:terrain->dependencies)if(texture&&!texture->payload.empty()){
-                    u64 decoded=texture->payload.size();
-                    if(decoded>=12&&!std::memcmp(texture->payload.data(),"WPZ1",4)){decoded=0;for(unsigned i=0;i<8;++i)decoded|=u64(texture->payload[4+i])<<(8*i);}
-                    if(decoded>graphicsTextureByteLimit+4096){error="Captured terrain texture exceeds its decode bound";return false;}scratchBytes+=2*decoded+65536;
+            error.clear();
+            try
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                auto graphics = app ? app->getGraphicsSystem() : nullptr;
+                auto renderer = graphics
+                                    ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() )
+                                    : nullptr;
+                if( !renderer || !renderer->isLoaded() )
+                {
+                    error = "Captured terrain requires an active DX11 renderer";
+                    return false;
+                }
+                if( !terrain )
+                {
+                    error = "Captured terrain resource is missing";
+                    return false;
+                }
+                u64 scratchBytes = 65536 + 8 * terrain->payload.size();
+                for( const auto &texture : terrain->dependencies )
+                {
+                    if( texture && !texture->payload.empty() )
+                    {
+                        u64 decoded = texture->payload.size();
+                        if( decoded >= 12 && !std::memcmp( texture->payload.data(), "WPZ1", 4 ) )
+                        {
+                            decoded = 0;
+                            for( unsigned i = 0; i < 8; ++i )
+                            {
+                                decoded |= u64( texture->payload[4 + i] ) << ( 8 * i );
+                            }
+                        }
+                        if( decoded > graphicsTextureByteLimit + 4096 )
+                        {
+                            error = "Captured terrain texture exceeds its decode bound";
+                            return false;
+                        }
+                        scratchBytes += 2 * decoded + 65536;
+                    }
                 }
                 std::shared_ptr<const CookedTerrainCandidate> candidate;
                 {
-                    auto scratch=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,scratchBytes,error);if(!scratch)return false;
-                    candidate=stageCookedTerrainMaterial(*renderer,terrain,target,packaged,error,mount);if(!candidate)return false;
+                    auto scratch = WorldStreamingScheduler::shared()->reserve(
+                        StreamMemoryClass::WorkingCpu, scratchBytes, error );
+                    if( !scratch )
+                    {
+                        return false;
+                    }
+                    candidate =
+                        stageCookedTerrainMaterial( *renderer, terrain, target, packaged, error, mount );
+                    if( !candidate )
+                    {
+                        return false;
+                    }
                 }
                 // Terrain parsing/upload scratch has retired; the staged
                 // candidate retains its own source and native texture owners.
                 // Foliage admits its independent decode envelope next.
                 std::shared_ptr<const CookedFoliageCandidate> plants;
-                if(foliage){auto decoded=decodeCookedFoliageWorld(foliage,mount,target,packaged,error);if(!decoded)return false;
-                    plants=stageCookedFoliageWorld(*renderer,std::move(decoded),error,mount);if(!plants)return false;}
-                if(!applyCookedTerrain(std::move(candidate),error))return false;
-                if(!setFoliageSnapshot(plants?plants->source.snapshot:FoliageSnapshot{},error))return false;
-                m_runtimeFoliage=std::move(plants);return true;
-            }catch(const std::exception &failure){error=failure.what();return false;}
+                if( foliage )
+                {
+                    auto decoded = decodeCookedFoliageWorld( foliage, mount, target, packaged, error );
+                    if( !decoded )
+                    {
+                        return false;
+                    }
+                    plants = stageCookedFoliageWorld( *renderer, std::move( decoded ), error, mount );
+                    if( !plants )
+                    {
+                        return false;
+                    }
+                }
+                if( !applyCookedTerrain( std::move( candidate ), error ) )
+                {
+                    return false;
+                }
+                if( !setFoliageSnapshot( plants ? plants->source.snapshot : FoliageSnapshot{}, error ) )
+                {
+                    return false;
+                }
+                m_runtimeFoliage = std::move( plants );
+                return true;
+            }
+            catch( const std::exception &failure )
+            {
+                error = failure.what();
+                return false;
+            }
 #else
-            return IGraphicsTerrain::loadRuntimeResource(std::move(terrain),std::move(foliage),std::move(mount),target,packaged,error);
+            return IGraphicsTerrain::loadRuntimeResource( std::move( terrain ), std::move( foliage ),
+                                                          std::move( mount ), target, packaged, error );
 #endif
         }
 

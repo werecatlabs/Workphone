@@ -282,7 +282,10 @@ namespace workphone::ui
         const auto bounds = getWorkphoneBounds();
         const auto tint = ClawUIWorkphoneContext::toWorkphoneColor( getColour() );
         auto texture = getTexture();
-        if(texture)frame_retention::retainResource(texture);
+        if( texture )
+        {
+            frame_retention::retainResource( texture );
+        }
         auto image = texture ? wp_image_ptr( texture.get() ) : wp_image_id( 0 );
 
         if( texture && m_useNineSlice &&

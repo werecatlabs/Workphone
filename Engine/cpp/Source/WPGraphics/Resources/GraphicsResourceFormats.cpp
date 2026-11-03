@@ -1180,7 +1180,14 @@ namespace workphone::render
                 require( matches == 1,
                          "Cooked material requires exactly one installed generation per texture" );
             }
-            struct ValidatedTexture {resource::ResourceID id;TextureMipFilter filter;u32 storageFormat;};
+
+            struct ValidatedTexture
+            {
+                resource::ResourceID id;
+                TextureMipFilter filter;
+                u32 storageFormat;
+            };
+
             Array<ValidatedTexture> validatedTextures;
             const auto validateSlot = [&]( const resource::ResourceID &id, u64 sourceHash,
                                            u64 payloadHash, u64 compilerVersion,
@@ -1204,7 +1211,7 @@ namespace workphone::render
                         CookedTextureData semantic;
                         semantic.target = data.target;
                         semantic.mipSettings.filter = cached.filter;
-                        semantic.storageFormat=cached.storageFormat;
+                        semantic.storageFormat = cached.storageFormat;
                         if( !validateMaterialTextureSemantic( semantic, slot, error ) )
                         {
                             throw std::runtime_error( error.c_str() );
@@ -1213,7 +1220,9 @@ namespace workphone::render
                     }
                 }
                 CookedTextureData texture;
-                if( !(dependency->streamData?describeRuntimeTextureSnapshot(*dependency,texture,error):decodeCookedTexture(*dependency,texture,error)) )
+                if( !( dependency->streamData
+                           ? describeRuntimeTextureSnapshot( *dependency, texture, error )
+                           : decodeCookedTexture( *dependency, texture, error ) ) )
                 {
                     throw std::runtime_error( error.c_str() );
                 }
@@ -1223,7 +1232,7 @@ namespace workphone::render
                 {
                     throw std::runtime_error( error.c_str() );
                 }
-                validatedTextures.push_back({id,texture.mipSettings.filter,texture.storageFormat});
+                validatedTextures.push_back( { id, texture.mipSettings.filter, texture.storageFormat } );
             };
             validateSlot( data.textureId, data.textureSourceHash, data.texturePayloadHash,
                           data.textureCompilerVersion, MaterialTextureSlot::BaseColour );

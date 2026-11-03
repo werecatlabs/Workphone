@@ -648,13 +648,18 @@ namespace workphone::render
         SmartPtr<ITexture> particleTexture;
         if( material )
         {
-            particleTexture=particleState?particleState->textures[0]:nullptr;
+            particleTexture = particleState ? particleState->textures[0] : nullptr;
             // A freshly staged typed material can have a pending native surface
             // before its first immutable pass snapshot has been published.
             // Retain the actual captured binding through every particle batch.
-            if(!particleTexture)particleTexture=material->getTexture(0);
-            if(auto nativeTexture=dynamic_pointer_cast<ClawTexture>(particleTexture))
-                texture=nativeTexture->getNativeTextureView(wp_renderer_get_dx11(m_renderer));
+            if( !particleTexture )
+            {
+                particleTexture = material->getTexture( 0 );
+            }
+            if( auto nativeTexture = dynamic_pointer_cast<ClawTexture>( particleTexture ) )
+            {
+                texture = nativeTexture->getNativeTextureView( wp_renderer_get_dx11( m_renderer ) );
+            }
             else if( particleTexture )
             {
                 particleTexture->getTextureFinal( &texture );

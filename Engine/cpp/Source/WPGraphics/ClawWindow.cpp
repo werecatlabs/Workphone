@@ -72,7 +72,8 @@ namespace workphone
                 if( ImGui::GetCurrentContext() && ImGui::GetIO().BackendPlatformUserData )
                 {
                     const auto handled = ImGui_ImplWin32_WndProcHandler( hwnd, message, wParam, lParam );
-                    return handled || detail::consumeImGuiSystemMenuMessage( message, wParam, true ) ? 1 : 0;
+                    return handled || detail::consumeImGuiSystemMenuMessage( message, wParam, true ) ? 1
+                                                                                                     : 0;
                 }
 #    endif
 

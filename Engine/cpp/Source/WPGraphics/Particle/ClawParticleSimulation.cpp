@@ -5,8 +5,8 @@
 #include <cmath>
 #include <cstring>
 #if WP_FOLIAGE_SOURCE_RESOURCES
-#include <WPGraphics/Resources/ParticleResource.hpp>
-#include <Workphone/System/ResourcePayloadStream.hpp>
+#    include <WPGraphics/Resources/ParticleResource.hpp>
+#    include <Workphone/System/ResourcePayloadStream.hpp>
 #endif
 #if defined( _WIN32 )
 #    include <WPGraphics/ClawRendererDX11.hpp>
@@ -26,7 +26,12 @@ namespace workphone::render
         {
             return;
         }
-        if(m_runtimeResourcesMode){WP_LOG_ERROR("Captured particles require explicit resource reconfiguration before reload");setLoadingState(LoadingState::Unloaded);return;}
+        if( m_runtimeResourcesMode )
+        {
+            WP_LOG_ERROR( "Captured particles require explicit resource reconfiguration before reload" );
+            setLoadingState( LoadingState::Unloaded );
+            return;
+        }
         if( !getTemplateName().empty() )
         {
             WP_LOG_ERROR(
@@ -71,8 +76,13 @@ namespace workphone::render
 
     void CParticleSystem::unload( SmartPtr<ISharedObject> data )
     {
-        auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystem():nullptr;
-        std::unique_lock<ISharedObject> graphicsLock;if(graphics)graphicsLock=std::unique_lock<ISharedObject>(*graphics);
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        std::unique_lock<ISharedObject> graphicsLock;
+        if( graphics )
+        {
+            graphicsLock = std::unique_lock<ISharedObject>( *graphics );
+        }
         std::unique_lock<std::mutex> lock( m_simulationMutex );
         wp_particle_simulation_destroy( m_simulation );
         m_simulation = nullptr;
@@ -80,50 +90,132 @@ namespace workphone::render
         wp_particle_compute_dx11_destroy( static_cast<wp_particle_compute_dx11 *>( m_particleCompute ) );
 #endif
         m_particleCompute = m_particleComputeDevice = nullptr;
-        m_runtimeComputeBudget.reset();m_runtimeSimulationBudget.reset();m_runtimeMaterial=nullptr;m_runtimeResource.reset();
+        m_runtimeComputeBudget.reset();
+        m_runtimeSimulationBudget.reset();
+        m_runtimeMaterial = nullptr;
+        m_runtimeResource.reset();
         lock.unlock();
         ParticleSystem::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
 
-    bool CParticleSystem::loadRuntimeResource(std::shared_ptr<const resource::RuntimeResource> resource,
-        std::shared_ptr<resource::ResourcePayloadMount> mount,const String &target,bool packaged,String &error)
+    bool CParticleSystem::loadRuntimeResource( std::shared_ptr<const resource::RuntimeResource> resource,
+                                               std::shared_ptr<resource::ResourcePayloadMount> mount,
+                                               const String &target, bool packaged, String &error )
     {
 #if WP_FOLIAGE_SOURCE_RESOURCES
-        error.clear();try {
-            if(!resource){error="Captured particle resource is missing";return false;}
-            auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystem():nullptr;
-#if defined(_WIN32)
-            auto renderer=graphics?dynamic_pointer_cast<ClawRendererDX11>(graphics->getRenderer()):nullptr;
-            if(!renderer||!renderer->isLoaded()||!wp_renderer_get_dx11(renderer->getNativeRenderer())){error="Captured particle rendering requires an active native DX11 renderer";return false;}
-#else
-            error="Captured particle rendering requires the native DX11 backend";return false;
-#endif
-            CookedParticleData data;if(!decodeCookedParticle(*resource,data,error))return false;
-            if(data.target!=target||data.packagedBuild!=packaged){error="Captured particle target/build mismatch";return false;}
-            if(mount){resource::RuntimeResourceRangeInfo info;if(!mount->resourceInfo(resource->header.resourceId,info,error))return false;
-                const auto &a=info.header,&b=resource->header;if(a.compilerVersion!=b.compilerVersion||a.sourceHash!=b.sourceHash||a.payloadHash!=b.payloadHash||a.payloadSize!=b.payloadSize){error="Captured particle mount generation mismatch";return false;}}
-            auto scheduler=WorldStreamingScheduler::shared();auto budget=scheduler->reserve(StreamMemoryClass::SourceCpu,4096+u64(data.capacity)*sizeof(wp_particle_sample),error);if(!budget)return false;
-            std::unique_ptr<wp_particle_simulation,decltype(&wp_particle_simulation_destroy)> candidate(wp_particle_simulation_create(data.capacity,data.seed),wp_particle_simulation_destroy);
-            if(!candidate||!wp_particle_simulation_configure(candidate.get(),&data.settings)){error="Cannot allocate/configure captured native particle capacity";return false;}
-            SmartPtr<IMaterial> material;
-            if(data.material.isValid()){
-                if(!graphics){error="Captured particle material requires its graphics system";return false;}
-                material=graphics->createRuntimeMaterial(resource->dependencies[0],error,target,packaged,mount);if(!material)return false;
+        error.clear();
+        try
+        {
+            if( !resource )
+            {
+                error = "Captured particle resource is missing";
+                return false;
             }
-            ParticleSystem::load(SmartPtr<ISharedObject>{});
-            std::lock_guard<std::mutex> lock(m_simulationMutex);
-            wp_particle_simulation_destroy(m_simulation);
-#if defined(_WIN32)
-            wp_particle_compute_dx11_destroy(static_cast<wp_particle_compute_dx11 *>(m_particleCompute));
-#endif
-            m_particleCompute=m_particleComputeDevice=nullptr;m_runtimeComputeBudget.reset();m_gpuUnavailableLogged=false;
-            m_simulation=candidate.release();m_runtimeSimulationBudget=std::move(budget);m_poolSize=data.capacity;m_seed=data.seed;m_simulationSettings=data.settings;m_customSimulationSettings=true;
-            m_runtimeResource=std::move(resource);m_runtimeMaterial=material;m_runtimeResourcesMode=true;m_templateName.clear();m_materialName.clear();m_state=ParticleSystemState::Stopped;
-            setLoadingState(LoadingState::Loaded);return true;
-        }catch(const std::exception &failure){error=failure.what();return false;}
+            auto app = core::IApplicationManager::instancePtr();
+            auto graphics = app ? app->getGraphicsSystem() : nullptr;
+#    if defined( _WIN32 )
+            auto renderer =
+                graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
+            if( !renderer || !renderer->isLoaded() ||
+                !wp_renderer_get_dx11( renderer->getNativeRenderer() ) )
+            {
+                error = "Captured particle rendering requires an active native DX11 renderer";
+                return false;
+            }
+#    else
+            error = "Captured particle rendering requires the native DX11 backend";
+            return false;
+#    endif
+            CookedParticleData data;
+            if( !decodeCookedParticle( *resource, data, error ) )
+            {
+                return false;
+            }
+            if( data.target != target || data.packagedBuild != packaged )
+            {
+                error = "Captured particle target/build mismatch";
+                return false;
+            }
+            if( mount )
+            {
+                resource::RuntimeResourceRangeInfo info;
+                if( !mount->resourceInfo( resource->header.resourceId, info, error ) )
+                {
+                    return false;
+                }
+                const auto &a = info.header, &b = resource->header;
+                if( a.compilerVersion != b.compilerVersion || a.sourceHash != b.sourceHash ||
+                    a.payloadHash != b.payloadHash || a.payloadSize != b.payloadSize )
+                {
+                    error = "Captured particle mount generation mismatch";
+                    return false;
+                }
+            }
+            auto scheduler = WorldStreamingScheduler::shared();
+            auto budget =
+                scheduler->reserve( StreamMemoryClass::SourceCpu,
+                                    4096 + u64( data.capacity ) * sizeof( wp_particle_sample ), error );
+            if( !budget )
+            {
+                return false;
+            }
+            std::unique_ptr<wp_particle_simulation, decltype( &wp_particle_simulation_destroy )>
+                candidate( wp_particle_simulation_create( data.capacity, data.seed ),
+                           wp_particle_simulation_destroy );
+            if( !candidate || !wp_particle_simulation_configure( candidate.get(), &data.settings ) )
+            {
+                error = "Cannot allocate/configure captured native particle capacity";
+                return false;
+            }
+            SmartPtr<IMaterial> material;
+            if( data.material.isValid() )
+            {
+                if( !graphics )
+                {
+                    error = "Captured particle material requires its graphics system";
+                    return false;
+                }
+                material = graphics->createRuntimeMaterial( resource->dependencies[0], error, target,
+                                                            packaged, mount );
+                if( !material )
+                {
+                    return false;
+                }
+            }
+            ParticleSystem::load( SmartPtr<ISharedObject>{} );
+            std::lock_guard<std::mutex> lock( m_simulationMutex );
+            wp_particle_simulation_destroy( m_simulation );
+#    if defined( _WIN32 )
+            wp_particle_compute_dx11_destroy(
+                static_cast<wp_particle_compute_dx11 *>( m_particleCompute ) );
+#    endif
+            m_particleCompute = m_particleComputeDevice = nullptr;
+            m_runtimeComputeBudget.reset();
+            m_gpuUnavailableLogged = false;
+            m_simulation = candidate.release();
+            m_runtimeSimulationBudget = std::move( budget );
+            m_poolSize = data.capacity;
+            m_seed = data.seed;
+            m_simulationSettings = data.settings;
+            m_customSimulationSettings = true;
+            m_runtimeResource = std::move( resource );
+            m_runtimeMaterial = material;
+            m_runtimeResourcesMode = true;
+            m_templateName.clear();
+            m_materialName.clear();
+            m_state = ParticleSystemState::Stopped;
+            setLoadingState( LoadingState::Loaded );
+            return true;
+        }
+        catch( const std::exception &failure )
+        {
+            error = failure.what();
+            return false;
+        }
 #else
-        return IParticleSystem::loadRuntimeResource(std::move(resource),std::move(mount),target,packaged,error);
+        return IParticleSystem::loadRuntimeResource( std::move( resource ), std::move( mount ), target,
+                                                     packaged, error );
 #endif
     }
 
@@ -200,7 +292,10 @@ namespace workphone::render
         {
             return false;
         }
-        if(m_runtimeResourcesMode&&!m_isVisible)return true;
+        if( m_runtimeResourcesMode && !m_isVisible )
+        {
+            return true;
+        }
         if( !m_customSimulationSettings )
         {
             m_simulationSettings.rate = getRate();
@@ -234,13 +329,26 @@ namespace workphone::render
         }
         if( device && !m_particleCompute && !m_gpuUnavailableLogged )
         {
-            StreamBudget computeBudget;String error;
-            if(m_runtimeResourcesMode)computeBudget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::Gpu,2ull*m_poolSize*sizeof(wp_particle_sample)+64,error);
-            if(!m_runtimeResourcesMode||computeBudget)m_particleCompute = wp_particle_compute_dx11_create(
-                device, wp_renderer_dx11_get_context( native ), m_poolSize );
-            if(m_particleCompute)m_runtimeComputeBudget=std::move(computeBudget);
+            StreamBudget computeBudget;
+            String error;
+            if( m_runtimeResourcesMode )
+            {
+                computeBudget = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::Gpu, 2ull * m_poolSize * sizeof( wp_particle_sample ) + 64,
+                    error );
+            }
+            if( !m_runtimeResourcesMode || computeBudget )
+            {
+                m_particleCompute = wp_particle_compute_dx11_create(
+                    device, wp_renderer_dx11_get_context( native ), m_poolSize );
+            }
+            if( m_particleCompute )
+            {
+                m_runtimeComputeBudget = std::move( computeBudget );
+            }
             m_particleComputeDevice = device;
-            if( !m_particleCompute && !m_gpuUnavailableLogged && (!m_runtimeResourcesMode||error.empty()) )
+            if( !m_particleCompute && !m_gpuUnavailableLogged &&
+                ( !m_runtimeResourcesMode || error.empty() ) )
             {
                 WP_LOG_ERROR(
                     "GPU particle compute is unavailable on this device; retaining CPU simulation." );
@@ -259,7 +367,7 @@ namespace workphone::render
     Array<wp_particle_sample> CParticleSystem::getRenderSnapshot() const
     {
         std::lock_guard<std::mutex> lock( m_simulationMutex );
-        Array<wp_particle_sample> result{Allocator<wp_particle_sample>(sourceBudget)};
+        Array<wp_particle_sample> result{ Allocator<wp_particle_sample>( sourceBudget ) };
         const auto count = wp_particle_simulation_get_count( m_simulation );
         if( count )
         {
