@@ -219,6 +219,12 @@ namespace workphone
         root->addChild( vehiclesNode );
 
         auto databaseManager = getAssetDatabaseManager();
+        if( !databaseManager )
+        {
+            WP_LOG_ERROR( "AssetDatabaseManager is not set." );
+            return;
+        }
+
         auto sql = "select * from configured_models";
         auto result = databaseManager->executeQuery( sql );
         if( result )
@@ -256,6 +262,12 @@ namespace workphone
         Util::setText( root, "Resources" );
 
         auto databaseManager = getAssetDatabaseManager();
+        if( !databaseManager )
+        {
+            WP_LOG_ERROR( "AssetDatabaseManager is not set." );
+            return;
+        }
+
         auto sql = "select * from configured_models";
         auto result = databaseManager->executeQuery( sql );
         if( result )
@@ -287,7 +299,7 @@ namespace workphone
                     auto componentsResult = databaseManager->executeQuery( componentsSql );
                     if( componentsResult )
                     {
-                        while( !componentsResult->eof())
+                        while( !componentsResult->eof() )
                         {
                             auto componentId = componentsResult->getFieldValueAsInt( "id" );
                             auto componentName = componentsResult->getFieldValue( "ident" );
@@ -313,6 +325,11 @@ namespace workphone
         WP_ASSERT( applicationManager );
 
         auto databaseManager = getAssetDatabaseManager();
+        if( !databaseManager )
+        {
+            WP_LOG_ERROR( "AssetDatabaseManager is not set." );
+            return;
+        }
 
         auto root = treeCtrl->addRoot();
         Util::setText( root, "Configurable Components" );
@@ -344,6 +361,11 @@ namespace workphone
         WP_ASSERT( applicationManager );
 
         auto databaseManager = getAssetDatabaseManager();
+        if( !databaseManager )
+        {
+            WP_LOG_ERROR( "AssetDatabaseManager is not set." );
+            return;
+        }
 
         auto sqlStr = "select * from attribs where configured_model_id=" + StringUtil::toString( id );
         auto queryResult = databaseManager->executeQuery( sqlStr );
@@ -369,7 +391,11 @@ namespace workphone
         WP_ASSERT( applicationManager );
 
         auto databaseManager = getAssetDatabaseManager();
-        WP_ASSERT( databaseManager );
+        if( !databaseManager )
+        {
+            WP_LOG_ERROR( "AssetDatabaseManager is not set." );
+            return;
+        }
 
         auto sqlStr = "select * from " + m_staticAttribsTableName +
                       " where object_id=" + StringUtil::toString( id );
@@ -396,6 +422,11 @@ namespace workphone
         WP_ASSERT( applicationManager );
 
         auto databaseManager = getAssetDatabaseManager();
+        if( !databaseManager )
+        {
+            WP_LOG_ERROR( "AssetDatabaseManager is not set." );
+            return;
+        }
 
         auto sqlStr = "select * from ref_attribs where ref_component_id=" + StringUtil::toString( id );
         auto queryResult = databaseManager->executeQuery( sqlStr );
@@ -547,9 +578,11 @@ namespace workphone
         return p.lock();
     }
 
-    Parameter AssetDatabaseWindow::EventListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter AssetDatabaseWindow::EventListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                               const Array<Parameter> &arguments,
+                                                               SmartPtr<ISharedObject> sender,
+                                                               SmartPtr<ISharedObject> object,
+                                                               SmartPtr<IEvent> event )
     {
         if( auto owner = getOwner() )
         {
@@ -567,4 +600,4 @@ namespace workphone
     AssetDatabaseWindow::EventListener::EventListener() = default;
 
     AssetDatabaseWindow::EventListener::~EventListener() = default;
-}  // namespace workphone::editor
+}  // namespace workphone

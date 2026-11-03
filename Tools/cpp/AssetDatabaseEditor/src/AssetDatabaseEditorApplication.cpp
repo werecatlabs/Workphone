@@ -158,8 +158,12 @@ namespace workphone::adbeditor
 
     void AssetDatabaseEditorApplication::createScene()
     {
-        auto applicationManager = core::ApplicationManager::instance();
+        auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
+
+        auto menubarListener = workphone::make_ptr<CUIMenuBarListener>();
+        menubarListener->setOwner( this );
+        m_menubarListener = menubarListener;
 
         auto uiManager = applicationManager->getUI();
         if( uiManager )
@@ -174,6 +178,11 @@ namespace workphone::adbeditor
                                ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( fileMenu, static_cast<s32>( ElementId::Exit ), "Exit", "Exit",
                                ui::IUIMenuItem::Type::Normal );
+
+            if( m_menubarListener )
+            {
+                menuBar->addObjectListener( m_menubarListener );
+            }
 
             m_application->setMenubar( menuBar );
         }

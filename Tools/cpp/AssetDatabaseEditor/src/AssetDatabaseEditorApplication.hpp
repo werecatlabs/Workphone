@@ -73,6 +73,7 @@ namespace workphone
             SmartPtr<AssetDatabaseEditorMainWindow> m_mainWindow;
             SmartPtr<AssetDatabaseWindow> m_assetDatabaseWindow;
             SmartPtr<ui::IUIApplication> m_application;
+            SmartPtr<IEventListener> m_menubarListener;
         };
     }  // namespace adbeditor
 }  // namespace workphone
