@@ -289,7 +289,7 @@ namespace workphone
         {
             for( auto &currentProperty : m_properties )
             {
-                if( currentProperty.getName() == name )
+                if( StringUtil::isEqual( currentProperty.getNamePtr(), name ) )
                 {
                     return true;
                 }
