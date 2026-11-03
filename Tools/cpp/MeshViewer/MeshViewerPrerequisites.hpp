@@ -8,8 +8,5 @@
 #include <Workphone/Core/Singleton.hpp>
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
-#include <WPWxWidgets/WPWxWidgetsPrerequisites.hpp>
-
-class HAPI_Session;
 
 #endif  // MeshViewerPrerequisites_h__
