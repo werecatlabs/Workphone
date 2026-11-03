@@ -77,14 +77,17 @@ namespace workphone
             // current attachment. Draw records retain immutable prior values.
             void setRuntimeProgram( MaterialProgramDX11::Ptr program,
                                     std::shared_ptr<MaterialProgramResourcesDX11> resources = {} );
+            
             // Subscribes to automatic transactional reload before publication
             // capture. A null coordinator explicitly retires the attachment.
             void setRuntimeReload( MaterialProgramReloadDX11::Ptr reload,
                                    std::shared_ptr<MaterialProgramResourcesDX11> resources = {} );
+
             void copyRuntimeShaderTo( ClawMaterial &target ) const;
             bool requestRuntimeShaderReload();
             bool requestRuntimeShaderFiles( const String &vertexFile, const String &pixelFile );
             bool setRuntimeShaderWatching( bool enabled );
+            
             SmartPtr<Properties> getRuntimeShaderReloadStatus() const;
             static void processRuntimeShaderReloads( ClawRendererDX11 &renderer );
             bool hasRuntimeProgram() const;
@@ -93,6 +96,7 @@ namespace workphone
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
             void loadFromFile( const String &filePath ) override;
+            
             /** Caller holds the sole manager and candidate references.
              * Automatic inspections defer retries after an unsuccessful expensive check.
              * Explicit reclamation always retries immediately.
