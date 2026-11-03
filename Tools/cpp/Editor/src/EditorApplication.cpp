@@ -2141,12 +2141,16 @@ namespace workphone::editor
             {
             case TaskId::GarbageCollect:
             {
-                if( timer->getTimeSinceSceneLoad() > 3.0 )
+                if( m_removeUsedResources )
                 {
-                    auto graphicsSystem = applicationManager->getGraphicsSystem();
-                    if( graphicsSystem )
+                    if( timer->getTimeSinceSceneLoad() > 3.0 )
                     {
-                        render::collectUnusedGraphicsAssets( graphicsSystem, 4 );
+                        auto graphicsSystem = applicationManager->getGraphicsSystem();
+                        if( graphicsSystem )
+                        {
+                            render::collectUnusedGraphicsAssets( graphicsSystem, 1024 );
+                            m_removeUsedResources = false;
+                        }
                     }
                 }
             }
@@ -3787,6 +3791,11 @@ namespace workphone::editor
                     ui->updateComponentSelection();
                 }
             }
+        }
+        else if( eventValue == scene::IGameManager::sceneLoadedHash ||
+                 eventValue == scene::IGameManager::sceneUnloadedHash )
+        {
+            m_application->m_removeUsedResources = true;
         }
         else if( eventValue == IEvent::addActor )
         {

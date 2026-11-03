@@ -94,22 +94,9 @@ namespace workphone::scene
                         }
                     }
 
-                    auto sceneManager = applicationManager->getGameManagerPtr();
-                    if( !sceneManager )
+                    for( auto &cameraActor : m_cameras )
                     {
-                        break;
-                    }
-
-                    auto scene = sceneManager->getCurrentScenePtr();
-                    if( !scene )
-                    {
-                        break;
-                    }
-
-                    auto cameras = scene->getComponents<Camera>();
-                    for( auto &camera : cameras )
-                    {
-                        if( auto cameraActor = camera->getActorPtr() )
+                        if( cameraActor )
                         {
                             cameraActor->update();
                         }
