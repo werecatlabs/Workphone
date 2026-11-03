@@ -292,7 +292,8 @@ namespace workphone
             SmartPtr<ui::IUIApplication> m_application;
             SmartPtr<ui::IUIRenderWindow> m_renderWindow;
 
-            atomic_bool m_removeUsedResources = false;
+            atomic_f64 m_nextRemoveUnusedResourcesTime = 0.0;
+            atomic_bool m_removeUnusedResources = false;
 
             // Renderer type selection
             render::IGraphicsSystem::RenderApi m_rendererType = render::IGraphicsSystem::RenderApi::DX11;
