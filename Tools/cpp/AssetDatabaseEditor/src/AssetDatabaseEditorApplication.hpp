@@ -36,6 +36,27 @@ namespace workphone
                 Count
             };
 
+            class CUIMenuBarListener : public IEventListener
+            {
+            public:
+                CUIMenuBarListener();
+
+                ~CUIMenuBarListener() override;
+
+                Parameter handleEvent(EventType eventType, hash_type eventValue,
+                    const Array<Parameter>& arguments, SmartPtr<ISharedObject> sender,
+                    SmartPtr<ISharedObject> object, SmartPtr<IEvent> event) override;
+
+                SmartPtr<AssetDatabaseEditorApplication> getOwner() const;
+
+                void setOwner(SmartPtr<AssetDatabaseEditorApplication> owner);
+
+                WP_CLASS_REGISTER_DECL;
+
+            private:
+                WeakPtr<AssetDatabaseEditorApplication> m_owner;
+            };
+
             AssetDatabaseEditorApplication();
             ~AssetDatabaseEditorApplication() override;
 

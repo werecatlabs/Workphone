@@ -15,6 +15,35 @@
 namespace workphone::adbeditor
 {
     WP_CLASS_REGISTER_DERIVED( workphone::adbeditor, AssetDatabaseEditorApplication, core::Application );
+    WP_CLASS_REGISTER_DERIVED( workphone::adbeditor, AssetDatabaseEditorApplication::CUIMenuBarListener,
+                               IEventListener );
+
+    AssetDatabaseEditorApplication::CUIMenuBarListener::CUIMenuBarListener()
+    {
+    }
+
+    AssetDatabaseEditorApplication::CUIMenuBarListener::~CUIMenuBarListener()
+    {
+    }
+
+    Parameter AssetDatabaseEditorApplication::CUIMenuBarListener::handleEvent(
+        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
+        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    {
+        return {};
+    }
+
+    SmartPtr<AssetDatabaseEditorApplication>
+    AssetDatabaseEditorApplication::CUIMenuBarListener::getOwner() const
+    {
+        return m_owner.lock();
+    }
+
+    void AssetDatabaseEditorApplication::CUIMenuBarListener::setOwner(
+        SmartPtr<AssetDatabaseEditorApplication> owner )
+    {
+        m_owner = owner;
+    }
 
     AssetDatabaseEditorApplication::AssetDatabaseEditorApplication()
     {
