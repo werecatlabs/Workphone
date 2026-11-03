@@ -1851,4 +1851,15 @@ namespace workphone::render
         return ( toByte( colour.r ) << 24 ) | ( toByte( colour.g ) << 16 ) |
                ( toByte( colour.b ) << 8 ) | toByte( colour.a );
     }
+
+    u64 ClawRendererDX11::terrainFrameToken() const
+    {
+        return m_inFrame ? m_terrainFrame : 0;
+    }
+
+    u32 ClawRendererDX11::renderHeight() const
+    {
+        return m_rtHeight;
+    }
+
 }  // namespace workphone::render

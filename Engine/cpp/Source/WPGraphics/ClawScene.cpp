@@ -1172,6 +1172,11 @@ namespace workphone
             return true;
         }
 
+workphone::render::ClawDrawSortStrategy ClawScene::getDrawSortStrategy() const
+        {
+            return m_drawSortStrategy;
+        }
+
         static wp_u64 cullProfileClock( void * )
         {
             return static_cast<wp_u64>( std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1241,6 +1246,11 @@ namespace workphone
             }
             m_nativeRenderJobs = jobs;
             return true;
+        }
+
+double ClawScene::getDrawSortBucketSize() const
+        {
+            return m_drawSortBucketSize;
         }
 
         bool ClawScene::getPreparedTiming( PreparationTiming &out ) const

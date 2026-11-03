@@ -166,20 +166,26 @@ namespace workphone
              * @param transform World transform applied to the mesh.
              */
             void renderMesh( ClawMesh *mesh, const Matrix4F &transform );
+
             /** Colour draw using the same captured view that produced its cull list. */
             void renderMeshSnapshot( ClawMesh *, const Matrix4F &, const wp_mat4f &, const wp_mat4f & );
+
             /** Borrow the scene publication; false rejects stale/foreign/changed section bindings. */
             bool renderMeshRecords( ClawMesh *, const Matrix4F &, const ClawMaterialDrawRecords &,
                                     const ClawMaterialDrawRecords::Binding &,
                                     const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
+
             /** Resolve generation-qualified records in the renderer's persistent CPU table. */
             void prepareMaterialRecords( ClawMaterialDrawRecords & );
+
             struct MaterialRecordStatistics
             {
                 u64 preparations = 0, storageBytes = 0, storageAllocations = 0, directStorageAllocations = 0;
                 u32 slots = 0, resident = 0;
             };
+
             MaterialRecordStatistics getMaterialRecordStatistics() const;
+
             /** Draw fixed-LOD instances through the same material/submesh path.
              * Returns submitted instance-sections; zero means no output. */
             u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances, u32 count );
@@ -188,12 +194,10 @@ namespace workphone
                                        const wp_foliage_parameters_dx11 &, const FoliageMaterial &,
                                        void *const *albedoNormalOrm, bool unlit = false,
                                        bool atlas = false );
+
             Matrix4F foliageViewProjection( bool shadow = false ) const;
 
-            u32 renderHeight() const
-            {
-                return m_rtHeight;
-            }
+            u32 renderHeight() const;
 
             /** Draw an immutable particle snapshot; does not advance simulation. */
             void renderParticles( const Array<wp_particle_sample> &particles, const Matrix4F &world,
@@ -207,10 +211,7 @@ namespace workphone
                                  const Array<SmartPtr<IGraphicsCamera>> &cameras = {} );
             void renderTerrain( SmartPtr<ClawTerrain> terrain, bool prepare = true );
 
-            u64 terrainFrameToken() const
-            {
-                return m_inFrame ? m_terrainFrame : 0;
-            }
+            u64 terrainFrameToken() const;
 
             /**
              * @brief Render sky geometry.
@@ -227,12 +228,15 @@ namespace workphone
              */
             void setSceneLighting( const ColourF &ambient, const Vector3F &direction,
                                    const ColourF &colour, f32 intensity );
+
             void setSceneFog( u32 mode, const ColourF &colour, f32 density, f32 start, f32 end );
+
             /**
              * @brief Release a mesh previously handed to the native renderer.
              * @param mesh Pointer to the native mesh structure.
              */
             static void forgetMesh( const wp_graphics_mesh *mesh );
+
             /** Stage a native terrain tile's immutable vertex/index buffers without drawing. */
             bool prepareTerrainGeometry( const wp_graphics_mesh *mesh );
 

@@ -1140,4 +1140,10 @@ namespace workphone::render
 
         m_primitiveCount += 2;
     }
+
+    wp_renderer *ClawRendererDX12::getNativeRenderer() const
+    {
+        return nullptr;
+    }
+
 }  // namespace workphone::render

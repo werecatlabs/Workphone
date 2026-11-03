@@ -7,6 +7,7 @@
 #include "workphone_graphics_scene.h"
 #include <memory>
 #include <mutex>
+
 struct wp_transform_job_stats;
 struct wp_graphics_cull_bounds_stats;
 struct wp_graphics_cull_sort_stats;
@@ -67,11 +68,13 @@ namespace workphone
 
             /** Select a scene-owned sun without changing other lights. Null restores fallback. */
             bool setPrimaryDirectionalLight( SmartPtr<IGraphicsLight> light );
+
             /** Visible preferred member, otherwise the first visible Claw directional light. */
             SmartPtr<IGraphicsLight> getPrimaryDirectionalLight() const;
 
             SmartPtr<ISharedObject> addGraphicsObjectByTypeId( hash_type id ) override;
             bool removeGraphicsObject( SmartPtr<ISharedObject> object ) override;
+            
             SmartPtr<IGraphicsSceneNode> addSceneNode( const String &name ) override;
             SmartPtr<IGraphicsSceneNode> addSceneNode() override;
 
@@ -106,8 +109,10 @@ namespace workphone
 
             /** Submits Claw-backed skies and meshes for the current camera pass. */
             void render( void *renderer );
+
             /** Render owner: prepare CPU jobs before binding an offscreen target. */
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera );
+
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile,
                                     ClawRendererDX11 *materialRenderer = nullptr );
 
@@ -126,17 +131,23 @@ namespace workphone
              * assignments retain prepared jobs; invalid policies are rejected.
              * QueueOrder preserves existing ordering. Bucket size is world units. */
             bool setDrawSortStrategy( ClawDrawSortStrategy strategy, double bucketSize = 10.0 );
-            ClawDrawSortStrategy getDrawSortStrategy() const { return m_drawSortStrategy; }
-            double getDrawSortBucketSize() const { return m_drawSortBucketSize; }
+            
+            ClawDrawSortStrategy getDrawSortStrategy() const;
+            
+            double getDrawSortBucketSize() const;
 
             /** False and zeroed when unprofiled, failed or retired. Stale jobs
              * still describe elapsed work, without certifying draw validity. */
             bool getPreparedTiming( PreparationTiming & ) const;
+            
             /** Disjoint native main preparation phases; false/zero when unavailable. */
             bool getPreparedPhaseTiming( wp_graphics_cull_timing_stats * ) const;
+            
             bool validateRenderJobs() const;
+            
             /** Actual transform dispatches for the prepared pass; derived views add none. */
             u32 getPreparedTransformDispatchCount() const;
+            
             /** Owner-only copied main-view preparation work. Transform counters
              * describe the shared publication once, excluding the derived shadow
              * view. Optional outputs are zeroed after retirement; stale prepared
@@ -144,9 +155,11 @@ namespace workphone
             bool getPreparedJobStatistics( wp_transform_job_stats *, wp_graphics_cull_bounds_stats *,
                                            wp_u32 *candidates, wp_u32 *visible,
                                            wp_graphics_cull_sort_stats *sort = nullptr ) const;
+            
             /** Copied main-view cull array bytes; shared publication counted once.
              * False and zeroed after retirement, without certifying draw validity. */
             bool getPreparedStorageStatistics( wp_graphics_cull_storage_stats * ) const;
+
             struct MaterialPreparationStatistics
             {
                 u64 records = 0, bindings = 0, meshes = 0, preparations = 0, dense_capacity_bytes = 0;
@@ -154,6 +167,7 @@ namespace workphone
                 u64 storage_allocations = 0, retained_storage_bytes = 0, peak_storage_bytes = 0;
                 bool reused_storage = false;
             };
+
             /** Copied scene material publication counts; false/zero after retirement. */
             bool getPreparedMaterialStatistics( MaterialPreparationStatistics & ) const;
             void discardRenderJobs();
@@ -171,6 +185,7 @@ namespace workphone
                                       String &error );
             std::shared_ptr<const FoliageBatches> getFoliageBatches() const;
             void clearFoliageBatches();
+
             /** Render-owner standalone cooked worlds; terrain worlds attach automatically. */
             bool addFoliageWorld( std::shared_ptr<ClawFoliageWorld>, String &error );
             bool removeFoliageWorld( const std::shared_ptr<ClawFoliageWorld> & );
@@ -223,16 +238,16 @@ namespace workphone
             void createStateContext();
             void unbindNativeRenderObjects();
 
+            struct NativeRenderJobs;
+            struct FoliageWorldState;
+            struct OcclusionHistory;
+
             /** @brief Native C graphics scene owned by this object. */
             wp_graphics_scene *m_scene;
 
             ConcurrentArray<SmartPtr<IGraphicsLight>> m_lights;
             WeakPtr<IGraphicsLight> m_primaryDirectionalLight;
             mutable std::mutex m_primaryLightMutex;
-
-            time_interval m_nextCullTime = 0.0;
-
-            bool m_ownsScene = true;
 
             /**
              * @brief The most recently submitted SceneNodeCullJob, kept alive so
@@ -243,20 +258,25 @@ namespace workphone
             SmartPtr<SceneNodeCullJob> m_cullJob;
             std::shared_ptr<const FoliageBatches> m_foliageBatches;
             mutable std::mutex m_foliageMutex;
-            struct NativeRenderJobs;
+
             std::shared_ptr<NativeRenderJobs> m_nativeRenderJobs;
+
+            std::unique_ptr<FoliageWorldState> m_foliageWorlds;
+
+            std::unique_ptr<OcclusionHistory> m_occlusionHistory;
+            
             // Empty retired storage, never in-flight resources or draw records.
             std::unique_ptr<ClawMaterialDrawRecords> m_materialRecordWorkspace;
             ClawDrawSortStrategy m_drawSortStrategy = ClawDrawSortStrategy::QueueOrder;
-            double m_drawSortBucketSize = 10.0;
-            struct FoliageWorldState;
-            std::unique_ptr<FoliageWorldState> m_foliageWorlds;
-            struct OcclusionHistory;
-            std::unique_ptr<OcclusionHistory> m_occlusionHistory;
+            
             u64 m_occlusionFrame = 0;
 
-        private:
+            f64 m_drawSortBucketSize = 10.0;
             f64 m_foliageSimulationSeconds = 0;
+
+            time_interval m_nextCullTime = 0.0;
+
+            bool m_ownsScene = true;
         };
     }  // namespace render
 }  // namespace workphone
