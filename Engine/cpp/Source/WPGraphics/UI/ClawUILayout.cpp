@@ -21,15 +21,18 @@ namespace workphone::ui
             {
                 return clip;
             }
+
             auto actor = owner->getActor();
             if( !actor )
             {
                 return clip;
             }
+
             if( referenceSize.x <= 0 || referenceSize.y <= 0 )
             {
                 return clip;
             }
+
             auto scaleX = rootBounds.w / static_cast<f32>( referenceSize.x );
             auto scaleY = rootBounds.h / static_cast<f32>( referenceSize.y );
             for( auto parent = actor->getParent(); parent; parent = parent->getParent() )
@@ -39,6 +42,7 @@ namespace workphone::ui
                 {
                     continue;
                 }
+
                 auto contentActor = view->getContentPanel()->getActor();
                 auto inContent = false;
                 for( auto current = actor; current && current != parent; current = current->getParent() )
@@ -49,11 +53,13 @@ namespace workphone::ui
                         break;
                     }
                 }
+
                 auto transform = parent->getComponent<scene::LayoutTransform>();
                 if( !inContent || !transform )
                 {
                     continue;
                 }
+
                 auto position = transform->getAbsolutePosition();
                 auto size = transform->getAbsoluteSize();
                 auto left = MathF::max( clip.x, rootBounds.x + static_cast<f32>( position.x ) * scaleX );
@@ -64,6 +70,7 @@ namespace workphone::ui
                     clip.y + clip.h, rootBounds.y + static_cast<f32>( position.y + size.y ) * scaleY );
                 clip = { left, top, MathF::max( 0.0f, right - left ), MathF::max( 0.0f, bottom - top ) };
             }
+
             return clip;
         }
     }  // namespace
@@ -253,7 +260,7 @@ namespace workphone::ui
 
             // UI callbacks can rebuild their screen while this frame is being
             // drawn. Pin this frame's members instead of traversing live slots.
-            for( auto child : children )
+            for( auto &child : children )
             {
                 if( child && child->isVisible() )
                 {
@@ -262,18 +269,21 @@ namespace workphone::ui
                     {
                         continue;
                     }
+
                     auto previousClip = panel->clip;
                     auto clip = contentClip( child, originalClip, viewportBounds, referenceSize );
                     if( clip.w <= 0 || clip.h <= 0 )
                     {
                         continue;
                     }
+
                     if( clip.x != previousClip.x || clip.y != previousClip.y ||
                         clip.w != previousClip.w || clip.h != previousClip.h )
                     {
                         panel->clip = clip;
                         wp_push_scissor( canvas, clip );
                     }
+
                     widget->draw( ctx );
                 }
             }

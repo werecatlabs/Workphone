@@ -76,16 +76,18 @@ namespace workphone::render
             {
                 return released;
             }
-            ScopedLock lifecycleLock( &graphics );
+
             if( auto manager = dynamic_pointer_cast<MaterialManager>( graphics.getMaterialManager() ) )
             {
                 released.materials = automatic ? manager->releaseUnusedResourcesOnUpdate( maximumCandidates )
                                                : manager->releaseUnusedResources( maximumCandidates );
             }
+
             if( auto manager = dynamic_pointer_cast<TextureManager>( graphics.getTextureManager() ) )
             {
                 released.textures = manager->releaseUnusedResources( maximumCandidates );
             }
+
             return released;
         }
     }

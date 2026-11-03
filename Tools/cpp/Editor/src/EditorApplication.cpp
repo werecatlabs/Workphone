@@ -113,20 +113,34 @@ namespace workphone::editor
         class DebuggerNativeSuspension
         {
         public:
-            ~DebuggerNativeSuspension() { resume(); }
+            ~DebuggerNativeSuspension()
+            {
+                resume();
+            }
 
             void observe( bool paused ) noexcept
             {
-                if( !paused ) { resume(); return; }
-                if( m_active ) return;
+                if( !paused )
+                {
+                    resume();
+                    return;
+                }
+                if( m_active )
+                {
+                    return;
+                }
                 m_active = true;
                 try
                 {
                     if( auto app = core::IApplicationManager::instancePtr() )
                     {
                         m_timer = dynamic_pointer_cast<TimerMT>( app->getTimer() );
-                        if( m_timer ) m_timer->beginSuspension();
-                        m_input = dynamic_pointer_cast<InputDeviceManager>( app->getInputDeviceManager() );
+                        if( m_timer )
+                        {
+                            m_timer->beginSuspension();
+                        }
+                        m_input =
+                            dynamic_pointer_cast<InputDeviceManager>( app->getInputDeviceManager() );
                         if( m_input )
                         {
                             m_previousInputSuspension = m_input->getDebuggerSuspended();
@@ -138,31 +152,50 @@ namespace workphone::editor
                         {
                             m_previousAudioSuspension = m_audio->getDebuggerSuspended();
                             m_audioHeld = m_audio->setDebuggerSuspended( true );
-                            if( !m_audioHeld ) WP_LOG_ERROR( "Debugger cannot suspend the active audio backend." );
+                            if( !m_audioHeld )
+                            {
+                                WP_LOG_ERROR( "Debugger cannot suspend the active audio backend." );
+                            }
                         }
 #endif
                     }
                 }
                 catch( ... )
                 {
-                    try { WP_LOG_ERROR( "Debugger could not suspend a native subsystem." ); }
-                    catch( ... ) { }
+                    try
+                    {
+                        WP_LOG_ERROR( "Debugger could not suspend a native subsystem." );
+                    }
+                    catch( ... )
+                    {
+                    }
                 }
             }
 
         private:
             void resume() noexcept
             {
-                if( !m_active ) return;
+                if( !m_active )
+                {
+                    return;
+                }
                 m_active = false;
                 try
                 {
-                    if( m_input ) m_input->setDebuggerSuspended( m_previousInputSuspension );
+                    if( m_input )
+                    {
+                        m_input->setDebuggerSuspended( m_previousInputSuspension );
+                    }
                 }
                 catch( ... )
                 {
-                    try { WP_LOG_ERROR( "Debugger could not restore native input dispatch." ); }
-                    catch( ... ) { }
+                    try
+                    {
+                        WP_LOG_ERROR( "Debugger could not restore native input dispatch." );
+                    }
+                    catch( ... )
+                    {
+                    }
                 }
                 m_input = nullptr;
 #if WP_EDITOR_AUDIO_PAUSE
@@ -170,13 +203,20 @@ namespace workphone::editor
                 {
                     if( m_audio && m_audioHeld &&
                         !m_audio->setDebuggerSuspended( m_previousAudioSuspension ) )
+                    {
                         WP_LOG_ERROR( "Debugger could not restore native audio processing." );
+                    }
                 }
-                catch( ... ) { }
+                catch( ... )
+                {
+                }
                 m_audio = nullptr;
                 m_audioHeld = false;
 #endif
-                if( m_timer ) m_timer->endSuspension();
+                if( m_timer )
+                {
+                    m_timer->endSuspension();
+                }
                 m_timer = nullptr;
             }
 
@@ -200,11 +240,17 @@ namespace workphone::editor
             {
             }
 
-            ~PausedDebuggerActivity() { restoreProfiling(); }
+            ~PausedDebuggerActivity()
+            {
+                restoreProfiling();
+            }
 
             void observe( bool paused ) noexcept
             {
-                if( m_failed ) return;
+                if( m_failed )
+                {
+                    return;
+                }
                 try
                 {
                     m_paused = paused;
@@ -226,18 +272,26 @@ namespace workphone::editor
                             m_graphics = dynamic_pointer_cast<render::ClawHammerSystem>( graphics );
                             if( m_graphics )
                             {
-                                m_redrawAvailable = Thread::getCurrentTask() != m_graphics->getRenderTask();
-                                m_redrawUnavailableReason = m_redrawAvailable ? "" : "renderCallbackSuspended";
+                                m_redrawAvailable =
+                                    Thread::getCurrentTask() != m_graphics->getRenderTask();
+                                m_redrawUnavailableReason =
+                                    m_redrawAvailable ? "" : "renderCallbackSuspended";
                                 m_previousProfiling = m_graphics->getSceneProfilingEnabled();
                                 // Do not disturb the profiling generation of a frame
                                 // whose render callback is currently suspended.
-                                if( m_redrawAvailable ) m_graphics->setSceneProfilingEnabled( true );
+                                if( m_redrawAvailable )
+                                {
+                                    m_graphics->setSceneProfilingEnabled( true );
+                                }
                             }
 #endif
                         }
                     }
                     publish( true );
-                    if( !paused || m_failed ) restoreProfiling();
+                    if( !paused || m_failed )
+                    {
+                        restoreProfiling();
+                    }
                 }
                 catch( const std::exception &error )
                 {
@@ -253,10 +307,16 @@ namespace workphone::editor
 
             void completedPump() noexcept
             {
-                if( m_failed ) return;
+                if( m_failed )
+                {
+                    return;
+                }
                 ++m_completedPumps;
                 publish( false );
-                if( m_failed ) restoreProfiling();
+                if( m_failed )
+                {
+                    restoreProfiling();
+                }
             }
 
         private:
@@ -265,9 +325,18 @@ namespace workphone::editor
 #if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
                 if( m_graphics )
                 {
-                    try { m_graphics->setSceneProfilingEnabled( m_previousProfiling ); }
-                    catch( const std::exception &error ) { disable( error.what() ); }
-                    catch( ... ) { disable( "Cannot restore scene profiling" ); }
+                    try
+                    {
+                        m_graphics->setSceneProfilingEnabled( m_previousProfiling );
+                    }
+                    catch( const std::exception &error )
+                    {
+                        disable( error.what() );
+                    }
+                    catch( ... )
+                    {
+                        disable( "Cannot restore scene profiling" );
+                    }
                     m_graphics = nullptr;
                 }
 #endif
@@ -275,18 +344,29 @@ namespace workphone::editor
 
             void disable( const char *reason ) noexcept
             {
-                if( m_failed ) return;
+                if( m_failed )
+                {
+                    return;
+                }
                 m_failed = true;
                 // Diagnostics must not fail a debugger pause if logging fails too.
-                try { WP_LOG_ERROR( String( "Lua debugger activity report disabled: " ) + reason ); }
-                catch( ... ) { }
+                try
+                {
+                    WP_LOG_ERROR( String( "Lua debugger activity report disabled: " ) + reason );
+                }
+                catch( ... )
+                {
+                }
             }
 
             void publish( bool force ) noexcept
             {
                 const auto now = std::chrono::steady_clock::now();
                 if( m_failed || ( ( !force || m_publicationRetries != 0 ) &&
-                    now - m_lastPublication < std::chrono::milliseconds( 250 ) ) ) return;
+                                  now - m_lastPublication < std::chrono::milliseconds( 250 ) ) )
+                {
+                    return;
+                }
                 m_lastPublication = now;
                 std::filesystem::path temporary;
                 try
@@ -294,16 +374,25 @@ namespace workphone::editor
                     temporary = m_destination;
                     temporary += ".tmp";
                     boost::json::object report{
-                        { "paused", m_paused }, { "pauseSequence", m_pauseSequence },
+                        { "paused", m_paused },
+                        { "pauseSequence", m_pauseSequence },
                         { "completedPumps", m_completedPumps },
-                        { "sincePauseMs", std::chrono::duration<double, std::milli>( now - m_started ).count() },
+                        { "sincePauseMs",
+                          std::chrono::duration<double, std::milli>( now - m_started ).count() },
                         { "redrawAvailable", m_redrawAvailable },
                         { "redrawUnavailableReason", m_redrawUnavailableReason },
-                        { "profileAvailable", false }, { "dx11Available", false } };
+                        { "profileAvailable", false },
+                        { "dx11Available", false }
+                    };
                     if( auto app = core::IApplicationManager::instancePtr() )
+                    {
                         if( auto pool = app->getThreadPool() )
+                        {
                             report["executorWorkerCount"] = pool->getNumThreads();
+                        }
+                    }
                     if( auto app = core::IApplicationManager::instancePtr() )
+                    {
                         if( auto timer = dynamic_pointer_cast<TimerMT>( app->getTimer() ) )
                         {
                             report["timerSuspended"] = timer->isSuspended();
@@ -311,18 +400,30 @@ namespace workphone::editor
                             report["engineDeltaTime"] = timer->getDeltaTime();
                             report["engineFixedTimeNow"] = timer->getFixedTimeNow();
                         }
+                    }
                     if( auto app = core::IApplicationManager::instancePtr() )
-                        if( auto input = dynamic_pointer_cast<InputDeviceManager>( app->getInputDeviceManager() ) )
+                    {
+                        if( auto input = dynamic_pointer_cast<InputDeviceManager>(
+                                app->getInputDeviceManager() ) )
+                        {
                             report["inputSuspended"] = input->getDebuggerSuspended();
+                        }
+                    }
 #if WP_EDITOR_AUDIO_PAUSE
                     if( auto app = core::IApplicationManager::instancePtr() )
+                    {
                         if( auto audio = dynamic_pointer_cast<WPAudioManager>( app->getSoundManager() ) )
+                        {
                             report["audioSuspended"] = audio->getDebuggerSuspended();
+                        }
+                    }
 #endif
                     if( auto editor = EditorManager::getSingletonPtr() )
+                    {
                         if( auto ui = editor->getUI() )
                         {
-                            report["deferredRenderCallbackActive"] = ui->isDeferredRenderCallbackActive();
+                            report["deferredRenderCallbackActive"] =
+                                ui->isDeferredRenderCallbackActive();
                             report["deferredRenderCallbackCount"] = ui->getDeferredRenderCallbackCount();
                             report["dispatchedScriptEventCount"] = ui->getDispatchedScriptEventCount();
                             if( auto panel = ui->getLuaDebuggerWindow() )
@@ -332,47 +433,78 @@ namespace workphone::editor
                                 {
                                     for( auto child : parent->getChildren() )
                                     {
-                                        if( auto button = dynamic_pointer_cast<workphone::ui::IUIButton>( child ) )
+                                        if( auto button =
+                                                dynamic_pointer_cast<workphone::ui::IUIButton>( child ) )
                                         {
                                             const auto label = button->getLabel();
 #if WP_BUILD_IMGUI
                                             if( label == "Step Over" || label == "Show stack" )
-                                                if( auto native = dynamic_pointer_cast<workphone::ui::ImGuiButton>( button ) )
+                                            {
+                                                if( auto native =
+                                                        dynamic_pointer_cast<workphone::ui::ImGuiButton>(
+                                                            button ) )
                                                 {
-                                                    const auto snapshot = native->getKeyboardShortcutSnapshot();
+                                                    const auto snapshot =
+                                                        native->getKeyboardShortcutSnapshot();
                                                     const auto observation = []( const auto &value ) {
                                                         return boost::json::object{
-                                                            { "frame", value.frame }, { "enabled", value.enabled },
+                                                            { "frame", value.frame },
+                                                            { "enabled", value.enabled },
                                                             { "itemVisible", value.itemVisible },
-                                                            { "applicationFocused", value.applicationFocused },
-                                                            { "ctrl", value.ctrl }, { "alt", value.alt },
-                                                            { "shift", value.shift }, { "super", value.super },
-                                                            { "keyPressed", value.keyPressed } };
+                                                            { "applicationFocused",
+                                                              value.applicationFocused },
+                                                            { "ctrl", value.ctrl },
+                                                            { "alt", value.alt },
+                                                            { "shift", value.shift },
+                                                            { "super", value.super },
+                                                            { "keyPressed", value.keyPressed }
+                                                        };
                                                     };
-                                                    report[label == "Step Over" ? "debuggerStepOverShortcut" : "debuggerStackShortcut"] =
+                                                    report[label == "Step Over"
+                                                               ? "debuggerStepOverShortcut"
+                                                               : "debuggerStackShortcut"] =
                                                         boost::json::object{
-                                                            { "keyboardShortcut", snapshot.keyboardShortcut.c_str() },
-                                                            { "lastRendered", observation( snapshot.lastRendered ) },
-                                                            { "lastKeyPress", observation( snapshot.lastKeyPress ) },
+                                                            { "keyboardShortcut",
+                                                              snapshot.keyboardShortcut.c_str() },
+                                                            { "lastRendered",
+                                                              observation( snapshot.lastRendered ) },
+                                                            { "lastKeyPress",
+                                                              observation( snapshot.lastKeyPress ) },
                                                             { "keyPressCount", snapshot.keyPressCount },
-                                                            { "activationCount", snapshot.activationCount } };
+                                                            { "activationCount",
+                                                              snapshot.activationCount }
+                                                        };
                                                 }
+                                            }
 #endif
-                                            if( label == "Step Over" ) report["debuggerStepOverEnabled"] = button->isEnabled();
-                                            else if( label == "Continue" ) report["debuggerContinueEnabled"] = button->isEnabled();
-                                            else if( label == "Pause" ) report["debuggerPauseEnabled"] = button->isEnabled();
+                                            if( label == "Step Over" )
+                                            {
+                                                report["debuggerStepOverEnabled"] = button->isEnabled();
+                                            }
+                                            else if( label == "Continue" )
+                                            {
+                                                report["debuggerContinueEnabled"] = button->isEnabled();
+                                            }
+                                            else if( label == "Pause" )
+                                            {
+                                                report["debuggerPauseEnabled"] = button->isEnabled();
+                                            }
                                         }
-                                        if( auto text = dynamic_pointer_cast<workphone::ui::IUIText>( child ) )
+                                        if( auto text =
+                                                dynamic_pointer_cast<workphone::ui::IUIText>( child ) )
                                         {
                                             const auto value = text->getText();
                                             // Record UI state, never script text or console contents.
-                                            report["debuggerStatusStopped"] = value.find( " | Stopped" ) != String::npos;
-                                            report["debuggerSourcePreviewAvailable"] = value.find( "\n> " ) != String::npos;
+                                            report["debuggerStatusStopped"] =
+                                                value.find( " | Stopped" ) != String::npos;
+                                            report["debuggerSourcePreviewAvailable"] =
+                                                value.find( "\n> " ) != String::npos;
                                         }
                                     }
                                 }
                             }
                         }
+                    }
 #if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
                     render::ClawHammerSystem::SceneProfileSnapshot profile;
                     if( m_graphics && m_graphics->readSceneProfile( profile ) )
@@ -410,10 +542,14 @@ namespace workphone::editor
                             // never sleep inside the Editor's pause observer.
                             std::error_code ignored;
                             std::filesystem::remove( temporary, ignored );
-                            if( ++m_publicationRetries <= 8 ) return;
+                            if( ++m_publicationRetries <= 8 )
+                            {
+                                return;
+                            }
                         }
-                        throw std::runtime_error( "Cannot publish paused Lua debugger activity (Win32 error " +
-                                                  std::to_string( error ) + ")" );
+                        throw std::runtime_error(
+                            "Cannot publish paused Lua debugger activity (Win32 error " +
+                            std::to_string( error ) + ")" );
                     }
 #else
                     std::filesystem::rename( temporary, m_destination );
@@ -423,13 +559,19 @@ namespace workphone::editor
                 catch( const std::exception &error )
                 {
                     std::error_code ignored;
-                    if( !temporary.empty() ) std::filesystem::remove( temporary, ignored );
+                    if( !temporary.empty() )
+                    {
+                        std::filesystem::remove( temporary, ignored );
+                    }
                     disable( error.what() );
                 }
                 catch( ... )
                 {
                     std::error_code ignored;
-                    if( !temporary.empty() ) std::filesystem::remove( temporary, ignored );
+                    if( !temporary.empty() )
+                    {
+                        std::filesystem::remove( temporary, ignored );
+                    }
                     disable( "Unknown publication error" );
                 }
             }
@@ -446,7 +588,7 @@ namespace workphone::editor
             bool m_previousProfiling = false;
 #endif
         };
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::editor, EditorApplication, core::Application );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, EditorApplication::ApplicationListener,
@@ -461,12 +603,19 @@ namespace workphone::editor
 
     struct EditorApplication::RuntimeSceneBootstrap
     {
-        struct Root { UUID identity;SmartPtr<scene::IGameActor> actor;u32 slot=0; };
-        String directory,uuid,target,error,projectPath,projectDirectory,projectFile;
+        struct Root
+        {
+            UUID identity;
+            SmartPtr<scene::IGameActor> actor;
+            u32 slot = 0;
+        };
+
+        String directory, uuid, target, error, projectPath, projectDirectory, projectFile;
         Array<String> directories;
-        resource::RuntimeMountCollisionPolicy collisionPolicy=resource::RuntimeMountCollisionPolicy::Reject;
+        resource::RuntimeMountCollisionPolicy collisionPolicy =
+            resource::RuntimeMountCollisionPolicy::Reject;
         String rootMount;
-        u32 rootShadows=0;
+        u32 rootShadows = 0;
         std::thread::id owner;
         std::chrono::steady_clock::time_point started;
         std::shared_ptr<resource::ResourcePayloadMount> mount;
@@ -476,149 +625,528 @@ namespace workphone::editor
         SmartPtr<scene::GameScene> scene;
         SmartPtr<Project> project;
         StreamBudget metadata;
-        Array<Root> roots{Allocator<Root>(sourceBudget)};
-        u64 generation=0,requestGeneration=0;
-        u32 actors=0,components=0,scripts=0,meshes=0,residentMeshes=0,streamingMeshes=0;
-        bool pending=false,complete=false,succeeded=false;
+        Array<Root> roots{ Allocator<Root>( sourceBudget ) };
+        u64 generation = 0, requestGeneration = 0;
+        u32 actors = 0, components = 0, scripts = 0, meshes = 0, residentMeshes = 0, streamingMeshes = 0;
+        bool pending = false, complete = false, succeeded = false;
     };
 
-    void EditorApplication::configureRuntimeScenePackage(const String &directory,const String &uuid,const String &target)
-    {configureRuntimeScenePackages(Array<String>{directory},uuid,target);}
-    void EditorApplication::configureRuntimeScenePackages(const Array<String> &directories,const String &uuid,const String &target,const String &collisionPolicy)
+    void EditorApplication::configureRuntimeScenePackage( const String &directory, const String &uuid,
+                                                          const String &target )
     {
-        if(isLoaded())throw std::logic_error("Configure runtime scene startup before loading the Editor");
-        if(directories.empty()||directories.size()>32||uuid.size()!=36||target.empty()||target.size()>128)throw std::invalid_argument("Runtime scene requires 1-32 package directories, canonical UUID and target");
-        auto staged=std::make_unique<RuntimeSceneBootstrap>();
-        if(collisionPolicy=="reject")staged->collisionPolicy=resource::RuntimeMountCollisionPolicy::Reject;
-        else if(collisionPolicy=="identical")staged->collisionPolicy=resource::RuntimeMountCollisionPolicy::IdenticalOnly;
-        else if(collisionPolicy=="prefer-earlier")staged->collisionPolicy=resource::RuntimeMountCollisionPolicy::PreferEarlier;
-        else throw std::invalid_argument("Unknown runtime package collision policy");
-        std::set<String> paths;for(const auto &directory:directories){const auto path=std::filesystem::canonical(std::filesystem::u8path(directory.c_str()));
-            if(!std::filesystem::is_directory(path)||!std::filesystem::is_regular_file(path/"runtime.wprm"))throw std::invalid_argument("Runtime scene package manifest is missing");
-            const String canonical=path.u8string().c_str();if(!paths.insert(StringUtil::make_lower(canonical)).second)throw std::invalid_argument("Duplicate runtime scene package directory");staged->directories.push_back(canonical);}
-        staged->directory=staged->directories.front();staged->uuid=uuid;staged->target=target;staged->owner=std::this_thread::get_id();m_runtimeScene=std::move(staged);
+        configureRuntimeScenePackages( Array<String>{ directory }, uuid, target );
     }
-    bool EditorApplication::runtimeSceneComplete() const {return m_runtimeScene&&m_runtimeScene->complete;}
-    bool EditorApplication::runtimeSceneSucceeded() const {return m_runtimeScene&&m_runtimeScene->succeeded;}
-    String EditorApplication::runtimeSceneDiagnostic() const {return m_runtimeScene?m_runtimeScene->error:String();}
+
+    void EditorApplication::configureRuntimeScenePackages( const Array<String> &directories,
+                                                           const String &uuid, const String &target,
+                                                           const String &collisionPolicy )
+    {
+        if( isLoaded() )
+        {
+            throw std::logic_error( "Configure runtime scene startup before loading the Editor" );
+        }
+        if( directories.empty() || directories.size() > 32 || uuid.size() != 36 || target.empty() ||
+            target.size() > 128 )
+        {
+            throw std::invalid_argument(
+                "Runtime scene requires 1-32 package directories, canonical UUID and target" );
+        }
+        auto staged = std::make_unique<RuntimeSceneBootstrap>();
+        if( collisionPolicy == "reject" )
+        {
+            staged->collisionPolicy = resource::RuntimeMountCollisionPolicy::Reject;
+        }
+        else if( collisionPolicy == "identical" )
+        {
+            staged->collisionPolicy = resource::RuntimeMountCollisionPolicy::IdenticalOnly;
+        }
+        else if( collisionPolicy == "prefer-earlier" )
+        {
+            staged->collisionPolicy = resource::RuntimeMountCollisionPolicy::PreferEarlier;
+        }
+        else
+        {
+            throw std::invalid_argument( "Unknown runtime package collision policy" );
+        }
+        std::set<String> paths;
+        for( const auto &directory : directories )
+        {
+            const auto path = std::filesystem::canonical( std::filesystem::u8path( directory.c_str() ) );
+            if( !std::filesystem::is_directory( path ) ||
+                !std::filesystem::is_regular_file( path / "runtime.wprm" ) )
+            {
+                throw std::invalid_argument( "Runtime scene package manifest is missing" );
+            }
+            const String canonical = path.u8string().c_str();
+            if( !paths.insert( StringUtil::make_lower( canonical ) ).second )
+            {
+                throw std::invalid_argument( "Duplicate runtime scene package directory" );
+            }
+            staged->directories.push_back( canonical );
+        }
+        staged->directory = staged->directories.front();
+        staged->uuid = uuid;
+        staged->target = target;
+        staged->owner = std::this_thread::get_id();
+        m_runtimeScene = std::move( staged );
+    }
+
+    bool EditorApplication::runtimeSceneComplete() const
+    {
+        return m_runtimeScene && m_runtimeScene->complete;
+    }
+
+    bool EditorApplication::runtimeSceneSucceeded() const
+    {
+        return m_runtimeScene && m_runtimeScene->succeeded;
+    }
+
+    String EditorApplication::runtimeSceneDiagnostic() const
+    {
+        return m_runtimeScene ? m_runtimeScene->error : String();
+    }
+
     String EditorApplication::runtimeSceneReport() const
     {
-        if(!m_runtimeScene)return "{}";const auto &state=*m_runtimeScene;
-        return boost::json::serialize(boost::json::object{{"status",state.succeeded?"loaded":state.complete?"failed":"loading"},
-            {"uuid",state.uuid.c_str()},{"target",state.target.c_str()},{"roots",state.roots.size()},
-            {"actors",state.actors},{"components",state.components},{"scripts",state.scripts},{"meshes",state.meshes},
-            {"residentMeshes",state.residentMeshes},{"streamingMeshes",state.streamingMeshes},
-            {"mountCount",state.directories.size()},{"rootMount",state.rootMount.c_str()},{"rootShadowedMounts",state.rootShadows},
-            {"streamGeneration",state.requestGeneration},{"diagnostic",state.error.c_str()}}).c_str();
+        if( !m_runtimeScene )
+        {
+            return "{}";
+        }
+        const auto &state = *m_runtimeScene;
+        return boost::json::serialize(
+                   boost::json::object{ { "status", state.succeeded  ? "loaded"
+                                                    : state.complete ? "failed"
+                                                                     : "loading" },
+                                        { "uuid", state.uuid.c_str() },
+                                        { "target", state.target.c_str() },
+                                        { "roots", state.roots.size() },
+                                        { "actors", state.actors },
+                                        { "components", state.components },
+                                        { "scripts", state.scripts },
+                                        { "meshes", state.meshes },
+                                        { "residentMeshes", state.residentMeshes },
+                                        { "streamingMeshes", state.streamingMeshes },
+                                        { "mountCount", state.directories.size() },
+                                        { "rootMount", state.rootMount.c_str() },
+                                        { "rootShadowedMounts", state.rootShadows },
+                                        { "streamGeneration", state.requestGeneration },
+                                        { "diagnostic", state.error.c_str() } } )
+            .c_str();
     }
+
     void EditorApplication::retireRuntimeSceneBootstrap() noexcept
     {
-        if(!m_runtimeScene)return;auto &state=*m_runtimeScene;
-        try {
-            if(state.owner!=std::this_thread::get_id())return;
-            if(state.stream){state.stream->cancel();state.stream->drain();state.stream.reset();}state.mount.reset();
-            if(state.manager&&state.manager->isLoaded()) {
-                auto app=core::IApplicationManager::instancePtr();SmartPtr<ITask> renderTask;
-                if(app)if(auto tasks=app->getTaskManager())if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())renderTask=task;
-                TaskLock pause(renderTask);ScopedLock managerLock(state.manager);
-                auto graphics=app?app->getGraphicsSystem():nullptr;ScopedLock graphicsLock(graphics);
-                for(auto &root:state.roots)if(root.actor&&root.actor->isLoaded()&&root.actor->getScene()==state.scene&&
-                    root.actor->getHandle()->getUUID()==root.identity&&state.manager->getActor(root.slot)==root.actor)
-                    state.manager->destroyActor(root.actor);
+        if( !m_runtimeScene )
+        {
+            return;
+        }
+        auto &state = *m_runtimeScene;
+        try
+        {
+            if( state.owner != std::this_thread::get_id() )
+            {
+                return;
             }
-            Array<RuntimeSceneBootstrap::Root> retired{Allocator<RuntimeSceneBootstrap::Root>(sourceBudget)};state.roots.swap(retired);state.metadata.reset();state.context.reset();state.scene=nullptr;state.manager=nullptr;state.project=nullptr;state.pending=false;
-        }catch(const std::exception &error){try{WP_LOG_ERROR(String("Runtime scene teardown failed: ")+error.what());}catch(...){}}
+            if( state.stream )
+            {
+                state.stream->cancel();
+                state.stream->drain();
+                state.stream.reset();
+            }
+            state.mount.reset();
+            if( state.manager && state.manager->isLoaded() )
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                SmartPtr<ITask> renderTask;
+                if( app )
+                {
+                    if( auto tasks = app->getTaskManager() )
+                    {
+                        if( auto task = tasks->getTask( TaskId::Render ); task && task->isLoaded() )
+                        {
+                            renderTask = task;
+                        }
+                    }
+                }
+                TaskLock pause( renderTask );
+                ScopedLock managerLock( state.manager );
+                auto graphics = app ? app->getGraphicsSystem() : nullptr;
+                ScopedLock graphicsLock( graphics );
+                for( auto &root : state.roots )
+                {
+                    if( root.actor && root.actor->isLoaded() && root.actor->getScene() == state.scene &&
+                        root.actor->getHandle()->getUUID() == root.identity &&
+                        state.manager->getActor( root.slot ) == root.actor )
+                    {
+                        state.manager->destroyActor( root.actor );
+                    }
+                }
+            }
+            Array<RuntimeSceneBootstrap::Root> retired{ Allocator<RuntimeSceneBootstrap::Root>(
+                sourceBudget ) };
+            state.roots.swap( retired );
+            state.metadata.reset();
+            state.context.reset();
+            state.scene = nullptr;
+            state.manager = nullptr;
+            state.project = nullptr;
+            state.pending = false;
+        }
+        catch( const std::exception &error )
+        {
+            try
+            {
+                WP_LOG_ERROR( String( "Runtime scene teardown failed: " ) + error.what() );
+            }
+            catch( ... )
+            {
+            }
+        }
     }
-    void EditorApplication::cancelRuntimeSceneStartup(const String &reason)
+
+    void EditorApplication::cancelRuntimeSceneStartup( const String &reason )
     {
-        if(!m_runtimeScene)return;if(m_runtimeScene->owner!=std::this_thread::get_id())throw std::logic_error("Runtime scene cancellation requires its primary owner");
-        retireRuntimeSceneBootstrap();m_runtimeScene->error=reason;m_runtimeScene->complete=true;m_runtimeScene->succeeded=false;
+        if( !m_runtimeScene )
+        {
+            return;
+        }
+        if( m_runtimeScene->owner != std::this_thread::get_id() )
+        {
+            throw std::logic_error( "Runtime scene cancellation requires its primary owner" );
+        }
+        retireRuntimeSceneBootstrap();
+        m_runtimeScene->error = reason;
+        m_runtimeScene->complete = true;
+        m_runtimeScene->succeeded = false;
     }
+
     void EditorApplication::startRuntimeSceneBootstrap()
     {
-        if(!m_runtimeScene)return;auto &state=*m_runtimeScene;
-        try {
-            if(state.owner!=std::this_thread::get_id())throw std::logic_error("Runtime scene startup requires its primary owner");
-            auto app=core::IApplicationManager::instancePtr();state.manager=app?app->getGameManager():nullptr;
-            state.scene=state.manager?dynamic_pointer_cast<scene::GameScene>(state.manager->getCurrentScene()):nullptr;
-            if(!state.scene||!state.scene->isLoaded())throw std::runtime_error("Runtime scene startup requires the loaded native scene");
-            state.project=m_editorManager?m_editorManager->getProject():nullptr;state.projectPath=app->getProjectPath();state.projectDirectory=state.project?state.project->getPath():String();state.projectFile=state.project?state.project->getFilePath():String();state.generation=state.scene->getLoadGeneration();
-            resource::RuntimeResourceConfig config;config.compiledRoot=state.directory;config.manifestPath=(std::filesystem::u8path(state.directory.c_str())/"runtime.wprm").u8string().c_str();config.target=state.target;
-            config.maxPayloadBytes=1ull<<30;config.maxClosurePayloadBytes=64ull<<20;config.maxClosureResources=256;config.maxDependencyDepth=64;
-            WorldStreamProducerLimits limits;limits.maximumPending=256;limits.maximumActive=2;limits.maximumReady=16;limits.maximumReadyBytes=32ull<<20;
-            String error;if(state.directories.size()==1)state.mount=resource::ResourcePayloadMount::create(config,WorldStreamingScheduler::shared(),limits,error);
-            if(state.directories.size()>1){Array<resource::RuntimeResourceMountConfig> packages;packages.reserve(state.directories.size());
-                state.mount.reset();for(size_t i=0;i<state.directories.size();++i){auto layer=config;layer.compiledRoot=state.directories[i];layer.manifestPath=(std::filesystem::u8path(layer.compiledRoot.c_str())/"runtime.wprm").u8string().c_str();
-                    packages.push_back({i+1==state.directories.size()?String("base"):String("overlay-")+StringUtil::toString(i),std::move(layer)});}
-                state.mount=resource::ResourcePayloadMount::createComposition(packages,state.collisionPolicy,WorldStreamingScheduler::shared(),limits,error);}
-            if(!state.mount)throw std::runtime_error(error.c_str());
-            auto leaves=resource::createRuntimeSceneLeafFactory(state.mount,error);if(!leaves)throw std::runtime_error(error.c_str());
-            state.stream=resource::ResourceClosureStream::create(state.mount,error,std::move(leaves));
-            if(!state.stream||!state.stream->requestUUID(1,state.uuid,{},100,error))throw std::runtime_error(error.c_str());
-            state.requestGeneration=state.stream->generation();state.started=std::chrono::steady_clock::now();state.pending=true;
-        }catch(const std::exception &error){cancelRuntimeSceneStartup(error.what());}
+        if( !m_runtimeScene )
+        {
+            return;
+        }
+        auto &state = *m_runtimeScene;
+        try
+        {
+            if( state.owner != std::this_thread::get_id() )
+            {
+                throw std::logic_error( "Runtime scene startup requires its primary owner" );
+            }
+            auto app = core::IApplicationManager::instancePtr();
+            state.manager = app ? app->getGameManager() : nullptr;
+            state.scene =
+                state.manager
+                    ? dynamic_pointer_cast<scene::GameScene>( state.manager->getCurrentScene() )
+                    : nullptr;
+            if( !state.scene || !state.scene->isLoaded() )
+            {
+                throw std::runtime_error( "Runtime scene startup requires the loaded native scene" );
+            }
+            state.project = m_editorManager ? m_editorManager->getProject() : nullptr;
+            state.projectPath = app->getProjectPath();
+            state.projectDirectory = state.project ? state.project->getPath() : String();
+            state.projectFile = state.project ? state.project->getFilePath() : String();
+            state.generation = state.scene->getLoadGeneration();
+            resource::RuntimeResourceConfig config;
+            config.compiledRoot = state.directory;
+            config.manifestPath = ( std::filesystem::u8path( state.directory.c_str() ) / "runtime.wprm" )
+                                      .u8string()
+                                      .c_str();
+            config.target = state.target;
+            config.maxPayloadBytes = 1ull << 30;
+            config.maxClosurePayloadBytes = 64ull << 20;
+            config.maxClosureResources = 256;
+            config.maxDependencyDepth = 64;
+            WorldStreamProducerLimits limits;
+            limits.maximumPending = 256;
+            limits.maximumActive = 2;
+            limits.maximumReady = 16;
+            limits.maximumReadyBytes = 32ull << 20;
+            String error;
+            if( state.directories.size() == 1 )
+            {
+                state.mount = resource::ResourcePayloadMount::create(
+                    config, WorldStreamingScheduler::shared(), limits, error );
+            }
+            if( state.directories.size() > 1 )
+            {
+                Array<resource::RuntimeResourceMountConfig> packages;
+                packages.reserve( state.directories.size() );
+                state.mount.reset();
+                for( size_t i = 0; i < state.directories.size(); ++i )
+                {
+                    auto layer = config;
+                    layer.compiledRoot = state.directories[i];
+                    layer.manifestPath =
+                        ( std::filesystem::u8path( layer.compiledRoot.c_str() ) / "runtime.wprm" )
+                            .u8string()
+                            .c_str();
+                    packages.push_back( { i + 1 == state.directories.size()
+                                              ? String( "base" )
+                                              : String( "overlay-" ) + StringUtil::toString( i ),
+                                          std::move( layer ) } );
+                }
+                state.mount = resource::ResourcePayloadMount::createComposition(
+                    packages, state.collisionPolicy, WorldStreamingScheduler::shared(), limits, error );
+            }
+            if( !state.mount )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            auto leaves = resource::createRuntimeSceneLeafFactory( state.mount, error );
+            if( !leaves )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            state.stream =
+                resource::ResourceClosureStream::create( state.mount, error, std::move( leaves ) );
+            if( !state.stream || !state.stream->requestUUID( 1, state.uuid, {}, 100, error ) )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            state.requestGeneration = state.stream->generation();
+            state.started = std::chrono::steady_clock::now();
+            state.pending = true;
+        }
+        catch( const std::exception &error )
+        {
+            cancelRuntimeSceneStartup( error.what() );
+        }
     }
+
     void EditorApplication::updateRuntimeSceneBootstrap()
     {
-        if(!m_runtimeScene)return;auto &state=*m_runtimeScene;if(state.owner!=std::this_thread::get_id())return;
-        if(!state.pending&&!state.succeeded)return;
-        try {
-            auto app=core::IApplicationManager::instancePtr();auto project=m_editorManager?m_editorManager->getProject():nullptr;
-            if(!app||app->getGameManager()!=state.manager||project!=state.project||app->getProjectPath()!=state.projectPath||
-                (project&&(project->getPath()!=state.projectDirectory||project->getFilePath()!=state.projectFile))||
-                !state.scene||!state.scene->isLoaded()||state.manager->getCurrentScene()!=state.scene||state.scene->getLoadGeneration()!=state.generation)
-                throw std::runtime_error("Runtime scene startup was cancelled by a project or scene change");
-            if(!state.pending)return;
-            if(std::chrono::steady_clock::now()-state.started>std::chrono::seconds(30))throw std::runtime_error("Runtime scene package startup exceeded 30 seconds");
-            resource::ResourcePayloadResult result;if(!state.stream->take(result))return;
-            if(result.key!=1||result.generation!=state.requestGeneration)throw std::runtime_error("Runtime scene closure result was superseded");
-            if(!result.resource)throw std::runtime_error(result.error.empty()?"Runtime scene closure is unavailable":result.error.c_str());
-            if(state.directories.size()>1){resource::RuntimeResourceProvenance provenance;if(!state.mount->provenance(result.resource->header.resourceId,provenance,state.error))throw std::runtime_error(state.error.c_str());state.rootMount=provenance.mountName;state.rootShadows=provenance.shadowedMounts;}else state.rootMount="base";
-            String error;auto graph=resource::decodeActorGraphResource(result.resource,error);if(!graph)throw std::runtime_error(error.c_str());
-            auto context=resource::createActorGraphRuntimeContext(graph,state.target,true,error,state.mount);if(!context)throw std::runtime_error(error.c_str());
-            auto working=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::WorkingCpu,result.resource->payload.size()*48+(1ull<<20),error);
-            if(!working)throw std::runtime_error(error.c_str());auto document=make_ptr<Properties>();
-            if(!PropertiesBinarySerializer::deserialize(result.resource->payload,*document,&error))throw std::runtime_error(error.c_str());
-            const auto roots=document->getChildrenByName("actors");
-            state.metadata=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,1024+256*roots.size(),error);if(!state.metadata)throw std::runtime_error(error.c_str());
-            state.roots.resize(roots.size());std::map<UUID,size_t> expected;
-            for(size_t i=0;i<roots.size();++i){state.roots[i].identity=StringUtil::parseUUID(roots[i]->getProperty("uuid"));expected.emplace(state.roots[i].identity,i);}
-            const auto capacity=state.manager->getActors().size();
-            if(state.generation==std::numeric_limits<u64>::max())throw std::runtime_error("Runtime scene generation is exhausted");
-            const auto committedGeneration=state.generation+1;
+        if( !m_runtimeScene )
+        {
+            return;
+        }
+        auto &state = *m_runtimeScene;
+        if( state.owner != std::this_thread::get_id() )
+        {
+            return;
+        }
+        if( !state.pending && !state.succeeded )
+        {
+            return;
+        }
+        try
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto project = m_editorManager ? m_editorManager->getProject() : nullptr;
+            if( !app || app->getGameManager() != state.manager || project != state.project ||
+                app->getProjectPath() != state.projectPath ||
+                ( project && ( project->getPath() != state.projectDirectory ||
+                               project->getFilePath() != state.projectFile ) ) ||
+                !state.scene || !state.scene->isLoaded() ||
+                state.manager->getCurrentScene() != state.scene ||
+                state.scene->getLoadGeneration() != state.generation )
             {
-                SmartPtr<ITask> renderTask;if(auto tasks=app->getTaskManager())if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())renderTask=task;
-                TaskLock pause(renderTask);ScopedLock managerLock(state.manager);
-                if(state.scene->getLoadGeneration()!=state.generation)throw std::runtime_error("Runtime scene generation changed before installation");
-                if(!resource::installCookedSceneGraph(graph,state.scene,context,error))throw std::runtime_error(error.c_str());
-                state.context=context;
-                size_t captured=0;for(u32 slot=0;slot<capacity;++slot)if(auto actor=state.manager->getActor(slot))if(actor->isLoaded()&&actor->getScene()==state.scene) {
-                    auto found=expected.find(actor->getHandle()->getUUID());if(found!=expected.end()){auto &root=state.roots[found->second];root.actor=actor;root.slot=slot;++captured;}
-                }
-                if(captured!=state.roots.size())throw std::runtime_error("Runtime scene roots did not publish as captured");
-                if(state.scene->getLoadGeneration()!=committedGeneration)throw std::runtime_error("Runtime scene generation changed during installation");
-                state.generation=committedGeneration;
+                throw std::runtime_error(
+                    "Runtime scene startup was cancelled by a project or scene change" );
             }
-            auto verify=[&](auto &&self,const SmartPtr<scene::IGameActor> &actor)->void {
-                if(state.actors>=4096)throw std::runtime_error("Runtime scene owner validation exceeds its actor limit");
-                ++state.actors;for(const auto &component:actor->getComponents()) {
-                    ++state.components;if(!component->isLoaded())throw std::runtime_error("Runtime scene component did not load");
-                    if(auto script=dynamic_pointer_cast<scene::Script>(component)) {
-                        if(!script->getScriptData()||script->getRuntimeScriptManager()!=context->scripts||script->getRuntimeScriptManager()==app->getScriptManager())throw std::runtime_error("Runtime Script did not construct through its private VM");
-                        script->update();++state.scripts;
-                    }
-                    if(auto renderer=dynamic_pointer_cast<scene::MeshRenderer>(component)) {
-                        auto mesh=renderer->getGraphicsObjectByType<render::IGraphicsMesh>();void *native=nullptr;if(mesh)mesh->_getObject(&native);
-                        const bool resident=mesh&&mesh->isLoaded()&&native;
-                        if(!resident&&!renderer->isRuntimeLODStreamed())throw std::runtime_error("Runtime renderer has no loaded native mesh object");
-                        ++state.meshes;if(resident)++state.residentMeshes;if(renderer->isRuntimeLODStreamed())++state.streamingMeshes;
+            if( !state.pending )
+            {
+                return;
+            }
+            if( std::chrono::steady_clock::now() - state.started > std::chrono::seconds( 30 ) )
+            {
+                throw std::runtime_error( "Runtime scene package startup exceeded 30 seconds" );
+            }
+            resource::ResourcePayloadResult result;
+            if( !state.stream->take( result ) )
+            {
+                return;
+            }
+            if( result.key != 1 || result.generation != state.requestGeneration )
+            {
+                throw std::runtime_error( "Runtime scene closure result was superseded" );
+            }
+            if( !result.resource )
+            {
+                throw std::runtime_error( result.error.empty() ? "Runtime scene closure is unavailable"
+                                                               : result.error.c_str() );
+            }
+            if( state.directories.size() > 1 )
+            {
+                resource::RuntimeResourceProvenance provenance;
+                if( !state.mount->provenance( result.resource->header.resourceId, provenance,
+                                              state.error ) )
+                {
+                    throw std::runtime_error( state.error.c_str() );
+                }
+                state.rootMount = provenance.mountName;
+                state.rootShadows = provenance.shadowedMounts;
+            }
+            else
+            {
+                state.rootMount = "base";
+            }
+            String error;
+            auto graph = resource::decodeActorGraphResource( result.resource, error );
+            if( !graph )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            auto context = resource::createActorGraphRuntimeContext( graph, state.target, true, error,
+                                                                     state.mount );
+            if( !context )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            auto working = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::WorkingCpu, result.resource->payload.size() * 48 + ( 1ull << 20 ),
+                error );
+            if( !working )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            auto document = make_ptr<Properties>();
+            if( !PropertiesBinarySerializer::deserialize( result.resource->payload, *document, &error ) )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            const auto roots = document->getChildrenByName( "actors" );
+            state.metadata = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::SourceCpu, 1024 + 256 * roots.size(), error );
+            if( !state.metadata )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            state.roots.resize( roots.size() );
+            std::map<UUID, size_t> expected;
+            for( size_t i = 0; i < roots.size(); ++i )
+            {
+                state.roots[i].identity = StringUtil::parseUUID( roots[i]->getProperty( "uuid" ) );
+                expected.emplace( state.roots[i].identity, i );
+            }
+            const auto capacity = state.manager->getActors().size();
+            if( state.generation == std::numeric_limits<u64>::max() )
+            {
+                throw std::runtime_error( "Runtime scene generation is exhausted" );
+            }
+            const auto committedGeneration = state.generation + 1;
+            {
+                SmartPtr<ITask> renderTask;
+                if( auto tasks = app->getTaskManager() )
+                {
+                    if( auto task = tasks->getTask( TaskId::Render ); task && task->isLoaded() )
+                    {
+                        renderTask = task;
                     }
                 }
-                for(const auto &child:actor->getChildren())self(self,child);
-            };for(const auto &root:state.roots)verify(verify,root.actor);
-            state.stream->drain();state.stream.reset();state.mount->trimCompletedPayloads();state.mount.reset();state.pending=false;state.complete=true;state.succeeded=true;
-            WP_LOG("Runtime scene package loaded: "+state.uuid);
-        }catch(const std::exception &error){cancelRuntimeSceneStartup(error.what());WP_LOG_ERROR("Runtime scene package failed: "+state.error);}
+                TaskLock pause( renderTask );
+                ScopedLock managerLock( state.manager );
+                if( state.scene->getLoadGeneration() != state.generation )
+                {
+                    throw std::runtime_error( "Runtime scene generation changed before installation" );
+                }
+                if( !resource::installCookedSceneGraph( graph, state.scene, context, error ) )
+                {
+                    throw std::runtime_error( error.c_str() );
+                }
+                state.context = context;
+                size_t captured = 0;
+                for( u32 slot = 0; slot < capacity; ++slot )
+                {
+                    if( auto actor = state.manager->getActor( slot ) )
+                    {
+                        if( actor->isLoaded() && actor->getScene() == state.scene )
+                        {
+                            auto found = expected.find( actor->getHandle()->getUUID() );
+                            if( found != expected.end() )
+                            {
+                                auto &root = state.roots[found->second];
+                                root.actor = actor;
+                                root.slot = slot;
+                                ++captured;
+                            }
+                        }
+                    }
+                }
+                if( captured != state.roots.size() )
+                {
+                    throw std::runtime_error( "Runtime scene roots did not publish as captured" );
+                }
+                if( state.scene->getLoadGeneration() != committedGeneration )
+                {
+                    throw std::runtime_error( "Runtime scene generation changed during installation" );
+                }
+                state.generation = committedGeneration;
+            }
+            auto verify = [&]( auto &&self, const SmartPtr<scene::IGameActor> &actor ) -> void {
+                if( state.actors >= 4096 )
+                {
+                    throw std::runtime_error( "Runtime scene owner validation exceeds its actor limit" );
+                }
+                ++state.actors;
+                for( const auto &component : actor->getComponents() )
+                {
+                    ++state.components;
+                    if( !component->isLoaded() )
+                    {
+                        throw std::runtime_error( "Runtime scene component did not load" );
+                    }
+                    if( auto script = dynamic_pointer_cast<scene::Script>( component ) )
+                    {
+                        if( !script->getScriptData() ||
+                            script->getRuntimeScriptManager() != context->scripts ||
+                            script->getRuntimeScriptManager() == app->getScriptManager() )
+                        {
+                            throw std::runtime_error(
+                                "Runtime Script did not construct through its private VM" );
+                        }
+                        script->update();
+                        ++state.scripts;
+                    }
+                    if( auto renderer = dynamic_pointer_cast<scene::MeshRenderer>( component ) )
+                    {
+                        auto mesh = renderer->getGraphicsObjectByType<render::IGraphicsMesh>();
+                        void *native = nullptr;
+                        if( mesh )
+                        {
+                            mesh->_getObject( &native );
+                        }
+                        const bool resident = mesh && mesh->isLoaded() && native;
+                        if( !resident && !renderer->isRuntimeLODStreamed() )
+                        {
+                            throw std::runtime_error(
+                                "Runtime renderer has no loaded native mesh object" );
+                        }
+                        ++state.meshes;
+                        if( resident )
+                        {
+                            ++state.residentMeshes;
+                        }
+                        if( renderer->isRuntimeLODStreamed() )
+                        {
+                            ++state.streamingMeshes;
+                        }
+                    }
+                }
+                for( const auto &child : actor->getChildren() )
+                {
+                    self( self, child );
+                }
+            };
+            for( const auto &root : state.roots )
+            {
+                verify( verify, root.actor );
+            }
+            state.stream->drain();
+            state.stream.reset();
+            state.mount->trimCompletedPayloads();
+            state.mount.reset();
+            state.pending = false;
+            state.complete = true;
+            state.succeeded = true;
+            WP_LOG( "Runtime scene package loaded: " + state.uuid );
+        }
+        catch( const std::exception &error )
+        {
+            cancelRuntimeSceneStartup( error.what() );
+            WP_LOG_ERROR( "Runtime scene package failed: " + state.error );
+        }
     }
 
     EditorApplication::EditorApplication()
@@ -982,12 +1510,18 @@ namespace workphone::editor
 
     bool EditorApplication::createScriptManager()
     {
-        if( !Application::createScriptManager() ) return false;
+        if( !Application::createScriptManager() )
+        {
+            return false;
+        }
         if( !m_luaDebuggerToken.empty() )
         {
             auto app = core::IApplicationManager::instancePtr();
             auto root = app->getProjectPath();
-            if( root.empty() ) root = std::filesystem::current_path().u8string().c_str();
+            if( root.empty() )
+            {
+                root = std::filesystem::current_path().u8string().c_str();
+            }
             // Start before project scripts create coroutines: Lua 5.5 threads
             // inherit their parent's hook at creation time.
             return app->getScriptManager()->startDebugger( 0, m_luaDebuggerToken, root );
@@ -1000,8 +1534,15 @@ namespace workphone::editor
         const auto debugOption = std::getenv( "WP_LUA_DEBUGGER" );
         const bool luaDebugging = debugOption && std::string( debugOption ) == "1";
         // Luabind execution and the paused UI pump share one physical owner.
-        if( luaDebugging ) { setActiveThreads( 0 ); m_luaDebuggerToken = StringUtil::getUUID(); }
-        else m_luaDebuggerToken.clear();
+        if( luaDebugging )
+        {
+            setActiveThreads( 0 );
+            m_luaDebuggerToken = StringUtil::getUUID();
+        }
+        else
+        {
+            m_luaDebuggerToken.clear();
+        }
         if( isDebugMode() )
         {
             loadDebug( data );
@@ -1017,25 +1558,41 @@ namespace workphone::editor
             if( scripts )
             {
                 auto root = app->getProjectPath();
-                if( root.empty() ) root = std::filesystem::current_path().u8string().c_str();
+                if( root.empty() )
+                {
+                    root = std::filesystem::current_path().u8string().c_str();
+                }
                 const auto token = m_luaDebuggerToken;
                 if( scripts->startDebugger( 0, token, root ) )
                 {
                     std::shared_ptr<PausedDebuggerActivity> activity;
-                    if( const auto path = std::getenv( "WP_LUA_DEBUGGER_ACTIVITY_REPORT" ); path && *path )
+                    if( const auto path = std::getenv( "WP_LUA_DEBUGGER_ACTIVITY_REPORT" );
+                        path && *path )
                     {
-                        try { activity = std::make_shared<PausedDebuggerActivity>( path ); }
+                        try
+                        {
+                            activity = std::make_shared<PausedDebuggerActivity>( path );
+                        }
                         catch( const std::exception &error )
-                        { WP_LOG_ERROR( String( "Cannot start Lua debugger activity report: " ) + error.what() ); }
+                        {
+                            WP_LOG_ERROR( String( "Cannot start Lua debugger activity report: " ) +
+                                          error.what() );
+                        }
                     }
                     auto suspension = std::make_shared<DebuggerNativeSuspension>();
                     scripts->setDebuggerPauseObserver( [activity, suspension]( bool paused ) {
                         suspension->observe( paused );
-                        if( activity ) activity->observe( paused );
+                        if( activity )
+                        {
+                            activity->observe( paused );
+                        }
                     } );
                     scripts->setDebuggerPausePump( [this, activity]() {
                         auto app = core::IApplicationManager::instancePtr();
-                        if( !app || app->getQuit() ) return false;
+                        if( !app || app->getQuit() )
+                        {
+                            return false;
+                        }
                         // Do not run scene, physics, jobs, Play/Stop or reload
                         // while their interrupted Lua stack is still live.
                         const auto previousTask = Thread::getCurrentTask();
@@ -1044,7 +1601,8 @@ namespace workphone::editor
                         {
                             if( auto graphics = app->getGraphicsSystem() )
                             {
-                                const bool renderCallbackSuspended = previousTask == graphics->getRenderTask();
+                                const bool renderCallbackSuspended =
+                                    previousTask == graphics->getRenderTask();
                                 Thread::setCurrentTask( TaskId::Primary );
                                 Thread::setTaskFlags( Thread::Primary_Flag );
                                 graphics->messagePump();
@@ -1057,35 +1615,55 @@ namespace workphone::editor
                                 if( !renderCallbackSuspended )
                                 {
                                     Thread::setCurrentTask( TaskId::Application );
-                                    Thread::setTaskFlags( Thread::Primary_Flag | Thread::Application_Flag );
+                                    Thread::setTaskFlags( Thread::Primary_Flag |
+                                                          Thread::Application_Flag );
                                     if( auto editor = EditorManager::getSingletonPtr() )
+                                    {
                                         if( auto ui = editor->getUI() )
                                         {
                                             ui->dispatchQueuedScriptEvents( true );
                                             if( auto panel = ui->getLuaDebuggerWindow() )
                                             {
-                                                if( !panel->isWindowVisible() ) panel->setWindowVisible( true );
-                                                if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
+                                                if( !panel->isWindowVisible() )
+                                                {
+                                                    panel->setWindowVisible( true );
+                                                }
+                                                if( auto invoker = panel->getInvoker() )
+                                                {
+                                                    invoker->callObjectMember( "update" );
+                                                }
                                             }
                                         }
+                                    }
                                     Thread::setCurrentTask( TaskId::Render );
                                     Thread::setTaskFlags( Thread::Render_Flag | Thread::Primary_Flag );
 #if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
-                                    if( auto claw = dynamic_pointer_cast<render::ClawHammerSystem>( graphics ) )
+                                    if( auto claw =
+                                            dynamic_pointer_cast<render::ClawHammerSystem>( graphics ) )
                                         claw->updatePausedFrame();
 #endif
                                 }
                             }
                         }
-                        catch( ... ) { Thread::setCurrentTask( previousTask ); Thread::setTaskFlags( previousFlags ); throw; }
+                        catch( ... )
+                        {
+                            Thread::setCurrentTask( previousTask );
+                            Thread::setTaskFlags( previousFlags );
+                            throw;
+                        }
                         Thread::setCurrentTask( previousTask );
                         Thread::setTaskFlags( previousFlags );
-                        if( activity ) activity->completedPump();
+                        if( activity )
+                            activity->completedPump();
                         return !app->getQuit();
                     } );
-                    auto destination = std::filesystem::u8path( root.c_str() ) / ".workphone/lua-debug.json";
-                    if( const auto requested = std::getenv( "WP_LUA_DEBUG_ENDPOINT" ); requested && *requested )
+                    auto destination =
+                        std::filesystem::u8path( root.c_str() ) / ".workphone/lua-debug.json";
+                    if( const auto requested = std::getenv( "WP_LUA_DEBUG_ENDPOINT" );
+                        requested && *requested )
+                    {
                         destination = std::filesystem::absolute( std::filesystem::u8path( requested ) );
+                    }
                     const auto directory = destination.parent_path();
                     std::filesystem::create_directories( directory );
                     auto temporary = destination;
@@ -1094,12 +1672,18 @@ namespace workphone::editor
                     {
                         std::ofstream endpoint( temporary, std::ios::binary | std::ios::trunc );
                         endpoint.exceptions( std::ios::badbit | std::ios::failbit );
-                        endpoint << boost::json::serialize( boost::json::object{
-                            { "port", scripts->getDebuggerPort() }, { "token", token.c_str() }, { "sourceRoot", root.c_str() } } );
-                        endpoint.flush(); endpoint.close();
+                        endpoint << boost::json::serialize(
+                            boost::json::object{ { "port", scripts->getDebuggerPort() },
+                                                 { "token", token.c_str() },
+                                                 { "sourceRoot", root.c_str() } } );
+                        endpoint.flush();
+                        endpoint.close();
 #ifdef _WIN32
-                        if( !MoveFileExW( temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                        if( !MoveFileExW( temporary.c_str(), destination.c_str(),
+                                          MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                        {
                             throw std::runtime_error( "Cannot publish Lua debugger endpoint" );
+                        }
 #else
                         std::filesystem::rename( temporary, destination );
 #endif
@@ -1107,18 +1691,35 @@ namespace workphone::editor
                     }
                     catch( ... )
                     {
-                        std::error_code ignored; std::filesystem::remove( temporary, ignored ); throw;
+                        std::error_code ignored;
+                        std::filesystem::remove( temporary, ignored );
+                        throw;
                     }
                     WP_LOG( "Lua debugger endpoint: " + m_luaDebuggerEndpoint );
                     if( auto editor = EditorManager::getSingletonPtr() )
+                    {
                         if( auto ui = editor->getUI() )
+                        {
                             if( auto panel = ui->getLuaDebuggerWindow() )
-                                if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "onDebuggerReady" );
+                            {
+                                if( auto invoker = panel->getInvoker() )
+                                {
+                                    invoker->callObjectMember( "onDebuggerReady" );
+                                }
+                            }
+                        }
+                    }
                 }
-                else WP_LOG_ERROR( "Could not start the Lua debugger" );
+                else
+                {
+                    WP_LOG_ERROR( "Could not start the Lua debugger" );
+                }
             }
         }
-        if(isLoaded())startRuntimeSceneBootstrap();
+        if( isLoaded() )
+        {
+            startRuntimeSceneBootstrap();
+        }
     }
 
     void EditorApplication::unload( SmartPtr<ISharedObject> data )
@@ -1145,15 +1746,18 @@ namespace workphone::editor
                     {
                         std::ifstream input( std::filesystem::u8path( m_luaDebuggerEndpoint.c_str() ) );
                         const std::string text( ( std::istreambuf_iterator<char>( input ) ), {} );
-                        input.close(); // Windows cannot remove an endpoint held open by this reader.
+                        input.close();  // Windows cannot remove an endpoint held open by this reader.
                         auto endpoint = boost::json::parse( text ).as_object();
                         if( endpoint.at( "token" ).as_string() == m_luaDebuggerToken.c_str() )
                         {
                             std::error_code ignored;
-                            std::filesystem::remove( std::filesystem::u8path( m_luaDebuggerEndpoint.c_str() ), ignored );
+                            std::filesystem::remove(
+                                std::filesystem::u8path( m_luaDebuggerEndpoint.c_str() ), ignored );
                         }
                     }
-                    catch( ... ) {} // Another instance may have replaced the endpoint.
+                    catch( ... )
+                    {
+                    }  // Another instance may have replaced the endpoint.
                     m_luaDebuggerEndpoint.clear();
                 }
 
@@ -1537,7 +2141,14 @@ namespace workphone::editor
             {
             case TaskId::GarbageCollect:
             {
-                render::collectUnusedGraphicsAssets( applicationManager->getGraphicsSystem() );
+                if( timer->getTimeSinceSceneLoad() > 3.0 )
+                {
+                    auto graphicsSystem = applicationManager->getGraphicsSystem();
+                    if( graphicsSystem )
+                    {
+                        render::collectUnusedGraphicsAssets( graphicsSystem, 4 );
+                    }
+                }
             }
             break;
             case TaskId::Primary:
@@ -1685,7 +2296,9 @@ namespace workphone::editor
                             }
                         }
                         if( auto objectWindow = editorUI->getObjectWindow() )
+                        {
                             objectWindow->updateMaterialEditorStatus();
+                        }
                         ScriptWindow::updateMaterialEditorStatus( editorUI->getMaterialWindow() );
                         if( auto propertiesWindow = editorUI->getPropertiesWindow() )
                         {
@@ -1697,8 +2310,14 @@ namespace workphone::editor
                         if( auto panel = editorUI->getLuaDebuggerWindow() )
                         {
                             const auto scripts = applicationManager->getScriptManager();
-                            if( panel->isWindowVisible() || ( scripts && scripts->getDebuggerPort() != 0 ) )
-                                if( auto invoker = panel->getInvoker() ) invoker->callObjectMember( "update" );
+                            if( panel->isWindowVisible() ||
+                                ( scripts && scripts->getDebuggerPort() != 0 ) )
+                            {
+                                if( auto invoker = panel->getInvoker() )
+                                {
+                                    invoker->callObjectMember( "update" );
+                                }
+                            }
                         }
                         auto inputWindow = editorUI->getInputManagerWindow();
                         if( inputWindow && inputWindow->isLoaded() && inputWindow->isWindowVisible() )
@@ -1709,10 +2328,13 @@ namespace workphone::editor
                             }
                         }
                         auto packageWindow = editorUI->getPackageWindow();
-                        if(packageWindow && packageWindow->isLoaded() && packageWindow->isWindowVisible())
+                        if( packageWindow && packageWindow->isLoaded() &&
+                            packageWindow->isWindowVisible() )
                         {
-                            if(auto invoker = packageWindow->getInvoker())
-                                invoker->callObjectMember("update");
+                            if( auto invoker = packageWindow->getInvoker() )
+                            {
+                                invoker->callObjectMember( "update" );
+                            }
                         }
                     }
 
@@ -1769,15 +2391,23 @@ namespace workphone::editor
         const bool debuggerEnabled = scripts && scripts->getDebuggerPort() != 0;
         const bool paused = debuggerEnabled && scripts->isDebuggerPaused();
         if( event )
+        {
             if( auto keyboard = event->getKeyboardState() )
             {
                 const auto key = static_cast<KeyCodes>( keyboard->getKeyCode() );
                 // These keys belong to the native debugger buttons' accelerator
                 // path, which emits the same UI event as a mouse activation.
                 if( debuggerEnabled && ( key == KeyCodes::KEY_F5 || key == KeyCodes::KEY_F8 ||
-                    key == KeyCodes::KEY_F10 || key == KeyCodes::KEY_F11 ) ) return true;
+                                         key == KeyCodes::KEY_F10 || key == KeyCodes::KEY_F11 ) )
+                {
+                    return true;
+                }
             }
-        if( paused ) return true;
+        }
+        if( paused )
+        {
+            return true;
+        }
 
         if( m_application )
         {
@@ -2143,13 +2773,21 @@ namespace workphone::editor
         if( auto preferences = applicationManager->getEditorSettings() )
         {
             auto projectFile = preferences->getProperty( "Project Path" );
-            if( !projectFile.empty() && std::filesystem::is_regular_file(
-                    std::filesystem::u8path( projectFile.c_str() ) ) )
-                loadProjectRuntimeSettings( std::filesystem::u8path( projectFile.c_str() ).parent_path().u8string() );
+            if( !projectFile.empty() &&
+                std::filesystem::is_regular_file( std::filesystem::u8path( projectFile.c_str() ) ) )
+            {
+                loadProjectRuntimeSettings(
+                    std::filesystem::u8path( projectFile.c_str() ).parent_path().u8string() );
+            }
         }
         auto numThreads = projectWorkerCount( getActiveThreads() );
         if( auto profile = applicationManager->getPlayerSettings() )
-            if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 ) numThreads = 0;
+        {
+            if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 )
+            {
+                numThreads = 0;
+            }
+        }
 
         auto maxThreads = Thread::hardware_concurrency();
         if( numThreads > maxThreads )
@@ -2276,8 +2914,8 @@ namespace workphone::editor
             // otherwise resolve against the active project when mounted or refreshed.
             mediaPath = mountEditorMedia( fileSystem, workingDirectory, mediaPath );
             applicationManager->setMediaPath( mediaPath );
-            WP_LOG( "Mounted editor Media folder: " + mediaPath + "; startup directory: " +
-                    workingDirectory + "; project directory: " + projectPath );
+            WP_LOG( "Mounted editor Media folder: " + mediaPath +
+                    "; startup directory: " + workingDirectory + "; project directory: " + projectPath );
 
             fileSystem->addFileArchive( ".FBCache", true, true, IFileSystem::ArchiveType::Folder );
             fileSystem->addFileArchive( "./", true, true, IFileSystem::ArchiveType::Folder );
@@ -2388,12 +3026,18 @@ namespace workphone::editor
         // A cooked scene can install native textures during its first owner
         // iteration. Configure its selected backend with a real window before
         // those uploads; the ordinary Editor retains its deferred-window path.
-        const bool runtimeStartup=bool(m_runtimeScene);
-        if(runtimeStartup)graphicsSystem->setRendererType(m_rendererType);
+        const bool runtimeStartup = bool( m_runtimeScene );
+        if( runtimeStartup )
+        {
+            graphicsSystem->setRendererType( m_rendererType );
+        }
         configuration->setCreateWindow( runtimeStartup );
 
-        const bool configured=graphicsSystem->configure( configuration );
-        if(runtimeStartup&&!configured)return false;
+        const bool configured = graphicsSystem->configure( configuration );
+        if( runtimeStartup && !configured )
+        {
+            return false;
+        }
         graphicsSystem->setRendererType( m_rendererType );
 
         if( auto settings = applicationManager->getEditorSettings() )
@@ -2433,10 +3077,17 @@ namespace workphone::editor
             properties->setProperty( "WindowHandle", m_windowHandle );
         }
 
-        auto window = runtimeStartup ? graphicsSystem->getDefaultWindow() :
-            graphicsSystem->createRenderWindow( "Editor", 400, 400, false, properties );
-        if(runtimeStartup&&!window)return false;
-        if(runtimeStartup&&isDebugMode())window->setVisible(false);
+        auto window = runtimeStartup
+                          ? graphicsSystem->getDefaultWindow()
+                          : graphicsSystem->createRenderWindow( "Editor", 400, 400, false, properties );
+        if( runtimeStartup && !window )
+        {
+            return false;
+        }
+        if( runtimeStartup && isDebugMode() )
+        {
+            window->setVisible( false );
+        }
         applicationManager->setWindow( window );
 
         auto resourceGroupManager = graphicsSystem->getResourceGroupManager();
@@ -2483,7 +3134,8 @@ namespace workphone::editor
             auto ui = m_editorManager ? m_editorManager->getUI() : nullptr;
             auto sceneWindow = ui ? ui->getSceneWindow() : nullptr;
             auto hierarchyWindow = sceneWindow ? sceneWindow->getParentWindow() : nullptr;
-            m_renderWindow->setDropTarget( hierarchyWindow ? hierarchyWindow->getDropTarget() : nullptr );
+            m_renderWindow->setDropTarget( hierarchyWindow ? hierarchyWindow->getDropTarget()
+                                                           : nullptr );
         }
     }
 
@@ -2657,7 +3309,8 @@ namespace workphone::editor
             {
                 if( auto window = graphicsSystem->getDefaultWindow() )
                 {
-                    auto inputManager = createProjectInputBackend( factoryManager, applicationManager->getPlayerSettings() );
+                    auto inputManager = createProjectInputBackend(
+                        factoryManager, applicationManager->getPlayerSettings() );
                     if( inputManager )
                     {
                         applicationManager->setInputDeviceManager( inputManager );
@@ -3068,7 +3721,9 @@ namespace workphone::editor
         auto applicationManager = core::IApplicationManager::instance();
 
         if( !applicationManager->getPlayerSettings() )
+        {
             applicationManager->setPlayerSettings( workphone::make_ptr<Properties>() );
+        }
 
         loadEditorPreferences();
 
