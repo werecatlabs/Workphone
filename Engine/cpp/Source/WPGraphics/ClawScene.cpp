@@ -7,12 +7,6 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawFoliageBatch.hpp>
 #include <WPGraphics/ClawFoliageWorld.hpp>
-#if WP_FOLIAGE_SOURCE_RESOURCES
-#    include <WPGraphics/Resources/FoliageResource.hpp>
-#endif
-#include <chrono>
-#include <map>
-#include <set>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRendererSoftware.hpp>
 #include <WPGraphics/ClawTerrain.hpp>
@@ -39,6 +33,14 @@
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_scenenode.h"
+
+#if WP_FOLIAGE_SOURCE_RESOURCES
+#    include <WPGraphics/Resources/FoliageResource.hpp>
+#endif
+
+#include <chrono>
+#include <map>
+#include <set>
 
 namespace workphone
 {
@@ -228,10 +230,12 @@ namespace workphone
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
+
             if( m_scene && m_ownsScene )
             {
                 wp_graphics_scene_destroy( m_scene );
             }
+
             m_scene = nullptr;
         }
 
@@ -298,17 +302,19 @@ namespace workphone
 
         void ClawScene::unload( SmartPtr<ISharedObject> data )
         {
-            m_foliageSimulationSeconds = 0;
-            discardRenderJobs();
-            m_materialRecordWorkspace.reset();
-            clearFoliageBatches();
-            clearFoliageWorlds();
             if( getLoadingState() == LoadingState::Unloaded )
             {
                 return;
             }
 
             setLoadingState( LoadingState::Unloading );
+
+            m_foliageSimulationSeconds = 0;
+            discardRenderJobs();
+            m_materialRecordWorkspace.reset();
+            clearFoliageBatches();
+            clearFoliageWorlds();
+
             GraphicsScene::unload( data );
             setLoadingState( LoadingState::Unloaded );
         }
@@ -316,9 +322,11 @@ namespace workphone
         void ClawScene::update()
         {
             GraphicsScene::update();
+
             const auto app = core::IApplicationManager::instancePtr();
             const auto timer = app ? app->getTimer() : nullptr;
             const auto delta = timer ? timer->getDeltaTime() : 1.0 / 60.0;
+
             // Animation belongs to the simulation update, never a render read.
             // No timer still has a deterministic normal-update fallback; paused
             // presentation skips this method entirely on every backend.
@@ -361,6 +369,7 @@ namespace workphone
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
+
             {
                 std::lock_guard<std::mutex> lock( m_primaryLightMutex );
                 m_primaryDirectionalLight = nullptr;
@@ -369,9 +378,11 @@ namespace workphone
 
             // Release C++ wrappers while their scene-owned C nodes are still valid.
             GraphicsScene::clear();
+
             // Native clear destroys every non-root node. Detach cameras/lights
             // and invalidate the wrappers before releasing that native storage.
             auto root = getRootSceneNode();
+
             for( auto &node : m_sceneNodes.snapshot() )
             {
                 if( node && node != root )
@@ -379,12 +390,15 @@ namespace workphone
                     node->unload( nullptr );
                 }
             }
+
             m_sceneNodes.clear();
             m_registeredSceneNodes.clear();
+
             if( root )
             {
                 root->removeChildren();
             }
+
             for( auto &camera : m_cameras.snapshot() )
             {
                 if( camera )
@@ -392,8 +406,10 @@ namespace workphone
                     camera->detachFromParent( camera->getOwner() );
                 }
             }
+
             m_cameras.clear();
             setDefaultCamera( nullptr );
+
             if( m_scene )
             {
                 wp_graphics_scene_clear( m_scene );
@@ -405,12 +421,14 @@ namespace workphone
                                              String &error )
         {
             error.clear();
+
             try
             {
                 std::lock_guard<std::mutex> lock( m_foliageMutex );
                 const auto retained = std::atomic_load( &m_foliageBatches );
                 auto candidate =
                     std::make_shared<FoliageBatches>( retained ? *retained : FoliageBatches{} );
+
                 if( previous )
                 {
                     const auto found = std::find( candidate->begin(), candidate->end(), previous );
@@ -421,6 +439,7 @@ namespace workphone
                     }
                     candidate->erase( found );
                 }
+
                 if( replacement )
                 {
                     if( std::find( candidate->begin(), candidate->end(), replacement ) !=
@@ -431,16 +450,19 @@ namespace workphone
                     }
                     candidate->push_back( replacement );
                 }
+
                 u64 count = 0;
                 for( const auto &batch : *candidate )
                 {
                     count += batch->instanceCount();
                 }
+
                 if( candidate->size() > 1024 || count > 1048576 )
                 {
                     error = "Scene foliage exceeds 1024 batches or 1048576 instances.";
                     return false;
                 }
+
                 std::shared_ptr<const FoliageBatches> published = candidate;
                 std::atomic_store( &m_foliageBatches, published );
                 return true;
@@ -713,6 +735,7 @@ namespace workphone
                 m_primaryDirectionalLight = nullptr;
                 return true;
             }
+
             const auto lights = m_lights.snapshot();
             if( !dynamic_pointer_cast<ClawLight>( light ) ||
                 light->getType() != LightTypes::LT_DIRECTIONAL ||
@@ -720,6 +743,7 @@ namespace workphone
             {
                 return false;
             }
+
             m_primaryDirectionalLight = light;
             return true;
         }
@@ -733,11 +757,13 @@ namespace workphone
                 return light && dynamic_pointer_cast<ClawLight>( light ) && light->isVisible() &&
                        light->getType() == LightTypes::LT_DIRECTIONAL;
             };
+
             if( visibleDirectional( preferred ) &&
                 std::find( lights.begin(), lights.end(), preferred ) != lights.end() )
             {
                 return preferred;
             }
+
             for( const auto &light : lights )
             {
                 if( visibleDirectional( light ) )
@@ -745,6 +771,7 @@ namespace workphone
                     return light;
                 }
             }
+
             return nullptr;
         }
 
@@ -754,6 +781,7 @@ namespace workphone
             {
                 return false;
             }
+
             if( auto light = dynamic_pointer_cast<IGraphicsLight>( object ) )
             {
                 std::lock_guard<std::mutex> lock( m_primaryLightMutex );
@@ -763,12 +791,14 @@ namespace workphone
                 }
                 m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
             }
+
             if( auto camera = dynamic_pointer_cast<IGraphicsCamera>( object ) )
             {
                 ScopedLock cameraLock( &m_cameras, true );
                 m_cameras.erase( std::remove( m_cameras.begin(), m_cameras.end(), camera ),
                                  m_cameras.end() );
             }
+
             if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
             {
                 if( m_foliageWorlds )
@@ -776,6 +806,7 @@ namespace workphone
                     m_foliageWorlds->terrains.erase( terrain.get() );
                 }
             }
+
             return true;
         }
 
@@ -998,6 +1029,7 @@ namespace workphone
             if( ppObject )
             {
                 wp_graphics_scene_get_native( m_scene, ppObject );
+
                 if( !*ppObject )
                 {
                     *ppObject = m_scene;
@@ -1011,6 +1043,7 @@ namespace workphone
             wp_graphics_cull_result *shadow = nullptr;
             SmartPtr<IGraphicsCamera> camera;
             PreparationTiming timing;
+
             bool profiled = false;
             std::unique_ptr<ClawMaterialDrawRecords> materials;
 
@@ -1073,15 +1106,18 @@ namespace workphone
                 m_occlusionHistory.reset();
                 return;
             }
+
             if( !m_occlusionHistory || !m_occlusionHistory->renderedJobs )
             {
                 return;
             }
+
             auto &history = *m_occlusionHistory;
             const auto jobs = history.renderedJobs;
             history.hierarchy.clear();
             history.capturedJobs.reset();
             history.materials.clear();
+
             if( !camera || jobs->camera != camera ||
                 wp_graphics_cull_result_validate(
                     jobs->main, m_scene, wp_graphics_cull_result_get_scene_generation( jobs->main ) ) !=
@@ -1089,6 +1125,7 @@ namespace workphone
             {
                 return;
             }
+
             try
             {
                 // Terrain/foliage/particle callbacks can deform geometry without
@@ -1101,6 +1138,7 @@ namespace workphone
                 {
                     return;
                 }
+
                 size_t nativeMeshes = 0;
                 for( const auto &object : m_graphicsObjects.snapshot() )
                 {
@@ -1108,6 +1146,7 @@ namespace workphone
                     {
                         continue;
                     }
+
                     if( dynamic_cast<ClawTerrain *>( object.get() ) ||
                         dynamic_cast<CParticleSystem *>( object.get() ) ||
                         dynamic_cast<ClawBillboard *>( object.get() ) ||
@@ -1115,11 +1154,13 @@ namespace workphone
                     {
                         return;
                     }
+
                     auto mesh = dynamic_pointer_cast<ClawMesh>( object );
                     if( !mesh || !mesh->getNativeRenderObject() )
                     {
                         continue;
                     }
+
                     ++nativeMeshes;
                     const auto native = mesh->getNativeMesh();
                     const auto sections =
@@ -1152,16 +1193,19 @@ namespace workphone
                         history.materials.push_back( { mesh, section, material, state } );
                     }
                 }
+
                 if( nativeMeshes !=
                     static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->main ) ) )
                 {
                     return;
                 }
+
                 wp_mat4f view, projection, matrix;
                 if( !wp_graphics_cull_result_get_camera_matrices( jobs->main, &view, &projection ) )
                 {
                     return;
                 }
+
                 wp_mat4f_mul( &matrix, &projection, &view );
                 std::vector<float> depth;
                 unsigned width = 0, height = 0;
@@ -1169,11 +1213,13 @@ namespace workphone
                 {
                     return;
                 }
+
                 history.matrix = occlusionMatrix( matrix );
                 if( !history.hierarchy.publish( depth.data(), width, height, history.matrix ) )
                 {
                     return;
                 }
+
                 history.surface = history.readback.surface( renderer );
                 history.camera = camera;
                 history.capturedJobs = jobs;
@@ -1198,10 +1244,12 @@ namespace workphone
             {
                 return false;
             }
+
             if( strategy == m_drawSortStrategy && bucketSize == m_drawSortBucketSize )
             {
                 return true;
             }
+
             discardRenderJobs();
             m_drawSortStrategy = strategy;
             m_drawSortBucketSize = bucketSize;
@@ -1337,14 +1385,17 @@ namespace workphone
             wp_graphics_cull_result_get_transform_stats( main, transforms );
             wp_graphics_cull_result_get_bounds_stats( main, bounds );
             wp_graphics_cull_result_get_sort_stats( main, sort );
+
             if( candidates )
             {
                 *candidates = static_cast<wp_u32>( wp_graphics_cull_result_get_candidate_count( main ) );
             }
+
             if( visible )
             {
                 *visible = static_cast<wp_u32>( wp_graphics_cull_result_get_visible_count( main ) );
             }
+
             return main != nullptr;
         }
 
@@ -1375,6 +1426,7 @@ namespace workphone
             {
                 return false;
             }
+
             const auto &records = *m_nativeRenderJobs->materials;
             out.records = records.getRecordCount();
             out.bindings = records.getBindingCount();
@@ -1530,6 +1582,7 @@ namespace workphone
                         WP_LOG_WARNING( "Scene material record CPU budget denied; deferring draw." );
                         return;
                     }
+
                     const auto foliage = getFoliageBatches();
                     const auto foliageMask =
                         m_scene->visibility_mask &
@@ -1551,13 +1604,16 @@ namespace workphone
                         lightIntensity = light->getPowerScale();
                         lightCastsShadows = light->getCastShadows();
                     }
+
                     dx11Renderer->setSceneLighting( getAmbientLight(), lightDirection, lightColour,
                                                     lightIntensity );
+
                     dx11Renderer->setSceneFog( static_cast<u32>( m_scene->fog_mode ),
                                                ColourF( m_scene->fog_colour.r, m_scene->fog_colour.g,
                                                         m_scene->fog_colour.b, 1 ),
                                                m_scene->fog_density, m_scene->fog_start,
                                                m_scene->fog_end );
+
                     dx11Renderer->disableShadows();
                     const auto viewport = rawRenderer->getViewport();
                     SmartPtr<IGraphicsPipeline> pipeline;
@@ -1568,11 +1624,13 @@ namespace workphone
                             pipeline = graphics->getGraphicsPipeline();
                         }
                     }
+
                     const bool shadows = ( !pipeline || pipeline->isCSMEnabled() ) &&
                                          getEnableShadows() && lightCastsShadows &&
                                          lightIntensity > 0.0f &&
                                          ( !viewport || viewport->getShadowsEnabled() );
-                    const auto terrainObjects = m_terrains.snapshot();
+
+                    auto &terrainObjects = m_terrains;
                     Array<SmartPtr<IGraphicsCamera>> terrainCameras;
                     for( const auto &sceneCamera : m_cameras.snapshot() )
                     {
@@ -1611,11 +1669,13 @@ namespace workphone
                         }
                         return success;
                     };
+
                     for( const auto &object : terrainObjects )
                     {
                         if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
                         {
                             const auto snapshot = terrain->getFoliageSnapshot();
+
 #if WP_FOLIAGE_SOURCE_RESOURCES
                             const auto cooked = terrain->getRuntimeFoliageCandidate();
 #endif
@@ -1630,6 +1690,7 @@ namespace workphone
                             {
                                 attached.world = std::make_shared<ClawFoliageWorld>();
                             }
+
                             const auto placement = terrain->getWorldTransform();
                             // A larger world scale can make a new source's local
                             // paging range admissible. Retry after source changes
@@ -1699,11 +1760,13 @@ namespace workphone
                         }
                         return view;
                     };
+
                     const auto colourFoliageView = makeFoliageView( rawRenderer->getCamera() );
                     auto shadowFoliageView = colourFoliageView;
                     shadowFoliageView.key ^= u64( 1 ) << 63;
                     shadowFoliageView.shadow = true;
                     shadowFoliageView.worldToClip = dx11Renderer->foliageViewProjection( true );
+
                     Array<ClawFoliageView> foliageViews{ colourFoliageView };
                     for( const auto &other : terrainCameras )
                     {
@@ -1712,16 +1775,19 @@ namespace workphone
                             foliageViews.push_back( makeFoliageView( other ) );
                         }
                     }
+
                     if( shadowPass )
                     {
                         foliageViews.push_back( shadowFoliageView );
                     }
+
                     const auto foliageFrame = dx11Renderer->terrainFrameToken();
                     if( !foliageFrame || foliageFrame != foliageState.frame )
                     {
                         foliageState.frame = foliageFrame;
                         foliageState.seconds = static_cast<f32>( m_foliageSimulationSeconds );
                     }
+
                     for( const auto &world : foliageWorlds )
                     {
                         observeFoliage(
@@ -1732,6 +1798,7 @@ namespace workphone
                             foliageErrors[world.get()] = foliageError;
                         }
                     }
+
                     if( shadowPass )
                     {
                         // Camera culling cannot exclude casters: offscreen objects can shadow visible receivers.
@@ -1740,6 +1807,7 @@ namespace workphone
                             ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() )
                                      : ~u32( 0 ) ) &
                             ( viewport ? viewport->getVisibilityMask() : ~u32( 0 ) );
+
                         for( s32 i = 0; i < wp_graphics_cull_result_get_visible_count( jobs->shadow );
                              ++i )
                         {
@@ -1769,6 +1837,7 @@ namespace workphone
                                 throw std::runtime_error( "Stale shadow material binding." );
                             }
                         }
+
                         for( auto &object : terrainObjects )
                         {
                             if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
@@ -1776,6 +1845,7 @@ namespace workphone
                                 dx11Renderer->renderTerrain( terrain, false );
                             }
                         }
+
                         if( foliage )
                         {
                             for( const auto &batch : *foliage )
@@ -1786,6 +1856,7 @@ namespace workphone
                                 }
                             }
                         }
+
                         for( const auto &world : foliageWorlds )
                         {
                             auto view = shadowFoliageView;
@@ -1802,6 +1873,7 @@ namespace workphone
                         }
                         dx11Renderer->endShadowMap();
                     }
+
                     for( auto &sky : m_skies.snapshot() )
                     {
                         dx11Renderer->renderSky( sky );
@@ -1814,6 +1886,7 @@ namespace workphone
                             dx11Renderer->renderTerrain( terrain, false );
                         }
                     }
+
                     // Render one retained population snapshot in both passes.
                     if( foliage )
                     {
@@ -1825,6 +1898,7 @@ namespace workphone
                             }
                         }
                     }
+
                     for( const auto &world : foliageWorlds )
                     {
                         auto view = colourFoliageView;
@@ -1833,10 +1907,12 @@ namespace workphone
                         {
                             view.forcedLod = owner->second->getFoliageForcedLod();
                         }
+
                         if( !observeFoliage( world->render( *dx11Renderer, view, foliageError ) ) )
                         {
                             foliageErrors[world.get()] = foliageError;
                         }
+
                         if( owner != foliageOwners.end() )
                         {
                             const auto stats = world->diagnostics();
@@ -1870,6 +1946,7 @@ namespace workphone
                             owner->second->setFoliageDiagnostics( published );
                         }
                     }
+
                     if( foliageFrameError != foliageState.error )
                     {
                         foliageState.error = foliageFrameError;
@@ -1907,6 +1984,7 @@ namespace workphone
                             {
                                 return 0;
                             }
+
                             const auto binding = submission.materials->find( mesh );
                             if( !binding || !renderer->renderMeshRecords(
                                                 mesh, Matrix4F( world->m[0] ), *submission.materials,
@@ -1914,9 +1992,11 @@ namespace workphone
                             {
                                 submission.failed = true;
                             }
+
                             return 1;
                         },
                         &meshSubmission );
+
                     if( submission != WP_GRAPHICS_CULL_OK || meshSubmission.failed )
                     {
                         throw std::runtime_error( "Stale colour draw snapshot." );
@@ -1924,7 +2004,7 @@ namespace workphone
 
                     // Particle simulation is updated by GraphicsScene::update, once per
                     // simulation cycle. Each camera consumes its own immutable draw snapshot.
-                    for( auto &object : m_particleSystems.snapshot() )
+                    for( auto &object : m_particleSystems )
                     {
                         auto particles = dynamic_pointer_cast<CParticleSystem>( object );
                         if( !particles || !particles->isVisible() || !particles->isLoaded() )
