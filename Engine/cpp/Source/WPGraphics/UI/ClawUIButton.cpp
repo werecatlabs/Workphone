@@ -260,4 +260,11 @@ namespace workphone::ui
             }
         }
     }
+
+    bool ClawUIButton::setRuntimeLiteralText( bool enabled )
+    {
+        m_runtimeLiteralText = enabled;
+        return true;
+    }
+
 }  // namespace workphone::ui

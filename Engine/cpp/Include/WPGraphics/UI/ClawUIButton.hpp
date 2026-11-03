@@ -38,11 +38,7 @@ namespace workphone
 
             void setTextSize( f32 textSize ) override;
 
-            bool setRuntimeLiteralText( bool enabled ) override
-            {
-                m_runtimeLiteralText = enabled;
-                return true;
-            }
+            bool setRuntimeLiteralText( bool enabled ) override;
 
             bool setRuntimeFont( SmartPtr<render::IFont> ) override;
             SmartPtr<render::IFont> getRuntimeFont() const override;

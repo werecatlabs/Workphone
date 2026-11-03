@@ -16,6 +16,7 @@ namespace workphone
 #if defined( WP_PLATFORM_WIN32 ) && !defined( _WP_STATIC_LIB_ ) && !defined( WPCore_EXPORTS )
         extern template class core::Prototype<IUIImage>;
 #endif
+
         class ClawUIImage : public ClawUIElement<IUIImage>
         {
         public:
