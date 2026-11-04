@@ -20,7 +20,7 @@ GNS documents reliable/unreliable messages, fragmentation, encryption, IPv6 and 
 
 The Windows x64 experiment uses GNS static linkage with its `BCrypt` crypto backend and the engine's DLL CRT setting. Disable ICE and WebRTC initially; direct connections do not justify that dependency expansion. The upstream build supports BCrypt, requires protobuf, and requires matching `protoc` and protobuf runtime versions. Recent protobuf adds Abseil. [Build requirements](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/BUILDING.md).
 
-Before adding the adapter, record an immutable GNS commit/archive checksum, protobuf/protoc versions, any Abseil revision, upstream submodule revisions, licenses and all local patches. **That pin and dependency audit are pending.** A branch name or an unbounded `find_package()` search is insufficient for the shipping build. Recheck all API and trust details below against the chosen revision.
+Before adding the adapter, record an immutable GNS commit/archive checksum, protobuf/protoc versions, any Abseil revision, upstream submodule revisions, licenses and all local patches. **The initial dependency pin, source hashes and license inventory are recorded in `Tests/NetworkTransport/dependencies.lock.json`; security review and the complete dependency audit remain pending.** A branch name or an unbounded `find_package()` search is insufficient for the shipping build. Recheck all API and trust details below against the chosen revision.
 
 Build the audited dependency separately with these intended settings:
 
@@ -111,3 +111,15 @@ Required evidence for the GNS adapter:
 6. Native-versus-GNS CPU, memory, bytes, queue age, throughput and loss recovery on recorded hardware/topologies, including process callback budgets and reliable-control traffic under bulk load. Freeze supported operating limits from those results.
 
 Only after these pass should the shipping profile select GNS by default and the session/spawn/late-join work depend on its reliable authenticated control channel. Record the exact adapter/dependency revisions and proof artifacts in [implementation status](WPNETWORK_IMPLEMENTATION_STATUS.md). Existing native UDP tests and this decision record do not satisfy NET-02 certification.
+
+## Executable conformance experiment, 4 November 2026
+
+`Scripts/Validate-WPNetworkTransport.ps1` builds a separate, pinned vcpkg package set and runs `Tests/NetworkTransport/GNSConformance.cpp`. The experiment uses GNS 1.6.1 at commit `d534c19aa760df3fb75fd20db13ba1932b8a5463` and registry baseline `520c3b781ac2abf391887d286d569f74ae6bf752`. The baseline fixes protobuf/protoc, Abseil, OpenSSL, utf8-range and package patches; the lock records source hashes and licenses. Build outputs and installed packages live under ignored `.codex/network`, isolated from engine binaries.
+
+This experiment deliberately uses the registry's OpenSSL backend with static libraries and the DLL CRT, rather than overriding the port to BCrypt. ICE is disabled. The shipping crypto choice and operator root-key build must still be reviewed together. No private keys or credentials are committed.
+
+The test requires encrypted IPv6 development connections, reliable ordered messages under 15 percent simulated send loss, and reassembly of a 64 KiB payload. A separate strict-client case verifies that no connection establishes without provisioned authentication, with the localhost authentication exception disabled. In the current run this terminates with connection timeout (5003), not an explicit certificate-rejection reason. The negative fixture asserts that authentication is not available; it does not prove a signed certificate was verified or rejected. The successful data case explicitly permits unverified development identities; it is not a verified-certificate positive test. No engine capabilities change and no GNS adapter is enabled by this experiment.
+
+After successful validation the script records manifest, dependency-lock, installed-package-status and executable SHA256 hashes in `conformance-result-<configuration>.json`. Installed package license files remain under the vcpkg installation's `share` directories. These records are reproducibility evidence, not a vulnerability assessment, trust certification or complete R1 conformance result.
+
+The first static-profile link exposed an upstream port configuration mismatch: GNS declared protobuf imports as DLL symbols while linking static protobuf. The recorded overlay in `Tests/NetworkTransport/ports/gamenetworkingsockets` sets `Protobuf_USE_STATIC_LIBS` to match library linkage. Its files are SHA256-locked and verified by the runner; the registry checkout remains unmodified. This is a required local package patch, not a suppressed linker diagnostic.

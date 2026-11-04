@@ -96,6 +96,7 @@ namespace workphone::render
     {
         if( graphics && maximumCandidates )
         {
+            ScopedLock lifecycleLock( graphics.get() );
             releaseGraphicsAssets( *graphics, maximumCandidates, true );
         }
     }
@@ -279,6 +280,7 @@ namespace workphone::render
     GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssetsImpl(
         u32 maximumCandidates, bool automatic )
     {
+        ScopedLock lifecycleLock( this );
         return releaseGraphicsAssets( *this, maximumCandidates, automatic );
     }
 

@@ -1085,7 +1085,7 @@ namespace workphone
         {
             auto children = getChildren();
 
-            List<T *> componentsInChildren;
+            List<T *> componentsInChildren( sourceBudget );
 
             for( auto &child : children )
             {
@@ -1268,7 +1268,7 @@ namespace workphone
         template <class T>
         List<T *> IGameActor::getComponentsByTypePtr() const
         {
-            List<T *> componentsByType;
+            List<T *> componentsByType( sourceBudget );
 
             auto components = getComponents();
             for( auto &component : components )

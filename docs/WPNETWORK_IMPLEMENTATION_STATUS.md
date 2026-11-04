@@ -1,6 +1,10 @@
 # WPNetwork implementation status
 
-Updated: 30 October 2026. Implements the foundation and development-workflow increments of [the production plan](WPNETWORK_PRODUCTION_PLAN.md). R1 and R2 are not certified or complete.
+Updated: 4 November 2026. Implements the foundation and development-workflow increments of [the production plan](WPNETWORK_PRODUCTION_PLAN.md). R1 and R2 are not certified or complete.
+
+## Transport conformance work, 4 November
+
+The next transport prerequisite now has a pinned package manifest, source-hash/license inventory, isolated CMake target and repeatable `Scripts/Validate-WPNetworkTransport.ps1` entry point. It builds the real GNS library and exercises IPv6, reliable ordering under simulated loss, fragmentation/reassembly and credentialless client fail-closed behavior (currently timeout, not explicit certificate rejection). The current engine backend remains native UDP; the GNS manager adapter, operator certificate provisioning and authenticated positive/negative tests remain unfinished. See the [transport decision](WPNETWORK_TRANSPORT_DECISION.md) for the exact boundary. The first package link exposed a protobuf static/DLL-import mismatch, now repaired by a hash-locked GNS port overlay. The conformance target passes in Debug and RelWithDebInfo; these tests establish a transport experiment, not engine integration or operator-certificate authentication. Native/codec suites also pass 2/2 in both configurations in this checkout. JUnit and per-configuration hash reports are retained under `.codex/network/build`.
 
 ## Development workflow increment, 30 October
 
@@ -61,7 +65,7 @@ Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a
 
 | Package | Status and next concrete dependency |
 |---|---|
-| NET-00 | Transport direction recorded; baseline and separate-process harness added; dependency pin/audit, backend comparison and performance baseline remain |
+| NET-00 | Transport direction and initial dependency lock recorded; baseline, separate-process and standalone GNS conformance harnesses added; complete dependency audit, adapter comparison and performance baseline remain |
 | NET-01 | Socket/codec/lifecycle repairs implemented; fuzz/sanitizer coverage and comprehensive event-overload certification remain |
 | NET-02 | Pending: authenticated encrypted transport, reliable channels, congestion/fragmentation, IPv6/asynchronous DNS, admission and replay protection |
 | NET-03 | Polling, distinct player IDs, diagnostics, cancellation/reconnect and timeout repairs added; session service/facade, connection state model, roster/readiness and synchronized clock remain |

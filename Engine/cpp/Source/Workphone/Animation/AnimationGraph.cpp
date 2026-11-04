@@ -511,6 +511,26 @@ namespace workphone::animation
         return m_definition;
     }
 
+    void AnimationGraphInstance::clear() noexcept
+    {
+        m_definition.clear();
+        // Keep the existing map sentinels until the instance itself retires.
+        m_boolParameters.clear();
+        m_floatParameters.clear();
+        m_currentState.release();
+        m_destinationState.release();
+        m_currentTime = m_destinationTime = m_transitionTime = m_transitionDuration = 0.0f;
+        m_samples = makeSourceBudgetSnapshot<AnimationGraphSample>();
+        m_sampledEvents = makeSourceBudgetSnapshot<AnimationGraphEvent>();
+        m_staging.currentState.release();
+        m_staging.destinationState.release();
+        m_staging.currentTime = m_staging.destinationTime = m_staging.transitionTime =
+            m_staging.transitionDuration = 0.0f;
+        m_staging.samples = makeSourceBudgetSnapshot<AnimationGraphSample>();
+        m_staging.events = makeSourceBudgetSnapshot<AnimationGraphEvent>();
+        m_traversalScratch = makeSourceBudgetSnapshot<const String *>();
+    }
+
     void AnimationGraphInstance::reset()
     {
         beginRuntimeMutation();

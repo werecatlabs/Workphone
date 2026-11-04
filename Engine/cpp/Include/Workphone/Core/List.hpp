@@ -2,6 +2,9 @@
 #define List_h__
 
 #include <Workphone/WorkphoneEnums.hpp>
+#include <Workphone/Core/Allocator.hpp>
+#include <limits>
+#include <algorithm>
 #include <list>
 #include <cassert>
 #include <cstddef>
@@ -60,6 +63,18 @@ namespace workphone
                 return std::launder( reinterpret_cast<const T *>( &storage ) );
             }
         };
+
+        struct BlockDeleter
+        {
+            bool source = false;
+            void operator()( Node *nodes ) const noexcept
+            {
+                if( source ) freeSourceBudgetStorage( nodes, alignof( Node ) );
+                else delete[] nodes;
+            }
+        };
+        using Block = std::unique_ptr<Node[], BlockDeleter>;
+        using BlockAllocator = Allocator<Block>;
 
     public:
         using value_type = T;
@@ -185,6 +200,14 @@ namespace workphone
             initialiseSentinel();
         }
 
+        explicit ListBase( SourceBudgetTag ) noexcept :
+            m_blocks( BlockAllocator( sourceBudget ) ), m_sourceBudgeted( true )
+        {
+            initialiseSentinel();
+        }
+
+        bool isSourceBudgeted() const noexcept { return m_sourceBudgeted; }
+
         /**
          * Create a pool with an initial capacity.
          */
@@ -202,6 +225,8 @@ namespace workphone
         }
 
         ListBase( const ListBase &other ) :
+            m_blocks( other.m_blocks.get_allocator() ),
+            m_sourceBudgeted( other.m_sourceBudgeted ),
             m_growthPolicy( other.m_growthPolicy ),
             m_growthSize( other.m_growthSize )
         {
@@ -250,30 +275,14 @@ namespace workphone
                 return *this;
             }
 
-            /*
-             * First destroy our current elements.
-             *
-             * Existing pool memory is retained and reused.
-             */
-            clear();
-
-            m_growthPolicy = other.m_growthPolicy;
-            m_growthSize = other.m_growthSize;
-
-            reserve( other.capacity() );
-
-            try
-            {
-                for( const auto &value : other )
-                {
-                    emplace_back( value );
-                }
-            }
-            catch( ... )
-            {
-                clear();
-                throw;
-            }
+            ListBase candidate;
+            if( m_sourceBudgeted || other.m_sourceBudgeted )
+                candidate = ListBase( sourceBudget );
+            candidate.m_growthPolicy = other.m_growthPolicy;
+            candidate.m_growthSize = other.m_growthSize;
+            candidate.reserve( std::max( capacity(), other.capacity() ) );
+            for( const auto &value : other ) candidate.emplace_back( value );
+            *this = std::move( candidate );
 
             return *this;
         }
@@ -638,7 +647,15 @@ namespace workphone
                 return;
             }
 
-            auto block = std::make_unique<Node[]>( count );
+            if( count > std::numeric_limits<size_type>::max() / sizeof( Node ) ) throw std::bad_alloc();
+            Block block( nullptr, BlockDeleter{ m_sourceBudgeted } );
+            if( m_sourceBudgeted )
+            {
+                auto nodes = static_cast<Node *>( allocateSourceBudgetStorage( count * sizeof( Node ), alignof( Node ) ) );
+                block.reset( nodes );
+                for( size_type i = 0; i < count; ++i ) ::new( static_cast<void *>( nodes + i ) ) Node();
+            }
+            else block.reset( new Node[count] );
 
             Node *nodes = block.get();
 
@@ -763,6 +780,7 @@ namespace workphone
         void moveFrom( ListBase &&other ) noexcept
         {
             m_blocks = std::move( other.m_blocks );
+            m_sourceBudgeted = other.m_sourceBudgeted;
 
             m_freeHead = other.m_freeHead;
             m_capacity = other.m_capacity;
@@ -803,7 +821,8 @@ namespace workphone
          *
          * Growing this vector does NOT move the actual nodes.
          */
-        std::vector<std::unique_ptr<Node[]>> m_blocks;
+        std::vector<Block, BlockAllocator> m_blocks;
+        bool m_sourceBudgeted = false;
 
         Node *m_freeHead = nullptr;
 

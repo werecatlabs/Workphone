@@ -1387,7 +1387,7 @@ namespace workphone::scene
 
     void Animator::clearAnimationGraph()
     {
-        m_animationGraph = animation::AnimationGraphInstance();
+        m_animationGraph.clear();
     }
 
     bool Animator::hasAnimationGraph() const

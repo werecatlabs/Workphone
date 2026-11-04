@@ -340,6 +340,8 @@ namespace
     };
 }
 
+#include "SharedSceneInventoryBudgetTests.hpp"
+
 BOOST_AUTO_TEST_CASE( actor_snapshots_reject_at_cap_and_retain_admitted_storage )
 {
     TestGuard guard; CoordinatorBudget budget;

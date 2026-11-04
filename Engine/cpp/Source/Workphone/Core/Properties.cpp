@@ -225,13 +225,17 @@ namespace workphone
     const String Properties::transformStr = String( "transform" );
     const String Properties::transformdStr = String( "transformd" );
 
-    Properties::Properties() : ISharedObject( Properties::typeInfo() )
+    Properties::Properties() : ISharedObject( Properties::typeInfo() ),
+        m_properties( GrowthPolicy::Default, 1, Allocator<Property>( sourceBudget ) ),
+        m_children( GrowthPolicy::Default, 1, Allocator<SmartPtr<Properties>>( sourceBudget ) )
     {
         m_properties.reserve( 12 );
         m_children.reserve( 4 );
     }
 
-    Properties::Properties( const Properties &other )
+    Properties::Properties( const Properties &other ) :
+        m_properties( GrowthPolicy::Default, 1, Allocator<Property>( sourceBudget ) ),
+        m_children( GrowthPolicy::Default, 1, Allocator<SmartPtr<Properties>>( sourceBudget ) )
     {
         *this = other;
 
@@ -422,8 +426,20 @@ namespace workphone
     {
         if( this != &other )
         {
-            m_properties = other.m_properties;
-            m_children = other.m_children;
+            decltype( m_properties ) properties( GrowthPolicy::Default, 1, Allocator<Property>( sourceBudget ) );
+            decltype( m_children ) children( GrowthPolicy::Default, 1, Allocator<SmartPtr<Properties>>( sourceBudget ) );
+            {
+                ScopedLock lock( &other.m_properties, false );
+                properties.reserve( other.m_properties.capacity() );
+                for( const auto &property : other.m_properties ) properties.push_back( property );
+            }
+            {
+                ScopedLock lock( &other.m_children, false );
+                children.reserve( other.m_children.capacity() );
+                for( const auto &child : other.m_children ) children.push_back( child );
+            }
+            m_properties = std::move( properties );
+            m_children = std::move( children );
         }
 
         return *this;
@@ -571,7 +587,10 @@ namespace workphone
 
     void Properties::setPropertiesAsArray( const Array<Property> &array )
     {
-        m_properties = { array.begin(), array.end() };
+        decltype( m_properties ) candidate( GrowthPolicy::Default, 1, Allocator<Property>( sourceBudget ) );
+        candidate.reserve( array.capacity() );
+        for( const auto &property : array ) candidate.push_back( property );
+        m_properties = std::move( candidate );
     }
 
     auto Properties::getPropertiesAsArray() const -> Array<Property>

@@ -18,10 +18,12 @@ namespace workphone::scene
         auto applicationManager = core::IApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );
 
-        applicationManager->addObjectListener( this );
-
+        // Admit inventories before publishing an observer of this system.
+        auto dirty = m_dirtyComponents;
+        dirty.reserve( 12 );
         reserve( 12 );
-        m_dirtyComponents.reserve( 12 );
+        m_dirtyComponents = std::move( dirty );
+        applicationManager->addObjectListener( this );
     }
 
     void ComponentSystem::unload( SmartPtr<ISharedObject> data )
@@ -30,6 +32,21 @@ namespace workphone::scene
         WP_ASSERT( applicationManager );
 
         applicationManager->removeObjectListener( this );
+        decltype( m_dirtyComponents ) retiredDirty;
+        decltype( m_components ) retiredComponents;
+        decltype( m_loadingStates ) retiredStates;
+        {
+            ScopedLock lock( this );
+            retiredDirty = std::move( m_dirtyComponents );
+            retiredComponents = std::move( m_components );
+            retiredStates = std::move( m_loadingStates );
+            // Moved-from arrays retain their SourceCpu allocator. Publish the
+            // empty system before any final component reference can call back.
+            m_size = 0;
+            m_lastFreeSlot = 0;
+            m_dirty = false;
+        }
+        // Physical storage and strong component owners retire outside the lock.
     }
 
     u32 ComponentSystem::addComponent( SmartPtr<IComponent> component )
@@ -150,16 +167,19 @@ namespace workphone::scene
         auto currentSize = getSize();
         if( currentSize != size )
         {
-            m_components.resize( size );
-            m_loadingStates.resize( size );
+            auto components = m_components;
+            auto states = m_loadingStates;
+            components.resize( size );
+            states.resize( size );
 
             for( size_t i = currentSize; i < size; ++i )
             {
-                m_loadingStates[i] = LoadingState::Unallocated;
+                states[i] = LoadingState::Unallocated;
             }
 
             reserveData( size );
-
+            m_components = std::move( components );
+            m_loadingStates = std::move( states );
             setSize( size );
         }
     }
@@ -227,7 +247,12 @@ namespace workphone::scene
 
     void ComponentSystem::setComponents( const Array<SmartPtr<IComponent>> &components )
     {
-        m_components = { components.begin(), components.end() };
+        decltype( m_components ) candidate( GrowthPolicy::Default, 1,
+            Allocator<SmartPtr<IComponent>>( sourceBudget ) );
+        candidate.reserve( components.capacity() );
+        for( const auto &component : components ) candidate.push_back( component );
+        ScopedLock lock( this );
+        m_components = std::move( candidate );
     }
 
     Array<SmartPtr<IComponent>> ComponentSystem::getComponents() const
@@ -252,6 +277,7 @@ namespace workphone::scene
 
     void ComponentSystem::addDirtyComponent( SmartPtr<IComponent> component )
     {
+        ScopedLock lock( this );
         auto it = std::find( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() );
         if( it == m_dirtyComponents.end() )
         {
@@ -263,6 +289,7 @@ namespace workphone::scene
 
     void ComponentSystem::removeDirtyComponent( SmartPtr<IComponent> component )
     {
+        ScopedLock lock( this );
         m_dirtyComponents.erase(
             std::remove( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() ),
             m_dirtyComponents.end() );
@@ -278,7 +305,12 @@ namespace workphone::scene
 
     void ComponentSystem::setDirtyComponents( const Array<SmartPtr<IComponent>> &dirtyComponents )
     {
-        m_dirtyComponents = { dirtyComponents.begin(), dirtyComponents.end() };
+        decltype( m_dirtyComponents ) candidate( GrowthPolicy::Default, 1,
+            Allocator<SmartPtr<IComponent>>( sourceBudget ) );
+        candidate.reserve( dirtyComponents.capacity() );
+        for( const auto &component : dirtyComponents ) candidate.push_back( component );
+        ScopedLock lock( this );
+        m_dirtyComponents = std::move( candidate );
     }
 
     Array<SmartPtr<IComponent>> ComponentSystem::getDirtyComponents() const

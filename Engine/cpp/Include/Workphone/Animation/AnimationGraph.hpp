@@ -156,6 +156,8 @@ namespace workphone::animation
         bool setDefinition( const AnimationGraphDefinition &definition );
         const AnimationGraphDefinition &getDefinition() const;
 
+        /** Release graph payloads without allocating replacement map sentinels. */
+        void clear() noexcept;
         void reset();
         bool forceState( const String &stateId, f32 normalizedTime = 0.0f );
         void update( f32 deltaTime );

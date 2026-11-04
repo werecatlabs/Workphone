@@ -444,32 +444,39 @@ namespace workphone::scene
 
     void GameScene::load( SmartPtr<ISharedObject> data )
     {
+        ScopedLock lock( this, true );
+        // A callback can re-enter load while an update owns a borrowed row.
+        // Keep that row alive until the update's existing load lock leaves.
+        if( isLoadLocked() ) return;
+        const auto previous = getLoadingState();
         try
         {
-            ScopedLock lock( this, true );
-
             setLoadingState( LoadingState::Loading );
-
-            m_updateObjects.resize( static_cast<s32>( Thread::UpdateState::Count ) );
-
-            for( u32 x = 0; x < static_cast<s32>( Thread::UpdateState::Count ); ++x )
+            UpdateTable candidate( GrowthPolicy::Default, 1, Allocator<UpdateTasks>( sourceBudget ) );
+            candidate.resize( static_cast<size_t>( Thread::UpdateState::Count ) );
+            for( size_t phase = 0; phase < candidate.size(); ++phase )
             {
-                m_updateObjects[x].resize( static_cast<s32>( TaskId::Count ) );
-            }
-
-            for( u32 x = 0; x < static_cast<s32>( Thread::UpdateState::Count ); ++x )
-            {
-                for( u32 y = 0; y < static_cast<s32>( Thread::UpdateState::Count ); ++y )
+                candidate[phase] = UpdateTasks( GrowthPolicy::Default, 1, Allocator<UpdateActors>( sourceBudget ) );
+                candidate[phase].resize( static_cast<size_t>( TaskId::Count ) );
+                for( size_t task = 0; task < candidate[phase].size(); ++task )
                 {
-                    m_updateObjects[x][y].reserve( WP_MAX_ACTORS );
+                    auto &row = candidate[phase][task];
+                    row = UpdateActors( GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+                    const bool existing = phase < m_updateObjects.size() && task < m_updateObjects[phase].size();
+                    row.reserve( existing ? std::max<size_t>( WP_MAX_ACTORS, m_updateObjects[phase][task].capacity() ) : WP_MAX_ACTORS );
+                    if( existing ) for( const auto &actor : m_updateObjects[phase][task] ) row.push_back( actor );
                 }
             }
-
-            WP_ASSERT( isValid() );
+            m_updateObjects = std::move( candidate );
             setLoadingState( LoadingState::Loaded );
         }
-        catch( std::exception &e )
+        catch( const std::bad_alloc & )
         {
+            setLoadingState( previous == LoadingState::Loaded ? previous : LoadingState::Error );
+        }
+        catch( const std::exception &e )
+        {
+            setLoadingState( previous == LoadingState::Loaded ? previous : LoadingState::Error );
             WP_LOG_EXCEPTION( e );
         }
     }
@@ -672,14 +679,14 @@ namespace workphone::scene
                 actor = nullptr;
             }
 
-            m_playQueue.clear();
-            m_editQueue.clear();
+            m_playQueue.release();
+            m_editQueue.release();
 
-            for( u32 x = 0; x < static_cast<int>( Thread::UpdateState::Count ); ++x )
+            for( u32 x = 0; x < m_updateObjects.size(); ++x )
             {
-                for( u32 y = 0; y < static_cast<int>( TaskId::Count ); ++y )
+                for( u32 y = 0; y < m_updateObjects[x].size(); ++y )
                 {
-                    m_updateObjects[x][y].clear();
+                    m_updateObjects[x][y] = UpdateActors( GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
                 }
             }
 
@@ -900,6 +907,7 @@ namespace workphone::scene
                         throw std::length_error( "Scene actor capacity exhausted" );
                     }
 
+                    reserveUpdateSlots( actor );
                     if( m_partitioner ) m_partitioner->addActor( actor );
                     actor->setScene( this );
                     m_actors.push_back( actor );
@@ -1098,6 +1106,21 @@ namespace workphone::scene
         }
     }
 
+    void GameScene::reserveUpdateSlots( SmartPtr<IGameActor> actor, s32 task, s32 phase )
+    {
+        if( !actor ) return;
+        for( size_t p = 0; p < m_updateObjects.size(); ++p )
+        {
+            if( phase >= 0 && p != static_cast<size_t>( phase ) ) continue;
+            for( size_t t = 0; t < m_updateObjects[p].size(); ++t )
+            {
+                if( task >= 0 && t != static_cast<size_t>( task ) ) continue;
+                auto &row = m_updateObjects[p][t];
+                if( std::find( row.begin(), row.end(), actor ) == row.end() ) row.reserve( row.size() + 1 );
+            }
+        }
+    }
+
     void GameScene::registerAllUpdates( SmartPtr<IGameActor> actor )
     {
         ScopedLock sceneLock( this );
@@ -1106,6 +1129,7 @@ namespace workphone::scene
             WP_ASSERT( isValid() );
             WP_ASSERT( getLoadingState() == LoadingState::Loaded );
 
+            reserveUpdateSlots( actor );
             for( u32 x = 0; x < static_cast<u32>( TaskId::Count ); ++x )
             {
                 for( u32 y = 0; y < static_cast<u32>( Thread::UpdateState::Count ); ++y )
@@ -1124,6 +1148,9 @@ namespace workphone::scene
     void GameScene::registerUpdates( TaskId taskId, SmartPtr<IGameActor> actor )
     {
         ScopedLock sceneLock( this );
+        // Admit all three phases before publishing any membership.
+        for( auto phase : { Thread::UpdateState::PreUpdate, Thread::UpdateState::Update, Thread::UpdateState::PostUpdate } )
+            reserveUpdateSlots( actor, static_cast<s32>( taskId ), static_cast<s32>( phase ) );
         registerUpdate( taskId, Thread::UpdateState::PreUpdate, actor );
         registerUpdate( taskId, Thread::UpdateState::Update, actor );
         registerUpdate( taskId, Thread::UpdateState::PostUpdate, actor );
@@ -1390,7 +1417,16 @@ namespace workphone::scene
         WP_ASSERT( static_cast<s32>( task ) <
                    static_cast<s32>( m_updateObjects[static_cast<s32>( updateState )].size() ) );
 
-        m_updateObjects[static_cast<s32>( updateState )][static_cast<s32>( task )] = objects;
+        ScopedLock sceneLock( this );
+        auto &destination = m_updateObjects[static_cast<s32>( updateState )][static_cast<s32>( task )];
+        if( &destination == &objects ) return;
+        UpdateActors candidate( GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+        {
+            ScopedLock sourceLock( &objects, false );
+            candidate.reserve( objects.capacity() );
+            for( const auto &actor : objects ) candidate.push_back( actor );
+        }
+        destination = std::move( candidate );
     }
 
     bool GameScene::isValid() const
@@ -1502,6 +1538,17 @@ namespace workphone::scene
         auto taskManager = applicationManager->getTaskManagerPtr();
         auto factoryManager = applicationManager->getFactoryManagerPtr();
 
+        const bool threaded = threadPool && threadPool->getNumThreads() > 0;
+        ConcurrentQueue<SmartPtr<IGameActor>> candidate( 0, GrowthPolicy::Double, 64,
+            Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+        if( threaded && ( state == State::Edit || state == State::Play ) )
+        {
+            auto actors = m_actors.readLocked();
+            const auto capacity = state == State::Edit ? m_editQueue.capacity() : m_playQueue.capacity();
+            candidate.reserve( std::max<size_t>( actors.size(), capacity ) );
+            for( const auto &actor : actors ) candidate.push( actor );
+        }
+
         // A queued transition can outlive a rapid play/stop request. Discard
         // superseded requests before queuing the actors for the latest mode.
         m_playQueue.clear();
@@ -1518,11 +1565,7 @@ namespace workphone::scene
         {
             if( threadPool && threadPool->getNumThreads() > 0 )
             {
-                auto actors = m_actors.snapshot();
-                for( auto &actor : actors )
-                {
-                    m_editQueue.push( actor );
-                }
+                m_editQueue = std::move( candidate );
 
                 auto applicationTask = taskManager->getTask( TaskId::Application );
                 auto cameraManagerResetJob = factoryManager->make_ptr<CameraManagerReset>();
@@ -1554,10 +1597,7 @@ namespace workphone::scene
         {
             if( threadPool && threadPool->getNumThreads() > 0 )
             {
-                for( auto &actor : m_actors )
-                {
-                    m_playQueue.push( actor );
-                }
+                m_playQueue = std::move( candidate );
 
                 auto applicationTask = taskManager->getTask( TaskId::Application );
                 auto cameraManagerResetJob = factoryManager->make_ptr<CameraManagerReset>();

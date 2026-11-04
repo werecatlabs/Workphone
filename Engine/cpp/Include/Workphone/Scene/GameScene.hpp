@@ -427,6 +427,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void reserveUpdateSlots( SmartPtr<IGameActor> actor, s32 task = -1, s32 phase = -1 );
+
             /**
              * @var m_lightingDirector
              * @brief The lighting director for the scene, managing lighting settings and updates.
@@ -476,7 +478,8 @@ namespace workphone
              * This concurrent queue is used to manage actors that need to be transitioned to play mode
              * in a thread-safe manner.
              */
-            ConcurrentQueue<SmartPtr<IGameActor>> m_playQueue;
+            ConcurrentQueue<SmartPtr<IGameActor>> m_playQueue{ 0, GrowthPolicy::Double, 64,
+                Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
 
             /**
              * @var m_editQueue
@@ -485,7 +488,8 @@ namespace workphone
              * This concurrent queue is used to manage actors that need to be transitioned to edit mode
              * in a thread-safe manner.
              */
-            ConcurrentQueue<SmartPtr<IGameActor>> m_editQueue;
+            ConcurrentQueue<SmartPtr<IGameActor>> m_editQueue{ 0, GrowthPolicy::Double, 64,
+                Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
 
             /**
              * @var m_actors
@@ -503,7 +507,10 @@ namespace workphone
              * This structure organizes actors by update state and task for efficient multi-threaded
              * updates.
              */
-            ConcurrentArray<ConcurrentArray<ConcurrentArray<SmartPtr<IGameActor>>>> m_updateObjects;
+            using UpdateActors = ConcurrentArray<SmartPtr<IGameActor>>;
+            using UpdateTasks = ConcurrentArray<UpdateActors>;
+            using UpdateTable = ConcurrentArray<UpdateTasks>;
+            UpdateTable m_updateObjects{ GrowthPolicy::Default, 1, Allocator<UpdateTasks>( sourceBudget ) };
         };
     }  // namespace scene
 }  // namespace workphone

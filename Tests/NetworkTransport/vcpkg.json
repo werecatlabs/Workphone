@@ -1,0 +1,8 @@
+{
+  "name": "wpnetwork-transport-conformance",
+  "version-string": "0.1.0",
+  "builtin-baseline": "520c3b781ac2abf391887d286d569f74ae6bf752",
+  "dependencies": [
+    { "name": "gamenetworkingsockets", "default-features": false }
+  ]
+}

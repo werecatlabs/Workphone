@@ -278,18 +278,18 @@ namespace workphone
              * @brief List of component pointers that have been marked dirty and need
              * processing.
              */
-            ConcurrentArray<SmartPtr<IComponent>> m_dirtyComponents;
+            ConcurrentArray<SmartPtr<IComponent>> m_dirtyComponents{ GrowthPolicy::Default, 1, Allocator<SmartPtr<IComponent>>( sourceBudget ) };
 
             /**
              * @brief Primary storage array of component pointers indexed by slot.
              */
-            ConcurrentArray<SmartPtr<IComponent>> m_components;
+            ConcurrentArray<SmartPtr<IComponent>> m_components{ GrowthPolicy::Default, 1, Allocator<SmartPtr<IComponent>>( sourceBudget ) };
 
             /**
              * @brief Per-slot loading state flags used during asynchronous load/unload
              * operations.
              */
-            ConcurrentArray<AtomicValue<LoadingState>> m_loadingStates;
+            ConcurrentArray<AtomicValue<LoadingState>> m_loadingStates{ GrowthPolicy::Default, 1, Allocator<AtomicValue<LoadingState>>( sourceBudget ) };
 
             /**
              * @brief Recursive mutex protecting access to internal arrays.

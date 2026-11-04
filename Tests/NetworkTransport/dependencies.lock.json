@@ -1,0 +1,55 @@
+{
+  "vcpkgBaseline": "520c3b781ac2abf391887d286d569f74ae6bf752",
+  "gnsCommit": "d534c19aa760df3fb75fd20db13ba1932b8a5463",
+  "targetTriplet": "x64-windows-static-md",
+  "hostTriplet": "x64-windows",
+  "crypto": "OpenSSL",
+  "ice": false,
+  "packages": [
+    {
+      "name": "gamenetworkingsockets",
+      "version": "1.6.1",
+      "portVersion": 0,
+      "license": "BSD-3-Clause",
+      "sourceSHA512": "b044010aad017804e1b16b5664431e56f59feb35284adaedfd35f518251e8d8abeb3a29d3d273dea57bde63af63b4b3dd54d2cb2712d28975373b54b640da611"
+    },
+    {
+      "name": "openssl",
+      "version": "3.6.5",
+      "portVersion": 2,
+      "license": "Apache-2.0",
+      "sourceSHA512": "40f0b346a9a5cf4cb37f1ecebdc74750c39a95783710061bfac58964883b0831543ecee0aee9f747ea093781b13c58a543b0b935d222519e3cb19648d77a0276"
+    },
+    {
+      "name": "protobuf",
+      "version": "7.36.2",
+      "portVersion": 1,
+      "license": "BSD-3-Clause",
+      "sourceSHA512": "659ec2da3fadf6d2e4ecf9af0494df1d5527f9fbbd7820061791babe6f8aa8a34371a10d799c33d5d5f7108916df83492ee276675709fc7ed7d6a36242670b47"
+    },
+    {
+      "name": "abseil",
+      "version": "20260107.1",
+      "portVersion": 3,
+      "license": "Apache-2.0",
+      "sourceSHA512": "f5012885d6b6844a9cf5ed92ad5468b8757db33dfe1364bfb232fff928e06c550c7eb4557f45186a8ac4d18b178df9be267681abab4a6de40823b574afbe9960"
+    },
+    {
+      "name": "utf8-range",
+      "version": "7.36.2",
+      "portVersion": 0,
+      "license": "MIT",
+      "sourceSHA512": "659ec2da3fadf6d2e4ecf9af0494df1d5527f9fbbd7820061791babe6f8aa8a34371a10d799c33d5d5f7108916df83492ee276675709fc7ed7d6a36242670b47"
+    }
+  ],
+  "localPatches": [
+    {
+      "description": "Match GNS protobuf DLL-import declarations to static/dynamic library linkage",
+      "files": {
+        "ports/gamenetworkingsockets/portfile.cmake": "85ba6548cefeeb243ade60ff3538a793b4b0865c765a2c225010582e20464378",
+        "ports/gamenetworkingsockets/vcpkg.json": "c83598f75d67d07a3d1e0814c09ab3ff8e440602270e9de967ba509585936506",
+        "ports/gamenetworkingsockets/LICENSE.txt": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+      }
+    }
+  ]
+}

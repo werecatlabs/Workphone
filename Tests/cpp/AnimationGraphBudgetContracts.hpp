@@ -283,12 +283,22 @@ namespace animation_graph_budget_contracts
                      closeValue( instance->getSamples()[1].weight, 0.5f ),
                  "Scoped traversal visits both shared child branches without retaining a false cycle" );
         std::optional<Array<AnimationGraphSample>> retained( instance->getSamples() );
+        instance->setBoolParameter( "Existing", true );
         const auto resident = budget.used();
         budget.set( resident );
         const auto denials = sourceBudgetDenialCount();
         instance->update( 0.1f );
         require( sourceBudgetDenialCount() == denials && budget.used() == resident,
                  "Oversized nonpooled node traversal reuses its borrowed path stack and output workspaces at capacity" );
+        const auto beforeClear = sourceBudgetDenialCount();
+        instance->clear();
+        require( !instance->isValid() && instance->getCurrentState().empty() &&
+                     instance->getSamples().capacity() == 0 &&
+                     instance->getSampledEvents().capacity() == 0 &&
+                     !instance->getBoolParameter( "Existing" ) &&
+                     closeValue( instance->getFloatParameter( "Speed", -1 ), -1 ) &&
+                     sourceBudgetDenialCount() == beforeClear,
+                 "Full-cap graph clear releases payloads and parameters without replacing map sentinels" );
         instance.reset(); definition.reset();
         require( sourceBudgetDenialCount() == denials && budget.used() > baseline &&
                      retained->size() == 2 && closeValue( retained->front().time, 0.2f ),
