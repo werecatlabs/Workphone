@@ -57,7 +57,28 @@ namespace workphone
         void addBoxMesh( SmartPtr<scene::IGameActor> actor, SmartPtr<render::IMaterial> material )
         {
             auto mesh = actor->addComponent<scene::Mesh>();
-            mesh->setMeshPath( "cube_internal.fbmeshbin" );
+            // Explicit centered unit bounds keep the visible ground and chassis aligned with
+            // their full-dimension collision boxes, independent of imported asset pivots.
+            auto app = core::IApplicationManager::instance();
+            auto manager = dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
+            if( !manager )
+            {
+                manager = make_ptr<MeshManager>();
+                app->setMeshManager( manager );
+            }
+            auto resource = dynamic_pointer_cast<IMeshResource>(
+                manager->createOrRetrieve( "__procedural/sample_vehicle_box.meshbin" ).first );
+            if( !resource )
+                throw std::runtime_error( "Could not create the SampleVehicle box mesh." );
+            if( !resource->getMesh() )
+            {
+                auto generated = MeshUtil::createBox( 1.0f, 1.0f, 1.0f, 1, 1, 1 );
+                generated->updateAABB( true );
+                resource->setName( resource->getFilePath() );
+                resource->setMesh( generated );
+                resource->setLoadingState( LoadingState::Loaded );
+            }
+            mesh->setMeshResource( resource );
             actor->addComponent<scene::MeshRenderer>();
             actor->addComponent<scene::Material>()->setMaterial( material );
         }
@@ -245,6 +266,15 @@ namespace workphone
             applicationManager->setPlaying( true );
             applicationManager->setPaused( false );
             sceneManager->play();
+
+            // Scene activation resolves world poses. Apply visual attachment offsets once the
+            // hierarchy is active so those poses cannot become unintended local offsets.
+            m_chassisMeshActor->setLocalPosition( Vector3<real_Num>::zero() );
+            for( auto child : m_boxGround->getChildren() )
+                child->setLocalPosition( Vector3<real_Num>::zero() );
+            for( auto wheelActor : m_wheelActors )
+                for( auto child : wheelActor->getChildren() )
+                    child->setLocalPosition( Vector3<real_Num>::zero() );
 
             auto car = m_vehicleActor->getComponent<scene::CarController>();
             if( m_smokeTest )
@@ -479,8 +509,13 @@ namespace workphone
             const auto mount = wheel->getWorldTransform().getPosition();
             const auto up = vehicle->getWorldTransform().up();
             if( physicsScene->castRay( Ray3<real_Num>( mount, -up ), hit ) )
-                extension = Math<real_Num>::clamp( hit->getDistance() - wheel->getRadius(),
-                                                  0.0f, wheel->getSuspensionTravel() );
+            {
+                // Leave a small visual clearance to avoid tire/ground overlap from pose lag.
+                constexpr real_Num tireClearance = 0.01f;
+                extension = Math<real_Num>::clamp(
+                    hit->getDistance() - wheel->getRadius() - tireClearance,
+                    0.0f, wheel->getSuspensionTravel() );
+            }
             // Apply suspension to the axle actor; offsetting the spinning mesh makes it orbit.
             auto position = wheel->getLocalTransform().getPosition();
             position.Y() -= extension;
@@ -763,6 +798,7 @@ namespace workphone
         groundMesh->setName( "Ground mesh" );
         groundMesh->setScale( groundSize );
         m_boxGround->addChild( groundMesh );
+        groundMesh->setLocalPosition( Vector3<real_Num>::zero() );
         addBoxMesh( groundMesh, sampleMaterial );
         scene->addActor( m_boxGround );
 
@@ -802,10 +838,11 @@ namespace workphone
         auto chassisMesh = sceneManager->createActor();
         m_chassisMeshActor = chassisMesh;
         chassisMesh->setName( "Chassis mesh" );
-        chassisMesh->setLocalPosition( Vector3<real_Num>( 0.0f, 0.0f, -chassisSize.z * 0.5f ) );
         chassisMesh->setScale( chassisSize );
 
         m_vehicleActor->addChild( chassisMesh );
+        // Parenting preserves world position; establish the collider-relative pose afterwards.
+        chassisMesh->setLocalPosition( Vector3<real_Num>::zero() );
         addBoxMesh( chassisMesh, chassisMaterial );
         auto wheelResource = createBasicWheelMesh();
         for( u32 i = 0; i < 4; ++i )
@@ -818,6 +855,7 @@ namespace workphone
             auto wheelMesh = sceneManager->createActor();
             wheelMesh->setName( "Wheel mesh" );
             wheelActor->addChild( wheelMesh );
+            wheelMesh->setLocalPosition( Vector3<real_Num>::zero() );
             wheelMesh->addComponent<scene::Mesh>()->setMeshResource( wheelResource );
             wheelMesh->addComponent<scene::MeshRenderer>();
             wheelMesh->addComponent<scene::Material>()->setMaterial( wheelMaterial );
