@@ -35,6 +35,9 @@ namespace workphone::render
         u64 residentInstances = 0, testedInstances = 0, culledInstances = 0;
         std::array<u64, 3> lodInstances{};
         u64 groups = 0, predictedDraws = 0, actualDraws = 0, submittedInstances = 0;
+        // Additional predicted draws beyond the first draw of a populated pass.
+        u64 speciesSplits = 0, lodSplits = 0, sectionSplits = 0, capacitySplits = 0, policySplits = 0;
+        u64 submittedTriangles = 0;
         u64 geometryBytes = 0, uploadBytes = 0;
     };
 

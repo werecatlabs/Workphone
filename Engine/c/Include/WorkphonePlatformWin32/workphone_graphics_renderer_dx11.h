@@ -591,14 +591,14 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *,
 
 /** Foliage stream extends ordinary instances without changing their ABI. Wind
  * and interaction are local horizontal displacements in metres; phase is radians.
- * Atlas rectangles transform all material UVs together. Both passes run the same
- * deformation and inverse-Jacobian normal correction. */
+ * Atlas rectangles transform all material UVs together. Colour and shadow use the
+ * same deformation, inverse-Jacobian normal correction and object-space coverage. */
 typedef struct wp_foliage_instance_dx11
 {
     wp_instance_pntc_dx11 instance;
     wp_vec4f uv_rect;
     wp_vec4f wind;        /* local x/z amplitude, phase, flutter amplitude */
-    wp_vec4f interaction; /* local x/z bend; reserved z/w */
+    wp_vec4f interaction; /* local x/z bend, coverage fade amount and seed in [0,1] */
 } wp_foliage_instance_dx11;
 typedef struct wp_foliage_parameters_dx11
 {

@@ -37,13 +37,19 @@ page results. `render` builds independent culling and LOD decisions for each vie
 LOD is projected-height based with hysteresis and supports forced levels. The
 transition policy is a hard switch with hysteresis. Shadow distance and LOD bias
 are species properties. Grass and ground cover use clumps/cards with stable
-deterministic density subsets; they do not create one impostor per blade.
+deterministic density subsets. The last 15% of each colour or shadow range fades
+using cutout coverage. The pixel shader samples the same instance-seeded pattern
+in undeformed object space for both passes, so it stays anchored under wind and
+camera motion.
 
 Visible instances from different cells share species/LOD/material-section bins.
 Capacity splits use the renderer's reusable 4,096-instance buffer. The dedicated
 foliage stream is 160 bytes per instance and leaves the existing 112-byte instanced
 geometry ABI unchanged. Statistics separate visible populations, LOD counts,
 draws, submitted triangles, uploads, resident pages and resource reservations.
+The renderer attributes extra draws to species, LOD, material sections, capacity
+and the configured batching policy. Editor diagnostics combine colour and shadow
+for the displayed view.
 Scene failures are available through `ClawScene::getFoliageError` and logged when
 the message changes.
 
@@ -132,9 +138,15 @@ Capacity pressure is reported in the collision statistics.
 Terrain foliage publication stages replacement collision bodies before switching
 the visible source and placement. A busy scene, rejected body or exhausted budget
 retains the previous complete generation. Physics and render publication share the
-native scene boundary. A standalone cooked page stream currently supplies visual
-residency; applications needing collision must also provide `FoliagePhysics` with
-an authoritative instance snapshot.
+native scene boundary. Cooked terrain selects nearby trunk collision directly from
+the pinned CPU page directory. It retains the last complete native body set while
+replacement pages load and retires remote page leases. Standalone worlds can pass
+the same CPU page source to `FoliagePhysics::setPagedSource` and supply observer
+positions. `setSource` still accepts authored snapshots.
+
+Convert legacy per-layer prefab hierarchies into explicit mesh species and placement
+rules. Choose the intended render meshes, materials and density per square metre
+when converting older absolute-count layers or texture pointers without durable IDs.
 
 `FoliageGameplay` accepts an application's actor/prefab acquire and release
 callbacks. Promotion creates a gameplay actor and flags its compact instance;
@@ -180,9 +192,21 @@ intervening edits before queuing a result. Pending refreshes retry on the physic
 update. Building without the resource system leaves raw texture paths available
 and reports authored `.texres` resolution as unavailable.
 
-Run `Tools/BuildWPGraphicsBaseline.ps1 -IncludeEditor` to build and validate Debug
-and RelWithDebInfo. The baseline includes the new foliage CPU/physics, DX11,
-cooked-resource and Lua workflow contracts, together with terrain and existing
-graphics tests. Release certification still requires representative forest frame
-timings, interactive Editor inspection and the plan's eight-hour soak; automated
-contracts do not substitute for those checks.
+Run `Tools/powershell/BuildWPGraphicsBaseline.ps1 -IncludeEditor` to build and validate
+Debug and RelWithDebInfo. The baseline includes foliage CPU/physics, DX11,
+cooked-resource and Lua workflow contracts alongside the other graphics tests.
+After the build, run the foliage evidence runner into a fresh directory.
+
+```powershell
+./Tools/powershell/ValidateFoliageAcceptance.ps1 -Tier GF0 `
+    -BuildDirectory project_wpgraphics_baseline -OutputDirectory project_wpgraphics_baseline/foliage-gf0
+./Tools/powershell/ValidateFoliageAcceptance.ps1 -Tier GF1 `
+    -BuildDirectory project_wpgraphics_baseline -OutputDirectory project_wpgraphics_baseline/foliage-gf1
+```
+
+`-Diagnostic` runs the automated checks with a short GF1 soak and supports WARP.
+The runner saves fixture and binary hashes, CSV counters, images, adapter and driver
+details, and an acceptance JSON report. The 1080p fixture measures isolated foliage
+passes, with the pixel shader invocation to visible-pixel ratio as an overdraw
+estimate. Full release sign-off also needs interactive Editor review, a
+representative installed scene on target Windows, and the whole-renderer gate.

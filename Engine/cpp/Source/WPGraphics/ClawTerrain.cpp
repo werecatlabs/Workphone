@@ -50,7 +50,8 @@ namespace workphone
 
         void ClawTerrain::unload( SmartPtr<ISharedObject> data )
         {
-            m_runtimeFoliage.reset();
+            std::atomic_store( &m_runtimeFoliage, std::shared_ptr<const CookedFoliageCandidate>{} );
+            std::atomic_store( &m_runtimeFoliagePages, std::shared_ptr<const FoliageStreamSource>{} );
             m_tiles->stream.drain();
             m_tiles->resident.clear();
             m_tiles->staged.clear();
@@ -83,7 +84,22 @@ namespace workphone
 
         std::shared_ptr<const CookedFoliageCandidate> ClawTerrain::getRuntimeFoliageCandidate() const
         {
-            return m_runtimeFoliage;
+            return std::atomic_load( &m_runtimeFoliage );
+        }
+
+        std::shared_ptr<const FoliageStreamSource> ClawTerrain::getFoliagePageSource(
+            const FoliageSnapshot &snapshot ) const
+        {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+            const auto pages = std::atomic_load( &m_runtimeFoliagePages );
+            if( pages && pages->snapshot == snapshot )
+            {
+                return pages;
+            }
+#else
+            (void)snapshot;
+#endif
+            return {};
         }
 
         bool ClawTerrain::loadRuntimeResource( std::shared_ptr<const resource::RuntimeResource> terrain,
@@ -151,6 +167,7 @@ namespace workphone
                 // candidate retains its own source and native texture owners.
                 // Foliage admits its independent decode envelope next.
                 std::shared_ptr<const CookedFoliageCandidate> plants;
+                std::shared_ptr<const FoliageStreamSource> foliagePages;
                 if( foliage )
                 {
                     auto decoded = decodeCookedFoliageWorld( foliage, mount, target, packaged, error );
@@ -163,6 +180,8 @@ namespace workphone
                     {
                         return false;
                     }
+                    // Physics retains only the CPU page directory and loader.
+                    foliagePages = std::make_shared<const FoliageStreamSource>( plants->source );
                 }
                 if( !applyCookedTerrain( std::move( candidate ), error ) )
                 {
@@ -172,7 +191,8 @@ namespace workphone
                 {
                     return false;
                 }
-                m_runtimeFoliage = std::move( plants );
+                std::atomic_store( &m_runtimeFoliagePages, std::move( foliagePages ) );
+                std::atomic_store( &m_runtimeFoliage, std::move( plants ) );
                 return true;
             }
             catch( const std::exception &failure )

@@ -848,6 +848,9 @@ namespace workphone::render
         stats.lodInstances = {};
         stats.groups = stats.predictedDraws = stats.actualDraws = stats.submittedInstances =
             stats.uploadBytes = 0;
+        stats.speciesSplits = stats.lodSplits = stats.sectionSplits = stats.capacitySplits =
+            stats.policySplits = 0;
+        stats.submittedTriangles = 0;
         if( !p.active || !p.assets || !( view.visibilityMask & p.mask ) )
         {
             return true;
@@ -947,12 +950,26 @@ namespace workphone::render
                 const auto maxScale = maximumScale( world );
                 const auto radius = deformedRadius( species, world );
                 const auto distance = ( centre - view.position ).length();
-                if( distance - radius >
-                        ( view.shadow ? species.shadowDistance : species.maximumDistance ) ||
-                    !visible( view, centre, radius ) )
+                const auto range = view.shadow ? species.shadowDistance : species.maximumDistance;
+                const auto nearest = distance - radius;
+                if( nearest > range || !visible( view, centre, radius ) )
                 {
                     ++stats.culledInstances;
                     continue;
+                }
+                f32 coverageFade = 0;
+                if( species.kind == FoliageKind::Grass || species.kind == FoliageKind::GroundCover )
+                {
+                    constexpr f32 fadeRangeFraction = .15f;
+                    if( range <= 0 || nearest >= range )
+                    {
+                        ++stats.culledInstances;
+                        continue;
+                    }
+                    // Preserve the stable LOD population while fading each clump's
+                    // depth-writing coverage at the end of the pass's range.
+                    coverageFade = std::clamp( 1 - ( range - nearest ) / ( range * fadeRangeFraction ),
+                                               0.0f, 1.0f );
                 }
                 const auto previous =
                     std::lower_bound( history.begin(), history.end(), instance.id,
@@ -1064,7 +1081,8 @@ namespace workphone::render
                     bend.normalise();
                 }
                 bend = vector( world.inverse(), bend * species.wind.maximumInteractionBend );
-                output.interaction = { bend.x, bend.z, 0, 0 };
+                const auto coverageSeed = f32( hash & 65535u ) / 65535.0f;
+                output.interaction = { bend.x, bend.z, coverageFade, coverageSeed };
                 bins[{ instance.species, u32( lod ) }].push_back( output );
                 ++stats.lodInstances[size_t( lod )];
             }
@@ -1073,10 +1091,15 @@ namespace workphone::render
         p.history[view.key] = std::move( nextHistory );
         // Validate every group before the first draw: a late invalid transform
         // cannot leave a partially submitted population in the current pass.
+        const auto batch = renderer.isFoliageBatchingEnabled();
+        u64 visibleSpecies = 0, groups = 0, predictedDraws = 0;
+        u32 previousSpecies = u32( p.active->species.size() );
         for( const auto &bin : bins )
         {
             const auto &species = *p.active->species[bin.first.first];
-            const f32 offset = bin.first.second == 2 && species.farBillboard
+            const auto lod = bin.first.second;
+            const auto billboard = lod == 2 && species.farBillboard;
+            const f32 offset = billboard
                                    ? ( species.boundsMinimum.y + species.boundsMaximum.y ) * .5f
                                    : 0;
             const wp_foliage_parameters_dx11 parameters = { { 0, species.wind.frequency, 0, 0 },
@@ -1089,7 +1112,39 @@ namespace workphone::render
                 p.error = error;
                 return false;
             }
+            if( bin.first.first != previousSpecies )
+            {
+                ++visibleSpecies;
+                previousSpecies = bin.first.first;
+            }
+            const auto sectionCount = billboard ? size_t( 1 )
+                                                : std::max<size_t>( 1, species.lods[lod].sections.size() );
+            const auto chunks = batch ? ( bin.second.size() + WP_DX11_INSTANCE_CAPACITY - 1 ) /
+                                            WP_DX11_INSTANCE_CAPACITY
+                                      : bin.second.size();
+            groups += sectionCount;
+            predictedDraws += sectionCount * chunks;
         }
+        stats.groups = groups;
+        stats.predictedDraws = predictedDraws;
+        stats.speciesSplits = visibleSpecies ? visibleSpecies - 1 : 0;
+        stats.lodSplits = bins.size() - visibleSpecies;
+        stats.sectionSplits = stats.groups - bins.size();
+        if( batch )
+        {
+            stats.capacitySplits = stats.predictedDraws - stats.groups;
+        }
+        else
+        {
+            stats.policySplits = stats.predictedDraws - stats.groups;
+        }
+        const auto captureSubmission = [&] {
+            wp_render_statistics_dx11 after{};
+            wp_renderer_dx11_get_statistics( native, &after );
+            stats.actualDraws = after.draws - before.draws;
+            stats.submittedTriangles = after.triangles - before.triangles;
+            stats.uploadBytes = after.instance_upload_bytes - before.instance_upload_bytes;
+        };
         for( const auto &bin : bins )
         {
             const auto &species = *p.active->species[bin.first.first];
@@ -1113,26 +1168,21 @@ namespace workphone::render
             {
                 const auto &mat = billboard ? gpu.impostor : gpu.materials[section.material];
                 void *views[] = { mat.views[0].Get(), mat.views[1].Get(), mat.views[2].Get() };
-                ++stats.groups;
-                stats.predictedDraws +=
-                    ( bin.second.size() + WP_DX11_INSTANCE_CAPACITY - 1 ) / WP_DX11_INSTANCE_CAPACITY;
                 const auto submitted = renderer.renderFoliageGeometry(
                     gpu.meshes[lod]->native, section.firstIndex, section.indexCount, bin.second.data(),
                     u32( bin.second.size() ), parameters, mat.data, views,
-                    billboard && !species.impostor.relightable, billboard );
+                    billboard && !species.impostor.relightable, billboard, batch );
                 stats.submittedInstances += submitted;
                 if( submitted != bin.second.size() )
                 {
+                    captureSubmission();
                     error = "Foliage GPU submission was incomplete.";
                     p.error = error;
                     return false;
                 }
             }
         }
-        wp_render_statistics_dx11 after{};
-        wp_renderer_dx11_get_statistics( native, &after );
-        stats.actualDraws = after.draws - before.draws;
-        stats.uploadBytes = after.instance_upload_bytes - before.instance_upload_bytes;
+        captureSubmission();
         p.error.clear();
         return true;
     }

@@ -1140,17 +1140,7 @@ int main( int argc, char **argv )
         }
         if(argc==3 && std::strcmp(argv[1],"--foliage-source-export")==0)
         {
-            using namespace cooked_foliage_contracts;
-            const auto source=fs::u8path(argv[2]);
-            cooked_foliage_contracts::require(!fs::exists(source),"Foliage fixture source must be new");
-            fs::create_directories(source); cooked_foliage_contracts::image(source/"leaf.tga");
-            cooked_foliage_contracts::text(source/"leaf.texres","{\"version\":1,\"source\":\"data://leaf.tga\",\"mipFilter\":\"cutout\",\"atlasColumns\":1,\"alphaCutoff\":0.5}");
-            auto authored=foliage_page_stream_contracts::source();
-            auto species=std::make_shared<FoliageSpecies>(*authored->species[0]);
-            species->materials[0].albedo="data://leaf.texres"; authored->species[0]=species;
-            authored->instances[0].position={-.4f,-.5f,.1f}; authored->instances[1].position={.4f,-.5f,.1f};
-            authored->instances[2].position={129,-.5f,.1f}; String error;
-            cooked_foliage_contracts::require(writeFoliageSources(authored,cooked_foliage_contracts::path(source),ResourceID("data://forest.folworld"),error),error);
+            cooked_foliage_contracts::writeCheckedPackageSources( fs::u8path( argv[2] ) );
             return 0;
         }
         if(argc==4 && std::strcmp(argv[1],"--terrain-checked-package-consume")==0)

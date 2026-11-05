@@ -1,0 +1,64 @@
+diff --git a/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_udp.cpp b/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_udp.cpp
+--- a/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_udp.cpp
++++ b/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_udp.cpp
+@@ -135,9 +135,10 @@ bool CSteamNetworkListenSocketDirectUDP::BInit( const SteamNetworkingIPAddr &local
+ 
+ 		// If we know for sure that this can't ever work, then go ahead and fail now.
+ 		#ifndef STEAMNETWORKINGSOCKETS_CAN_REQUEST_CERT
+-			if ( IP_AllowWithoutAuth == 0 )
++			// Open-source operators can provision a certificate out of band.
++			if ( IP_AllowWithoutAuth == 0 && m_pSteamNetworkingSocketsInterface->GetSecondsUntilCertExpiry() <= 0 )
+ 			{
+-				V_strcpy_safe( errMsg, "No cert authority, must set IP_AllowWithoutAuth" );
++				V_strcpy_safe( errMsg, "Strict listener requires a current local certificate" );
+ 				return false;
+ 			}
+ 		#endif
+diff --git a/src/steamnetworkingsockets/clientlib/csteamnetworkingsockets.cpp b/src/steamnetworkingsockets/clientlib/csteamnetworkingsockets.cpp
+--- a/src/steamnetworkingsockets/clientlib/csteamnetworkingsockets.cpp
++++ b/src/steamnetworkingsockets/clientlib/csteamnetworkingsockets.cpp
+@@ -722,7 +722,12 @@ bool CSteamNetworkingSockets::InternalSetCertificate( const void *pCertificate, i
+ 	const CertAuthScope *pAuthScope = CertStore_CheckCert( msgCertSigned, msgCert, authTime, errMsg );
+ 	if ( !pAuthScope )
+ 	{
+-		SpewWarning( "SetCertificate: We are not currently able to verify our own cert!  %s.  Continuing anyway!", errMsg );
++		return false;
++	}
++	if ( !msgCert.has_time_expiry() || static_cast<time_t>( msgCert.time_expiry() ) <= authTime )
++	{
++		V_strcpy_safe( errMsg, "Local certificate has expired" );
++		return false;
+ 	}
+ 
+ 	// Extract the identity from the cert
+@@ -1084,6 +1089,17 @@ ESteamNetworkingAvailability CSteamNetworkingSockets::GetAuthenticationStatus( St
+ {
+ 	SteamNetworkingGlobalLock scopeLock; // !SPEED! We could protect this with a more tightly scoped lock, if we think this is eomthing people might be polling
+ 
++	if ( m_AuthenticationStatus.m_eAvail == k_ESteamNetworkingAvailability_Current && GetSecondsUntilCertExpiry() <= 0 )
++	{
++		if ( pDetails )
++		{
++			*pDetails = m_AuthenticationStatus;
++			pDetails->m_eAvail = k_ESteamNetworkingAvailability_Previously;
++			V_strcpy_safe( pDetails->m_debugMsg, "Local certificate has expired" );
++		}
++		return k_ESteamNetworkingAvailability_Previously;
++	}
++
+ 	// Return details, if requested
+ 	if ( pDetails )
+ 		*pDetails = m_AuthenticationStatus;
+diff --git a/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_connections.cpp b/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_connections.cpp
+--- a/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_connections.cpp
++++ b/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_connections.cpp
+@@ -1172,8 +1172,7 @@ bool CSteamNetworkConnectionBase::BThinkCryptoReady( SteamNetworkingMicroseconds u
+ 
+ 	// Otherwise, we don't have a signed cert (yet?).
+ 	#ifndef STEAMNETWORKINGSOCKETS_CAN_REQUEST_CERT
+-		ConnectionState_ProblemDetectedLocally( k_ESteamNetConnectionEnd_Misc_InternalError, "Need a cert authority!" );
+-		Assert( false );
++		ConnectionState_ProblemDetectedLocally( k_ESteamNetConnectionEnd_Misc_InternalError, "No current local certificate" );
+ 	#endif
+ 	return false;
+ }

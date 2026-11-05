@@ -2,6 +2,50 @@
 
 Source review: 9 October 2026 at `2a37b63ea`. Extends the [graphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md) and [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md). User priority: **foliage LOD, lower batch count and fewer actual draw calls**. The original review did not include renderer implementation, a new benchmark, build or GPU capture; the implementation follow-up below records later work.
 
+## Acceptance tooling and remaining scope — 5 November 2026
+
+The bounded DX11 tier now includes distance fade for grass and ground cover,
+draw-split attribution, and nearby collision demand from installed foliage pages.
+The repaired validation entry points and commands for the GF0/GF1 evidence runner
+are in the [foliage workflow](FOLIAGE_WORKFLOW.md#bounds-and-validation).
+
+The 1080p fixture measures a fixed forest containing 2,048 trees and 9,216 grass
+clumps in 64 signed cells. It records separate colour, shadow and reflected-view
+draws, GPU timestamps, CPU preparation and submission, grass coverage, upload
+spikes and memory. A fixed 512-tree comparison locks transforms, material sections
+and LOD for scalar, 64 m merged patches and the paged renderer. The flight exercises
+page eviction and reload, and then reconstructs the native renderer while retaining
+the foliage source. GF1 release mode runs the flight for eight hours on physical DX11.
+
+The local Debug diagnostics each passed all seven focused CTest contracts. The GF0
+flight completed 40 frames and the GF1 diagnostic completed 65 frames in 38.5
+seconds, with eviction, repaging, three active views and renderer reconstruction.
+The matched tree paths recorded 1,024 scalar, 32 merged-patch and four paged
+draws, each submitting 925,696 triangles with covered-pixel counts within one.
+The source-free package contract drew both installed tree and grass materials.
+[GF0 report](../project_x64/qa/foliage-20261105/gf0-debug-1080/foliage-acceptance.json) ·
+[GF1 report](../project_x64/qa/foliage-20261105/gf1-debug-1080/foliage-acceptance.json)
+
+The RelWithDebInfo baseline rebuilt the Editor and passed 60 of 62 tests, including
+all seven foliage contracts. The external mesh-import fixture was unavailable.
+`WPGraphics.material_load_sequence` failed in the CPU material ownership handoff
+and reproduced in isolation. A preloaded detached Claw pass retains defaults
+after its technique is attached because the technique stores passes outside the
+base child inventory that receives the owner update.
+[Baseline evidence](../project_foliage_rel/claw-graphics-RelWithDebInfo-evidence.json) ·
+[Material recheck](../project_x64/qa/foliage-20261105/rel-material-recheck.log)
+
+The device was Microsoft Basic Render Driver (WARP), so physical-GPU performance
+is unavailable and the GF1 release-duration preflight rejected the adapter.
+The rebuilt Editor produced a native back-buffer capture of the scratch scene.
+Windows denied foreground input and monitor capture, leaving live paint, undo
+and reopen acceptance open. [GF1 preflight](../project_x64/qa/foliage-20261105/gf1-release-preflight.log) ·
+[Editor startup evidence](../project_x64/qa/foliage-20261105/editor-live/Captures/scratch-startup.json)
+
+The release checklist below still owns the physical-GPU budgets, interactive Editor
+and visual acceptance, representative installed scene, and whole-renderer release
+gate. Legacy per-layer prefab hierarchies and absolute-count densities require an
+explicit asset conversion. The documented hard-switch LOD policy remains supported.
 
 ## Implementation follow-up — 10 October 2026
 

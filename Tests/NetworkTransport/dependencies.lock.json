@@ -50,6 +50,12 @@
         "ports/gamenetworkingsockets/vcpkg.json": "c83598f75d67d07a3d1e0814c09ab3ff8e440602270e9de967ba509585936506",
         "ports/gamenetworkingsockets/LICENSE.txt": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
       }
+    },
+    {
+      "description": "Require a verified and current locally provisioned certificate in the standalone operator build",
+      "files": {
+        "TrustedGNS/offline-certificate.patch": "43c313ef0d908210396bd37afbc8a32e8780741790a136e8a5b1eb948251bd17"
+      }
     }
   ]
 }

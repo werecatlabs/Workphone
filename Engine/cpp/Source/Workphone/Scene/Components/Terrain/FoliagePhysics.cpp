@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Graphics/FoliagePageStream.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePhysics.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager.hpp>
@@ -37,6 +38,27 @@ namespace workphone::scene
             error = s;
             return false;
         }
+
+        bool validPlacement( const Transform3<real_Num> &placement )
+        {
+            const auto &scale = placement.getScale();
+            const auto &q = placement.getOrientation();
+            const double norm =
+                double( q.w ) * q.w + double( q.x ) * q.x + double( q.y ) * q.y + double( q.z ) * q.z;
+            return finite( placement.getPosition() ) && finite( scale ) && scale.x > 0 &&
+                   scale.y > 0 && scale.z > 0 && std::isfinite( norm ) && std::abs( norm - 1 ) <= .001;
+        }
+
+        bool collidable( const render::FoliageSpecies &species )
+        {
+            return species.collisionRadius > 0 && species.kind != render::FoliageKind::Grass &&
+                   species.kind != render::FoliageKind::GroundCover;
+        }
+
+        bool activeInstance( const render::FoliageInstance &instance )
+        {
+            return !( instance.flags & ( render::FoliageRemoved | render::FoliagePromoted ) );
+        }
     }  // namespace
 
     struct FoliagePhysics::State
@@ -53,7 +75,48 @@ namespace workphone::scene
             render::FoliageSnapshot data;
             Transform3<real_Num> placement;
             std::map<render::FoliageCellKey, Array<u32>> cells;
+            std::shared_ptr<const render::FoliageStreamSource> paged;
+            std::unique_ptr<render::FoliagePageStream> stream;
+            std::map<render::FoliageCellKey, std::shared_ptr<const render::FoliagePageData>> pages;
             f32 maximumDistance = 0;
+
+            bool loadNearby( const Array<render::FoliageCellKey> &wanted, String &error )
+            {
+                // Old native bodies remain live while new pages load. Their geometry
+                // is self-contained, so an out-of-range page lease can retire now.
+                for( auto it = pages.begin(); it != pages.end(); )
+                {
+                    if( !std::binary_search( wanted.begin(), wanted.end(), it->first ) )
+                    {
+                        it = pages.erase( it );
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+                const bool admitted = stream->setDemand( wanted, error );
+                render::FoliagePageResult result;
+                while( stream->take( result ) )
+                {
+                    // Ready results from an old demand may be holding the
+                    // result budget that the new demand needs to retry.
+                    if( !std::binary_search( wanted.begin(), wanted.end(), result.cell ) )
+                    {
+                        continue;
+                    }
+                    if( result.page )
+                    {
+                        pages[result.cell] = std::move( result.page );
+                    }
+                    else if( error.empty() )
+                    {
+                        error = result.error.empty() ? "Foliage collision page failed to load."
+                                                     : result.error;
+                    }
+                }
+                return admitted && error.empty() && pages.size() == wanted.size();
+            }
         };
 
         SmartPtr<physics::IPhysicsManager> manager;
@@ -100,6 +163,12 @@ namespace workphone::scene
 
     void FoliagePhysics::clear()
     {
+        clearActive();
+        m_state->pending.reset();
+    }
+
+    void FoliagePhysics::clearActive()
+    {
         auto &s = *m_state;
         for( auto &entry : s.bodies )
         {
@@ -107,7 +176,6 @@ namespace workphone::scene
         }
         s.bodies.clear();
         s.source.reset();
-        s.pending.reset();
         s.budget.reset();
         s.stats.active = s.stats.eligible = s.stats.omitted = s.stats.visitedCells = 0;
         s.stats.reservedBytes = 0;
@@ -123,21 +191,18 @@ namespace workphone::scene
             clear();
             return true;
         }
-        if( s.pending && source == s.pending->data && placement == s.pending->placement )
+        if( s.pending && !s.pending->paged && source == s.pending->data &&
+            placement == s.pending->placement )
         {
             return true;
         }
-        if( s.source && source == s.source->data && placement == s.source->placement )
+        if( s.source && !s.source->paged && source == s.source->data &&
+            placement == s.source->placement )
         {
             s.pending.reset();
             return true;
         }
-        const auto &scale = placement.getScale();
-        const auto &q = placement.getOrientation();
-        const double norm =
-            double( q.w ) * q.w + double( q.x ) * q.x + double( q.y ) * q.y + double( q.z ) * q.z;
-        if( !finite( placement.getPosition() ) || !finite( scale ) || scale.x <= 0 || scale.y <= 0 ||
-            scale.z <= 0 || !std::isfinite( norm ) || std::abs( norm - 1 ) > .001 )
+        if( !validPlacement( placement ) )
         {
             return fail( error, "Invalid foliage collision placement." );
         }
@@ -164,9 +229,7 @@ namespace workphone::scene
             {
                 const auto &i = source->instances[n];
                 const auto &species = *source->species[i.species];
-                if( ( i.flags & ( render::FoliageRemoved | render::FoliagePromoted ) ) ||
-                    !species.collisionRadius || species.kind == render::FoliageKind::Grass ||
-                    species.kind == render::FoliageKind::GroundCover )
+                if( !activeInstance( i ) || !collidable( species ) )
                 {
                     continue;
                 }
@@ -194,7 +257,87 @@ namespace workphone::scene
         }
     }
 
+    bool FoliagePhysics::setPagedSource( std::shared_ptr<const render::FoliageStreamSource> source,
+                                         const Transform3<real_Num> &placement, String &error )
+    {
+        error.clear();
+        auto &s = *m_state;
+        if( !source || !source->snapshot || !source->load ||
+            source->cells.size() > render::foliageMaximumPages ||
+            source->cells.size() != source->pageInstanceCounts.size() )
+        {
+            return fail( error, "Invalid paged foliage collision source." );
+        }
+        if( s.pending && source == s.pending->paged && placement == s.pending->placement )
+        {
+            return true;
+        }
+        if( s.source && source == s.source->paged && placement == s.source->placement )
+        {
+            s.pending.reset();
+            return true;
+        }
+        if( !validPlacement( placement ) )
+        {
+            return fail( error, "Invalid foliage collision placement." );
+        }
+        if( !render::validateFoliageWorld( *source->snapshot, error ) )
+        {
+            return false;
+        }
+        try
+        {
+            auto candidate = std::make_shared<State::Source>();
+            candidate->data = source->snapshot;
+            candidate->placement = placement;
+            candidate->paged = std::move( source );
+            bool needsPages = false;
+            for( const auto &species : candidate->data->species )
+            {
+                if( collidable( *species ) )
+                {
+                    needsPages = true;
+                    candidate->maximumDistance =
+                        std::max( candidate->maximumDistance, species->collisionDistance );
+                }
+            }
+            const auto pageCount = needsPages ? candidate->paged->cells.size() : 0;
+            candidate->budget = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::Collision, 4096 + pageCount * 128ull, error );
+            if( !candidate->budget )
+            {
+                return false;
+            }
+            if( needsPages && pageCount )
+            {
+                candidate->stream = std::make_unique<render::FoliagePageStream>();
+                if( !candidate->stream->setSource( *candidate->paged, error ) )
+                {
+                    return false;
+                }
+            }
+            s.pending = std::move( candidate );
+            return true;
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
+    }
+
     bool FoliagePhysics::update( const Array<Vector3F> &observers, String &error )
+    {
+        return update( observers, error, true );
+    }
+
+    bool FoliagePhysics::updateActive( const Array<Vector3F> &observers, String &error )
+    {
+        return update( observers, error, false );
+    }
+
+    bool FoliagePhysics::update( const Array<Vector3F> &observers, String &error,
+                                  bool publishPending )
     {
         error.clear();
         auto &s = *m_state;
@@ -213,7 +356,7 @@ namespace workphone::scene
                 return fail( error, "Foliage observers must be finite." );
             }
         }
-        const auto source = s.pending ? s.pending : s.source;
+        const auto source = publishPending && s.pending ? s.pending : s.source;
         if( !source )
         {
             return true;
@@ -239,18 +382,15 @@ namespace workphone::scene
 
         try
         {
-            if( !s.budget )
+            struct Candidate
             {
-                s.budget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::Collision,
-                                                                       s.capacity * 4096ull, error );
-                if( !s.budget )
-                {
-                    return false;
-                }
-            }
-            using Candidate = std::pair<std::pair<double, u64>, u32>;
+                std::pair<double, u64> rank;
+                const render::FoliageInstance *instance;
+
+                bool operator<( const Candidate &other ) const { return rank < other.rank; }
+            };
             std::priority_queue<Candidate> nearest;
-            s.stats.eligible = s.stats.visitedCells = 0;
+            u32 eligible = 0, visitedCells = 0;
             // Local observer coordinates allow cell rejection even under translated,
             // rotated and nonuniformly scaled terrain placements.
             Array<Vector3<real_Num>> localObservers;
@@ -264,11 +404,9 @@ namespace workphone::scene
                 localObservers.push_back(
                     ( inverse * ( realPoint( p ) - source->placement.getPosition() ) ) / scale );
             }
-            for( const auto &cell : source->cells )
-            {
-                const double x = double( cell.first.x ) * source->data->pageSize,
-                             z = double( cell.first.z ) * source->data->pageSize;
-                bool visit = false;
+            const auto nearby = [&]( render::FoliageCellKey cell ) {
+                const double x = double( cell.x ) * source->data->pageSize,
+                             z = double( cell.z ) * source->data->pageSize;
                 for( const auto &p : localObservers )
                 {
                     const double dx =
@@ -277,48 +415,95 @@ namespace workphone::scene
                         std::max( { z - p.z, 0.0, double( p.z ) - z - source->data->pageSize } );
                     if( dx * dx + dz * dz <= localRange * localRange )
                     {
-                        visit = true;
-                        break;
+                        return true;
                     }
                 }
-                if( !visit )
+                return false;
+            };
+            const auto consider = [&]( const render::FoliageInstance &i ) {
+                const auto &species = *source->data->species[i.species];
+                const auto centre = point( source->placement, realPoint( i.position ) );
+                double distance = std::numeric_limits<double>::max();
+                for( const auto &p : observers )
                 {
-                    continue;
+                    const auto delta = centre - realPoint( p );
+                    distance = std::min( distance, double( delta.lengthSquared() ) );
                 }
-                ++s.stats.visitedCells;
-                for( u32 index : cell.second )
+                if( distance > double( species.collisionDistance ) * species.collisionDistance )
                 {
-                    const auto &i = source->data->instances[index];
-                    const auto &species = *source->data->species[i.species];
-                    const auto centre = point( source->placement, realPoint( i.position ) );
-                    double distance = std::numeric_limits<double>::max();
-                    for( const auto &p : observers )
+                    return;
+                }
+                ++eligible;
+                Candidate candidate{ { distance, i.id }, &i };
+                if( nearest.size() < s.capacity )
+                {
+                    nearest.push( candidate );
+                }
+                else if( candidate < nearest.top() )
+                {
+                    nearest.pop();
+                    nearest.push( candidate );
+                }
+            };
+            if( source->stream )
+            {
+                Array<render::FoliageCellKey> demand;
+                for( const auto cell : source->paged->cells )
+                {
+                    if( nearby( cell ) )
                     {
-                        const auto delta = centre - realPoint( p );
-                        distance = std::min( distance, double( delta.lengthSquared() ) );
+                        demand.push_back( cell );
                     }
-                    if( distance > double( species.collisionDistance ) * species.collisionDistance )
+                }
+                std::sort( demand.begin(), demand.end() );
+                if( !source->loadNearby( demand, error ) )
+                {
+                    return false;
+                }
+                visitedCells = u32( source->pages.size() );
+                for( const auto &entry : source->pages )
+                {
+                    for( const auto &i : entry.second->instances )
                     {
-                        continue;
-                    }
-                    ++s.stats.eligible;
-                    Candidate candidate{ { distance, i.id }, index };
-                    if( nearest.size() < s.capacity )
-                    {
-                        nearest.push( candidate );
-                    }
-                    else if( candidate < nearest.top() )
-                    {
-                        nearest.pop();
-                        nearest.push( candidate );
+                        if( activeInstance( i ) && collidable( *source->data->species[i.species] ) )
+                        {
+                            consider( i );
+                        }
                     }
                 }
             }
-            std::map<u64, u32> wanted;
+            else
+            {
+                for( const auto &cell : source->cells )
+                {
+                    if( nearby( cell.first ) )
+                    {
+                        ++visitedCells;
+                        for( u32 index : cell.second )
+                        {
+                            consider( source->data->instances[index] );
+                        }
+                    }
+                }
+            }
+            std::map<u64, const render::FoliageInstance *> wanted;
             while( !nearest.empty() )
             {
-                wanted.emplace( nearest.top().first.second, nearest.top().second );
+                const auto &candidate = nearest.top();
+                if( !wanted.emplace( candidate.rank.second, candidate.instance ).second )
+                {
+                    return fail( error, "Duplicate foliage collision instance ID across pages." );
+                }
                 nearest.pop();
+            }
+            if( !wanted.empty() && !s.budget )
+            {
+                s.budget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::Collision,
+                                                                       s.capacity * 4096ull, error );
+                if( !s.budget )
+                {
+                    return false;
+                }
             }
             const bool replacing = source != s.source;
             u64 additional = 0;
@@ -355,7 +540,7 @@ namespace workphone::scene
                 {
                     continue;
                 }
-                const auto &i = source->data->instances[entry.second];
+                const auto &i = *entry.second;
                 const auto &species = *source->data->species[i.species];
                 // Install the cleanup record before the first native allocation.
                 auto &body = staged.emplace( entry.first, State::Body{} ).first->second;
@@ -452,8 +637,11 @@ namespace workphone::scene
             }
             staged.clear();
             auto retiredSource = s.source;
-            s.source = source;
-            s.pending.reset();
+            if( replacing )
+            {
+                s.source = source;
+                s.pending.reset();
+            }
             for( auto &entry : next )
             {
                 if( replacing || !s.bodies.count( entry.first ) )
@@ -462,8 +650,10 @@ namespace workphone::scene
                 }
             }
             s.stats.active = u32( s.bodies.size() );
-            s.stats.omitted = s.stats.eligible - s.stats.active;
-            s.stats.reservedBytes = s.budget->bytes() + source->budget->bytes();
+            s.stats.eligible = eligible;
+            s.stats.visitedCells = visitedCells;
+            s.stats.omitted = eligible - s.stats.active;
+            s.stats.reservedBytes = ( s.budget ? s.budget->bytes() : 0 ) + source->budget->bytes();
             return true;
         }
         catch( const std::exception &e )

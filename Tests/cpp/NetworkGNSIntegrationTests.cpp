@@ -26,14 +26,14 @@ static void require( bool value, const char *error )
     }
 }
 
-template <class F>
+template <class Exception = std::exception, class F>
 static bool rejects( F f )
 {
     try
     {
         f();
     }
-    catch( const std::exception & )
+    catch( const Exception & )
     {
         return true;
     }
@@ -95,12 +95,25 @@ int main()
     try
     {
         {
-            auto strict = make_ptr<WPNetworkGNSManager>();
+            WPNetworkGNSConfig strictConfig;
+            strictConfig.allowedPeerIdentities = { "ip:127.0.0.1" };
+            require( rejects<std::invalid_argument>(
+                         [&] { make_ptr<WPNetworkGNSManager>( strictConfig ); } ),
+                     "An IP address was allowed as a strict GNS identity" );
+            strictConfig.allowedPeerIdentities = { "str:wpnetwork-test" };
+            auto strict = make_ptr<WPNetworkGNSManager>( strictConfig );
             require( strict->getBoundAddress().empty(), "Construction opened a listener" );
-            require( rejects( [&] { strict->setServer( true ); } ),
-                     "Strict mode started without certificate/allowlist" );
+            require( rejects<std::logic_error>( [&] { strict->setServer( true ); } ),
+                     "Strict mode started without a certificate" );
+            require( rejects<std::logic_error>( [&] { strict->installCertificate( { 1, 2, 3 } ); } ),
+                     "Strict mode allowed certificate import before generating its request" );
             require( !strict->getCertificateRequest().empty(), "Certificate request missing" );
-            require( rejects( [&] { strict->installCertificate( { 1, 2, 3 } ); } ),
+            WPNetworkGNSConfig development;
+            development.allowUnverifiedLoopback = true;
+            auto dev = make_ptr<WPNetworkGNSManager>( development );
+            require( rejects<std::logic_error>( [&] { dev->setServer( false ); } ),
+                     "Development manager shared the reserved certificate identity" );
+            require( rejects<std::runtime_error>( [&] { strict->installCertificate( { 1, 2, 3 } ); } ),
                      "Malformed certificate accepted" );
             strict->unload( nullptr );
             strict->unload( nullptr );

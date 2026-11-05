@@ -1937,6 +1937,12 @@ namespace workphone
                             published.predictedDraws = stats.predictedDraws;
                             published.actualDraws = stats.actualDraws;
                             published.submittedInstances = stats.submittedInstances;
+                            published.speciesSplits = stats.speciesSplits;
+                            published.lodSplits = stats.lodSplits;
+                            published.sectionSplits = stats.sectionSplits;
+                            published.capacitySplits = stats.capacitySplits;
+                            published.policySplits = stats.policySplits;
+                            published.submittedTriangles = stats.submittedTriangles;
                             published.geometryBytes = stats.geometryBytes;
                             published.uploadBytes = stats.uploadBytes;
                             if( shadow != foliageShadowStats.end() )
@@ -1945,6 +1951,12 @@ namespace workphone
                                 published.predictedDraws += shadow->second.predictedDraws;
                                 published.actualDraws += shadow->second.actualDraws;
                                 published.submittedInstances += shadow->second.submittedInstances;
+                                published.speciesSplits += shadow->second.speciesSplits;
+                                published.lodSplits += shadow->second.lodSplits;
+                                published.sectionSplits += shadow->second.sectionSplits;
+                                published.capacitySplits += shadow->second.capacitySplits;
+                                published.policySplits += shadow->second.policySplits;
+                                published.submittedTriangles += shadow->second.submittedTriangles;
                                 published.uploadBytes += shadow->second.uploadBytes;
                             }
                             published.error = foliageErrors[world.get()];

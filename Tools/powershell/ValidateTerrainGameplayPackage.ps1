@@ -10,7 +10,7 @@ param(
     [ValidateRange(30, 900)][int]$TimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
-$repositoryRoot = Split-Path $PSScriptRoot -Parent
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 . (Join-Path $PSScriptRoot 'TerrainValidationEvidence.ps1')
 $buildPath = if ([IO.Path]::IsPathRooted($BuildDirectory)) { [IO.Path]::GetFullPath($BuildDirectory) } else { [IO.Path]::GetFullPath((Join-Path $repositoryRoot $BuildDirectory)) }
 $cmake = Join-Path $env:ProgramFiles 'CMake/bin/cmake.exe'
@@ -61,7 +61,7 @@ $captures = [Collections.Generic.List[object]]::new()
 
 function Get-GameplaySourceSnapshot {
     $snapshot = Get-TerrainSourceSnapshot $repositoryRoot
-    $extraPaths = @(& git -C $repositoryRoot ls-files --cached --others --exclude-standard -- 'Samples/cpp/VehicleAdvanced' 'Tools/ValidateTerrainGameplayPackage.ps1')
+    $extraPaths = @(& git -C $repositoryRoot ls-files --cached --others --exclude-standard -- 'Samples/cpp/VehicleAdvanced' 'Tools/powershell/ValidateTerrainGameplayPackage.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inventory gameplay sample source inputs.' }
     $extraPaths = @($extraPaths | Sort-Object -Unique)
     $identities = @($extraPaths | & git -C $repositoryRoot hash-object --no-filters --stdin-paths)
@@ -186,7 +186,7 @@ try {
     $sourceBefore | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'source-before.json') -Encoding utf8
     $discovery = Join-Path $output 'dependency-discovery'
     New-Item -ItemType Directory -Path $discovery | Out-Null
-    $runtimeScript = Join-Path $PSScriptRoot 'TerrainPackageRuntime.cmake'
+    $runtimeScript = Join-Path $repositoryRoot 'Tools/TerrainPackageRuntime.cmake'
     $rootLibraries = $pluginRoots -join ';'
     & $cmake "-DEXECUTABLE=$executable" "-DROOT_LIBRARIES=$rootLibraries" "-DOUTPUT_DIRECTORY=$discovery" "-DDUMPBIN=$dumpbin" -P $runtimeScript *> (Join-Path $output 'dependency-discovery.log')
     if ($LASTEXITCODE -ne 0) { throw 'Runtime/plugin dependency discovery failed; see dependency-discovery.log.' }

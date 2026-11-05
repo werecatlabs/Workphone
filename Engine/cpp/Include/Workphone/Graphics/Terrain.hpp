@@ -17,6 +17,8 @@ namespace workphone
 {
     namespace render
     {
+        struct FoliageStreamSource;
+
         /**
          * @brief Renderer-agnostic implementation of IGraphicsTerrain.
          *
@@ -65,6 +67,14 @@ namespace workphone
             bool setFoliageSnapshot( FoliageSnapshot snapshot, String &error );
             FoliageSnapshot getFoliageSnapshot() const;
 
+            // Captured worlds can supply the same immutable page source to physics.
+            // The returned source must match the requested snapshot.
+            virtual std::shared_ptr<const FoliageStreamSource> getFoliagePageSource(
+                const FoliageSnapshot & ) const
+            {
+                return {};
+            }
+
             struct ActiveFoliage
             {
                 FoliageSnapshot snapshot;
@@ -87,6 +97,8 @@ namespace workphone
                 u64 residentInstances = 0, testedInstances = 0, culledInstances = 0;
                 std::array<u64, 3> lodInstances{};
                 u64 groups = 0, predictedDraws = 0, actualDraws = 0, submittedInstances = 0;
+                u64 speciesSplits = 0, lodSplits = 0, sectionSplits = 0, capacitySplits = 0, policySplits = 0;
+                u64 submittedTriangles = 0;
                 u64 geometryBytes = 0, uploadBytes = 0;
                 String error;
             };

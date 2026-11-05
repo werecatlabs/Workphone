@@ -73,6 +73,23 @@ void runMaterialSurfaceHandoff( Fixture &fixture )
         material->unload( nullptr );
     }
 
+    {
+        auto material = make_ptr<ClawMaterial>();
+        material->setShaderParameters( full.getParameterInfo(), full.getShaderID() );
+        material->load( nullptr );
+        author( material );
+        material->setShaderParameters( absent.getParameterInfo(), absent.getShaderID() );
+
+        auto technique = make_ptr<ClawMaterialTechnique>();
+        auto replacement = technique->createPass();
+        replacement->load( nullptr );
+        material->setTechniques( { technique } );
+        require( replacement->getMaterial().get() == material.get(),
+                 "graph replacement attaches the preloaded Claw pass" );
+        expectAuthored( replacement );
+        material->unload( nullptr );
+    }
+
     auto pending = make_ptr<ClawMaterial>();
     pending->setShaderParameters( full.getParameterInfo(), full.getShaderID() );
     {

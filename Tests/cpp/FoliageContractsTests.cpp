@@ -16,6 +16,7 @@
 #include "FoliageAuthoringContracts.hpp"
 #include "FoliagePageStreamContracts.hpp"
 #include "FoliageImpostorContracts.hpp"
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <cstdio>
@@ -214,6 +215,106 @@ namespace
         }
         std::puts("Foliage native collision/proximity/placement/promotion contracts: PASS");
     }
+
+    void pagedPhysicsContracts( SmartPtr<physics::IPhysicsManager> manager )
+    {
+        auto scene = manager->addScene();
+        require( scene != nullptr, "Paged foliage native physics scene" );
+        void *handle = nullptr;
+        scene->_getObject( &handle );
+        auto native = static_cast<wp_physics_scene *>( handle );
+        require( native != nullptr, "Paged foliage native scene handle" );
+        const auto before = WorldStreamingScheduler::shared()->stats().used;
+        const auto world = fixture();
+        String error;
+        const auto makeSource = [&]( const std::shared_ptr<const render::FoliageWorldData> &population,
+                                     const std::shared_ptr<std::atomic<bool>> &allowFar,
+                                     const std::shared_ptr<std::atomic<u32>> &farReads ) {
+            auto metadata = std::make_shared<render::FoliageWorldData>();
+            metadata->revision = population->revision;
+            metadata->species = population->species;
+            metadata->pageSize = population->pageSize;
+            auto source = std::make_shared<render::FoliageStreamSource>();
+            source->snapshot = metadata;
+            require( render::foliageInstanceRadii( *metadata, population->instances,
+                                                   source->maximumGeometryRadius,
+                                                   source->maximumBendRadius, error ),
+                     error.c_str() );
+            source->cells = { { -1, 0 }, { 0, 0 }, { 1, 0 }, { 2, 0 } };
+            source->pageInstanceCounts = { 1, 1, 1, 1 };
+            source->load = [population, allowFar, farReads]( render::FoliageCellKey cell,
+                                                            const StreamCancellation &cancel,
+                                                            String &failure )
+                -> std::shared_ptr<const render::FoliagePageData> {
+                if( cell.x == 2 )
+                {
+                    ++*farReads;
+                    while( !*allowFar && !cancel.cancelled() )
+                    {
+                        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+                    }
+                    if( cancel.cancelled() )
+                    {
+                        return {};
+                    }
+                }
+                auto page = std::make_shared<render::FoliagePageData>();
+                page->cell = cell;
+                page->revision = population->revision;
+                page->instances = { population->instances[size_t( cell.x + 1 )] };
+                failure.clear();
+                return page;
+            };
+            return source;
+        };
+        {
+            auto allowFar = std::make_shared<std::atomic<bool>>( false );
+            auto farReads = std::make_shared<std::atomic<u32>>( 0 );
+            const auto source = makeSource( world, allowFar, farReads );
+            scene::FoliagePhysics solids( manager, scene, 2 );
+            const auto finish = [&]( const Vector3F &observer ) {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 5 );
+                while( !solids.update( { observer }, error ) )
+                {
+                    require( error.empty(), error.c_str() );
+                    require( std::chrono::steady_clock::now() < deadline, "Paged collision timed out" );
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+                }
+            };
+            require( solids.setPagedSource( source, {}, error ), error.c_str() );
+            finish( { -2, 0, 0 } );
+            const auto first = world->instances.front().id;
+            const auto last = world->instances.back().id;
+            require( solids.getBody( first ) && *farReads == 0, "Remote cooked page stays cold" );
+            require( !solids.update( { { 94, 0, 0 } }, error ) && error.empty() &&
+                         solids.getBody( first ) && !solids.getBody( last ),
+                     "Pending teleport preserves the previous complete native collision set" );
+            *allowFar = true;
+            finish( { 94, 0, 0 } );
+            require( !solids.getBody( first ) && solids.getBody( last ) && *farReads == 1,
+                     "Ready teleport pages replace old collision and reuse the loaded page" );
+            wp_vec3f hit{}, normal{};
+            require( wp_physics_scene_intersects( native, { 90, 2, 0 }, { 98, 2, 0 }, &hit,
+                                                  &normal, 0, 0 ) &&
+                         std::abs( hit.x - 93.5f ) < .01f,
+                     "Lazy page placement reaches native ray queries" );
+
+            auto edited = std::make_shared<render::FoliageWorldData>( *world );
+            ++edited->revision;
+            edited->instances.back().flags = render::FoliagePromoted;
+            const auto replacement = makeSource( edited, allowFar, farReads );
+            require( solids.setPagedSource( replacement, {}, error ) &&
+                         solids.updateActive( { { 94, 0, 0 } }, error ) && solids.getBody( last ),
+                     "Physics task updates cannot consume an unpublished replacement" );
+            finish( { 94, 0, 0 } );
+            require( !solids.getBody( last ) && wp_physics_scene_get_actor_count( native ) == 0,
+                     "Cooked promotion suppresses the compact native trunk" );
+        }
+        require( WorldStreamingScheduler::shared()->stats().used == before,
+                 "Paged collision leases retire with the owner" );
+        manager->removeScene( scene );
+        std::puts( "Foliage paged collision demand, teleport, promotion and lease contracts: PASS" );
+    }
     void lifecycleContracts()
     {
         const auto before=WorldStreamingScheduler::shared()->stats(); String error;
@@ -249,7 +350,19 @@ int main()
     auto plugin=make_ptr<physics::WPPhysics>(); plugin->load(nullptr);
     auto manager=factories->make_object<physics::IPhysicsManager>(physics::PhysicsManager::typeInfo());
     app->setPhysicsManager(manager); int result=0;
-    try { require(manager!=nullptr,"Native physics plugin factory"); dataContracts(); publicationContracts(); runFoliageAuthoringContracts(); runFoliageImpostorContracts(); foliage_page_stream_contracts::run(); streamContracts(); physicsContracts(manager); lifecycleContracts(); }
+    try
+    {
+        require( manager != nullptr, "Native physics plugin factory" );
+        dataContracts();
+        publicationContracts();
+        runFoliageAuthoringContracts();
+        runFoliageImpostorContracts();
+        foliage_page_stream_contracts::run();
+        streamContracts();
+        physicsContracts( manager );
+        pagedPhysicsContracts( manager );
+        lifecycleContracts();
+    }
     catch(const std::exception &e) { std::fprintf(stderr,"Foliage contracts failed: %s\n",e.what()); result=1; }
     if(manager)manager->unload(nullptr); app->setPhysicsManager(nullptr); manager=nullptr;
     plugin->unload(nullptr); plugin=nullptr; app->setStateManager(nullptr); app->setFactoryManager(nullptr);

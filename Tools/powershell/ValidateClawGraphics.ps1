@@ -8,7 +8,7 @@ param(
     [switch]$TerrainOnly
 )
 $ErrorActionPreference = 'Stop'
-$repositoryRoot = Split-Path $PSScriptRoot -Parent
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 . (Join-Path $PSScriptRoot 'TerrainValidationEvidence.ps1')
 . (Join-Path $PSScriptRoot 'GraphicsValidationEvidence.ps1')
 $buildPath = if ([System.IO.Path]::IsPathRooted($BuildDirectory)) { [System.IO.Path]::GetFullPath($BuildDirectory) } else { [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $BuildDirectory)) }
@@ -223,10 +223,10 @@ $verificationPaths = @(
     'Engine/cpp/Source/WPGraphics/ClawTerrain.cpp',
     'Engine/cpp/Source/WPLuabind/Bindings/ComponentBind.cpp',
     'bin/Media/Scripts/Lua/Editor/TerrainEditor.lua',
-    'Tools/ValidateTerrainPackage.ps1', 'Tools/TerrainPackageRuntime.cmake',
-    'Tools/TerrainValidationEvidence.ps1',
-    'Tests/cpp/DX11TestEvidence.hpp', 'Tools/ValidateClawGraphics.ps1',
-    'Tools/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
+    'Tools/powershell/ValidateTerrainPackage.ps1', 'Tools/TerrainPackageRuntime.cmake',
+    'Tools/powershell/TerrainValidationEvidence.ps1',
+    'Tests/cpp/DX11TestEvidence.hpp', 'Tools/powershell/ValidateClawGraphics.ps1',
+    'Tools/powershell/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
     'Engine/cpp/Project/WPGraphics/CMakeLists.txt', 'Tests/cpp/CMakeLists.txt',
     'Engine/cpp/Include/Workphone/Database/AssetCatalogPath.hpp',
     'Engine/cpp/Source/Workphone/Database/AssetCatalogPath.cpp',

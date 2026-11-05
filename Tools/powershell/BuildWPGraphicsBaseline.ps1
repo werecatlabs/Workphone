@@ -12,7 +12,7 @@ param(
     [switch]$TerrainOnly
 )
 $ErrorActionPreference = 'Stop'
-$repositoryRoot = Split-Path $PSScriptRoot -Parent
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 . (Join-Path $PSScriptRoot 'TerrainValidationEvidence.ps1')
 . (Join-Path $PSScriptRoot 'GraphicsValidationEvidence.ps1')
 $buildPath = if ([System.IO.Path]::IsPathRooted($BuildDirectory)) { [System.IO.Path]::GetFullPath($BuildDirectory) } else { [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $BuildDirectory)) }

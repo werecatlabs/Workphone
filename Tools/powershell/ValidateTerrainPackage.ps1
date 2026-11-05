@@ -5,11 +5,12 @@ param(
     [string]$OutputDirectory
 )
 $ErrorActionPreference = 'Stop'
-$repositoryRoot = Split-Path $PSScriptRoot -Parent
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 . (Join-Path $PSScriptRoot 'TerrainValidationEvidence.ps1')
 $buildPath = if ([IO.Path]::IsPathRooted($BuildDirectory)) { [IO.Path]::GetFullPath($BuildDirectory) } else { [IO.Path]::GetFullPath((Join-Path $repositoryRoot $BuildDirectory)) }
 $cmake = Join-Path $env:ProgramFiles 'CMake/bin/cmake.exe'
 $ctest = Join-Path (Split-Path $cmake -Parent) 'ctest.exe'
+$runtimeScript = Join-Path $repositoryRoot 'Tools/TerrainPackageRuntime.cmake'
 $inventoryText = & $ctest --test-dir $buildPath -C $Configuration -R '^WPGraphics.cooked_material_resource$' --show-only=json-v1
 if ($LASTEXITCODE -ne 0) { throw 'Unable to inventory cooked resource executable.' }
 $inventory = ($inventoryText -join "`n") | ConvertFrom-Json
@@ -108,7 +109,7 @@ try {
     # The second collection below must match this exact closure and fingerprint.
     $discovery = Join-Path $output 'dependency-discovery'
     New-Item -ItemType Directory -Path $discovery | Out-Null
-    & $cmake "-DEXECUTABLE=$executable" "-DOUTPUT_DIRECTORY=$discovery" "-DDUMPBIN=$dumpbin" -P (Join-Path $PSScriptRoot 'TerrainPackageRuntime.cmake') *> (Join-Path $output 'dependency-discovery.log')
+    & $cmake "-DEXECUTABLE=$executable" "-DOUTPUT_DIRECTORY=$discovery" "-DDUMPBIN=$dumpbin" -P $runtimeScript *> (Join-Path $output 'dependency-discovery.log')
     if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency discovery failed; see dependency-discovery.log.' }
     $dependencyPaths = @((Get-Content -LiteralPath (Join-Path $discovery 'runtime-dependencies.txt') -Raw) -split '[;\r\n]+' |
         Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_) } | Sort-Object -Unique)
@@ -128,7 +129,7 @@ try {
         Where-Object { $_.Name -match '(?i)\.(db|db-wal|db-shm|sqlite|terrain|texres|tga)$' })
     if ($authoringLeaks.Count) { throw 'Authoring data or compilation database leaked into the terrain install.' }
     Copy-Item -LiteralPath $executable -Destination $bin
-    & $cmake "-DEXECUTABLE=$executable" "-DOUTPUT_DIRECTORY=$bin" "-DDUMPBIN=$dumpbin" -P (Join-Path $PSScriptRoot 'TerrainPackageRuntime.cmake') *> (Join-Path $output 'dependencies.log')
+    & $cmake "-DEXECUTABLE=$executable" "-DOUTPUT_DIRECTORY=$bin" "-DDUMPBIN=$dumpbin" -P $runtimeScript *> (Join-Path $output 'dependencies.log')
     if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency collection failed; see dependencies.log.' }
     $collectedPaths = @((Get-Content -LiteralPath (Join-Path $bin 'runtime-dependencies.txt') -Raw) -split '[;\r\n]+' |
         Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_) } | Sort-Object -Unique)

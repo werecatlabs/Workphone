@@ -64,6 +64,10 @@ namespace runtime_terrain_component_contracts
         require(terrain&&terrain->getRuntimeFoliageCandidate(),"Captured terrain component must stage its native terrain and lazy foliage candidate");
         require(!terrain->isVisible()&&component->getTerrainSnapshot()->dimensions==Vector2I(5,5),"Unpublished terrain must remain hidden and expose the typed authoritative heightfield");
         const auto foliage=terrain->getRuntimeFoliageCandidate();require(foliage->source.snapshot->instances.empty()&&foliage->source.cells.size()==2,"Scene foliage must retain a lazy directory instead of eagerly decoding every page");
+        const auto collisionSource = terrain->getFoliagePageSource( foliage->source.snapshot );
+        require( collisionSource && collisionSource->cells == foliage->source.cells &&
+                     collisionSource->load && !terrain->getFoliagePageSource( {} ),
+                 "Cooked terrain must expose a CPU-only collision loader for the matching generation" );
         auto escaped=component->getTerrainSnapshot();manager->getCurrentScene()->addActor(actor);
         runtime_scene_membership_contracts::nested(manager,actor,[&](bool visible){require(terrain->isVisible()==visible,"Nested terrain must follow its real scene ancestor's publication and enabled state");});
         render::TerrainTileView terrainView;terrainView.cull=false;String error;

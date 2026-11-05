@@ -12,10 +12,10 @@ function Get-TerrainSourceSnapshot([string]$RepositoryRoot) {
         'Tests/cpp/ScenePickingTests.cpp', 'Tests/cpp/EditorDeferredScriptEventsTests.cpp',
         'Tests/cpp/ClawCookedResourceTests.cpp', 'Tests/cpp/GraphicsProduction', 'Tests/cpp/Fixtures',
         'CMakeLists.txt', 'CMakePresets.json', 'CMake', 'Dependencies/CMakeLists.txt',
-        'Dependencies/cJSON/CMakeLists.txt', 'Tools/ValidateClawGraphics.ps1',
-        'Tools/BuildWPGraphicsBaseline.ps1', 'Tools/ValidateTerrainPackage.ps1',
-        'Tools/TerrainPackageRuntime.cmake', 'Tools/TerrainValidationEvidence.ps1'
-        'Samples/cpp/VehicleAdvanced', 'Tools/ValidateTerrainGameplayPackage.ps1'
+        'Dependencies/cJSON/CMakeLists.txt', 'Tools/powershell/ValidateClawGraphics.ps1',
+        'Tools/powershell/BuildWPGraphicsBaseline.ps1', 'Tools/powershell/ValidateTerrainPackage.ps1',
+        'Tools/TerrainPackageRuntime.cmake', 'Tools/powershell/TerrainValidationEvidence.ps1',
+        'Samples/cpp/VehicleAdvanced', 'Tools/powershell/ValidateTerrainGameplayPackage.ps1'
     )
     $paths = @(& git -C $RepositoryRoot ls-files --cached --others --exclude-standard -- @sourcePaths)
     if ($LASTEXITCODE -ne 0) { throw 'Unable to inventory terrain source inputs.' }

@@ -189,6 +189,12 @@ namespace workphone
                     STAT( predictedDraws );
                     STAT( actualDraws );
                     STAT( submittedInstances );
+                    STAT( speciesSplits );
+                    STAT( lodSplits );
+                    STAT( sectionSplits );
+                    STAT( capacitySplits );
+                    STAT( policySplits );
+                    STAT( submittedTriangles );
                     STAT( geometryBytes );
                     STAT( uploadBytes );
 #undef STAT

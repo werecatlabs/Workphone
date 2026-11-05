@@ -38,10 +38,23 @@ if(WP_NETWORK_GNS)
     set(Protobuf_USE_STATIC_LIBS ON)
     set(CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release)
     set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL Release)
+    if(WP_NETWORK_GNS_VALIDATION_OUTPUT)
+        # A trust fixture builds one configuration against a matching single-config
+        # SDK. Let CMake generate the other configurations without changing the
+        # engine generator's configuration list or rebuilding shared dependencies.
+        list(APPEND CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO Debug)
+        list(APPEND CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL Debug)
+    endif()
     find_package(Protobuf CONFIG REQUIRED)
     find_package(GameNetworkingSockets CONFIG REQUIRED)
     target_link_libraries(WPNetwork PRIVATE GameNetworkingSockets::static)
     target_compile_definitions(WPNetwork PUBLIC WP_NETWORK_GNS=1)
+    if(WP_NETWORK_GNS_VALIDATION_OUTPUT)
+        set_target_properties(WPNetwork PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${WP_NETWORK_GNS_VALIDATION_OUTPUT}"
+            LIBRARY_OUTPUT_DIRECTORY "${WP_NETWORK_GNS_VALIDATION_OUTPUT}"
+            ARCHIVE_OUTPUT_DIRECTORY "${WP_NETWORK_GNS_VALIDATION_OUTPUT}")
+    endif()
 else()
     target_compile_definitions(WPNetwork PUBLIC WP_NETWORK_GNS=0)
 endif()

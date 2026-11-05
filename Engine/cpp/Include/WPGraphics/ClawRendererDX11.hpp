@@ -27,6 +27,7 @@ namespace workphone
 
         class ClawMesh;
         class ClawTerrain;
+        class ClawFoliageWorld;
         class ClawMaterialRenderCache;
         struct FoliageMaterial;
 
@@ -246,6 +247,12 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
+            friend class ClawFoliageWorld;
+            bool isFoliageBatchingEnabled() const;
+            u32 renderFoliageGeometry( const wp_geometry_dx11 *, u32 firstIndex, u32 indexCount,
+                                       const wp_foliage_instance_dx11 *, u32 count,
+                                       const wp_foliage_parameters_dx11 &, const FoliageMaterial &,
+                                       void *const *albedoNormalOrm, bool unlit, bool atlas, bool batch );
             u64 renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
                                  const wp_instance_pntc_dx11 *instances, u32 instanceCount,
                                  const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr,

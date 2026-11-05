@@ -1,0 +1,29 @@
+syntax = "proto2";
+
+package workphone.network.gns_issuer;
+
+// Minimal wire projection of GNS 1.6.1's steamnetworkingsockets_messages_certs.proto.
+// Pin: d534c19aa760df3fb75fd20db13ba1932b8a5463, src/common.
+// Field names are local. Field numbers and wire types must match GNS.
+message Leaf {
+    enum KeyType {
+        INVALID = 0;
+        ED25519 = 1;
+    }
+    optional KeyType key_type = 1;
+    optional bytes key_data = 2;
+    optional fixed32 time_created = 8;
+    optional fixed32 time_expiry = 9;
+    repeated uint32 app_ids = 10;
+    optional string identity = 12;
+}
+
+message Request {
+    optional Leaf leaf = 1;
+}
+
+message SignedLeaf {
+    optional bytes leaf = 4;
+    optional fixed64 ca_key_id = 5;
+    optional bytes ca_signature = 6;
+}

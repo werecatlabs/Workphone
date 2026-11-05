@@ -8,6 +8,7 @@
 #include <WPGraphics/ClawFoliageWorld.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
@@ -23,12 +24,63 @@ namespace cooked_foliage_contracts
     inline String path(const fs::path &p){return p.generic_u8string().c_str();}
     inline void text(const fs::path &p,const String &value){std::ofstream f(p,std::ios::binary);f.write(value.data(),std::streamsize(value.size()));require(bool(f),"Foliage fixture write");}
     inline String bytes(const fs::path &p){std::ifstream f(p,std::ios::binary);return String(std::istreambuf_iterator<char>(f),{});}
-    inline void image(const fs::path &p)
+    inline void image(const fs::path &p, std::array<u8,4> bgra = {0,173,0,255})
     {
         std::array<u8,18+4*4*4> data{};data[2]=2;data[12]=data[14]=4;data[16]=32;data[17]=0x28;
-        for(size_t i=18;i<data.size();i+=4){data[i+1]=173;data[i+3]=255;}
+        for(size_t i=18;i<data.size();i+=4)
+            std::copy(bgra.begin(), bgra.end(), data.begin() + i);
         std::ofstream f(p,std::ios::binary);f.write(reinterpret_cast<const char*>(data.data()),data.size());require(bool(f),"Foliage fixture TGA write");
     }
+
+    inline constexpr u32 checkedTrees = 24, checkedGrass = 24;
+
+    inline void writeCheckedPackageSources( const fs::path &source )
+    {
+        require( !fs::exists( source ), "Foliage fixture source must be new" );
+        fs::create_directories( source );
+        image( source / "leaf.tga" );
+        image( source / "grass.tga", { 0, 0, 173, 255 } );
+        text( source / "leaf.texres",
+              R"({"version":1,"source":"data://leaf.tga","mipFilter":"cutout","atlasColumns":1,"alphaCutoff":0.5})" );
+        text( source / "grass.texres",
+              R"({"version":1,"source":"data://grass.tga","mipFilter":"cutout","atlasColumns":1,"alphaCutoff":0.5})" );
+
+        const auto sample = foliage_page_stream_contracts::source();
+        auto tree = std::make_shared<FoliageSpecies>( *sample->species.front() );
+        tree->materials[0].albedo = "data://leaf.texres";
+        tree->maximumDistance = tree->shadowDistance = 8;
+        auto grass = std::make_shared<FoliageSpecies>( *tree );
+        grass->id = "fixture-grass";
+        grass->kind = FoliageKind::Grass;
+        grass->materials[0].albedo = "data://grass.texres";
+        grass->maximumDistance = grass->shadowDistance = 4;
+        grass->densityFractions = { 1, .75f, .5f };
+
+        auto world = std::make_shared<FoliageWorldData>();
+        world->pageSize = 1;
+        world->species = { tree, grass };
+        for( u32 i = 0; i < checkedTrees + checkedGrass; ++i )
+        {
+            const bool isGrass = i >= checkedTrees;
+            const auto index = isGrass ? i - checkedTrees : i;
+            FoliageInstance plant;
+            plant.id = i + 1;
+            plant.species = isGrass ? 1 : 0;
+            const auto x = -.84f + .24f * ( index % 8 );
+            const auto row = index / 8;
+            // The outer pages contain trees outside the pixel fixture but within
+            // paging and instance draw range.
+            plant.position = { !isGrass && row == 2 ? x + 4.0f : x,
+                               ( isGrass ? .13f : -.70f ) + .25f * row, .1f };
+            plant.scale = { .16f, .16f, .16f };
+            world->instances.push_back( plant );
+        }
+        String error;
+        require( writeFoliageSources( world, path( source ), ResourceID( "data://forest.folworld" ),
+                                     error ),
+                 error );
+    }
+
     inline void consumePackage(const fs::path &package,const String &uuid)
     {
         // Graphics-only consumer: no catalog, compiler registry or authoring DB.
@@ -46,7 +98,12 @@ namespace cooked_foliage_contracts
         while(!producer->take(prepared)) { require(std::chrono::steady_clock::now()<deadline,"Checked foliage decode timeout"); std::this_thread::yield(); }
         require(prepared.payload&&prepared.error.empty(),prepared.error);
         auto decoded=std::static_pointer_cast<const DecodedFoliageWorld>(prepared.payload);
-        require(decoded->source.snapshot->instances.empty()&&decoded->source.cells.size()==3,"Checked foliage mounts a shallow world directory");
+        require( decoded->source.snapshot->instances.empty() &&
+                     decoded->source.snapshot->species.size() == 2 &&
+                     decoded->source.cells.size() == 4 &&
+                     std::any_of( decoded->source.cells.begin(), decoded->source.cells.end(),
+                                  []( FoliageCellKey cell ) { return cell.x < 0; } ),
+                 "Checked foliage mounts a shallow mixed-species directory with signed pages" );
         producer->drain(); producer.reset();
         auto candidate=stageCookedFoliageWorld(renderer,decoded,error); require(candidate!=nullptr,error);
         auto target=make_ptr<ClawRenderTarget>(); target->setSize({128,128}); renderer.setRenderTarget(target);
@@ -61,13 +118,47 @@ namespace cooked_foliage_contracts
         const auto ready=std::chrono::steady_clock::now()+std::chrono::seconds(15);
         while(world.diagnostics().sourceRevision!=candidate->source.snapshot->revision)
         { require(world.prepare(renderer,{camera},0,error),error); require(std::chrono::steady_clock::now()<ready,"Checked foliage publication timeout"); std::this_thread::yield(); }
-        wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL); require(world.render(renderer,camera,error),error);
-        require(world.diagnostics().residentInstances==3&&world.diagnostics().actualDraws>0,"Checked package enters native foliage draws");
-        auto pixels=claw_foliage_contracts::pixels(native); size_t green=0;
-        for(size_t i=0;i<pixels.size();i+=4) green+=pixels[i+1]>20&&pixels[i+1]>pixels[i]*2;
-        require(green>100,"Checked foliage package visibly samples its installed texture");
+        const auto draw = [&]( const ClawFoliageView &view ) {
+            wp_renderer_dx11_clear( native, WORKPHONE_CLEAR_FLAG_ALL );
+            require( world.render( renderer, view, error ), error );
+            const auto pixels = claw_foliage_contracts::pixels( native );
+            std::array<size_t,2> coverage{};
+            for( size_t i = 0; i < pixels.size(); i += 4 )
+            {
+                coverage[0] += pixels[i + 1] > 20 && pixels[i + 1] > pixels[i] * 2;
+                coverage[1] += pixels[i] > 20 && pixels[i] > pixels[i + 1] * 2;
+            }
+            return coverage;
+        };
+        const auto nearCoverage = draw( camera );
+        const auto nearStats = world.diagnostics();
+        require( nearStats.residentInstances == checkedTrees + checkedGrass &&
+                     nearStats.submittedInstances == nearStats.residentInstances &&
+                     nearStats.actualDraws == 2 &&
+                     nearCoverage[0] > 100 && nearCoverage[1] > 100,
+                 "Checked package draws trees and grass with both installed textures across pages" );
+
+        auto farLod = camera;
+        farLod.key = 2;
+        farLod.forcedLod = 2;
+        const auto farCoverage = draw( farLod );
+        const auto farStats = world.diagnostics();
+        require( farStats.actualDraws == 2 && farStats.submittedInstances > checkedTrees &&
+                     farStats.submittedInstances < nearStats.submittedInstances &&
+                     farCoverage[0] == nearCoverage[0] && farCoverage[1] < nearCoverage[1],
+                 "Checked package preserves tree coverage and applies the cooked grass density tier" );
+
+        auto fadeView = camera;
+        fadeView.key = 3;
+        fadeView.position.z = -3.55f;
+        const auto fadedCoverage = draw( fadeView );
+        const auto faded = world.diagnostics();
+        require( faded.actualDraws == 2 && faded.submittedInstances == nearStats.submittedInstances &&
+                     fadedCoverage[0] == nearCoverage[0] && fadedCoverage[1] > 0 &&
+                     fadedCoverage[1] < nearCoverage[1] * 3 / 4,
+                 "Checked package fades grass coverage before culling clumps at distance" );
         world.clear(); renderer.setRenderTarget(nullptr); runtime->shutdown();
-        std::puts("PASS: checked UUID foliage package, source-free scheduled page reads and native draws");
+        std::puts("PASS: checked UUID mixed tree/grass package, source-free native draws, density and fade");
     }
     inline void run(ClawRendererDX11 &renderer,const fs::path &parent)
     {

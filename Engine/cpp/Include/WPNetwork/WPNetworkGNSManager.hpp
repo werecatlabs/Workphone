@@ -12,14 +12,15 @@ namespace workphone
         u32 maxClients = 32;
         u32 eventsPerPoll = 128;
         bool allowUnverifiedLoopback = false;
+        /// Recognized GNS identities such as "str:game-server". IP addresses cannot authenticate.
         Array<String> allowedPeerIdentities;
     };
 
     /** GNS implementation of the engine facade. Construction opens no sockets.
      * Strict mode requires a provisioned certificate and explicit peer allowlist.
      * Unverified development mode is restricted to loopback endpoints.
-     * One process-wide GNS identity is shared; certificates can only be installed
-     * when this is the sole, stopped manager. No application secrets are logged.
+     * The sole, stopped strict manager reserves the process-wide GNS identity
+     * when it creates a certificate request and releases it on unload.
      */
     class WPNetwork_API WPNetworkGNSManager : public INetworkManager
     {
@@ -30,8 +31,8 @@ namespace workphone
         void poll() override;
         void disconnect();
         std::vector<u8> getCertificateRequest();
-        /// Import an issuer response. Successful import is not proof of trust;
-        /// the peer must still validate the chain during its strict handshake.
+        /// Import the issuer response for this manager's request. The peer verifies
+        /// the chain and proof of key possession during its strict handshake.
         void installCertificate( const std::vector<u8> &certificate );
         String getLastError() const;
         String getBoundAddress() const;

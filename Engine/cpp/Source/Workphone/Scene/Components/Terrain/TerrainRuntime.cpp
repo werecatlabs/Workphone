@@ -5,6 +5,7 @@
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
+#include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
 #include <stdexcept>
@@ -47,6 +48,14 @@ namespace workphone::scene
             if(!getActor())throw std::runtime_error("Runtime terrain requires its actor");
             setLoadingState(LoadingState::Loading);Component::load(data);
             if(!m_terrain||!m_runtimeTerrainResource)throw std::runtime_error("Runtime terrain requires a captured terrainAssetUuid");
+            if( auto app = core::IApplicationManager::instancePtr() )
+            {
+                if( auto manager = app->getGameManager() )
+                {
+                    manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::Update,
+                                                      this );
+                }
+            }
             setLoadingState(LoadingState::Loaded);updateVisibility();
         }catch(...){unload(nullptr);throw;}
     }

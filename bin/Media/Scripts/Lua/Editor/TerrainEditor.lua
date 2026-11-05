@@ -1729,6 +1729,13 @@ function TerrainEditor:updateFoliageControls()
     self._foliageStatus=status; self._foliageRules=status.rules or {};
     local summary=status.rendererAvailable and ("Actual draws " .. tostring(status.actualDraws or 0) .. " / predicted " .. tostring(status.predictedDraws or 0) .. "; groups " .. tostring(status.groups or 0) .. "; near/mid/far " .. tostring(status.nearInstances or 0) .. "/" .. tostring(status.midInstances or 0) .. "/" .. tostring(status.farInstances or 0) .. "; resident/pending/failed pages " .. tostring(status.residentPages or 0) .. "/" .. tostring(status.pendingPages or 0) .. "/" .. tostring(status.failedPages or 0) .. "; geometry/upload bytes " .. tostring(status.geometryBytes or 0) .. "/" .. tostring(status.uploadBytes or 0) .. (status.ready and "; ready" or "; preparing")) or "Native foliage renderer unavailable.";
     if status.error and status.error ~= "" then summary=summary .. " " .. status.error; end
+    if status.rendererAvailable then
+        summary = summary .. "; triangles " .. tostring(status.submittedTriangles or 0)
+            .. "; draw splits (species/LOD/section/capacity/policy) "
+            .. tostring(status.speciesSplits or 0) .. "/" .. tostring(status.lodSplits or 0) .. "/"
+            .. tostring(status.sectionSplits or 0) .. "/" .. tostring(status.capacitySplits or 0)
+            .. "/" .. tostring(status.policySplits or 0);
+    end
     safeCall(self.foliageDiagnosticsText,"setText",summary);
     local controlKey=tostring(status.revision) .. ":" .. tostring(self.selectedTreeLayerIndex) .. ":" .. tostring(self.selectedGrassLayerIndex) .. ":" .. tostring(self.settings.foliageSpecies);
     if rawequal(self._foliageControlOwner, self.terrain) and self._foliageControlKey == controlKey then return; end

@@ -169,6 +169,8 @@ namespace workphone
                                       bool, String &error ) override;
 
             std::shared_ptr<const CookedFoliageCandidate> getRuntimeFoliageCandidate() const;
+            std::shared_ptr<const FoliageStreamSource> getFoliagePageSource(
+                const FoliageSnapshot & ) const override;
 
             /** Bounds apply independently to active and staged generations. */
             bool setTerrainResidencyLimits( u32 tiles, u64 bytes, u32 uploadsPerUpdate, String & );
@@ -190,6 +192,7 @@ namespace workphone
             std::unique_ptr<ClawTerrainTileState> m_tiles;
             std::unique_ptr<ClawTerrainMaterial> m_terrainMaterial;
             std::shared_ptr<const CookedFoliageCandidate> m_runtimeFoliage;
+            std::shared_ptr<const FoliageStreamSource> m_runtimeFoliagePages;
         };
 
     }  // namespace render

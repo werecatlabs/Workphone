@@ -1102,24 +1102,32 @@ namespace workphone::render
                 result->source.snapshot = FoliageSnapshot( owner, world.get() );
                 result->source.maximumGeometryRadius = envelope.data.geometryRadius;
                 result->source.maximumBendRadius = envelope.data.bendRadius;
-                std::map<FoliageCellKey, Entry> directory;
+                struct PageDirectory
+                {
+                    Envelope envelope;
+                    std::map<FoliageCellKey, Entry> entries;
+                };
+                auto directory = std::make_shared<PageDirectory>();
                 for( const auto &entry : envelope.data.pages )
                 {
-                    directory.emplace( entry.cell, entry );
+                    directory->entries.emplace( entry.cell, entry );
                     result->source.cells.push_back( entry.cell );
                     result->source.pageInstanceCounts.push_back( entry.count );
                 }
+                directory->envelope = std::move( envelope );
                 // Only directory/species are retained here. Each demand opens exactly
                 // one pinned page container, validates it, then retires its raw bytes.
                 result->source.load = [load, definition = result->source.snapshot,
-                                       envelope = std::move( envelope ),
-                                       directory = std::move( directory ), target, packaged](
+                                       directory = std::shared_ptr<const PageDirectory>( directory ),
+                                       target, packaged](
                                           FoliageCellKey key, const StreamCancellation &cancel,
                                           String &error ) -> std::shared_ptr<const FoliagePageData> {
                     try
                     {
-                        auto found = directory.find( key );
-                        check( found != directory.end(), "Foliage cell is outside the cooked world" );
+                        const auto &envelope = directory->envelope;
+                        auto found = directory->entries.find( key );
+                        check( found != directory->entries.end(),
+                               "Foliage cell is outside the cooked world" );
                         if( cancel.cancelled() )
                         {
                             return {};

@@ -13,6 +13,10 @@
 #    include <stdexcept>
 #    include <algorithm>
 
+// Provided by the pinned static GNS build. The upstream default accepts expired
+// certificates for another day, which is inappropriate for strict admission.
+extern "C" void SteamNetworkingSockets_CertStore_SetExpiryGraceSeconds( int seconds );
+
 namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, WPNetworkGNSManager, INetworkManager );
@@ -23,6 +27,7 @@ namespace workphone
         {
             std::recursive_mutex mutex;
             unsigned users = 0;
+            const Impl *certificateOwner = nullptr;
             std::map<HSteamListenSocket, std::weak_ptr<Impl>> listeners;
             std::map<HSteamNetConnection, std::weak_ptr<Impl>> connections;
         };
@@ -93,10 +98,12 @@ namespace workphone
             u16 player = 0xffffu;
             bool transportConnected = false;
             bool ready = false;
+            SteamNetworkingIdentity identity{};
             SmartPtr<Endpoint> endpoint;
         };
 
         WPNetworkGNSConfig config;
+        std::vector<SteamNetworkingIdentity> allowedPeerIdentities;
         SmartPtr<scene::NetworkListener> listener =
             SmartPtr<scene::NetworkListener>( new scene::NetworkListener() );
         ISteamNetworkingSockets *sockets = nullptr;
@@ -107,6 +114,7 @@ namespace workphone
         u16 local = 0xffffu;
         u32 nextPlayer = 1;
         bool server = false, started = false, polling = false, fatal = false;
+        bool installedCertificate = false;
         String error;
         static constexpr size_t MaxPayload = 65536;
 
@@ -119,10 +127,12 @@ namespace workphone
             for( const auto &text : config.allowedPeerIdentities )
             {
                 SteamNetworkingIdentity identity{};
-                if( !identity.ParseString( text.c_str() ) )
+                if( text.find( '\0' ) != String::npos || !identity.ParseString( text.c_str() ) ||
+                    !isNamedIdentity( identity ) )
                 {
-                    throw std::invalid_argument( "Invalid GNS peer identity" );
+                    throw std::invalid_argument( "GNS peer identity must be a recognized name" );
                 }
+                allowedPeerIdentities.push_back( identity );
             }
             if( config.maxClients == 0 || config.maxClients > 64 || config.eventsPerPoll == 0 ||
                 config.eventsPerPoll > 256 )
@@ -139,6 +149,10 @@ namespace workphone
             }
             auto &r = runtime();
             std::lock_guard<std::recursive_mutex> lock( r.mutex );
+            if( r.certificateOwner && r.certificateOwner != this )
+            {
+                throw std::logic_error( "A certificate provisioned GNS manager owns the runtime" );
+            }
             if( !r.users )
             {
                 SteamDatagramErrMsg message{};
@@ -146,6 +160,7 @@ namespace workphone
                 {
                     throw std::runtime_error( message );
                 }
+                SteamNetworkingSockets_CertStore_SetExpiryGraceSeconds( 0 );
             }
             ++r.users;
             sockets = SteamNetworkingSockets();
@@ -158,17 +173,29 @@ namespace workphone
             stop();
         }
 
-        bool authorized( const SteamNetworkingIdentity &identity )
+        static bool isNamedIdentity( const SteamNetworkingIdentity &identity )
         {
-            for( const auto &text : config.allowedPeerIdentities )
+            return !identity.IsInvalid() && identity.m_eType != k_ESteamNetworkingIdentityType_IPAddress &&
+                   identity.m_eType != k_ESteamNetworkingIdentityType_UnknownType;
+        }
+
+        bool authorized( const SteamNetConnectionInfo_t &info ) const
+        {
+            return !( info.m_nFlags & k_nSteamNetworkConnectionInfoFlags_Unauthenticated ) &&
+                   std::find( allowedPeerIdentities.begin(), allowedPeerIdentities.end(),
+                              info.m_identityRemote ) != allowedPeerIdentities.end();
+        }
+
+        bool canAccept( const SteamNetConnectionInfo_t &info ) const
+        {
+            if( config.allowUnverifiedLoopback )
             {
-                SteamNetworkingIdentity expected{};
-                if( expected.ParseString( text.c_str() ) && expected == identity )
-                {
-                    return true;
-                }
+                return info.m_addrRemote.IsLocalHost();
             }
-            return false;
+            return authorized( info ) &&
+                   std::none_of( peers.begin(), peers.end(), [&]( const auto &entry ) {
+                       return entry.second.identity == info.m_identityRemote;
+                   } );
         }
 
         static void callback( SteamNetConnectionStatusChangedCallback_t *event )
@@ -202,16 +229,13 @@ namespace workphone
                     return;
                 }
                 if( s.fatal || s.events.size() >= 512 || s.peers.size() >= s.config.maxClients ||
-                    s.nextPlayer > 65534 ||
-                    ( s.config.allowUnverifiedLoopback
-                          ? !event->m_info.m_addrRemote.IsLocalHost()
-                          : !s.authorized( event->m_info.m_identityRemote ) ) )
+                    s.nextPlayer > 65534 || !s.canAccept( event->m_info ) )
                 {
                     s.sockets->CloseConnection( handle, 1001, "Admission rejected", false );
                     return;
                 }
                 Peer peer;
-                peer.player = static_cast<u16>( s.nextPlayer++ );
+                peer.identity = event->m_info.m_identityRemote;
                 peer.endpoint =
                     SmartPtr<Endpoint>( new Endpoint( self, handle, event->m_info.m_addrRemote ) );
                 s.peers.emplace( handle, peer );
@@ -229,16 +253,26 @@ namespace workphone
                 {
                     return;
                 }
+                // The inbound Connecting callback already verifies the remote cert. The
+                // negotiated cipher is available only after the SDK finishes accepting it.
                 if( !s.config.allowUnverifiedLoopback &&
-                    !s.authorized( event->m_info.m_identityRemote ) )
+                    ( !s.authorized( event->m_info ) ||
+                      ( event->m_info.m_nFlags & k_nSteamNetworkConnectionInfoFlags_Unencrypted ) ||
+                      ( s.server && !( peer->second.identity == event->m_info.m_identityRemote ) ) ) )
                 {
+                    s.error = "GNS peer did not satisfy strict admission";
                     s.close( handle );
                     return;
                 }
                 peer->second.transportConnected = true;
                 if( s.server )
                 {
-                    const u16 id = peer->second.player;
+                    if( s.nextPlayer > 65534 )
+                    {
+                        s.close( handle );
+                        return;
+                    }
+                    const auto id = static_cast<u16>( s.nextPlayer );
                     const u8 hello[] = { 0, 1, static_cast<u8>( id ), static_cast<u8>( id >> 8 ) };
                     if( s.sockets->SendMessageToConnection( handle, hello, sizeof( hello ),
                                                             k_nSteamNetworkingSend_Reliable,
@@ -247,6 +281,8 @@ namespace workphone
                         s.close( handle );
                         return;
                     }
+                    ++s.nextPlayer;
+                    peer->second.player = id;
                     peer->second.ready = true;
                     s.notify( true, id );
                 }
@@ -322,7 +358,13 @@ namespace workphone
             started = false;
             local = 0xffffu;
             sockets = nullptr;
-            if( --runtime().users == 0 )
+            installedCertificate = false;
+            auto &r = runtime();
+            if( r.certificateOwner == this )
+            {
+                r.certificateOwner = nullptr;
+            }
+            if( --r.users == 0 )
             {
                 GameNetworkingSockets_Kill();
             }
@@ -334,18 +376,17 @@ namespace workphone
             {
                 throw std::logic_error( "Stop GNS session before changing role" );
             }
-            acquire();
             if( !config.allowUnverifiedLoopback )
             {
-                SteamNetAuthenticationStatus_t auth{};
-                if( config.allowedPeerIdentities.empty() ||
-                    sockets->GetAuthenticationStatus( &auth ) != k_ESteamNetworkingAvailability_Current )
+                if( allowedPeerIdentities.empty() || !installedCertificate ||
+                    sockets->GetAuthenticationStatus( nullptr ) != k_ESteamNetworkingAvailability_Current )
                 {
                     throw std::logic_error(
                         "GNS strict mode requires a provisioned certificate and explicit peer "
                         "identities" );
                 }
             }
+            acquire();
             server = asServer;
             error.clear();
             nextPlayer = 1;
@@ -772,11 +813,13 @@ namespace workphone
     std::vector<u8> WPNetworkGNSManager::getCertificateRequest()
     {
         GNS_LOCK;
-        s.acquire();
-        if( s.started || Impl::runtime().users != 1 )
+        auto &runtime = Impl::runtime();
+        if( s.config.allowUnverifiedLoopback || s.started ||
+            runtime.users != ( s.sockets ? 1u : 0u ) )
         {
-            throw std::logic_error( "Certificate setup requires one stopped manager" );
+            throw std::logic_error( "Certificate setup requires one stopped strict manager" );
         }
+        s.acquire();
         int size = 0;
         SteamNetworkingErrMsg message{};
         if( !s.sockets->GetCertificateRequest( &size, nullptr, message ) || size <= 0 || size > 65536 )
@@ -789,16 +832,16 @@ namespace workphone
             throw std::runtime_error( "Cannot serialize GNS certificate request" );
         }
         bytes.resize( size );
+        runtime.certificateOwner = &s;
         return bytes;
     }
 
     void WPNetworkGNSManager::installCertificate( const std::vector<u8> &bytes )
     {
         GNS_LOCK;
-        s.acquire();
-        if( s.started || Impl::runtime().users != 1 )
+        if( s.started || Impl::runtime().certificateOwner != &s )
         {
-            throw std::logic_error( "Certificate setup requires one stopped manager" );
+            throw std::logic_error( "Request a certificate from this stopped manager before importing it" );
         }
         if( bytes.empty() || bytes.size() > 65536 )
         {
@@ -808,6 +851,12 @@ namespace workphone
         if( !s.sockets->SetCertificate( bytes.data(), static_cast<int>( bytes.size() ), message ) )
         {
             throw std::runtime_error( "GNS certificate rejected" );
+        }
+        SteamNetworkingIdentity identity{};
+        s.installedCertificate = s.sockets->GetIdentity( &identity ) && Impl::isNamedIdentity( identity );
+        if( !s.installedCertificate )
+        {
+            throw std::runtime_error( "GNS certificate requires a named local identity" );
         }
     }
 

@@ -289,6 +289,86 @@ namespace claw_foliage_world_contracts
         require(world.diagnostics().residentInstances==1&&world.diagnostics().lodInstances[0]==1&&
             world.diagnostics().actualDraws==2,"Visible off-centre foliage must load its distant origin cell");
     }
+    inline void grassFade( ClawRendererDX11 &renderer, wp_renderer_dx11 *native )
+    {
+        setup( native );
+        auto grass = species();
+        grass->kind = FoliageKind::Grass;
+        grass->boundsMinimum *= 20.0f;
+        grass->boundsMaximum *= 20.0f;
+        for( auto &lod : grass->lods )
+        {
+            for( auto &position : lod.positions )
+            {
+                position *= 20.0f;
+            }
+        }
+        auto data = std::make_shared<FoliageWorldData>();
+        data->pageSize = 1;
+        data->revision = 1;
+        data->species = { grass };
+        FoliageInstance clump;
+        clump.id = 1;
+        clump.position = { 0, -.4f, 0 };
+        data->instances.push_back( clump );
+
+        ClawFoliageWorld world;
+        String error;
+        require( world.setSource( data, {}, error ), error.c_str() );
+        ClawFoliageView view;
+        view.forcedLod = 0;
+        view.orthographic = true;
+        prepare( world, renderer, view, 1 );
+        renderer.setSceneLighting( ColourF::White, { 0, 0, -1 }, ColourF::White, 0 );
+        const auto draw = [&] {
+            renderer.clear( ColourF::Black );
+            require( world.render( renderer, view, error ), error.c_str() );
+            return pixels( native );
+        };
+        const auto bright = []( const auto &image, size_t pixel ) {
+            return std::max( image[pixel * 4], image[pixel * 4 + 1] ) > 20;
+        };
+        const auto solid = draw();
+        view.position.z = 9.8f;
+        const auto faded = draw();
+        size_t solidCoverage = 0, fadedCoverage = 0;
+        for( size_t i = 0; i < solid.size() / 4; ++i )
+        {
+            const auto visible = bright( solid, i );
+            const auto retained = bright( faded, i );
+            require( visible || !retained, "grass fade must only remove coverage" );
+            solidCoverage += visible;
+            fadedCoverage += retained;
+        }
+        require( solidCoverage > 2000 && fadedCoverage > solidCoverage / 3 &&
+                     fadedCoverage < solidCoverage * 2 / 3 && world.diagnostics().lodInstances[0] == 1,
+                 "mid-band grass must retain partial coverage and the same stable clump" );
+        require( draw() == faded, "identical grass fade inputs must repeat the same coverage" );
+
+        const auto light = identity();
+        require( wp_renderer_dx11_begin_shadow_map( native, &light, 128 ),
+                 "grass fade shadow must begin" );
+        {
+            NativeShadowScope shadowScope{ native };
+            view.shadow = true;
+            require( world.render( renderer, view, error ), error.c_str() );
+            for( UINT y = 44; y <= 84; y += 10 )
+            {
+                for( UINT x = 44; x <= 84; x += 10 )
+                {
+                    require( bright( faded, y * 128 + x ) == ( shadowDepth( native, x, y ) < .9f ),
+                             "grass fade colour and shadow must retain the same surface samples" );
+                }
+            }
+        }
+        view.shadow = false;
+        view.position.z = 11.0f;
+        draw();
+        require( world.diagnostics().actualDraws == 0,
+                 "fully faded grass must issue no draw" );
+        setup( native );
+    }
+
     inline bool run(ClawRendererDX11 &renderer)
     {
         struct Scope
@@ -306,6 +386,7 @@ namespace claw_foliage_world_contracts
             auto target=make_ptr<ClawRenderTarget>();target->setSize({128,128});renderer.setRenderTarget(target);
             renderer.setCamera(nullptr);renderer.setViewport(nullptr);renderer.disableShadows();
             auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());wind(native);atlas(native);cpuTexture(native);deformationBounds(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
+            grassFade( renderer, native );
             auto data=std::make_shared<FoliageWorldData>();data->pageSize=1;data->revision=1;auto sourceSpecies=species();data->species={sourceSpecies};
             for(u32 n=0;n<5000;++n){FoliageInstance i;i.id=n+1;i.seed=n;i.position={f32(n%100)*.016f-.8f,f32(n/100)*.016f-.4f,0};data->instances.push_back(i);}
             String error;ClawFoliageWorld world;require(world.setSource(data,{},error),error.c_str());
@@ -315,6 +396,10 @@ namespace claw_foliage_world_contracts
             auto stats=world.diagnostics();require(stats.residentPages>=2&&stats.lodInstances[0]==5000,"multiple sparse cells must be resident and independently instanced");
             require(stats.groups==2&&stats.actualDraws==4&&stats.predictedDraws==4&&stats.submittedInstances==10000,
                 "cross-page grouping must issue two sections times two capacity chunks");
+            require( stats.speciesSplits == 0 && stats.lodSplits == 0 && stats.sectionSplits == 1 &&
+                         stats.capacitySplits == 2 && stats.policySplits == 0 &&
+                         stats.submittedTriangles == 10000,
+                     "draw reasons and triangle totals must account for each native submission" );
             require(stats.uploadBytes==10000*160,"reported uploads must match native foliage stream bytes");
             const auto covered=pixels(native);require(std::count_if(covered.begin(),covered.end(),[](u8 v){return v>40;})>128*128,"resident world must visibly render");
             bool permit=false;u32 commits=0;

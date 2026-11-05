@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.24)
+project(WPNetworkOperatorGNS LANGUAGES C CXX)
+
+file(TO_CMAKE_PATH "${WP_GNS_SOURCE}" WP_GNS_SOURCE)
+file(TO_CMAKE_PATH "${WP_GNS_PUBLIC_ROOT}" WP_GNS_PUBLIC_ROOT)
+if(NOT IS_DIRECTORY "${WP_GNS_SOURCE}" OR NOT EXISTS "${WP_GNS_PUBLIC_ROOT}")
+    message(FATAL_ERROR "Provide the pinned GNS source and the operator's OpenSSH public root")
+endif()
+file(READ "${WP_GNS_PUBLIC_ROOT}" operator_root LIMIT 160)
+string(STRIP "${operator_root}" operator_root)
+if(NOT operator_root MATCHES "^ssh-ed25519 [A-Za-z0-9+/]+ ID[0-9]+$")
+    message(FATAL_ERROR "Invalid operator root. Use the public key exported by WPNetworkGNSIssuer")
+endif()
+
+set(BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(ENABLE_ICE OFF CACHE BOOL "" FORCE)
+set(USE_STEAMWEBRTC OFF CACHE BOOL "" FORCE)
+set(Protobuf_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
+set(OPENSSL_USE_STATIC_LIBS ON)
+set(USE_CRYPTO OpenSSL CACHE STRING "" FORCE)
+
+add_subdirectory("${WP_GNS_SOURCE}" gns)
+target_compile_definitions(GameNetworkingSockets_s PRIVATE
+    "STEAMNETWORKINGSOCKETS_HARDCODED_ROOT_CA_KEY=\"${operator_root}\"")
+
+install(FILES "${WP_GNS_SOURCE}/LICENSE" DESTINATION share/GameNetworkingSockets)

@@ -3,6 +3,7 @@
 #include "ClawFoliageSceneContracts.hpp"
 #include "ClawSceneLifetimeContracts.hpp"
 #include "ClawFoliageWorldContracts.hpp"
+#include "ClawFoliageAcceptance.hpp"
 #include "ClawAnimationContracts.hpp"
 #include "ClawMeshBudgetContracts.hpp"
 #include "ClawMaterialReloadContracts.hpp"
@@ -1501,6 +1502,43 @@ int main( int argc, char **argv )
     TypeManager types; types.load(); TypeManager::setInstance(&types);
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance(application);
+    if( argc >= 2 && !std::strcmp( argv[1], "--foliage-acceptance" ) )
+    {
+        char *frameEnd = nullptr, *soakEnd = nullptr;
+        const auto frames = argc >= 4 ? std::strtol( argv[2], &frameEnd, 10 ) : 0;
+        const auto seconds = argc >= 4 ? std::strtol( argv[3], &soakEnd, 10 ) : -1;
+        bool ok = false;
+        if( ( argc == 4 || argc == 5 ) && frameEnd && !*frameEnd && frames >= 2 && frames <= 10000 &&
+            soakEnd && !*soakEnd && seconds >= 0 && seconds <= 8 * 60 * 60 )
+        {
+            auto window = make_ptr<TestWindow>();
+            window->handle = CreateWindowExW( 0, L"STATIC", L"Claw foliage acceptance", WS_OVERLAPPEDWINDOW,
+                0, 0, 128, 128, nullptr, nullptr, GetModuleHandleW( nullptr ), nullptr );
+            ClawRendererDX11 renderer;
+            try
+            {
+                claw_foliage_contracts::require( window->handle != nullptr, "foliage fixture window must initialize" );
+                renderer.load( window );
+                claw_foliage_contracts::require( renderer.isLoaded(), "foliage fixture needs DX11" );
+                auto *native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+                claw_foliage_contracts::require( recordDX11TestDevice( static_cast<ID3D11Device *>(
+                    wp_renderer_dx11_get_device( native ) ) ), "foliage fixture must identify its actual device" );
+                const auto captureDirectory = argc == 5 ? std::filesystem::path( argv[4] ) : std::filesystem::path{};
+                claw_foliage_acceptance::run( renderer, window, u32( frames ), u32( seconds ), captureDirectory );
+                ok = true;
+            }
+            catch( const std::exception &error ) { std::fprintf( stderr, "Foliage acceptance failed: %s\n", error.what() ); }
+            if( renderer.isLoaded() ) renderer.unload( nullptr );
+            if( window->handle ) DestroyWindow( window->handle );
+        }
+        else
+        {
+            std::fprintf( stderr, "Usage: --foliage-acceptance frames[2..10000] soak-seconds[0..28800] [capture-directory]\n" );
+        }
+        core::IApplicationManager::setInstance( nullptr ); application = nullptr;
+        TypeManager::setInstance( nullptr ); types.unload();
+        return ok ? 0 : 1;
+    }
     if( argc == 2 && !std::strcmp( argv[1], "--debugger-pause" ) )
     {
         auto window = make_ptr<TestWindow>();

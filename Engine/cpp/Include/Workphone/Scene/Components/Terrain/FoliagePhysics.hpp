@@ -12,6 +12,11 @@ namespace workphone::physics
     class IRigidStatic3;
 }  // namespace workphone::physics
 
+namespace workphone::render
+{
+    struct FoliageStreamSource;
+}
+
 namespace workphone::scene
 {
     class FoliageAuthoring;
@@ -34,7 +39,12 @@ namespace workphone::scene
                         u32 maximumColliders = 512 );
         ~FoliagePhysics();
         bool setSource( render::FoliageSnapshot, const Transform3<real_Num> &placement, String &error );
+        bool setPagedSource( std::shared_ptr<const render::FoliageStreamSource>,
+                             const Transform3<real_Num> &placement, String &error );
+        // A false result with an empty error means demanded pages are still loading.
         bool update( const Array<Vector3F> &observers, String &error );
+        bool updateActive( const Array<Vector3F> &observers, String &error );
+        void clearActive();
         void clear();
         FoliageCollisionStats getStats() const;
         SmartPtr<physics::IRigidStatic3> getBody( u64 instanceId ) const;
@@ -42,6 +52,7 @@ namespace workphone::scene
         FoliagePhysics &operator=( const FoliagePhysics & ) = delete;
 
     private:
+        bool update( const Array<Vector3F> &observers, String &error, bool publishPending );
         struct State;
         std::unique_ptr<State> m_state;
     };

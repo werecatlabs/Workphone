@@ -917,11 +917,34 @@ namespace workphone::render
                       : Matrix4F::identity();
     }
 
+    bool ClawRendererDX11::isFoliageBatchingEnabled() const
+    {
+        bool batch = true;
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            if( auto settings = app->getPlayerSettings() )
+            {
+                settings->getPropertyValue( "performance.staticBatching", batch );
+            }
+        }
+        return batch;
+    }
+
     u32 ClawRendererDX11::renderFoliageGeometry( const wp_geometry_dx11 *geometry, u32 first,
                                                  u32 indices, const wp_foliage_instance_dx11 *instances,
                                                  u32 count, const wp_foliage_parameters_dx11 &parameters,
                                                  const FoliageMaterial &source, void *const *views,
                                                  bool unlit, bool atlas )
+    {
+        return renderFoliageGeometry( geometry, first, indices, instances, count, parameters, source,
+                                      views, unlit, atlas, isFoliageBatchingEnabled() );
+    }
+
+    u32 ClawRendererDX11::renderFoliageGeometry( const wp_geometry_dx11 *geometry, u32 first,
+                                                 u32 indices, const wp_foliage_instance_dx11 *instances,
+                                                 u32 count, const wp_foliage_parameters_dx11 &parameters,
+                                                 const FoliageMaterial &source, void *const *views,
+                                                 bool unlit, bool atlas, bool batch )
     {
         auto native = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
         if( !native || !geometry || !count || count > foliageMaximumInstances || !views ||
@@ -967,14 +990,6 @@ namespace workphone::render
         wp_renderer_set_cull_mode(
             m_renderer, source.twoSided ? WORKPHONE_CULL_MODE_NONE : WORKPHONE_CULL_MODE_BACK );
         wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
-        bool batch = true;
-        if( auto app = core::IApplicationManager::instancePtr() )
-        {
-            if( auto settings = app->getPlayerSettings() )
-            {
-                settings->getPropertyValue( "performance.staticBatching", batch );
-            }
-        }
         u32 submitted = 0;
         const u32 chunk = batch ? count : 1u;
         for( u32 offset = 0; offset < count; offset += chunk )

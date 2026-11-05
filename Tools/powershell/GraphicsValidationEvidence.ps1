@@ -7,8 +7,9 @@ function Get-GraphicsValidationSourceSnapshot([string]$RepositoryRoot) {
         Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot $directory) -File -Recurse |
             Where-Object { $_.Extension -in @('.c','.cpp','.h','.hpp','.inl','.cmake','.py','.lua','.gltf','.json','.txt') }
     })
-    $files+=@('CMakeLists.txt','CMakePresets.json','Tools/ValidateClawGraphics.ps1',
-        'Tools/BuildWPGraphicsBaseline.ps1','Tools/GraphicsValidationEvidence.ps1') |
+    $files+=@('CMakeLists.txt','CMakePresets.json','Tools/powershell/ValidateClawGraphics.ps1',
+        'Tools/powershell/BuildWPGraphicsBaseline.ps1','Tools/powershell/GraphicsValidationEvidence.ps1',
+        'Tools/powershell/TerrainValidationEvidence.ps1') |
         ForEach-Object { Get-Item -LiteralPath (Join-Path $RepositoryRoot $_) }
     $snapshot=@{}
     foreach($file in $files | Sort-Object FullName -Unique) {

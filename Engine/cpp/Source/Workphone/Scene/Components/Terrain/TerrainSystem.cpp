@@ -693,13 +693,15 @@ namespace workphone::scene
 
     void TerrainSystem::update()
     {
-        if(m_runtimeAssetsMode)return;
         if( Thread::getCurrentTask() != TaskId::Physics )
         {
             return;
         }
-        String foliagePending;
-        refreshFoliage( foliagePending );
+        if( !m_runtimeAssetsMode )
+        {
+            String foliagePending;
+            refreshFoliage( foliagePending );
+        }
         std::unique_lock<std::recursive_mutex> guard( m_foliagePhysicsMutex, std::try_to_lock );
         if( !guard.owns_lock() )
         {
@@ -708,7 +710,7 @@ namespace workphone::scene
         const auto terrain = dynamic_pointer_cast<render::Terrain>( getTerrain() );
         const auto active = terrain ? terrain->getActiveFoliage() : render::Terrain::ActiveFoliage{};
         String error;
-        if( !prepareFoliagePhysics( active.snapshot, active.placement, error ) &&
+        if( !prepareFoliagePhysics( active.snapshot, active.placement, error ) && !error.empty() &&
             error != m_foliagePhysicsError )
         {
             WP_LOG_WARNING( "Terrain foliage: " + error );
@@ -756,7 +758,8 @@ namespace workphone::scene
             error = "Foliage publication is waiting for the physics scene boundary.";
             return false;
         }
-        if( !isEnabled() || ( actor && !actor->isEnabledInScene() ) )
+        if( !isEnabled() || ( actor && !actor->isEnabledInScene() ) ||
+            ( m_runtimeAssetsMode && !detail::runtimeActorPublished( actor ) ) )
         {
             m_foliagePhysics.reset();
             m_foliagePhysicsManager = nullptr;
@@ -786,8 +789,28 @@ namespace workphone::scene
                 }
             }
         }
-        if( !m_foliagePhysics->setSource( snapshot, placement, error ) ||
-            !m_foliagePhysics->update( observers, error ) )
+        // Only the renderer publication gate can replace a cooked source. The
+        // physics update can move observers independently without superseding it.
+        if( m_runtimeAssetsMode && !commit )
+        {
+            if( !snapshot )
+            {
+                m_foliagePhysics->clearActive();
+                error.clear();
+                return true;
+            }
+            return m_foliagePhysics->updateActive( observers, error );
+        }
+        const auto terrain = dynamic_pointer_cast<render::Terrain>( getTerrain() );
+        const auto paged = terrain ? terrain->getFoliagePageSource( snapshot ) : nullptr;
+        if( m_runtimeAssetsMode && snapshot && !paged )
+        {
+            error = "Captured foliage is waiting for its matching collision page directory.";
+            return false;
+        }
+        const bool admitted = paged ? m_foliagePhysics->setPagedSource( paged, placement, error )
+                                   : m_foliagePhysics->setSource( snapshot, placement, error );
+        if( !admitted || !m_foliagePhysics->update( observers, error ) )
         {
             return false;
         }

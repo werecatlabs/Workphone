@@ -46,6 +46,20 @@ namespace workphone::render
             SmartPtr<IMaterialPass> pass;
         };
 
+        void attachTechnique( IMaterialTechnique &technique, Material &material )
+        {
+            technique.setMaterial( &material );
+            // Backend techniques can store passes outside the generic child list.
+            const auto passCount = technique.getNumPasses();
+            for( u32 index = 0; index < passCount; ++index )
+            {
+                if( auto pass = technique.getPass( index ); pass && pass->getMaterial().get() != &material )
+                {
+                    pass->setMaterial( &material );
+                }
+            }
+        }
+
         SinglePassEdit singlePassEdit( const IMaterial &material,
                                       const std::atomic<u64> &graphRevision )
         {
@@ -1223,7 +1237,7 @@ namespace workphone::render
             if( technique )
             {
                 if(auto previous=technique->getMaterial();previous&&previous.get()!=this)previous->removeTechnique(technique);
-                technique->setMaterial( this );
+                attachTechnique( *technique, *this );
             }
         }
         invalidateRenderState();
@@ -1528,7 +1542,7 @@ namespace workphone::render
         m_techniques.push_back( technique );
         if( technique )
         {
-            technique->setMaterial( this );
+            attachTechnique( *technique, *this );
         }
         invalidateRenderState();
         applyPendingLegacySurface();
