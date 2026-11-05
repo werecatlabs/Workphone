@@ -4,6 +4,8 @@
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <WPLuabind/StringConverter.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainGrassLayer.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/CommandManagerMT.hpp>
@@ -58,6 +60,31 @@ int main()
             String error;
             if( !terrain->applyTerrainData( data, error ) )
                 throw std::runtime_error( error.c_str() );
+
+            auto legacyTerrain = make_ptr<scene::TerrainSystem>();
+            auto legacyTrees = make_ptr<scene::TerrainTreeLayer>();
+            auto legacyGrass = make_ptr<scene::TerrainGrassLayer>();
+            const auto expectMigration = [&] {
+                String diagnostic;
+                if( legacyTerrain->generateFoliage( diagnostic ) ||
+                    diagnostic.find( "requires explicit migration" ) == String::npos ||
+                    !legacyTerrain->exportFoliageData().empty() )
+                {
+                    throw std::runtime_error( "Legacy generation must report migration without creating foliage data" );
+                }
+            };
+            legacyTrees->setPrefabPath( "Trees/oak.prefab" );
+            legacyTerrain->addSubComponent( legacyTrees );
+            expectMigration();
+            if( legacyTrees->getPrefabPath() != "Trees/oak.prefab" )
+                throw std::runtime_error( "Legacy generation must preserve the original prefab reference" );
+            legacyTerrain->removeSubComponent( legacyTrees );
+            legacyTerrain->addSubComponent( legacyGrass );
+            expectMigration();
+            legacyTerrain->removeSubComponent( legacyGrass );
+            legacyTerrain->setGeneratedTreeCount( 444 );
+            expectMigration();
+
             luabind::globals( state )["terrainFixture"] = terrain;
             luabind::globals( state )["restoredTerrainFixture"] = restored;
             luabind::globals( state )["terrainFixturePath"] =

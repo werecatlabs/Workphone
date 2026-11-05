@@ -1278,11 +1278,8 @@ namespace workphone::render
             Reserve reserve = [scheduler]( auto kind, u64 bytes, String &failure ) {
                 return scheduler->reserve( kind, bytes, failure );
             };
-            auto scratch = reserve( StreamMemoryClass::WorkingCpu, options.maximumWorkingBytes, error );
-            if( !scratch )
-            {
-                return {};
-            }
+            const u64 directoryScratch = std::min( u64( root->payload.size() ), metadataLimit ) * 64;
+            u64 dependencyScratch = 0;
 
             struct Captured final : SourceBudgetObject
             {
@@ -1371,6 +1368,16 @@ namespace workphone::render
                 check( payload <= options.maximumSourceBytes - bytes,
                        "Captured foliage source exceeds its byte bound" );
                 bytes += payload;
+                if( type == resource::ResourceTypeID( "folspec" ) )
+                {
+                    dependencyScratch = std::max( dependencyScratch,
+                        std::min( u64( payload ), speciesLimit ) * 64 );
+                }
+                else if( type == resource::ResourceTypeID( "texres" ) && !isRuntimeTextureSnapshot( *value ) )
+                {
+                    dependencyScratch = std::max( dependencyScratch,
+                        std::min( u64( payload ), graphicsTextureByteLimit + 4096 ) * 2 );
+                }
                 auto budget = reserve( StreamMemoryClass::SourceCpu, metadata + payload + 1024, error );
                 if( !budget )
                 {
@@ -1431,7 +1438,18 @@ namespace workphone::render
                 }
                 return page;
             };
-            return decodeWorld( load, id, target, packaged, options, reserve, StreamCancellation( {} ),
+            // The captured graph already has separate SourceCpu reservations. Admit the
+            // directory and largest sequential decode instead of claiming the entire shared
+            // WorkingCpu envelope while the enclosing scene still owns its startup lease.
+            auto bounded = options;
+            bounded.maximumWorkingBytes = std::min( options.maximumWorkingBytes,
+                ( u64( 1 ) << 20 ) + directoryScratch + dependencyScratch );
+            auto scratch = reserve( StreamMemoryClass::WorkingCpu, bounded.maximumWorkingBytes, error );
+            if( !scratch )
+            {
+                return {};
+            }
+            return decodeWorld( load, id, target, packaged, bounded, reserve, StreamCancellation( {} ),
                                 error );
         }
         catch( const std::exception &failure )

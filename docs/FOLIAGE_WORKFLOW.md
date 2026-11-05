@@ -147,6 +147,8 @@ positions. `setSource` still accepts authored snapshots.
 Convert legacy per-layer prefab hierarchies into explicit mesh species and placement
 rules. Choose the intended render meshes, materials and density per square metre
 when converting older absolute-count layers or texture pointers without durable IDs.
+Initial generation reports the migration requirement when it finds legacy authoring.
+Create or import explicit species and set their placement rules before regenerating.
 
 `FoliageGameplay` accepts an application's actor/prefab acquire and release
 callbacks. Promotion creates a gameplay actor and flags its compact instance;
@@ -208,5 +210,31 @@ After the build, run the foliage evidence runner into a fresh directory.
 The runner saves fixture and binary hashes, CSV counters, images, adapter and driver
 details, and an acceptance JSON report. The 1080p fixture measures isolated foliage
 passes, with the pixel shader invocation to visible-pixel ratio as an overdraw
-estimate. Full release sign-off also needs interactive Editor review, a
-representative installed scene on target Windows, and the whole-renderer gate.
+estimate. Its teleport checkpoints verify empty residency and bound GPU reservations
+against the first eviction. The final unload verifies that page reservations and
+queued streaming work return to their starting counts. These checks cover the
+foliage fixture. The whole-renderer gate uses the parent plan's mixed scene.
+
+Use the checked package fixture to cook and run the same forest from installed
+content. The runner removes its temporary source tree, catalog and cook cache
+before verification, runs the offscreen flight from the read-only package, and
+recreates the renderer. Pass `--editor` with the executable from a staged Editor
+package to exercise the cooked scene through the product entry point as well.
+
+```powershell
+$bin = 'bin/windows/v145/x64/MD/RelWithDebInfo'
+python Tests/python/resource_installed_foliage_scene.py `
+    "$bin/WPGraphicsCookedResourceTests.exe" "$bin/WorkphoneResourcePackage.exe" `
+    project_wpgraphics_baseline/installed-forest `
+    --editor 'path/to/staged-package/bin/Editor.exe'
+```
+
+For interactive acceptance, use a scratch scene with editable terrain, a tree
+species and a grass species. Record the initial foliage export, then use
+**Viewport Paint** to add both species and **Viewport Erase** to remove a subset.
+Use **Undo Foliage** and **Redo Foliage** and compare each export's instance IDs,
+transforms and removal flags with the corresponding recorded state. Save the
+scene, close the Editor, reopen it in a fresh process and compare a new export
+with the last saved state. Capture near, middle and far views with shadows and
+wind enabled. Keep the scene, exports, captures, build revision and GPU/driver
+details with the acceptance results.

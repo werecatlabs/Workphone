@@ -9,7 +9,7 @@ param(
     [switch]$RequireComplete
 )
 $ErrorActionPreference='Stop'
-$repo=Split-Path $PSScriptRoot -Parent
+$repo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $output=[IO.Path]::GetFullPath($OutputPath)
 if(Test-Path -LiteralPath $output) { throw 'Use a new release evidence path to preserve previous results.' }
 $report=[ordered]@{schemaVersion=2;recordedAtUtc=[DateTime]::UtcNow.ToString('o');

@@ -2286,6 +2286,25 @@ namespace workphone::scene
     bool TerrainSystem::generateFoliage( String &error )
     {
         if(m_runtimeAssetsMode){error="Captured foliage is loaded from its typed world resource";return false;}
+        SmartPtr<FoliageAuthoring> existing;
+        {
+            std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
+            existing = m_foliageAuthoring;
+        }
+        if( !existing || existing->getSnapshot()->species.empty() )
+        {
+            // The original inspector used prefab hierarchies and absolute counts.
+            // Its unchanged global defaults also appear on new terrain components.
+            const bool customPrefab = !m_treePrefabName.empty() && m_treePrefabName != "tree.prefab";
+            const bool customCount = m_generatedTreeCount != 1000;
+            if( customPrefab || customCount || !getSubComponentsByType<TerrainTreeLayer>().empty() ||
+                !getSubComponentsByType<TerrainGrassLayer>().empty() )
+            {
+                error = "Legacy terrain foliage requires explicit migration. Import the intended meshes "
+                        "as foliage species, then set placement density per square metre in the Foliage tab.";
+                return false;
+            }
+        }
         auto authoring = getFoliageAuthoring();
         if( authoring->getSnapshot()->species.empty() )
         {

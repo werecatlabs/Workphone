@@ -317,28 +317,45 @@ namespace
     }
     void lifecycleContracts()
     {
-        const auto before=WorldStreamingScheduler::shared()->stats(); String error;
-        auto original=fixture();
+        const auto scheduler = WorldStreamingScheduler::shared();
+        const auto before = scheduler->stats();
+        String error;
+        auto ground = std::make_shared<render::TerrainData>();
+        ground->dimensions = { 17, 9 };
+        ground->origin = { -8, 0 };
+        ground->heights.assign( 17 * 9, 0 );
+        const Array<render::FoliageCellKey> cells{ { -1, 0 }, { 0, 0 } };
         {
+            auto author = make_ptr<scene::FoliageAuthoring>();
+            require( author->setSpecies( foliage_page_stream_contracts::source()->species, error ), error.c_str() );
+            scene::FoliagePlacementRecipe recipe;
+            recipe.pageSize = 8;
+            recipe.candidateSpacing = 2;
+            scene::FoliagePlacementRule rule;
+            rule.density = 1;
+            rule.minimumSpacing = 0;
+            recipe.rules = { rule };
             render::FoliagePageStream stream;
-            for(u32 cycle=0;cycle<1000;++cycle)
+            for( u32 cycle = 0; cycle < 1000; ++cycle )
             {
-                auto source=std::make_shared<render::FoliageWorldData>(*original); source->revision=cycle+1;
-                require(stream.setSource(source,error),error.c_str());
-                const render::FoliageCellKey cell=cycle%2?render::FoliageCellKey{-1,0}:render::FoliageCellKey{1,0};
-                require(stream.setDemand({cell},error),error.c_str());
-                render::FoliagePageResult result; bool ready=false;
-                const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);
-                while(!(ready=stream.take(result)) && std::chrono::steady_clock::now()<deadline)
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                require(ready&&result.page&&result.source->revision==cycle+1&&result.cell==cell,
-                        "Repeated load/teleport publishes only the current foliage generation");
+                recipe.seed = cycle + 1;
+                const auto previous = author->getSnapshot();
+                require( author->configure( recipe, error ) && author->regenerate( ground, cells, error ),
+                         error.c_str() );
+                const auto source = author->getSnapshot();
+                require( source != previous && !source->instances.empty(), "Regeneration publishes a new population" );
+                const auto cell = cells[cycle % cells.size()];
+                require( stream.setSource( source, error ) && stream.setDemand( { cell }, error ), error.c_str() );
+                const auto result = foliage_page_stream_contracts::take( stream );
+                require( result.page && result.source == source && result.cell == cell && !result.page->instances.empty(),
+                         "Regenerate/load publishes only the current foliage generation" );
+                const auto count = result.page->instances.size();
                 stream.drain();
-                require(result.page->instances.size()==1,"Retained result survives each unload");
+                require( result.page->instances.size() == count, "Retained result survives each unload" );
             }
         }
-        require(WorldStreamingScheduler::shared()->stats().used==before.used,"1000 page/load/unload cycles release every reservation");
-        std::puts("Foliage 1000 page/load/teleport/unload cycles: PASS (bounded fixture; not an eight-hour soak)");
+        require( scheduler->stats().used == before.used, "1000 regeneration/page/load/unload cycles release every reservation" );
+        std::puts( "Foliage 1000 regeneration/page/load/unload cycles: PASS" );
     }
 }
 int main()

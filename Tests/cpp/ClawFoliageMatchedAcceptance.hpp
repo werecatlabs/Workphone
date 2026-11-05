@@ -8,6 +8,7 @@
 namespace claw_foliage_matched_acceptance
 {
     using namespace claw_foliage_contracts;
+    using claw_foliage_contracts::require;
     using Clock = std::chrono::steady_clock;
 
     struct Placement

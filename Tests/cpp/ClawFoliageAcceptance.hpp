@@ -10,13 +10,14 @@
 namespace claw_foliage_acceptance
 {
     using namespace claw_foliage_contracts;
+    using claw_foliage_contracts::require;
     using Clock = std::chrono::steady_clock;
     constexpr u32 width = 1920, height = 1080;
     constexpr u32 cells = 8, treesPerCell = 32, grassPerCell = 144;
     constexpr f32 cellWidth = 64;
     constexpr u64 seed = 0x464f4c31;
 
-    inline FoliageSnapshot forest()
+    inline FoliageSnapshot forest( const String &leaf = "acceptance-leaf" )
     {
         auto data = std::make_shared<FoliageWorldData>();
         data->pageSize = cellWidth;
@@ -35,7 +36,7 @@ namespace claw_foliage_acceptance
             recipe.branches = grass ? 8 : 16;
             recipe.bark.tint = { .35f, .20f, .11f, 1.f };
             recipe.leaves.tint = grass ? ColourF( .50f, .75f, .22f, 1.f ) : ColourF( .30f, .64f, .28f, 1.f );
-            recipe.leaves.albedo = "acceptance-leaf";
+            recipe.leaves.albedo = leaf;
             recipe.wind.amplitude = grass ? .11f : .27f;
             recipe.wind.flutter = .03f;
             recipe.wind.bendEnd = recipe.height;
@@ -105,9 +106,8 @@ namespace claw_foliage_acceptance
         Matrix4F m_view, m_projection;
     };
 
-    inline SmartPtr<ClawTexture> leafTexture( wp_renderer_dx11 *native )
+    inline TextureMipLevel leafPixels()
     {
-        auto texture = make_ptr<ClawTexture>();
         TextureMipLevel level;
         level.width = level.height = 32;
         level.bgra.resize( level.width * level.height * 4 );
@@ -119,6 +119,13 @@ namespace claw_foliage_acceptance
                 auto *pixel = level.bgra.data() + ( y * level.width + x ) * 4;
                 pixel[0] = 140; pixel[1] = 212; pixel[2] = 165; pixel[3] = covered ? 255 : 0;
             }
+        return level;
+    }
+
+    inline SmartPtr<ClawTexture> leafTexture( wp_renderer_dx11 *native )
+    {
+        auto texture = make_ptr<ClawTexture>();
+        const auto level = leafPixels();
         TextureMipSettings settings;
         settings.filter = TextureMipFilter::Cutout;
         String error;
@@ -290,6 +297,8 @@ namespace claw_foliage_acceptance
         const auto deadline = start + std::chrono::seconds( soakSeconds );
         const auto scheduler = WorldStreamingScheduler::shared();
         u64 maxCpu = 0, maxGpu = 0, maxUpload = 0, maxLocalVideoMemory = 0;
+        u64 evictions = 0, firstEvictedGpuBytes = 0, peakEvictedGpuBytes = 0;
+        const auto gpuClass = size_t( StreamMemoryClass::Gpu );
         u64 frame = 0;
         u32 observedPasses = 0, observedLods = 0;
         for( ; frame < frames || Clock::now() < deadline; ++frame )
@@ -316,6 +325,14 @@ namespace claw_foliage_acceptance
                 auto remote = colour;
                 remote.position = { 8192.f, 32.f, 8192.f };
                 waitForPages( world, renderer, { remote }, seconds, false );
+                require( world.diagnostics().residentInstances == 0,
+                         "forest teleport must evict every resident instance" );
+                const auto gpuBytes = scheduler->stats().used[gpuClass];
+                if( !evictions ) firstEvictedGpuBytes = gpuBytes;
+                require( gpuBytes <= firstEvictedGpuBytes,
+                         "forest GPU reservations must stay bounded at empty residency checkpoints" );
+                peakEvictedGpuBytes = std::max( peakEvictedGpuBytes, gpuBytes );
+                ++evictions;
             }
             if( frame == 0 || frame % 32 == 0 ) waitForPages( world, renderer, views, seconds );
             const auto cpuStart = Clock::now();
@@ -362,10 +379,10 @@ namespace claw_foliage_acceptance
             require( !c.failedPages && !s.failedPages && !r.failedPages, "forest page failed during flight" );
             if( captureCoverage ) require( covered > 100 && psInvocations, "grazing-angle forest must cover real pixels" );
             const auto budget = scheduler->stats();
-            const auto gpuClass = size_t( StreamMemoryClass::Gpu );
             maxGpu = std::max( maxGpu, budget.used[gpuClass] );
             maxCpu = std::max( maxCpu, budget.used[size_t( StreamMemoryClass::SourceCpu )] +
-                budget.used[size_t( StreamMemoryClass::PendingCpu )] + budget.used[size_t( StreamMemoryClass::WorkingCpu )] );
+                budget.used[size_t( StreamMemoryClass::PendingCpu )] + budget.used[size_t( StreamMemoryClass::WorkingCpu )] +
+                budget.used[size_t( StreamMemoryClass::ResultCpu )] );
             maxUpload = std::max( maxUpload, c.uploadBytes + s.uploadBytes + r.uploadBytes );
             DXGI_QUERY_VIDEO_MEMORY_INFO local{};
             if( memory && SUCCEEDED( memory->QueryVideoMemoryInfo( 0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &local ) ) )
@@ -390,6 +407,9 @@ namespace claw_foliage_acceptance
         }
         require( observedPasses == 7, "forest must submit all three passes" );
         require( observedLods == 7, "the automatic forest view must submit all three LODs" );
+        std::printf( "FOLIAGE_EVICTIONS,%llu,%llu,%llu\n", static_cast<unsigned long long>( evictions ),
+            static_cast<unsigned long long>( firstEvictedGpuBytes ),
+            static_cast<unsigned long long>( peakEvictedGpuBytes ) );
         std::printf( "FOLIAGE_FLIGHT,%llu,%.3f,%llu,%llu,%llu,%llu\n", static_cast<unsigned long long>( frame ),
             milliseconds( Clock::now() - start ) / 1000.0, static_cast<unsigned long long>( maxCpu ),
             static_cast<unsigned long long>( maxGpu ), static_cast<unsigned long long>( maxUpload ),
@@ -466,6 +486,8 @@ namespace claw_foliage_acceptance
         renderer.setRenderTarget( target );
         renderer.setViewport( nullptr );
         claw_foliage_matched_acceptance::run( renderer, data, camera, texture );
+        const auto scheduler = WorldStreamingScheduler::shared();
+        const auto beforeWorld = scheduler->stats();
         ClawFoliageWorld world;
         String error;
         require( world.setSource( data, [&]( const String &, String & ) -> SmartPtr<ITexture> { return texture; }, error ),
@@ -494,6 +516,15 @@ namespace claw_foliage_acceptance
         require( renderPass( world, renderer, native, view ).actualDraws && capture( native ) > 100,
                  "world must render retained foliage on the new native device" );
         std::puts( "FOLIAGE_RECOVERY,passed" );
+        world.clear();
+        const auto afterWorld = scheduler->stats();
+        const auto resultClass = size_t( StreamMemoryClass::ResultCpu );
+        require( world.diagnostics().residentPages == 0 && !world.source() &&
+                 beforeWorld.used[resultClass] == afterWorld.used[resultClass] &&
+                 beforeWorld.pending == afterWorld.pending && beforeWorld.active == afterWorld.active &&
+                 beforeWorld.ready == afterWorld.ready,
+                 "unloading the forest must release its pages and queued streaming work" );
+        std::puts( "FOLIAGE_UNLOAD,passed" );
         renderer.setRenderTarget( nullptr );
         renderer.setCamera( nullptr );
     }

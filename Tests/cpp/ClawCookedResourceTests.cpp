@@ -26,6 +26,7 @@
 #include "GraphicsResourceCompilerContracts.hpp"
 #include "FontResourceContracts.hpp"
 #include "ClawMorphResourceContracts.hpp"
+#include "ClawInstalledFoliageContracts.hpp"
 #include <array>
 #include <cstring>
 #include <cstdlib>
@@ -1051,7 +1052,6 @@ namespace
 }  // namespace
 
 #include "CookedTerrainContracts.hpp"
-#include "CookedFoliageContracts.hpp"
 #include "ClawMaterialProgramRetirementContracts.hpp"
 #include "CookedMaterialShaderContracts.hpp"
 #include "ClawCookedMaterialRetirementContracts.hpp"
@@ -1063,6 +1063,17 @@ int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 3 && std::strcmp( argv[1], "--installed-foliage-export" ) == 0 )
+        {
+            claw_installed_foliage_contracts::exportForest( fs::u8path( argv[2] ) );
+            return 0;
+        }
+        if( argc == 5 && std::strcmp( argv[1], "--installed-foliage-consume" ) == 0 )
+        {
+            claw_installed_foliage_contracts::consumeForest( fs::u8path( argv[2] ), argv[3],
+                                                              fs::u8path( argv[4] ) );
+            return 0;
+        }
         if(argc==4 && (std::strcmp(argv[1],"--skeleton-checked-package-consume")==0 ||
                       std::strcmp(argv[1],"--skin-checked-package-consume")==0))
         {

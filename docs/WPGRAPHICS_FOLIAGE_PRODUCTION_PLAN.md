@@ -38,7 +38,7 @@ base child inventory that receives the owner update.
 The material fix restores pass ownership when adding or replacing a technique.
 The full RelWithDebInfo rerun rebuilt the Editor and recorded 61 passes, zero
 failures and one unavailable external mesh-import fixture.
-[Rerun evidence](../project_foliage_rel/claw-graphics-RelWithDebInfo-evidence.json)
+[Material-fix baseline evidence](../project_x64/qa/foliage-closure-e5a4947b/before/claw-graphics-RelWithDebInfo-evidence.json)
 
 The device was Microsoft Basic Render Driver (WARP), so physical-GPU performance
 is unavailable and the GF1 release-duration preflight rejected the adapter.
@@ -47,10 +47,40 @@ Windows denied foreground input and monitor capture, leaving live paint, undo
 and reopen acceptance open. [GF1 preflight](../project_x64/qa/foliage-20261105/gf1-release-preflight.log) ·
 [Editor startup evidence](../project_x64/qa/foliage-20261105/editor-live/Captures/scratch-startup.json)
 
-The release checklist below still owns the physical-GPU budgets, interactive Editor
-and visual acceptance, representative installed scene, and whole-renderer release
-gate. Legacy per-layer prefab hierarchies and absolute-count densities require an
-explicit asset conversion. The documented hard-switch LOD policy remains supported.
+The representative cooked scene now passes local source-free installation and
+load. The RelWithDebInfo Editor bound the terrain/foliage and camera from the
+installed scene UUID. The native consumer drew 65 frames from the same read-only
+package, with 2,048 trees and 9,216 grass clumps across 64 signed cells, and drew
+again after rebuilding the renderer. The fixture caught a startup memory admission
+failure. Cooked scene loading now reserves scratch for the foliage directory and
+the largest sequential species or texture decode, within the caller's cap.
+[Installed-scene evidence](../project_foliage_rel/installed-foliage-evidence-4/evidence.json)
+The relocated Editor package passed its local startup and mixed-scene probes and
+its packaged executable also loaded the representative forest scene.
+[Editor package evidence](../project_x64/qa/foliage-release-candidate-2b2ac4c82b/candidate/editor-package-evidence.json) ·
+[Packaged Editor forest bootstrap](../project_x64/qa/foliage-closure-e5a4947b/archive-installed-forest-bootstrap.log)
+The clean-Windows kit is prepared for a separate target-machine run.
+[Kit instructions](../project_x64/qa/k-1fc1b66c/README.txt) ·
+[Kit preparation evidence](../project_x64/qa/k-1fc1b66c/kit-evidence.json)
+
+The lifecycle test now exercises 1,000 actual authoring regenerations with page
+load and unload. The 65-frame local flight reached two empty-residency checkpoints
+with equal GPU reservations and released its page reservations and queued work
+after final unload. Legacy layers that need explicit conversion now receive a
+migration diagnostic before initial generation.
+[Regeneration contract](../project_x64/qa/foliage-closure-e5a4947b/regeneration.xml) ·
+[GF1 diagnostic rerun](../project_x64/qa/foliage-closure-e5a4947b/gf1-final/foliage-acceptance.json)
+
+The final local RelWithDebInfo baseline rebuilt the Editor and recorded 61 passes,
+zero failures and one unavailable external mesh-import fixture.
+[Final baseline evidence](../project_foliage_rel/claw-graphics-RelWithDebInfo-evidence.json)
+
+GF0/GF1 sign-off still requires physical-GPU budgets, the eight-hour GF1 soak,
+interactive Editor and visual acceptance, target-machine installation, and the
+parent whole-renderer gate. The latest scratch Editor produced a native back-buffer
+capture, while both desktop capture attempts timed out. The documented hard-switch
+LOD policy remains supported.
+[Editor retry evidence](../project_x64/qa/foliage-closure-e5a4947b/editor-live/Captures/editor-retry.json)
 
 ## Implementation follow-up — 10 October 2026
 

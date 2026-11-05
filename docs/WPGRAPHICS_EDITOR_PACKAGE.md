@@ -1,6 +1,6 @@
 # C++ Editor package candidate
 
-Build the shared Windows x64 Claw/Lua Editor with `Tools/BuildEditorPackage.ps1`.
+Build the shared Windows x64 Claw/Lua Editor with `Tools/powershell/BuildEditorPackage.ps1`.
 The `WorkphoneEditor` CMake install component installs the RelWithDebInfo Editor,
 its configured dynamic plugins, resolved PE runtime dependencies, media
 and available dependency notices. Debug Editor is a Boost test executable and is
@@ -27,7 +27,7 @@ clean-machine prerequisites, hardware performance, project authoring workflows,
 complete media/dependency license auditing and shipping certification remain open.
 This package is a local validation candidate until those gates pass.
 
-`Tools/AuditEditorPackage.ps1` inventories the exact candidate's binaries, PE
+`Tools/powershell/AuditEditorPackage.ps1` inventories the exact candidate's binaries, PE
 imports, link inputs, media and embedded font metadata. It requires the installed
 notice files to match the checked-in originals. Both package validators run it
 before archiving and preserve `dependency-media-audit.json` outside the payload.
@@ -66,7 +66,7 @@ The package evidence pins their complete SHA256/size inventories.
 Prepare a portable clean-Windows validation kit with stock Windows PowerShell:
 
 ```powershell
-Tools/ValidateEditorCleanMachine.ps1 -Mode Prepare -KitDirectory <new-kit> `
+Tools/powershell/ValidateEditorCleanMachine.ps1 -Mode Prepare -KitDirectory <new-kit> `
   -ArchivePath <Editor.zip> -PackageEvidencePath <editor-package-evidence.json> `
   -ExpectedArchiveSha256 <sha256>
 ```
@@ -88,12 +88,12 @@ mappings; Collect verifies those recorded mappings even after evidence relocatio
 When the accepted evidence contains the retained fixtures, Prepare verifies and
 copies their exact inventories. The guest additionally replays native extended
 UUID verification, DX11/Software mixed scenes and overlay policies without Python
-or authoring storage. `Tools/EditorResourceFixtureReplay.ps1` can exercise that
+or authoring storage. `Tools/powershell/EditorResourceFixtureReplay.ps1` can exercise that
 same replay on the host against a prepared kit; its report explicitly records
 host-only execution and does not satisfy fresh-guest acceptance. Older candidate
 reports without retained fixtures keep their narrower startup coverage.
 
-`Tools/ValidateGraphicsReleaseEvidence.ps1` consolidates the SDK, Editor and
+`Tools/powershell/ValidateGraphicsReleaseEvidence.ps1` consolidates the SDK, Editor and
 graphics reports, rechecks their current inputs and archive identities, and
 requires matching candidate runtime bytes and exact dependency-audit inventories.
 Supply `-RequireComplete` to reject any remaining release gate. A successful

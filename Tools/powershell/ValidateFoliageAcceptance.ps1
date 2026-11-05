@@ -106,6 +106,11 @@ $sourceChanges = @(Compare-GraphicsValidationSourceSnapshots $sourceBefore $sour
 $runtimeChanges = @(Compare-GraphicsValidationSourceSnapshots $runtimeBefore (Get-RuntimeSnapshot))
 $flight = @($lines | Where-Object { $_ -like 'FOLIAGE_FLIGHT,*' } | Select-Object -Last 1)
 $flightFields = if ($flight.Count) { $flight[0].Split(',') } else { @() }
+$eviction = $lines | Where-Object { $_ -like 'FOLIAGE_EVICTIONS,*' } | Select-Object -Last 1
+$evictionFields = if ($eviction) { $eviction.Split(',') } else { @() }
+$evictionMetrics = if ($evictionFields.Count -eq 4) {
+    [ordered]@{ checkpoints = [long]$evictionFields[1]; firstGpuBytes = [long]$evictionFields[2]; peakGpuBytes = [long]$evictionFields[3] }
+} else { $null }
 $physicalGpu = $lines -contains 'FOLIAGE_ADAPTER,physical'
 $flightMetrics = if ($flightFields.Count -eq 7) {
     [ordered]@{
@@ -121,8 +126,12 @@ $flightMetrics = if ($flightFields.Count -eq 7) {
 $gpu = Get-Percentiles @($rows | ForEach-Object { [double]$_.gpuMs } | Where-Object { $_ -ge 0 })
 $cpu = Get-Percentiles @($rows | ForEach-Object { [double]$_.prepareCpuMs + [double]$_.submitCpuMs })
 $validEvidence = !$sourceChanges.Count -and !$runtimeChanges.Count
+$residencyPassed = $flightMetrics -and $evictionMetrics -and
+    $evictionMetrics.checkpoints -eq [Math]::Floor(($flightMetrics.frames - 1) / 32) -and
+    $evictionMetrics.peakGpuBytes -le $evictionMetrics.firstGpuBytes -and $lines -contains 'FOLIAGE_UNLOAD,passed'
 $automatedPassed = $contractsExit -eq 0 -and $contractsPassed -and $forestExit -eq 0 -and $validEvidence -and
-    $rows.Count -ge $Frames -and $matched.Count -eq 3 -and $grass.Count -eq 24 -and $lines -contains 'FOLIAGE_RECOVERY,passed'
+    $residencyPassed -and $rows.Count -ge $Frames -and $matched.Count -eq 3 -and $grass.Count -eq 24 -and
+    $lines -contains 'FOLIAGE_RECOVERY,passed'
 $performance = if (!$physicalGpu -or !$gpu -or !$cpu -or $gpu.samples -ne $rows.Count) { 'unavailable' }
     elseif ($gpu.p95 -le 16.7 -and $cpu.p95 -le 4.0) { 'within-parent-budget' } else { 'over-parent-budget' }
 $soak = if ($Tier -eq 'GF0') { 'not-required' }
@@ -151,7 +160,7 @@ $soak = if ($Tier -eq 'GF0') { 'not-required' }
         [ordered]@{ frame = [long]$_.frame; pixelShaderInvocationsPerCoveredPixel =
             [double]$_.mainPixelShaderInvocations / [long]$_.mainCoveredPixels }
     })
-    flight = $flightMetrics; soak = $soak
+    flight = $flightMetrics; evictions = $evictionMetrics; residencyPassed = [bool]$residencyPassed; soak = $soak
     captures = @(Get-ChildItem -LiteralPath $output -Filter '*.bmp' -File | ForEach-Object {
         [ordered]@{ path = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     })

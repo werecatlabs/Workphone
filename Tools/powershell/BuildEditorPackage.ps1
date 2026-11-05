@@ -6,7 +6,7 @@ param(
     [switch]$SkipBuild
 )
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path $PSScriptRoot -Parent
+$repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $build = if ([IO.Path]::IsPathRooted($BuildDirectory)) { [IO.Path]::GetFullPath($BuildDirectory) } else { [IO.Path]::GetFullPath((Join-Path $repo $BuildDirectory)) }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo ('project_graphics_sdk/editor-validation-' + [guid]::NewGuid().ToString('N')) }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
@@ -17,7 +17,7 @@ $evidence = [ordered]@{ schemaVersion = 1; validationPassed = $false; releaseCer
     buildDirectory = $build; incrementalBuild = $true; buildSkipped = [bool]$SkipBuild
     interactiveValidated = $false; cleanMachineValidated = $false; licenseAuditComplete = $false }
 $checks = [Collections.Generic.List[object]]::new()
-$inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEditorPackage.ps1',
+$inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWorkphoneEditor.cmake','Tools/powershell/BuildEditorPackage.ps1',
     'Tools/cpp/Editor/src/application/win32/Main.cpp','Tools/cpp/Editor/src/application/win32/EditorPackage.hpp',
     'Tools/cpp/Editor/src/EditorApplication.hpp','Tools/cpp/Editor/src/EditorApplication.cpp',
     'Engine/cpp/Source/Workphone/System/ApplicationManager.cpp','docs/WPGRAPHICS_EDITOR_PACKAGE.md',
@@ -120,7 +120,7 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Tests/cpp/CatalogResourceAdapterContracts.hpp','Tests/cpp/ResourceSystem/ResourceSystemSmoke.cpp',
     'Tests/cpp/ResourcePackageJobTests.cpp',
     'Tests/cpp/ResourceRuntimeContracts.hpp','Tools/cpp/Editor/src/tests/SceneResourceTests.cpp',
-    'Tests/python/resource_package_history.py','Tools/AuditEditorPackage.ps1',
+    'Tests/python/resource_package_history.py','Tools/powershell/AuditEditorPackage.ps1',
     'Engine/cpp/Include/Workphone/Interface/Graphics/IGraphicsSystem.hpp',
     'Engine/cpp/Include/Workphone/Interface/Sound/ISound.hpp',
     'Engine/cpp/Include/Workphone/Interface/Sound/ISoundManager.hpp',
@@ -266,10 +266,10 @@ $inputs = @('CMakeLists.txt','CMake/WorkphoneWindows.manifest','CMake/InstallWor
     'Engine/cpp/Source/Workphone/Scene/RuntimeSceneMembership.hpp',
     'Tests/cpp/RuntimeSceneMembershipContracts.hpp',
     'Tests/python/resource_package_extended_families.py',
-    'Tools/ValidateEditorCleanMachine.ps1',
-    'Tools/EditorCleanMachineGuest.ps1',
-    'Tools/EditorResourceFixtureReplay.ps1',
-    'Tools/TerrainCleanMachineGuest.ps1') | ForEach-Object {
+    'Tools/powershell/ValidateEditorCleanMachine.ps1',
+    'Tools/powershell/EditorCleanMachineGuest.ps1',
+    'Tools/powershell/EditorResourceFixtureReplay.ps1',
+    'Tools/powershell/TerrainCleanMachineGuest.ps1') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
 $evidence['packagingInputs'] = @($inputs)

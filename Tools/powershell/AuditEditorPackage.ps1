@@ -3,7 +3,7 @@
 param(
     [Parameter(Mandatory)][string]$PackageRoot,
     [Parameter(Mandatory)][string]$OutputPath,
-    [string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent),
+    [string]$RepositoryRoot = ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))),
     [string]$BuildDirectory,
     [ValidateSet('RelWithDebInfo','Release')][string]$Configuration = 'RelWithDebInfo',
     [switch]$AllowIncompleteNotices
