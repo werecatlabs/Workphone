@@ -1,4 +1,5 @@
 #pragma once
+#include <Workphone/Database/AuthoredDomainDatabase.hpp>
 #include <Workphone/Interface/Scene/IGamePrefab.hpp>
 #include <Workphone/Scene/GamePrefabManager.hpp>
 #include <fstream>
@@ -194,6 +195,78 @@ namespace
                resources->loadAssetProperties( StringUtil::parseUUID( uuid ) ),
                "Consistent UUID column and attribute metadata preserve existing text row IDs" );
         domain->unload( nullptr );
-        std::cout << "PASS: read-only domain assets, authored numeric root UUIDs, legacy text IDs, headless model load, bounded tree traversal and identity rejection\n";
+
+        const auto deleteRoot = folder / "delete-domain";
+        std::filesystem::create_directory( deleteRoot );
+        app->setMediaPath( "delete-domain" );
+        domain = make_ptr<DatabaseManager>();
+        domain->loadFromFile( ( deleteRoot / "AssetDatabase.db" ).u8string().c_str() );
+        auto backend = domain->getDatabase();
+        bound = dynamic_cast<IParameterizedDatabase *>( backend.get() );
+        check( bound && sql(
+                    "CREATE TABLE configured_actors(id INTEGER PRIMARY KEY,name TEXT,parent_id INTEGER,lft INTEGER,rght INTEGER);"
+                    "CREATE TABLE attribs(actor_id INTEGER,configured_actor_id TEXT,title TEXT,value TEXT);"
+                    "INSERT INTO configured_actors VALUES(1,'Repository',0,1,8);"
+                    "INSERT INTO configured_actors VALUES(10,'Removed',1,2,5);"
+                    "INSERT INTO configured_actors VALUES(4294967301,'Descendant',10,3,4);"
+                    "INSERT INTO configured_actors VALUES(20,'Survivor',1,6,7);"
+                    "INSERT INTO attribs VALUES(10,'10','model-only','keep on failure');"
+                    "INSERT INTO attribs VALUES(10,'20','survivor-only','retain by configured owner')" ),
+               "Seed a configured subtree with a shared model-level actor ID" );
+        check( sql( "INSERT INTO attribs VALUES(10,'4294967301','uuid',?)", { authoredUuid } ) &&
+               resources->loadAssetProperties( authoredId ),
+               "The descendant UUID must resolve before deleting its owner" );
+        auto count = [&]( const String &statement ) {
+            auto rows = sql( statement );
+            return rows && !rows->eof() ? rows->getFieldValueAsInt( "n" ) : -1;
+        };
+        String error;
+        check( !removeConfiguredActorSubtree( backend, 1, error ) && !error.empty(),
+               "The reserved repository root cannot be deleted" );
+        check( sql( "UPDATE configured_actors SET parent_id=20 WHERE id=4294967301" ) &&
+               !removeConfiguredActorSubtree( backend, 10, error ) && !error.empty() &&
+               count( "SELECT count(*) AS n FROM configured_actors" ) == 4 &&
+               count( "SELECT count(*) AS n FROM attribs" ) == 3 &&
+               sql( "UPDATE configured_actors SET parent_id=10 WHERE id=4294967301" ),
+               "Inconsistent parent links must abort without deleting an unrelated node or its attributes" );
+        check( sql( "CREATE TRIGGER block_domain_compaction BEFORE UPDATE OF rght ON configured_actors "
+                    "WHEN old.id=20 BEGIN SELECT RAISE(ABORT,'injected failure'); END" ) &&
+               !removeConfiguredActorSubtree( backend, 10, error ) && !error.empty() &&
+               count( "SELECT count(*) AS n FROM configured_actors WHERE (id=1 AND lft=1 AND rght=8) OR "
+                      "(id=10 AND lft=2 AND rght=5) OR (id=4294967301 AND lft=3 AND rght=4) OR "
+                      "(id=20 AND lft=6 AND rght=7)" ) == 4 &&
+               count( "SELECT count(*) AS n FROM attribs" ) == 3 && resources->loadAssetProperties( authoredId ),
+               "A late repair error must roll back node removal, UUID removal and prior bounds updates" );
+        check( sql( "DROP TRIGGER block_domain_compaction" ) &&
+               sql( "CREATE TRIGGER skip_domain_compaction BEFORE UPDATE OF rght ON configured_actors "
+                    "WHEN old.id=20 BEGIN SELECT RAISE(IGNORE); END" ) &&
+               !removeConfiguredActorSubtree( backend, 10, error ) && !error.empty() &&
+               count( "SELECT count(*) AS n FROM configured_actors WHERE id=20 AND lft=6 AND rght=7" ) == 1 &&
+               count( "SELECT count(*) AS n FROM attribs" ) == 3 &&
+               sql( "DROP TRIGGER skip_domain_compaction" ),
+               "A trigger that silently skips bounds repair must also roll back the transaction" );
+        check( removeConfiguredActorSubtree( backend, 10, error ) && error.empty() &&
+               count( "SELECT count(*) AS n FROM configured_actors" ) == 2 &&
+               count( "SELECT count(*) AS n FROM configured_actors WHERE (id=1 AND lft=1 AND rght=4) OR "
+                      "(id=20 AND lft=2 AND rght=3)" ) == 2 &&
+               count( "SELECT count(*) AS n FROM attribs WHERE configured_actor_id='20' AND title='survivor-only'" ) == 1 &&
+               count( "SELECT count(*) AS n FROM attribs" ) == 1,
+               "Subtree deletion must remove every owned attribute and compact only surviving bounds" );
+        check( sql( "UPDATE configured_actors SET rght=6 WHERE id=1;"
+                    "INSERT INTO configured_actors VALUES(4294967301,'Reused',1,4,5)" ) &&
+               !resources->loadAssetProperties( authoredId ),
+               "Reusing a deleted numeric row cannot resurrect its retired UUID" );
+
+        check( sql( "DROP TABLE attribs; CREATE TABLE attribs(actor_id INTEGER,title TEXT,value TEXT);"
+                    "INSERT INTO attribs VALUES(20,'retained','survivor')" ) &&
+               sql( "INSERT INTO attribs VALUES(4294967301,'uuid',?)", { authoredUuid } ) &&
+               resources->loadAssetProperties( authoredId ) &&
+               removeConfiguredActorSubtree( backend, 4294967301, error ) &&
+               count( "SELECT count(*) AS n FROM attribs WHERE actor_id=20" ) == 1 &&
+               count( "SELECT count(*) AS n FROM attribs" ) == 1 &&
+               !resources->loadAssetProperties( authoredId ),
+               "The legacy actor_id-only layout must retire the exact 64-bit owned UUID" );
+        domain->unload( nullptr );
+        std::cout << "PASS: read-only domain assets, authored numeric root UUIDs, legacy text IDs, headless model load, bounded tree traversal, identity rejection and atomic subtree deletion\n";
     }
 }

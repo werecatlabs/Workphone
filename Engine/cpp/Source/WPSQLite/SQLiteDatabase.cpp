@@ -2,8 +2,12 @@
 #include <WPSQLite/extern/CppSQLite3.hpp>
 #include <WPSQLite/SQLiteQuery.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include <string_view>
 
 namespace workphone
@@ -12,6 +16,8 @@ namespace workphone
 
     namespace
     {
+        constexpr int maximumCatalogSearchBytes = 1024;
+
         bool globComparableUtf8( std::string_view text ) noexcept
         {
             for( size_t index = 0; index < text.size(); )
@@ -54,24 +60,120 @@ namespace workphone
             const auto size = sqlite3_value_bytes( argument );
             if( !data || size < 0 || size > limit ) return false;
             text = std::string_view( data, static_cast<size_t>( size ) );
-            return globComparableUtf8( text );
+            return true;
+        }
+
+        struct CatalogNeedle
+        {
+            std::string_view text;
+            size_t asciiPrefix = 0;
+            bool valid = false;
+        };
+
+        struct CachedCatalogNeedle
+        {
+            char bytes[maximumCatalogSearchBytes];
+            CatalogNeedle needle;
+
+            explicit CachedCatalogNeedle( const CatalogNeedle &source ) noexcept : needle( source )
+            {
+                if( !source.text.empty() )
+                {
+                    std::memcpy( bytes, source.text.data(), source.text.size() );
+                }
+                needle.text = std::string_view( bytes, source.text.size() );
+            }
+        };
+
+        enum class CatalogMatch { No, Yes, UseGlob };
+
+        CatalogMatch matchCatalogField( sqlite3_value *argument, int limit,
+                                        const CatalogNeedle &needle ) noexcept
+        {
+            std::string_view text;
+            if( !catalogSearchArgument( argument, limit, text ) )
+            {
+                return CatalogMatch::UseGlob;
+            }
+            // SQLite's decoder can replace malformed sequences with U+FFFD,
+            // but it cannot create ASCII. A missing literal ASCII prefix
+            // rules out a match even before checking the field's encoding.
+            if( needle.asciiPrefix &&
+                text.find( needle.text.substr( 0, needle.asciiPrefix ) ) == std::string_view::npos )
+            {
+                return CatalogMatch::No;
+            }
+            if( !globComparableUtf8( text ) )
+            {
+                return CatalogMatch::UseGlob;
+            }
+            return text.find( needle.text ) == std::string_view::npos ? CatalogMatch::No : CatalogMatch::Yes;
+        }
+
+        void matchCatalogRow( sqlite3_context *context, sqlite3_value **arguments,
+                              const CatalogNeedle &needle ) noexcept
+        {
+            if( !needle.valid )
+            {
+                sqlite3_result_null( context );
+                return;
+            }
+            const auto path = matchCatalogField( arguments[0], maximumCatalogSearchBytes, needle );
+            if( path == CatalogMatch::Yes )
+            {
+                sqlite3_result_int( context, 1 );
+                return;
+            }
+            const auto uuid = matchCatalogField( arguments[1], 256, needle );
+            if( uuid == CatalogMatch::Yes )
+            {
+                sqlite3_result_int( context, 1 );
+            }
+            else if( path == CatalogMatch::UseGlob || uuid == CatalogMatch::UseGlob )
+            {
+                sqlite3_result_null( context );
+            }
+            else
+            {
+                sqlite3_result_int( context, 0 );
+            }
         }
 
         void catalogLiteralContains( sqlite3_context *context, int count,
                                      sqlite3_value **arguments ) noexcept
         {
-            std::string_view path, uuid, term;
-            if( count != 3 || !catalogSearchArgument( arguments[2], 1024, term ) ||
-                !catalogSearchArgument( arguments[0], 1024, path ) ||
-                !catalogSearchArgument( arguments[1], 256, uuid ) )
+            if( count != 3 )
             {
                 sqlite3_result_null( context );
                 return;
             }
-            // A literal substring of valid UTF-8 matches the escaped GLOB on
-            // the same codepoint boundaries. Views borrow the SQLite buffers.
-            sqlite3_result_int( context, path.find( term ) != std::string_view::npos ||
-                                         uuid.find( term ) != std::string_view::npos );
+            if( auto *cached = static_cast<CachedCatalogNeedle *>( sqlite3_get_auxdata( context, 2 ) ) )
+            {
+                matchCatalogRow( context, arguments, cached->needle );
+                return;
+            }
+
+            CatalogNeedle needle;
+            needle.valid = catalogSearchArgument( arguments[2], maximumCatalogSearchBytes, needle.text ) &&
+                           globComparableUtf8( needle.text );
+            if( needle.valid )
+            {
+                while( needle.asciiPrefix < needle.text.size() &&
+                       static_cast<unsigned char>( needle.text[needle.asciiPrefix] ) < 0x80 )
+                {
+                    ++needle.asciiPrefix;
+                }
+            }
+            matchCatalogRow( context, arguments, needle );
+
+            // The statement owns its bound term. SQLite can drop auxiliary
+            // data immediately or when an argument changes, so use it only on
+            // subsequent callbacks that obtain it from the statement again.
+            if( auto *cached = new( std::nothrow ) CachedCatalogNeedle( needle ) )
+            {
+                sqlite3_set_auxdata( context, 2, cached,
+                    []( void *data ) { delete static_cast<CachedCatalogNeedle *>( data ); } );
+            }
         }
 
         void registerCatalogSearch( sqlite3 *database ) noexcept
@@ -80,6 +182,57 @@ namespace workphone
             // the backend cannot register this function.
             (void)sqlite3_create_function( database, "wp_catalog_contains", 3, SQLITE_UTF8, nullptr,
                                            catalogLiteralContains, nullptr, nullptr );
+        }
+
+        sqlite3_int64 readCachePragma( sqlite3 *database, const char *sql ) noexcept
+        {
+            sqlite3_stmt *statement = nullptr;
+            const auto prepared = sqlite3_prepare_v2( database, sql, -1, &statement, nullptr );
+            const auto value = prepared == SQLITE_OK && sqlite3_step( statement ) == SQLITE_ROW
+                                   ? sqlite3_column_int64( statement, 0 ) : -1;
+            sqlite3_finalize( statement );
+            return value;
+        }
+    }
+
+    void SQLiteDatabase::prepareCatalogBrowseCache() noexcept
+    {
+        try
+        {
+            std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+            if( m_catalogBrowseCache || !isLoaded() || !m_database || !m_database->mpDB )
+                return;
+
+            auto *database = m_database->mpDB;
+            const auto pageSize = readCachePragma( database, "PRAGMA page_size" );
+            if( pageSize < 512 || pageSize > 65536 )
+                return;
+            const auto pageCount = readCachePragma( database, "PRAGMA page_count" );
+            constexpr sqlite3_int64 minimumDatabaseBytes = 64ll << 20;
+            if( pageCount < minimumDatabaseBytes / pageSize )
+                return;
+
+            constexpr sqlite3_int64 allowance = 24ll << 20;
+            // Allow space for SQLite's page headers, cache bookkeeping and allocator overhead.
+            const auto bytesPerPage = pageSize + 512;
+            const auto pages = static_cast<int>( allowance / bytesPerPage );
+            const auto current = readCachePragma( database, "PRAGMA cache_size" );
+            if( current <= 0 || current >= pages )
+                return;
+
+            auto budget = WorldStreamingScheduler::reserveSharedSource( pages * bytesPerPage );
+            if( !budget )
+                return;
+
+            // This setting applies only to this open connection.
+            char sql[48];
+            std::snprintf( sql, sizeof( sql ), "PRAGMA cache_size=%d", pages );
+            if( sqlite3_exec( database, sql, nullptr, nullptr, nullptr ) == SQLITE_OK )
+                m_catalogBrowseCache = std::move( budget );
+        }
+        catch( ... )
+        {
+            // Cache tuning is optional. The current connection remains usable.
         }
     }
 
@@ -170,6 +323,8 @@ namespace workphone
 
                 if( m_database )
                 {
+                    m_database->close();
+                    m_catalogBrowseCache.reset();
                     m_database->open( filePath.c_str() );
                     m_database->setBusyTimeout( 1000 );
                     registerCatalogSearch( m_database->mpDB );
@@ -214,6 +369,8 @@ namespace workphone
 
             if( !m_database )
                 m_database = workphone::make_shared<CppSQLite3DB>();
+            m_database->close();
+            m_catalogBrowseCache.reset();
             m_database->open( filePath.c_str() );
             m_database->setBusyTimeout( 1000 );
 
@@ -395,6 +552,7 @@ namespace workphone
         {
             m_database->close();
         }
+        m_catalogBrowseCache.reset();
         setLoadingState( LoadingState::Unloaded );
     }
 

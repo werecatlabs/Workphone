@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <cwctype>
 #include <exception>
@@ -33,6 +34,7 @@
 #    include <unistd.h>
 #    include <fcntl.h>
 #    include <sys/file.h>
+#    include <sys/stat.h>
 #    if defined( __linux__ )
 #        include <sys/syscall.h>
 #    elif defined( __APPLE__ )
@@ -2550,19 +2552,236 @@ namespace workphone::resource
 
     namespace
     {
+        bool renamePackageDirectory( const fs::path &source, const fs::path &destination, String &error )
+        {
+            // The directory rename must never replace a competing destination.
+            bool published = false;
+#if defined WP_PLATFORM_WIN32
+            published = MoveFileExW( fileSystemIOPath( source ).c_str(),
+                                     fileSystemIOPath( destination ).c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
+#elif defined( __linux__ ) && defined( SYS_renameat2 )
+            published = syscall( SYS_renameat2, AT_FDCWD, source.c_str(), AT_FDCWD,
+                                 destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;
+#elif defined( __APPLE__ )
+            published = renamex_np( source.c_str(), destination.c_str(), RENAME_EXCL ) == 0;
+#endif
+            if( !published )
+            {
+                error = "Cannot publish runtime package exclusively; destination may have appeared or "
+                        "filesystem lacks support";
+            }
+            return published;
+        }
+
+        bool redirectedPackagePath( const fs::path &path )
+        {
+#if defined WP_PLATFORM_WIN32
+            const auto attributes = GetFileAttributesW( fileSystemIOPath( path ).c_str() );
+            return attributes != INVALID_FILE_ATTRIBUTES && ( attributes & FILE_ATTRIBUTE_REPARSE_POINT );
+#else
+            std::error_code ec;
+            const auto status = fs::symlink_status( path, ec );
+            return fs::is_symlink( status ) || ( ec && ec != std::errc::no_such_file_or_directory );
+#endif
+        }
+
+        fs::path packageStageOwnerPath( fs::path stage )
+        {
+            return stage += ".owner";
+        }
+
+        struct PackageStageIdentity
+        {
+            u64 volume = 0, file = 0;
+
+            bool capture( const fs::path &path )
+            {
+#if defined WP_PLATFORM_WIN32
+                const auto physical = fileSystemIOPath( path );
+                const auto handle = CreateFileW( physical.c_str(), FILE_READ_ATTRIBUTES,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr );
+                if( handle == INVALID_HANDLE_VALUE )
+                    return false;
+                BY_HANDLE_FILE_INFORMATION info{};
+                const bool found = GetFileInformationByHandle( handle, &info ) != FALSE;
+                CloseHandle( handle );
+                if( !found || !( info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ) ||
+                    ( info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT ) )
+                    return false;
+                volume = info.dwVolumeSerialNumber;
+                file = ( static_cast<u64>( info.nFileIndexHigh ) << 32 ) | info.nFileIndexLow;
+#else
+                struct stat info{};
+                if( lstat( path.c_str(), &info ) != 0 || !S_ISDIR( info.st_mode ) )
+                    return false;
+                volume = static_cast<u64>( info.st_dev );
+                file = static_cast<u64>( info.st_ino );
+#endif
+                return file != 0;
+            }
+
+            bool stillAt( const fs::path &path ) const
+            {
+                PackageStageIdentity observed;
+                return file != 0 && observed.capture( path ) && observed.volume == volume && observed.file == file;
+            }
+        };
+
+        String packageStageOwnerMarker( const fs::path &stage, const PackageStageIdentity &identity )
+        {
+            return "WORKPHONE_PACKAGE_STAGE_V1\n" + pathString( stage.filename() ) + "\n" +
+                   std::to_string( identity.volume ).c_str() + ":" +
+                   std::to_string( identity.file ).c_str() + "\n";
+        }
+
+        bool packageStageName( const String &name )
+        {
+            const String prefix = ".wp-package-";
+            if( name.find( prefix ) != 0 )
+                return false;
+            const auto split = name.find( '-', prefix.size() );
+            if( split == String::npos )
+                return false;
+            const auto digits = []( const String &part ) {
+                return !part.empty() && part.size() <= 20 &&
+                       part.find_first_not_of( "0123456789" ) == String::npos;
+            };
+            return digits( name.substr( prefix.size(), split - prefix.size() ) ) &&
+                   digits( name.substr( split + 1 ) );
+        }
+
+        // The lease is a sidecar so a successful directory rename cannot
+        // publish recovery metadata alongside the immutable package.
+        class PackageStageLock
+        {
+        public:
+            enum class Status { Locked, Busy, Unavailable };
+
+            PackageStageLock() = default;
+            PackageStageLock( const PackageStageLock & ) = delete;
+            PackageStageLock &operator=( const PackageStageLock & ) = delete;
+            ~PackageStageLock()
+            {
+#if defined WP_PLATFORM_WIN32
+                if( handle != INVALID_HANDLE_VALUE )
+                    CloseHandle( handle );
+#else
+                if( descriptor >= 0 )
+                    close( descriptor );
+#endif
+            }
+
+            Status acquire( const fs::path &stage, bool create, bool allowRemoval )
+            {
+                path = fileSystemIOPath( packageStageOwnerPath( stage ) );
+#if defined WP_PLATFORM_WIN32
+                const DWORD access = GENERIC_READ | ( create ? GENERIC_WRITE : 0 ) |
+                                     ( allowRemoval ? DELETE : 0 );
+                handle = CreateFileW( path.c_str(), access, 0, nullptr, create ? CREATE_NEW : OPEN_EXISTING,
+                                      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr );
+                if( handle == INVALID_HANDLE_VALUE )
+                {
+                    const auto failure = GetLastError();
+                    return failure == ERROR_SHARING_VIOLATION || failure == ERROR_LOCK_VIOLATION ?
+                               Status::Busy : Status::Unavailable;
+                }
+                BY_HANDLE_FILE_INFORMATION info{};
+                if( !GetFileInformationByHandle( handle, &info ) || info.nNumberOfLinks != 1 ||
+                    ( info.dwFileAttributes & ( FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT ) ) )
+                    return Status::Unavailable;
+#else
+                (void)allowRemoval;
+                const int flags = create ? O_RDWR | O_CREAT | O_EXCL : O_RDONLY;
+                descriptor = open( path.c_str(), flags | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600 );
+                if( descriptor < 0 )
+                    return Status::Unavailable;
+                struct stat info{};
+                if( fstat( descriptor, &info ) != 0 || !S_ISREG( info.st_mode ) || info.st_nlink != 1 )
+                    return Status::Unavailable;
+                if( flock( descriptor, LOCK_EX | LOCK_NB ) != 0 )
+                    return errno == EWOULDBLOCK || errno == EAGAIN ? Status::Busy : Status::Unavailable;
+#endif
+                return Status::Locked;
+            }
+
+            bool writeMarker( const String &marker )
+            {
+#if defined WP_PLATFORM_WIN32
+                DWORD written = 0;
+                return WriteFile( handle, marker.data(), static_cast<DWORD>( marker.size() ), &written, nullptr ) &&
+                       written == marker.size() && FlushFileBuffers( handle );
+#else
+                return write( descriptor, marker.data(), marker.size() ) == static_cast<ssize_t>( marker.size() ) &&
+                       fsync( descriptor ) == 0;
+#endif
+            }
+
+            bool matchesMarker( const String &marker ) const
+            {
+                char bytes[256]{};
+                if( marker.size() >= sizeof( bytes ) )
+                    return false;
+#if defined WP_PLATFORM_WIN32
+                DWORD count = 0;
+                if( !ReadFile( handle, bytes, static_cast<DWORD>( sizeof( bytes ) ), &count, nullptr ) )
+                    return false;
+#else
+                const auto count = read( descriptor, bytes, sizeof( bytes ) );
+#endif
+                return static_cast<size_t>( count ) == marker.size() &&
+                       std::equal( marker.begin(), marker.end(), bytes );
+            }
+
+            bool removeMarker() noexcept
+            {
+#if defined WP_PLATFORM_WIN32
+                FILE_DISPOSITION_INFO disposition{ TRUE };
+                return SetFileInformationByHandle( handle, FileDispositionInfo, &disposition,
+                                                   sizeof( disposition ) ) != FALSE;
+#else
+                struct stat opened{}, named{};
+                return fstat( descriptor, &opened ) == 0 && lstat( path.c_str(), &named ) == 0 &&
+                       opened.st_dev == named.st_dev && opened.st_ino == named.st_ino &&
+                       unlink( path.c_str() ) == 0;
+#endif
+            }
+
+        private:
+            fs::path path;
+#if defined WP_PLATFORM_WIN32
+            HANDLE handle = INVALID_HANDLE_VALUE;
+#else
+            int descriptor = -1;
+#endif
+        };
+
         // Ownership starts after exclusive directory creation. An interrupted
         // request can leave its private staging directory for inspection.
         struct PackageStaging
         {
             fs::path path;
+            PackageStageLock owner;
+            PackageStageIdentity identity;
+            bool ownsMarker = false;
 
-            ~PackageStaging()
+            ~PackageStaging() noexcept
             {
-                if( !path.empty() )
+                try
                 {
-                    std::error_code ignored;
-                    fs::remove_all( fileSystemIOPath( path ), ignored );
+                    if( !path.empty() )
+                    {
+                        if( !identity.stillAt( path ) )
+                            return;  // Preserve a replacement directory and its evidence.
+                        std::error_code ignored;
+                        fs::remove_all( fileSystemIOPath( path ), ignored );
+                        if( ignored )
+                            return;  // Preserve the owner marker for later recovery.
+                    }
+                    if( ownsMarker )
+                        owner.removeMarker();
                 }
+                catch( ... ) {}  // Preserve the stage and marker when cleanup cannot be verified.
             }
 
             bool create( const fs::path &destination, String &error )
@@ -2577,7 +2796,16 @@ namespace workphone::resource
                     if( fs::create_directory( fileSystemIOPath( candidate ), ec ) )
                     {
                         path = candidate;
-                        return true;
+                        if( !identity.capture( path ) )
+                        {
+                            error = "Cannot capture runtime package stage identity";
+                            return false;
+                        }
+                        ownsMarker = owner.acquire( path, true, true ) == PackageStageLock::Status::Locked;
+                        if( ownsMarker && owner.writeMarker( packageStageOwnerMarker( path, identity ) ) )
+                            return true;
+                        error = "Cannot acquire and persist runtime package stage ownership";
+                        return false;
                     }
                     if( ec && ec != std::errc::file_exists )
                     {
@@ -2591,24 +2819,16 @@ namespace workphone::resource
 
             bool publish( const fs::path &destination, String &error )
             {
-                // The directory rename must never replace a competing destination.
-                bool published = false;
-#if defined WP_PLATFORM_WIN32
-                published = MoveFileExW( fileSystemIOPath( path ).c_str(),
-                                         fileSystemIOPath( destination ).c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
-#elif defined( __linux__ ) && defined( SYS_renameat2 )
-                published = syscall( SYS_renameat2, AT_FDCWD, path.c_str(), AT_FDCWD,
-                                     destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;
-#elif defined( __APPLE__ )
-                published = renamex_np( path.c_str(), destination.c_str(), RENAME_EXCL ) == 0;
-#endif
-                if( !published )
+                if( !identity.stillAt( path ) )
                 {
-                    error = "Cannot publish runtime package exclusively; destination may have appeared or "
-                            "filesystem lacks support";
+                    error = "Runtime package stage directory identity changed";
                     return false;
                 }
+                if( !renamePackageDirectory( path, destination, error ) )
+                    return false;
                 path.clear();
+                if( ownsMarker && owner.removeMarker() )
+                    ownsMarker = false;
                 return true;
             }
         };
@@ -3102,6 +3322,133 @@ namespace workphone::resource
                                             RuntimePackagePatchResult &result, String &error )
     {
         return runRuntimePatch( baseDirectory, patchDirectory, outputDirectory, target, true, result, error );
+    }
+
+    bool ResourceSystem::recoverRuntimePackageStages( const String &publicationParent, bool inspectOnly,
+                                                       RuntimePackageStageRecoveryResult &result, String &error )
+    try
+    {
+        result = {};
+        error.clear();
+        if( publicationParent.empty() || publicationParent.find( '\0' ) != String::npos )
+        {
+            error = "Package stage recovery requires an existing publication parent directory";
+            return false;
+        }
+        const auto supplied = fs::u8path( publicationParent.c_str() );
+        if( std::find( supplied.begin(), supplied.end(), fs::path( ".." ) ) != supplied.end() )
+        {
+            error = "Package stage recovery refuses parent-traversal components";
+            return false;
+        }
+        const auto requested = fs::absolute( supplied ).lexically_normal();
+        for( auto component = requested; !component.empty(); component = component.parent_path() )
+        {
+            if( redirectedPackagePath( component ) )
+            {
+                error = "Package stage recovery refuses a redirected publication parent";
+                return false;
+            }
+            if( component == component.parent_path() )
+                break;
+        }
+        const auto parent = comparableFileSystemPath( fs::canonical( fileSystemIOPath( requested ) ) );
+        if( !parent.is_absolute() || !fs::is_directory( fileSystemIOPath( parent ) ) )
+        {
+            error = "Package stage recovery requires an existing publication parent directory";
+            return false;
+        }
+
+        // Inventory before mutating, with fixed bounds on both the parent scan
+        // and the number of entries held for deterministic diagnostics.
+        Array<String> candidates;
+        size_t inspected = 0;
+        for( const auto &entry : fs::directory_iterator( fileSystemIOPath( parent ) ) )
+        {
+            if( ++inspected > 65536 )
+            {
+                error = "Package stage recovery parent exceeds the 65536-entry inspection limit";
+                return false;
+            }
+            const auto name = pathString( entry.path().filename() );
+            if( packageStageName( name ) )
+            {
+                if( candidates.size() == 4096 )
+                {
+                    error = "Package stage recovery exceeds the 4096-stage inspection limit";
+                    return false;
+                }
+                candidates.push_back( name );
+            }
+        }
+        std::sort( candidates.begin(), candidates.end() );
+        result.recoverable.reserve( candidates.size() );
+        result.recovered.reserve( candidates.size() );
+        result.skipped.reserve( candidates.size() );
+        result.warnings.reserve( candidates.size() );
+        for( const auto &name : candidates )
+        {
+            const auto stage = parent / fs::u8path( name.c_str() );
+            PackageStageLock owner;
+            const auto locked = owner.acquire( stage, false, !inspectOnly );
+            if( locked == PackageStageLock::Status::Busy )
+            {
+                result.skipped.push_back( name );
+                continue;
+            }
+            if( locked != PackageStageLock::Status::Locked )
+            {
+                result.warnings.push_back( "Preserved stage without valid ownership: " + name );
+                continue;
+            }
+            std::error_code ec;
+            const auto status = fs::symlink_status( fileSystemIOPath( stage ), ec );
+            auto expected = stage;
+            auto actual = comparableFileSystemPath( fs::weakly_canonical( fileSystemIOPath( stage ), ec ) );
+            if( ec || redirectedPackagePath( stage ) || !fs::is_directory( status ) ||
+                actual.make_preferred().native() != expected.make_preferred().native() )
+            {
+                result.warnings.push_back( "Preserved unavailable or redirected stage: " + name );
+                continue;
+            }
+            PackageStageIdentity identity;
+            if( !identity.capture( stage ) || !owner.matchesMarker( packageStageOwnerMarker( stage, identity ) ) )
+            {
+                result.warnings.push_back( "Preserved stage without matching directory ownership: " + name );
+                continue;
+            }
+            String archiveName = name + ".interrupted";
+            const auto archive = parent / fs::u8path( archiveName.c_str() );
+            const auto archiveStatus = fs::symlink_status( fileSystemIOPath( archive ), ec );
+            if( fs::exists( archiveStatus ) || ( ec && ec != std::errc::no_such_file_or_directory ) )
+            {
+                result.warnings.push_back( "Preserved stage with unavailable archive destination: " + name );
+                continue;
+            }
+            result.recoverable.push_back( name );
+            if( inspectOnly )
+                continue;
+            String reason;
+            if( !identity.stillAt( stage ) )
+            {
+                result.warnings.push_back( "Preserved changed stage directory: " + name );
+                continue;
+            }
+            if( !renamePackageDirectory( stage, archive, reason ) )
+            {
+                result.warnings.push_back( "Preserved stage " + name + ": " + reason );
+                continue;
+            }
+            result.recovered.push_back( std::move( archiveName ) );
+            if( !owner.removeMarker() )
+                result.warnings.push_back( "Recovered stage but could not retire its sidecar: " + name );
+        }
+        return true;
+    }
+    catch( const std::exception &failure )
+    {
+        runtimeReadFailure( error, failure.what() );
+        return false;
     }
 
     bool ResourceSystem::writeRuntimePackage( const String &directory, const Array<ResourceID> &roots,

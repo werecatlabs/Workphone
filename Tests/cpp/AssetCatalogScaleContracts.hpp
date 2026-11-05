@@ -61,6 +61,13 @@ namespace
         require( scalar( database, "SELECT count(*) AS n FROM resources" ) == assets &&
                  scalar( database, "SELECT count(*) AS n FROM wp_asset_references" ) == assets * 10,
                  "Scale fixture must contain the declared catalog and graph sizes" );
+        const auto pragma = [&]( const String &name ) {
+            auto row = sql( database, "PRAGMA " + name );
+            require( row && !row->eof(), "Scale fixture storage pragma" );
+            return row->getFieldValueAsInt( name );
+        };
+        const int pageSize = pragma( "page_size" );
+        const int initialCachePages = pragma( "cache_size" );
 
         const String suffix = assets == 10000 ? "09999" : "99999";
         const String id = "f0000000-0000-4000-8000-0000000" + suffix;
@@ -98,6 +105,30 @@ namespace
                  hotPage.edges.back().sourcePath != next.edges.front().sourcePath,
                  "Scale high-fanout reverse queries must continue in bounded pages" );
 
+        constexpr auto source = size_t( StreamMemoryClass::SourceCpu );
+        const auto scheduler = WorldStreamingScheduler::shared();
+        if( assets == 100000 )
+        {
+            const auto before = scheduler->stats();
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, before.used[source] + ( 8ull << 20 ), error ),
+                     error.c_str() );
+            const auto deniedPage = catalog->queryEntries( filter );
+            require( scheduler->setBudget( StreamMemoryClass::SourceCpu, before.limits[source], error ),
+                     error.c_str() );
+            require( deniedPage.succeeded && deniedPage.entries.size() == 1 &&
+                     deniedPage.entries.front().uuid == id && pragma( "cache_size" ) == initialCachePages,
+                     "Catalog search must work when cache growth is denied" );
+        }
+        const auto beforeWarm = scheduler->stats().used[source];
+        search();
+        const int cachePages = pragma( "cache_size" );
+        const auto cacheBytes = assets == 100000 ? u64( cachePages ) * ( pageSize + 512 ) : 0;
+        if( assets == 100000 )
+            require( cachePages > initialCachePages && scheduler->stats().used[source] >= beforeWarm + cacheBytes,
+                     "Large catalog browse cache must be charged to SourceCpu" );
+        else
+            require( cachePages == initialCachePages, "Small catalog must retain its default cache" );
+
         const auto percentile95 = [&]( const auto &operation ) {
             operation();
             std::vector<double> samples;
@@ -114,7 +145,8 @@ namespace
                   << " seed_ms=" << seedMilliseconds << " exact_p95_ms=" << percentile95( exact )
                   << " rare_search_p95_ms=" << percentile95( search )
                   << " dense_search_p95_ms=" << percentile95( denseSearch )
-                  << " where_used_p95_ms=" << percentile95( whereUsed ) << '\n';
+                  << " where_used_p95_ms=" << percentile95( whereUsed )
+                  << " browse_cache_pages=" << cachePages << " browse_cache_reserved_bytes=" << cacheBytes << '\n';
         for( const String &statement : {
                  String( "SELECT uuid FROM resources WHERE uuid=?" ),
                  String( "SELECT id FROM wp_asset_references WHERE target_catalog='project' AND target_uuid=? ORDER BY id LIMIT 64" ) } )
@@ -124,12 +156,6 @@ namespace
             for( ; !plan->eof(); plan->nextRow() )
                 std::cout << "CatalogScalePlan " << plan->getFieldValue( "detail" ) << '\n';
         }
-        const auto pragma = [&]( const String &name ) {
-            auto row = sql( database, "PRAGMA " + name );
-            require( row && !row->eof(), "Scale fixture storage pragma" );
-            return row->getFieldValueAsInt( name );
-        };
-        const int pageSize = pragma( "page_size" );
         for( const String &index : { String( "idx_resources_uuid_unique" ), String( "idx_resources_kind_path" ),
                                     String( "idx_resources_uuid_browse" ),
                                     String( "wp_asset_reference_reverse" ), String( "wp_asset_reference_forward" ) } )
@@ -142,7 +168,10 @@ namespace
             require( pages > 0 && pageSize > 0, "Measure index allocation in the disposable catalog" );
             std::cout << "CatalogScaleIndex " << index << " bytes=" << u64( pages ) * pageSize << '\n';
         }
+        const auto beforeClose = scheduler->stats().used[source];
         catalog->unload( nullptr );
+        require( scheduler->stats().used[source] + cacheBytes <= beforeClose,
+                 "Closing a catalog must release the page cache reservation" );
         std::cout << "CatalogScaleStorage assets=" << assets << " database_bytes=" << fs::file_size( databasePath ) << '\n';
     }
 }

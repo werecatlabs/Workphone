@@ -5,6 +5,7 @@
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/System/Resource.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Core/LogManagerDefault.hpp>
 #include <WPSQLite/WPSQLite.hpp>
 #include "AssetCatalogPathContracts.hpp"
@@ -265,6 +266,12 @@ namespace
         require( scalar( reopened, "SELECT wp_catalog_contains(?,?,?) AS n",
                          { unicodePath, unicodeUuid, query.search } ) == 1,
                  "Reopened SQLite connection must register the literal search function" );
+        require( scalar( reopened, "SELECT sum(wp_catalog_contains('alpha','id',needle)) AS n "
+                                   "FROM (SELECT 'alpha' AS needle UNION ALL SELECT 'beta')" ) == 1,
+                 "Search terms supplied by different rows must use different statement data" );
+        require( scalar( reopened, "SELECT (wp_catalog_contains(?,?,?) IS NULL) AS n",
+                         { String( "alpha\xc0\xaf", 7 ), unicodeUuid, "alpha" } ) == 1,
+                 "A matching prefix in malformed input must use the GLOB fallback" );
         page = catalog->queryEntries( query );
         require( page.succeeded && page.entries.size() == 1 && page.entries.front().uuid == unicodeUuid,
                  "Indexed search must match an exact Unicode substring" );
@@ -907,6 +914,122 @@ namespace
         require(catalog->undoFileOperation(undoInterrupted.operationId).succeeded &&
                 read(root / "source" / "data.bin")==bytes && catalog->hasResourceById(uuid),
                 "Recovered deletion must remain undoable without losing bytes");
+
+        auto single = asset( "retry-source.bin" );
+        catalog->addResourceEntry( single );
+        const auto singleUuid = single->getHandle()->getUUIDAsString();
+        write( root / "retry-source.bin", bytes );
+        write( root / "retry-peer-source.bin", "peer" );
+        const auto peer = catalog->performFileOperation( Operation::Move, "retry-peer-source.bin", "retry-peer.bin" );
+        require( peer.succeeded, "Create separate journal fixture" );
+        require( sql( catalog->getDatabase(),
+            "CREATE TRIGGER fail_single_recovery BEFORE UPDATE OF path ON resources BEGIN SELECT RAISE(ABORT,'injected'); END" ),
+            "Install single-file interruption" );
+        const auto retry = catalog->performFileOperation( Operation::Move, "retry-source.bin", "retry-output.bin" );
+        require( !retry.succeeded && read( root / "retry-output.bin" ) == bytes, "Interrupt a published single-file move" );
+        bound = dynamic_cast<IParameterizedDatabase *>( catalog->getDatabase().get() );
+        require( bound && bound->queryBound( "UPDATE wp_asset_operations SET state='undoing' WHERE id=?", { peer.operationId } ),
+                 "Persist a second interrupted journal record" );
+        fs::rename( root / "retry-peer.bin", root / "retry-peer-source.bin" );
+        auto selected = catalog->inspectFileOperationRecovery( retry.operationId );
+        require( selected.canRetry && !selected.canPreserve && selected.state == "prepared" &&
+                 catalog->retryFileOperationRecovery( selected ).succeeded &&
+                 read( root / "retry-source.bin" ) == bytes && !fs::exists( root / "retry-output.bin" ) &&
+                 catalog->tryGetEntry( singleUuid, entry ) && entry.path == "retry-source.bin" &&
+                 catalog->inspectFileOperationRecovery( peer.operationId ).state == "undoing" &&
+                 read( root / "retry-peer-source.bin" ) == "peer" && !fs::exists( root / "retry-peer.bin" ),
+                 "Selected retry must recover only its journal record, preserving the authored UUID" );
+        require( !catalog->retryFileOperationRecovery( selected ).succeeded &&
+                 catalog->retryFileOperationRecovery( catalog->inspectFileOperationRecovery( peer.operationId ) ).succeeded &&
+                 read( root / "retry-peer.bin" ) == "peer", "Selected retry expires and handles interrupted undo" );
+        require( sql( catalog->getDatabase(),
+            "CREATE TRIGGER supersede_prepared AFTER INSERT ON wp_asset_operations WHEN NEW.state='prepared' "
+            "BEGIN UPDATE wp_asset_operations SET state='rolled-back' WHERE id=NEW.id; END" ),
+                 "Install prepared-intent supersession fixture" );
+        const auto superseded = catalog->performFileOperation( Operation::Move, "retry-source.bin", "retry-output.bin" );
+        require( !superseded.succeeded && catalog->inspectFileOperationRecovery( superseded.operationId ).state == "rolled-back" &&
+                 read( root / "retry-source.bin" ) == bytes && !fs::exists( root / "retry-output.bin" ),
+                 "A recovered prepared intent cannot move files before its durable state is rechecked" );
+        require( sql( catalog->getDatabase(), "DROP TRIGGER supersede_prepared" ), "Remove prepared supersession fixture" );
+        require( sql( catalog->getDatabase(),
+            "CREATE TRIGGER supersede_undoing AFTER UPDATE OF state ON wp_asset_operations WHEN NEW.state='undoing' "
+            "BEGIN UPDATE wp_asset_operations SET state='committed' WHERE id=NEW.id; END" ),
+                 "Install undo-intent supersession fixture" );
+        require( !catalog->undoFileOperation( peer.operationId ).succeeded &&
+                 catalog->inspectFileOperationRecovery( peer.operationId ).state == "committed" &&
+                 read( root / "retry-peer.bin" ) == "peer" && !fs::exists( root / "retry-peer-source.bin" ),
+                 "A recovered undo intent cannot rename a committed file under stale state" );
+        require( sql( catalog->getDatabase(), "DROP TRIGGER supersede_undoing" ), "Remove undo supersession fixture" );
+
+#if defined WP_PLATFORM_WIN32
+        const auto interruptedConflict = catalog->performFileOperation( Operation::Move, "retry-source.bin", "retry-output.bin" );
+        require( !interruptedConflict.succeeded && read( root / "retry-output.bin" ) == bytes,
+                 "Create real interrupted move for conflict recovery" );
+        write( root / "retry-source.bin", bytes );
+        selected = catalog->inspectFileOperationRecovery( interruptedConflict.operationId );
+        require( selected.canRetry && !selected.canPreserve && !selected.error.empty(),
+                 "Identical copies cannot authorize a preserve-and-recover choice" );
+        write( root / "retry-source.bin", "external-v1" );
+        selected = catalog->inspectFileOperationRecovery( interruptedConflict.operationId );
+        require( selected.canPreserve && selected.payloadPath == "retry-output.bin" &&
+                 selected.conflictPath == "retry-source.bin" &&
+                 read( root / "retry-source.bin" ) == "external-v1" && !catalog->retryFileOperationRecovery( selected ).succeeded,
+                 "Review identifies the exact files and ordinary retry cannot move a blocker" );
+        const auto held = root / fs::u8path( selected.holdingPath.c_str() );
+        write( root / "retry-source.bin", "external-v2" );
+        require( !catalog->preserveFileOperationConflict( selected ).succeeded &&
+                 read( root / "retry-source.bin" ) == "external-v2" && !fs::exists( held ) &&
+                 read( root / "retry-output.bin" ) == bytes, "Changing blocker bytes invalidates reviewed preservation" );
+        selected = catalog->inspectFileOperationRecovery( interruptedConflict.operationId );
+        write( held, "existing holding bytes" );
+        require( !catalog->preserveFileOperationConflict( selected ).succeeded &&
+                 read( held ) == "existing holding bytes" && read( root / "retry-source.bin" ) == "external-v2",
+                 "Conflict preservation must never overwrite its holding destination" );
+        fs::remove( held );
+        require( sql( catalog->getDatabase(),
+            "CREATE TRIGGER fail_recovery_publish BEFORE UPDATE OF state ON wp_asset_operations "
+            "WHEN NEW.state='rolled-back' BEGIN SELECT RAISE(IGNORE); END" ), "Ignore recovery journal publication" );
+        require( !catalog->preserveFileOperationConflict( selected ).succeeded &&
+                 read( held ) == "external-v2" && read( root / "retry-source.bin" ) == bytes &&
+                 !fs::exists( root / "retry-output.bin" ), "Journal fault after both renames retains both files" );
+        require( sql( catalog->getDatabase(), "DROP TRIGGER fail_recovery_publish" ), "Remove journal fault" );
+        selected = catalog->inspectFileOperationRecovery( interruptedConflict.operationId );
+        require( selected.state == "prepared" && selected.canRetry && !selected.canPreserve && !selected.retainedPath.empty() &&
+                 catalog->retryFileOperationRecovery( selected ).succeeded &&
+                 catalog->inspectFileOperationRecovery( interruptedConflict.operationId ).state == "rolled-back" &&
+                 catalog->tryGetEntry( singleUuid, entry ) && entry.path == "retry-source.bin" &&
+                 read( held ) == "external-v2", "Retry completes the recovered identity while keeping held content" );
+#endif
+        require( sql( catalog->getDatabase(), "DROP TRIGGER fail_single_recovery" ), "Remove single-file fault" );
+        require( sql( catalog->getDatabase(),
+            "CREATE TRIGGER ignore_final_move BEFORE UPDATE OF state ON wp_asset_operations "
+            "WHEN OLD.state='prepared' AND NEW.state='committed' BEGIN SELECT RAISE(IGNORE); END" ),
+                 "Ignore move journal publication without a SQL error" );
+        const auto ignored = catalog->performFileOperation( Operation::Move, "retry-source.bin", "retry-output.bin" );
+        require( !ignored.succeeded && catalog->inspectFileOperationRecovery( ignored.operationId ).state == "prepared" &&
+                 catalog->tryGetEntry( singleUuid, entry ) && entry.path == "retry-source.bin" &&
+                 read( root / "retry-output.bin" ) == bytes && !fs::exists( root / "retry-source.bin" ),
+                 "Ignored final journal write rolls back catalog paths and leaves moved bytes recoverable" );
+        require( sql( catalog->getDatabase(), "DROP TRIGGER ignore_final_move" ) &&
+                 catalog->retryFileOperationRecovery( catalog->inspectFileOperationRecovery( ignored.operationId ) ).succeeded &&
+                 read( root / "retry-source.bin" ) == bytes, "Retry restores bytes after a silently ignored move commit" );
+
+        const auto committed = catalog->performFileOperation( Operation::Move, "retry-source.bin", "retry-output.bin" );
+        require( committed.succeeded && sql( catalog->getDatabase(),
+            "CREATE TRIGGER reverse_final_undo AFTER UPDATE OF state ON wp_asset_operations "
+            "WHEN OLD.state='undoing' AND NEW.state='undone' "
+            "BEGIN UPDATE wp_asset_operations SET state='undoing' WHERE id=NEW.id; END" ),
+                 "Reverse undo journal publication after the UPDATE succeeds" );
+        require( !catalog->undoFileOperation( committed.operationId ).succeeded &&
+                 catalog->inspectFileOperationRecovery( committed.operationId ).state == "undoing" &&
+                 catalog->tryGetEntry( singleUuid, entry ) && entry.path == "retry-output.bin" &&
+                 read( root / "retry-source.bin" ) == bytes && !fs::exists( root / "retry-output.bin" ),
+                 "An AFTER trigger reversing journal state rolls back catalog undo and retains both recovery routes" );
+        require( sql( catalog->getDatabase(), "DROP TRIGGER reverse_final_undo" ) &&
+                 catalog->retryFileOperationRecovery( catalog->inspectFileOperationRecovery( committed.operationId ) ).succeeded &&
+                 read( root / "retry-output.bin" ) == bytes && catalog->undoFileOperation( committed.operationId ).succeeded &&
+                 read( root / "retry-source.bin" ) == bytes,
+                 "Recovery after silent undo reversal restores the committed bytes and permits ordinary undo" );
         catalog->unload(nullptr);
     }
 

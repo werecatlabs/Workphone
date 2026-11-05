@@ -95,12 +95,26 @@ namespace workphone
             bool succeeded = false;
         };
 
+        struct FileOperationRecovery
+        {
+            String operationId, kind, state, sourcePath, destinationPath;
+            String payloadPath, conflictPath, holdingPath, retainedPath, error;
+            String payloadDigest, conflictDigest;
+            u64 catalogInstance = 0, generation = 0;
+            bool canRetry = false, canPreserve = false;
+        };
+
         /** Journaled project-relative operation. Move preserves catalog UUIDs;
          * copy allocates new UUIDs and rejects formats requiring a reference remapper.
          * Delete quarantines exact bytes. Destinations are never overwritten. */
         FileOperationResult performFileOperation( FileOperation kind, const String &source,
                                                   const String &destination = {} );
         FileOperationResult undoFileOperation( const String &operationId );
+        FileOperationRecovery inspectFileOperationRecovery( const String &operationId );
+        FileOperationResult retryFileOperationRecovery( const FileOperationRecovery &selection );
+        /** Move the verified blocker to an exclusive holding path, then retry recovery.
+         * Both assets remain reachable if publication is interrupted. */
+        FileOperationResult preserveFileOperationConflict( const FileOperationRecovery &selection );
         /** Recover interrupted operations to their last committed state. Conflicts
          * retain both content and the journal for explicit repair. */
         Array<FileOperationResult> recoverFileOperations();

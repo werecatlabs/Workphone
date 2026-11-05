@@ -38,6 +38,11 @@ namespace workphone::resource
         u64 changedArtifactBytes = 0, targetArtifactBytes = 0;
     };
 
+    struct WPCore_API RuntimePackageStageRecoveryResult
+    {
+        Array<String> recoverable, recovered, skipped, warnings;
+    };
+
     /** A checked exporter retains admission until publication or failure. The
      * resolver must bind every closure member, acquire external admission in
      * resource-system -> catalog -> connection order, and never reenter this
@@ -183,6 +188,11 @@ namespace workphone::resource
         static bool applyRuntimePatch( const String &baseDirectory, const String &patchDirectory,
                                        const String &outputDirectory, const String &target,
                                        RuntimePackagePatchResult &, String &error );
+        /** Inspect or quarantine abandoned, owned staging directories in one
+         * publication parent. Live, unmarked and redirected entries are preserved.
+         * Recovery renames exclusively and never deletes stage contents. */
+        static bool recoverRuntimePackageStages( const String &publicationParent, bool inspectOnly,
+                                                RuntimePackageStageRecoveryResult &, String &error );
         /** Cooks are performed by the caller. Inspects the same pinned, admitted
          * closure as export without publishing or touching a package destination.
          * A temporary manifest is owned under cooked storage and removed on return. */

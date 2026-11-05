@@ -7,6 +7,7 @@
 #include <WPSQLite/SQLiteDatabase.hpp>
 #include <WPSQLite/SQLiteQuery.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Database/AuthoredDomainDatabase.hpp>
 
 #include <algorithm>
 #include <sstream>
@@ -319,26 +320,11 @@ namespace workphone::adbeditor
 
     void AssetDatabaseEditorDatabase::removeNode( s32 nodeId )
     {
-        const auto node = executeQuery( "select lft, rght from configured_actors where id = " +
-                                       StringUtil::toString( nodeId ) );
-        if( node.empty() )
+        String error;
+        if( !removeConfiguredActorSubtree( m_database, nodeId, error ) )
         {
-            return;
+            WP_LOG_ERROR( error );
         }
-
-        const auto left = node.rows.front().getFieldValueAsInt( "lft" );
-        const auto right = node.rows.front().getFieldValueAsInt( "rght" );
-
-        executeDML( "delete from configured_actors where lft between " +
-                    StringUtil::toString( left ) + " and " + StringUtil::toString( right ) );
-
-        const s32 offset = right - left + 1;
-        executeDML( "update configured_actors set lft = lft - " + StringUtil::toString( offset ) +
-                    " where lft > " + StringUtil::toString( left ) );
-        executeDML( "update configured_actors set rght = rght - " + StringUtil::toString( offset ) +
-                    " where rght > " + StringUtil::toString( right ) );
-        executeDML( "delete from attribs where configured_actor_id = " +
-                    StringUtil::toString( nodeId ) );
     }
 
     String AssetDatabaseEditorDatabase::getResourceValue( const String &name )

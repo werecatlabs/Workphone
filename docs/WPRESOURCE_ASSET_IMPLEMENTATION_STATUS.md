@@ -2576,6 +2576,71 @@ live Editor and license certification remain open, together with the remaining
 implementation and scale gates below. The evidence retains
 `releaseCertified=false`.
 
+## Increment 48: catalog scale and interrupted operation recovery
+
+SQLite caches a bounded literal search term for the current statement and uses
+its ASCII prefix to reject rows that cannot match. Malformed text still takes
+the bundled GLOB path when its encoding can affect the result. Large indexed
+catalogs at or above 64 MiB can expand their connection-local page cache under
+a 24 MiB SourceCpu reservation. If admission fails, search uses SQLite's current
+cache. Closing the connection retires its reservation.
+
+Asset Database history can retry a selected journal record. On Windows it can
+also review and preserve a conflicting regular file before recovering an
+interrupted move or delete. The journal state and project revision are checked
+under the same SQLite writer admission for normal, undo and recovery operations.
+The confirmation is bound to the reviewed record and file digests. Recovery
+retains the independent file in the operation's holding directory.
+
+Runtime directory exports and deltas bind staging directories to an exclusive
+owner marker and their filesystem identity. The package CLI can inspect stages
+and quarantine a verified abandoned one. Quarantine requires both an available
+owner lock and a matching directory identity. The owner marker stays beside the
+stage and retires separately from publication.
+
+The standalone domain subtree deletion service removes configured actor rows and
+their owned UUID and other attributes in one transaction. It supports both
+recognized owner columns and verifies cleanup before repairing surviving
+nested-set bounds. The C++ standalone editor forwards its deletion method to
+this service. Wiring a standalone delete action remains open.
+
+The optimized and Debug builds each passed all **16** focused suites in
+**161.85** and **279.13 seconds**, including the catalog and publication-crash
+contracts. The full Debug Editor aggregate passed all **101** cases in
+**873.15 seconds** with its original 900-second timeout. On the same local scale
+fixture of **100,000 assets and 1,000,000 references**, warm sparse search was
+**78.456 ms p95** against the **100 ms** target and the previous **122.126 ms**
+measurement. Exact UUID lookup was **1.051 ms p95**, dense search **51.884 ms**,
+and where-used **12.833 ms**. The 10,000-asset case kept its 2,000-page cache.
+The large case proved search after cache admission denial, then used a
+16,384-page cache with a 24 MiB reservation and released it on close. The
+local results are in `project_x64/resource-nov05-next-catalog-scale.log`,
+`project_x64/resource-nov05-next-final-opt-tests.log` and
+`project_x64/resource-nov05-next-final-debug-tests.log`. The aggregate report
+is `project_x64/resource-nov05-next-editor-all-report.log`.
+
+Five additional suites passed in both configurations: production rendering,
+material residency retry, terrain Lua, actor-scene streaming and mesh importer
+streaming. The optimized run took **43.17 seconds** and Debug **78.86 seconds**.
+See `project_x64/resource-nov05-next-streaming-state.json`.
+
+The relocated Editor candidate passed **8** package checks, including the typed
+family and mixed-scene launches. All **329** input hashes and **12** built and
+installed module pairs matched after the additional optimized build. The runtime
+ZIP and evidence are under `project_x64/rd51/`. Its SHA-256 is
+`F9A728CE0D68A18B5D27496FDD83639D9044170394AAE938EC1A7D47663D2B59`.
+The installed source-free foliage probe passed a **65-frame** run.
+Stock PowerShell 5.1 prepared `project_x64/ek51/`. Its host replay passed
+**9** checks and records `cleanMachineExecuted=false`. All **303** installed
+files matched the inventory after the live launch, and **44** required notices
+matched their original bytes. Licensing approval remains open.
+
+The installed Editor opened the disposable recovery catalog and reported the
+ambiguous interrupted operation. Both fixture files remained intact. The
+Software renderer reported a font atlas upload failure and window capture timed
+out twice. Live confirmation input remains unverified. See
+`project_x64/resource-nov05-next-live-editor-check.json`.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -2587,7 +2652,7 @@ shipping gates using the same immutable resource pipeline.
 
 1. Migrate authored rows that lack explicit UUID bindings. Finish immutable
    metadata migration, full-project reference coverage, asset-operation retention
-   and conflict resolution UI.
+   and conflict resolution beyond the supported regular-file cases.
 2. Extend the guarded cook boundary across remaining importer and build routes.
    Add generation recovery/retention for immutable artifacts and certify
    importer-specific interruption and power-loss publication.
@@ -2599,6 +2664,8 @@ shipping gates using the same immutable resource pipeline.
    richer root picking/closure inspection and owner-thread publication throughout the
    Editor and shipping sample. Extend the owned Windows package job to the
    remaining asynchronous requests/residency and platform requirements.
+   Package-range animation, skinned geometry and terrain heightfields still need
+   typed demand paths, aggregate accounting and cross-family soak evidence.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;
    implement domain editing, previews, full reference coverage, packaging controls and
    the declared format-family matrix.

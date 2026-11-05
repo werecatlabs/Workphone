@@ -35,12 +35,36 @@ destinations, including empty directories, are never replaced. Windows uses
 macOS uses `renamex_np(RENAME_EXCL)`. Other platforms or filesystems without an
 exclusive rename implementation fail publication.
 
-Normal failures clean up only the request-owned staging directory. A process crash
-can leave that directory behind; orphan recovery and retention are still open.
-Parent directories created for a failed request may remain empty. This establishes
-complete-directory visibility during normal execution, not machine/power-loss
-durability, cryptographic authenticity or protection against hostile filesystem
-replacement. No executable, plugin or redistributable dependency is included.
+Normal failures clean up the request-owned staging directory. Parent directories
+created for a failed request may remain empty. This establishes complete-directory
+visibility during normal execution. Power-loss durability, cryptographic
+authentication and hostile filesystem replacement are separate concerns. A resource
+package contains resource data and manifests.
+
+## Interrupted package staging
+
+Exports and both directory delta commands hold an exclusive OS lock on a sibling
+`.wp-package-<id>.owner` file until publication or cleanup. The versioned marker
+binds the exact staging name to its volume and directory identity. The output directory keeps the same
+resource inventory because the sidecar stays outside the renamed stage.
+
+```text
+WorkphoneResourcePackage --inspect-package-stages <publication-parent>
+WorkphoneResourcePackage --recover-package-stages <publication-parent>
+```
+
+Use the immediate parent of the requested output directory. Inspection lists
+recoverable stages, live locks and warnings without changing files. Recovery
+locks each valid abandoned stage and exclusively renames it to
+`.wp-package-<id>.interrupted` in that parent. It keeps the archived bytes and
+retires the sidecar. Redirected directories, invalid or missing ownership markers,
+live locks and archive conflicts are preserved. The scan considers at most
+65,536 immediate entries and 4,096 staging names. Earlier unmarked stages, a
+crash before marker creation and marker-only remnants require manual review.
+
+A quarantined stage is diagnostic evidence. Retry with a new destination and
+inspect any already published output separately. Recovery leaves the authoring
+cache, published packages and request history outside this workflow.
 
 ## UUID manifest contract
 
@@ -121,8 +145,8 @@ base directory to roll back. The CLI reports changed, reused and removed resourc
 counts and transferred artifact bytes.
 
 Version 1 uses FNV transfer fingerprints for corruption detection. Distribution
-authentication, compressed block deltas, partial-download resume, activation and
-orphan staging recovery remain separate work.
+authentication, compressed block deltas, partial-download resume and activation
+remain separate work.
 
 ## Named read-only package composition
 
@@ -497,9 +521,10 @@ or declares a prior package successful/failed. Inspect outputs first, then save
 an explicit profile with an unused destination before retrying.
 
 This establishes snapshot recovery and child-lifetime behavior after a tested
-owner-process kill. The separate publication test described below covers process
-termination inside the real resource pipeline. Orphan cooking/staging artifact
-reclamation, power-loss durability and hostile filesystem races remain open.
+owner-process kill. The separate publication test covers process termination
+inside the resource pipeline. Package-stage quarantine uses the ownership protocol
+above. Cooking artifact reclamation, power-loss durability and hostile filesystem
+races remain open.
 
 ## Profile-aware build identity
 

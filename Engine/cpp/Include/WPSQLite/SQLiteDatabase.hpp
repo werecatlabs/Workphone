@@ -2,13 +2,16 @@
 #define WPSQLiteManager_h__
 
 #include <WPSQLite/WPSQLitePrerequisites.hpp>
+#include <Workphone/Interface/Database/ICatalogBrowseCache.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Memory/SharedPtr.hpp>
+#include <memory>
 #include <mutex>
 
 namespace workphone
 {
+    class StreamBudgetLease;
 
     /**
      * @class SQLiteDatabase
@@ -20,7 +23,7 @@ namespace workphone
      */
     class SQLiteDatabase : public IDatabase, public IParameterizedDatabase, public ISerializedDatabase,
                            public IBackupDatabase, public IReadOnlyDatabase,
-                           public ITransactionCleanupDatabase
+                           public ITransactionCleanupDatabase, public ICatalogBrowseCache
     {
     public:
         /**
@@ -29,6 +32,7 @@ namespace workphone
         SQLiteDatabase();
         bool rollbackTransaction() noexcept override;
         bool openReadOnly( const String &path, String &error ) override;
+        void prepareCatalogBrowseCache() noexcept override;
 
         /**
          * @brief Destructor
@@ -103,6 +107,7 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
+        std::shared_ptr<StreamBudgetLease> m_catalogBrowseCache;
         /// Internal SQLite database handle
         SharedPtr<CppSQLite3DB> m_database;
         std::recursive_mutex m_boundQueryMutex;

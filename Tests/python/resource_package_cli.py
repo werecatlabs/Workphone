@@ -55,6 +55,14 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result
 
+    stage_parent = root / "stage recovery"
+    stage_parent.mkdir()
+    for operation in ("--inspect-package-stages", "--recover-package-stages"):
+        result = invoke([operation, stage_parent])
+        assert "Recoverable 0; recovered 0; locked 0; warnings 0" in result.stdout
+    invoke(["--recover-package-stages", stage_parent / "missing"], expected=1)
+    assert not list(stage_parent.iterdir())
+
     # Real typed audio admission, cooking and source-free UUID mounting.
     audio_id = str(uuid.uuid4())
     audio_script_id = str(uuid.uuid4())

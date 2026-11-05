@@ -43,6 +43,9 @@ namespace workphone::editor
         void populate();
         void populateOperations();
         void populateDocuments();
+        void clearRecoverySelection();
+        void removeRecoveryConfirmation();
+        void showRecoverySelection( bool confirmation );
         SmartPtr<AssetDatabaseManager> m_assetDatabaseManager;
         SmartPtr<AssetDatabaseManager> m_mediaCatalog;
         bool m_showMedia = false;
@@ -57,6 +60,7 @@ namespace workphone::editor
         SmartPtr<ui::IUIButton> m_source;
         SmartPtr<ui::IUIButton> m_history;
         SmartPtr<ui::IUIButton> m_restore;
+        SmartPtr<ui::IUIButton> m_retryRecovery, m_reviewConflict, m_confirmRecovery;
         SmartPtr<ui::IUIButton> m_reindex;
         SmartPtr<ui::IUIButton> m_scanDocuments, m_reindexDocuments;
         SmartPtr<ui::IUIButton> m_shipRuntime, m_shipEditorOnly, m_shipExcluded;
@@ -65,6 +69,7 @@ namespace workphone::editor
         size_t m_documentPage = 0;
         bool m_showOperations = false;
         size_t m_selectedOperation = static_cast<size_t>( -1 );
+        AssetDatabaseManager::FileOperationRecovery m_recovery;
         AssetOperationPage m_operations;
         Array<String> m_operationCursors;
         String m_operationAfter;

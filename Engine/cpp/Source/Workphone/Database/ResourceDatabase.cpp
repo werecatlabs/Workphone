@@ -5,6 +5,7 @@
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Database/AssetDocumentSave.hpp>
+#include <Workphone/Database/AuthoredDomainDatabase.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
 #include <Workphone/Database/ResourceReference.hpp>
 #include <Workphone/System/Director.hpp>
@@ -2602,10 +2603,10 @@ namespace workphone
 
     namespace
     {
-        std::set<String> domainColumns( SmartPtr<IDatabaseManager> db, const String &table )
+        std::set<String> domainColumns( IParameterizedDatabase &db, const String &table )
         {
             // Only fixed internal table names reach this helper.
-            auto rows = queryResourceValues( db, "PRAGMA table_info(" + table + ")", {} );
+            auto rows = db.queryBound( "PRAGMA table_info(" + table + ")", {} );
             std::set<String> columns;
             if( !rows )
             {
@@ -2617,6 +2618,13 @@ namespace workphone
                 rows->nextRow();
             }
             return columns;
+        }
+
+        String domainAttributeOwner( const std::set<String> &columns )
+        {
+            if( columns.count( "configured_actor_id" ) ) return "configured_actor_id";
+            if( columns.count( "actor_id" ) ) return "actor_id";
+            throw std::runtime_error( "Domain attributes have no supported owner column." );
         }
 
         String completeDomainText( const String &column )
@@ -2670,20 +2678,21 @@ namespace workphone
             }
             ScopedLock managerLock( db );
             auto connection = db->getDatabase();
+            auto bound = connection ? dynamic_cast<IParameterizedDatabase *>( connection.get() ) : nullptr;
             DatabaseConnectionLock guard(
                 connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
-            if( !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) )
+            if( !bound || !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) )
             {
                 return nullptr;
             }
             try
             {
-                const auto columns = domainColumns( db, "configured_actors" );
+                const auto columns = domainColumns( *bound, "configured_actors" );
                 if( !columns.count( "id" ) || !columns.count( "parent_id" ) )
                 {
                     throw std::runtime_error( "Domain actor schema is unsupported." );
                 }
-                const auto attributes = domainColumns( db, "attribs" );
+                const auto attributes = domainColumns( *bound, "attribs" );
                 String attributeOwner;
                 if( !attributes.empty() )
                 {
@@ -2691,13 +2700,7 @@ namespace workphone
                     {
                         throw std::runtime_error( "Domain attribute schema is unsupported." );
                     }
-                    attributeOwner = attributes.count( "configured_actor_id" ) ? "configured_actor_id"
-                                     : attributes.count( "actor_id" )          ? "actor_id"
-                                                                               : "";
-                    if( attributeOwner.empty() )
-                    {
-                        throw std::runtime_error( "Domain attributes have no supported owner column." );
-                    }
+                    attributeOwner = domainAttributeOwner( attributes );
                 }
                 const auto requestedUuid = StringUtil::toString( uuid );
                 const bool hasUuidColumn = columns.count( "uuid" ) != 0;
@@ -2858,6 +2861,144 @@ namespace workphone
             }
         }
     }  // namespace
+
+    bool removeConfiguredActorSubtree( SmartPtr<IDatabase> database, s64 nodeId, String &error )
+    {
+        error.clear();
+        try
+        {
+            auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
+            auto serialized = database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr;
+            auto cleanup = database ? dynamic_cast<ITransactionCleanupDatabase *>( database.get() ) : nullptr;
+            if( nodeId <= 1 || !bound || !serialized || !cleanup )
+            {
+                throw std::runtime_error( "Subtree deletion requires a writable domain connection and a non-root numeric actor." );
+            }
+            DatabaseConnectionLock lock( serialized );
+            if( !bound->queryBound( "BEGIN IMMEDIATE", {} ) )
+            {
+                throw std::runtime_error( "Cannot begin domain subtree deletion." );
+            }
+            struct Rollback
+            {
+                ITransactionCleanupDatabase *database;
+                ~Rollback() { if( database ) database->rollbackTransaction(); }
+            } rollback{ cleanup };
+
+            const auto node = StringUtil::toString( nodeId );
+            String left, right;
+            {
+                auto rows = bound->queryBound(
+                    "SELECT lft,rght," + completeDomainText( "lft" ) + " AS left_complete," +
+                    completeDomainText( "rght" ) + " AS right_complete FROM configured_actors "
+                    "WHERE id=CAST(? AS INTEGER) LIMIT 2", { node } );
+                if( !rows || rows->eof() )
+                {
+                    throw std::runtime_error( "Configured actor does not exist or its schema is unsupported." );
+                }
+                if( rows->getFieldValueAsInt( "left_complete" ) != 1 ||
+                    rows->getFieldValueAsInt( "right_complete" ) != 1 )
+                {
+                    throw std::runtime_error( "Configured actor subtree has invalid nested-set bounds." );
+                }
+                left = rows->getFieldValue( "lft" );
+                right = rows->getFieldValue( "rght" );
+                rows->nextRow();
+                if( !rows->eof() )
+                {
+                    throw std::runtime_error( "Configured actor ID is ambiguous." );
+                }
+            }
+            if( !positiveDomainRowId( left ) || !positiveDomainRowId( right ) ||
+                left.size() > right.size() || ( left.size() == right.size() && left >= right ) )
+            {
+                throw std::runtime_error( "Configured actor subtree has invalid nested-set bounds." );
+            }
+
+            // A child selected by nested-set bounds must belong to the selected parent tree.
+            // Conversely, no child of a selected actor may survive outside those bounds.
+            const String inSubtree = " BETWEEN CAST(?1 AS INTEGER) AND CAST(?2 AS INTEGER)";
+            auto invalid = bound->queryBound(
+                "SELECT 1 FROM configured_actors c LEFT JOIN configured_actors p ON c.parent_id=p.id WHERE "
+                "(c.lft" + inSubtree + " AND (c.rght IS NULL OR c.rght>CAST(?2 AS INTEGER) OR c.rght<=c.lft "
+                "OR (c.id<>CAST(?3 AS INTEGER) AND (p.id IS NULL OR p.lft IS NULL OR p.rght IS NULL "
+                "OR p.lft<CAST(?1 AS INTEGER) OR p.lft>=c.lft OR p.rght<=c.rght)))) OR "
+                "((c.id=CAST(?3 AS INTEGER) OR c.lft IS NULL OR c.lft NOT" + inSubtree + ") AND p.lft" +
+                inSubtree + ") OR (c.lft<CAST(?1 AS INTEGER) AND c.rght" + inSubtree + ") LIMIT 1",
+                { left, right, node } );
+            if( !invalid || !invalid->eof() )
+            {
+                throw std::runtime_error( "Configured actor parent links disagree with nested-set bounds." );
+            }
+            invalid = nullptr;
+
+            const Array<String> bounds{ left, right };
+            const String selected = " FROM configured_actors WHERE lft" + inSubtree;
+            const auto attributes = domainColumns( *bound, "attribs" );
+            if( !attributes.empty() )
+            {
+                const auto owner = domainAttributeOwner( attributes );
+                // A model-level actor_id can differ from the per-node owner. Use the same
+                // column as the UUID reader and preserve the attributes of surviving nodes.
+                const String owned = " FROM attribs WHERE CAST(" + owner + " AS TEXT) COLLATE BINARY IN "
+                                     "(SELECT CAST(id AS TEXT)" + selected + ")";
+                if( !bound->queryBound( "DELETE" + owned, bounds ) )
+                {
+                    throw std::runtime_error( "Cannot remove configured actor attributes." );
+                }
+                auto remaining = bound->queryBound( "SELECT 1" + owned + " LIMIT 1", bounds );
+                if( !remaining || !remaining->eof() )
+                {
+                    throw std::runtime_error( "Configured actor attribute removal was incomplete." );
+                }
+            }
+
+            if( !bound->queryBound( "DELETE" + selected, bounds ) )
+            {
+                throw std::runtime_error( "Cannot remove configured actor subtree rows." );
+            }
+            {
+                auto remaining = bound->queryBound( "SELECT 1" + selected + " LIMIT 1", bounds );
+                if( !remaining || !remaining->eof() )
+                {
+                    throw std::runtime_error( "Configured actor subtree removal was incomplete." );
+                }
+            }
+            const String width = "(CAST(?2 AS INTEGER)-CAST(?1 AS INTEGER)+1)";
+            for( const String &column : { String( "lft" ), String( "rght" ) } )
+            {
+                auto count = bound->queryBound( "SELECT count(*) AS affected FROM configured_actors WHERE " +
+                                                column + ">CAST(? AS INTEGER)", { right } );
+                if( !count || count->eof() )
+                {
+                    throw std::runtime_error( "Cannot count surviving configured actor bounds." );
+                }
+                const auto expected = count->getFieldValue( "affected" );
+                count = nullptr;
+                if( !bound->queryBound( "UPDATE configured_actors SET " + column + "=" + column + "-" + width +
+                                        " WHERE " + column + ">CAST(?2 AS INTEGER)", bounds ) )
+                {
+                    throw std::runtime_error( "Cannot repair configured actor bounds." );
+                }
+                auto changed = bound->queryBound( "SELECT changes() AS affected", {} );
+                if( !changed || changed->eof() || changed->getFieldValue( "affected" ) != expected )
+                {
+                    throw std::runtime_error( "Configured actor bounds repair was incomplete." );
+                }
+            }
+            if( !bound->queryBound( "COMMIT", {} ) )
+            {
+                throw std::runtime_error( "Cannot commit configured actor subtree deletion." );
+            }
+            rollback.database = nullptr;
+            return true;
+        }
+        catch( const std::exception &failure )
+        {
+            error = failure.what();
+            return false;
+        }
+    }
 
     auto ResourceDatabase::loadAssetNode( SmartPtr<IDatabaseManager> db, SmartPtr<Properties> parent,
                                           const UUID &id ) -> SmartPtr<Properties>

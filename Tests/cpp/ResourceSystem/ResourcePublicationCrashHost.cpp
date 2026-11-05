@@ -56,6 +56,16 @@ int main(int argc,char **argv)
 {
     try
     {
+        if(argc==3&&(std::string(argv[1])=="--inspect-stages"||std::string(argv[1])=="--recover-stages"))
+        {
+            RuntimePackageStageRecoveryResult result;
+            String error;
+            require(ResourceSystem::recoverRuntimePackageStages(argv[2],std::string(argv[1])=="--inspect-stages",
+                                                                result,error),error);
+            std::cout<<"Recoverable "<<result.recoverable.size()<<"; recovered "<<result.recovered.size()
+                     <<"; locked "<<result.skipped.size()<<"; warnings "<<result.warnings.size()<<'\n';
+            return 0;
+        }
         if(argc==4&&std::string(argv[1])=="--verify")
         {
             ResourceSystem runtime(nullptr,nullptr); RuntimeResourceConfig config;

@@ -131,10 +131,13 @@ The read-only domain loader rejects duplicate, dangling or conflicting
 bindings before returning a tree. It reads the binding and descendants in one
 SQLite snapshot. Loading a configured model uses the prefab manager and can
 run without graphics. Cloning a configured model leaves its UUID attribute
-unassigned so the copy can receive a distinct authored identity. Standalone
-deletion still needs transactional descendant attribute cleanup before numeric
-rows can be safely reused. Metadata migration and saved-document graph coverage
-of domain assets remain open.
+unassigned so the copy can receive a distinct authored identity. The standalone
+database wrapper removes a configured subtree and its owned attributes in one
+checked SQLite transaction. It preserves surviving attributes that share a
+model-level ID and rolls back if nested-set repair fails. Reusing a retired row
+cannot restore its deleted UUID. The wrapper has no connected deletion control
+in the current standalone window. Metadata migration and saved-document graph
+coverage of domain assets remain open.
 
 Coverage is deliberately explicit: only indexed saved documents are represented.
 Legacy text documents must be saved through this path; remaining domain authoring

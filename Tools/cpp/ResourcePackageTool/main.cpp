@@ -107,6 +107,22 @@ namespace
 
     int run(const Array<String> &input)
     {
+        if(input.size() >= 2 && (input[1] == "--inspect-package-stages" || input[1] == "--recover-package-stages"))
+        {
+            if(input.size() != 3)
+                throw std::runtime_error("Package stage recovery requires a publication parent directory");
+            RuntimePackageStageRecoveryResult result;
+            String error;
+            if(!ResourceSystem::recoverRuntimePackageStages(input[2], input[1] == "--inspect-package-stages",
+                                                            result, error))
+                throw std::runtime_error(error.c_str());
+            std::cout << "Recoverable " << result.recoverable.size() << "; recovered " << result.recovered.size()
+                      << "; locked " << result.skipped.size() << "; warnings " << result.warnings.size() << '\n';
+            for(const auto &name : result.recoverable) std::cout << "Stage " << name << '\n';
+            for(const auto &name : result.recovered) std::cout << "Quarantined " << name << '\n';
+            for(const auto &warning : result.warnings) std::cerr << warning << '\n';
+            return 0;
+        }
         if(input.size() >= 2 && (input[1] == "--create-patch" || input[1] == "--apply-patch"))
         {
             if(input.size() != 6)
@@ -221,6 +237,8 @@ namespace
                          "       WorkphoneResourcePackage --prune-jobs <project> <keep-count> <max-bytes>\n"
                          "       WorkphoneResourcePackage --apply-prune-jobs <project> <keep-count> <max-bytes>\n"
                          "       WorkphoneResourcePackage --recover-jobs <project-root>\n"
+                         "       WorkphoneResourcePackage --inspect-package-stages <publication-parent>\n"
+                         "       WorkphoneResourcePackage --recover-package-stages <publication-parent>\n"
                          "       WorkphoneResourcePackage --preview-profile <profile.json> <new-report.json>\n"
                          "       WorkphoneResourcePackage --verify <package-directory> <target> <uuid> [uuid...]\n"
                          "       WorkphoneResourcePackage --create-patch <base-package> <target-package> <new-patch> <target>\n"

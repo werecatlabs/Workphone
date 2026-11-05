@@ -62,6 +62,9 @@ namespace workphone::editor
         m_history = button( "Operation history / Recovery##CatalogHistory" );
         m_restore = button( "Undo selected operation##CatalogRestore" );
         m_restore->setEnabled( false );
+        m_retryRecovery = button( "Retry selected recovery##CatalogRetryRecovery" );
+        m_reviewConflict = button( "Review conflict preservation##CatalogReviewConflict" );
+        clearRecoverySelection();
         m_reindex = button( "Reindex selected document references##CatalogReindex" );
         m_reindex->setEnabled( false );
         m_shipRuntime = button( "Allow in runtime packages##CatalogShipRuntime" );
@@ -96,6 +99,7 @@ namespace workphone::editor
             return;
         }
         setLoadingState( LoadingState::Unloading );
+        removeRecoveryConfirmation();
         auto listener = getEventListener();
         if( listener )
         {
@@ -103,7 +107,8 @@ namespace workphone::editor
             Array<SmartPtr<ui::IUIElement>> controls = {
                 m_tree,          m_search,           m_type,        m_refresh,        m_previous,
                 m_next,          m_source,           m_history,     m_restore,        m_reindex,
-                m_scanDocuments, m_reindexDocuments, m_shipRuntime, m_shipEditorOnly, m_shipExcluded
+                m_scanDocuments, m_reindexDocuments, m_shipRuntime, m_shipEditorOnly, m_shipExcluded,
+                m_retryRecovery, m_reviewConflict
             };
             for( auto &control : controls )
             {
@@ -141,6 +146,9 @@ namespace workphone::editor
         m_source = nullptr;
         m_history = nullptr;
         m_restore = nullptr;
+        m_retryRecovery = nullptr;
+        m_reviewConflict = nullptr;
+        m_recovery = {};
         m_reindex = nullptr;
         m_shipRuntime = nullptr;
         m_shipEditorOnly = nullptr;
@@ -238,6 +246,10 @@ namespace workphone::editor
         {
             refresh();
         }
+        else
+        {
+            clearRecoverySelection();
+        }
         EditorWindow::setWindowVisible( visible );
     }
 
@@ -259,6 +271,7 @@ namespace workphone::editor
         {
             return;
         }
+        clearRecoverySelection();
         m_reindex->setEnabled( false );
         m_tree->clear();
         m_details->setText( "Select an asset to inspect its identity." );
@@ -311,7 +324,7 @@ namespace workphone::editor
             return;
         }
         m_tree->clear();
-        m_selectedOperation = static_cast<size_t>( -1 );
+        clearRecoverySelection();
         m_restore->setEnabled( false );
         m_details->setText(
             "Select a journal record. Delete undo restores quarantined bytes; move/copy undo reverses "
@@ -335,8 +348,44 @@ namespace workphone::editor
             root->addChild( node );
         }
         m_status->setText( "Project journal | " + StringUtil::toString( m_operations.rows.size() ) +
-                           " records | Interrupted operations recover on catalog reopen. Conflicts "
-                           "require explicit repair." );
+                           " records | Select an interrupted record to retry recovery or review a conflict." );
+    }
+
+    void AssetDatabaseWindow::removeRecoveryConfirmation()
+    {
+        if( !m_confirmRecovery ) return;
+        auto button = m_confirmRecovery;
+        m_confirmRecovery = nullptr;
+        button->removeObjectListener( getEventListener() );
+        auto app = core::IApplicationManager::instancePtr();
+        if( auto ui = app ? app->getUI() : nullptr ) ui->removeElement( button );
+    }
+
+    void AssetDatabaseWindow::clearRecoverySelection()
+    {
+        removeRecoveryConfirmation();
+        m_selectedOperation = static_cast<size_t>( -1 );
+        m_recovery = {};
+        for( auto button : { m_retryRecovery, m_reviewConflict } )
+        {
+            if( button ) button->setVisible( false, false );
+        }
+    }
+
+    void AssetDatabaseWindow::showRecoverySelection( bool confirmation )
+    {
+        const auto &row = m_operations.rows[m_selectedOperation];
+        String detail = "Operation: " + row.id + "\nState: " + row.state + "\nSource: " + row.source +
+                        "\nDestination: " + row.destination + "\nRoot: " + row.root;
+        if( !m_recovery.retainedPath.empty() ) detail += "\nHolding file: " + m_recovery.retainedPath;
+        if( !m_recovery.error.empty() ) detail += "\n" + m_recovery.error;
+        if( confirmation )
+        {
+            detail += "\nJournal bytes: " + m_recovery.payloadPath + "\nBlocking file: " + m_recovery.conflictPath +
+                      "\nThe blocking file will move to " + m_recovery.holdingPath +
+                      " before restoring the journal bytes. Confirm to apply this plan.";
+        }
+        m_details->setText( detail );
     }
 
     void AssetDatabaseWindow::populateDocuments()
@@ -354,6 +403,7 @@ namespace workphone::editor
         }
         m_reindex->setEnabled( false );
         m_restore->setEnabled( false );
+        clearRecoverySelection();
         m_reindexDocuments->setEnabled( m_documentCanApply && m_documentInventory.succeeded &&
                                         m_documentInventory.ready > 0 );
         m_tree->clear();
@@ -536,6 +586,64 @@ namespace workphone::editor
                                           "UUIDs; save or reload affected documents as needed."
                                         : "Undo failed; existing content retained. " + result.error );
             }
+            else if( sender && ( sender == m_retryRecovery || sender == m_reviewConflict || sender == m_confirmRecovery ) )
+            {
+                auto catalog = getAssetDatabaseManager();
+                auto node = m_tree->getSelectedTreeNode();
+                if( !m_showOperations || m_showMedia || !node || !node->getId() ||
+                    m_selectedOperation != node->getId() - 1 || m_selectedOperation >= m_operations.rows.size() ||
+                    !m_operations.session.isCurrent( catalog ) || !m_recovery.canRetry )
+                {
+                    clearRecoverySelection();
+                    m_details->setText( "Operation or project session changed. Select the record again." );
+                    return {};
+                }
+                if( sender == m_reviewConflict )
+                {
+                    removeRecoveryConfirmation();
+                    m_recovery = catalog->inspectFileOperationRecovery( m_operations.rows[m_selectedOperation].id );
+                    m_retryRecovery->setVisible( m_recovery.canRetry, false );
+                    m_reviewConflict->setVisible( m_recovery.canPreserve, false );
+                    if( m_recovery.canPreserve )
+                    {
+                        auto app = core::IApplicationManager::instancePtr();
+                        auto ui = app ? app->getUI() : nullptr;
+                        if( ui )
+                        {
+                            // Use a fresh control for each review. A queued event from an
+                            // earlier confirmation can never authorize the current plan.
+                            m_confirmRecovery = ui->addElementByType<ui::IUIButton>();
+                            if( m_confirmRecovery )
+                            {
+                                m_confirmRecovery->setLabel( "Confirm preserve and recover##CatalogConfirmRecovery" );
+                                m_confirmRecovery->addObjectListener( getEventListener() );
+                                getParentWindow()->addChild( m_confirmRecovery );
+                            }
+                            else m_recovery.error = "Cannot allocate the recovery confirmation control.";
+                        }
+                    }
+                    showRecoverySelection( m_confirmRecovery != nullptr );
+                    return {};
+                }
+
+                const bool preserve = sender == m_confirmRecovery;
+                if( preserve && !m_recovery.canPreserve )
+                {
+                    removeRecoveryConfirmation();
+                    m_details->setText( "Conflict review expired. Inspect the record again." );
+                    return {};
+                }
+                const auto selection = m_recovery;
+                removeRecoveryConfirmation();
+                const auto result = preserve ? catalog->preserveFileOperationConflict( selection )
+                                             : catalog->retryFileOperationRecovery( selection );
+                const auto current = catalog->inspectFileOperationRecovery( selection.operationId );
+                refresh();
+                String status = result.succeeded ? "Selected journal record recovered."
+                                                 : "Recovery incomplete. " + result.error;
+                if( !current.retainedPath.empty() ) status += "\nHolding file: " + current.retainedPath;
+                m_details->setText( status );
+            }
             else if( sender == m_previous )
             {
                 if( m_showDocuments )
@@ -622,22 +730,24 @@ namespace workphone::editor
                 if( m_showOperations )
                 {
                     const auto index = static_cast<size_t>( id - 1 );
-                    if( index >= m_operations.rows.size() ||
-                        !m_operations.session.isCurrent( getAssetDatabaseManager() ) )
+                    auto catalog = getAssetDatabaseManager();
+                    if( index >= m_operations.rows.size() || !m_operations.session.isCurrent( catalog ) )
                     {
                         refresh();
                         m_details->setText( "Project journal changed. Select the record again." );
                         return {};
                     }
+                    clearRecoverySelection();
                     m_selectedOperation = index;
                     const auto &row = m_operations.rows[index];
-                    m_restore->setEnabled( m_operations.canUndo( getAssetDatabaseManager(), index ) );
+                    m_restore->setEnabled( m_operations.canUndo( catalog, index ) );
                     m_restore->setLabel( row.kind == "delete"
                                              ? "Restore quarantined asset##CatalogRestore"
                                              : "Undo selected operation##CatalogRestore" );
-                    m_details->setText( "Operation: " + row.id + "\nState: " + row.state +
-                                        "\nSource: " + row.source + "\nDestination: " + row.destination +
-                                        "\nRoot: " + row.root );
+                    m_recovery = catalog->inspectFileOperationRecovery( row.id );
+                    m_retryRecovery->setVisible( m_recovery.canRetry, false );
+                    m_reviewConflict->setVisible( m_recovery.canPreserve, false );
+                    showRecoverySelection( false );
                     return {};
                 }
                 AssetDatabaseManager::EntrySnapshot entry;
@@ -707,6 +817,11 @@ namespace workphone::editor
                     }
                     m_details->setText( details );
                 }
+            }
+            else if( m_showOperations )
+            {
+                clearRecoverySelection();
+                m_restore->setEnabled( false );
             }
         }
         return {};
