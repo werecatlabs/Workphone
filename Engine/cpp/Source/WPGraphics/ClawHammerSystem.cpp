@@ -1852,6 +1852,15 @@ namespace workphone
                 if( !explicitOutput && ( renderer->getRenderTarget() != getDefaultWindow() ||
                                          !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) )
                 {
+                    // A legacy project may follow one with an explicit GPU profile.
+                    // Its direct draw path must not inherit that project's light grid
+                    // or pipeline state merely because it bypasses the HDR resolve.
+                    auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
+                    wp_renderer_dx11_set_scene_sampling( native, 1, 1.f );
+                    wp_renderer_dx11_set_pipeline_mode( native, 0, 0 );
+                    wp_renderer_dx11_set_post_options( native, 0, 0, 0, 0 );
+                    wp_renderer_dx11_set_local_lights(
+                        native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1, .1f, 1000.f, nullptr );
                     return false;
                 }
                 const bool hdr = !options->hasProperty( "graphics.hdr" ) ||

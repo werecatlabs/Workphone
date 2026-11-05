@@ -1119,6 +1119,7 @@ if (WP_EDITOR_TESTS)
         project_graphics_provider_preflight_test
         project_settings_runtime_subsystem_contract_test
         project_settings_runtime_graphics_director_test
+        project_settings_project_switch_runtime_test
         project_settings_runtime_validation_and_capabilities_test
         project_loaded_cache_paths_test
         project_mesh_import_cache_test

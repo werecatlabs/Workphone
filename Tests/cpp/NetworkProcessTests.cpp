@@ -1,4 +1,7 @@
 #include <WPNetwork/WPNetworkManager.hpp>
+#if WP_NETWORK_GNS
+#    include <WPNetwork/WPNetworkGNSManager.hpp>
+#endif
 #include <Workphone/Interface/Net/INetworkListener.hpp>
 #include <Workphone/Interface/Net/IPacket.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
@@ -19,8 +22,7 @@
 #    include <unistd.h>
 #endif
 
-// A loopback development fixture using separate OS processes and the concrete
-// manager. Retries below are application test traffic, not reliable transport.
+// Loopback development fixture using separate OS processes and the engine facade.
 using namespace workphone;
 
 namespace
@@ -73,7 +75,7 @@ namespace
         std::filesystem::rename( temporary, path );
     }
 
-    SmartPtr<IPacket> message( WPNetworkManager &manager, Message type, u32 token, u16 player )
+    SmartPtr<IPacket> message( INetworkManager &manager, Message type, u32 token, u16 player )
     {
         auto packet = manager.createPacket();
         packet->write( Magic );
@@ -81,6 +83,39 @@ namespace
         packet->write( token );
         packet->write( player );
         return packet;
+    }
+
+    void send( INetworkManager &manager, SmartPtr<IPacket> &packet, u16 player )
+    {
+        if( manager.getCapabilities() & INetworkManager::ReliableOrderedDelivery )
+        {
+            manager.sendPacket( packet, player );
+        }
+        else
+        {
+            manager.sendPacketUnreliable( packet, player );
+        }
+    }
+
+    SmartPtr<INetworkManager> createManager( bool gns, unsigned clients, unsigned port )
+    {
+        if( gns )
+        {
+#if WP_NETWORK_GNS
+            WPNetworkGNSConfig config;
+            config.allowUnverifiedLoopback = true;
+            config.bindAddress = "127.0.0.1:" + std::to_string( port );
+            config.maxClients = clients;
+            return make_ptr<WPNetworkGNSManager>( config );
+#else
+            throw std::invalid_argument( "This fixture was built without the GNS backend" );
+#endif
+        }
+        auto manager = make_ptr<WPNetworkManager>();
+        manager->setBindAddress( 0x7f000001u );
+        manager->setPort( 0 );
+        manager->setMaxClients( clients );
+        return manager;
     }
 
     struct PeerResult
@@ -93,7 +128,7 @@ namespace
     class ServerListener final : public INetworkListener
     {
     public:
-        ServerListener( WPNetworkManager &manager, unsigned expected ) :
+        ServerListener( INetworkManager &manager, unsigned expected ) :
             manager( manager ),
             expected( expected )
         {
@@ -154,7 +189,7 @@ namespace
                              "Client token reused by another identity" );
                     peer.id = static_cast<u16>( sender );
                     auto reply = message( manager, Message::HelloAck, token, peer.id );
-                    manager.sendPacketUnreliable( reply, peer.id );
+                    send( manager, reply, peer.id );
                 }
                 else if( type == static_cast<u8>( Message::Finished ) )
                 {
@@ -163,7 +198,7 @@ namespace
                              "Finish before verified hello" );
                     found->second.finished = true;
                     auto reply = message( manager, Message::FinishedAck, token, found->second.id );
-                    manager.sendPacketUnreliable( reply, found->second.id );
+                    send( manager, reply, found->second.id );
                 }
                 else
                 {
@@ -192,7 +227,7 @@ namespace
             return true;
         }
 
-        WPNetworkManager &manager;
+        INetworkManager &manager;
         unsigned expected;
         std::set<u32> joined;
         std::map<u32, PeerResult> peers;
@@ -202,7 +237,7 @@ namespace
     class ClientListener final : public INetworkListener
     {
     public:
-        ClientListener( WPNetworkManager &manager, unsigned token ) : manager( manager ), token( token )
+        ClientListener( INetworkManager &manager, unsigned token ) : manager( manager ), token( token )
         {
         }
 
@@ -250,25 +285,70 @@ namespace
             }
         }
 
-        WPNetworkManager &manager;
+        INetworkManager &manager;
         unsigned token;
         unsigned connections = 0;
         bool hello = false, finished = false;
         std::string failure;
     };
 
-    void server( const std::filesystem::path &directory, unsigned clients, unsigned timeout )
+    unsigned startServer( INetworkManager &manager )
     {
-        auto manager = make_ptr<WPNetworkManager>();
-        manager->setBindAddress( 0x7f000001u );
-        manager->setPort( 0 );
-        manager->setMaxClients( clients );
+        manager.setServer( true );
+#if WP_NETWORK_GNS
+        if( auto *gns = dynamic_cast<WPNetworkGNSManager *>( &manager ) )
+        {
+            const auto bound = gns->getBoundAddress();
+            const std::string prefix = "127.0.0.1:";
+            require( bound.rfind( prefix, 0 ) == 0, "GNS listener did not bind to loopback" );
+            return integer( bound.substr( prefix.size() ), 1, 65535 );
+        }
+#endif
+        const auto bound = dynamic_cast<WPNetworkManager &>( manager ).getDiagnostics();
+        require( bound.boundHost == 0x7f000001u && bound.boundPort != 0,
+                 "Native server did not bind to a loopback port" );
+        return bound.boundPort;
+    }
+
+    void requireStopped( INetworkManager &manager )
+    {
+#if WP_NETWORK_GNS
+        if( auto *gns = dynamic_cast<WPNetworkGNSManager *>( &manager ) )
+        {
+            require( gns->getBoundAddress().empty() && !gns->getPeerCount() &&
+                         gns->getPlayerNumber() == 0xffffu,
+                     "GNS fixture did not close" );
+            return;
+        }
+#endif
+        const auto stopped = dynamic_cast<WPNetworkManager &>( manager ).getDiagnostics();
+        require( stopped.state == WPNetworkSessionState::Stopped && stopped.boundPort == 0,
+                 "Native fixture did not close" );
+    }
+
+    void server( const std::filesystem::path &directory, unsigned clients, unsigned timeout,
+                 bool gns )
+    {
+        SmartPtr<INetworkManager> manager;
+        unsigned port = 0;
+        for( unsigned attempt = 0; attempt < 32; ++attempt )
+        {
+            manager = createManager( gns, clients, 34000 + ( processId() + attempt ) % 2000 );
+            try
+            {
+                port = startServer( *manager );
+                break;
+            }
+            catch( const std::runtime_error & )
+            {
+                if( !gns || attempt == 31 )
+                {
+                    throw;
+                }
+            }
+        }
         auto listener = make_ptr<ServerListener>( *manager, clients );
         manager->addListener( listener );
-        manager->setServer( true );
-        const auto bound = manager->getDiagnostics();
-        const auto port = bound.boundPort;
-        require( bound.boundHost == 0x7f000001u, "Server did not bind exclusively to loopback" );
         require( port != 0, "Server has no bound port" );
         publish( directory / "server.ready", std::to_string( port ) );
         const auto deadline = Clock::now() + std::chrono::seconds( timeout );
@@ -280,13 +360,10 @@ namespace
         require( listener->failure.empty(), listener->failure.c_str() );
         require( listener->complete(), "Server timed out waiting for verified clients and disconnects" );
         manager->unload( nullptr );
-        const auto stopped = manager->getDiagnostics();
-        require( stopped.state == WPNetworkSessionState::Stopped && stopped.boundPort == 0,
-                 "Server did not close its socket" );
+        requireStopped( *manager );
         std::string report =
             "{\"version\":1,\"role\":\"server\",\"pid\":" + std::to_string( processId() ) +
-            ",\"boundHost\":" + std::to_string( bound.boundHost ) +
-            ",\"loopback\":true,\"closed\":true,\"clients\":[";
+            ",\"boundHost\":2130706433,\"loopback\":true,\"closed\":true,\"clients\":[";
         bool first = true;
         for( const auto &[token, peer] : listener->peers )
         {
@@ -307,24 +384,30 @@ namespace
     }
 
     void client( const std::filesystem::path &directory, unsigned port, unsigned token,
-                 unsigned timeout )
+                 unsigned timeout, bool gns )
     {
-        auto manager = make_ptr<WPNetworkManager>();
-        manager->setBindAddress( 0x7f000001u );
+        auto manager = createManager( gns, 8, port );
         auto listener = make_ptr<ClientListener>( *manager, token );
         manager->addListener( listener );
         manager->connect( "127.0.0.1", static_cast<unsigned short>( port ), "" );
         const auto deadline = Clock::now() + std::chrono::seconds( timeout );
         auto nextSend = Clock::now();
+        bool helloSent = false, finishSent = false;
         while( !listener->finished && listener->failure.empty() && Clock::now() < deadline )
         {
             manager->poll();
             if( manager->getConnectionStatus() == INetworkManager::ConnectionStatus::NCS_ESTABLISHED &&
                 Clock::now() >= nextSend )
             {
-                auto packet = message( *manager, listener->hello ? Message::Finished : Message::Hello,
-                                       token, manager->getPlayerNumber() );
-                manager->sendPacketUnreliable( packet );
+                auto &sent = listener->hello ? finishSent : helloSent;
+                if( !gns || !sent )
+                {
+                    auto packet = message( *manager,
+                                           listener->hello ? Message::Finished : Message::Hello,
+                                           token, manager->getPlayerNumber() );
+                    send( *manager, packet, 0 );
+                    sent = true;
+                }
                 nextSend = Clock::now() + std::chrono::milliseconds( 50 );
             }
             std::this_thread::sleep_for( std::chrono::milliseconds( 2 ) );
@@ -333,19 +416,31 @@ namespace
         require( listener->finished && listener->connections == 1,
                  "Client timed out or connected more than once" );
         const auto player = manager->getPlayerNumber();
-        const auto bound = manager->getDiagnostics();
-        require( bound.boundHost == 0x7f000001u, "Client did not bind exclusively to loopback" );
+        u32 boundHost = 0;
+        if( !gns )
+        {
+            auto &native = dynamic_cast<WPNetworkManager &>( *manager );
+            boundHost = native.getDiagnostics().boundHost;
+            require( boundHost == 0x7f000001u, "Native client did not bind to loopback" );
+            native.disconnect();
+        }
+#if WP_NETWORK_GNS
+        else
+        {
+            auto &client = dynamic_cast<WPNetworkGNSManager &>( *manager );
+            require( client.getClientAddress( 0 ) == 0x7f000001u, "GNS server is not loopback" );
+            client.disconnect();
+        }
+#endif
         require( player > 0 && player <= NET_MAX_PLAYER_ID, "Invalid assigned client identity" );
-        manager->disconnect();
         manager->poll();
         manager->unload( nullptr );
-        const auto stopped = manager->getDiagnostics();
-        require( stopped.state == WPNetworkSessionState::Stopped && stopped.boundPort == 0,
-                 "Client did not close its socket" );
+        requireStopped( *manager );
         publish( directory / ( "client-" + std::to_string( token ) + ".json" ),
                  "{\"version\":1,\"role\":\"client\",\"pid\":" + std::to_string( processId() ) +
                      ",\"token\":" + std::to_string( token ) + ",\"playerId\":" +
-                     std::to_string( player ) + ",\"boundHost\":" + std::to_string( bound.boundHost ) +
+                     std::to_string( player ) + ",\"boundHost\":" +
+                     ( gns ? "null" : std::to_string( boundHost ) ) +
                      ",\"helloAcknowledged\":true,\"finishAcknowledged\":true,\"closed\":true}" );
         std::printf( "PASS: client %u assigned player %u exchanged messages and closed\n", token,
                      static_cast<unsigned>( player ) );
@@ -372,17 +467,22 @@ int main( int argc, char **argv )
         const auto mode = options.at( "--mode" );
         const auto directory = std::filesystem::absolute( options.at( "--output" ) );
         const auto timeout = integer( options.at( "--timeout" ), 5, 30 );
+        const auto backend = options.find( "--backend" );
+        const bool gns = backend != options.end() && backend->second == "gns_loopback";
+        require( backend == options.end() || gns || backend->second == "native_udp_development",
+                 "Unknown network fixture backend" );
+        options.erase( "--backend" );
         require( std::filesystem::is_directory( directory ), "Output directory must already exist" );
         if( mode == "server" )
         {
             require( options.size() == 4, "Unknown server argument" );
-            server( directory, integer( options.at( "--clients" ), 2, 8 ), timeout );
+            server( directory, integer( options.at( "--clients" ), 2, 8 ), timeout, gns );
         }
         else
         {
             require( mode == "client" && options.size() == 5, "Unknown mode or client argument" );
             client( directory, integer( options.at( "--port" ), 1, 65535 ),
-                    integer( options.at( "--client" ), 1, 8 ), timeout );
+                    integer( options.at( "--client" ), 1, 8 ), timeout, gns );
         }
         result = 0;
     }

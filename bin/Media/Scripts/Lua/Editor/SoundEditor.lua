@@ -484,11 +484,13 @@ function SoundEditor:_syncToControls()
 		return;
 	end
 
+	self._syncingControls = true;
 	for control, info in pairs(self._controlBindings) do
 		if control ~= nil and info ~= nil and self._settings[info.key] ~= nil then
 			self:_setControlValue(control, info.kind, self._settings[info.key]);
 		end
 	end
+	self._syncingControls = false;
 end
 
 function SoundEditor:_getCurrentEventPath()
@@ -587,7 +589,7 @@ function SoundEditor:_applyCurrentSoundSettings(sound)
 	self:_safeCall(sound, "setLoop", loop);
 end
 
-function SoundEditor:_applyManagerSettings()
+function SoundEditor:_applyManagerSettings(changedKey)
 	-- Only the master bus has an engine service today.
 	if self._settings.bus ~= nil and self._settings.bus ~= 0 then
 		return false;
@@ -597,15 +599,30 @@ function SoundEditor:_applyManagerSettings()
 		return false;
 	end
 
-	if self._settings.bus == 0 and self._settings.busVolume ~= nil then
+	if changedKey ~= "busMute" and self._settings.bus == 0 and self._settings.busVolume ~= nil then
 		self:_safeCall(soundManager, "setVolume", self._settings.busVolume);
 	end
 
-	if self._settings.busMute ~= nil then
+	if changedKey ~= "busVolume" and self._settings.busMute ~= nil then
 		self:_safeCall(soundManager, "setMute", self._settings.busMute == true);
 	end
 
 	return true;
+end
+
+function SoundEditor:_readManagerSettings()
+	-- The project/audio manager owns the master bus. Opening a hidden tool or
+	-- restoring its window snapshot must not replay the tool's default gain.
+	if self._settings.bus ~= 0 then return; end
+	local manager = self:_getSoundManager();
+	if manager == nil then return; end
+	local ok, volume = self:_safeCall(manager, "getVolume");
+	if ok and type(volume) == "number" and volume == volume and
+		volume > -math.huge and volume < math.huge then
+		self._settings.busVolume = math.max(0.0, math.min(1.0, volume));
+	end
+	local muteOk, mute = self:_safeCall(manager, "isMute");
+	if muteOk and type(mute) == "boolean" then self._settings.busMute = mute; end
 end
 
 function SoundEditor:_applyLiveSetting(key, value, results)
@@ -625,21 +642,23 @@ function SoundEditor:_applyLiveSetting(key, value, results)
 			self:_applyCurrentSoundSettings(self._currentSound);
 		end
 	elseif key == "busVolume" or key == "busMute" then
-		if self:_applyManagerSettings() then
+		if self:_applyManagerSettings(key) then
+			self:_readManagerSettings();
+			self:_syncToControls();
 			self:_setStatus("Applied mixer setting: " .. tostring(key), results);
 		else
 			self:_setResult(results, "success", false);
 			self:_setStatus("Selected mixer bus service is unavailable", results);
 		end
+	elseif key == "bus" then
+		self:_readManagerSettings();
+		self:_syncToControls();
 	elseif key == "bank" then
 		self._selectedBank = self:_getCurrentBankName();
 	elseif key == "snapshot" then
 		self._selectedSnapshot = self:_getCurrentSnapshotPath();
 	end
 
-	if self._settings.liveUpdate == true then
-		self:_applyManagerSettings();
-	end
 end
 
 function SoundEditor:_registerEventControls()
@@ -1001,7 +1020,8 @@ function SoundEditor:load()
 
 	self:_registerEventControls();
 	self:_syncFromControls();
-	self:_applyManagerSettings();
+	self:_readManagerSettings();
+	self:_syncToControls();
 
 	print("SoundEditor load end");
 end
@@ -1070,6 +1090,8 @@ end
 
 function SoundEditor:show()
 	print("SoundEditor show called");
+	self:_readManagerSettings();
+	self:_syncToControls();
 
 	local parentWindow = self.window:getParentWindow();
 	local debugWindow = self.window:getDebugWindow();
@@ -1257,12 +1279,12 @@ function SoundEditor:_executeRawCommand(results)
 	elseif op == "mute" then
 		self._settings.busMute = true;
 		if self.busMuteCheckbox then self.busMuteCheckbox:setValue(true); end
-		self:_applyManagerSettings();
+		self:_applyManagerSettings("busMute");
 		self:_setStatus("Muted audio.", results);
 	elseif op == "unmute" then
 		self._settings.busMute = false;
 		if self.busMuteCheckbox then self.busMuteCheckbox:setValue(false); end
-		self:_applyManagerSettings();
+		self:_applyManagerSettings("busMute");
 		self:_setStatus("Unmuted audio.", results);
 	else
 		self:_setStatus("Unknown raw command: " .. tostring(command), results);
@@ -1270,6 +1292,7 @@ function SoundEditor:_executeRawCommand(results)
 end
 
 function SoundEditor:_handleControlChanged(sender, results)
+	if self._syncingControls then return false; end
 	local binding = self._controlBindings and self._controlBindings[sender] or nil;
 	if binding == nil then
 		return false;
@@ -1388,6 +1411,7 @@ function SoundEditor:getProperties(parameters)
 	end
 
 	self:_syncFromControls();
+	self:_readManagerSettings();
 	for key, value in pairs(self._settings) do
 		if type(value) == "boolean" then
 			properties:setPropertyAsBool(key, value);
@@ -1422,6 +1446,6 @@ function SoundEditor:setProperties(parameters)
 		end
 	end
 
+	self:_readManagerSettings();
 	self:_syncToControls();
-	self:_applyManagerSettings();
 end

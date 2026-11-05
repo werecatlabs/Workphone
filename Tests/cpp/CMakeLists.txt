@@ -117,6 +117,15 @@ if(TARGET Workphone)
 endif()
 
 if(TARGET WPNetwork)
+    if(WP_NETWORK_GNS)
+        add_executable(WPNetworkGNSIntegrationTests NetworkGNSIntegrationTests.cpp)
+        target_compile_definitions(WPNetworkGNSIntegrationTests PRIVATE BOOST_ALL_NO_LIB
+            WP_GNS_LOOPBACK_PROFILE="${WP_ROOT}/Samples/cpp/Network/Config/network.gns-loopback.json")
+        target_link_libraries(WPNetworkGNSIntegrationTests PRIVATE WPNetwork Workphone)
+        set_target_properties(WPNetworkGNSIntegrationTests PROPERTIES FOLDER Tests/Network)
+        add_test(NAME WPNetwork.gns_engine COMMAND WPNetworkGNSIntegrationTests)
+        set_tests_properties(WPNetwork.gns_engine PROPERTIES LABELS "network;scene;gns;development" TIMEOUT 30)
+    endif()
     add_executable(WPNetworkIntegrationTests NetworkProductionTests.cpp)
     target_compile_definitions(WPNetworkIntegrationTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(WPNetworkIntegrationTests PRIVATE
@@ -141,6 +150,14 @@ if(TARGET WPNetwork)
                 -Executable "$<TARGET_FILE:WPNetworkProcessTests>" -Clients 3 -TimeoutSeconds 20)
         set_tests_properties(WPNetwork.local_multiprocess PROPERTIES
             LABELS "network;headless;multiprocess;development" TIMEOUT 35)
+        if(WP_NETWORK_GNS)
+            add_test(NAME WPNetwork.gns_multiprocess
+                COMMAND "${WP_NETWORK_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                    -File "${WP_ROOT}/Scripts/Run-WPNetworkLocal.ps1" -Backend gns_loopback
+                    -Executable "$<TARGET_FILE:WPNetworkProcessTests>" -Clients 3 -TimeoutSeconds 20)
+            set_tests_properties(WPNetwork.gns_multiprocess PROPERTIES
+                LABELS "network;headless;multiprocess;development;gns" TIMEOUT 35)
+        endif()
     endif()
 endif()
 

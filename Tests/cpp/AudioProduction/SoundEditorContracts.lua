@@ -74,3 +74,87 @@ assert(editor:_loadSound("missing.wav") == nil)
 editor:__finalize()
 assert(currentManager.destroyed == 1)
 print("SoundEditor preview ownership, failure status and unsupported-bank contracts passed")
+
+-- Run the real window construction and passive restore paths against an already
+-- configured audio manager. UI setters emit callbacks to exercise sync guards.
+local startupManager = {volume = 0.37, mute = true, volumeWrites = 0, muteWrites = 0}
+function startupManager:getVolume() return self.volume end
+function startupManager:isMute() return self.mute end
+function startupManager:setVolume(value) self.volume = value; self.volumeWrites = self.volumeWrites + 1 end
+function startupManager:setMute(value) self.mute = value; self.muteWrites = self.muteWrites + 1 end
+local loadedEditor
+local function notify(control)
+    if loadedEditor then loadedEditor:_handleControlChanged(control, {}) end
+end
+local function element()
+    local control = {children = {}, options = {}}
+    function control:addChild(child) self.children[#self.children + 1] = child; child.parent = self end
+    function control:removeChild(child) child.parent = nil end
+    function control:getParent() return self.parent end
+    function control:destroyAllChildren() self.children = {} end
+    function control:setLabel(value) self.label = value end
+    function control:setSize(value) self.size = value end
+    function control:setSameLine(value) self.sameLine = value end
+    function control:setMinValue(value) self.minimum = value end
+    function control:setMaxValue(value) self.maximum = value end
+    function control:setVisible(value) self.visible = value end
+    function control:setValue(value) self.value = value; notify(self) end
+    function control:getValue() return self.value end
+    function control:setText(value) self.text = value; notify(self) end
+    function control:getText() return self.text or "" end
+    function control:addOption(value) self.options[#self.options + 1] = value end
+    function control:setSelectedOption(value) self.selected = value; notify(self) end
+    function control:getSelectedOption() return self.selected or 0 end
+    function control:addTabItem() local tab = element(); self:addChild(tab); return tab end
+    return control
+end
+for _, name in ipairs({"IUIWindow", "IUIDropdown", "IUIButton", "IUIImage", "IUIText", "IUICheckbox",
+    "IUITabBar", "IUICollapsingHeader", "IUILabelSliderPair", "IUITextEntry", "IUILabelTogglePair"}) do
+    _G[name] = {typeInfo = function() return 1 end}
+end
+Vector2F = function(x, y) return {x = x, y = y} end
+local ui = {addElement = function() return element() end, removeElement = function() end}
+local application = {getUI = function() return ui end, getSoundManager = function() return startupManager end}
+IApplicationManager = {instance = function() return application end}
+local parent = element()
+local window = {getParentWindow = function() return parent end, getDebugWindow = function() end,
+    setHandleEvents = function() end}
+loadedEditor = setmetatable({}, {__index = SoundEditor})
+loadedEditor:__init(window)
+loadedEditor:load()
+assert(startupManager.volume == 0.37 and startupManager.mute == true)
+assert(startupManager.volumeWrites == 0 and startupManager.muteWrites == 0)
+assert(loadedEditor.busVolumeSlider:getValue() == 0.37 and loadedEditor.busMuteCheckbox:getValue() == true)
+
+local stale = {values = {busVolume = 1.0, busMute = false}}
+function stale:hasProperty(key) return self.values[key] ~= nil end
+function stale:getPropertyAsFloat(key) return self.values[key] end
+function stale:getPropertyAsBool(key) return self.values[key] end
+loadedEditor:setProperties({at = function() return stale end})
+assert(startupManager.volume == 0.37 and startupManager.mute == true)
+assert(startupManager.volumeWrites == 0 and startupManager.muteWrites == 0)
+assert(loadedEditor.busVolumeSlider:getValue() == 0.37 and loadedEditor.busMuteCheckbox:getValue() == true)
+
+-- Explicit edits still reach the existing manager API, one setting at a time.
+loadedEditor.busVolumeSlider:setValue(0.2)
+assert(startupManager.volume == 0.2 and startupManager.mute == true)
+assert(startupManager.volumeWrites == 1 and startupManager.muteWrites == 0)
+startupManager.volume = 0.58 -- A different tool changed the project master gain.
+loadedEditor.busMuteCheckbox:setValue(false)
+assert(startupManager.volume == 0.58 and startupManager.mute == false)
+assert(startupManager.volumeWrites == 1 and startupManager.muteWrites == 1)
+loadedEditor.volumeSlider:setValue(0.65)
+assert(startupManager.volumeWrites == 1 and startupManager.muteWrites == 1)
+startupManager.volume = 0.44
+loadedEditor:show()
+assert(loadedEditor.busVolumeSlider:getValue() == 0.44)
+assert(startupManager.volumeWrites == 1 and startupManager.muteWrites == 1)
+local snapshot = {values = {}}
+function snapshot:setPropertyAsBool(key, value) self.values[key] = value end
+snapshot.setPropertyAsFloat = snapshot.setPropertyAsBool
+snapshot.setPropertyAsString = snapshot.setPropertyAsBool
+loadedEditor:getProperties({at = function() return snapshot end})
+assert(snapshot.values.busVolume == 0.44 and snapshot.values.busMute == false)
+assert(startupManager.volumeWrites == 1 and startupManager.muteWrites == 1)
+loadedEditor:unload()
+print("SoundEditor startup/restore preserves project master gain and mute; explicit mixer edits remain live")

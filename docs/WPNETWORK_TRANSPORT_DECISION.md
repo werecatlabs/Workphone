@@ -6,7 +6,7 @@ Date: 30 October 2026. Scope: NET-00 and NET-02 in the [production plan](WPNETWO
 
 Use **GameNetworkingSockets behind the Workphone networking facade** as the R1 transport direction, with project-controlled certificate issuance hosted by the game operator. Retain native WorkphoneNetwork UDP for explicit development/reference use. Do not add native retransmission or a new cryptographic protocol as the shipping solution.
 
-This selects an implementation direction. Shipping enablement still requires a pinned dependency set, an operating certificate issuer, the conformance comparison and trust/failure tests below. The current WPNetwork implementation remains the native development backend; this decision does not enable or certify GNS.
+The native development backend remains the default. An opt-in GNS adapter is available for loopback development as of 5 November. Shipping enablement still requires an audited dependency set, an operating certificate issuer, the conformance comparison and the trust/failure tests below.
 
 The user selected self-hosted services with local development providers. R1 starts with direct dedicated/listen server connections. Matchmaking, signaling, NAT traversal and relay adapters follow separately. Open-source GNS supplies transport capabilities without requiring Steam, but does not grant access to Steam authentication or relay services. It also leaves entity replication and compression to the game. [GNS scope](https://github.com/ValveSoftware/GameNetworkingSockets#readme).
 
@@ -36,16 +36,14 @@ BUILD_TESTS=ON
 
 Build issuer tools in their own configuration if needed; do not distribute an issuer private key with an engine dependency package. GNS exposes target-scoped crypto and platform linkage and a separate certificate-tool target. [Upstream CMake implementation](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/src/CMakeLists.txt).
 
-The Workphone integration should consume the audited installed package through an opt-in target. The following is the intended CMake shape, not an existing option:
+The Workphone integration consumes the pinned installed package when `WP_NETWORK_GNS=ON`. The adapter builds into `WPNetwork`; its dependencies stay private. The development build uses the following package contract:
 
 ```cmake
-option(WP_NETWORK_GNS "Build the audited GNS transport adapter" OFF)
+option(WP_NETWORK_GNS "Build the opt-in GNS transport adapter" OFF)
 if(WP_NETWORK_GNS)
+    find_package(Protobuf CONFIG REQUIRED)
     find_package(GameNetworkingSockets CONFIG REQUIRED)
-    add_library(WPNetworkGNS STATIC ${WP_NETWORK_GNS_SOURCES})
-    target_link_libraries(WPNetworkGNS PRIVATE GameNetworkingSockets::static)
-    target_compile_features(WPNetworkGNS PRIVATE cxx_std_17)
-    target_link_libraries(WPNetwork PRIVATE WPNetworkGNS)
+    target_link_libraries(WPNetwork PRIVATE GameNetworkingSockets::static)
 endif()
 ```
 
@@ -118,8 +116,14 @@ Only after these pass should the shipping profile select GNS by default and the 
 
 This experiment deliberately uses the registry's OpenSSL backend with static libraries and the DLL CRT, rather than overriding the port to BCrypt. ICE is disabled. The shipping crypto choice and operator root-key build must still be reviewed together. No private keys or credentials are committed.
 
-The test requires encrypted IPv6 development connections, reliable ordered messages under 15 percent simulated send loss, and reassembly of a 64 KiB payload. A separate strict-client case verifies that no connection establishes without provisioned authentication, with the localhost authentication exception disabled. In the current run this terminates with connection timeout (5003), not an explicit certificate-rejection reason. The negative fixture asserts that authentication is not available; it does not prove a signed certificate was verified or rejected. The successful data case explicitly permits unverified development identities; it is not a verified-certificate positive test. No engine capabilities change and no GNS adapter is enabled by this experiment.
+The test requires encrypted IPv6 development connections, reliable ordered messages under 15 percent simulated send loss, and reassembly of a 64 KiB payload. A separate strict-client case verifies that no connection establishes without provisioned authentication, with the localhost authentication exception disabled. In the current run this terminates with connection timeout (5003), not an explicit certificate-rejection reason. The negative fixture asserts that authentication is not available; it does not prove a signed certificate was verified or rejected. The successful data case explicitly permits unverified development identities; it is not a verified-certificate positive test. This standalone experiment does not exercise the engine adapter.
 
 After successful validation the script records manifest, dependency-lock, installed-package-status and executable SHA256 hashes in `conformance-result-<configuration>.json`. Installed package license files remain under the vcpkg installation's `share` directories. These records are reproducibility evidence, not a vulnerability assessment, trust certification or complete R1 conformance result.
 
 The first static-profile link exposed an upstream port configuration mismatch: GNS declared protobuf imports as DLL symbols while linking static protobuf. The recorded overlay in `Tests/NetworkTransport/ports/gamenetworkingsockets` sets `Protobuf_USE_STATIC_LIBS` to match library linkage. Its files are SHA256-locked and verified by the runner; the registry checkout remains unmodified. This is a required local package patch, not a suppressed linker diagnostic.
+
+## Engine development adapter, 5 November 2026
+
+`WPNetworkGNSManager` implements `INetworkManager` using a shared process runtime, a poll group per manager and the existing packet and listener types. It assigns player IDs in a reliable control message and publishes the client join event before delivering gameplay packets. `WPNetwork.gns_engine` exercises the facade and NetworkView end to end. `WPNetwork.gns_multiprocess` runs separate processes through the same development fixture used by native UDP. The current adapter uses GNS's default lane and supports numeric addresses; dedicated lanes, typed backpressure and asynchronous DNS are still open.
+
+The pinned development package uses the stock GNS trust root. The strict adapter path requires explicit allowed identities and a certificate and disables both unauthenticated IP modes; it does not establish project trust by itself. To qualify this path, build the pinned library with the operator's public root, deploy issuance separately from the game binary, and verify trusted, wrong-root, wrong-identity, expiry and revocation cases across processes. Keep `AuthenticatedEncryption` unadvertised until those tests demonstrate the required policy.

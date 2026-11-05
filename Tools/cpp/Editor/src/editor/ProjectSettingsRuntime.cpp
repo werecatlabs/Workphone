@@ -125,12 +125,13 @@ namespace workphone::editor
         director->setProperties( properties );
     }
 
-    SmartPtr<Properties> applyProjectSettingsRuntime( SmartPtr<Properties> settings )
+    static SmartPtr<Properties> applyRuntimeProfile( SmartPtr<Properties> settings, bool replace,
+                                                    SmartPtr<Properties> graphicsReplacement = nullptr )
     {
         if( !settings ) return validateProjectSettingsRuntime( settings );
         auto app = core::IApplicationManager::instancePtr();
         auto previous = app ? app->getPlayerSettings() : nullptr;
-        auto immutable = previous ? snapshot( *previous ) : make_ptr<Properties>();
+        auto immutable = previous && !replace ? snapshot( *previous ) : make_ptr<Properties>();
         for( const auto &property : settings->getPropertiesAsArray() ) immutable->addProperty( property );
         for( auto child : settings->getChildren() ) if( child )
         {
@@ -159,7 +160,24 @@ namespace workphone::editor
             }
             auto editor = EditorManager::getSingletonPtr();
             auto project = editor ? editor->getProject() : nullptr;
-            if( project ) updateProjectGraphicsSettings( immutable, project->getGraphicsSettingsDirector() );
+            if( graphicsReplacement )
+            {
+                if( app ) if( auto graphics = app->getGraphicsSystem() )
+                    if( auto pipeline = graphics->getGraphicsPipeline() )
+                    {
+                        auto replacement = snapshot( *graphicsReplacement );
+                        replacement->setProperty( "Replace project settings", true );
+                        pipeline->setProperties( replacement );
+                        pipeline->setProperties( graphicsReplacement );
+                    }
+                if( project )
+                {
+                    auto director = project->getGraphicsSettingsDirector();
+                    director->setProperties( graphicsReplacement );
+                    director->setProperties( graphicsReplacement );
+                }
+            }
+            else if( project ) updateProjectGraphicsSettings( immutable, project->getGraphicsSettingsDirector() );
             if( app )
             {
                 auto tasks = app->getTaskManager();
@@ -195,5 +213,41 @@ namespace workphone::editor
             result->setProperty( "status", String( error.what() ) );
         }
         return result;
+    }
+
+    SmartPtr<Properties> applyProjectSettingsRuntime( SmartPtr<Properties> settings )
+    {
+        return applyRuntimeProfile( settings, false );
+    }
+
+    SmartPtr<Properties> loadProjectSettingsRuntime( SmartPtr<Properties> settings )
+    {
+        if( !settings ) return validateProjectSettingsRuntime( settings );
+        auto fresh = snapshot( *settings );
+        for( const auto &definition : settingDefinitions )
+        {
+            const String name( definition.name );
+            if( fresh->hasProperty( name ) ) continue;
+            // Missing legacy graphics keys must not opt the viewport into HDR,
+            // resize its window, select a device or overwrite its saved preset.
+            // Missing themes likewise retain the host's existing ImGui style.
+            if( ( name.find( "graphics." ) == 0 && name != "graphics.frameRateLimit" ) ||
+                name == "quality.preset" || name == "editor.theme" ) continue;
+            if( std::strcmp( definition.type, "bool" ) == 0 )
+                fresh->setProperty( name, std::strcmp( definition.defaultValue, "true" ) == 0 );
+            else if( std::strcmp( definition.type, "int" ) == 0 )
+                fresh->setProperty( name, static_cast<s32>( std::strtol( definition.defaultValue, nullptr, 10 ) ) );
+            else if( std::strcmp( definition.type, "float" ) == 0 )
+                fresh->setProperty( name, static_cast<f32>( std::strtod( definition.defaultValue, nullptr ) ) );
+            else fresh->setProperty( name, String( definition.defaultValue ) );
+        }
+        auto legacyGraphics = settings->getChild( "Game Graphics" );
+        auto replacement = legacyGraphics ? snapshot( *legacyGraphics ) :
+            make_ptr<scene::GraphicsSettingsDirector>()->getProperties();
+        // Saved friendly graphics fields are restored first; explicit namespaced
+        // B settings then take precedence over those legacy values.
+        for( const auto &property : projectGraphicsBackendProperties( fresh )->getPropertiesAsArray() )
+            replacement->addProperty( property );
+        return applyRuntimeProfile( fresh, true, replacement );
     }
 }

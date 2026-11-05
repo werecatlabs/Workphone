@@ -20,6 +20,10 @@ namespace workphone::editor
      * status, appliedKeys and unavailableKeys. Call on the primary editor thread.
      */
     SmartPtr<Properties> applyProjectSettingsRuntime( SmartPtr<Properties> settings );
+
+    /** Replaces the previous project's runtime profile, filling non-graphics
+     * defaults while retaining legacy output/theme behavior when unspecified. */
+    SmartPtr<Properties> loadProjectSettingsRuntime( SmartPtr<Properties> settings );
 }
 
 #endif

@@ -96,6 +96,10 @@ namespace workphone::render
         {
             return;
         }
+        // A different project replaces its profile. Inspector/Apply requests
+        // keep their existing patch semantics. This command is never persisted.
+        if( properties->getPropertyAsBool( "Replace project settings", false ) )
+            m_projectSettings = nullptr;
         if( !m_projectSettings ) m_projectSettings = workphone::make_ptr<Properties>();
         for( const auto &property : properties->getPropertiesAsArray() )
             if( property.getName().find( "graphics." ) == 0 || property.getName().find( "quality." ) == 0 ||

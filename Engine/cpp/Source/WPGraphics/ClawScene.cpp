@@ -310,6 +310,9 @@ namespace workphone
             setLoadingState( LoadingState::Unloading );
 
             m_foliageSimulationSeconds = 0;
+            // History owns cameras, material snapshots and completed render jobs.
+            // Release them before the base scene retires its object factories.
+            m_occlusionHistory.reset();
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
@@ -350,6 +353,7 @@ namespace workphone
         wp_graphics_scene *ClawScene::releaseNativeScene()
         {
             m_foliageSimulationSeconds = 0;
+            m_occlusionHistory.reset();
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
@@ -364,6 +368,7 @@ namespace workphone
         void ClawScene::clear()
         {
             m_foliageSimulationSeconds = 0;
+            m_occlusionHistory.reset();
             discardRenderJobs();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();

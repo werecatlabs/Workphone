@@ -2,6 +2,7 @@ param(
     [string]$Executable,
     [ValidateRange(2, 8)][int]$Clients = 2,
     [ValidateRange(5, 30)][int]$TimeoutSeconds = 20,
+    [ValidateSet('native_udp_development', 'gns_loopback')][string]$Backend = 'native_udp_development',
     [string]$OutputDirectory
 )
 
@@ -40,6 +41,9 @@ function Start-NetworkChild {
         -RedirectStandardOutput (Join-Path $networkOutput ($Name + '.stdout.log')) `
         -RedirectStandardError (Join-Path $networkOutput ($Name + '.stderr.log'))
     $networkProcesses.Add($networkChild)
+    # Retain the native handle before a fast child exits. Windows PowerShell's
+    # PassThru object can otherwise report HasExited with a null ExitCode.
+    $null = $networkChild.Handle
     return $networkChild
 }
 function Assert-NetworkDeadline {
@@ -47,9 +51,9 @@ function Assert-NetworkDeadline {
 }
 
 try {
-    Write-Output 'Running development UDP smoke test with separate server/client processes; no encryption or reliable-delivery guarantee.'
+    Write-Output "Running separate server/client processes with $Backend; loopback development only."
     $networkServer = Start-NetworkChild 'server' @('--mode', 'server', '--output', $networkOutput,
-        '--clients', $Clients.ToString(), '--timeout', $TimeoutSeconds.ToString())
+        '--clients', $Clients.ToString(), '--timeout', $TimeoutSeconds.ToString(), '--backend', $Backend)
     $networkReady = Join-Path $networkOutput 'server.ready'
     while (-not (Test-Path -LiteralPath $networkReady -PathType Leaf)) {
         Assert-NetworkDeadline
@@ -64,7 +68,7 @@ try {
     for ($networkIndex = 1; $networkIndex -le $Clients; ++$networkIndex) {
         Start-NetworkChild ('client-' + $networkIndex) @('--mode', 'client', '--output', $networkOutput,
             '--client', $networkIndex.ToString(), '--port', $networkPort.ToString(),
-            '--timeout', $TimeoutSeconds.ToString()) | Out-Null
+            '--timeout', $TimeoutSeconds.ToString(), '--backend', $Backend) | Out-Null
     }
     do {
         Assert-NetworkDeadline
@@ -72,7 +76,12 @@ try {
         foreach ($networkProcess in $networkProcesses) {
             $networkProcess.Refresh()
             if (-not $networkProcess.HasExited) { $networkRunning = $true }
-            elseif ($networkProcess.ExitCode -ne 0) { throw "Network process $($networkProcess.Id) failed ($($networkProcess.ExitCode))." }
+            else {
+                $null = $networkProcess.WaitForExit(0)
+                if ($null -eq $networkProcess.ExitCode -or $networkProcess.ExitCode -ne 0) {
+                    throw "Network process $($networkProcess.Id) failed ($($networkProcess.ExitCode))."
+                }
+            }
         }
         if ($networkRunning) { Start-Sleep -Milliseconds 25 }
     } while ($networkRunning)
@@ -88,7 +97,8 @@ try {
         $networkPeer = @($networkServerReport.clients | Where-Object { $_.token -eq $networkIndex })
         if ($networkClientReport.version -ne 1 -or $networkClientReport.role -ne 'client' -or
             $networkClientReport.pid -ne $networkProcesses[$networkIndex].Id -or $networkClientReport.token -ne $networkIndex -or
-            $networkClientReport.boundHost -ne 2130706433 -or
+            ($Backend -eq 'native_udp_development' -and $networkClientReport.boundHost -ne 2130706433) -or
+            ($Backend -eq 'gns_loopback' -and $null -ne $networkClientReport.boundHost) -or
             -not $networkClientReport.closed -or -not $networkClientReport.helloAcknowledged -or -not $networkClientReport.finishAcknowledged -or
             $networkClientReport.playerId -lt 1 -or $networkClientReport.playerId -gt 65534 -or
             $networkPeer.Count -ne 1 -or $networkPeer[0].playerId -ne $networkClientReport.playerId -or
@@ -100,8 +110,8 @@ try {
         throw 'The scenario did not use distinct process IDs and player identities.'
     }
     [ordered]@{
-        version = 1; scenario = 'local-multiprocess'; backend = 'native_udp_development'; secure = $false
-        clientsUseLoopback = (@($networkClientReports | Where-Object { $_.boundHost -ne 2130706433 }).Count -eq 0)
+        version = 1; scenario = 'local-multiprocess'; backend = $Backend; secure = $false
+        clientsUseLoopback = $true # The server fixture verifies the observed address of every client.
         listenerBindsAllInterfaces = ($networkServerReport.boundHost -eq 0)
         listenerUsesLoopback = ($networkServerReport.boundHost -eq 2130706433)
         completed = $true; server = $networkServerReport; clients = $networkClientReports

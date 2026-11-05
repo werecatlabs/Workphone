@@ -88,7 +88,7 @@ namespace workphone::editor
             setProjectPath( applicationManager->getProjectPath() );
             setCachePath( applicationManager->getCachePath() );
 
-            auto runtimeSettings = applyProjectSettingsRuntime( project->getProperties() );
+            auto runtimeSettings = loadProjectSettingsRuntime( project->getProperties() );
             if( !runtimeSettings->getPropertyAsBool( "success" ) )
                 WP_LOG_ERROR( runtimeSettings->getProperty( "status" ) );
             if( auto settingsWindow = uiManager->getProjectSettingsWindow() )
@@ -100,10 +100,15 @@ namespace workphone::editor
                     settingsWindow->setProperties( settings );
             }
 
-            if( auto editorSettings = applicationManager->getEditorSettings() )
+            auto editorSettings = applicationManager->getEditorSettings();
+            if( !editorSettings )
             {
-                editorSettings->setProperty( "Project Path", filePath );
+                // A fresh installation has no preferences file yet. Create the
+                // snapshot so normal shutdown can remember this opened project.
+                editorSettings = workphone::make_ptr<Properties>();
+                applicationManager->setEditorSettings( editorSettings );
             }
+            editorSettings->setProperty( "Project Path", filePath );
 
             uiManager->rebuildSceneTree();
 

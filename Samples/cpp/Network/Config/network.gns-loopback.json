@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "backend": "gns_loopback",
+  "environment": "development",
+  "bindAddress": "127.0.0.1",
+  "port": 28080,
+  "maxClients": 32,
+  "eventsPerPoll": 128,
+  "verbose": false
+}

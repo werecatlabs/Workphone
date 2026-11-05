@@ -894,14 +894,23 @@ namespace workphone::editor
                     auto authorityName = authorityIndex < scene::NetworkView::authorityModeNames.size()
                                              ? scene::NetworkView::authorityModeNames[authorityIndex]
                                              : String( "Unknown" );
+                    const auto deliveryName = networkView->getDeliveryMode() ==
+                                                      scene::NetworkView::DeliveryMode::Reliable
+                                                  ? "Reliable"
+                                                  : "Unreliable";
                     auto summary = "Networking: View " + StringUtil::toString( networkView->getViewId() ) +
                         " | Owner " + StringUtil::toString( networkView->getOwnerId() ) + " | " +
                         authorityName + " @ " + StringUtil::toString( networkView->getSendRate() ) +
-                        " Hz";
+                        " Hz | " + deliveryName;
+                    const auto manager = applicationManager->getNetworkManager();
+                    if( !manager )
+                    {
+                        summary += " | No network session";
+                    }
                     if( auto gameManager = applicationManager->getGameManager() )
                     {
                         const auto validation = scene::validateNetworkScene(
-                            gameManager->getCurrentScene(), applicationManager->getNetworkManager() );
+                            gameManager->getCurrentScene(), manager );
                         for( const auto &issue : validation.issues )
                         {
                             if( validation.actors[issue.viewIndex] == actor ||

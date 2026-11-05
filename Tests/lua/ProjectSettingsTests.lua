@@ -80,6 +80,7 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsString("project.company", "")
         request:setPropertyAsString("project.startupScene", "")
         request:setPropertyAsFloat("physics.gravity", -12.25)
+        request:setPropertyAsInt("graphics.shadowQuality", 4)
         request:setPropertyAsBool("capability.services.cloudSave", false)
         request:setPropertyAsString("unavailable.services.cloudSave", "No cloud provider configured")
         request:setPropertyAsBool("services.cloudSave", true)
@@ -108,6 +109,9 @@ assert(#native.calls==1 and native.calls[1].values.action=="readProjectSettings"
 assert(editor.projectNameControl:getText()=="Stored project")
 assert(editor.companyControl:getText()=="" and editor.startupSceneControl:getText()=="")
 assert(editor.gravityControl:getValue()==-12.25)
+assert(table.concat(editor.shadowQualityControl.options, ",")=="Off,Low,Medium,High,Ultra")
+assert(editor.settings.shadowQuality==4 and editor.shadowQualityControl:getSelectedOption()==4,
+    "Reading Ultra shadows must preserve its schema value in the dropdown")
 assert(not editor.cloudSaveControl.enabled and editor.cloudSaveControl.label:find("(Unavailable)", 1, true))
 assert(editor.settings.cloudSave==true)
 assert(#editor.controlBindings==132, "All project settings must be bound")
@@ -129,6 +133,8 @@ assert(editor.settings.activePlatform==3 and editor.rendererSummaryText.text:fin
 editor.gravityControl:setValue(-4.5)
 editor:handleEvent(event(IEvent.handleValueChanged, editor.gravityControl))
 assert(editor.settings.gravity==-4.5)
+assert(editor.settings.shadowQuality==4,
+    "Editing unrelated controls must not downgrade stored Ultra shadows")
 local before=#native.calls
 editor:handleEvent(event(IEvent.handleValueChanged, element()))
 assert(#native.calls==before)
@@ -138,8 +144,14 @@ local saved=native.calls[#native.calls]
 assert(saved.values.action=="saveProjectSettings" and saved.values["project.name"]=="Edited project")
 assert(saved.kinds["graphics.vsync"]=="Bool" and saved.kinds["physics.gravity"]=="Float")
 assert(saved.kinds["graphics.frameRateLimit"]=="Int" and saved.kinds["project.company"]=="String")
+assert(saved.values["graphics.shadowQuality"]==4,
+    "Save must preserve stored shadow quality after unrelated edits")
 assert(editor.statusText.text=="saveProjectSettings completed")
 assert(editor.settings.cloudSave==true)
+
+editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
+assert(native.calls[#native.calls].values["graphics.shadowQuality"]==4,
+    "Apply must preserve stored shadow quality after unrelated edits")
 
 for _, entry in ipairs({{editor.validateButton, "validateProjectSettings"}, {editor.reloadRendererButton, "reloadRenderer"},
     {editor.buildSelectedButton, "buildSelectedPlatform"}, {editor.exportJsonButton, "exportProjectSettingsJson"}}) do
@@ -165,6 +177,23 @@ before=#native.calls
 editor:handleEvent(event(IEvent.handleSelection, editor.applyIosProfileButton))
 assert(#native.calls==before and editor.settings.activePlatform==2 and editor.settings.aa==0)
 assert(editor.settings.cloudSave==false and editor.statusText.text:find("profile staged", 1, true))
+for _, entry in ipairs({{editor.applyPcProfileButton, 3}, {editor.applyMacProfileButton, 3},
+    {editor.applyIosProfileButton, 2}, {editor.applyAndroidProfileButton, 1}}) do
+    local callsBeforeProfile=#native.calls
+    editor:handleEvent(event(IEvent.handleSelection, entry[1]))
+    assert(#native.calls==callsBeforeProfile, "Platform profiles must stage changes without applying them")
+    assert(editor.settings.shadowQuality==entry[2] and
+        editor.shadowQualityControl:getSelectedOption()==entry[2],
+        "A staged platform profile must display its exact shadow quality")
+    editor.companyControl:setText("Profile company")
+    editor:handleEvent(event(IEvent.handlePropertyChanged, editor.companyControl))
+    for _, button in ipairs({editor.applyButton, editor.saveButton}) do
+        editor:handleEvent(event(IEvent.handleSelection, button))
+        assert(native.calls[#native.calls].values["graphics.shadowQuality"]==entry[2],
+            "Unrelated edits and Apply/Save must preserve the profile's shadow quality")
+    end
+end
+before=#native.calls
 editor:handleEvent(event(IEvent.handleSelection, editor.resetButton))
 assert(#native.calls==before and editor.settings.activePlatform==0 and editor.settings.cloudSave==false)
 editor.cloudSaveControl:setValue(true)

@@ -6,9 +6,11 @@
 #include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/UI/ClawUIManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/StateManager.hpp>
 #include <Workphone/Graphics/Texture.hpp>
 #include <Workphone/Input/InputEvent.hpp>
 #include <Workphone/Input/MouseState.hpp>
@@ -177,6 +179,13 @@ namespace
             core::IApplicationManager::setInstance( application );
             application->setFactoryManager( make_ptr<FactoryManager>() );
             application->getFactoryManager()->load( nullptr );
+            // The native viewport UI owns a real state context and queries the
+            // renderer's state task during construction, as it does in the Editor.
+            auto states = make_ptr<StateManager>();
+            application->setStateManager( states );
+            states->load( nullptr );
+            require( states->isLoaded(), "native UI fixture must load its state manager" );
+            application->setGraphicsSystem( make_ptr<render::ClawHammerSystem>() );
             Thread::setCurrentTask( TaskId::Render );
             ImGui::CreateContext();
             auto &io = ImGui::GetIO();
@@ -201,6 +210,9 @@ namespace
             application->setUI( nullptr );
             ImGui::DestroyContext();
             application->setSceneRenderWindow( nullptr );
+            application->setGraphicsSystem( nullptr );
+            if( auto states = application->getStateManager() ) states->unload( nullptr );
+            application->setStateManager( nullptr );
             if( auto factories = application->getFactoryManager() ) factories->unload( nullptr );
             application->setFactoryManager( nullptr );
             core::IApplicationManager::setInstance( nullptr );
@@ -563,6 +575,8 @@ namespace
         fixture.application->setSceneRenderWindow( window );
         ui::ImGuiApplication editor;
         ui::ClawUIManager nativeUi;
+        require( nativeUi.getStateContext() && nativeUi.getStateContext()->isLoaded(),
+                 "native viewport UI must own a loaded context from the fixture state manager" );
 
         // The production Win32 backend supplies main-client coordinates and enables
         // docking without platform viewports. DPI/RTT scaling is handled by the

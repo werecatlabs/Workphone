@@ -1,10 +1,20 @@
 # WPNetwork implementation status
 
-Updated: 4 November 2026. Implements the foundation and development-workflow increments of [the production plan](WPNETWORK_PRODUCTION_PLAN.md). R1 and R2 are not certified or complete.
+Updated: 5 November 2026. Covers the foundation, development workflow and first engine GNS integration from [the production plan](WPNETWORK_PRODUCTION_PLAN.md). R1 and R2 remain open.
+
+## Engine GNS integration, 5 November
+
+`WP_NETWORK_GNS=ON` adds an opt-in GameNetworkingSockets manager behind `INetworkManager`. It supports direct numeric IPv4/IPv6, ordered reliable and unreliable messages, server-issued player IDs, directed sends, client RTT, disconnect and reconnect. The engine still uses the same packet codec and scene listeners. The manager bounds receive work, rejects oversized payloads, and invalidates a received address when its connection closes. Reliable sends report local queue acceptance; broadcast can fail after queueing to some peers.
+
+Pass `Samples/cpp/Network/Config/network.gns-loopback.json` to `createWPNetworkServer()` to start a listener on `127.0.0.1:28080`. Call `createWPNetworkClient()` with the same profile, then call `connect("127.0.0.1", 28080, "")`. Install each manager through its application's lifecycle to use the existing scene validation and Play path. The Inspector shows the view's delivery mode and whether a session manager is available. The project still has no automatic Editor session or process launch UI. Builds with GNS disabled reject this profile explicitly; native UDP remains the default.
+
+Use `./Scripts/Validate-WPNetwork.ps1 -IncludeGNS` to build the pinned standalone dependency and exercise the real engine adapter. The engine fixture runs two IPv6 clients, checks assigned IDs and reliable ordering, reassembles a 60,000-byte payload, and drives a real NetworkView transform update and ownership transfer. It also covers disconnect/reconnect, stale endpoints, and unloading from a packet callback. The launcher verifies a separate server and three client processes over GNS IPv4, and the scene preflight fixture verifies that reliable authoring is accepted with GNS and rejected with native UDP. These tests do not run the Editor interactively.
+
+The C++ adapter has stopped-manager certificate request/import hooks and a strict mode that requires a certificate and an explicit peer identity allowlist, and disables GNS authentication exceptions. The tests cover unavailable credentials and malformed imports. No operator root or issuer has been integrated and no trusted signed operator certificate has been exercised. Certificate import alone does not prove trust. The manager does not advertise `AuthenticatedEncryption`, and the loopback profile cannot enable shipping mode.
 
 ## Transport conformance work, 4 November
 
-The next transport prerequisite now has a pinned package manifest, source-hash/license inventory, isolated CMake target and repeatable `Scripts/Validate-WPNetworkTransport.ps1` entry point. It builds the real GNS library and exercises IPv6, reliable ordering under simulated loss, fragmentation/reassembly and credentialless client fail-closed behavior (currently timeout, not explicit certificate rejection). The current engine backend remains native UDP; the GNS manager adapter, operator certificate provisioning and authenticated positive/negative tests remain unfinished. See the [transport decision](WPNETWORK_TRANSPORT_DECISION.md) for the exact boundary. The first package link exposed a protobuf static/DLL-import mismatch, now repaired by a hash-locked GNS port overlay. The conformance target passes in Debug and RelWithDebInfo; these tests establish a transport experiment, not engine integration or operator-certificate authentication. Native/codec suites also pass 2/2 in both configurations in this checkout. JUnit and per-configuration hash reports are retained under `.codex/network/build`.
+The standalone prerequisite established a pinned package manifest, source-hash/license inventory, isolated CMake target and repeatable `Scripts/Validate-WPNetworkTransport.ps1` entry point. It exercises IPv6, reliable ordering under simulated loss, fragmentation/reassembly and a client failing closed without credentials (the connection times out). The first package link exposed a protobuf static/DLL-import mismatch, now repaired by a hash-locked GNS port overlay. The conformance target passes in Debug and RelWithDebInfo; this experiment does not verify operator certificates. Native/codec suites also pass 2/2 in both configurations in this checkout. JUnit and per-configuration hash reports are retained under `.codex/network/build`. See the [transport decision](WPNETWORK_TRANSPORT_DECISION.md) for the exact boundary.
 
 ## Development workflow increment, 30 October
 
@@ -40,6 +50,8 @@ The native UDP backend is unencrypted and unreliable. The nonce binds connection
 
 ## Validation
 
+Recorded on Windows x64/MSVC, 5 November 2026: `Scripts/Validate-WPNetwork.ps1 -IncludeGNS` passes in Debug and RelWithDebInfo, with **4/4 engine scenarios** and **1/1 standalone GNS scenario** in each configuration. The RelWithDebInfo run also built Editor and WPLuaBind with `-IncludeEditor`. An eight-client GNS launcher run passed. Interactive Editor acceptance, operator certificate trust and release certification remain open.
+
 Recorded on Windows x64/MSVC, 30 October 2026: `Scripts/Validate-WPNetwork.ps1 -IncludeEditor` passes. Isolated native/codec/authoring contracts pass **2/2 in Debug** and **2/2 in RelWithDebInfo**; production scene/diagnostic/lifecycle integration and the three-client separate-process scenario pass **2/2 in RelWithDebInfo**. WPNetwork, WPLuaBind and Editor build successfully. The integration fixture uses the production timer required by the current transform lifecycle. These remain headless/build results; interactive Inspector, Play/Stop and persistence acceptance are open.
 
 
@@ -55,9 +67,10 @@ For a manual local smoke run after building `WPNetworkProcessTests`, run:
 
 ```powershell
 ./Scripts/Run-WPNetworkLocal.ps1 -Clients 3
+./Scripts/Run-WPNetworkLocal.ps1 -Clients 3 -Backend gns_loopback
 ```
 
-The default executable is the RelWithDebInfo Windows x64 build; pass `-Executable` for another build path and `-OutputDirectory` for a new/empty report directory. The launcher prints its report path. Each report records actual process IDs, server-assigned identities, loopback bindings and successful teardown. It retains child stdout/stderr logs and terminates only processes it started if the scenario fails or times out. This exercises fixture traffic, not a playable game scene or loss/jitter simulation.
+The GNS run requires a fixture built with `WP_NETWORK_GNS=ON` and uses reliable messages without application retries. The default executable is the RelWithDebInfo Windows x64 build; pass `-Executable` for another build path and `-OutputDirectory` for a new/empty report directory. Each report records actual process IDs, server-assigned identities, verified loopback peer traffic and successful teardown. The launcher retains child stdout/stderr logs and terminates only processes it started if the scenario fails or times out. This exercises fixture traffic rather than a playable game scene or loss/jitter simulation.
 
 Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a scene and prefab; repeat Play/Stop; remove components during traffic; verify no networking starts in Edit mode and no subscriptions survive teardown. A compilation or headless scene test does not establish this interactive behavior.
 
@@ -67,12 +80,12 @@ Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a
 |---|---|
 | NET-00 | Transport direction and initial dependency lock recorded; baseline, separate-process and standalone GNS conformance harnesses added; complete dependency audit, adapter comparison and performance baseline remain |
 | NET-01 | Socket/codec/lifecycle repairs implemented; fuzz/sanitizer coverage and comprehensive event-overload certification remain |
-| NET-02 | Pending: authenticated encrypted transport, reliable channels, congestion/fragmentation, IPv6/asynchronous DNS, admission and replay protection |
-| NET-03 | Polling, distinct player IDs, diagnostics, cancellation/reconnect and timeout repairs added; session service/facade, connection state model, roster/readiness and synchronized clock remain |
+| NET-02 | Engine adapter supports ordered reliable and unreliable delivery, fragmentation and direct IPv4/IPv6 in development. Operator certificate trust, admission, replay protection, explicit lanes, overload evidence and asynchronous DNS remain |
+| NET-03 | Polling, distinct player IDs (including reliable assignment in GNS), native diagnostics, cancellation/reconnect and timeout repairs added; session service/facade, connection state model, roster/readiness and synchronized clock remain |
 | NET-04/05 | Pending: registry, prefab allowlist, spawn/despawn, late-join baselines, ownership epochs, typed state/RPC and relevance |
 | NET-06 | Existing immediate transform replication hardened; interpolation, physics/character authority and prediction remain |
-| NET-07/08 | Existing component/command path hardened; scene preflight, Inspector diagnostics and standalone local process launcher added; full component catalogue, NetworkSession authoring, validators, local process launcher and diagnostics remain |
+| NET-07/08 | Scene preflight, Inspector diagnostics and standalone process launcher added; NetworkView reliable transform and ownership transfer verified through the GNS adapter. Component catalogue, NetworkSession authoring, Editor process controls and interactive acceptance remain |
 | NET-09 | Pending: dedicated server packaging, health/metrics, operating budgets and R1 certification |
 | NET-10/11/12 | Pending: richer gameplay, self-hosted/local service providers, reconnect/streaming/replay and R2 certification |
 
-Continue with the NET-00 dependency pin/audit and transport conformance comparison and NET-02 security/delivery implementation before expanding automatic spawning or shipping Editor launch controls. Those features depend on a reliable, authenticated control channel.
+The next production dependency is a pinned GNS build with the operator trust root, certificate issuance and separate-process trust tests. Shipping spawn and admission depend on this authenticated control channel.

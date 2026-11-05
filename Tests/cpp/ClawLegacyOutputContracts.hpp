@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <vector>
 #include <cmath>
+#include <memory>
 
 namespace claw_legacy_output_contracts
 {
@@ -93,6 +94,58 @@ namespace claw_legacy_output_contracts
                          output, selectedPixels.data(), selectedPixels.size() ) &&
                      selectedPixels[0] > legacy[0] + 20 && selectedPixels[3] == 255,
                  "explicit linear output policy must reach scene texture pixels" );
+
+        // Returning to a legacy project must also discard the previous project's
+        // GPU light grid. Compare actual lit geometry, not just profile values.
+        auto replacement = make_ptr<GraphicsPipeline>()->getProperties();
+        replacement->setProperty( "Replace project settings", true );
+        pipeline->setProperties( replacement );
+        require( !graphics.beginGraphicsPipelineFrame( renderer ),
+                 "replacement legacy profile must bypass scene resolve" );
+        wp_mat4f identity{};
+        for( unsigned axis = 0; axis < 4; ++axis ) identity.m[axis][axis] = 1;
+        wp_renderer_dx11_set_world_matrix( native, &identity );
+        wp_renderer_dx11_set_view_matrix( native, &identity );
+        wp_renderer_dx11_set_projection_matrix( native, &identity );
+        wp_renderer_dx11_set_cull_mode( native, WORKPHONE_CULL_MODE_NONE );
+        wp_renderer_dx11_set_blend_mode( native, WORKPHONE_BLEND_MODE_NONE );
+        wp_material_dx11 material{};
+        material.base_color = { 1, 1, 1, 1 };
+        material.surface = { 0, .5f, 1, 1 };
+        material.uv_transform.z = 1;
+        material.camera_position = { 0, 0, 3, 0 };
+        material.ambient_color = { .025f, .025f, .025f, 1 };
+        wp_renderer_dx11_set_material( native, &material );
+        const wp_vertex_pntc vertices[] = {
+            { { -1, -1, 0 }, { 0, 0, 1 }, { 0, 0 }, 0xffffffff },
+            { { -1, 1, 0 }, { 0, 0, 1 }, { 0, 0 }, 0xffffffff },
+            { { 1, -1, 0 }, { 0, 0, 1 }, { 0, 0 }, 0xffffffff }
+        };
+        const unsigned short indices[] = { 0, 1, 2 };
+        std::unique_ptr<wp_geometry_dx11, decltype( &wp_renderer_dx11_destroy_geometry )> geometry(
+            wp_renderer_dx11_create_indexed_geometry_pntc( native, vertices, 3, indices, 3, 0 ),
+            &wp_renderer_dx11_destroy_geometry );
+        require( geometry != nullptr, "legacy lighting geometry must allocate" );
+        const auto drawPixels = [&] {
+            renderer->clear( ColourF::Black );
+            wp_renderer_dx11_draw_geometry_pntc( native, geometry.get(), 0, 3, 0 );
+            std::vector<unsigned char> pixels( legacy.size() );
+            require( wp_renderer_dx11_copy_render_texture_rgba8( output, pixels.data(), pixels.size() ),
+                     "legacy lighting pixels must be readable" );
+            return pixels;
+        };
+        const auto unlitGrid = drawPixels();
+        const float lights[] = { 0, 0, -1, 4, 0, 0, 8, 0, 0, 0, 1, 4, 0, 0, 8, 0 };
+        const unsigned cells[] = { 0, 2 }, list[] = { 0, 1 };
+        const float forward[] = { 0, 0, -1 };
+        require( wp_renderer_dx11_set_local_lights(
+                     native, lights, 2, cells, list, 2, 1, 1, 1, .1f, 100, forward ),
+                 "previous project light grid must upload" );
+        wp_renderer_dx11_set_pipeline_mode( native, 3, 1 );
+        require( drawPixels() != unlitGrid, "previous project lights must visibly affect the fixture" );
+        require( !graphics.beginGraphicsPipelineFrame( renderer ) && drawPixels() == unlitGrid,
+                 "legacy project pixels must discard the previous project's GPU lights and pipeline" );
+        geometry.reset();
         renderer->setRenderTarget( nullptr );
         renderer->endRender();
         renderer->setCamera( nullptr );

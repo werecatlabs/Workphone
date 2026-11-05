@@ -1,4 +1,5 @@
 project(WPNetwork C CXX)
+option(WP_NETWORK_GNS "Build the GNS engine adapter (requires the pinned transport package)" OFF)
 
 # define header and source files for the library
 file(GLOB_RECURSE HEADER_FILES "../../Include/WPNetwork/*.h" "../../Include/WPNetwork/*.hpp")
@@ -33,6 +34,17 @@ target_compile_definitions(WPNetwork PRIVATE WPNetwork_EXPORTS)
 target_include_directories(WPNetwork PRIVATE "${WP_ROOT}/Dependencies/rapidjson/include")
 
 target_link_libraries(WPNetwork PUBLIC Workphone WorkphoneNetwork)
+if(WP_NETWORK_GNS)
+    set(Protobuf_USE_STATIC_LIBS ON)
+    set(CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release)
+    set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL Release)
+    find_package(Protobuf CONFIG REQUIRED)
+    find_package(GameNetworkingSockets CONFIG REQUIRED)
+    target_link_libraries(WPNetwork PRIVATE GameNetworkingSockets::static)
+    target_compile_definitions(WPNetwork PUBLIC WP_NETWORK_GNS=1)
+else()
+    target_compile_definitions(WPNetwork PUBLIC WP_NETWORK_GNS=0)
+endif()
 # Workphone still exports some third-party dependencies as bare library names.
 # Publish their configuration-specific search path to network consumers too.
 if(WIN32)

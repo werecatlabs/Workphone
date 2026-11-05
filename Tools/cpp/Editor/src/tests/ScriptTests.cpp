@@ -30,6 +30,14 @@
 #include <fstream>
 #include <chrono>
 #include <thread>
+#include <cstdlib>
+#include <sstream>
+#include <cctype>
+#if defined( _WIN32 )
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
@@ -80,6 +88,8 @@ namespace
             Thread::setCurrentTask( previousTask );
         }
 
+        void iterate() { m_application.iterate(); }
+
         ~EditorApplicationGuard()
         {
             if( auto applicationManager = core::IApplicationManager::instancePtr() )
@@ -94,6 +104,227 @@ namespace
     private:
         EditorApplication m_application;
     };
+
+    std::string restartFixtureBytes( const std::filesystem::path &path )
+    {
+        std::ifstream stream( path, std::ios::binary );
+        if( !stream ) throw std::runtime_error( "Cannot read restart fixture: " + path.u8string() );
+        std::ostringstream bytes; bytes << stream.rdbuf();
+        return bytes.str();
+    }
+
+    void writeRestartEvidence( const std::filesystem::path &path, SmartPtr<Properties> evidence )
+    {
+        std::ofstream stream( path, std::ios::binary | std::ios::trunc );
+        stream.exceptions( std::ios::badbit | std::ios::failbit );
+        stream << DataUtil::toString( evidence.get(), true );
+        stream.close();
+    }
+
+    // The existing integration case can be run twice by an external test runner.
+    // No environment variables means its ordinary self-contained fixture below.
+    void projectSettingsRestartStage( const String &stage )
+    {
+        namespace fs = std::filesystem;
+        BOOST_REQUIRE( stage == "write" || stage == "read" );
+        const auto directoryOption = std::getenv( "WP_EDITOR_SETTINGS_RESTART_DIRECTORY" );
+        BOOST_REQUIRE_MESSAGE( directoryOption && *directoryOption, "Restart fixture directory is required" );
+        const auto root = fs::canonical( fs::u8path( directoryOption ) );
+        auto configuration = make_ptr<Properties>();
+        DataUtil::parse( restartFixtureBytes( root / "restart-fixture.json" ).c_str(), configuration.get() );
+        BOOST_REQUIRE_EQUAL( configuration->getProperty( "fixture" ), "project-settings-process-restart-v1" );
+        const auto working = fs::canonical( fs::u8path( configuration->getProperty( "workingDirectory" ).c_str() ) );
+        BOOST_REQUIRE_EQUAL( fs::canonical( fs::current_path() ), working );
+        BOOST_REQUIRE( working.filename().u8string().find( "SettingsRestart-" ) == 0 );
+        const auto nonce = configuration->getProperty( "nonce" );
+        BOOST_REQUIRE_EQUAL( nonce.size(), 32u );
+        BOOST_REQUIRE( std::all_of( nonce.begin(), nonce.end(), []( unsigned char c ) { return std::isxdigit( c ) != 0; } ) );
+        const String company = "Restart company " + nonce;
+        const auto projectFile = root / "Project/project.fbproject";
+        const auto runtimeFile = root / "Project/ProjectRuntime.settings";
+        const auto graphicsFile = root / "Project/GameGraphics.settings";
+#if defined( _WIN32 )
+        const auto processId = static_cast<s32>( GetCurrentProcessId() );
+#else
+        const auto processId = static_cast<s32>( getpid() );
+#endif
+        auto evidence = make_ptr<Properties>();
+        evidence->setProperty( "stage", stage ); evidence->setProperty( "pid", processId );
+        evidence->setProperty( "nonce", nonce ); evidence->setProperty( "company", company );
+        evidence->setProperty( "masterVolume", s32( 37 ) ); evidence->setProperty( "frameRateLimit", s32( 73 ) );
+        evidence->setProperty( "shadowQuality", s32( 4 ) ); evidence->setProperty( "gravity", -7.5f );
+        std::string savedProject, savedRuntime, savedGraphics;
+        if( stage == "read" )
+        {
+            savedProject = restartFixtureBytes( projectFile ); savedRuntime = restartFixtureBytes( runtimeFile );
+            savedGraphics = restartFixtureBytes( graphicsFile );
+            auto writer = make_ptr<Properties>();
+            DataUtil::parse( restartFixtureBytes( root / "native-write.json" ).c_str(), writer.get() );
+            BOOST_REQUIRE_NE( writer->getPropertyAsInt( "pid" ), processId );
+            BOOST_REQUIRE_EQUAL( writer->getProperty( "nonce" ), nonce );
+            evidence->setProperty( "writerPid", writer->getPropertyAsInt( "pid" ) );
+        }
+        else BOOST_REQUIRE_MESSAGE( !fs::exists( projectFile ), "Writer requires a fresh disposable project" );
+
+        {
+            EditorApplicationGuard app;
+            app.loadSingleThreaded();
+            auto application = core::IApplicationManager::instance();
+            BOOST_REQUIRE( application );
+            auto editor = EditorManager::getSingletonPtr();
+            BOOST_REQUIRE( editor );
+            auto scripts = application->getScriptManager();
+            BOOST_REQUIRE( scripts );
+
+            if( stage == "read" )
+            {
+                // Observe the startup loader before the owner's first iteration.
+                // Do not seed values, explicitly open the document, or apply a request.
+                auto startup = application->getPlayerSettings();
+                BOOST_REQUIRE( startup );
+                BOOST_REQUIRE( application->getEditorSettings() );
+                BOOST_REQUIRE_EQUAL( fs::u8path( application->getEditorSettings()->getProperty( "Project Path" ).c_str() ), projectFile );
+                BOOST_REQUIRE_EQUAL( fs::u8path( application->getProjectPath().c_str() ), projectFile.parent_path() );
+                BOOST_REQUIRE_EQUAL( startup->getProperty( "project.company" ), company );
+                BOOST_REQUIRE_EQUAL( startup->getPropertyAsInt( "sound.masterVolume" ), 37 );
+                BOOST_REQUIRE_EQUAL( startup->getPropertyAsInt( "graphics.frameRateLimit" ), 73 );
+                BOOST_REQUIRE_EQUAL( startup->getPropertyAsInt( "graphics.shadowQuality" ), 4 );
+                BOOST_REQUIRE_CLOSE( startup->getPropertyAsFloat( "physics.gravity" ), -7.5f, .001f );
+                evidence->setProperty( "startupSidecarLoadedBeforeUpdate", true );
+                BOOST_REQUIRE( application->getSoundManager() );
+                BOOST_REQUIRE_CLOSE( application->getSoundManager()->getVolume(), .37f, .01f );
+                BOOST_REQUIRE( application->getPhysicsManager() );
+                BOOST_REQUIRE( application->getPhysicsManager()->getPhysicsScene() );
+                BOOST_REQUIRE_CLOSE( application->getPhysicsManager()->getPhysicsScene()->getGravity().Y(), -7.5f, .001f );
+                evidence->setProperty( "startupAudioAndGravityMatchedBeforeUpdate", true );
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 20 );
+                while( std::chrono::steady_clock::now() < deadline )
+                {
+                    const auto current = editor->getProject();
+                    if( current && fs::u8path( current->getFilePath().c_str() ) == projectFile ) break;
+                    app.iterate();
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+                }
+                BOOST_REQUIRE( editor->getProject() );
+                BOOST_REQUIRE_EQUAL( fs::u8path( editor->getProject()->getFilePath().c_str() ), projectFile );
+                evidence->setProperty( "rememberedProjectOpenedByStartupFSM", true );
+            }
+            else
+            {
+                auto initial = make_ptr<Project>();
+                initial->create( ( root / "Project" ).u8string() );
+                auto settings = initial->getProperties();
+                settings->setProperty( "project.company", String( "Before Apply" ) );
+                settings->setProperty( "sound.masterVolume", s32( 80 ) );
+                initial->setProperties( settings ); initial->save();
+                editor->setProject( initial );
+                // Use the normal open boundary so shutdown remembers this private project.
+                editor->loadProject( initial->getFilePath() );
+                BOOST_REQUIRE_MESSAGE( application->getEditorSettings(), "Opening the first project must initialize editor preferences" );
+                BOOST_REQUIRE_EQUAL( fs::u8path( application->getEditorSettings()->getProperty( "Project Path" ).c_str() ), projectFile );
+            }
+            const auto project = editor->getProject();
+            BOOST_REQUIRE( project );
+            auto window = make_ptr<ScriptWindow>();
+            struct WindowGuard { SmartPtr<ScriptWindow> window; ~WindowGuard() { window->unload( nullptr ); } } windowGuard{ window };
+            window->setClassName( "ProjectSettings" ); window->load( nullptr ); window->setWindowVisible( false );
+            BOOST_REQUIRE( window->getInvoker() );
+            const auto checkLiveValues = [&]() {
+                BOOST_REQUIRE_EQUAL( project->getProperties()->getProperty( "project.company" ), company );
+                BOOST_REQUIRE_EQUAL( project->getProperties()->getPropertyAsInt( "graphics.shadowQuality" ), 4 );
+                BOOST_REQUIRE( application->getSoundManager() );
+                BOOST_REQUIRE_CLOSE( application->getSoundManager()->getVolume(), .37f, .01f );
+                BOOST_REQUIRE( application->getPhysicsManager() );
+                BOOST_REQUIRE( application->getPhysicsManager()->getPhysicsScene() );
+                BOOST_REQUIRE_CLOSE( application->getPhysicsManager()->getPhysicsScene()->getGravity().Y(), -7.5f, .001f );
+                BOOST_REQUIRE( application->getTaskManager() );
+                BOOST_REQUIRE( application->getTaskManager()->getTask( TaskId::Render ) );
+                BOOST_REQUIRE_EQUAL( application->getTaskManager()->getTask( TaskId::Render )->getTargetFPS(), 73 );
+            };
+            if( stage == "write" )
+            {
+                const auto beforeApply = restartFixtureBytes( projectFile );
+                const auto runtimeBeforeApply = restartFixtureBytes( runtimeFile );
+                const auto graphicsBeforeApply = restartFixtureBytes( graphicsFile );
+                scripts->loadScriptFromString( String( R"(
+                    function ProjectSettings:restartFixtureDispatch(button)
+                        local click = Parameters()
+                        click:add(IEvent.UI); click:add(IEvent.handleSelection)
+                        click:addAsInt(0); click:addAsObject(button)
+                        local perform, succeeded = self.performAction, false
+                        self.performAction = function(editor, action, ...)
+                            succeeded = perform(editor, action, ...); return succeeded
+                        end
+                        self:handleEvent(click); self.performAction = perform
+                        assert(succeeded, self.statusMessage)
+                    end
+                    function ProjectSettings:restartFixtureApply()
+                        self.companyControl:setText(")" ) + company + R"(")
+                        self.masterVolumeControl:setValue(37)
+                        self.frameRateLimitControl:setValue(73)
+                        self.shadowQualityControl:setSelectedOption(4)
+                        self.gravityControl:setValue(-7.5)
+                        self:restartFixtureDispatch(self.applyButton)
+                        self.window:setName("Restart Apply completed")
+                    end
+                    function ProjectSettings:restartFixtureSave()
+                        self:restartFixtureDispatch(self.saveButton)
+                        self.window:setName("Restart Save completed")
+                    end
+                )" );
+                window->getInvoker()->callObjectMember( "restartFixtureApply" );
+                BOOST_REQUIRE_EQUAL( window->getName(), "Restart Apply completed" );
+                BOOST_REQUIRE( project->isDirty() );
+                BOOST_REQUIRE_EQUAL( restartFixtureBytes( projectFile ), beforeApply );
+                BOOST_REQUIRE_EQUAL( restartFixtureBytes( runtimeFile ), runtimeBeforeApply );
+                BOOST_REQUIRE_EQUAL( restartFixtureBytes( graphicsFile ), graphicsBeforeApply );
+                checkLiveValues();
+                evidence->setProperty( "applyChangedLiveVolumeGravityAndFrameRate", true );
+                evidence->setProperty( "applyKeptProjectAndSidecarUnchanged", true );
+                window->getInvoker()->callObjectMember( "restartFixtureSave" );
+                BOOST_REQUIRE_EQUAL( window->getName(), "Restart Save completed" );
+                BOOST_REQUIRE( !project->isDirty() );
+                BOOST_REQUIRE( restartFixtureBytes( projectFile ) != beforeApply );
+                BOOST_REQUIRE( restartFixtureBytes( graphicsFile ) != graphicsBeforeApply );
+                auto savedGraphics = make_ptr<Properties>();
+                DataUtil::parse( restartFixtureBytes( graphicsFile ).c_str(), savedGraphics.get() );
+                BOOST_REQUIRE_EQUAL( savedGraphics->getPropertyAsInt( "graphics.shadowQuality" ), 4 );
+                evidence->setProperty( "saveWroteProject", true );
+            }
+            else
+            {
+                scripts->loadScriptFromString( String( R"(
+                    function ProjectSettings:restartFixtureObserve()
+                        assert(#self.controlBindings == 132)
+                        assert(self.companyControl:getText() == ")" ) + company + R"(")
+                        assert(self.masterVolumeControl:getValue() == 37)
+                        assert(self.frameRateLimitControl:getValue() == 73)
+                        assert(self.shadowQualityControl:getSelectedOption() == 4)
+                        assert(self.gravityControl:getValue() == -7.5)
+                        self.window:setName("Restart controls restored")
+                    end
+                )" );
+                window->getInvoker()->callObjectMember( "restartFixtureObserve" );
+                BOOST_REQUIRE_EQUAL( window->getName(), "Restart controls restored" );
+                BOOST_REQUIRE( !project->isDirty() );
+                evidence->setProperty( "controlsRestoredWithoutApplyOrSave", true );
+            }
+            checkLiveValues();
+            evidence->setProperty( "liveVolumeGravityAndFrameRateMatched", true );
+        }
+        auto remembered = make_ptr<Properties>();
+        DataUtil::parse( restartFixtureBytes( working / "LioncatEditor.settings" ).c_str(), remembered.get() );
+        BOOST_REQUIRE_EQUAL( fs::u8path( remembered->getProperty( "Project Path" ).c_str() ), projectFile );
+        evidence->setProperty( "normalShutdownRememberedPrivateProject", true );
+        if( stage == "read" )
+        {
+            BOOST_REQUIRE_EQUAL( restartFixtureBytes( projectFile ), savedProject );
+            BOOST_REQUIRE_EQUAL( restartFixtureBytes( runtimeFile ), savedRuntime );
+            BOOST_REQUIRE_EQUAL( restartFixtureBytes( graphicsFile ), savedGraphics );
+            evidence->setProperty( "readerKeptProjectAndSidecarUnchanged", true );
+        }
+        writeRestartEvidence( root / ( "native-" + std::string( stage.c_str() ) + ".json" ), evidence );
+    }
 }  // namespace
 
 BOOST_AUTO_TEST_CASE( script_window_class_name_test )
@@ -192,6 +423,11 @@ BOOST_AUTO_TEST_CASE( editor_script_window_properties_bridge_test )
 
 BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
 {
+    if( const auto stage = std::getenv( "WP_EDITOR_SETTINGS_RESTART_STAGE" ); stage && *stage )
+    {
+        projectSettingsRestartStage( stage );
+        return;
+    }
     EditorApplicationGuard app;
     app.loadSingleThreaded();
     auto application = core::IApplicationManager::instance();

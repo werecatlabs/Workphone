@@ -12,6 +12,7 @@
 #    include <Workphone/Physics/PhysicsManager.hpp>
 #    include <Workphone/Physics/PhysicsScene3.hpp>
 #    include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
+#    include <Workphone/Graphics/GraphicsSystem.hpp>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -56,6 +57,15 @@ namespace
         f32 volume = 1;
     };
 
+    class SettingsGraphicsProbe : public render::GraphicsSystem
+    {
+    public:
+        SmartPtr<render::IGraphicsPipeline> getGraphicsPipeline() const override { return pipeline; }
+        SmartPtr<Properties> getProperties() const override { return make_ptr<Properties>(); }
+        void setProperties( SmartPtr<Properties> ) override {}
+        SmartPtr<render::GraphicsPipeline> pipeline = make_ptr<render::GraphicsPipeline>();
+    };
+
     class SettingsPhysicsSceneProbe : public physics::PhysicsScene3
     {
     public:
@@ -91,6 +101,7 @@ namespace
             app->setTaskManager( nullptr );
             app->setSoundManager( nullptr );
             app->setPhysicsManager( nullptr );
+            app->setGraphicsSystem( nullptr );
             EditorManager::setSingletonPtr( previousEditor );
             core::IApplicationManager::setInstance( previousApp );
         }
@@ -202,6 +213,102 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_graphics_director_test )
     BOOST_CHECK_EQUAL( restored->getProperties()->getPropertyAsInt( "Shadow map size" ), 4096 );
     BOOST_CHECK_EQUAL( restored->getProperties()->getPropertyAsInt( "Quality" ), 0 );
     BOOST_CHECK( !restored->getProperties()->getPropertyAsBool( "Bloom" ) );
+}
+
+BOOST_AUTO_TEST_CASE( project_settings_project_switch_runtime_test )
+{
+    SettingsRuntimeGuard guard;
+    auto tasks = make_ptr<SettingsTasksProbe>();
+    auto sound = make_ptr<SettingsSoundProbe>();
+    auto physics = make_ptr<SettingsPhysicsProbe>();
+    auto scene = make_ptr<SettingsPhysicsSceneProbe>();
+    auto graphics = make_ptr<SettingsGraphicsProbe>();
+    physics->setPhysicsScene( scene );
+    guard.app->setTaskManager( tasks );
+    guard.app->setSoundManager( sound );
+    guard.app->setPhysicsManager( physics );
+    guard.app->setGraphicsSystem( graphics );
+
+    auto projectA = make_ptr<Properties>();
+    projectA->setProperty( "physics.gravity", -12.5f );
+    projectA->setProperty( "physics.debugDraw", true );
+    projectA->setProperty( "sound.masterVolume", 25 );
+    projectA->setProperty( "graphics.frameRateLimit", 144 );
+    projectA->setProperty( "graphics.hdr", true );
+    projectA->setProperty( "graphics.renderScale", .5f );
+    projectA->setProperty( "editor.theme", 3 );
+    projectA->setProperty( "plugin.projectAOnly", String( "must not survive" ) );
+    auto result = applyProjectSettingsRuntime( projectA );
+    BOOST_REQUIRE_MESSAGE( result->getPropertyAsBool( "success" ), result->getProperty( "status" ) );
+    BOOST_CHECK_CLOSE( scene->gravity.Y(), -12.5f, .001f );
+    BOOST_CHECK_CLOSE( sound->volume, .25f, .001f );
+    BOOST_CHECK_EQUAL( tasks->render->rate, 144 );
+    BOOST_REQUIRE( graphics->pipeline->getProperties()->hasProperty( "graphics.hdr" ) );
+
+    // This is the load boundary used by EditorManager. B has only its legacy
+    // graphics director: defaults must reach real subsystems without enabling
+    // a new viewport output policy or retaining A's canonical graphics values.
+    auto projectB = make_ptr<Properties>();
+    projectB->setProperty( "project.company", String( "Project B" ) );
+    auto legacyGraphics = make_ptr<scene::GraphicsSettingsDirector>()->getProperties();
+    legacyGraphics->setName( "Game Graphics" );
+    legacyGraphics->setProperty( "Bloom", false );
+    projectB->addChild( legacyGraphics );
+    result = loadProjectSettingsRuntime( projectB );
+    BOOST_REQUIRE_MESSAGE( result->getPropertyAsBool( "success" ), result->getProperty( "status" ) );
+    auto active = guard.app->getPlayerSettings();
+    BOOST_CHECK_EQUAL( active->getProperty( "project.company" ), "Project B" );
+    BOOST_CHECK( !active->hasProperty( "plugin.projectAOnly" ) );
+    BOOST_CHECK( !active->hasProperty( "graphics.hdr" ) );
+    BOOST_CHECK( !active->hasProperty( "graphics.renderScale" ) );
+    BOOST_CHECK( !active->hasProperty( "graphics.resolution" ) );
+    BOOST_CHECK( !active->hasProperty( "editor.theme" ) );
+    BOOST_CHECK_EQUAL( active->getPropertyAsInt( "graphics.frameRateLimit" ), 60 );
+    BOOST_CHECK_CLOSE( active->getPropertyAsFloat( "physics.gravity" ), -9.8f, .001f );
+    BOOST_CHECK_EQUAL( active->getPropertyAsInt( "sound.masterVolume" ), 80 );
+    BOOST_CHECK_CLOSE( scene->gravity.Y(), -9.8f, .001f );
+    BOOST_CHECK_CLOSE( sound->volume, .8f, .001f );
+    BOOST_CHECK_EQUAL( tasks->primary->rate, 60 );
+    BOOST_CHECK_EQUAL( tasks->application->rate, 60 );
+    BOOST_CHECK_EQUAL( tasks->render->rate, 60 );
+    BOOST_CHECK_EQUAL( tasks->physics->rate, 60 );
+    BOOST_CHECK( !physics->getEnableDebugDraw() );
+    auto pipeline = graphics->pipeline->getProperties();
+    BOOST_CHECK( !pipeline->hasProperty( "graphics.hdr" ) );
+    BOOST_CHECK( !pipeline->hasProperty( "graphics.renderScale" ) );
+    BOOST_CHECK( !pipeline->hasProperty( "Replace project settings" ) );
+    BOOST_CHECK( !graphics->pipeline->isBloomEnabled() );
+
+    // The replacement command must not leak into a later partial Apply request.
+    auto patch = make_ptr<Properties>();
+    patch->setProperty( "physics.gravity", -11.f );
+    result = applyProjectSettingsRuntime( patch );
+    BOOST_REQUIRE_MESSAGE( result->getPropertyAsBool( "success" ), result->getProperty( "status" ) );
+    BOOST_CHECK_CLOSE( scene->gravity.Y(), -11.f, .001f );
+    BOOST_CHECK_CLOSE( sound->volume, .8f, .001f );
+    BOOST_CHECK( !graphics->pipeline->isBloomEnabled() );
+    BOOST_CHECK_EQUAL( guard.app->getPlayerSettings()->getProperty( "project.company" ), "Project B" );
+
+    auto accepted = guard.app->getPlayerSettings();
+    auto invalid = make_ptr<Properties>();
+    invalid->setProperty( "physics.gravity", String( "invalid" ) );
+    invalid->setProperty( "sound.masterVolume", 5 );
+    result = loadProjectSettingsRuntime( invalid );
+    BOOST_CHECK( !result->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( guard.app->getPlayerSettings() == accepted );
+    BOOST_CHECK_CLOSE( scene->gravity.Y(), -11.f, .001f );
+    BOOST_CHECK_CLOSE( sound->volume, .8f, .001f );
+    BOOST_CHECK( !graphics->pipeline->isBloomEnabled() );
+
+    auto explicitB = make_ptr<Properties>( *projectB );
+    explicitB->setProperty( "graphics.hdr", false );
+    explicitB->setProperty( "graphics.bloom", true );
+    result = loadProjectSettingsRuntime( explicitB );
+    BOOST_REQUIRE_MESSAGE( result->getPropertyAsBool( "success" ), result->getProperty( "status" ) );
+    pipeline = graphics->pipeline->getProperties();
+    BOOST_REQUIRE( pipeline->hasProperty( "graphics.hdr" ) );
+    BOOST_CHECK( !pipeline->getPropertyAsBool( "graphics.hdr" ) );
+    BOOST_CHECK( graphics->pipeline->isBloomEnabled() );
 }
 
 BOOST_AUTO_TEST_CASE( project_settings_runtime_validation_and_capabilities_test )

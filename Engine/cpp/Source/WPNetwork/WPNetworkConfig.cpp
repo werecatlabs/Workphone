@@ -71,7 +71,11 @@ namespace workphone
             }
             else if( name == "backend" )
             {
-                requireString( item, "native_udp_development" );
+                if( !item.IsString() )
+                    throw std::invalid_argument( "WPNetwork: backend must be a string" );
+                config.backend = String( item.GetString(), item.GetStringLength() );
+                if( config.backend != "native_udp_development" && config.backend != "gns_loopback" )
+                    throw std::invalid_argument( "WPNetwork: unknown backend" );
             }
             else if( name == "environment" )
             {

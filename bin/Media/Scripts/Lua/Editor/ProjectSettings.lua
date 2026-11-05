@@ -788,8 +788,8 @@ function ProjectSettings:load()
 	self:bind(addSlider(ui, renderingHeader, "Anisotropy", ProjectSettingsTypes.Anisotropy, 1.0, 16.0, self.settings.anisotropy), "anisotropy", "intSlider");
 
 	local lightingHeader = self:addHeader(ui, graphicsTab, "Lighting / Shadows / Post FX");
-	self:bind(addDropdown(ui, lightingHeader, "Shadows", ProjectSettingsTypes.ShadowQuality,
-		{ "Off", "On" }, self.settings.shadowQuality > 0 and 1 or 0), "shadowQuality", "dropdown");
+	self:bind(addDropdown(ui, lightingHeader, "Shadow Quality", ProjectSettingsTypes.ShadowQuality,
+		{ "Off", "Low", "Medium", "High", "Ultra" }, self.settings.shadowQuality), "shadowQuality", "dropdown");
 	self:bind(addSlider(ui, lightingHeader, "Shadow Distance", ProjectSettingsTypes.ShadowDistance, 0.0, 300.0, self.settings.shadowDistance), "shadowDistance", "floatSlider");
 	self:bind(addDropdown(ui, lightingHeader, "Shadow Resolution", ProjectSettingsTypes.ShadowResolution,
 		{ "512", "1024", "2048", "4096" }, self.settings.shadowResolution), "shadowResolution", "dropdown");
@@ -1033,7 +1033,6 @@ function ProjectSettings:syncToControls()
 	self.syncingControls = true;
 	for _, binding in ipairs(self.controlBindings) do
 		local value = self.settings[binding.key];
-		if binding.key == "shadowQuality" then value = value > 0 and 1 or 0; end
 		self:setControlValue(binding.control, binding.kind, value);
 		local available = self.capabilities[binding.key] ~= false;
 		binding.control:setEnabled(available, false);

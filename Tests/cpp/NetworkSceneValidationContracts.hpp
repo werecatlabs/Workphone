@@ -8,6 +8,9 @@
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Core/Handle.hpp>
 #include <WPNetwork/WPNetworkManager.hpp>
+#if WP_NETWORK_GNS
+#    include <WPNetwork/WPNetworkGNSManager.hpp>
+#endif
 #include <algorithm>
 #include <stdexcept>
 
@@ -89,6 +92,12 @@ inline bool networkSceneValidationContracts(
     require( report.issues.size() == 1 &&
                  report.issues[0].code == network::NetworkSceneIssueCode::UnsupportedDelivery,
              "real manager capabilities did not reject reliable UDP authoring" );
+#if WP_NETWORK_GNS
+    auto gns = make_ptr<WPNetworkGNSManager>();
+    require( scene::validateNetworkScene( fixture.world, gns ).issues.empty(),
+             "Editor Play preflight rejected reliable authoring with the GNS backend" );
+    require( gns->getBoundAddress().empty(), "Editor preflight started a GNS listener" );
+#endif
     fixture.parent->setEnabled( false );
     require( scene::validateNetworkScene( fixture.world, backend ).issues.empty(),
              "disabled hierarchy still participated in network routing validation" );
