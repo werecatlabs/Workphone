@@ -100,6 +100,10 @@ int main()
             require( rejects<std::invalid_argument>(
                          [&] { make_ptr<WPNetworkGNSManager>( strictConfig ); } ),
                      "An IP address was allowed as a strict GNS identity" );
+            strictConfig.allowedPeerIdentities = { "str:wpnetwork-test", "str:alternate-server" };
+            auto multiServerClient = make_ptr<WPNetworkGNSManager>( strictConfig );
+            require( rejects<std::logic_error>( [&] { multiServerClient->setAdmissionTicket( {} ); } ),
+                     "A client staged a ticket with an ambiguous server identity" );
             strictConfig.allowedPeerIdentities = { "str:wpnetwork-test" };
             auto strict = make_ptr<WPNetworkGNSManager>( strictConfig );
             require( strict->getBoundAddress().empty(), "Construction opened a listener" );

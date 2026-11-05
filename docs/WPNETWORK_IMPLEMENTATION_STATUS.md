@@ -20,7 +20,17 @@ Each game process calls `getCertificateRequest()` while stopped and keeps the sa
 
 `Scripts/Validate-WPNetworkGNSTrust.ps1` generates disposable issuer keys and builds the trust fixture in a separate output directory. The RelWithDebInfo run passed all six scenarios. Trusted peers exchanged gameplay in both directions. The wrong identity and unsigned client failed during the handshake, the wrong root failed at import, and expired or missing local credentials failed at startup. The server recorded zero gameplay packets and zero admitted players in every rejection case. The runner records binary and dependency hashes, restores the engine's build settings, and removes the disposable signing keys after the run.
 
-A separate RelWithDebInfo probe confirmed that a valid signed certificate fails import in a process that holds a different private key. The Debug issuer, standalone transport test, and operator package built successfully. The Debug engine trust suite remains open after a concurrent workspace build locked Workphone compiler files. Run the trust runner with `-Configuration Debug` when the shared `project_x64` build directory is idle.
+A separate RelWithDebInfo probe confirmed that a valid signed certificate fails import in a process that holds a different private key. A concurrent build blocked the original Debug engine run. The expanded Debug suite below now covers the certificate cases. Run the trust runner with `-Configuration Debug` when the shared `project_x64` build directory is idle.
+
+## Strict session admission
+
+The server now sends a fresh 32-byte challenge over the authenticated, encrypted GNS connection. It assigns a player ID only after receiving the matching reliable response. Pending peers have a five-second deadline and a separate limit of 16. They cannot send gameplay or generate join callbacks. Update strict servers and clients together because this adds frames to the strict handshake. The development loopback profile retains its existing handshake.
+
+A strict server can set `WPNetworkGNSConfig::requireAdmissionTickets` before startup. Its trusted caller can then use `issueAdmissionTicket(peerIdentity, lifetimeSeconds)` for an allowlisted identity and pass the returned token to the authenticated account through an out-of-band channel. The client allowlists exactly one server identity, calls `setAdmissionTicket()` before dialing, and sends the token in the encrypted response to that server. Tickets expire after 1–120 seconds, are accepted once, and are scoped to the identity and the issuing listener instance. The server stores only token hashes and holds at most 256 outstanding tickets. Stopping the listener invalidates outstanding tickets.
+
+The ticket store runs inside the listening server. Remote issuance still needs an account-backed service and a trusted delivery channel. A listener restart discards outstanding tickets, and clients need a fresh ticket to reconnect to a ticket-required listener.
+
+The expanded trust runner passed in Debug and RelWithDebInfo. It retains the certificate checks and adds four raw signed-client probes. It verifies remote rejection of a withheld response, a wrong nonce, early gameplay and a nonce from an earlier connection. The same ticket-required listener rejects five invalid attempts and accepts the valid ticket as player ID 1. The four stock engine and loopback regressions passed in RelWithDebInfo. Reports are under `.codex/network/trust-runs`.
 
 ## Transport conformance work, 4 November
 
@@ -90,7 +100,7 @@ Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a
 |---|---|
 | NET-00 | Transport direction and initial dependency lock recorded; baseline, separate-process and standalone GNS conformance harnesses added; complete dependency audit, adapter comparison and performance baseline remain |
 | NET-01 | Socket/codec/lifecycle repairs implemented; fuzz/sanitizer coverage and comprehensive event-overload certification remain |
-| NET-02 | Engine adapter supports ordered reliable and unreliable delivery, fragmentation and direct IPv4/IPv6. The operator-root package and strict local trust cases pass. Fresh-session confirmation, application admission and replay protection, certificate rotation and revocation, explicit lanes, overload evidence and asynchronous DNS remain |
+| NET-02 | Engine adapter supports ordered reliable and unreliable delivery, fragmentation and direct IPv4/IPv6. It has an operator-root package, encrypted confirmation before player assignment and optional single-use tickets scoped to a named identity and listener. Service-backed issuance, certificate rotation and revocation, explicit lanes, overload evidence and asynchronous DNS remain |
 | NET-03 | Polling, distinct player IDs (including reliable assignment in GNS), native diagnostics, cancellation/reconnect and timeout repairs added; session service/facade, connection state model, roster/readiness and synchronized clock remain |
 | NET-04/05 | Pending: registry, prefab allowlist, spawn/despawn, late-join baselines, ownership epochs, typed state/RPC and relevance |
 | NET-06 | Existing immediate transform replication hardened; interpolation, physics/character authority and prediction remain |
@@ -98,4 +108,4 @@ Editor acceptance remains: add/configure/undo/redo a Network View; save/reopen a
 | NET-09 | Pending: dedicated server packaging, health/metrics, operating budgets and R1 certification |
 | NET-10/11/12 | Pending: richer gameplay, self-hosted/local service providers, reconnect/streaming/replay and R2 certification |
 
-The next admission step is to require an encrypted client confirmation before the server allocates a gameplay slot, then validate a short-lived session ticket with an audience and a replay policy. A trusted certificate identifies a peer. The current server join event does not itself demonstrate possession of the fresh session key. Expiry checks govern new connections. Renewal and revocation during active sessions remain open.
+The next admission step is to connect ticket issuance to account authentication and session selection. Certificate expiry governs new connections. Renewal and revocation during active sessions remain open.

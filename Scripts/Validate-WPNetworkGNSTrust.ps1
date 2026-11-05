@@ -32,13 +32,13 @@ function Publish-TrustCertificate {
 }
 
 function Start-TrustPeer {
-    param([string]$Role, [string[]]$Arguments)
+    param([string]$Role, [string[]]$Arguments, [string]$Executable = $networkFixture)
     $networkProcessArguments = @($Arguments | ForEach-Object {
         if ($_.Contains('"')) { throw 'Invalid quote in fixture argument.' }
         '"' + $_ + '"'
     }) -join ' '
-    $networkProcess = Start-Process -FilePath $networkFixture -ArgumentList $networkProcessArguments `
-        -WorkingDirectory (Split-Path -Parent $networkFixture) -WindowStyle Hidden -PassThru `
+    $networkProcess = Start-Process -FilePath $Executable -ArgumentList $networkProcessArguments `
+        -WorkingDirectory (Split-Path -Parent $Executable) -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $networkCase "$Role.stdout.log") `
         -RedirectStandardError (Join-Path $networkCase "$Role.stderr.log")
     $networkChildren.Add($networkProcess)
@@ -76,6 +76,29 @@ function Read-TrustResult {
     return $networkResult
 }
 
+function Get-TrustPort {
+    $networkPortProbe = New-Object Net.Sockets.UdpClient ([Net.IPEndPoint]::new([Net.IPAddress]::Loopback, 0))
+    try { $networkPortProbe.Client.LocalEndPoint.Port.ToString() }
+    finally { $networkPortProbe.Dispose() }
+}
+
+function Write-TrustErrors {
+    foreach ($networkLog in Get-ChildItem -LiteralPath $networkCase -Filter '*.stderr.log') {
+        Write-Host (Get-Content -LiteralPath $networkLog.FullName -Raw)
+    }
+}
+
+function Stop-TrustPeers {
+    foreach ($networkChild in $networkChildren) {
+        try {
+            if (-not $networkChild.HasExited) {
+                $networkChild.Kill()
+                if (-not $networkChild.WaitForExit(3000)) { throw 'Failed to stop trust fixture child.' }
+            }
+        } finally { $networkChild.Dispose() }
+    }
+}
+
 function Invoke-TrustCase {
     param([string]$Name)
     $networkCase = Join-Path $networkOutput $Name
@@ -89,9 +112,8 @@ function Invoke-TrustCase {
     $networkClientRequest = Join-Path $networkCase 'client.request'
     $networkClientCertificate = Join-Path $networkCase 'client.cert'
     $networkClientResult = Join-Path $networkCase 'client.json'
-    $networkPortProbe = New-Object Net.Sockets.UdpClient ([Net.IPEndPoint]::new([Net.IPAddress]::Loopback, 0))
-    try { $networkPort = $networkPortProbe.Client.LocalEndPoint.Port.ToString() }
-    finally { $networkPortProbe.Dispose() }
+    $networkPort = Get-TrustPort
+    $networkRawProof = $Name.StartsWith('proof-', [StringComparison]::Ordinal)
     try {
         $networkServerArgs = @('--mode', 'server', '--peer', 'str:wp-client', '--port', $networkPort,
             '--request', $networkServerRequest, '--certificate', $networkServerCertificate,
@@ -123,7 +145,13 @@ function Invoke-TrustCase {
             $networkClientArgs += @('--ready', $networkClientReady, '--connect-gate', $networkClientGate)
             $networkClientStages += 'startup'
         }
-        $networkClient = Start-TrustPeer 'client' $networkClientArgs
+        if ($networkRawProof) {
+            $networkProofMode = $Name.Substring('proof-'.Length)
+            $networkClientArgs += @('--proof-mode', $networkProofMode)
+            $networkClient = Start-TrustPeer 'client' $networkClientArgs $networkProofFixture
+        } else {
+            $networkClient = Start-TrustPeer 'client' $networkClientArgs
+        }
         if ($Name -notin @('no-local-certificate', 'unsigned-on-wire')) {
             Wait-TrustFile $networkClientRequest $networkClient
             $networkIdentity = if ($Name -eq 'wrong-identity') { 'str:wp-other-client' } else { 'str:wp-client' }
@@ -139,25 +167,98 @@ function Invoke-TrustCase {
             }
         }
         $networkClientReport = Read-TrustResult $networkClientResult $networkClient 'client' $networkAccepted $networkClientStages
+        if ($networkRawProof -and ($networkClientReport.challengeReceived -ne $true -or
+            $networkClientReport.remoteClosure -ne $true -or $networkClientReport.proofMode -cne $networkProofMode)) {
+            throw "Invalid proof rejection evidence in $networkClientResult."
+        }
+        if ($Name -eq 'proof-replay' -and $networkClientReport.freshChallengeObserved -ne $true) {
+            throw "Replay probe did not observe distinct challenges in $networkClientResult."
+        }
         $networkServerStages = if ($networkAccepted) { @('gameplay') } else { @('observation') }
         $networkServerReport = Read-TrustResult $networkServerResult $networkServer 'server' $networkAccepted $networkServerStages
         Write-Host "PASS: $Name ($($networkClientReport.stage))"
         [ordered]@{ name = $Name; server = $networkServerReport; client = $networkClientReport }
     } catch {
-        foreach ($networkLog in Get-ChildItem -LiteralPath $networkCase -Filter '*.stderr.log') {
-            Write-Host (Get-Content -LiteralPath $networkLog.FullName -Raw)
-        }
+        Write-TrustErrors
         throw
-    } finally {
-        foreach ($networkChild in $networkChildren) {
-            try {
-                if (-not $networkChild.HasExited) {
-                    $networkChild.Kill()
-                    if (-not $networkChild.WaitForExit(3000)) { throw 'Failed to stop trust fixture child.' }
-                }
-            } finally { $networkChild.Dispose() }
+    } finally { Stop-TrustPeers }
+}
+
+function Invoke-TrustTicketClient {
+    param([string]$Name, [string]$Identity, [string]$TicketPath, [bool]$Accepted = $false)
+    $networkRequest = Join-Path $networkCase "$Name.request"
+    $networkCertificate = Join-Path $networkCase "$Name.cert"
+    $networkResult = Join-Path $networkCase "$Name.json"
+    $networkClientArgs = @('--mode', 'client', '--peer', 'str:wp-server', '--port', $networkPort,
+        '--request', $networkRequest, '--certificate', $networkCertificate, '--result', $networkResult,
+        '--timeout-ms', '12000')
+    if ($TicketPath) { $networkClientArgs += @('--ticket', $TicketPath) }
+    if (-not $Accepted) { $networkClientArgs += '--expect-ticket-rejection' }
+    $networkClient = Start-TrustPeer $Name $networkClientArgs
+    Wait-TrustFile $networkRequest $networkClient
+    Publish-TrustCertificate $networkCertificate @('--request', $networkRequest, '--identity', $Identity,
+        '--key', $networkTrustedKey)
+    $networkStage = if ($Accepted) { 'gameplay' } else { 'ticket' }
+    $networkClientReport = Read-TrustResult $networkResult $networkClient 'client' $Accepted @($networkStage)
+    [ordered]@{ name = $Name; client = $networkClientReport }
+}
+
+function Invoke-TrustTicketCase {
+    $networkCase = Join-Path $networkOutput 'admission-tickets'
+    New-Item -ItemType Directory -Path $networkCase | Out-Null
+    $networkChildren = New-Object 'System.Collections.Generic.List[System.Diagnostics.Process]'
+    $networkPort = Get-TrustPort
+    $networkServerRequest = Join-Path $networkCase 'server.request'
+    $networkServerCertificate = Join-Path $networkCase 'server.cert'
+    $networkServerReady = Join-Path $networkCase 'server.ready'
+    $networkServerResult = Join-Path $networkCase 'server.json'
+    $networkAdmitted = Join-Path $networkCase 'server.admitted'
+    $networkFinish = Join-Path $networkCase 'server.finish'
+    $networkIdentity = 'str:wp-client'
+    $networkAlternateIdentity = 'str:wp-alternate-client'
+    try {
+        $networkServerArgs = @('--mode', 'server', '--peer', $networkIdentity, '--extra-peer', $networkAlternateIdentity,
+            '--port', $networkPort, '--request', $networkServerRequest, '--certificate', $networkServerCertificate,
+            '--ready', $networkServerReady, '--result', $networkServerResult, '--timeout-ms', '30000',
+            '--ticket', $networkTicket, '--expiring-ticket', $networkExpiringTicket,
+            '--admitted', $networkAdmitted, '--finish', $networkFinish)
+        $networkServer = Start-TrustPeer 'server' $networkServerArgs
+        Wait-TrustFile $networkServerRequest $networkServer
+        Publish-TrustCertificate $networkServerCertificate @('--request', $networkServerRequest,
+            '--identity', 'str:wp-server', '--key', $networkTrustedKey)
+        Wait-TrustFile $networkServerReady $networkServer
+
+        # Ticket bytes stay in the temporary issuer directory and are never emitted in reports.
+        $networkMutated = [IO.File]::ReadAllBytes($networkTicket)
+        try {
+            if ($networkMutated.Length -ne 32) { throw 'Server produced an invalid ticket length.' }
+            $networkMutated[0] = [byte]($networkMutated[0] -bxor 1)
+            [IO.File]::WriteAllBytes($networkInvalidTicket + '.tmp', $networkMutated)
+            [IO.File]::Move($networkInvalidTicket + '.tmp', $networkInvalidTicket)
+        } finally { [Array]::Clear($networkMutated, 0, $networkMutated.Length) }
+
+        $networkAttempts = @(
+            Invoke-TrustTicketClient 'missing' $networkIdentity ''
+            Invoke-TrustTicketClient 'invalid' $networkIdentity $networkInvalidTicket
+            Invoke-TrustTicketClient 'wrong-allowed-identity' $networkAlternateIdentity $networkTicket
+            Start-Sleep -Milliseconds 1200
+            Invoke-TrustTicketClient 'expired' $networkIdentity $networkExpiringTicket
+            Invoke-TrustTicketClient 'valid' $networkIdentity $networkTicket $true
+            # The server must see the first player leave before the same identity dials again.
+            Wait-TrustFile $networkAdmitted $networkServer
+            Invoke-TrustTicketClient 'replay' $networkIdentity $networkTicket
+        )
+        New-Item -ItemType File -Path $networkFinish | Out-Null
+        $networkServerReport = Read-TrustResult $networkServerResult $networkServer 'server' $true @('gameplay')
+        if ($networkServerReport.disconnects -ne 1 -or $networkServerReport.peerId -ne 1) {
+            throw 'Ticket listener did not admit and retire exactly its first assigned player.'
         }
-    }
+        Write-Host 'PASS: admission tickets (missing, invalid, wrong identity, expired, valid, replay)'
+        [ordered]@{ name = 'admission-tickets'; server = $networkServerReport; attempts = $networkAttempts }
+    } catch {
+        Write-TrustErrors
+        throw
+    } finally { Stop-TrustPeers }
 }
 
 & (Join-Path $PSScriptRoot 'Validate-WPNetworkTransport.ps1') -Configuration $Configuration
@@ -166,6 +267,9 @@ $networkKeyDirectory = Join-Path ([IO.Path]::GetTempPath()) ('WPNetwork-fixture-
 New-Item -ItemType Directory -Path $networkKeyDirectory | Out-Null
 $networkTrustedKey = Join-Path $networkKeyDirectory 'trusted.pem'
 $networkOtherKey = Join-Path $networkKeyDirectory 'other.pem'
+$networkTicket = Join-Path $networkKeyDirectory 'admission.ticket'
+$networkExpiringTicket = Join-Path $networkKeyDirectory 'expiring.ticket'
+$networkInvalidTicket = Join-Path $networkKeyDirectory 'invalid.ticket'
 $networkPublicRoot = Join-Path $networkOutput 'root.pub'
 $networkPreviousPath = $env:Path
 $networkEngineChanged = $false
@@ -206,16 +310,19 @@ try {
         "-DProtobuf_DIR=$networkPrefix/share/protobuf",
         "-DProtobuf_PROTOC_EXECUTABLE=$networkDirectory/installed/x64-windows/tools/protobuf/protoc.exe")
     Invoke-TrustCheck cmake @('--build', $networkEngine, '--config', $Configuration, '--target',
-        'WPNetworkGNSTrustTests', '--parallel', '4')
+        'WPNetworkGNSTrustTests', 'WPNetworkGNSProofTests', '--parallel', '4')
     Invoke-TrustCheck cmake $networkRestore
     $networkEngineChanged = $false
     $networkBuildLock.Dispose()
     $networkBuildLock = $null
     $networkFixture = Join-Path $networkIsolatedBin "$Configuration/WPNetworkGNSTrustTests.exe"
+    $networkProofFixture = Join-Path $networkIsolatedBin "$Configuration/WPNetworkGNSProofTests.exe"
     $networkEngineBin = Join-Path $networkRoot "bin/windows/v145/x64/MD/$Configuration"
     $env:Path = $networkEngineBin + ';' + $networkPreviousPath
     $networkReports = @('trusted', 'wrong-identity', 'wrong-root', 'unsigned-on-wire',
-        'expired', 'no-local-certificate' | ForEach-Object { Invoke-TrustCase $_ })
+        'expired', 'no-local-certificate', 'proof-withheld', 'proof-wrong-nonce', 'proof-early-gameplay', 'proof-replay' |
+        ForEach-Object { Invoke-TrustCase $_ })
+    $networkReports += Invoke-TrustTicketCase
     [ordered]@{
         version = 1
         configuration = $Configuration
@@ -225,14 +332,16 @@ try {
         gnsLibrarySHA256 = $networkPackage.LibrarySHA256
         issuerSHA256 = (Get-FileHash -LiteralPath $networkIssuer -Algorithm SHA256).Hash
         fixtureSHA256 = (Get-FileHash -LiteralPath $networkFixture -Algorithm SHA256).Hash
+        proofFixtureSHA256 = (Get-FileHash -LiteralPath $networkProofFixture -Algorithm SHA256).Hash
         wpNetworkSHA256 = (Get-FileHash -LiteralPath (Join-Path $networkIsolatedBin "$Configuration/WPNetwork.dll") -Algorithm SHA256).Hash
         scenarios = $networkReports
-    } | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $networkOutput 'report.json') -Encoding UTF8
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $networkOutput 'report.json') -Encoding UTF8
     Write-Host "Report: $(Join-Path $networkOutput 'report.json')"
 } finally {
     $env:Path = $networkPreviousPath
     try {
-        foreach ($networkKey in @($networkTrustedKey, $networkOtherKey)) {
+        foreach ($networkKey in @($networkTrustedKey, $networkOtherKey, $networkTicket, ($networkTicket + '.tmp'),
+                $networkExpiringTicket, ($networkExpiringTicket + '.tmp'), $networkInvalidTicket, ($networkInvalidTicket + '.tmp'))) {
             if (Test-Path -LiteralPath $networkKey -PathType Leaf) { Remove-Item -LiteralPath $networkKey -Force }
         }
         Remove-Item -LiteralPath $networkKeyDirectory

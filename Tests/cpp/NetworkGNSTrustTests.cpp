@@ -4,6 +4,7 @@
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -22,6 +23,7 @@ namespace
 {
     using Clock = std::chrono::steady_clock;
     using Status = INetworkManager::ConnectionStatus;
+    using AdmissionTicket = std::array<u8, 32>;
     constexpr std::size_t MaxCertificateBytes = 65536;
     constexpr u32 Request = 0x57505451u;
     constexpr u32 Response = 0x57505452u;
@@ -47,12 +49,14 @@ namespace
     {
         bool server = false;
         bool expectRejection = false;
+        bool expectTicketRejection = false;
         bool withoutCertificate = false;
         bool unverifiedClient = false;
         u16 port = 0;
         std::chrono::milliseconds timeout{ 10000 };
-        std::string peer;
+        std::string peer, extraPeer;
         std::filesystem::path request, certificate, ready, connectGate, result;
+        std::filesystem::path ticket, expiringTicket, admitted, finish;
     };
 
     Options parse( int argc, char **argv )
@@ -61,8 +65,8 @@ namespace
         for( int i = 1; i < argc; ++i )
         {
             const std::string key = argv[i];
-            const bool flag = key == "--expect-rejection" || key == "--without-certificate" ||
-                              key == "--unverified-client";
+            const bool flag = key == "--expect-rejection" || key == "--expect-ticket-rejection" ||
+                              key == "--without-certificate" || key == "--unverified-client";
             require( flag || i + 1 < argc, "Option requires a value" );
             require( args.emplace( key, flag ? "true" : argv[++i] ).second, "Duplicate option" );
         }
@@ -81,6 +85,8 @@ namespace
         require( mode == "server" || mode == "client", "Expected --mode server or client" );
         result.server = mode == "server";
         result.expectRejection = !take( "--expect-rejection" ).empty();
+        result.expectTicketRejection = !take( "--expect-ticket-rejection" ).empty();
+        result.expectRejection = result.expectRejection || result.expectTicketRejection;
         result.withoutCertificate = !take( "--without-certificate" ).empty();
         result.unverifiedClient = !take( "--unverified-client" ).empty();
         require( !( result.withoutCertificate && result.unverifiedClient ),
@@ -97,11 +103,16 @@ namespace
             result.timeout = std::chrono::milliseconds( integer( timeout, 1000, 30000 ) );
         }
         result.peer = take( "--peer" );
+        result.extraPeer = take( "--extra-peer" );
         result.result = take( "--result" );
         result.ready = take( "--ready" );
         result.connectGate = take( "--connect-gate" );
         result.request = take( "--request" );
         result.certificate = take( "--certificate" );
+        result.ticket = take( "--ticket" );
+        result.expiringTicket = take( "--expiring-ticket" );
+        result.admitted = take( "--admitted" );
+        result.finish = take( "--finish" );
         require( args.empty() && !result.peer.empty() && !result.result.empty(),
                  "Expected --peer and --result, with no unknown options" );
         const bool gated = !result.connectGate.empty();
@@ -126,6 +137,28 @@ namespace
             require( !std::filesystem::exists( result.certificate ),
                      "The certificate path must be unused before the fixture issues its request" );
         }
+        const bool ticketServer = result.server && !result.ticket.empty();
+        if( ticketServer )
+        {
+            require( !result.expectRejection && !result.expiringTicket.empty() &&
+                         !result.admitted.empty() && !result.finish.empty() && !result.extraPeer.empty(),
+                     "Ticket server requires all ticket observation paths and a second allowed identity" );
+            require( !std::filesystem::exists( result.finish ),
+                     "Ticket observation finish path must be unused before provisioning" );
+        }
+        else
+        {
+            require( result.expiringTicket.empty() && result.admitted.empty() &&
+                         result.finish.empty() && result.extraPeer.empty(),
+                     "Ticket observation options are for the ticket server" );
+        }
+        if( result.expectTicketRejection || !result.ticket.empty() )
+        {
+            require( !result.unverifiedClient && !result.withoutCertificate,
+                     "Ticket probes require a provisioned certificate" );
+        }
+        require( !result.server || !result.expectTicketRejection,
+                 "Ticket rejection probes are client-only" );
         return result;
     }
 
@@ -164,9 +197,18 @@ namespace
         require( !request.empty() && request.size() <= MaxCertificateBytes,
                  "GNS returned an invalid certificate request" );
         publish( options.request, reinterpret_cast<const char *>( request.data() ), request.size() );
-        waitForFile( options.certificate, options.timeout, "No issued certificate arrived" );
-        std::ifstream input( options.certificate, std::ios::binary | std::ios::ate );
-        require( static_cast<bool>( input ), "No issued certificate arrived" );
+        const auto deadline = Clock::now() + options.timeout;
+        std::ifstream input;
+        while( Clock::now() < deadline )
+        {
+            input.open( options.certificate, std::ios::binary | std::ios::ate );
+            if( input.is_open() )
+            {
+                break;
+            }
+            std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+        }
+        require( input.is_open(), "No readable certificate arrived" );
         const auto size = input.tellg();
         require( size > 0 && size <= static_cast<std::streamoff>( MaxCertificateBytes ),
                  "Issued certificate has invalid size" );
@@ -176,6 +218,24 @@ namespace
                                                 static_cast<std::streamsize>( size ) ) ),
                  "Could not read issued certificate" );
         return certificate;
+    }
+
+    AdmissionTicket readTicket( const std::filesystem::path &path )
+    {
+        AdmissionTicket ticket{};
+        std::ifstream input( path, std::ios::binary | std::ios::ate );
+        require( input && input.tellg() == static_cast<std::streamoff>( ticket.size() ),
+                 "Admission ticket has invalid size or is unavailable" );
+        input.seekg( 0 );
+        require( static_cast<bool>( input.read( reinterpret_cast<char *>( ticket.data() ),
+                                                static_cast<std::streamsize>( ticket.size() ) ) ),
+                 "Could not read admission ticket" );
+        return ticket;
+    }
+
+    void publishTicket( const std::filesystem::path &path, const AdmissionTicket &ticket )
+    {
+        publish( path, reinterpret_cast<const char *>( ticket.data() ), ticket.size() );
     }
 
     struct Recorder final : INetworkListener
@@ -249,6 +309,11 @@ namespace
             manager.setServer( true );
             require( manager.getBoundAddress() == "127.0.0.1:" + std::to_string( options.port ),
                      "Server did not bind the requested loopback endpoint" );
+            if( !options.ticket.empty() )
+            {
+                publishTicket( options.ticket, manager.issueAdmissionTicket( options.peer, 60 ) );
+                publishTicket( options.expiringTicket, manager.issueAdmissionTicket( options.peer, 1 ) );
+            }
             publish( options.ready, std::to_string( options.port ) );
         }
         else
@@ -272,7 +337,7 @@ namespace
             require( !options.withoutCertificate, "Credentialless strict client started" );
         }
 
-        bool sent = false;
+        bool sent = false, admissionPublished = false;
         const auto deadline = Clock::now() + options.timeout;
         while( Clock::now() < deadline )
         {
@@ -285,6 +350,11 @@ namespace
                 if( !options.server && manager.getConnectionStatus() == Status::NCS_FAILED )
                 {
                     const auto error = manager.getLastError();
+                    if( options.expectTicketRejection )
+                    {
+                        require( error == "Admission ticket rejected", "Expected admission ticket denial" );
+                        return "ticket";
+                    }
                     std::fprintf( stdout, "Connection rejected: %s\n", error.c_str() );
                     return "handshake";
                 }
@@ -299,7 +369,21 @@ namespace
                 }
                 if( sent && recorder.disconnects == 1 )
                 {
-                    return "gameplay";
+                    if( options.finish.empty() )
+                    {
+                        return "gameplay";
+                    }
+                    require( recorder.peer == 1 && !manager.getPeerCount(),
+                             "Ticket probes consumed an ID or left an admitted peer" );
+                    if( !admissionPublished )
+                    {
+                        publish( options.admitted, "disconnected" );
+                        admissionPublished = true;
+                    }
+                    if( std::filesystem::is_regular_file( options.finish ) )
+                    {
+                        return "gameplay";
+                    }
                 }
             }
             else
@@ -335,7 +419,12 @@ namespace
         config.bindAddress = "127.0.0.1:" + std::to_string( options.port );
         config.maxClients = 1;
         config.allowUnverifiedLoopback = options.unverifiedClient;
+        config.requireAdmissionTickets = options.server && !options.ticket.empty();
         config.allowedPeerIdentities.push_back( options.peer );
+        if( !options.extraPeer.empty() )
+        {
+            config.allowedPeerIdentities.push_back( options.extraPeer );
+        }
         auto manager = make_ptr<WPNetworkGNSManager>( config );
         auto recorder = make_ptr<Recorder>( *manager, options.server );
         manager->addListener( recorder );
@@ -359,6 +448,10 @@ namespace
         }
         if( !stage )
         {
+            if( !options.server && !options.ticket.empty() )
+            {
+                manager->setAdmissionTicket( readTicket( options.ticket ) );
+            }
             if( !options.connectGate.empty() )
             {
                 publish( options.ready, "certificate-installed" );

@@ -131,8 +131,12 @@ if(TARGET WPNetwork)
             target_compile_definitions(WPNetworkGNSTrustTests PRIVATE BOOST_ALL_NO_LIB)
             target_link_libraries(WPNetworkGNSTrustTests PRIVATE WPNetwork Workphone)
             set_target_properties(WPNetworkGNSTrustTests PROPERTIES FOLDER Tests/Network)
+            add_executable(WPNetworkGNSProofTests NetworkGNSProofTests.cpp)
+            target_compile_features(WPNetworkGNSProofTests PRIVATE cxx_std_17)
+            target_link_libraries(WPNetworkGNSProofTests PRIVATE GameNetworkingSockets::static)
+            set_target_properties(WPNetworkGNSProofTests PROPERTIES FOLDER Tests/Network)
             if(WP_NETWORK_GNS_VALIDATION_OUTPUT)
-                set_target_properties(WPNetworkGNSTrustTests PROPERTIES
+                set_target_properties(WPNetworkGNSTrustTests WPNetworkGNSProofTests PROPERTIES
                     RUNTIME_OUTPUT_DIRECTORY "${WP_NETWORK_GNS_VALIDATION_OUTPUT}")
             endif()
         endif()

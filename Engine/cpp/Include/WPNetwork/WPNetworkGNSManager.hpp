@@ -1,6 +1,7 @@
 #pragma once
 #include <WPNetwork/WPNetworkPrerequisites.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -14,6 +15,8 @@ namespace workphone
         bool allowUnverifiedLoopback = false;
         /// Recognized GNS identities such as "str:game-server". IP addresses cannot authenticate.
         Array<String> allowedPeerIdentities;
+        /// Require a one-time admission ticket on this strict server.
+        bool requireAdmissionTickets = false;
     };
 
     /** GNS implementation of the engine facade. Construction opens no sockets.
@@ -25,6 +28,8 @@ namespace workphone
     class WPNetwork_API WPNetworkGNSManager : public INetworkManager
     {
     public:
+        using AdmissionTicket = std::array<u8, 32>;
+
         explicit WPNetworkGNSManager( const WPNetworkGNSConfig &config = {} );
         ~WPNetworkGNSManager() override;
         void unload( SmartPtr<ISharedObject> data ) override;
@@ -34,6 +39,10 @@ namespace workphone
         /// Import the issuer response for this manager's request. The peer verifies
         /// the chain and proof of key possession during its strict handshake.
         void installCertificate( const std::vector<u8> &certificate );
+        /// Issue for an allowlisted peer on the running ticket-required server. Deliver via a trusted channel.
+        AdmissionTicket issueAdmissionTicket( const String &peerIdentity, u32 lifetimeSeconds );
+        /// Stage a one-time ticket before dialing. Only one server identity may be allowlisted.
+        void setAdmissionTicket( const AdmissionTicket &ticket );
         String getLastError() const;
         String getBoundAddress() const;
         void setServer( bool server ) override;
