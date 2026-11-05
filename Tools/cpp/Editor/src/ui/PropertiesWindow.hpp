@@ -8,11 +8,15 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/UI/IUIDropTarget.hpp>
 #include "Workphone/System/Job.hpp"
+#include <memory>
 
 namespace workphone
 {
     namespace editor
     {
+#if WP_EDITOR_TEXTURE_PROFILE
+        class TextureProfileInspector;
+#endif
 
         /**
          * Window for displaying and editing the properties of a selected object.
@@ -205,6 +209,10 @@ namespace workphone
 
         protected:
             void updateCubemapPreview( SmartPtr<ISharedObject> object );
+#if WP_EDITOR_TEXTURE_PROFILE
+            bool updateTextureProfile( SmartPtr<ISharedObject> object );
+            std::unique_ptr<TextureProfileInspector> m_textureProfile;
+#endif
 
             SmartPtr<ui::IUIWindow> m_cubemapPreview;
             SmartPtr<ui::IUIText> m_cubemapPreviewStatus;

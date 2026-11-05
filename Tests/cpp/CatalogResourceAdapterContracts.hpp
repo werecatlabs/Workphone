@@ -102,6 +102,7 @@ namespace catalog_adapter_contracts
         std::function<void()> duringCompile;
         u64 version = 1;
         bool fail = false;
+        String rejectedId;
         bool captureBindings = false;
         mutable std::shared_ptr<const std::map<String,ResourceID>> retainedBindings;
 
@@ -144,7 +145,7 @@ namespace catalog_adapter_contracts
         CompilationStatus compile( const CompileContext &context, std::ostream &output,
                                    Array<String> &messages ) const override
         {
-            if( fail )
+            if( fail || context.resourceId.str() == rejectedId )
             {
                 messages.push_back( "Injected bridge compiler failure" );
                 return CompilationStatus::Failure;
@@ -244,7 +245,10 @@ namespace catalog_adapter_contracts
                 "Catalog export must map every transitive install dependency to its durable UUID");
         {
             std::map<String,ResourceID> captured;
-            const bool capturedOK=adapter.captureAssetBindings(captured,error);require(capturedOK,error.c_str());
+            u64 capturedGeneration = 0;
+            const bool capturedOK=adapter.captureAssetBindings(captured,capturedGeneration,error);require(capturedOK,error.c_str());
+            require(capturedGeneration == request.entry.generation,
+                "The detached UUID map must carry the catalog generation it was read from");
             require(captured.size()==2 && captured.at(StringUtil::make_lower(uuid))==request.resourceId &&
                 captured.at(StringUtil::make_lower(dependencyUUID))==ResourceID("data://dependency.ctest"),
                 "Captured binding snapshot must include mapped files and exclude scene-domain rows");
@@ -468,6 +472,68 @@ namespace catalog_adapter_contracts
         require( !adapter.resolve( uuid, rejected, error ), "Missing compiler must reject resolution" );
         require( registry->registerCompiler( compiler, &error ), error.c_str() );
 
+        write( source / "second.ctest", "old second root\n" );
+        auto secondAsset = asset( "second.ctest" );
+        catalog->addResourceEntry( secondAsset );
+        CatalogResourceAdapter::Request second;
+        require( adapter.resolve( uuid, request, error ) &&
+                 adapter.resolve( secondAsset->getHandle()->getUUIDAsString(), second, error ) &&
+                 adapter.compile( second ).succeeded(), "Prepare two independently indexed cook roots" );
+        const CompilationVariant editorVariant{ config.target, false, {} };
+        const auto record = [&]( const ResourceID &id ) {
+            CompiledResourceRecord value;
+            require( compilationDatabase->getRecord( id.str(), editorVariant, value ),
+                     "Read the committed root generation directly from the index" );
+            return value;
+        };
+        const auto firstBefore = record( request.resourceId );
+        const auto secondBefore = record( second.resourceId );
+        write( source / "root.ctest", "install=data://dependency.ctest\nnew first root\n" );
+        write( source / "second.ctest", "new second root\n" );
+        compiler->rejectedId = second.resourceId.str();
+        auto batch = adapter.compileBatch( { request, second }, {} );
+        compiler->rejectedId.clear();
+        require( batch.size() == 2 && !batch[0].succeeded() && !batch[1].succeeded() &&
+                 record( request.resourceId ).outputPath == firstBefore.outputPath &&
+                 record( second.resourceId ).outputPath == secondBefore.outputPath,
+                 "Failure of the later root must retain both earlier committed index records" );
+
+        bool stop = false;
+        compiler->duringCompile = [&] { stop = true; };
+        batch = adapter.compileBatch( { request, second }, {}, [&] { return stop; } );
+        compiler->duringCompile = {};
+        require( stop && !batch.front().succeeded() &&
+                 record( request.resourceId ).outputPath == firstBefore.outputPath &&
+                 record( second.resourceId ).outputPath == secondBefore.outputPath,
+                 "Cancellation after cooking a root must retain the complete old index set" );
+
+        stop = false;
+        compiler->duringCompile = [&] { stop = true; };
+        batch = adapter.compileBatch( { request, second }, {}, [&] {
+            if( stop ) throw std::runtime_error( "lost cancellation event" );
+            return false;
+        } );
+        compiler->duringCompile = {};
+        require( stop && !batch.front().succeeded() &&
+                 record( request.resourceId ).outputPath == firstBefore.outputPath &&
+                 record( second.resourceId ).outputPath == secondBefore.outputPath,
+                 "A cancellation check failure must abandon the entire pending cook" );
+
+        independent->loadFromFile( catalogPath );
+        require( independentBound->queryBound( "PRAGMA busy_timeout=0", {} ) != nullptr,
+                 "Configure a nonblocking independent writer for the cook fence" );
+        bool writerExcluded = false;
+        batch = adapter.compileBatch( { request, second }, {}, {}, [&] {
+            writerExcluded = !independentBound->queryBound( "UPDATE resources SET type=type WHERE uuid=?", { uuid } );
+        } );
+        independent->close();
+        require( writerExcluded && batch.size() == 2 && batch[0].succeeded() && batch[1].succeeded() &&
+                 record( request.resourceId ).outputPath != firstBefore.outputPath &&
+                 record( second.resourceId ).outputPath != secondBefore.outputPath,
+                 "Successful cooks must publish both roots under the catalog writer fence" );
+
+        const auto beforeRename = record( request.resourceId );
+        write( source / "root.ctest", "install=data://dependency.ctest\nrejected stale replacement\n" );
         write( source / "renamed.ctest", "renamed payload\n" );
         compiler->duringCompile = [&] {
             sourceAsset->setFilePath( "renamed.ctest" );
@@ -476,6 +542,8 @@ namespace catalog_adapter_contracts
         require( !adapter.compile( request, force ).succeeded(),
                  "Deterministic catalog mutation during compile must reject the stale result" );
         compiler->duringCompile = {};
+        require( record( request.resourceId ).outputPath == beforeRename.outputPath,
+                 "Stale catalog requests must leave the prior committed generation indexed" );
         require( !adapter.isCurrent( request, error ) && !adapter.load( request, error ),
                  "Renamed UUID must invalidate old compile and load requests" );
         require( !adapter.runtimeBinding( request, binding, error ) && binding.uuid.empty() &&

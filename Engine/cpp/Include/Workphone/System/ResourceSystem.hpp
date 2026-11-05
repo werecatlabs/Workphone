@@ -32,6 +32,12 @@ namespace workphone::resource
         Array<ResourceID> installDependencies;
     };
 
+    struct WPCore_API RuntimePackagePatchResult
+    {
+        u32 changedArtifacts = 0, reusedArtifacts = 0, removedResources = 0;
+        u64 changedArtifactBytes = 0, targetArtifactBytes = 0;
+    };
+
     /** A checked exporter retains admission until publication or failure. The
      * resolver must bind every closure member, acquire external admission in
      * resource-system -> catalog -> connection order, and never reenter this
@@ -45,6 +51,12 @@ namespace workphone::resource
 
     using RuntimePackageResolver =
         std::function<bool( const RuntimePackageContext &, RuntimePackageAdmission &, String & )>;
+
+    /** Acquire publication admission after cooking, with the resource operation lock
+     * held. The returned token must keep admission through the index transaction.
+     * The callback must not reenter resource operations. */
+    using CompilationPublicationGuard =
+        std::function<bool( const String &sourceRoot, std::shared_ptr<void> &lifetime, String &error )>;
 
     /** Read-only cooked mount. Limits apply to each unique install dependency closure. */
     struct WPCore_API RuntimeResourceConfig
@@ -160,6 +172,17 @@ namespace workphone::resource
         /** Policy-aware export. Rejects absent admission or incomplete UUID coverage. */
         bool writeRuntimePackageChecked( const String &directory, const Array<ResourceID> &roots,
                                          const RuntimePackageResolver &resolver, String &error );
+        /** Create a deterministic delta between two complete manifest-v4 packages.
+         * All inputs are read-only. The patch owns its target manifest and changed
+         * immutable artifacts. Publication requires a new, separate directory. */
+        static bool writeRuntimePatch( const String &baseDirectory, const String &targetDirectory,
+                                       const String &patchDirectory, const String &target,
+                                       RuntimePackagePatchResult &, String &error );
+        /** Verify the exact base generation and assemble the target into a new
+         * directory. A failed or interrupted apply leaves the old package intact. */
+        static bool applyRuntimePatch( const String &baseDirectory, const String &patchDirectory,
+                                       const String &outputDirectory, const String &target,
+                                       RuntimePackagePatchResult &, String &error );
         /** Cooks are performed by the caller. Inspects the same pinned, admitted
          * closure as export without publishing or touching a package destination.
          * A temporary manifest is owned under cooked storage and removed on return. */
@@ -175,6 +198,12 @@ namespace workphone::resource
 
         CompilationReport compile( const ResourceID &resourceId,
                                    const CompilationOptions &options = {} ) override;
+
+        /** Cook all roots from one input capture and publish them in one index transaction. */
+        Array<CompilationReport> compileBatch( const Array<ResourceID> &roots,
+                                               const CompilationOptions &options,
+                                               const CompilationPublicationGuard &guard = {},
+                                               const std::function<bool()> &isCancelled = {} );
 
         /** Recompile all transitive dependents of a changed data:// path. */
         Array<CompilationReport> compileAffected( const String &changedPath,

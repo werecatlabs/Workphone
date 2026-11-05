@@ -2472,21 +2472,124 @@ license flags as false. Native rendering used Microsoft Basic Render Driver.
 Fresh-guest, physical GPU, audible audio, interactive Editor/project-switch,
 legal, scale/soak and complete R1/R2 family/authoring/cache/patch gates remain open.
 
+## Increment 47 — guarded cooks, numeric identities, deltas and texture profiles
+
+5 November 2026. The package CLI resolves its roots against the generation that
+supplied the captured UUID map. All roots share one input capture, pending artifact
+set and compilation-index transaction. Final catalog admission follows the
+resource → catalog → SQLite order, checks the current root identities and holds
+the catalog writer fence through source verification and index commit. Named
+profiles also recheck the pinned cooker modules at this boundary. A failed
+later root, cancellation or stale catalog generation preserves the committed
+records. Unindexed immutable files can remain for future recovery work.
+
+Configured numeric actor rows can resolve an explicitly authored UUID through
+their existing attributes. The read path preserves legacy UUID columns and text
+identities, rejects conflicting/dangling bindings, and loads model data with the
+prefab manager in a headless host. A clone leaves its UUID field unassigned.
+The [domain reference guide](WPRESOURCE_ASSET_REFERENCES.md) describes the supported
+layouts and remaining migration work.
+
+The package CLI can create and apply verified manifest-v4 directory deltas. It
+captures one base manifest, verifies artifact, chunk and dependency pins, and
+reconstructs the exact target in a separate staging directory before exclusive
+publication. Retaining the base makes rollback explicit. See the
+[delta commands](WPRESOURCE_RUNTIME_PACKAGES.md#verified-directory-deltas).
+
+The Windows resource-enabled Editor now opens `.texres` selections in a target
+profile inspector. It saves per-target overrides, reopens changed documents and
+uses the real cooker on a background worker to preview mip, channel and sampled
+compression error. See the [texture profile guide](WPRESOURCE_WINDOWS_DDS.md#editor-target-preview)
+for supported formats and limits.
+
+`WPAssetCatalogTests.exe --scale` measures the production lookup and reference
+queries over disposable synthetic catalogs with 10,000 and 100,000 assets and
+up to one million reference edges. The report records warm p95 latency, indexed
+access plans, selected index footprints and database bytes. Cold reconciliation,
+large-project cooking and interactive UI budgets require separate measurements.
+
+Literal search uses a narrow UUID/path index in writable catalogs. The bundled
+SQLite backend matches valid UTF-8 substrings with a bounded native function.
+It keeps the existing escaped GLOB behavior for malformed text and legacy
+backends. The query applies kind/type filters before the page limit and fetches
+row metadata for matching candidates. Older read-only catalogs retain the
+original keyset query when the derived index is absent.
+
+### Validation for increment 47
+
+The rebuilt optimized selection passed **16/16** in **160.46 seconds** and
+Debug passed **16/16** in **274.75 seconds**. These include the real SQLite
+numeric UUID and checked-cook contracts, texture profile cooking and preview,
+verified directory deltas, publication recovery and asynchronous package jobs.
+The full Debug Editor aggregate passed **101/101 cases** and **1,591,401
+assertions** in **873.80 seconds**, within the unchanged 900-second limit.
+Reports use `project_x64/resource-nov05-final-opt-*`,
+`resource-nov05-final-debug-*` and `resource-nov05-editor-all-*`.
+
+The full aggregate precedes the final catalog search changes. Both
+configurations rebuilt afterward. The final focused selection passed **2/2**
+optimized in **40.56 seconds** and **4/4** Debug in **37.29 seconds**. This
+includes the literal/Unicode and legacy read-only search fixtures, package CLI,
+Editor asset drop, project switch and property grid contracts. Evidence uses
+`project_x64/resource-nov05-search-*`.
+
+The final synthetic catalog measurements used the bundled SQLite 3.7.9 and
+40 warm samples per operation. Values are p95 milliseconds.
+
+| Assets | Reference edges | Exact | Sparse search | Common search | Where-used |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | 100,000 | 1.11 | 10.09 | 56.14 | 14.76 |
+| 100,000 | 1,000,000 | 1.17 | 122.13 | 55.02 | 15.39 |
+
+The 100,000-asset sparse search improved from 234.72 ms to 122.13 ms and
+still exceeds the 100 ms goal. The final narrow index occupies 8,594,432
+bytes at that scale. Baseline, wider covering-index and final measurements
+are retained in `project_x64/resource-nov05-catalog-scale*.log` and
+`project_x64/wide-udf-resource-nov05-catalog-scale-final.log`.
+
+The optimized installed Editor opened the disposable profile project. Windows
+capture timed out on both attempts, including after activation. The live
+inspector input result remains open. Receipt
+`project_x64/resource-nov05-live-editor-check.json` records the scope.
+
+The fresh relocated Editor candidate passed all **8** checks. Verification
+found zero drift across **321** captured inputs and matched all **12** selected
+built and installed modules. The source inventory covers all **28** changed
+engine, test and tool files. The runtime ZIP and its evidence are under
+`project_x64/rd1105/`. Its SHA256 is
+`125CB4F648A2CA77A04C2DF6C5BE6AE6193A038D89D82EC6B0AB86B539B39331`.
+The source and module verification receipt is
+`project_x64/resource-nov05-hash-verification.json`.
+
+The installed foliage probe passed a source-free **65-frame** flight through
+**64 cells**, with 2,048 trees, 9,216 grass clumps, eviction and renderer
+recreation. The product Editor loaded the cooked terrain and camera. The
+installed package stayed byte-identical. See `project_x64/rf1105/evidence.json`.
+
+Stock PowerShell 5.1 prepared `project_x64/ek1105/`. Its host replay passed all
+**9** checks, covering **15** typed UUIDs, DX11/Software mixed scenes, the overlay
+policies and packaged audio voice creation. See
+`project_x64/ek1105/host-replay/result.json` and
+`project_x64/resource-nov05-release-state.json`. Windows Sandbox is absent and
+disabled on this workstation. Fresh-guest, physical GPU, audible playback,
+live Editor and license certification remain open, together with the remaining
+implementation and scale gates below. The evidence retains
+`releaseCertified=false`.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
 platform texture profiles, Windows DDS cooking, native compressed uploads,
 Editor target previews and package certification. Increment 9 implements the
-bounded 2D compiler/upload subset. Complete the
-remaining profile authoring, quality, topology and shipping-package gates using
-the same immutable resource pipeline.
+bounded 2D compiler/upload subset. Increment 47 adds per-target 2D overrides and
+previews. Complete the remaining authoring, quality, topology and hardware
+shipping gates using the same immutable resource pipeline.
 
-1. Finish the first integrity slice: authored numeric-root UUID mapping, immutable
+1. Migrate authored rows that lack explicit UUID bindings. Finish immutable
    metadata migration, full-project reference coverage, asset-operation retention
    and conflict resolution UI.
-2. Extend persisted profile/toolchain BuildKeys and captured Windows cooker inputs with authored
-   revision fences and generation recovery/retention on top of captured inputs,
-   complete-request index transactions and immutable artifacts. Certify
+2. Extend the guarded cook boundary across remaining importer and build routes.
+   Add generation recovery/retention for immutable artifacts and certify
    importer-specific interruption and power-loss publication.
 3. Extend the saved-document reference graph across remaining domain authoring routes
    and legacy migration/remaining-format discovery; persist

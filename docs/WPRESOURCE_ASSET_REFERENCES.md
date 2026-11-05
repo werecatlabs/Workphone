@@ -118,6 +118,24 @@ Reindex text parsing additionally bounds structural depth to 128 and tokens/
 elements/attributes to 300,000 before recursive conversion. All mutations use bound SQL and the connection-wide transaction guard. Unknown or
 incomplete graph schemas fail without migration or partial query publication.
 
+Configured actors in the standalone domain database can bind a numeric row to
+an asset UUID through an authored attribute titled `uuid`. Set its value to the
+UUID of that asset in the existing attribute editor. The reader uses
+`configured_actor_id` when present and `actor_id` on older schemas. It requires
+a positive numeric owner for a new attribute binding and preserves the numeric
+IDs throughout the loaded tree. Existing `configured_actors.uuid` and legacy
+UUID text IDs continue to resolve. UUID spelling is case insensitive and the
+returned asset carries the canonical UUID.
+
+The read-only domain loader rejects duplicate, dangling or conflicting
+bindings before returning a tree. It reads the binding and descendants in one
+SQLite snapshot. Loading a configured model uses the prefab manager and can
+run without graphics. Cloning a configured model leaves its UUID attribute
+unassigned so the copy can receive a distinct authored identity. Standalone
+deletion still needs transactional descendant attribute cleanup before numeric
+rows can be safely reused. Metadata migration and saved-document graph coverage
+of domain assets remain open.
+
 Coverage is deliberately explicit: only indexed saved documents are represented.
 Legacy text documents must be saved through this path; remaining domain authoring
 routes still need adoption. Unsaved edits, raw SQL mutations and unindexed files

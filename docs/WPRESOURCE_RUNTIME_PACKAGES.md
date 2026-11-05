@@ -101,6 +101,29 @@ compiler or SQLite database. A previously exported UUID remains pinned to its ol
 generation after an authoring rename or recook; a new binding can retain that UUID
 while selecting the new logical path.
 
+## Verified directory deltas
+
+The cooker can create and apply a delta between complete manifest-v4 packages for
+the same target. Run the commands with separate input directories and fresh output
+paths.
+
+```powershell
+WorkphoneResourcePackage --create-patch <base-package> <target-package> <new-patch> pc
+WorkphoneResourcePackage --apply-patch <base-package> <patch> <new-package> pc
+```
+
+The patch contains a bounded `patch.wprd` descriptor, the exact `target.wprm`,
+and the changed immutable containers at their target artifact paths. Creation and
+apply verify manifest identity, container and chunk hashes, and pinned dependency
+generations. Apply requires the captured base manifest and reconstructs the target
+in a sibling staging directory before exclusive publication. Select the retained
+base directory to roll back. The CLI reports changed, reused and removed resource
+counts and transferred artifact bytes.
+
+Version 1 uses FNV transfer fingerprints for corruption detection. Distribution
+authentication, compressed block deltas, partial-download resume, activation and
+orphan staging recovery remain separate work.
+
 ## Named read-only package composition
 
 `RuntimeResourceMountConfig` pairs a unique bounded `name` with an ordinary

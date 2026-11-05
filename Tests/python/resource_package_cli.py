@@ -11,6 +11,7 @@ import os
 import wave
 from contextlib import closing
 from resource_package_history import check_history
+from resource_package_patch import check_patch
 
 exe = pathlib.Path(sys.argv[1]).resolve()
 child_environment = dict(os.environ)
@@ -22,6 +23,7 @@ for key in tuple(child_environment):
 
 with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     check_history(exe, pathlib.Path(temporary) / "history-only café", child_environment)
+    check_patch(exe, pathlib.Path(temporary) / "directory delta café", child_environment)
     root = pathlib.Path(temporary) / "project café"
     root.mkdir()
     source = root / "sources"

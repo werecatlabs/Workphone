@@ -424,6 +424,9 @@ namespace workphone
                                  "CREATE INDEX IF NOT EXISTS idx_resources_kind_path ON "
                                  "resources(kind,path_key)" ) &&
                    queryCatalog( manager,
+                                 "CREATE INDEX IF NOT EXISTS idx_resources_uuid_browse ON "
+                                 "resources(uuid COLLATE BINARY,path)" ) &&
+                   queryCatalog( manager,
                                  "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE INSERT "
                                  "ON resources "
                                  "WHEN NEW.kind='file' AND EXISTS(SELECT 1 FROM resources WHERE "
@@ -716,6 +719,7 @@ namespace workphone
                     queryCatalog( *this,
                                   "SELECT name FROM sqlite_master WHERE name COLLATE NOCASE IN "
                                   "('idx_resources_uuid_unique','idx_resources_kind_path',"
+                                  "'idx_resources_uuid_browse',"
                                   "'resources_file_path_insert','resources_file_path_update',"
                                   "'resources_values_insert','resources_values_update') "
                                   "AND tbl_name<>'resources' COLLATE NOCASE LIMIT 1" );
@@ -1320,15 +1324,54 @@ namespace workphone
                 }
             }
             pattern += '*';
-            auto rows =
-                queryCatalog( *this,
-                              "SELECT uuid,path,type,kind,path_key FROM resources "
-                              "WHERE (?='' OR path GLOB ? OR uuid GLOB ?) "
-                              "AND (?='' OR type=?) AND (?='1' OR kind='file') "
-                              "AND uuid COLLATE BINARY > ? ORDER BY uuid COLLATE BINARY LIMIT ?",
-                              { query.search, pattern, pattern, query.type, query.type,
-                                query.includeScenes ? "1" : "0", cursor ? cursor->afterUuid : String(),
-                                StringUtil::toString( query.pageSize + 1 ) } );
+            bool useCoveringIndex = false;
+            if( !query.search.empty() )
+            {
+                // The optional derived index keeps substring matching in a
+                // narrow UUID-ordered leaf scan. Older read-only catalogs can omit it.
+                auto index = queryCatalog( *this,
+                    "SELECT 1 FROM sqlite_master WHERE type='index' AND "
+                    "name='idx_resources_uuid_browse' AND tbl_name='resources' COLLATE NOCASE" );
+                useCoveringIndex = index && !index->eof();
+            }
+            const Array<String> values{ query.search, pattern, pattern, query.type, query.type,
+                query.includeScenes ? "1" : "0", cursor ? cursor->afterUuid : String(),
+                StringUtil::toString( query.pageSize + 1 ) };
+            const auto readPage = [&]( bool covering, bool literalSearch ) {
+                String statement = "SELECT uuid,path,type,kind,path_key FROM resources ";
+                if( covering )
+                {
+                    statement += "INDEXED BY idx_resources_uuid_browse ";
+                }
+                const String matches = literalSearch
+                    ? "COALESCE(wp_catalog_contains(path,uuid,?),path GLOB ? OR uuid GLOB ?)"
+                    : "(?='' OR path GLOB ? OR uuid GLOB ?)";
+                const char *filters = "(?='' OR type=?) AND (?='1' OR kind='file')";
+                if( covering )
+                {
+                    // Defer the table lookup for type/kind until the indexed
+                    // UUID or path matches. Apply the filters before LIMIT.
+                    statement += "WHERE CASE WHEN " + matches + " THEN " + filters + " ELSE 0 END ";
+                }
+                else
+                {
+                    statement += "WHERE " + matches + " AND " + filters + " ";
+                }
+                statement += "AND uuid COLLATE BINARY > ? ORDER BY uuid COLLATE BINARY LIMIT ?";
+                return queryCatalog( *this, statement, values );
+            };
+            auto rows = readPage( useCoveringIndex, useCoveringIndex );
+            if( !rows && useCoveringIndex && sourceBudgetDenialCount() == denials )
+            {
+                // Older database backends may have the derived index but no UDF.
+                rows = readPage( true, false );
+            }
+            if( !rows && useCoveringIndex && sourceBudgetDenialCount() == denials )
+            {
+                // An external schema edit may remove the optional index after
+                // the probe. The unhinted query keeps the same page contract.
+                rows = readPage( false, false );
+            }
             if( !rows )
             {
                 return fail( "Asset catalog query failed." );

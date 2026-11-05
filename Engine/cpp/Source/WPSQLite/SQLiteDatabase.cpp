@@ -4,10 +4,84 @@
 #include <Workphone/Workphone.hpp>
 #include <filesystem>
 #include <memory>
+#include <string_view>
 
 namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, SQLiteDatabase, IDatabase );
+
+    namespace
+    {
+        bool globComparableUtf8( std::string_view text ) noexcept
+        {
+            for( size_t index = 0; index < text.size(); )
+            {
+                const auto first = static_cast<unsigned char>( text[index++] );
+                if( first < 0x80 )
+                {
+                    if( first == 0 ) return false;
+                    continue;
+                }
+                const size_t count = first >= 0xc2 && first <= 0xdf   ? 1
+                                   : first >= 0xe0 && first <= 0xef ? 2
+                                   : first >= 0xf0 && first <= 0xf4 ? 3
+                                                                    : 0;
+                if( !count || text.size() - index < count ) return false;
+                unsigned codepoint = first & ( 0x7f >> count );
+                for( size_t byte = 0; byte < count; ++byte )
+                {
+                    const auto next = static_cast<unsigned char>( text[index++] );
+                    if( ( next & 0xc0 ) != 0x80 ) return false;
+                    codepoint = ( codepoint << 6 ) | ( next & 0x3f );
+                }
+                const unsigned minimum = count == 1 ? 0x80 : count == 2 ? 0x800 : 0x10000;
+                // The bundled SQLite GLOB decoder replaces U+FFFE and U+FFFF.
+                if( codepoint < minimum || codepoint > 0x10ffff ||
+                    ( codepoint >= 0xd800 && codepoint <= 0xdfff ) ||
+                    codepoint == 0xfffe || codepoint == 0xffff )
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool catalogSearchArgument( sqlite3_value *argument, int limit,
+                                    std::string_view &text ) noexcept
+        {
+            if( sqlite3_value_type( argument ) != SQLITE_TEXT ) return false;
+            const auto *data = reinterpret_cast<const char *>( sqlite3_value_text( argument ) );
+            const auto size = sqlite3_value_bytes( argument );
+            if( !data || size < 0 || size > limit ) return false;
+            text = std::string_view( data, static_cast<size_t>( size ) );
+            return globComparableUtf8( text );
+        }
+
+        void catalogLiteralContains( sqlite3_context *context, int count,
+                                     sqlite3_value **arguments ) noexcept
+        {
+            std::string_view path, uuid, term;
+            if( count != 3 || !catalogSearchArgument( arguments[2], 1024, term ) ||
+                !catalogSearchArgument( arguments[0], 1024, path ) ||
+                !catalogSearchArgument( arguments[1], 256, uuid ) )
+            {
+                sqlite3_result_null( context );
+                return;
+            }
+            // A literal substring of valid UTF-8 matches the escaped GLOB on
+            // the same codepoint boundaries. Views borrow the SQLite buffers.
+            sqlite3_result_int( context, path.find( term ) != std::string_view::npos ||
+                                         uuid.find( term ) != std::string_view::npos );
+        }
+
+        void registerCatalogSearch( sqlite3 *database ) noexcept
+        {
+            // Optional acceleration. The catalog can still query with GLOB if
+            // the backend cannot register this function.
+            (void)sqlite3_create_function( database, "wp_catalog_contains", 3, SQLITE_UTF8, nullptr,
+                                           catalogLiteralContains, nullptr, nullptr );
+        }
+    }
 
     bool SQLiteDatabase::rollbackTransaction() noexcept
     {
@@ -69,6 +143,7 @@ namespace workphone
             return false;
         }
         sqlite3_busy_timeout( m_database->mpDB, 5000 );
+        registerCatalogSearch( m_database->mpDB );
         setLoadingState( LoadingState::Loaded );
         return true;
     }
@@ -97,6 +172,7 @@ namespace workphone
                 {
                     m_database->open( filePath.c_str() );
                     m_database->setBusyTimeout( 1000 );
+                    registerCatalogSearch( m_database->mpDB );
                 }
                 else
                 {
@@ -146,6 +222,7 @@ namespace workphone
                 sqlite3_key( m_database->mpDB, key.c_str(), (int)key.size() );
             }
 
+            registerCatalogSearch( m_database->mpDB );
             setLoadingState( LoadingState::Loaded );
         }
         catch( CppSQLite3Exception &e )

@@ -107,6 +107,24 @@ namespace
 
     int run(const Array<String> &input)
     {
+        if(input.size() >= 2 && (input[1] == "--create-patch" || input[1] == "--apply-patch"))
+        {
+            if(input.size() != 6)
+                throw std::runtime_error("Package patch requires base, target/patch, new output directory and target");
+            RuntimePackagePatchResult result;
+            String error;
+            const bool creating = input[1] == "--create-patch";
+            const bool success = creating ?
+                ResourceSystem::writeRuntimePatch(input[2], input[3], input[4], input[5], result, error) :
+                ResourceSystem::applyRuntimePatch(input[2], input[3], input[4], input[5], result, error);
+            if(!success)
+                throw std::runtime_error(error.c_str());
+            std::cout << (creating ? "Created patch" : "Applied patch") << ". Changed artifacts "
+                      << result.changedArtifacts << "; reused " << result.reusedArtifacts
+                      << "; removed resources " << result.removedResources << "; changed artifact bytes "
+                      << result.changedArtifactBytes << "; target artifact bytes " << result.targetArtifactBytes << '\n';
+            return 0;
+        }
         if(input.size()==5 && (input[1]=="--prune-jobs" || input[1]=="--apply-prune-jobs"))
         {
             auto number = [](const String &value, u64 maximum) -> u64 {
@@ -205,6 +223,8 @@ namespace
                          "       WorkphoneResourcePackage --recover-jobs <project-root>\n"
                          "       WorkphoneResourcePackage --preview-profile <profile.json> <new-report.json>\n"
                          "       WorkphoneResourcePackage --verify <package-directory> <target> <uuid> [uuid...]\n"
+                         "       WorkphoneResourcePackage --create-patch <base-package> <target-package> <new-patch> <target>\n"
+                         "       WorkphoneResourcePackage --apply-patch <base-package> <patch> <new-package> <target>\n"
                          "       WorkphoneResourcePackage --save-profile <new-profile.json> <positional arguments above>\n";
             return 2;
         }
@@ -290,7 +310,8 @@ namespace
         if(!resources->initialize(config, error))
             throw std::runtime_error(error.c_str());
         CatalogResourceAdapter adapter(catalog, resources, config.sourceRoot, mappings);
-        if(!adapter.captureAssetBindings(config.assetBindings,error))
+        u64 bindingsGeneration = 0;
+        if(!adapter.captureAssetBindings(config.assetBindings,bindingsGeneration,error))
             throw std::runtime_error(error.c_str());
         resources->shutdown();
         if(!resources->initialize(config,error))throw std::runtime_error(error.c_str());
@@ -301,20 +322,25 @@ namespace
             CatalogResourceAdapter::Request request;
             if(!adapter.resolve(uuid, request, error))
                 throw std::runtime_error(error.c_str());
+            if(request.entry.generation != bindingsGeneration)
+                throw std::runtime_error("Catalog changed after UUID binding capture; retry the package cook");
             roots.push_back(request);
         }
         CompilationOptions options;
         options.packagedBuild = true;
-        for(const auto &request : roots)
+        const auto reports = adapter.compileBatch(roots, options, cancelled, [&] {
+            if(!buildProfile.key().empty()) modulePins.verify();
+        });
+        bool complete = reports.size() == roots.size();
+        for(const auto &report : reports)
         {
-            if(cancelled()) return 3;
-            const auto report = adapter.compile(request, options);
             for(const auto &message : report.messages)
                 std::cerr << message << '\n';
-            if(!report.succeeded())
-                throw std::runtime_error("Package compilation failed; no output directory published");
+            complete = complete && report.succeeded();
         }
         if(cancelled()) return 3;
+        if(!complete)
+            throw std::runtime_error("Package compilation failed; no output directory published");
         if(!buildProfile.key().empty()) modulePins.verify();
         if(!previewPath.empty())
         {

@@ -25,11 +25,15 @@ namespace workphone::ui
 
     SmartPtr<Properties> ImGuiPropertyGrid::getProperties() const
     {
-        return m_properties;
+        auto app = core::IApplicationManager::instancePtr();
+        ScopedLock lock( app ? app->getUI() : nullptr );
+        return m_properties.load();
     }
 
     void ImGuiPropertyGrid::setProperties( SmartPtr<Properties> properties )
     {
+        auto app = core::IApplicationManager::instancePtr();
+        ScopedLock lock( app ? app->getUI() : nullptr );
         m_properties = properties;
     }
 

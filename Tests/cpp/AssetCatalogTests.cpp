@@ -19,6 +19,7 @@
 #include <future>
 #include <chrono>
 #include <fstream>
+#include <vector>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include "MediaAssetCatalogContracts.hpp"
 #include "AssetReferenceChangeContracts.hpp"
@@ -254,6 +255,44 @@ namespace
                  "Destroyed project observers must reject without reading released storage" );
         require( !browser.next( nullptr ) && browser.page().entries.empty(),
                  "Expired project callbacks must discard detached rows" );
+        auto reopened = catalog->getDatabase();
+        const String unicodePath = u8"assets/caf\u00e9-\ufffd.tex";
+        const String unicodeUuid = "unicode-literal";
+        require( sql( reopened, "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,'file',?)",
+                      { unicodeUuid, unicodePath, "Texture", unicodePath } ) != nullptr,
+                 "Unicode substring fixture must seed" );
+        query.search = u8"caf\u00e9";
+        require( scalar( reopened, "SELECT wp_catalog_contains(?,?,?) AS n",
+                         { unicodePath, unicodeUuid, query.search } ) == 1,
+                 "Reopened SQLite connection must register the literal search function" );
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.size() == 1 && page.entries.front().uuid == unicodeUuid,
+                 "Indexed search must match an exact Unicode substring" );
+        query.search = u8"CAF\u00c9";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.empty(), "Indexed Unicode search must preserve case" );
+        // SQLite 3.7's GLOB decoder replaces this overlong encoding with U+FFFD.
+        query.search = String( "\xc0\xaf", 2 );
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.size() == 1 && page.entries.front().uuid == unicodeUuid,
+                 "Malformed UTF-8 search must preserve the bundled GLOB behavior" );
+        require( sql( reopened, "DROP INDEX idx_resources_uuid_browse" ) != nullptr,
+                 "Writable catalog must install its optional browse index" );
+        catalog->close();
+        String error;
+        require( catalog->openReadOnly( path.u8string().c_str(), error ), error.c_str() );
+        query.search = "*?[]";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.size() == 1 && page.entries.front().uuid == "special*?[]",
+                 "Older read-only catalogs must retain literal GLOB search without the browse index" );
+        query.search = "browse-";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.hasMore && page.entries.size() == query.pageSize,
+                 "Older read-only catalogs must return bounded filtered pages" );
+        const auto readOnlyNext = catalog->queryEntries( query, &page.next );
+        require( readOnlyNext.succeeded && readOnlyNext.entries.size() == query.pageSize &&
+                 page.entries.back().uuid < readOnlyNext.entries.front().uuid,
+                 "Older read-only catalogs must continue filtered pages in UUID order" );
         catalog->unload( nullptr );
         std::cout << "PASS: bounded catalog DTO browsing, literal filters, stable pages, external revision and lifecycle fences\n";
     }
@@ -1112,12 +1151,16 @@ namespace
 #include "AssetReferenceGraphContracts.hpp"
 #include "AssetImportSchedulingContracts.hpp"
 #include "CatalogSnapshotBudgetContracts.hpp"
+#include "AssetCatalogScaleContracts.hpp"
 #ifdef WP_CATALOG_RESOURCE_SYSTEM_TESTS
 #    include "AssetUIReferenceContracts.hpp"
 #endif
 
-int main()
+int main( int argc, char **argv )
 {
+    const bool measureScale = argc == 2 && std::string( argv[1] ) == "--scale";
+    if( argc != 1 && !measureScale )
+        return 2;
     TypeManager types;
     types.load();
     TypeManager::setInstance( &types );
@@ -1138,43 +1181,51 @@ int main()
         auto catalog = make_ptr<AssetDatabaseManager>();
         try
         {
-            catalog->loadFromFile( String( ( folder / "catalog.db" ).string().c_str() ) );
-            require( catalog->getDatabase() && catalog->getDatabase()->isLoaded(),
-                     "Real SQLite backend must open" );
-            contracts( *catalog, folder );
-            batchImportContracts( folder );
-            browsingContracts(folder);
-            catalogSnapshotBudgetContracts(folder);
-            mediaAssetCatalogContracts(folder);
-            assetReferenceChangeContracts(folder);
-            databaseValueContracts(folder);
-            domainAssetReadContracts(folder);
-            assetPackagePolicyContracts(folder);
-            maintenanceContracts(folder);
-            fileOperationContracts(folder);
-            assetReferenceGraphContracts(folder);
+            if( measureScale )
+            {
+                measureCatalogScale( folder, 10000 );
+                measureCatalogScale( folder, 100000 );
+            }
+            else
+            {
+                catalog->loadFromFile( String( ( folder / "catalog.db" ).string().c_str() ) );
+                require( catalog->getDatabase() && catalog->getDatabase()->isLoaded(),
+                         "Real SQLite backend must open" );
+                contracts( *catalog, folder );
+                batchImportContracts( folder );
+                browsingContracts(folder);
+                catalogSnapshotBudgetContracts(folder);
+                mediaAssetCatalogContracts(folder);
+                assetReferenceChangeContracts(folder);
+                databaseValueContracts(folder);
+                domainAssetReadContracts(folder);
+                assetPackagePolicyContracts(folder);
+                maintenanceContracts(folder);
+                fileOperationContracts(folder);
+                assetReferenceGraphContracts(folder);
 #ifdef WP_CATALOG_RESOURCE_SYSTEM_TESTS
-            assetUIReferenceContracts(folder);
+                assetUIReferenceContracts(folder);
 #endif
-            std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "
-                         "binary-safe asset operations, conflict-aware undo and interrupted-operation recovery\n";
-            std::cout << "PASS: catalog identity, parameter binding, scoped deletion, rollback, "
-                         "detached lookups, concurrency and persistence\n";
-            migrationContracts( folder );
-            std::cout << "PASS: versioned catalog migration, Unicode identity, retained backup, "
-                         "invalid-row rollback and future-version rejection\n";
-            versionOneMigrationContracts( folder );
-            versionTwoCorruptionContracts( folder );
-            identityLifecycleContracts( folder );
-            std::cout << "PASS: canonical catalog aliases, explicit kinds, project relocation, "
-                         "generation lifecycle and version-one migration rollback\n";
-            assetImportSchedulingContracts( folder );
-            runAssetCatalogPathContracts( folder );
+                std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "
+                             "binary-safe asset operations, conflict-aware undo and interrupted-operation recovery\n";
+                std::cout << "PASS: catalog identity, parameter binding, scoped deletion, rollback, "
+                             "detached lookups, concurrency and persistence\n";
+                migrationContracts( folder );
+                std::cout << "PASS: versioned catalog migration, Unicode identity, retained backup, "
+                             "invalid-row rollback and future-version rejection\n";
+                versionOneMigrationContracts( folder );
+                versionTwoCorruptionContracts( folder );
+                identityLifecycleContracts( folder );
+                std::cout << "PASS: canonical catalog aliases, explicit kinds, project relocation, "
+                             "generation lifecycle and version-one migration rollback\n";
+                assetImportSchedulingContracts( folder );
+                runAssetCatalogPathContracts( folder );
 #ifdef WP_CATALOG_RESOURCE_SYSTEM_TESTS
-            catalogResourceAdapterContracts( folder );
-            std::cout << "PASS: catalog ResourceID bridge, compilation, dependencies, failed "
-                         "replacement, stale request rejection and durable rename\n";
+                catalogResourceAdapterContracts( folder );
+                std::cout << "PASS: catalog ResourceID bridge, compilation, dependencies, failed "
+                             "replacement, stale request rejection and durable rename\n";
 #endif
+            }
         }
         catch( const std::exception &error )
         {

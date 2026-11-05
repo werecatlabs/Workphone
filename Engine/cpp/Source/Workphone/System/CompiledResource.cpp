@@ -588,12 +588,21 @@ namespace workphone::resource
     bool CompiledResourceIO::buildChunkHashes(const String &path,CompiledResourceHeader &header,
                                              u32 chunkBytes,Array<u64> &hashes,String &error)
     {
+        return buildChunkHashes(path,header,chunkBytes,hashes,error,maxEncodedHeaderBytes,
+                                std::numeric_limits<u64>::max());
+    }
+
+    bool CompiledResourceIO::buildChunkHashes(const String &path,CompiledResourceHeader &header,
+                                              u32 chunkBytes,Array<u64> &hashes,String &error,
+                                              u64 maximumHeaderBytes,u64 maximumPayloadBytes)
+    {
         hashes=makeSourceBudgetSnapshot<u64>();
         if(chunkBytes!=65536){error="Unsupported resource chunk size";return false;}
         const auto inputPath=fileSystemIOPath(std::filesystem::u8path(path.c_str()));
         std::ifstream input(inputPath,std::ios::binary);u64 payloadOffset=0;
         if(!input){error="Cannot open chunk source";return false;}
-        if(!readHeaderFromStream(input,header,payloadOffset,error))return false;
+        if(!readHeaderFromStream(input,header,payloadOffset,error,maximumHeaderBytes))return false;
+        if(header.payloadSize>maximumPayloadBytes){error="Chunk source exceeds the admitted payload size";return false;}
         std::error_code ec;const auto fileBytes=std::filesystem::file_size(inputPath,ec);
         if(ec||fileBytes<payloadOffset||fileBytes-payloadOffset!=header.payloadSize){error="Chunk source container size mismatch";return false;}
         const auto count=header.payloadSize/chunkBytes+(header.payloadSize%chunkBytes!=0);

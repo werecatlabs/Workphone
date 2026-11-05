@@ -465,14 +465,16 @@ namespace workphone::adbeditor
         executeDML( "update configured_actors set name = 'New Model' where id = 1 + " +
                     StringUtil::toString( maxId ) );
 
-        // 6. Copy attribs for the new model.
+        // Copy model attributes while leaving the clone's asset identity unassigned.
         executeDML( "insert into main.attribs (title, value, ref_component_id, actor_id, "
                     "configured_actor_id, applied) select attribs.title, attribs.value, "
                     "attribs.ref_component_id, 1 + " + StringUtil::toString( maxId ) + ", "
                     "main.configured_actors.id as 'configured_actor_id', attribs.applied from "
                     "main.configured_actors, attribs where main.configured_actors.ref_actor_row_id = "
                     "attribs.configured_actor_id and attribs.actor_id = " +
-                    StringUtil::toString( refId ) + " and main.configured_actors.lft between "
+                    StringUtil::toString( refId ) +
+                    " and (attribs.title is null or attribs.title collate binary <> 'uuid') "
+                    "and main.configured_actors.lft between "
                     "(select lft from main.configured_actors where id = 1 + " +
                     StringUtil::toString( maxId ) + ") and (select rght from main.configured_actors "
                     "where id = 1 + " + StringUtil::toString( maxId ) + ")" );

@@ -54,6 +54,7 @@
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 
+#include <charconv>
 #include <initializer_list>
 #include <set>
 #include <functional>
@@ -1839,8 +1840,9 @@ namespace workphone
         {
             return nullptr;
         }
+        const auto uuid = StringUtil::toString( id );
         AssetDatabaseManager::EntrySnapshot entry;
-        if( auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry ) )
+        if( auto catalog = catalogForUuid( *this, uuid, entry ) )
         {
             if( entry.kind != AssetDatabaseManager::EntryKind::File )
             {
@@ -1870,20 +1872,8 @@ namespace workphone
             return nullptr;
         }
 
-        auto sceneManager = applicationManager->getGameManagerPtr();
-        auto scene = sceneManager ? sceneManager->getCurrentScenePtr() : nullptr;
-
-        auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
-        if( !graphicsSystem )
-        {
-            return nullptr;
-        }
-
         auto prefabManager = applicationManager->getPrefabManager();
-
-        auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
-        auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
-        if( !materialManager || !textureManager )
+        if( !prefabManager )
         {
             return nullptr;
         }
@@ -1894,94 +1884,21 @@ namespace workphone
             return nullptr;
         }
 
-        auto uuid = properties->getProperty( "uuid" );
-        if( StringUtil::isNullOrEmpty( uuid ) )
+        const auto type = properties->getProperty( "asset_type" );
+        if( type == "prefab" )
         {
-            uuid = StringUtil::getUUID();
+            return prefabManager->createOrRetrieve( uuid, "", type ).first;
         }
-
-        auto type = properties->getProperty( "asset_type" );
-        if( type == "material" )
+        if( type == "model" )
         {
-        }
-        else if( type == "texture" )
-        {
-        }
-        else if( type == "prefab" )
-        {
-            auto result = prefabManager->createOrRetrieve( uuid, "", type );
-            return result.first;
-        }
-        else if( type == "scene" )
-        {
-        }
-        else if( type == "shader" )
-        {
-        }
-        else if( type == "mesh" )
-        {
-        }
-        else if( type == "model" )
-        {
-            SmartPtr<scene::IGamePrefab> prefab = prefabManager->create( uuid );
-            prefab->setData( properties );
+            auto prefab = dynamic_pointer_cast<scene::IGamePrefab>( prefabManager->create( uuid ) );
+            if( prefab )
+            {
+                prefab->setData( properties );
+            }
             return prefab;
         }
-        else if( type == "animation" )
-        {
-        }
-        else if( type == "audio" )
-        {
-        }
-        else if( type == "font" )
-        {
-        }
-        else if( type == "script" )
-        {
-        }
-        else if( type == "script_class" )
-        {
-        }
-        else if( type == "script_function" )
-        {
-        }
-        else if( type == "script_module" )
-        {
-        }
-        else if( type == "script_property" )
-        {
-        }
-        else if( type == "script_variable" )
-        {
-        }
-        else if( type == "shader" )
-        {
-        }
-        else if( type == "shader_program" )
-        {
-        }
-        else if( type == "shader_variable" )
-        {
-        }
-        else if( type == "shader_variable_block" )
-        {
-        }
-        else if( type == "shader_variable_sampler" )
-        {
-        }
-        else if( type == "shader_variable_texture" )
-        {
-        }
-        else if( type == "shader_variable_uniform" )
-        {
-        }
-        else if( type == "vehicle" )
-        {
-        }
-        else
-        {
-        }
-
+        WP_LOG_WARNING( "Unsupported authored domain asset type: " + type );
         return nullptr;
     }
 
@@ -2702,6 +2619,48 @@ namespace workphone
             return columns;
         }
 
+        String completeDomainText( const String &column )
+        {
+            // SQLite 3.7 has no instr(). Its text length/substr stop at NUL,
+            // while BLOB comparison retains every byte in the database encoding.
+            return "CAST(" + column + " AS BLOB)=CAST(substr(" + column +
+                   ",1,length(" + column + ")) AS BLOB)";
+        }
+
+        String uniqueDomainRoot( SmartPtr<IDatabaseQuery> rows )
+        {
+            if( !rows )
+            {
+                throw std::runtime_error( "Cannot read domain UUID binding." );
+            }
+            if( rows->eof() )
+            {
+                return {};
+            }
+            const auto id = rows->getFieldValue( "id" );
+            const auto completeId = rows->getFieldValueAsInt( "id_complete" ) == 1;
+            const auto idType = rows->getFieldValue( "id_type" );
+            rows->nextRow();
+            if( id.empty() || id.size() > 65536 || !completeId ||
+                ( idType != "integer" && idType != "text" ) || !rows->eof() )
+            {
+                throw std::runtime_error( "Domain UUID binding is missing an owner or is ambiguous." );
+            }
+            return id;
+        }
+
+        bool positiveDomainRowId( const String &id )
+        {
+            if( id.empty() || id.front() < '1' || id.front() > '9' )
+            {
+                return false;
+            }
+            s64 value = 0;
+            const auto end = id.data() + id.size();
+            const auto parsed = std::from_chars( id.data(), end, value );
+            return parsed.ec == std::errc{} && parsed.ptr == end;
+        }
+
         SmartPtr<Properties> readDomainTree( SmartPtr<IDatabaseManager> db, const UUID &uuid,
                                              SmartPtr<Properties> flattened )
         {
@@ -2709,6 +2668,7 @@ namespace workphone
             {
                 return nullptr;
             }
+            ScopedLock managerLock( db );
             auto connection = db->getDatabase();
             DatabaseConnectionLock guard(
                 connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
@@ -2724,21 +2684,6 @@ namespace workphone
                     throw std::runtime_error( "Domain actor schema is unsupported." );
                 }
                 const auto attributes = domainColumns( db, "attribs" );
-                const String identityColumn = columns.count( "uuid" ) ? "uuid" : "id";
-                auto identity = queryResourceValues(
-                    db, "SELECT id FROM configured_actors WHERE " + identityColumn + "=? LIMIT 2",
-                    { StringUtil::toString( uuid ) } );
-                if( !identity || identity->eof() )
-                {
-                    throw std::runtime_error(
-                        "Domain UUID is missing; numeric actors require an explicit UUID column." );
-                }
-                const auto rootId = identity->getFieldValue( "id" );
-                identity->nextRow();
-                if( !identity->eof() )
-                {
-                    throw std::runtime_error( "Domain UUID is ambiguous." );
-                }
                 String attributeOwner;
                 if( !attributes.empty() )
                 {
@@ -2752,6 +2697,55 @@ namespace workphone
                     if( attributeOwner.empty() )
                     {
                         throw std::runtime_error( "Domain attributes have no supported owner column." );
+                    }
+                }
+                const auto requestedUuid = StringUtil::toString( uuid );
+                const bool hasUuidColumn = columns.count( "uuid" ) != 0;
+                const String identityColumn = hasUuidColumn ? "uuid" : "id";
+                auto rootId = uniqueDomainRoot( queryResourceValues(
+                    db, "SELECT id," + completeDomainText( "id" ) + " AS id_complete,"
+                        "typeof(id) AS id_type FROM configured_actors WHERE " + identityColumn +
+                        " COLLATE NOCASE=? AND typeof(" + identityColumn + ")='text' AND " +
+                        completeDomainText( identityColumn ) + " LIMIT 2", { requestedUuid } ) );
+                if( !attributeOwner.empty() )
+                {
+                    // The authored domain editor already stores per-actor attributes.
+                    // Its reserved uuid attribute supplies identity for numeric rows.
+                    const auto mappedId = uniqueDomainRoot( queryResourceValues(
+                        db, "SELECT " + attributeOwner + " AS id," + completeDomainText( attributeOwner ) +
+                            " AS id_complete,typeof(" + attributeOwner + ") AS id_type FROM attribs "
+                            "WHERE title COLLATE BINARY=? AND value COLLATE NOCASE=? AND "
+                            "typeof(value)='text' AND " + completeDomainText( "value" ) + " LIMIT 2",
+                        { "uuid", requestedUuid } ) );
+                    if( !mappedId.empty() )
+                    {
+                        if( !rootId.empty() && rootId != mappedId )
+                        {
+                            throw std::runtime_error( "Domain UUID column and attribute bind different actors." );
+                        }
+                        // An existing direct binding can repeat its identical UUID
+                        // as metadata. A new binding requires a numeric owner.
+                        if( rootId.empty() && !positiveDomainRowId( mappedId ) )
+                        {
+                            throw std::runtime_error( "Domain UUID attribute requires a positive numeric actor ID." );
+                        }
+                        rootId = mappedId;
+                    }
+                }
+                if( rootId.empty() )
+                {
+                    throw std::runtime_error( "Domain UUID is missing; numeric actors require an authored UUID binding." );
+                }
+                if( hasUuidColumn )
+                {
+                    auto conflicts = queryResourceValues(
+                        db, "SELECT id FROM configured_actors WHERE id=? AND uuid IS NOT NULL AND "
+                            "(typeof(uuid)<>'text' OR NOT (" + completeDomainText( "uuid" ) +
+                            ") OR (uuid<>'' AND uuid COLLATE NOCASE<>?)) LIMIT 1",
+                        { rootId, requestedUuid } );
+                    if( !conflicts || !conflicts->eof() )
+                    {
+                        throw std::runtime_error( "Domain UUID attribute conflicts with the actor UUID column." );
                     }
                 }
                 std::set<String> visited;
@@ -2795,7 +2789,8 @@ namespace workphone
                     {
                         auto values =
                             queryResourceValues( db,
-                                                 "SELECT title,value FROM attribs WHERE " +
+                                                 "SELECT title,value,typeof(value)='text' AND length(value)=36 AND " +
+                                                     completeDomainText( "value" ) + " AS uuid_text FROM attribs WHERE " +
                                                      attributeOwner + "=? ORDER BY title LIMIT 4097",
                                                  { id } );
                         if( !values )
@@ -2813,6 +2808,12 @@ namespace workphone
                                 throw std::runtime_error(
                                     "Domain attributes are ambiguous or exceed their budget." );
                             }
+                            if( depth == 0 && name == "uuid" &&
+                                ( values->getFieldValueAsInt( "uuid_text" ) != 1 ||
+                                  StringUtil::make_lower( value ) != requestedUuid ) )
+                            {
+                                throw std::runtime_error( "Domain actor has a conflicting authored UUID attribute." );
+                            }
                             account( name );
                             account( value );
                             result->setProperty( name, value );
@@ -2822,6 +2823,10 @@ namespace workphone
                             }
                             values->nextRow();
                         }
+                    }
+                    if( depth == 0 )
+                    {
+                        result->setProperty( "uuid", requestedUuid );
                     }
                     auto children = queryResourceValues(
                         db, "SELECT id FROM configured_actors WHERE parent_id=? ORDER BY id LIMIT 4097",

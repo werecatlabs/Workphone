@@ -3,6 +3,7 @@
 
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
+#include <WPGraphics/Resources/TextureProfileAuthoring.hpp>
 #include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 
@@ -167,6 +168,64 @@ namespace graphics_compiler_contracts
             write(source/"image.texres",textureJson);
         }
         {
+            auto pc = context;
+            pc.target = "pc";
+            auto dx = context;
+            dx.target = "windows-dx11-dds-bc3-srgb-v1";
+            TextureProfileDocument original, selected;
+            if( !openTextureProfileDocument( context.sourceRoot, "image.texres", pc.target, original, error ) )
+                throw std::runtime_error( error.c_str() );
+            auto draft = original.effective;
+            draft.compression = "bc1";
+            TextureProfilePreview preview;
+            if( !buildTextureProfilePreview( original, draft, 1, TexturePreviewChannel::Error, preview, error ) )
+                throw std::runtime_error( error.c_str() );
+            require( preview.format == 71 && preview.width == 4 && preview.height == 4 && preview.mipCount == 3 &&
+                         preview.mip == 1 && preview.imageWidth == 2 && preview.imageHeight == 2 &&
+                         preview.image.size() == 16 && preview.hasReference && preview.meanAbsoluteError > 0,
+                     "Draft preview must encode actual BC1, select its mip and compare decoded pixels" );
+            CookedTextureData encoded;
+            require( openTextureProfileDocument( context.sourceRoot, "image.texres", pc.target, selected, error ) &&
+                         selected.original == original.original && !selected.overridden &&
+                         decodeCookedTexture( cook( compiler, pc ), encoded, error ) && encoded.ddsBytes.empty(),
+                     "Unsaved preview must leave the descriptor in inherited mode" );
+            if( !saveTextureProfileOverride( original, &draft, error ) ) throw std::runtime_error( error.c_str() );
+            require( !saveTextureProfileOverride( original, nullptr, error ) && !error.empty(),
+                     "A stale inspector must not replace a newer descriptor" );
+            require( !isTextureProfilePreviewCurrent( original, preview, error ),
+                     "A pending preview must detect descriptor changes before publication" );
+            if( !openTextureProfileDocument( context.sourceRoot, "image.texres", pc.target, selected, error ) )
+                throw std::runtime_error( error.c_str() );
+            require( selected.overridden && selected.effective.compression == "bc1" &&
+                         selected.defaults.compression.empty() && selected.source == "data://image.tga" &&
+                         selected.descriptorPath == "image.texres",
+                     "Reopen must distinguish inherited defaults from saved target values and preserve identity" );
+            require( decodeCookedTexture( cook( compiler, pc ), encoded, error ) && encoded.storageFormat == 71 &&
+                         encoded.ddsBytes.size() == preview.encodedBytes,
+                     "Actual cook must honor the saved override and match the preview encoding" );
+            require( decodeCookedTexture( cook( compiler, dx ), encoded, error ) && encoded.storageFormat == 0 &&
+                         dds::inspect( encoded.ddsBytes ).format == 78,
+                     "An override must not leak across package targets" );
+            TextureProfileDocument dxDocument;
+            if( !openTextureProfileDocument( context.sourceRoot, "image.texres", dx.target, dxDocument, error ) )
+                throw std::runtime_error( error.c_str() );
+            auto dxDraft = dxDocument.effective;
+            dxDraft.compression = "none";
+            dxDraft.maximumSize = 2;
+            if( !saveTextureProfileOverride( dxDocument, &dxDraft, error ) ) throw std::runtime_error( error.c_str() );
+            require( decodeCookedTexture( cook( compiler, dx ), encoded, error ) && encoded.storageFormat == 87 &&
+                         dds::inspect( encoded.ddsBytes ).mips.front().width == 2,
+                     "A second target override must drive actual resizing and lossless storage" );
+            require( !saveTextureProfileOverride( selected, nullptr, error ),
+                     "Another target edit invalidates the earlier descriptor snapshot" );
+            if( !openTextureProfileDocument( context.sourceRoot, "image.texres", pc.target, selected, error ) ||
+                !saveTextureProfileOverride( selected, nullptr, error ) ) throw std::runtime_error( error.c_str() );
+            require( decodeCookedTexture( cook( compiler, pc ), encoded, error ) && encoded.ddsBytes.empty() &&
+                         decodeCookedTexture( cook( compiler, dx ), encoded, error ) && encoded.storageFormat == 87,
+                     "Clear must restore inheritance for only the selected target" );
+            write( source / "image.texres", textureJson );
+        }
+        {
             auto policy=make_ptr<Properties>();policy->setProperty("assets.compression",s32(3));
             policy->setProperty("assets.textureCompression.pc",s32(1));policy->setProperty("platform.active",s32(0));
             policy->setProperty("quality.texture",s32(2));policy->setProperty("quality.maxTextureSize",s32(4096));
@@ -226,6 +285,10 @@ namespace graphics_compiler_contracts
                      "Malformed texture descriptor must fail without publishing payload bytes" );
         };
         rejectDescriptor( textureJson.substr( 0, textureJson.size() - 1 ) );
+        rejectDescriptor( textureJson.substr( 0, textureJson.size() - 1 ) +
+                          R"(,"targetOverrides":{"pc":{"source":"data://different.tga"}}})" );
+        rejectDescriptor( textureJson.substr( 0, textureJson.size() - 1 ) +
+                          R"(,"targetOverrides":{"pc":{"maxTextureSize":4,"maxTextureSize":8}}})" );
         rejectDescriptor(
             R"({"version":2,"source":"data://image.tga","mipFilter":"colour","atlasColumns":1,"alphaCutoff":0.5})" );
         rejectDescriptor(

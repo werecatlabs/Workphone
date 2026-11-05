@@ -115,11 +115,15 @@ namespace workphone::ui
 
     void ImGuiImage::setTexture( SmartPtr<render::ITexture> texture )
     {
+        auto app = core::IApplicationManager::instancePtr();
+        ScopedLock lock( app ? app->getUI() : nullptr );
         m_texture = texture;
     }
 
     SmartPtr<render::ITexture> ImGuiImage::getTexture() const
     {
+        auto app = core::IApplicationManager::instancePtr();
+        ScopedLock lock( app ? app->getUI() : nullptr );
         return m_texture;
     }
 

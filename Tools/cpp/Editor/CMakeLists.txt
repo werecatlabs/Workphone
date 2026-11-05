@@ -363,6 +363,9 @@ if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW AND WP_BUILD_RENDERER_DX11 AND TARGET WPGr
         ${WP_ROOT}/Engine/c/Include/WorkphoneCore
         ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
     target_link_libraries(Editor WPGraphics WorkphoneGraphics)
+    if(WP_BUILD_RESOURCE_SYSTEM)
+        target_compile_definitions(Editor PRIVATE WP_EDITOR_TEXTURE_PROFILE=1)
+    endif()
 endif()
 
 if (NOT WP_STATIC_LIB)

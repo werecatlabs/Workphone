@@ -169,11 +169,19 @@ namespace workphone
 
     bool CatalogResourceAdapter::captureAssetBindings(std::map<String,resource::ResourceID> &bindings,String &error) const
     {
-        error.clear();bindings.clear();
+        u64 generation = 0;
+        return captureAssetBindings( bindings, generation, error );
+    }
+
+    bool CatalogResourceAdapter::captureAssetBindings( std::map<String,resource::ResourceID> &bindings,
+                                                       u64 &catalogGeneration, String &error ) const
+    {
+        error.clear();bindings.clear();catalogGeneration = 0;
         try {
             if(!validateBinding(error))return false;
             auto catalog=m_catalog;
             asset_package_detail::Admission admission(m_catalog,error);if(!admission.active)return false;
+            const auto generation = catalog->getCatalogGeneration();
             std::map<String,resource::ResourceID> captured;std::set<String> identities;u64 bytes=0;
             for(const auto &mapping:m_mappings) {
                 AssetDatabaseManager::EntryQuery query;query.type=mapping.catalogType;query.includeScenes=false;query.pageSize=256;
@@ -201,7 +209,14 @@ namespace workphone
                     cursor=std::move(page.next);more=page.hasMore;
                 }while(more);
             }
-            bindings.swap(captured);return true;
+            if( catalog->getCatalogGeneration() != generation )
+            {
+                error = "Catalog changed during UUID binding capture";
+                return false;
+            }
+            bindings.swap(captured);
+            catalogGeneration = generation;
+            return true;
         }catch(const std::exception &failure){error=failure.what();return false;}
     }
 
@@ -335,6 +350,12 @@ namespace workphone
     resource::CompilationReport CatalogResourceAdapter::compile(
         const Request &request, const resource::CompilationOptions &options ) const
     {
+        if( m_catalog && !m_catalog->isReadOnly() &&
+            std::dynamic_pointer_cast<resource::ResourceSystem>( m_resources ) )
+        {
+            return std::move( compileBatch( { request }, options ).front() );
+        }
+
         String error;
         if( !validateRequest( request, error ) )
         {
@@ -350,6 +371,61 @@ namespace workphone
             report.messages.push_back( error );
         }
         return report;
+    }
+
+    Array<resource::CompilationReport> CatalogResourceAdapter::compileBatch(
+        const Array<Request> &requests, const resource::CompilationOptions &options,
+        const std::function<bool()> &isCancelled, const std::function<void()> &verifyInputs ) const
+    {
+        const auto fail = []( const resource::ResourceID &id, const String &message ) {
+            resource::CompilationReport report;
+            report.resourceId = id;
+            report.messages.push_back( message );
+            return Array<resource::CompilationReport>{ std::move( report ) };
+        };
+        const auto resources = std::dynamic_pointer_cast<resource::ResourceSystem>( m_resources );
+        if( !resources || requests.empty() || requests.size() > 65536 )
+        {
+            return fail( resource::ResourceID(), "Checked cooking requires a ResourceSystem and 1 to 65536 roots" );
+        }
+        if( !m_catalog || m_catalog->isReadOnly() )
+        {
+            return fail( requests.front().resourceId, "Checked cooking requires a writable project catalog" );
+        }
+        String error;
+        Array<resource::ResourceID> ids;
+        ids.reserve( requests.size() );
+        for( const auto &request : requests )
+        {
+            if( !validateRequest( request, error ) )
+                return fail( request.resourceId, error );
+            ids.push_back( request.resourceId );
+        }
+
+        const resource::CompilationPublicationGuard guard =
+            [&]( const String &sourceRoot, std::shared_ptr<void> &lifetime, String &diagnostic ) {
+                std::error_code filesystemError;
+                if( !std::filesystem::equivalent( std::filesystem::u8path( sourceRoot.c_str() ),
+                                                  std::filesystem::u8path( m_sourceRoot.c_str() ),
+                                                  filesystemError ) || filesystemError )
+                {
+                    diagnostic = "Cook resource source root does not match the admitted catalog";
+                    return false;
+                }
+                auto admission = std::make_shared<asset_package_detail::Admission>( m_catalog, diagnostic );
+                if( !admission->active )
+                    return false;
+                for( const auto &request : requests )
+                {
+                    if( !validateRequest( request, diagnostic ) )
+                        return false;
+                }
+                if( verifyInputs )
+                    verifyInputs();
+                lifetime = std::move( admission );
+                return true;
+            };
+        return resources->compileBatch( ids, options, guard, isCancelled );
     }
 
     std::shared_ptr<const resource::RuntimeResource> CatalogResourceAdapter::load(

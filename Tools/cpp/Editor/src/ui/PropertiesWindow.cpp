@@ -2,6 +2,7 @@
 #include <Workphone/Database/AssetReferenceChange.hpp>
 #include <Workphone/Core/PropertyPath.hpp>
 #include <ui/PropertiesWindow.hpp>
+#include <ui/TextureProfileInspector.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
 #include <ui/UIManager.hpp>
@@ -83,6 +84,9 @@ namespace workphone::editor
             propertiesListener->setOwner( this );
             m_propertyGrid->addObjectListener( propertiesListener );
             setEventListener( propertiesListener );
+#if WP_EDITOR_TEXTURE_PROFILE
+            m_textureProfile = std::make_unique<TextureProfileInspector>( ui, parentWindow, propertiesListener );
+#endif
 
             auto dropTarget = workphone::make_ptr<PropertiesDropTarget>();
             dropTarget->setOwner( this );
@@ -138,6 +142,9 @@ namespace workphone::editor
             auto ui = applicationManager->getUI();
             WP_ASSERT( ui );
 
+#if WP_EDITOR_TEXTURE_PROFILE
+            m_textureProfile.reset();
+#endif
             if( m_propertyGrid )
             {
                 if( auto listener = getEventListener() )
@@ -197,6 +204,9 @@ namespace workphone::editor
             }
         }
         updateCubemapPreview( object );
+#if WP_EDITOR_TEXTURE_PROFILE
+        if( updateTextureProfile( object ) ) return;
+#endif
 
         // Import jobs publish status on their retained director, not on this UI
         // snapshot. Refresh only that field so completion is visible without
@@ -326,6 +336,9 @@ namespace workphone::editor
     void PropertiesWindow::updateSelection( SmartPtr<ISharedObject> object )
     {
         updateCubemapPreview( object );
+#if WP_EDITOR_TEXTURE_PROFILE
+        if( TextureProfileInspector::isTextureDescriptor( object ) ) return;
+#endif
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
@@ -598,6 +611,9 @@ namespace workphone::editor
 
     void PropertiesWindow::updateSelectionMT( SmartPtr<ISharedObject> object )
     {
+#if WP_EDITOR_TEXTURE_PROFILE
+        if( TextureProfileInspector::isTextureDescriptor( object ) ) return;
+#endif
         if( auto propertyGrid = getPropertyGrid() )
         {
             auto applicationManager = core::IApplicationManager::instance();
@@ -1086,6 +1102,23 @@ namespace workphone::editor
             auto properties = workphone::dynamic_pointer_cast<Properties>( arguments[2].object );
             if( !properties ) return {};
 
+#if WP_EDITOR_TEXTURE_PROFILE
+            if( owner->m_textureProfile && owner->m_textureProfile->ownsEvent( sender ) &&
+                ( eventValue == IEvent::handlePropertyButtonClick || eventValue == IEvent::handlePropertyChanged ) )
+            {
+                auto selection = owner->getSelected();
+                if( !selection )
+                {
+                    auto app = core::IApplicationManager::instancePtr();
+                    auto manager = app ? app->getSelectionManagerPtr() : nullptr;
+                    auto objects = manager ? manager->getSelection() : Array<SmartPtr<ISharedObject>>();
+                    if( !objects.empty() ) selection = objects.front();
+                }
+                owner->updateTextureProfile( selection );
+                if( owner->m_textureProfile->handle( sender, properties, name, value,
+                        eventValue == IEvent::handlePropertyButtonClick ) ) return {};
+            }
+#endif
             if( eventValue == IEvent::handlePropertyButtonClick )
             {
                 owner->propertyChange( properties, name, value, true );
@@ -1098,6 +1131,15 @@ namespace workphone::editor
 
         return {};
     }
+
+#if WP_EDITOR_TEXTURE_PROFILE
+    bool PropertiesWindow::updateTextureProfile( SmartPtr<ISharedObject> object )
+    {
+        const bool selected = m_textureProfile && m_textureProfile->update( object );
+        if( m_propertyGrid ) m_propertyGrid->setVisible( !selected, false );
+        return selected;
+    }
+#endif
 
     SmartPtr<PropertiesWindow> PropertiesWindow::PropertiesListener::getOwner() const
     {

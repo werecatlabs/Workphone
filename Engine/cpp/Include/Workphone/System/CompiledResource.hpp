@@ -76,6 +76,9 @@ namespace workphone::resource
                           u64 maxPayloadBytes, u64 maxEncodedHeaderBytes );
         static bool buildChunkHashes(const String &path,CompiledResourceHeader &header,
                                      u32 chunkBytes,Array<u64> &hashes,String &error);
+        static bool buildChunkHashes(const String &path,CompiledResourceHeader &header,
+                                     u32 chunkBytes,Array<u64> &hashes,String &error,
+                                     u64 maximumHeaderBytes,u64 maximumPayloadBytes);
         /** Checks bounded header/file/range shape and the supplied independent
          * corruption pin; callers must obtain that pin from a verified manifest. */
         static bool readPinnedRange(const String &path,CompiledResourceHeader &header,

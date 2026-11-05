@@ -1,9 +1,11 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
+#include <WPGraphics/Resources/TextureProfileAuthoring.hpp>
 #include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Graphics/ProjectAssetPolicy.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/Core/StringUtil.hpp>
 #include <boost/json.hpp>
 #include <FreeImage.h>
 #if defined( WP_PLATFORM_WIN32 ) && WP_BUILD_RENDERER_DX11
@@ -21,6 +23,9 @@
 #include <mutex>
 #include <set>
 #include <stdexcept>
+#if defined( _WIN32 )
+#    include <Windows.h>
+#endif
 
 namespace workphone::render
 {
@@ -31,6 +36,7 @@ namespace workphone::render
         constexpr u64 encodedImageByteLimit = 64ull * 1024ull * 1024ull;
         constexpr u32 maxTextureDimension = 16384;
         std::mutex imageCodecMutex;
+        std::mutex textureProfileSaveMutex;
 
         void require( bool condition, const char *message )
         {
@@ -112,13 +118,9 @@ namespace workphone::render
             }
         }
 
-        json::object readDescriptor( const resource::CompileContext &context,
-                                     const std::set<std::string> &fields,
-                                     const std::set<std::string> &optional = {} )
+        json::object parseDescriptor( const std::string &text, const std::set<std::string> &fields,
+                                      const std::set<std::string> &optional )
         {
-            auto bytes =
-                readFile( fs::u8path( context.sourcePath.c_str() ), graphicsResourceDescriptorLimit );
-            const std::string text( reinterpret_cast<const char *>( bytes.data() ), bytes.size() );
             json::parse_options options;
             options.max_depth = 8;
             auto value = json::parse( text, {}, options );
@@ -139,6 +141,19 @@ namespace workphone::render
             require( version.is_number() && version.to_number<double>() == 1.0,
                      "Unsupported graphics descriptor version" );
             return object;
+        }
+
+        std::string readDescriptorText( const String &path )
+        {
+            const auto bytes = readFile( fs::u8path( path.c_str() ), graphicsResourceDescriptorLimit );
+            return { reinterpret_cast<const char *>( bytes.data() ), bytes.size() };
+        }
+
+        json::object readDescriptor( const resource::CompileContext &context,
+                                     const std::set<std::string> &fields,
+                                     const std::set<std::string> &optional = {} )
+        {
+            return parseDescriptor( readDescriptorText( context.sourcePath ), fields, optional );
         }
 
         String stringField( const json::object &object, const char *name )
@@ -168,6 +183,7 @@ namespace workphone::render
             TextureMipSettings settings;
             String compression;
             u32 maximumTextureSize = 0;
+            bool compressionOverridden = false, sizeOverridden = false;
         };
 
         constexpr const char *projectPolicyInput = "data://.workphone/ProjectAssetPolicy.settings";
@@ -198,90 +214,224 @@ namespace workphone::render
             return policy;
         }
 
-        TextureRecipe readTextureRecipe( const resource::CompileContext &context )
+        constexpr std::array<const char *, 6> mipFilters = {
+            "none", "colour", "data", "normal", "cutout", "roughness"
+        };
+
+        bool validTargetName( const String &target )
         {
-            const auto descriptor = readDescriptor(
-                context, { "version", "source", "mipFilter", "atlasColumns", "alphaCutoff" },
-                { "compression", "maxTextureSize" } );
-            TextureRecipe recipe;
-            auto path = stringField( descriptor, "source" );
+            return !target.empty() && target.size() <= 64 &&
+                   std::all_of( target.begin(), target.end(), []( char c ) {
+                       return ( c >= 'a' && c <= 'z' ) || ( c >= '0' && c <= '9' ) ||
+                              c == '-' || c == '_' || c == '.';
+                   } );
+        }
+
+        void validateTextureProfile( const TextureProfileSettings &profile, const String &target )
+        {
+            require( size_t( profile.mip.filter ) < mipFilters.size(), "Unknown texture mipFilter" );
+            require( profile.mip.atlasColumns > 0 && profile.mip.atlasColumns <= maxTextureDimension,
+                     "Texture atlasColumns is outside its supported range" );
+            require( profile.mip.alphaCutoff > 0 && profile.mip.alphaCutoff < 1,
+                     "Texture alphaCutoff must be strictly between zero and one" );
+            require( profile.maximumSize <= maxTextureDimension,
+                     "Texture maxTextureSize is outside its supported range" );
+            const auto &compression = profile.compression;
+            require( compression.empty() || compression == "none" || compression == "bc1" ||
+                         compression == "bc3" || compression == "bc7" || compression == "astc" ||
+                         compression == "pvrtc" || compression == "etc2",
+                     "Unknown texture recipe compression format" );
+            const auto gpuFormat = compression.empty()     ? ddsFormatForTarget( target )
+                                   : compression == "none" ? 87u
+                                   : compression == "bc1"  ? 71u
+                                   : compression == "bc3"  ? 77u
+                                                                  : 0u;
+            const bool srgb = gpuFormat == 72 || gpuFormat == 78 || gpuFormat == 91;
+            require( !srgb || profile.mip.filter == TextureMipFilter::Colour ||
+                         profile.mip.filter == TextureMipFilter::Cutout ||
+                         profile.mip.filter == TextureMipFilter::None,
+                     "SRGB DDS profiles require colour/cutout/none mip semantics" );
+            require( ( !dds::blockBytes( gpuFormat ) && compression != "bc7" ) ||
+                         profile.mip.filter != TextureMipFilter::Normal,
+                     "Normal maps require the lossless BGRA profile until a normal-map compression "
+                     "profile is supported" );
+        }
+
+        TextureProfileSettings readTextureProfile( const json::object &object,
+                                                   TextureProfileSettings profile = {},
+                                                   bool overrideProfile = false )
+        {
+            for( const auto &field : object )
+            {
+                const auto key = field.key();
+                if( key == "mipFilter" )
+                {
+                    const auto value = stringField( object, "mipFilter" );
+                    const auto found = std::find( mipFilters.begin(), mipFilters.end(), value );
+                    require( found != mipFilters.end(), "Unknown texture mipFilter" );
+                    profile.mip.filter = TextureMipFilter( found - mipFilters.begin() );
+                }
+                else if( key == "atlasColumns" || key == "maxTextureSize" )
+                {
+                    const auto minimum = key == "maxTextureSize" && overrideProfile ? 0.0 : 1.0;
+                    require( field.value().is_number(), "Texture size field must be numeric" );
+                    const auto number = field.value().to_number<double>();
+                    require( number >= minimum && number <= maxTextureDimension && std::floor( number ) == number,
+                             "Texture size field must be a bounded integer" );
+                    if( key == "atlasColumns" ) profile.mip.atlasColumns = u32( number );
+                    else profile.maximumSize = u32( number );
+                }
+                else if( key == "alphaCutoff" )
+                {
+                    profile.mip.alphaCutoff = scalar( field.value(), 0, 1 );
+                }
+                else if( key == "compression" )
+                {
+                    profile.compression = stringField( object, "compression" );
+                    if( overrideProfile && profile.compression == "inherit" ) profile.compression.clear();
+                }
+                else
+                {
+                    require( !overrideProfile, "Unsupported texture target override field" );
+                }
+            }
+            return profile;
+        }
+
+        json::object parseTextureDescriptor( const std::string &text )
+        {
+            return parseDescriptor( text, { "version", "source", "mipFilter", "atlasColumns", "alphaCutoff" },
+                                    { "compression", "maxTextureSize", "targetOverrides" } );
+        }
+
+        void readTextureDocument( const json::object &descriptor, TextureProfileDocument &document )
+        {
+            const auto path = stringField( descriptor, "source" );
             require( path.size() > 7 && path.substr( 0, 7 ) == "data://",
                      "Texture source must be a data:// path under the project source root" );
             AssetCatalogPath canonical;
             String error;
-            if( !canonicalAssetCatalogPath( context.sourceRoot, path.substr( 7 ), canonical, error ) )
-            {
+            if( !canonicalAssetCatalogPath( document.sourceRoot, path.substr( 7 ), canonical, error ) )
                 throw std::runtime_error( error.c_str() );
-            }
-            recipe.source = "data://" + canonical.path;
-            const auto filter = stringField( descriptor, "mipFilter" );
-            if( filter == "none" )
+            document.source = "data://" + canonical.path;
+            document.defaults = readTextureProfile( descriptor );
+            validateTextureProfile( document.defaults, {} );
+            document.effective = document.defaults;
+            document.overridden = false;
+            if( const auto *value = descriptor.if_contains( "targetOverrides" ) )
             {
-                recipe.settings.filter = TextureMipFilter::None;
+                require( value->is_object() && value->as_object().size() <= 16,
+                         "Texture targetOverrides must be an object with at most 16 targets" );
+                for( const auto &entry : value->as_object() )
+                {
+                    const String target( entry.key().data(), entry.key().size() );
+                    require( validTargetName( target ) && entry.value().is_object() &&
+                                 !entry.value().as_object().empty(), "Invalid texture target override" );
+                    auto profile = readTextureProfile( entry.value().as_object(), document.defaults, true );
+                    validateTextureProfile( profile, target );
+                    if( target == document.target )
+                    {
+                        document.effective = std::move( profile );
+                        document.overridden = true;
+                    }
+                }
             }
-            else if( filter == "colour" )
+        }
+
+        TextureRecipe textureRecipe( const TextureProfileDocument &doc, const TextureProfileSettings &profile )
+        {
+            validateTextureProfile( profile, doc.target );
+            return { doc.source, profile.mip, profile.compression, profile.maximumSize,
+                     profile.compression != doc.defaults.compression, profile.maximumSize != doc.defaults.maximumSize };
+        }
+
+        TextureRecipe readTextureRecipe( const resource::CompileContext &context )
+        {
+            TextureProfileDocument document;
+            document.sourceRoot = context.sourceRoot;
+            document.target = context.target;
+            readTextureDocument( parseTextureDescriptor( readDescriptorText( context.sourcePath ) ), document );
+            return textureRecipe( document, document.effective );
+        }
+
+        json::object textureOverride( const TextureProfileSettings &profile,
+                                      const TextureProfileSettings &defaults )
+        {
+            json::object values;
+            if( profile.mip.filter != defaults.mip.filter )
+                values["mipFilter"] = mipFilters[size_t( profile.mip.filter )];
+            if( profile.mip.atlasColumns != defaults.mip.atlasColumns )
+                values["atlasColumns"] = profile.mip.atlasColumns;
+            if( profile.mip.alphaCutoff != defaults.mip.alphaCutoff )
+                values["alphaCutoff"] = double( profile.mip.alphaCutoff );
+            if( profile.compression != defaults.compression )
+                values["compression"] = profile.compression.empty() ? "inherit" : profile.compression.c_str();
+            if( profile.maximumSize != defaults.maximumSize )
+                values["maxTextureSize"] = profile.maximumSize;
+            return values;
+        }
+
+        std::array<u8, 4> textureDdsPixel( const std::vector<u8> &bytes, const dds::Mip &mip,
+                                         u32 format, u32 x, u32 y )
+        {
+            const auto blockBytes = dds::blockBytes( format );
+            if( !blockBytes )
             {
-                recipe.settings.filter = TextureMipFilter::Colour;
+                const auto *p = bytes.data() + mip.offset + y * mip.rowPitch + x * 4;
+                return { p[0], p[1], p[2], p[3] };
             }
-            else if( filter == "data" )
+            const auto *block = bytes.data() + mip.offset + ( y / 4 ) * mip.rowPitch +
+                                ( x / 4 ) * blockBytes;
+            const auto pixel = ( y % 4 ) * 4 + x % 4;
+            const bool hasAlphaBlock = format == 77 || format == 78;
+            const auto *colour = block + ( hasAlphaBlock ? 8 : 0 );
+            const auto expand = []( u32 encoded ) -> std::array<u8, 4> {
+                const auto b = encoded & 31, g = ( encoded >> 5 ) & 63, r = encoded >> 11;
+                return { u8( ( b << 3 ) | ( b >> 2 ) ), u8( ( g << 2 ) | ( g >> 4 ) ),
+                         u8( ( r << 3 ) | ( r >> 2 ) ), 255 };
+            };
+            const u32 c0 = colour[0] | ( u32( colour[1] ) << 8 );
+            const u32 c1 = colour[2] | ( u32( colour[3] ) << 8 );
+            const auto a = expand( c0 ), b = expand( c1 );
+            const auto index = ( colour[4 + pixel / 4] >> ( 2 * ( pixel % 4 ) ) ) & 3;
+            std::array<u8, 4> result{ 0, 0, 0, 255 };
+            if( index < 2 ) result = index ? b : a;
+            else if( c0 > c1 || hasAlphaBlock )
             {
-                recipe.settings.filter = TextureMipFilter::Data;
+                for( size_t channel = 0; channel < 3; ++channel )
+                    result[channel] = u8( ( ( 4 - index ) * a[channel] + ( index - 1 ) * b[channel] ) / 3 );
             }
-            else if( filter == "normal" )
+            else if( index == 2 )
             {
-                recipe.settings.filter = TextureMipFilter::Normal;
+                for( size_t channel = 0; channel < 3; ++channel )
+                    result[channel] = u8( ( u32( a[channel] ) + b[channel] ) / 2 );
             }
-            else if( filter == "cutout" )
+            else result[3] = 0;
+            if( hasAlphaBlock )
             {
-                recipe.settings.filter = TextureMipFilter::Cutout;
+                u64 bits = 0;
+                for( size_t i = 0; i < 6; ++i ) bits |= u64( block[2 + i] ) << ( i * 8 );
+                const u32 alpha = ( bits >> ( 3 * pixel ) ) & 7;
+                if( alpha < 2 ) result[3] = block[alpha];
+                else if( block[0] > block[1] )
+                    result[3] = u8( ( ( 8 - alpha ) * block[0] + ( alpha - 1 ) * block[1] ) / 7 );
+                else if( alpha < 6 )
+                    result[3] = u8( ( ( 6 - alpha ) * block[0] + ( alpha - 1 ) * block[1] ) / 5 );
+                else result[3] = alpha == 6 ? 0 : 255;
             }
-            else if( filter == "roughness" )
-            {
-                recipe.settings.filter = TextureMipFilter::Roughness;
-            }
-            else
-            {
-                throw std::runtime_error( "Unknown texture mipFilter" );
-            }
-            const auto &columnValue = descriptor.at( "atlasColumns" );
-            require( columnValue.is_number(), "Texture atlasColumns must be numeric" );
-            const auto columns = columnValue.to_number<double>();
-            require( std::isfinite( columns ) && columns >= 1 && columns <= maxTextureDimension,
-                     "Texture atlasColumns is outside its supported range" );
-            require( std::floor( columns ) == columns, "Texture atlasColumns must be an integer" );
-            recipe.settings.atlasColumns = static_cast<u32>( columns );
-            recipe.settings.alphaCutoff = scalar( descriptor.at( "alphaCutoff" ), 0.0f, 1.0f );
-            if( descriptor.contains( "compression" ) )
-            {
-                recipe.compression = stringField( descriptor, "compression" );
-                require( recipe.compression == "none" || recipe.compression == "bc1" ||
-                             recipe.compression == "bc3" || recipe.compression == "bc7" ||
-                             recipe.compression == "astc" || recipe.compression == "pvrtc" ||
-                             recipe.compression == "etc2",
-                         "Unknown texture recipe compression format" );
-            }
-            if( descriptor.contains( "maxTextureSize" ) )
-            {
-                const auto maximum = scalar( descriptor.at( "maxTextureSize" ), 1, 16384 );
-                require( std::floor( maximum ) == maximum, "Texture maxTextureSize must be an integer" );
-                recipe.maximumTextureSize = static_cast<u32>( maximum );
-            }
-            const auto gpuFormat = recipe.compression.empty()     ? ddsFormatForTarget( context.target )
-                                   : recipe.compression == "none" ? 87u
-                                   : recipe.compression == "bc1"  ? 71u
-                                   : recipe.compression == "bc3"  ? 77u
-                                                                  : 0u;
-            const bool srgb = gpuFormat == 72 || gpuFormat == 78 || gpuFormat == 91;
-            require( !srgb || recipe.settings.filter == TextureMipFilter::Colour ||
-                         recipe.settings.filter == TextureMipFilter::Cutout ||
-                         recipe.settings.filter == TextureMipFilter::None,
-                     "SRGB DDS profiles require colour/cutout/none mip semantics" );
-            require( !dds::blockBytes( gpuFormat ) || recipe.settings.filter != TextureMipFilter::Normal,
-                     "Normal maps require the lossless BGRA profile until a normal-map compression "
-                     "profile is supported" );
-            require( recipe.settings.alphaCutoff > 0.0f && recipe.settings.alphaCutoff < 1.0f,
-                     "Texture alphaCutoff must be strictly between zero and one" );
-            return recipe;
+            return result;
+        }
+
+        u64 textureInputRevision( const TextureProfileDocument &document )
+        {
+            const auto root = fs::u8path( document.sourceRoot.c_str() );
+            const auto source = root / fs::u8path( document.source.substr( 7 ).c_str() );
+            const auto policy = root / ".workphone/ProjectAssetPolicy.settings";
+            const auto stamp = []( const fs::path &path ) {
+                return resource::combineHash( u64( fs::file_size( path ) ),
+                                              u64( fs::last_write_time( path ).time_since_epoch().count() ) );
+            };
+            return resource::combineHash( stamp( source ), fs::exists( policy ) ? stamp( policy ) : 0 );
         }
 
         void exactFields( const json::object &object, const std::set<std::string> &required,
@@ -812,9 +962,11 @@ namespace workphone::render
                                           u64 maximumOutputBytes = graphicsTextureByteLimit,
                                           const std::function<void( u64 )> &admitEncoded = {},
                                           const std::function<void( u64 )> &admitDecoded = {},
-                                          bool portableDecode = false )
+                                          bool portableDecode = false,
+                                          const TextureRecipe *previewRecipe = nullptr,
+                                          Array<TextureMipLevel> *referenceMips = nullptr )
         {
-            const auto recipe = readTextureRecipe( context );
+            const auto recipe = previewRecipe ? *previewRecipe : readTextureRecipe( context );
             const auto policy = projectAssetPolicy( context );
             const auto sourcePath = fs::u8path( context.sourceRoot.c_str() ) /
                                     fs::u8path( recipe.source.substr( 7 ).c_str() );
@@ -832,7 +984,20 @@ namespace workphone::render
             if( sourcePath.extension() == ".dds" && ddsFormatForTarget( context.target ) )
             {
                 const auto image = dds::inspect( encoded );
-                require( image.format == ddsFormatForTarget( context.target ),
+                auto format = ddsFormatForTarget( context.target );
+                if( recipe.compressionOverridden )
+                {
+                    if( recipe.compression == "none" ) format = 87;
+                    else if( recipe.compression == "bc1" ) format = 71;
+                    else if( recipe.compression == "bc3" ) format = 77;
+                    else if( recipe.compression == "bc7" ) format = image.format == 99 ? 99u : 98u;
+                    else require( recipe.compression.empty(), "Authored DDS cannot change containers" );
+                }
+                require( !recipe.sizeOverridden || !recipe.maximumTextureSize ||
+                             ( image.mips.front().width <= recipe.maximumTextureSize &&
+                               image.mips.front().height <= recipe.maximumTextureSize ),
+                         "Authored DDS pass-through cannot be resized" );
+                require( image.format == format,
                          "Authored DDS format does not match its target profile" );
                 require( !dds::blockBytes( image.format ) ||
                              ( image.mips[0].width % 4 == 0 && image.mips[0].height % 4 == 0 ),
@@ -842,8 +1007,9 @@ namespace workphone::render
                 data.packagedBuild = context.packagedBuild;
                 data.mipSettings = recipe.settings;
                 data.ddsBytes = std::move( encoded );
+                if( format != ddsFormatForTarget( context.target ) ) data.storageFormat = format;
                 String error;
-                require( validateCookedTextureData( data, error ), error.c_str() );
+                if( !validateCookedTextureData( data, error ) ) throw std::runtime_error( error.c_str() );
                 return data;
             }
             std::lock_guard<std::mutex> codecLock( imageCodecMutex );
@@ -859,10 +1025,16 @@ namespace workphone::render
             require( bool( header ) && FreeImage_GetImageType( header.get() ) == FIT_BITMAP &&
                          FreeImage_GetBPP( header.get() ) <= 32,
                      "Only integer colour images with up to 32 bits per pixel are supported" );
+            auto mipSettings = recipe.settings;
+            const bool resize = recipe.maximumTextureSize || policy.present;
+            if( resize && mipSettings.filter == TextureMipFilter::None )
+            {
+                mipSettings.filter = TextureMipFilter::Data;
+            }
             const auto width = FreeImage_GetWidth( header.get() );
             const auto height = FreeImage_GetHeight( header.get() );
             const auto decodedBytes =
-                validateImageSize( width, height, recipe.settings, maximumOutputBytes );
+                validateImageSize( width, height, mipSettings, maximumOutputBytes );
             if( admitDecoded )
             {
                 admitDecoded( decodedBytes );
@@ -896,12 +1068,6 @@ namespace workphone::render
             data.target = context.target;
             data.packagedBuild = context.packagedBuild;
             data.mipSettings = recipe.settings;
-            auto mipSettings = recipe.settings;
-            const bool resize = recipe.maximumTextureSize || policy.present;
-            if( resize && mipSettings.filter == TextureMipFilter::None )
-            {
-                mipSettings.filter = TextureMipFilter::Data;
-            }
             auto levels = generateTextureMips( pixels.data(), width, height, mipSettings );
             size_t firstMip = 0;
             const auto maximum =
@@ -967,6 +1133,7 @@ namespace workphone::render
                 }
                 else
                 {
+                    require( !previewRecipe, "Preview requires a built-in BGRA8, BC1 or BC3 encoder" );
                     TextureCompressionRequest request;
                     request.format = selected;
                     request.effort = policy.compression;
@@ -1003,7 +1170,8 @@ namespace workphone::render
                 {
                     data.ddsBytes = dds::encode( data.levels, gpuFormat );
                 }
-                data.levels.clear();
+                if( referenceMips ) *referenceMips = std::move( data.levels );
+                else data.levels.clear();
             }
             return data;
         }
@@ -1126,6 +1294,221 @@ namespace workphone::render
             return data;
         }
     }  // namespace
+
+    bool openTextureProfileDocument( const String &sourceRoot, const String &path, const String &target,
+                                     TextureProfileDocument &document, String &error )
+    {
+        error.clear();
+        try
+        {
+            require( validTargetName( target ), "Invalid texture preview target" );
+            TextureProfileDocument candidate;
+            if( !canonicalAssetCatalogRoot( sourceRoot, candidate.sourceRoot, error ) ) return false;
+            AssetCatalogPath descriptor;
+            if( !canonicalAssetCatalogPath( candidate.sourceRoot, path, descriptor, error ) ) return false;
+            require( descriptor.path.size() >= 7 &&
+                         StringUtil::make_lower( descriptor.path.substr( descriptor.path.size() - 7 ) ) == ".texres",
+                     "Texture profile editing requires a .texres descriptor" );
+            candidate.descriptorPath = descriptor.path;
+            candidate.target = target;
+            const auto text = readDescriptorText( candidate.sourceRoot + "/" + candidate.descriptorPath );
+            candidate.original.assign( text.data(), text.size() );
+            readTextureDocument( parseTextureDescriptor( text ), candidate );
+            document = std::move( candidate );
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
+    }
+
+    bool saveTextureProfileOverride( const TextureProfileDocument &document,
+                                     const TextureProfileSettings *settings, String &error )
+    {
+        error.clear();
+        try
+        {
+            const std::lock_guard<std::mutex> lock( textureProfileSaveMutex );
+            TextureProfileDocument current;
+            if( !openTextureProfileDocument( document.sourceRoot, document.descriptorPath,
+                                             document.target, current, error ) ) return false;
+            require( current.original == document.original && current.sourceRoot == document.sourceRoot &&
+                         current.descriptorPath == document.descriptorPath,
+                     "Texture descriptor changed on disk. Reopen it before saving." );
+            auto recipe = parseTextureDescriptor( std::string( current.original.data(), current.original.size() ) );
+            const auto previous = recipe;
+            auto *prior = recipe.if_contains( "targetOverrides" );
+            json::object overrides = prior ? prior->as_object() : json::object{};
+            if( settings ) validateTextureProfile( *settings, current.target );
+            auto values = settings ? textureOverride( *settings, current.defaults ) : json::object{};
+            if( values.empty() ) overrides.erase( current.target.c_str() );
+            else overrides.insert_or_assign( current.target.c_str(), std::move( values ) );
+            if( overrides.empty() ) recipe.erase( "targetOverrides" );
+            else recipe.insert_or_assign( "targetOverrides", std::move( overrides ) );
+            if( recipe == previous ) return true;
+            const auto text = json::serialize( recipe ) + '\n';
+            require( text.size() <= graphicsResourceDescriptorLimit, "Texture descriptor exceeds its byte limit" );
+            readTextureDocument( recipe, current );
+
+            const auto path = fs::u8path( ( current.sourceRoot + "/" + current.descriptorPath ).c_str() );
+            auto staged = path;
+            const auto suffix = ".profile-" + StringUtil::generateUUID().to_string() + ".tmp";
+            staged += fs::u8path( suffix.c_str() );
+            struct TemporaryFile
+            {
+                fs::path path;
+                ~TemporaryFile() { std::error_code ignored; fs::remove( path, ignored ); }
+            } temporary{ std::move( staged ) };
+            {
+                std::ofstream stream( temporary.path, std::ios::binary | std::ios::trunc );
+                stream.write( text.data(), static_cast<std::streamsize>( text.size() ) );
+                stream.close();
+                require( stream.good(), "Cannot write staged texture descriptor" );
+            }
+            const auto latest = readDescriptorText( current.sourceRoot + "/" + current.descriptorPath );
+            require( latest == std::string( document.original.data(), document.original.size() ),
+                     "Texture descriptor changed while saving. Reopen it before saving." );
+#if defined( _WIN32 )
+            require( MoveFileExW( temporary.path.c_str(), path.c_str(),
+                                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) != 0,
+                     "Cannot atomically replace texture descriptor" );
+#else
+            fs::rename( temporary.path, path );
+#endif
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
+    }
+
+    bool isTextureProfilePreviewCurrent( const TextureProfileDocument &document,
+                                         const TextureProfilePreview &preview, String &error )
+    {
+        error.clear();
+        try
+        {
+            const auto latest = readDescriptorText( document.sourceRoot + "/" + document.descriptorPath );
+            require( latest == std::string( document.original.data(), document.original.size() ) &&
+                         textureInputRevision( document ) == preview.inputRevision,
+                     "Texture inputs changed during preview. Reopen the descriptor and build again." );
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
+    }
+
+    bool buildTextureProfilePreview( const TextureProfileDocument &document,
+                                     const TextureProfileSettings &settings, u32 mip,
+                                     TexturePreviewChannel channel, TextureProfilePreview &preview, String &error )
+    {
+        error.clear();
+        try
+        {
+            TextureProfileDocument current;
+            if( !openTextureProfileDocument( document.sourceRoot, document.descriptorPath,
+                                             document.target, current, error ) ) return false;
+            require( current.original == document.original && current.sourceRoot == document.sourceRoot &&
+                         current.descriptorPath == document.descriptorPath,
+                     "Texture descriptor changed on disk. Reopen it before previewing." );
+            require( mip < 15 && channel <= TexturePreviewChannel::Error, "Invalid texture preview selection" );
+            constexpr u64 previewLimit = 16ull << 20;
+            TextureProfilePreview candidate;
+            candidate.inputRevision = textureInputRevision( current );
+            auto scheduler = WorldStreamingScheduler::shared();
+            auto metadata = scheduler->reserve( StreamMemoryClass::WorkingCpu, 4ull << 20, error );
+            if( !metadata ) return false;
+            StreamBudget encoded, decoded;
+            const auto recipe = textureRecipe( current, settings );
+            resource::CompileContext context;
+            context.sourceRoot = current.sourceRoot;
+            context.target = current.target;
+            context.packagedBuild = true;
+            Array<TextureMipLevel> reference;
+            const auto data = compileTexture( context, previewLimit,
+                [&]( u64 bytes ) {
+                    require( bytes <= previewLimit, "Encoded image exceeds the 16 MiB preview limit" );
+                    encoded = scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes, error );
+                    if( !encoded ) throw std::runtime_error( error.c_str() );
+                },
+                [&]( u64 bytes ) {
+                    decoded = scheduler->reserve( StreamMemoryClass::WorkingCpu, 5 * bytes, error );
+                    if( !decoded ) throw std::runtime_error( error.c_str() );
+                }, false, &recipe, &reference );
+            if( !validateCookedTextureData( data, error ) ) return false;
+            const bool native = !data.ddsBytes.empty();
+            const auto image = native ? dds::inspect( data.ddsBytes ) : dds::Image{};
+            candidate.format = image.format;
+            candidate.mipCount = u32( native ? image.mips.size() : data.levels.size() );
+            candidate.mip = std::min( mip, candidate.mipCount - 1 );
+            candidate.width = native ? image.mips.front().width : data.levels.front().width;
+            candidate.height = native ? image.mips.front().height : data.levels.front().height;
+            for( const auto &level : image.mips ) candidate.residentBytes += level.size;
+            for( const auto &level : data.levels ) candidate.residentBytes += level.bgra.size();
+            candidate.encodedBytes = native ? data.ddsBytes.size() : candidate.residentBytes;
+            const bool canSample = image.format != 98 && image.format != 99;
+            candidate.hasReference = canSample && ( !native || !reference.empty() );
+            if( canSample && ( channel != TexturePreviewChannel::Error || candidate.hasReference ) )
+            {
+                const auto level = candidate.mip;
+                const auto width = native ? image.mips[level].width : data.levels[level].width;
+                const auto height = native ? image.mips[level].height : data.levels[level].height;
+                const auto largest = std::max( width, height );
+                candidate.imageWidth = largest > 256 ? std::max( 1u, width * 256 / largest ) : width;
+                candidate.imageHeight = largest > 256 ? std::max( 1u, height * 256 / largest ) : height;
+                candidate.image.resize( size_t( candidate.imageWidth ) * candidate.imageHeight * 4 );
+                u64 totalError = 0;
+                for( u32 y = 0; y < candidate.imageHeight; ++y )
+                {
+                    for( u32 x = 0; x < candidate.imageWidth; ++x )
+                    {
+                        const auto sx = x * width / candidate.imageWidth, sy = y * height / candidate.imageHeight;
+                        const auto offset = ( size_t( sy ) * width + sx ) * 4;
+                        std::array<u8, 4> pixel{};
+                        if( native ) pixel = textureDdsPixel( data.ddsBytes, image.mips[level], image.format, sx, sy );
+                        else std::copy_n( data.levels[level].bgra.data() + offset, 4, pixel.begin() );
+                        std::array<u8, 4> difference{};
+                        if( native && candidate.hasReference )
+                        {
+                            for( size_t c = 0; c < 4; ++c )
+                            {
+                                difference[c] = u8( std::abs( int( pixel[c] ) - int( reference[level].bgra[offset + c] ) ) );
+                                totalError += difference[c];
+                            }
+                        }
+                        if( channel == TexturePreviewChannel::Error )
+                        {
+                            for( size_t c = 0; c < 3; ++c ) pixel[c] = std::max( difference[c], difference[3] );
+                        }
+                        else if( channel != TexturePreviewChannel::Colour )
+                        {
+                            const auto c = channel == TexturePreviewChannel::Alpha ? 3 : 3 - u32( channel );
+                            std::fill_n( pixel.begin(), 3, pixel[c] );
+                        }
+                        pixel[3] = 255;
+                        std::copy( pixel.begin(), pixel.end(), candidate.image.data() +
+                            ( size_t( y ) * candidate.imageWidth + x ) * 4 );
+                    }
+                }
+                candidate.meanAbsoluteError = double( totalError ) / double( candidate.image.size() );
+            }
+            if( !isTextureProfilePreviewCurrent( current, candidate, error ) ) return false;
+            preview = std::move( candidate );
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
+    }
 
     bool decodeGraphicsTextureSource( const String &sourceRoot, const resource::ResourceID &id,
                                       CookedTextureData &output, String &error, u64 maximumOutputBytes,

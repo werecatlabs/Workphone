@@ -2548,6 +2548,562 @@ namespace workphone::resource
                                                 error );
     }
 
+    namespace
+    {
+        // Ownership starts after exclusive directory creation. An interrupted
+        // request can leave its private staging directory for inspection.
+        struct PackageStaging
+        {
+            fs::path path;
+
+            ~PackageStaging()
+            {
+                if( !path.empty() )
+                {
+                    std::error_code ignored;
+                    fs::remove_all( fileSystemIOPath( path ), ignored );
+                }
+            }
+
+            bool create( const fs::path &destination, String &error )
+            {
+                std::error_code ec;
+                for( unsigned attempt = 0; attempt < 64; ++attempt )
+                {
+                    const auto candidate = destination.parent_path() /
+                        ( ".wp-package-" + std::to_string(
+                              std::chrono::high_resolution_clock::now().time_since_epoch().count() ) +
+                          "-" + std::to_string( payloadTemporaryCounter.fetch_add( 1 ) ) );
+                    if( fs::create_directory( fileSystemIOPath( candidate ), ec ) )
+                    {
+                        path = candidate;
+                        return true;
+                    }
+                    if( ec && ec != std::errc::file_exists )
+                    {
+                        break;
+                    }
+                    ec.clear();
+                }
+                error = "Cannot create exclusive runtime package staging directory";
+                return false;
+            }
+
+            bool publish( const fs::path &destination, String &error )
+            {
+                // The directory rename must never replace a competing destination.
+                bool published = false;
+#if defined WP_PLATFORM_WIN32
+                published = MoveFileExW( fileSystemIOPath( path ).c_str(),
+                                         fileSystemIOPath( destination ).c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
+#elif defined( __linux__ ) && defined( SYS_renameat2 )
+                published = syscall( SYS_renameat2, AT_FDCWD, path.c_str(), AT_FDCWD,
+                                     destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;
+#elif defined( __APPLE__ )
+                published = renamex_np( path.c_str(), destination.c_str(), RENAME_EXCL ) == 0;
+#endif
+                if( !published )
+                {
+                    error = "Cannot publish runtime package exclusively; destination may have appeared or "
+                            "filesystem lacks support";
+                    return false;
+                }
+                path.clear();
+                return true;
+            }
+        };
+
+        constexpr u64 patchManifestLimit = maximumManifestBytes + ( 8ull << 20 );
+        constexpr u64 patchDescriptorLimit = 48 + 24ull * maximumManifestResources;
+        const ResourceID patchDescriptorId( "data://runtime.wprd" );
+
+        struct PatchFilePin
+        {
+            u64 bytes = 0, hash = 0;
+            bool operator==( const PatchFilePin &other ) const
+            {
+                return bytes == other.bytes && hash == other.hash;
+            }
+        };
+
+        struct PatchArtifactPin
+        {
+            PatchFilePin file;
+            bool reuse = false;
+        };
+
+        struct PatchPlan
+        {
+            PatchFilePin base, target;
+            Array<PatchArtifactPin> artifacts;
+        };
+
+        struct PatchManifest
+        {
+            std::shared_ptr<StreamBudgetLease> admission;
+            RuntimeManifest value;
+        };
+
+        bool separatePackagePaths( const fs::path &left, const fs::path &right )
+        {
+            return !isUnderRoot( left, right ) && !isUnderRoot( right, left );
+        }
+
+        bool patchInputFile( const fs::path &root, const String &relative, fs::path &file,
+                             String &error )
+        {
+            if( !resolveUnderRoot( root, "data://" + relative, true, file, error ) )
+                return false;
+            auto expected = root / fs::u8path( relative.c_str() );
+            if( file.make_preferred().native() != expected.make_preferred().native() )
+            {
+                error = "Package patch inputs cannot contain redirected files: " + relative;
+                return false;
+            }
+            return true;
+        }
+
+        // Bound each read before copying and check for growth after the final
+        // byte. Staged copies are independently verified before publication.
+        bool transferPatchFile( const fs::path &input, const fs::path &output, u64 maximumBytes,
+                                const PatchFilePin *expected, PatchFilePin &pin, String &error )
+        {
+            std::error_code ec;
+            const auto inputPath = fileSystemIOPath( input );
+            const auto bytes = fs::file_size( inputPath, ec );
+            if( ec || !bytes || bytes > maximumBytes || ( expected && bytes != expected->bytes ) )
+            {
+                error = "Package patch file has a missing, invalid or changed size: " + pathString( input );
+                return false;
+            }
+            std::ifstream source( inputPath, std::ios::binary );
+            if( !source )
+            {
+                error = "Cannot open package patch input: " + pathString( input );
+                return false;
+            }
+            std::ofstream destination;
+            if( !output.empty() )
+            {
+                const auto outputPath = fileSystemIOPath( output );
+                fs::create_directories( outputPath.parent_path() );
+                if( fs::exists( outputPath ) )
+                {
+                    error = "Aliased package patch staging file: " + pathString( output );
+                    return false;
+                }
+                destination.open( outputPath, std::ios::binary | std::ios::out );
+                if( !destination )
+                {
+                    error = "Cannot open package patch staging file: " + pathString( output );
+                    return false;
+                }
+            }
+            char buffer[65536];
+            u64 hash = 14695981039346656037ull;
+            for( u64 remaining = bytes; remaining; )
+            {
+                const auto count = static_cast<std::streamsize>( std::min<u64>( remaining, sizeof( buffer ) ) );
+                source.read( buffer, count );
+                if( !source )
+                {
+                    error = "Package patch file was truncated: " + pathString( input );
+                    return false;
+                }
+                hash = hashBytes( buffer, static_cast<size_t>( count ), hash );
+                if( destination.is_open() )
+                {
+                    destination.write( buffer, count );
+                    if( !destination )
+                    {
+                        error = "Failed to write package patch staging file: " + pathString( output );
+                        return false;
+                    }
+                }
+                remaining -= static_cast<u64>( count );
+            }
+            if( destination.is_open() )
+                destination.close();
+            pin = { bytes, hash };
+            if( !destination || source.peek() != std::char_traits<char>::eof() || source.bad() ||
+                ( expected && !( pin == *expected ) ) )
+            {
+                error = "Package patch file changed or failed verification: " + pathString( input );
+                return false;
+            }
+            return true;
+        }
+
+        bool portablePatchArtifact( const String &relative )
+        {
+            if( relative.size() <= 5 || relative.substr( relative.size() - 5 ) != ".wprs" )
+                return false;
+            const auto path = relative.substr( 0, relative.size() - 5 );
+            // A tilde component can resolve to a different staged directory
+            // through a Windows short name even when both inputs are distinct.
+            if( path.find_first_not_of( "abcdefghijklmnopqrstuvwxyz0123456789_/-" ) != String::npos )
+                return false;
+            size_t first = 0;
+            while( first < path.size() )
+            {
+                const auto slash = path.find( '/', first );
+                const auto name = path.substr( first, slash == String::npos ? slash : slash - first );
+                if( name.empty() || name == "con" || name == "prn" || name == "aux" || name == "nul" ||
+                    ( name.size() == 4 && ( name.substr( 0, 3 ) == "com" || name.substr( 0, 3 ) == "lpt" ) &&
+                      name[3] >= '0' && name[3] <= '9' ) )
+                    return false;
+                if( slash == String::npos )
+                    return true;
+                first = slash + 1;
+            }
+            return false;
+        }
+
+        bool readPatchManifest( const fs::path &file, const PatchFilePin &pin, const String &target,
+                                PatchManifest &output, String &error )
+        {
+            const auto scheduler = WorldStreamingScheduler::shared();
+            const u64 bytes = 65536 + 12 * pin.bytes;
+            output.admission = scheduler->reserve( StreamMemoryClass::SourceCpu, bytes, error );
+            if( !output.admission )
+                return false;
+            const auto working = scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes, error );
+            if( !working || !readManifest( pathString( file ), output.value, error, pin.bytes ) )
+                return false;
+            const auto &manifest = output.value;
+            if( manifest.version != 4 || manifest.target != target )
+            {
+                error = "Package patches require version-4 manifests for the requested target";
+                return false;
+            }
+            const auto prefix = artifactNamespace( target ) + "package/";
+            const auto legacyPrefix = legacyArtifactNamespace( target ) + "package/";
+            std::set<String> paths;
+            for( const auto &entry : manifest.artifacts )
+            {
+                const auto &relative = entry.second;
+                if( !portablePatchArtifact( relative ) ||
+                    ( relative.find( prefix ) != 0 && relative.find( legacyPrefix ) != 0 ) ||
+                    !paths.insert( relative ).second )
+                {
+                    error = "Package patch manifest has an unsafe, aliased or non-package artifact path";
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool verifyPatchArtifact( const fs::path &file, const RuntimeManifest &manifest,
+                                  const CompiledResourceHeader &expected, u64 encodedHeaderBytes,
+                                  String &error )
+        {
+            const auto &hashes = manifest.chunks.at( expected.resourceId.str() ).hashes;
+            const auto scratch = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::WorkingCpu,
+                headerMemoryAllowance( encodedHeaderBytes, expected.installDependencies.size() ) +
+                    65536 + sizeof( u64 ) * hashes.size(), error );
+            if( !scratch )
+                return false;
+            Array<u64> actualHashes;
+            CompiledResourceHeader actual;
+            if( !CompiledResourceIO::buildChunkHashes( pathString( file ), actual, resourceChunkBytes,
+                    actualHashes, error, encodedHeaderBytes, expected.payloadSize ) )
+            {
+                error = "Package patch artifact failed verification: " + expected.resourceId.str() + ": " + error;
+                return false;
+            }
+            if( actual.formatVersion != 2 || !sameRuntimeHeader( actual, expected, false ) ||
+                actualHashes != hashes )
+            {
+                error = "Package patch artifact differs from its pinned manifest: " + expected.resourceId.str();
+                return false;
+            }
+            for( size_t index = 0; index < actual.installDependencies.size(); ++index )
+            {
+                const auto &id = actual.installDependencies[index].str();
+                const auto &child = manifest.resources.at( id );
+                const auto &pin = actual.installArtifacts[index];
+                if( pin.path != manifest.artifacts.at( id ) || pin.sourceHash != child.sourceHash ||
+                    pin.payloadHash != child.payloadHash )
+                {
+                    error = "Package patch dependency generation differs from its manifest: " + id;
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool readPatchPlan( const fs::path &path, PatchPlan &plan, String &error )
+        {
+            const auto scratch = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::WorkingCpu, 65536 + 4 * patchDescriptorLimit, error );
+            if( !scratch )
+                return false;
+            RuntimeResource descriptor;
+            if( !CompiledResourceIO::read( pathString( path ), descriptor, error, patchDescriptorLimit, 256 ) )
+                return false;
+            const auto &header = descriptor.header;
+            const auto size = descriptor.payload.size();
+            if( header.resourceId != patchDescriptorId || header.compilerVersion != 1 ||
+                header.sourceHash != header.payloadHash || !header.installDependencies.empty() ||
+                size < 48 || ( size - 48 ) % 24 != 0 )
+            {
+                error = "Invalid package patch descriptor";
+                return false;
+            }
+            std::istringstream input( std::string( descriptor.payload.begin(), descriptor.payload.end() ),
+                                      std::ios::binary );
+            u64 version = 0, count = 0;
+            const auto readPin = [&]( PatchFilePin &pin ) {
+                return readManifestNumber( input, pin.bytes ) && readManifestNumber( input, pin.hash ) && pin.bytes;
+            };
+            if( !readManifestNumber( input, version ) || version != 1 || !readPin( plan.base ) ||
+                !readPin( plan.target ) || !readManifestNumber( input, count ) ||
+                count == 0 || count != ( size - 48 ) / 24 )
+            {
+                error = "Invalid package patch descriptor version, manifest pins or artifact count";
+                return false;
+            }
+            plan.artifacts.reserve( static_cast<size_t>( count ) );
+            for( u64 index = 0; index < count; ++index )
+            {
+                PatchArtifactPin pin;
+                u64 reuse = 0;
+                if( !readPin( pin.file ) || !readManifestNumber( input, reuse ) || reuse > 1 )
+                {
+                    error = "Invalid package patch artifact pin";
+                    return false;
+                }
+                pin.reuse = reuse != 0;
+                plan.artifacts.push_back( pin );
+            }
+            return true;
+        }
+
+        bool writePatchPlan( const fs::path &directory, const PatchPlan &plan, String &error )
+        {
+            const auto payload = directory / ".patch-payload";
+            std::ofstream stream( fileSystemIOPath( payload ), std::ios::binary );
+            const auto writePin = [&]( const PatchFilePin &pin ) {
+                writeManifestNumber( stream, pin.bytes );
+                writeManifestNumber( stream, pin.hash );
+            };
+            writeManifestNumber( stream, 1 );
+            writePin( plan.base );
+            writePin( plan.target );
+            writeManifestNumber( stream, plan.artifacts.size() );
+            for( const auto &pin : plan.artifacts )
+            {
+                writePin( pin.file );
+                writeManifestNumber( stream, pin.reuse ? 1 : 0 );
+            }
+            stream.close();
+            if( !stream )
+            {
+                error = "Cannot write package patch descriptor payload";
+                return false;
+            }
+            CompiledResourceHeader header;
+            header.resourceId = patchDescriptorId;
+            header.resourceType = patchDescriptorId.type();
+            header.compilerVersion = 1;
+            const auto payloadPath = pathString( payload );
+            if( !CompiledResourceIO::hashFile( payloadPath, header.payloadHash, header.payloadSize, error ) )
+                return false;
+            header.sourceHash = header.payloadHash;
+            if( !CompiledResourceIO::writeAtomic( pathString( directory / "patch.wprd" ), header,
+                                                  payloadPath, error ) )
+                return false;
+            fs::remove( fileSystemIOPath( payload ) );
+            return true;
+        }
+
+        bool runRuntimePatch( const String &baseDirectory, const String &inputDirectory,
+                              const String &outputDirectory, const String &target, bool applying,
+                              RuntimePackagePatchResult &result, String &error )
+        try
+        {
+            result = {};
+            error.clear();
+            const auto validPath = []( const String &value ) {
+                return !value.empty() && value.find( '\0' ) == String::npos;
+            };
+            if( !validPath( baseDirectory ) || !validPath( inputDirectory ) ||
+                !validPath( outputDirectory ) || !validPath( target ) || target.size() > 128 )
+            {
+                error = "Package patch requires valid input and output directories and a target";
+                return false;
+            }
+            const auto absolute = []( const String &directory ) {
+                return fileSystemIOPath( fs::absolute( fs::u8path( directory.c_str() ) ) );
+            };
+            const auto base = comparableFileSystemPath( fs::canonical( absolute( baseDirectory ) ) );
+            const auto input = comparableFileSystemPath( fs::canonical( absolute( inputDirectory ) ) );
+            const auto output = comparableFileSystemPath( fs::weakly_canonical( absolute( outputDirectory ) ) );
+            if( !base.is_absolute() || !input.is_absolute() || !output.is_absolute() ||
+                !fs::is_directory( fileSystemIOPath( base ) ) ||
+                !fs::is_directory( fileSystemIOPath( input ) ) ||
+                !separatePackagePaths( base, input ) ||
+                !separatePackagePaths( output, base ) || !separatePackagePaths( output, input ) )
+            {
+                error = "Package patch inputs and output must be separate directories";
+                return false;
+            }
+            std::error_code ec;
+            const auto status = fs::symlink_status( fileSystemIOPath( output ), ec );
+            if( ( ec && ec != std::errc::no_such_file_or_directory ) || fs::exists( status ) )
+            {
+                error = "Package patch destination already exists or cannot be inspected";
+                return false;
+            }
+
+            PatchPlan plan;
+            fs::path baseManifestFile, inputManifestFile;
+            if( applying )
+            {
+                fs::path descriptor;
+                if( !patchInputFile( input, "patch.wprd", descriptor, error ) ||
+                    !readPatchPlan( descriptor, plan, error ) )
+                    return false;
+            }
+            if( !patchInputFile( base, "runtime.wprm", baseManifestFile, error ) ||
+                !patchInputFile( input, applying ? "target.wprm" : "runtime.wprm", inputManifestFile, error ) )
+                return false;
+            fs::create_directories( fileSystemIOPath( output.parent_path() ) );
+            PackageStaging staging;
+            if( !staging.create( output, error ) )
+                return false;
+            const auto capturedBaseManifest = staging.path / ".base-capture.wprm";
+            PatchFilePin basePin;
+            if( !transferPatchFile( baseManifestFile, capturedBaseManifest, patchManifestLimit, nullptr, basePin, error ) )
+                return false;
+            if( applying && !( basePin == plan.base ) )
+            {
+                error = "Package patch base generation does not match the installed manifest";
+                return false;
+            }
+            plan.base = basePin;
+            PatchManifest baseManifest;
+            if( !readPatchManifest( capturedBaseManifest, plan.base, target, baseManifest, error ) )
+                return false;
+            fs::remove( fileSystemIOPath( capturedBaseManifest ) );
+
+            const auto stagedManifest = staging.path / ( applying ? "runtime.wprm" : "target.wprm" );
+            PatchFilePin targetPin;
+            if( !transferPatchFile( inputManifestFile, stagedManifest, patchManifestLimit,
+                                    applying ? &plan.target : nullptr, targetPin, error ) )
+                return false;
+            plan.target = targetPin;
+            PatchManifest targetManifest;
+            if( !readPatchManifest( stagedManifest, plan.target, target, targetManifest, error ) )
+                return false;
+            const auto &before = baseManifest.value;
+            const auto &after = targetManifest.value;
+            if( applying && plan.artifacts.size() != after.resources.size() )
+            {
+                error = "Package patch artifact count does not match its target manifest";
+                return false;
+            }
+
+            std::map<String, PatchFilePin> baseFiles;
+            RuntimePackagePatchResult report;
+            for( const auto &entry : before.resources )
+            {
+                const auto &relative = before.artifacts.at( entry.first );
+                u64 headerBytes = 0;
+                fs::path file;
+                PatchFilePin pin;
+                if( !runtimeHeaderEnvelope( before, entry.second, headerBytes, error ) ||
+                    !patchInputFile( base, relative, file, error ) ||
+                    !transferPatchFile( file, {}, entry.second.payloadSize + headerBytes, nullptr, pin, error ) ||
+                    !verifyPatchArtifact( file, before, entry.second, headerBytes, error ) )
+                    return false;
+                baseFiles.emplace( entry.first, pin );
+                if( !after.resources.count( entry.first ) )
+                    ++report.removedResources;
+            }
+            if( !applying )
+                plan.artifacts.reserve( after.resources.size() );
+            size_t index = 0;
+            for( const auto &entry : after.resources )
+            {
+                const auto &relative = after.artifacts.at( entry.first );
+                const auto oldFile = baseFiles.find( entry.first );
+                const bool canReuse = oldFile != baseFiles.end() && before.artifacts.at( entry.first ) == relative;
+                u64 headerBytes = 0;
+                if( !runtimeHeaderEnvelope( after, entry.second, headerBytes, error ) )
+                    return false;
+                const auto limit = entry.second.payloadSize + headerBytes;
+                PatchArtifactPin pin;
+                fs::path file;
+                if( applying )
+                {
+                    pin = plan.artifacts[index];
+                    if( pin.reuse && ( !canReuse || !( pin.file == oldFile->second ) ) )
+                    {
+                        error = "Package patch cannot reuse the requested base artifact: " + entry.first;
+                        return false;
+                    }
+                    if( !patchInputFile( pin.reuse ? base : input, relative, file, error ) )
+                        return false;
+                }
+                else
+                {
+                    if( !patchInputFile( input, relative, file, error ) ||
+                        !transferPatchFile( file, {}, limit, nullptr, pin.file, error ) )
+                        return false;
+                    pin.reuse = canReuse && pin.file == oldFile->second;
+                    plan.artifacts.push_back( pin );
+                }
+                if( applying || !pin.reuse )
+                {
+                    const auto copy = staging.path / fs::u8path( relative.c_str() );
+                    PatchFilePin copied;
+                    if( !transferPatchFile( file, copy, limit, &pin.file, copied, error ) )
+                        return false;
+                    file = copy;
+                }
+                if( !verifyPatchArtifact( file, after, entry.second, headerBytes, error ) )
+                    return false;
+                ++index;
+                if( pin.reuse )
+                    ++report.reusedArtifacts;
+                else
+                {
+                    ++report.changedArtifacts;
+                    report.changedArtifactBytes += pin.file.bytes;
+                }
+                report.targetArtifactBytes += pin.file.bytes;
+            }
+            PatchFilePin confirmed;
+            if( !transferPatchFile( baseManifestFile, {}, patchManifestLimit, &plan.base, confirmed, error ) ||
+                !transferPatchFile( inputManifestFile, {}, patchManifestLimit, &plan.target, confirmed, error ) ||
+                ( !applying && !writePatchPlan( staging.path, plan, error ) ) ||
+                !staging.publish( output, error ) )
+                return false;
+            result = report;
+            return true;
+        }
+        catch( const std::exception &failure )
+        {
+            runtimeReadFailure( error, failure.what() );
+            return false;
+        }
+    }
+
+    bool ResourceSystem::writeRuntimePatch( const String &baseDirectory, const String &targetDirectory,
+                                            const String &patchDirectory, const String &target,
+                                            RuntimePackagePatchResult &result, String &error )
+    {
+        return runRuntimePatch( baseDirectory, targetDirectory, patchDirectory, target, false, result, error );
+    }
+
+    bool ResourceSystem::applyRuntimePatch( const String &baseDirectory, const String &patchDirectory,
+                                            const String &outputDirectory, const String &target,
+                                            RuntimePackagePatchResult &result, String &error )
+    {
+        return runRuntimePatch( baseDirectory, patchDirectory, outputDirectory, target, true, result, error );
+    }
+
     bool ResourceSystem::writeRuntimePackage( const String &directory, const Array<ResourceID> &roots,
                                               const Array<RuntimeResourceBinding> &bindings,
                                               String &error )
@@ -2630,46 +3186,9 @@ namespace workphone::resource
             return false;
         }
 
-        // Ownership starts only after exclusive directory creation. Cleanup removes
-        // only this request's staging tree; an interrupted request may leave it behind.
-        struct Staging
-        {
-            fs::path path;
-
-            ~Staging()
-            {
-                if( !path.empty() )
-                {
-                    std::error_code ignored;
-                    fs::remove_all( fileSystemIOPath( path ), ignored );
-                }
-            }
-        } staging;
-
-        for( unsigned attempt = 0; attempt < 64; ++attempt )
-        {
-            const auto candidate =
-                destination.parent_path() /
-                ( ".wp-package-" +
-                  std::to_string(
-                      std::chrono::high_resolution_clock::now().time_since_epoch().count() ) +
-                  "-" + std::to_string( payloadTemporaryCounter.fetch_add( 1 ) ) );
-            if( fs::create_directory( fileSystemIOPath( candidate ), ec ) )
-            {
-                staging.path = candidate;
-                break;
-            }
-            if( ec && ec != std::errc::file_exists )
-            {
-                break;
-            }
-            ec.clear();
-        }
-        if( staging.path.empty() )
-        {
-            error = "Cannot create exclusive runtime package staging directory";
+        PackageStaging staging;
+        if( !staging.create( destination, error ) )
             return false;
-        }
         const auto manifestPath = staging.path / "runtime.wprm";
         if( !writeRuntimeManifestLocked( pathString( manifestPath ), roots, bindings, error ) )
         {
@@ -2813,26 +3332,7 @@ namespace workphone::resource
                 }
             }
         }
-        // Directory rename must not replace even an empty competing destination.
-        bool published = false;
-#if defined WP_PLATFORM_WIN32
-        published = MoveFileExW( fileSystemIOPath( staging.path ).c_str(),
-                                 fileSystemIOPath( destination ).c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
-#elif defined( __linux__ ) && defined( SYS_renameat2 )
-        published = syscall( SYS_renameat2, AT_FDCWD, staging.path.c_str(), AT_FDCWD,
-                             destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;
-#elif defined( __APPLE__ )
-        published = renamex_np( staging.path.c_str(), destination.c_str(), RENAME_EXCL ) == 0;
-#endif
-        if( !published )
-        {
-            error =
-                "Cannot publish runtime package exclusively; destination may have appeared or "
-                "filesystem lacks support";
-            return false;
-        }
-        staging.path.clear();
-        return true;
+        return staging.publish( destination, error );
     }
     catch( const fs::filesystem_error &exception )
     {
@@ -2888,41 +3388,103 @@ namespace workphone::resource
     CompilationReport ResourceSystem::compile( const ResourceID &resourceId,
                                                const CompilationOptions &options )
     {
-        if( !resourceId.isValid() )
+        return std::move( compileBatch( { resourceId }, options ).front() );
+    }
+
+    Array<CompilationReport> ResourceSystem::compileBatch(
+        const Array<ResourceID> &roots, const CompilationOptions &options,
+        const CompilationPublicationGuard &guard, const std::function<bool()> &isCancelled )
+    {
+        if( roots.empty() || roots.size() > 65536 )
         {
-            return failureReport( resourceId, "Cannot compile an invalid resource ID" );
+            return { failureReport( ResourceID(), "Compilation requires between 1 and 65536 roots" ) };
+        }
+        for( const auto &id : roots )
+        {
+            if( !id.isValid() )
+            {
+                return { failureReport( id, "Cannot compile an invalid resource ID" ) };
+            }
         }
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         {
             std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
             if( !m_impl->initialized )
             {
-                return failureReport( resourceId, "Resource system is not initialized" );
+                return { failureReport( roots.front(), "Resource system is not initialized" ) };
             }
             if( m_impl->runtimeOnly )
             {
-                return failureReport( resourceId,
-                                      "Cooking is unavailable in a read-only runtime mount" );
+                return { failureReport( roots.front(),
+                                        "Cooking is unavailable in a read-only runtime mount" ) };
             }
         }
         std::map<String, CompilationReport> completed;
         Array<String> stack;
         Array<CompilationCommit> pendingCommits;
+        Array<CompilationReport> reports;
+        reports.reserve( roots.size() );
         BuildInputs inputs( m_impl->sourceRoot, m_impl->compiledRoot );
-        auto report =
-            m_impl->compileNode( resourceId, options, completed, stack, pendingCommits, inputs );
         String error;
-        if( report.succeeded() &&
-            ( !inputs.verify( error ) ||
-              !m_impl->publishBatch( pendingCommits, completed, options.packagedBuild, error ) ) )
+        const auto cancelled = [&] {
+            try
+            {
+                if( !isCancelled || !isCancelled() )
+                    return false;
+                error = "Compilation request cancelled before index publication";
+            }
+            catch( const std::exception &failure )
+            {
+                error = String( "Cannot check compilation cancellation: " ) + failure.what();
+            }
+            return true;
+        };
+        for( const auto &id : roots )
         {
-            report = failureReport( resourceId, error );
+            if( cancelled() )
+            {
+                reports.push_back( failureReport( id, error ) );
+                break;
+            }
+            reports.push_back( m_impl->compileNode( id, options, completed, stack, pendingCommits, inputs ) );
+            if( !reports.back().succeeded() )
+                break;
         }
-        if( !report.succeeded() )
+
+        bool ready = reports.size() == roots.size() && reports.back().succeeded() && !cancelled();
+        std::shared_ptr<void> admission;
+        if( ready && guard )
         {
-            m_impl->abandonBatch( completed );
+            try
+            {
+                ready = guard( pathString( m_impl->sourceRoot ), admission, error ) && admission;
+            }
+            catch( const std::exception &failure )
+            {
+                error = String( "Compilation publication admission failed: " ) + failure.what();
+                ready = false;
+            }
+            if( !ready && error.empty() )
+                error = "Compilation publication admission was not retained";
         }
-        return report;
+        // Verify the captured bytes after admission, so coordinated authoring
+        // mutations cannot race the final source check and index transaction.
+        if( ready && inputs.verify( error ) && !cancelled() &&
+            m_impl->publishBatch( pendingCommits, completed, options.packagedBuild, error ) )
+        {
+            return reports;
+        }
+
+        admission.reset();
+        m_impl->abandonBatch( completed );
+        if( error.empty() )
+            error = "Compilation set not committed because one or more roots failed";
+        for( auto &report : reports )
+        {
+            if( report.succeeded() )
+                report = failureReport( report.resourceId, error );
+        }
+        return reports;
     }
 
     Array<CompilationReport> ResourceSystem::compileAffected( const String &changedPath,

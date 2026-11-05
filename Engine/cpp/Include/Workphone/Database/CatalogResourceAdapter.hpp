@@ -3,6 +3,7 @@
 
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
+#include <functional>
 
 namespace workphone
 {
@@ -14,10 +15,10 @@ namespace workphone
 
     /**
      * Connects durable catalog identity to the existing resource compilation service.
-     * Calls reject stale requests before and after work. They do not lock catalog
-     * mutation across resource compilation or loading. A render-thread publisher
-     * must guard the final generation check and GPU replacement separately.
-     * Stale compilation may leave an unused cooked file at its original path.
+     * Checked cooks on a writable catalog hold catalog admission from final
+     * revision validation through index publication. Compilers run outside that
+     * admission. A render-thread publisher still owns its final generation check
+     * and GPU replacement. A rejected cook can leave an unindexed immutable file.
      */
     class WPCore_API CatalogResourceAdapter final
     {
@@ -57,6 +58,8 @@ namespace workphone
         /** Capture mapped file identities in one catalog admission. Reinitialize
          * a build service with this immutable map before compiling scene roots. */
         bool captureAssetBindings(std::map<String,resource::ResourceID> &bindings,String &error) const;
+        bool captureAssetBindings( std::map<String,resource::ResourceID> &bindings,
+                                   u64 &catalogGeneration, String &error ) const;
         /** Export a project-only package with a catalog UUID and shipping policy
          * check for every pinned install member. Holds catalog/SQLite mutation
          * admission through publication. Requires a writable project catalog and
@@ -69,6 +72,13 @@ namespace workphone
                                     String &error ) const;
         resource::CompilationReport compile( const Request &request,
                                              const resource::CompilationOptions &options = {} ) const;
+        /** One checked cook for the entire root set. Requires a writable catalog
+         * and concrete ResourceSystem. verifyInputs runs before index publication
+         * and can throw to reject a changed toolchain. */
+        Array<resource::CompilationReport> compileBatch(
+            const Array<Request> &requests, const resource::CompilationOptions &options,
+            const std::function<bool()> &isCancelled = {},
+            const std::function<void()> &verifyInputs = {} ) const;
         std::shared_ptr<const resource::RuntimeResource> load( const Request &request,
                                                                String &error ) const;
 
