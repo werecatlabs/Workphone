@@ -26,14 +26,19 @@ The source-free package contract drew both installed tree and grass materials.
 [GF0 report](../project_x64/qa/foliage-20261105/gf0-debug-1080/foliage-acceptance.json) ·
 [GF1 report](../project_x64/qa/foliage-20261105/gf1-debug-1080/foliage-acceptance.json)
 
-The RelWithDebInfo baseline rebuilt the Editor and passed 60 of 62 tests, including
-all seven foliage contracts. The external mesh-import fixture was unavailable.
+The initial RelWithDebInfo baseline rebuilt the Editor and passed 60 of 62 tests,
+including all seven foliage contracts. The external mesh-import fixture was unavailable.
 `WPGraphics.material_load_sequence` failed in the CPU material ownership handoff
 and reproduced in isolation. A preloaded detached Claw pass retains defaults
 after its technique is attached because the technique stores passes outside the
 base child inventory that receives the owner update.
-[Baseline evidence](../project_foliage_rel/claw-graphics-RelWithDebInfo-evidence.json) ·
+[Initial baseline evidence](../project_x64/qa/material-handoff-20261105/before/claw-graphics-RelWithDebInfo-evidence.json) ·
 [Material recheck](../project_x64/qa/foliage-20261105/rel-material-recheck.log)
+
+The material fix restores pass ownership when adding or replacing a technique.
+The full RelWithDebInfo rerun rebuilt the Editor and recorded 61 passes, zero
+failures and one unavailable external mesh-import fixture.
+[Rerun evidence](../project_foliage_rel/claw-graphics-RelWithDebInfo-evidence.json)
 
 The device was Microsoft Basic Render Driver (WARP), so physical-GPU performance
 is unavailable and the GF1 release-duration preflight rejected the adapter.
