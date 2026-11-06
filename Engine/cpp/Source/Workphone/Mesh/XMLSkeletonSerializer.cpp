@@ -452,6 +452,15 @@ namespace workphone
         WP_LOG( "XMLSkeletonSerializer export successful: " + filename );
     }
 
+    String XMLSkeletonSerializer::exportSkeletonData( const MeshSkeleton &skeleton )
+    {
+        TiXmlDocument document;
+        writeSkeleton( &skeleton, appendElement( &document, "skeleton" ) );
+        TiXmlPrinter printer;
+        document.Accept( &printer );
+        return printer.CStr();
+    }
+
     void XMLSkeletonSerializer::writeSkeleton( const ISkeleton *pSkel, TiXmlElement *rootNode )
     {
         auto meshSkeleton = dynamic_cast<const MeshSkeleton *>( pSkel );

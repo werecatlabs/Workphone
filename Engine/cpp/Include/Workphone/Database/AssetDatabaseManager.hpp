@@ -189,6 +189,17 @@ namespace workphone
         /** Register import outputs atomically with one durable catalog commit. */
         void addResourceEntries( const Array<SmartPtr<ISharedObject>> &objects );
 
+        struct FileEntry
+        {
+            String uuid;
+            String path;
+            String type;
+        };
+
+        /** Register existing project files whose catalog types are supplied by an authoring tool.
+         * An identical entry is reusable. A conflict rolls back the entire batch. */
+        bool registerFileEntries( const Array<FileEntry> &files, String &error );
+
         /** @brief Updates an existing resource entry in the database.
          *  @param object The shared object containing updated resource data.
          */

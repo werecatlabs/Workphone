@@ -1,5 +1,27 @@
 # WPGraphics implementation status
 
+## Imported skinned character cooking — 5 November 2026
+
+The authoring package tool now imports a skinned model through Assimp and
+registers WPM1 geometry, skin influences, a rig with its named clips and an
+actor scene in the project catalog. Cooking the scene UUID pins all three
+dependencies in the runtime package. The scene uses the existing MeshRenderer
+and Animator to load, animate and draw the character. The import scope and
+command are documented in the [runtime package guide](WPRESOURCE_RUNTIME_PACKAGES.md#importing-a-skinned-character).
+
+Eight targeted Windows x64 RelWithDebInfo tests passed. The import contract
+checks inverse-bind rejection, unchanged prior import output and exact
+deformation of two independent instances at different clip times. The package
+contract registers the analytic glTF's assets, checks catalog rollback, cooks
+the scene, removes authoring storage and relocates the five-file package to a
+Unicode path. A fresh runtime loads it by UUID and a GameManager update
+advances the scene's Animator. DX11 WARP readback records 3,025 lit bind-pose
+pixels, 2,492 lit animated pixels and 2,325 changed silhouette pixels. Rewinding
+restores the bind silhouette and all five package hashes remain unchanged.
+[Import test](../project_x64/import-character-animation-test.log),
+[catalog and package regressions](../project_x64/import-character-catalog-results.xml),
+[graphics and imported scene results](../project_x64/import-character-final-results.xml).
+
 ## Windows C++ SDK and release-candidate completion work — 31 October 2026
 
 The installed Core/Claw/SQLite SDK now exercises all six existing graphics cooking

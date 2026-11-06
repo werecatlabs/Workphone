@@ -17,6 +17,25 @@
 #include <limits>
 #include <stdexcept>
 
+#if WP_ANIMATION_IMPORTED_RESOURCES
+#include <WPAssimp/CharacterImport.hpp>
+#include <WPGraphics/ClawMesh.hpp>
+#include <WPGraphics/Resources/MeshResourceCompiler.hpp>
+#include <WPGraphics/Resources/SkinnedMeshResource.hpp>
+#include <WPSQLite/ResourceCompilationDatabase.hpp>
+#include <Workphone/Scene/Components/Animator.hpp>
+#include <Workphone/System/ResourceCompilerRegistry.hpp>
+#include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/System/SkeletonResourceCompiler.hpp>
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
+#endif
+
 using namespace workphone;
 
 namespace
@@ -143,6 +162,252 @@ namespace
         std::puts( "glTF scene/skeletal import, runtime interpolation and independent targets: PASS" );
     }
 
+#if WP_ANIMATION_IMPORTED_RESOURCES
+    namespace fs = std::filesystem;
+    using namespace resource;
+
+    struct CharacterWorkspace
+    {
+        fs::path folder = fs::temp_directory_path() /
+                          fs::u8path( ( "wp-imported-skin-" + StringUtil::getUUID() ).c_str() );
+
+        CharacterWorkspace()
+        {
+            require( fs::create_directory( folder ), "Create private character import workspace" );
+        }
+
+        ~CharacterWorkspace()
+        {
+            std::error_code ignored;
+            fs::remove_all( folder, ignored );
+        }
+    };
+
+    String pathText( const fs::path &path ) { return path.generic_u8string().c_str(); }
+
+    void writeSource( const fs::path &path, const void *bytes, size_t size )
+    {
+        std::ofstream file( path, std::ios::binary );
+        file.write( static_cast<const char *>( bytes ), static_cast<std::streamsize>( size ) );
+        file.close();
+        require( bool( file ), "Write imported character authoring source" );
+    }
+
+    void requireResource( bool success, const String &error, const char *step )
+    {
+        if( !success ) throw std::runtime_error( std::string( step ) + ": " + error.c_str() );
+    }
+
+    wp_vec3f vertexPosition( const wp_graphics_mesh *mesh, size_t index )
+    {
+        const auto *vertices = static_cast<const u8 *>( wp_graphics_mesh_get_vertices( mesh ) );
+        const auto stride = wp_graphics_mesh_get_vertex_stride( mesh );
+        wp_vec3f position{};
+        require( vertices && stride >= sizeof( position ), "Imported mesh has readable vertices" );
+        std::memcpy( &position, vertices + index * stride, sizeof( position ) );
+        return position;
+    }
+
+    bool closePosition( const wp_vec3f &a, const wp_vec3f &b )
+    {
+        return closeValue( a.x, b.x ) && closeValue( a.y, b.y ) && closeValue( a.z, b.z );
+    }
+
+    void verifyCharacterPose( const std::shared_ptr<const RuntimeResource> &resource,
+                              const std::shared_ptr<const RuntimeResource> &rig, const String &target )
+    {
+        String error;
+        render::CookedSkinnedMeshData skin;
+        requireResource( render::SkinnedMeshResourceCompiler::decode( *resource, skin, error ), error,
+                         "Decode cooked imported skin" );
+        require( skin.vertices.size() == 4 && skin.target == target && skin.packagedBuild,
+                 "Imported skin retains the exact vertex count and package target/mode" );
+
+        scene::Animator firstAnimator, secondAnimator;
+        requireResource( firstAnimator.loadResource( rig, error ), error, "Load first imported rig" );
+        requireResource( secondAnimator.loadResource( rig, error ), error, "Load second imported rig" );
+        auto firstSkeleton = firstAnimator.getSkeleton();
+        auto secondSkeleton = secondAnimator.getSkeleton();
+        require( firstSkeleton && secondSkeleton && firstSkeleton != secondSkeleton,
+                 "Cooked imported rig creates independent animation owners" );
+        const auto root = firstSkeleton->getBone( "Root" );
+        const auto child = firstSkeleton->getBone( "Child" );
+        const auto clip = firstSkeleton->getAnimation( "Lift" );
+        require( root && child && child->getParent() == root &&
+                 closeValue( child->getPosition().Y(), 1 ) && clip && closeValue( clip->getLength(), 2 ),
+                 "Cooked import retains joint names, parent, child bind translation and clip length" );
+
+        auto firstMesh = make_ptr<render::ClawMesh>();
+        auto secondMesh = make_ptr<render::ClawMesh>();
+        requireResource( firstMesh->loadResource( resource, error, target, true ), error,
+                         "Install first imported mesh and skin" );
+        requireResource( secondMesh->loadResource( resource, error, target, true ), error,
+                         "Install second imported mesh and skin" );
+        const auto *bindMesh = secondMesh->getNativeMesh();
+        require( bindMesh && firstMesh->getNativeMesh() != bindMesh &&
+                 firstMesh->hasSkinningData() && secondMesh->hasSkinningData() &&
+                 wp_graphics_mesh_get_vertex_count( bindMesh ) == 4 &&
+                 wp_graphics_mesh_get_index_count( bindMesh ) == 6 &&
+                 wp_graphics_mesh_get_submesh_count( bindMesh ) == 1 &&
+                 wp_graphics_mesh_get_primitive_type( bindMesh ) == WORKPHONE_PRIMITIVE_TRIANGLE_LIST,
+                 "Imported package installs two independent indexed quad meshes" );
+
+        const std::array<wp_vec3f, 4> bind = {{ { 0, 0, 0 }, { 2, 0, 0 }, { 0, 2, 0 }, { 2, 2, 0 } }};
+        const std::array<float, 4> rootWeight = { 1, 0, .25f, .6f };
+        std::array<size_t, 4> fixtureVertex{};
+        std::array<bool, 4> found{};
+        for( size_t vertex = 0; vertex < bind.size(); ++vertex )
+        {
+            const auto position = vertexPosition( bindMesh, vertex );
+            size_t index = 0;
+            while( index < bind.size() && !closePosition( position, bind[index] ) ) ++index;
+            require( index < bind.size() && !found[index], "Bind-space import preserves the source quad" );
+            found[index] = true;
+            fixtureVertex[vertex] = index;
+
+            float rootSum = 0, childSum = 0;
+            const auto &influence = skin.vertices[vertex];
+            for( size_t slot = 0; slot < influence.weights.size(); ++slot )
+            {
+                const auto weight = influence.weights[slot];
+                if( weight == 0 ) continue;
+                const auto joint = influence.joints[slot];
+                require( joint == root->getBoneHandle() || joint == child->getBoneHandle(),
+                         "Every positive imported influence refers to a source skin joint" );
+                if( joint == root->getBoneHandle() ) rootSum += weight;
+                else childSum += weight;
+            }
+            require( closeValue( rootSum, rootWeight[index] ) && closeValue( childSum, 1 - rootWeight[index] ),
+                     "Imported skin keeps each mixed weight attached to the corresponding source vertex" );
+        }
+
+        // At one second the root moved +1X and the child rotates +45 degrees about its bind joint.
+        const auto s = std::sqrt( .5f );
+        const std::array<wp_vec3f, 4> midpoint = {{
+            { 1, 0, 0 }, { 1 + 3 * s, 1 + s, 0 },
+            { 1 - .75f * s, 1.25f + .75f * s, 0 }, { 2.2f + .4f * s, 1.6f + 1.2f * s, 0 }
+        }};
+        const std::array<wp_vec3f, 4> endpoint = {{ { 2, 0, 0 }, { 3, 3, 0 }, { 1.25f, 1.25f, 0 }, { 2.8f, 2.4f, 0 } }};
+        firstAnimator.setAnimationTime( 1 );
+        secondAnimator.setAnimationTime( 2 );
+        requireResource( firstMesh->applySkeletonPose( firstSkeleton, error ), error,
+                         "Apply interpolated imported pose" );
+        requireResource( secondMesh->applySkeletonPose( secondSkeleton, error ), error,
+                         "Apply independent imported endpoint pose" );
+        for( size_t vertex = 0; vertex < bind.size(); ++vertex )
+        {
+            const auto index = fixtureVertex[vertex];
+            require( closePosition( vertexPosition( firstMesh->getNativeMesh(), vertex ), midpoint[index] ) &&
+                     closePosition( vertexPosition( secondMesh->getNativeMesh(), vertex ), endpoint[index] ),
+                     "Imported clip and inverse bind produce independent weighted native vertex positions" );
+        }
+        firstMesh->unload( nullptr );
+        secondMesh->unload( nullptr );
+    }
+
+    void importedCharacterPackage()
+    {
+        CharacterWorkspace workspace;
+        const auto source = workspace.folder / "source";
+        const auto compiled = workspace.folder / "compiled";
+        const auto package = workspace.folder / "package";
+        fs::create_directory( source );
+        const auto input = source / "character.gltf";
+        fs::copy_file( fs::u8path( WP_TEST_SOURCE_ROOT "/Tests/cpp/Fixtures/Animation/analytic_skin.gltf" ), input );
+
+        const ResourceID meshId( "data://character.mesh" ), rigId( "data://character.skelres" ),
+                         skinId( "data://character.skinres" );
+        const String meshUuid = "6f7f5fa3-88a8-479d-84c5-65a017baf011";
+        const String rigUuid = "6f7f5fa3-88a8-479d-84c5-65a017baf012";
+        const String skinUuid = "6f7f5fa3-88a8-479d-84c5-65a017baf013";
+        const String target = "imported-skin-contract";
+        String error;
+        character_import::Sources imported;
+        requireResource( character_import::importSources( pathText( input ), meshId, rigId, imported, error ),
+                         error, "Import glTF geometry, skin and clip through WPAssimp" );
+        require( !imported.mesh.empty() && !imported.skeleton.empty() && !imported.skin.empty(),
+                 "Successful character import supplies all three cooker inputs" );
+        writeSource( source / "character.mesh", imported.mesh.data(), imported.mesh.size() );
+        writeSource( source / "character.skelres", imported.skeleton.data(), imported.skeleton.size() );
+        writeSource( source / "character.skinres", imported.skin.data(), imported.skin.size() );
+
+        // A changed bind transform without its matching inverse bind is unsupported by the rigid runtime.
+        std::ifstream original( input, std::ios::binary );
+        std::string mismatch( ( std::istreambuf_iterator<char>( original ) ), {} );
+        original.close();
+        const std::string oldBind = "\"translation\":[0,1,0]";
+        const auto bindAt = mismatch.find( oldBind );
+        require( bindAt != std::string::npos, "Analytic source contains the expected child bind translation" );
+        mismatch.replace( bindAt, oldBind.size(), "\"translation\":[0,2,0]" );
+        const auto badInput = source / "inconsistent-bind.gltf";
+        writeSource( badInput, mismatch.data(), mismatch.size() );
+        const auto previous = imported;
+        const auto accepted = character_import::importSources( pathText( badInput ), meshId, rigId, imported, error );
+        require( !accepted && !error.empty() && imported.mesh == previous.mesh &&
+                 imported.skeleton == previous.skeleton && imported.skin == previous.skin,
+                 "Inconsistent inverse bind fails without replacing the prior complete source set" );
+
+        {
+            auto registry = std::make_shared<ResourceCompilerRegistry>();
+            requireResource( registry->registerCompiler( std::make_shared<render::MeshResourceCompiler>(), &error ),
+                             error, "Register mesh compiler" );
+            requireResource( registry->registerCompiler( std::make_shared<SkeletonResourceCompiler>(), &error ),
+                             error, "Register skeleton and clip compiler" );
+            requireResource( registry->registerCompiler( std::make_shared<render::SkinnedMeshResourceCompiler>(), &error ),
+                             error, "Register skin compiler" );
+            ResourceSystem authoring( registry, std::make_shared<ResourceCompilationDatabase>() );
+            ResourceSystemConfig config;
+            config.sourceRoot = pathText( source );
+            config.compiledRoot = pathText( compiled );
+            config.target = target;
+            requireResource( authoring.initialize( config, error ), error, "Open imported character cooker" );
+            CompilationOptions options;
+            options.packagedBuild = true;
+            const auto result = authoring.compile( skinId, options );
+            if( !result.succeeded() )
+                for( const auto &message : result.messages ) std::fprintf( stderr, "%s\n", message.c_str() );
+            require( result.succeeded(), "Cook imported skin and its mesh/rig closure" );
+            const Array<RuntimeResourceBinding> bindings = {{ skinUuid, skinId }, { meshUuid, meshId }, { rigUuid, rigId }};
+            requireResource( authoring.writeRuntimePackage( pathText( package ), { skinId }, bindings, error ), error,
+                             "Export imported character package" );
+            authoring.shutdown();
+        }
+        fs::remove_all( source );
+        fs::remove_all( compiled );
+        size_t artifacts = 0;
+        for( const auto &entry : fs::recursive_directory_iterator( package ) )
+            if( entry.is_regular_file() )
+            {
+                require( entry.path().extension() == ".wprs" || entry.path() == package / "runtime.wprm",
+                         "Character package contains only cooked resources and the runtime manifest" );
+                ++artifacts;
+            }
+        require( artifacts == 4 && !fs::exists( source ) && !fs::exists( compiled ),
+                 "Source-free character package has one manifest and three cooked containers" );
+
+        ResourceSystem runtime( nullptr, nullptr );
+        RuntimeResourceConfig config;
+        config.compiledRoot = pathText( package );
+        config.manifestPath = pathText( package / "runtime.wprm" );
+        config.target = target;
+        requireResource( runtime.initializeRuntime( config, error ), error, "Mount imported character package" );
+        const auto skin = runtime.loadUUID( skinUuid, error );
+        requireResource( bool( skin ), error, "Resolve cooked skin by UUID" );
+        const auto mesh = runtime.loadUUID( meshUuid, error );
+        requireResource( bool( mesh ), error, "Resolve cooked mesh by UUID" );
+        const auto rig = runtime.loadUUID( rigUuid, error );
+        requireResource( bool( rig ), error, "Resolve cooked skeleton and clip by UUID" );
+        require( skin->header.resourceId == skinId && mesh->header.resourceId == meshId &&
+                 rig->header.resourceId == rigId && skin->dependencies.size() == 2 &&
+                 std::find( skin->dependencies.begin(), skin->dependencies.end(), mesh ) != skin->dependencies.end() &&
+                 std::find( skin->dependencies.begin(), skin->dependencies.end(), rig ) != skin->dependencies.end(),
+                 "Cooked skin links to the same pinned mesh and rig generations resolved by UUID" );
+        verifyCharacterPose( skin, rig, target );
+        runtime.shutdown();
+        std::puts( "Original glTF import, typed package/UUID mount and independent native skin deformation: PASS" );
+    }
+#endif
+
     void samplingFailuresAndDefaults()
     {
         aiNodeAnim channel;
@@ -199,7 +464,14 @@ int main()
     timer->load( nullptr );
     application->setTimer( timer );
     int result = 0;
-    try { samplingFailuresAndDefaults(); importedRoutes(); }
+    try
+    {
+        samplingFailuresAndDefaults();
+        importedRoutes();
+#if WP_ANIMATION_IMPORTED_RESOURCES
+        importedCharacterPackage();
+#endif
+    }
     catch( const std::exception &error ) { std::fprintf( stderr, "Animation import: FAIL: %s\n", error.what() ); result = 1; }
     application->setFactoryManager( nullptr );
     application->setTimer( nullptr );

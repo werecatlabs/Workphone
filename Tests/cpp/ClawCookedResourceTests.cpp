@@ -27,6 +27,7 @@
 #include "FontResourceContracts.hpp"
 #include "ClawMorphResourceContracts.hpp"
 #include "ClawInstalledFoliageContracts.hpp"
+#include "ClawCookedSkinSceneContracts.hpp"
 #include <array>
 #include <cstring>
 #include <cstdlib>
@@ -36,6 +37,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace workphone
 {
@@ -1059,10 +1061,25 @@ namespace
 #include "ClawQueuedMaterialNodeContracts.hpp"
 #include "ClawTextureStreamingContracts.hpp"
 
-int main( int argc, char **argv )
+int wmain( int argc, wchar_t **wideArgv )
 {
     try
     {
+        // The package APIs consume UTF-8 paths. Preserve Windows command-line
+        // arguments before the existing dispatch interprets them as UTF-8.
+        std::vector<workphone::String> arguments;
+        arguments.reserve( argc );
+        for( int index = 0; index < argc; ++index )
+        {
+            arguments.push_back( workphone::StringUtil::toUTF16to8( wideArgv[index] ) );
+        }
+        std::vector<const char *> argv;
+        argv.reserve( arguments.size() );
+        for( const auto &argument : arguments )
+        {
+            argv.push_back( argument.c_str() );
+        }
+
         if( argc == 3 && std::strcmp( argv[1], "--installed-foliage-export" ) == 0 )
         {
             claw_installed_foliage_contracts::exportForest( fs::u8path( argv[2] ) );
@@ -1075,7 +1092,8 @@ int main( int argc, char **argv )
             return 0;
         }
         if(argc==4 && (std::strcmp(argv[1],"--skeleton-checked-package-consume")==0 ||
-                      std::strcmp(argv[1],"--skin-checked-package-consume")==0))
+                      std::strcmp(argv[1],"--skin-checked-package-consume")==0 ||
+                      std::strcmp(argv[1],"--skin-scene-checked-package-consume")==0))
         {
             claw_texture_mip_contracts::Fixture graphics; graphics.initialize();
             graphics.application->getFactoryManager()->load(nullptr);
@@ -1090,7 +1108,9 @@ int main( int argc, char **argv )
             config.compiledRoot=argv[2]; config.manifestPath=(fs::u8path(argv[2])/"runtime.wprm").u8string().c_str(); config.target="pc";
             String error; require(runtime.initializeRuntime(config,error),error);
             auto loaded=runtime.loadUUID(argv[3],error); require(loaded!=nullptr,error);
-            if(std::strcmp(argv[1],"--skin-checked-package-consume")==0)
+            if(std::strcmp(argv[1],"--skin-scene-checked-package-consume")==0)
+                claw_cooked_skin_scene_contracts::consume(graphics,loaded);
+            else if(std::strcmp(argv[1],"--skin-checked-package-consume")==0)
                 claw_skeleton_resource_contracts::consumeSkin(loaded);
             else claw_skeleton_resource_contracts::consume(loaded);
             return 0;

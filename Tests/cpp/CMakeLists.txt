@@ -669,6 +669,19 @@ if(TARGET Workphone)
             target_include_directories(WPAnimationImportTests PRIVATE ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/linux)
         endif()
         add_dependencies(WPAnimationImportTests WPAssimp Workphone)
+        if(WP_USE_ASSET_IMPORT AND NOT WP_USE_FBXSDK AND WP_BUILD_RESOURCE_SYSTEM AND
+           TARGET WPGraphics AND TARGET WPSQLite AND TARGET WorkphoneGraphics)
+            target_compile_definitions(WPAnimationImportTests PRIVATE WP_ANIMATION_IMPORTED_RESOURCES=1)
+            target_include_directories(WPAnimationImportTests PRIVATE
+                ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+                ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+            target_link_libraries(WPAnimationImportTests PRIVATE
+                $<TARGET_LINKER_FILE:WPGraphics> $<TARGET_LINKER_FILE:WPSQLite> WorkphoneGraphics)
+            if(TARGET WorkphonePlatformWin32)
+                target_link_libraries(WPAnimationImportTests PRIVATE WorkphonePlatformWin32)
+            endif()
+            add_dependencies(WPAnimationImportTests WPGraphics WPSQLite)
+        endif()
         set_target_properties(WPAnimationImportTests PROPERTIES FOLDER Tests/Cpp)
         add_test(NAME WPAnimation.import_contracts COMMAND WPAnimationImportTests)
         if(TARGET Meshopt)

@@ -204,6 +204,46 @@ namespace workphone
             return kind == AssetDatabaseManager::EntryKind::File ? "file" : "scene";
         }
 
+        bool insertCatalogEntry( AssetDatabaseManager &manager, const String &uuid,
+                                 const AssetCatalogPath &path, const String &kind,
+                                 const String &type, bool &inserted, String &error )
+        {
+            inserted = false;
+            auto existing =
+                queryCatalog( manager,
+                              "SELECT uuid,path_key,kind,type FROM resources WHERE uuid=? OR "
+                              "(kind='file' AND ?='file' AND path_key=?)",
+                              { uuid, kind, path.key } );
+            if( !existing )
+            {
+                error = "Cannot inspect existing catalog identity";
+                return false;
+            }
+            if( !existing->eof() )
+            {
+                const bool identical = existing->getFieldValue( "uuid" ) == uuid &&
+                                       existing->getFieldValue( "path_key" ) == path.key &&
+                                       existing->getFieldValue( "kind" ) == kind &&
+                                       existing->getFieldValue( "type" ) == type;
+                existing->nextRow();
+                if( !identical || !existing->eof() )
+                {
+                    error = "Conflicting catalog identity; insertion rejected: " + path.path;
+                    return false;
+                }
+                return true;
+            }
+            if( !queryCatalog( manager,
+                               "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,?,?)",
+                               { uuid, path.path, type, kind, path.key } ) )
+            {
+                error = "Cannot insert catalog file identity: " + path.path;
+                return false;
+            }
+            inserted = true;
+            return true;
+        }
+
         // Version 2 stores explicit file/scene kinds and a canonical file lookup key.
         // Keep this separate from ResourceSystem's compilation metadata and user_version.
         bool migrateIdentity( AssetDatabaseManager &manager, const String &root, bool backup )
@@ -1025,36 +1065,17 @@ namespace workphone
             {
                 return;
             }
-            auto existing =
-                queryCatalog( *this,
-                              "SELECT uuid,path_key,kind,type FROM resources WHERE uuid=? OR "
-                              "(kind='file' AND ?='file' AND path_key=?)",
-                              { uuid, kind, path.key } );
-            if( !existing )
+            bool newEntry = false;
+            String error;
+            if( !insertCatalogEntry( *this, uuid, path, kind, type, newEntry, error ) )
             {
+                WP_LOG_ERROR( error );
                 return;
             }
-            if( !existing->eof() )
+            if( newEntry )
             {
-                const bool identical = existing->getFieldValue( "uuid" ) == uuid &&
-                                       existing->getFieldValue( "path_key" ) == path.key &&
-                                       existing->getFieldValue( "kind" ) == kind &&
-                                       existing->getFieldValue( "type" ) == type;
-                existing->nextRow();
-                if( !identical || !existing->eof() )
-                {
-                    WP_LOG_ERROR( "Conflicting catalog identity; insertion rejected." );
-                    return;
-                }
-                continue;
+                inserted.push_back( { object, uuid } );
             }
-            if( !queryCatalog( *this,
-                               "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,?,?)",
-                               { uuid, path.path, type, kind, path.key } ) )
-            {
-                return;
-            }
-            inserted.push_back( { object, uuid } );
         }
         if( transaction.commit() && !inserted.empty() )
         {
@@ -1066,6 +1087,61 @@ namespace workphone
             // publish the same import a second time as an external change.
             refreshDatabaseRevision();
         }
+    }
+
+    bool AssetDatabaseManager::registerFileEntries( const Array<FileEntry> &files, String &error )
+    {
+        error.clear();
+        ScopedLock lock( this );
+        if( !m_catalogReady || m_readOnly || files.empty() )
+        {
+            error = "File registration requires entries and a writable project catalog";
+            return false;
+        }
+        CatalogTransaction transaction( *this );
+        if( !transaction.active() )
+        {
+            error = "Cannot begin catalog file registration";
+            return false;
+        }
+        bool changed = false;
+        for( const auto &file : files )
+        {
+            if( !validValue( file.uuid, 256 ) || !validValue( file.type, 256 ) )
+            {
+                error = "Catalog file registration requires a UUID and type";
+                return false;
+            }
+            AssetCatalogPath path;
+            if( !canonicalAssetCatalogPath( m_projectRoot, file.path, path, error ) )
+            {
+                return false;
+            }
+            const auto source = std::filesystem::u8path( m_projectRoot.c_str() ) /
+                                std::filesystem::u8path( path.path.c_str() );
+            std::error_code filesystemError;
+            if( !std::filesystem::is_regular_file( source, filesystemError ) )
+            {
+                error = "Catalog source must be an existing regular project file: " + path.path;
+                return false;
+            }
+            bool inserted = false;
+            if( !insertCatalogEntry( *this, file.uuid, path, "file", file.type, inserted, error ) )
+            {
+                return false;
+            }
+            changed = changed || inserted;
+        }
+        if( !transaction.commit() )
+        {
+            error = "Cannot commit catalog file registration";
+            return false;
+        }
+        if( changed )
+        {
+            refreshDatabaseRevision();
+        }
+        return true;
     }
 
     void AssetDatabaseManager::updateResourceEntry( SmartPtr<ISharedObject> object )

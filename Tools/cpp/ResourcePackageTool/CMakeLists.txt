@@ -8,6 +8,13 @@ target_link_libraries(WorkphoneResourcePackage PRIVATE
     $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPSQLite>
     $<TARGET_LINKER_FILE:WPGraphics> $<TARGET_LINKER_FILE:WPLua>)
 add_dependencies(WorkphoneResourcePackage Workphone WPSQLite WPGraphics WPLua)
+if(TARGET WPAssimp AND TARGET WorkphoneGraphics AND WP_USE_ASSET_IMPORT AND NOT WP_USE_FBXSDK)
+    set(_wp_package_character_import ON)
+    target_sources(WorkphoneResourcePackage PRIVATE CharacterImportCommand.cpp)
+    target_compile_definitions(WorkphoneResourcePackage PRIVATE WP_PACKAGE_CHARACTER_IMPORT=1)
+    target_link_libraries(WorkphoneResourcePackage PRIVATE $<TARGET_LINKER_FILE:WPAssimp>)
+    add_dependencies(WorkphoneResourcePackage WPAssimp)
+endif()
 if(WIN32)
     target_link_libraries(WorkphoneResourcePackage PRIVATE psapi)
 endif()
@@ -41,6 +48,14 @@ if(BUILD_TESTING)
                 COMMAND "${Python3_EXECUTABLE}" "${WP_ROOT}/Tests/python/resource_package_families.py"
                     "$<TARGET_FILE:WPGraphicsCookedResourceTests>" "$<TARGET_FILE:WorkphoneResourcePackage>")
             set_tests_properties(WorkphoneAssets.typed_package_families PROPERTIES TIMEOUT 240 RUN_SERIAL TRUE LABELS "resource;package;graphics")
+            if(_wp_package_character_import AND WIN32)
+                add_test(NAME WorkphoneAssets.imported_character_package
+                    COMMAND "${Python3_EXECUTABLE}" "${WP_ROOT}/Tests/python/resource_imported_character.py"
+                        "$<TARGET_FILE:WorkphoneResourcePackage>" "$<TARGET_FILE:WPGraphicsCookedResourceTests>"
+                        "${WP_ROOT}/Tests/cpp/Fixtures/Animation/analytic_skin.gltf")
+                set_tests_properties(WorkphoneAssets.imported_character_package PROPERTIES
+                    TIMEOUT 180 RUN_SERIAL TRUE LABELS "resource;package;animation;graphics")
+            endif()
         endif()
         if(WIN32)
         add_executable(ResourcePackageJobTests ${WP_ROOT}/Tests/cpp/ResourcePackageJobTests.cpp

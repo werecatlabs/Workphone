@@ -36,6 +36,9 @@ namespace workphone
         /** Exports a skeleton to the named XML file. */
         void exportSkeleton( const ISkeleton *pSkeleton, const String &filename );
 
+        /** Serializes a MeshSkeleton without writing authoring files. */
+        String exportSkeletonData( const MeshSkeleton &skeleton );
+
     private:
         friend class resource::SkeletonResourceCompiler;
         // Called only after strict typed-resource validation; mutates a private candidate.

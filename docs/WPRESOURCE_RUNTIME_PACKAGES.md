@@ -874,7 +874,34 @@ without reopening an authoring mesh. The native package fixture advances two
 independent Animators, checks deformed vertices and reads posed/rest pixels after
 source/catalog/cooking storage removal. That historical fixture predates the
 typed graph, mask, retarget, IK-rig and static morph additions described below.
-Full model import remains a separate feature gate.
+
+### Importing a skinned character
+
+With Assimp and native graphics enabled, the package tool can prepare an imported
+character in an existing project. Give it a new directory relative to the
+source root with an existing parent directory. It writes WPM1 geometry, the rig
+and named clips, per-vertex skin weights, and a scene with a MeshRenderer and
+Animator that starts the first clip. It registers the four files as runtime
+assets in the project catalog and prints their UUIDs. If catalog registration
+fails after file publication, the command reports the complete source directory
+it retained for recovery.
+
+```powershell
+WorkphoneResourcePackage.exe --import-character 'G:/Project' `
+  'G:/Project/AssetDatabase.db' 'G:/Models/Character.gltf' 'Characters/Hero'
+WorkphoneResourcePackage.exe 'G:/Project' 'G:/Project/AssetDatabase.db' `
+  'G:/Cooked/Project' 'G:/Packages/Hero-v1' pc `
+  --map mesh=mesh --map skelres=skelres --map skinres=skinres `
+  --map fbscene=fbscene --root <scene-uuid>
+```
+
+The importer accepts one skinned mesh node with triangulated primitives, up to
+four weights per vertex, rigid joint transforms and linear skeletal clips. It
+bakes the mesh bind transform into the geometry and checks each source inverse
+bind against the rig before writing files. Mesh primitives initially use the
+default material. Assign cooked materials through the mesh material sidecar if
+needed. Scale animation, morph targets and unrelated scene animation channels
+require separate import support.
 
 ## Mixed scene and prefab graphs
 

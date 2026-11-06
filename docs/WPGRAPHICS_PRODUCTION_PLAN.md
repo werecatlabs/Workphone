@@ -1,5 +1,12 @@
 # WPGraphics production readiness and feature implementation plan
 
+Imported character follow-up, 5 November: the first Assimp character route
+feeds the existing mesh, skin, skeleton and scene compilers. The cooked actor
+uses MeshRenderer and Animator with UUID bindings and no source paths. This
+advances the imported animation slice. Wider format coverage, authored material
+import, Editor adoption and full R1 acceptance remain open. See the
+[implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md#imported-skinned-character-cooking--5-november-2026).
+
 Release-candidate follow-up, 31 October: the supported Windows x64
 Core/Claw/SQLite SDK now covers all six existing graphics cooked formats,
 1,571 standalone Windows headers, real native UI layout and animator lifecycle

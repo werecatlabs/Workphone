@@ -185,6 +185,13 @@ endif()
 #endif()
 target_link_libraries(WPAssimp $<LINK_ONLY:Meshopt>)
 
+if(TARGET WorkphoneGraphics AND WP_BUILD_RESOURCE_SYSTEM AND WP_USE_ASSET_IMPORT AND NOT WP_USE_FBXSDK)
+    set_source_files_properties("${WP_ROOT}/Engine/cpp/Source/WPAssimp/CharacterImport.cpp"
+        PROPERTIES COMPILE_DEFINITIONS WP_ASSIMP_CHARACTER_IMPORT=1
+        INCLUDE_DIRECTORIES "${WP_ROOT}/Engine/c/Include/WorkphoneCore;${WP_ROOT}/Engine/c/Include/WorkphoneGraphics")
+    target_link_libraries(WPAssimp $<LINK_ONLY:WorkphoneGraphics>)
+endif()
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         target_link_libraries(WPAssimp Workphone)

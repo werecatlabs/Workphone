@@ -41,6 +41,10 @@ $requiredTests = @(
 if (Select-String -LiteralPath (Join-Path $buildPath 'CMakeCache.txt') -Pattern '^WP_BUILD_TOOLS:BOOL=ON$' -Quiet) {
     $requiredTests += @('WorkphoneAssets.package_editor_workflow', 'WorkphoneAssets.typed_package_families',
         'WorkphoneAssets.package_jobs', 'WorkphoneAssets.package_cli')
+    if ((Select-String -LiteralPath (Join-Path $buildPath 'CMakeCache.txt') -Pattern '^WP_USE_ASSET_IMPORT:BOOL=ON$' -Quiet) -and
+        -not (Select-String -LiteralPath (Join-Path $buildPath 'CMakeCache.txt') -Pattern '^WP_USE_FBXSDK:BOOL=ON$' -Quiet)) {
+        $requiredTests += 'WorkphoneAssets.imported_character_package'
+    }
 }
 if ($TerrainOnly) {
     $requiredTests = @(
@@ -127,9 +131,14 @@ $verificationPaths = @(
     'Tests/cpp/UnitTests/AnimationGraphTests.cpp',
     'Tests/cpp/UnitTests/AnimationIKTests.cpp',
     'Tests/cpp/Fixtures/Animation/analytic_channels.gltf',
+    'Tests/cpp/Fixtures/Animation/analytic_skin.gltf',
+    'Tests/python/resource_imported_character.py',
+    'Tools/cpp/ResourcePackageTool/CharacterImportCommand.cpp',
     'Engine/c/Include/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h',
     'Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.c',
     'Engine/cpp/Include/WPAssimp/AnimationImport.hpp',
+    'Engine/cpp/Include/WPAssimp/CharacterImport.hpp',
+    'Engine/cpp/Source/WPAssimp/CharacterImport.cpp',
     'Engine/cpp/Include/WPAssimp/AssimpLoader.hpp',
     'Engine/cpp/Source/WPAssimp/AssimpLoader.cpp',
     'Engine/cpp/Include/WPGraphics/ClawFoliageBatch.hpp',

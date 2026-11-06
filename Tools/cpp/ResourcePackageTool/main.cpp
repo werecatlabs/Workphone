@@ -40,6 +40,14 @@
 #include <Psapi.h>
 #endif
 
+#if WP_PACKAGE_CHARACTER_IMPORT
+namespace workphone::resource
+{
+    void importCharacter( const String &project, const String &catalog, const String &model,
+                          const String &destination );
+}
+#endif
+
 namespace
 {
     using namespace workphone;
@@ -107,6 +115,21 @@ namespace
 
     int run(const Array<String> &input)
     {
+        if(input.size() >= 2 && input[1] == "--import-character")
+        {
+            if(input.size() != 6)
+            {
+                std::cerr << "Usage: WorkphoneResourcePackage --import-character <source-root> "
+                             "<existing-catalog> <source-model> <new-project-relative-directory>\n";
+                return 2;
+            }
+#if WP_PACKAGE_CHARACTER_IMPORT
+            importCharacter(input[2], input[3], input[4], input[5]);
+            return 0;
+#else
+            throw std::runtime_error("Character import is unavailable in this build");
+#endif
+        }
         if(input.size() >= 2 && (input[1] == "--inspect-package-stages" || input[1] == "--recover-package-stages"))
         {
             if(input.size() != 3)
@@ -241,6 +264,8 @@ namespace
                          "       WorkphoneResourcePackage --recover-package-stages <publication-parent>\n"
                          "       WorkphoneResourcePackage --preview-profile <profile.json> <new-report.json>\n"
                          "       WorkphoneResourcePackage --verify <package-directory> <target> <uuid> [uuid...]\n"
+                         "       WorkphoneResourcePackage --import-character <source-root> <existing-catalog> "
+                         "<source-model> <new-project-relative-directory>\n"
                          "       WorkphoneResourcePackage --create-patch <base-package> <target-package> <new-patch> <target>\n"
                          "       WorkphoneResourcePackage --apply-patch <base-package> <patch> <new-package> <target>\n"
                          "       WorkphoneResourcePackage --save-profile <new-profile.json> <positional arguments above>\n";
