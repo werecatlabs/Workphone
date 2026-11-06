@@ -28,6 +28,7 @@ struct Draw {
     HWND window = nullptr;
     bool fail = false, stale = false, pending = false, nested = false;
     bool sample_destination = false, transient_sample = false;
+    ID3D11ShaderResourceView *validation_view = nullptr;
     unsigned validations = 0, draws = 0;
 };
 inline void triangle(wp_renderer_dx11 *r) {
@@ -64,6 +65,11 @@ inline wp_rtt_result draw(void *p, const wp_graphics_rtt_desc *) {
                     d.window, 0), "RTT must block resize and presentation");
     }
     triangle(d.r);
+    if(d.validation_view) {
+        for(unsigned i = 0; i < 8; ++i)
+            wp_renderer_dx11_set_texture_native(d.r, d.validation_view);
+        wp_renderer_dx11_set_texture_native(d.r, nullptr);
+    }
     if(d.transient_sample) {
         wp_renderer_dx11_set_texture_native(d.r, wp_renderer_dx11_get_render_texture_view(d.target));
         wp_renderer_dx11_set_texture_native(d.r, nullptr);
@@ -81,6 +87,94 @@ inline std::vector<unsigned char> pixels(wp_render_texture_dx11 *target) {
     require(wp_renderer_dx11_copy_render_texture_rgba8(target, value.data(), value.size()), "RTT readback");
     return value;
 }
+
+// Count validation calls and references without passing the adapter to D3D.
+class CountingValidationView final : public ID3D11ShaderResourceView {
+public:
+    explicit CountingValidationView(ID3D11ShaderResourceView *source) : m_source(source) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override {
+        if(!out) return E_POINTER;
+        *out = nullptr;
+        if(iid != __uuidof(IUnknown) && iid != __uuidof(ID3D11DeviceChild) &&
+           iid != __uuidof(ID3D11View) && iid != __uuidof(ID3D11ShaderResourceView)) return E_NOINTERFACE;
+        *out = static_cast<ID3D11ShaderResourceView *>(this);
+        AddRef();
+        return S_OK;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++references; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const auto remaining = --references;
+        if(!remaining) delete this;
+        return remaining;
+    }
+    void STDMETHODCALLTYPE GetDevice(ID3D11Device **device) override { m_source->GetDevice(device); }
+    HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *size, void *data) override {
+        return m_source->GetPrivateData(guid, size, data);
+    }
+    HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT size, const void *data) override {
+        return m_source->SetPrivateData(guid, size, data);
+    }
+    HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(REFGUID guid, const IUnknown *data) override {
+        return m_source->SetPrivateDataInterface(guid, data);
+    }
+    void STDMETHODCALLTYPE GetResource(ID3D11Resource **resource) override {
+        ++lookups;
+        m_source->GetResource(resource);
+    }
+    void STDMETHODCALLTYPE GetDesc(D3D11_SHADER_RESOURCE_VIEW_DESC *desc) override { m_source->GetDesc(desc); }
+
+    unsigned lookups = 0;
+    ULONG references = 1;
+
+private:
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_source;
+};
+
+inline void validationCache(wp_renderer_dx11 *renderer, wp_render_texture_dx11 *target,
+                            const wp_graphics_rtt_desc &desc, const std::vector<unsigned char> &lastGood) {
+    std::unique_ptr<wp_render_texture_dx11, decltype(&wp_renderer_dx11_destroy_render_texture)>
+        other(wp_renderer_dx11_create_render_texture(renderer, 32, 32), &wp_renderer_dx11_destroy_render_texture);
+    require(other != nullptr, "RTT validation cache secondary target");
+    auto *device = static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(renderer));
+    auto *resource = static_cast<ID3D11Texture2D *>(wp_renderer_dx11_get_render_texture_resource(other.get()));
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> alias;
+    require(SUCCEEDED(device->CreateShaderResourceView(resource, nullptr, alias.GetAddressOf())),
+            "RTT validation cache secondary color alias");
+    auto *counted = new CountingValidationView(alias.Get());
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> countedOwner;
+    countedOwner.Attach(counted);
+    Draw job{renderer, target, desc};
+    const auto execute = [&] {
+        return wp_renderer_dx11_execute_rtt_job(renderer, job.target, &job.desc, nullptr, nullptr, draw, &job);
+    };
+
+    job.validation_view = counted;
+    require(execute() == WP_RTT_OK && counted->lookups == 1 && counted->references == 1,
+            "RTT must reuse safe view validation and release cache references after publication");
+    job.fail = true; job.desc.colour[0] = 1;
+    require(execute() == WP_RTT_BACKEND_FAILED && counted->lookups == 2 && counted->references == 1 &&
+                pixels(target) == lastGood,
+            "RTT must release cache references and preserve output after rollback");
+    job.fail = false; job.transient_sample = true;
+    require(execute() == WP_RTT_HAZARD && counted->lookups == 3 && counted->references == 1 &&
+                pixels(target) == lastGood,
+            "a changed binding must reject feedback after earlier safe validation in the same job");
+
+    job.target = other.get(); job.desc.target_generation = wp_renderer_dx11_get_render_texture_generation(job.target);
+    job.transient_sample = false; job.validation_view = nullptr;
+    require(execute() == WP_RTT_OK, "RTT validation cache secondary target baseline");
+    const auto secondaryGood = pixels(job.target);
+    job.desc.colour[0] = 0; job.validation_view = counted;
+    require(execute() == WP_RTT_HAZARD && counted->lookups > 3 && counted->references == 1 &&
+                pixels(job.target) == secondaryGood,
+            "a previously safe view must reject when its resource becomes the RTT destination");
+
+    job.validation_view = alias.Get();
+    require(execute() == WP_RTT_HAZARD && pixels(job.target) == secondaryGood,
+            "RTT feedback checks must reject a separate SRV of the destination resource");
+}
+
 inline bool native(wp_renderer_dx11 *r) {
     auto *context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(r));
     auto *target = wp_renderer_dx11_create_render_texture(r, 32, 32);
@@ -163,6 +257,7 @@ inline bool native(wp_renderer_dx11 *r) {
     context->PSSetShaderResources(9, 1, &sourceView);
     context->VSSetShaderResources(11, 1, &sourceView);
     context->CSSetShaderResources(4, 1, &sourceView);
+    validationCache(r, target, d.desc, lastGood);
     d.fail = true; d.nested = false; d.validations = 0; d.desc.colour[0] = 1;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_BACKEND_FAILED &&
                 pixels(target) == lastGood, "failed RTT must retain every last-good output pixel");

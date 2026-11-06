@@ -545,7 +545,15 @@ typedef struct wp_dx11_mesh_cache
 } wp_dx11_mesh_cache;
 static wp_renderer_dx11 *wp_dx11_renderers = NULL;
 static volatile LONG64 wp_dx11_rtt_generation = 0;
+enum { WP_DX11_RTT_VIEW_CACHE_SIZE = 64 };
+typedef struct wp_rtt_dx11_view_cache
+{
+    wp_render_texture_dx11 *destination;
+    ID3D11ShaderResourceView *allowed[WP_DX11_RTT_VIEW_CACHE_SIZE];
+} wp_rtt_dx11_view_cache;
+
 static wp_s32 wp_rtt_dx11_view_allowed(wp_renderer_dx11 *, ID3D11ShaderResourceView *);
+static void wp_rtt_dx11_forget_view(wp_rtt_dx11_view_cache *, ID3D11ShaderResourceView *);
 
 typedef struct wp_material_surface_constants_dx11
 {
@@ -570,7 +578,7 @@ struct wp_renderer_dx11
     wp_u64 rtt_generation;
     DWORD rtt_owner_thread;
     wp_s32 rtt_active, rtt_hazard;
-    wp_render_texture_dx11 *rtt_destination;
+    wp_rtt_dx11_view_cache *rtt_view_cache;
     wp_dx11_mesh_cache *meshes[WP_DX11_MESH_CACHE_BUCKETS];
     wp_renderer_dx11 *next_renderer;
     wp_render_statistics_dx11 statistics;
@@ -3736,7 +3744,15 @@ static wp_s32 wp_renderer_dx11_stage_terrain_material( wp_renderer_dx11 *r,
     if( memcmp( &r->terrain, &value, sizeof( value ) ) )
     { r->terrain = value; r->terrain_dirty = 1; }
     if( memcmp( r->terrain_views, candidate, sizeof( candidate ) ) )
-    { memcpy( r->terrain_views, candidate, sizeof( candidate ) ); r->pntc_bindings_valid = 0; }
+    {
+        /* Terrain publications can return their allocation leases at unbind. */
+        if( r->rtt_view_cache )
+            for( i = 0; i < WP_TERRAIN_MATERIAL_VIEWS; ++i )
+                if( r->terrain_views[i] != candidate[i] )
+                    wp_rtt_dx11_forget_view( r->rtt_view_cache, r->terrain_views[i] );
+        memcpy( r->terrain_views, candidate, sizeof( candidate ) );
+        r->pntc_bindings_valid = 0;
+    }
     /* The immediate context owns COM references to bound views. Release them at
        unbind, before the owner retires its material and returns allocation leases;
        waiting for another draw would leave unaccounted resident terrain textures. */
@@ -6050,6 +6066,7 @@ typedef struct wp_rtt_dx11_context {
     ID3D11SamplerState *material_sampler;
     wp_f32 environment_lod;
     D3D11_VIEWPORT ui_viewport;
+    wp_rtt_dx11_view_cache view_cache;
     wp_s32 started;
 } wp_rtt_dx11_context;
 
@@ -6066,13 +6083,42 @@ static wp_s32 wp_rtt_dx11_view_matches(ID3D11ShaderResourceView *view,
     return match;
 }
 
+static ID3D11ShaderResourceView **wp_rtt_dx11_view_cache_slot(wp_rtt_dx11_view_cache *cache,
+                                                           ID3D11ShaderResourceView *view)
+{
+    uintptr_t key = (uintptr_t)view;
+    return &cache->allowed[((key >> 4) ^ (key >> 10)) & (WP_DX11_RTT_VIEW_CACHE_SIZE - 1u)];
+}
+
 static wp_s32 wp_rtt_dx11_view_allowed(wp_renderer_dx11 *r, ID3D11ShaderResourceView *view)
 {
-    if(r && r->rtt_active && wp_rtt_dx11_view_matches(view, r->rtt_destination)) {
+    wp_rtt_dx11_view_cache *cache;
+    ID3D11ShaderResourceView **slot;
+    ID3D11ShaderResourceView *previous;
+    if(!r || !view || !(cache = r->rtt_view_cache)) return 1;
+    slot = wp_rtt_dx11_view_cache_slot(cache, view);
+    if(*slot == view) return 1;
+    if(wp_rtt_dx11_view_matches(view, cache->destination)) {
         r->rtt_hazard = 1;
         return 0;
     }
+    /* Pin cached identities against address reuse if a caller releases its view. */
+    ID3D11ShaderResourceView_AddRef(view);
+    previous = *slot;
+    *slot = view;
+    if(previous) ID3D11ShaderResourceView_Release(previous);
     return 1;
+}
+
+static void wp_rtt_dx11_forget_view(wp_rtt_dx11_view_cache *cache, ID3D11ShaderResourceView *view)
+{
+    ID3D11ShaderResourceView **slot;
+    if(!view) return;
+    slot = wp_rtt_dx11_view_cache_slot(cache, view);
+    if(*slot == view) {
+        *slot = NULL;
+        ID3D11ShaderResourceView_Release(view);
+    }
 }
 
 static wp_s32 wp_rtt_dx11_sampled(wp_renderer_dx11 *r, wp_render_texture_dx11 *target)
@@ -6168,7 +6214,9 @@ static wp_rtt_result wp_rtt_dx11_begin(void *data, const wp_graphics_rtt_desc *d
     c->environment_lod = r->environment_max_lod; c->material_sampler = r->material_sampler;
     c->old_rt = r->active_rt_view; c->old_ds = r->active_ds_view;
     ID3D11DeviceContext1_SwapDeviceContextState(c->context1, target->rtt_state, &c->previous);
-    c->started = 1; r->rtt_destination = target; r->rtt_hazard = 0; r->rtt_active = 1;
+    c->view_cache.destination = target;
+    r->rtt_view_cache = &c->view_cache;
+    c->started = 1; r->rtt_hazard = 0; r->rtt_active = 1;
     if(!r->rtt_owner_thread) r->rtt_owner_thread = GetCurrentThreadId();
     ID3D11DeviceContext_CopyResource(r->context, (ID3D11Resource *)target->scratch->texture, (ID3D11Resource *)target->texture);
     ID3D11DeviceContext_CopyResource(r->context, (ID3D11Resource *)target->scratch->ds_texture, (ID3D11Resource *)target->ds_texture);
@@ -6192,6 +6240,7 @@ static wp_rtt_result wp_rtt_dx11_finish(void *data, wp_s32 publish)
     wp_rtt_dx11_context *c = (wp_rtt_dx11_context *)data;
     wp_renderer_dx11 *r = c->r;
     wp_rtt_result result = WP_RTT_OK;
+    wp_s32 i;
     if(c->started) {
         if(r->hdr_active || r->shadow_pass) {
             publish = 0; result = WP_RTT_BACKEND_FAILED;
@@ -6215,7 +6264,9 @@ static wp_rtt_result wp_rtt_dx11_finish(void *data, wp_s32 publish)
         r->active_rt_view = c->old_rt; r->active_ds_view = c->old_ds;
         r->mvp_dirty = r->material_dirty = r->terrain_dirty = r->shadow_dirty = 1;
         wp_renderer_dx11_invalidate_state(r);
-        r->rtt_active = 0; r->rtt_destination = NULL; r->rtt_hazard = 0;
+        r->rtt_active = 0; r->rtt_view_cache = NULL; r->rtt_hazard = 0;
+        for(i = 0; i < WP_DX11_RTT_VIEW_CACHE_SIZE; ++i)
+            if(c->view_cache.allowed[i]) ID3D11ShaderResourceView_Release(c->view_cache.allowed[i]);
     }
     if(c->context1) { ID3D11DeviceContext1_Release(c->context1); c->context1 = NULL; }
     return result;
