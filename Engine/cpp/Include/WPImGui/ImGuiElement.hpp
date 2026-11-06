@@ -1013,7 +1013,7 @@ namespace workphone
         template <class T>
         Array<SmartPtr<IUIElement>> ImGuiElement<T>::getChildren() const
         {
-            return Array<SmartPtr<IUIElement>>( m_children.begin(), m_children.end() );
+            return m_children.snapshot();
         }
 
         template <class T>
