@@ -163,19 +163,10 @@ namespace workphone
     {
         if( object )
         {
-            // Safety: catch exceptions when accessing partially destroyed objects
-            try
+            if( object->getWeakReferences() != -1 )
             {
-                if( object->getWeakReferences() != -1 )
-                {
-                    m_pointer = object;
-                    object->addWeakReference();
-                }
-            }
-            catch( ... )
-            {
-                // Object is being destroyed, store pointer without weak reference bookkeeping
                 m_pointer = object;
+                object->addWeakReference();
             }
         }
     }
@@ -497,39 +488,6 @@ namespace workphone
 
         return *this;
     }
-
-    /*
-    template <class T>
-    FBWeakPtr<T> &FBWeakPtr<T>::operator=( const FBSmartPtr<T> &other ) throw()
-    {
-        T *pNewObject = nullptr;
-        auto otherObject = other.get();
-        if( otherObject )
-        {
-#    if WP_TRACK_REFERENCES
-            otherObject->addWeakReference( this, __FILE__, __LINE__, __FUNCTION__ );
-#    else
-            otherObject->addWeakReference();
-#    endif
-
-            pNewObject = otherObject;
-        }
-
-        auto pObject = this->m_object;
-        if( pObject )
-        {
-#    if WP_TRACK_REFERENCES
-            pObject->removeWeakReference( this, __FILE__, __LINE__, __FUNCTION__ );
-#    else
-            pObject->removeWeakReference();
-#    endif
-        }
-
-        m_object = pNewObject;
-
-        return *this;
-    }
-    */
 
     template <class T>
     bool WeakPtr<T>::operator==( T *other ) const
