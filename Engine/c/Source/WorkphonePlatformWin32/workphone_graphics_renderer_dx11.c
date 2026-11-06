@@ -3604,22 +3604,26 @@ void wp_renderer_dx11_set_projection_matrix( wp_renderer_dx11 *r, const wp_mat4f
     r->mvp_dirty = 1;
 }
 
-void wp_renderer_dx11_set_material( wp_renderer_dx11 *r,
-                                    const wp_material_dx11 *material )
+static void wp_renderer_dx11_publish_material( wp_renderer_dx11 *r, wp_material_dx11 *resolved )
+{
+    // Transfer flags belong to bound SRVs, not caller-authored material state.
+    // Preserve them here so submitting an unchanged material does not force a
+    // constant-buffer upload on every sRGB draw; bind_geometry refreshes on change.
+    resolved->extra_map_flags.z = r->material.extra_map_flags.z;
+    resolved->extra_map_flags.w = r->material.extra_map_flags.w;
+    resolved->environment.x = r->environment_view ? 1.0f : 0.0f;
+    resolved->environment.y = r->environment_max_lod;
+    if( memcmp( &r->material, resolved, sizeof( *resolved ) ) == 0 ) return;
+    r->material = *resolved;
+    r->material_dirty = 1;
+}
+
+void wp_renderer_dx11_set_material( wp_renderer_dx11 *r, const wp_material_dx11 *material )
 {
     wp_material_dx11 resolved;
     if( !r || !material ) return;
     resolved = *material;
-    // Transfer flags belong to bound SRVs, not caller-authored material state.
-    // Preserve them here so submitting an unchanged material does not force a
-    // constant-buffer upload on every sRGB draw; bind_geometry refreshes on change.
-    resolved.extra_map_flags.z = r->material.extra_map_flags.z;
-    resolved.extra_map_flags.w = r->material.extra_map_flags.w;
-    resolved.environment.x = r->environment_view ? 1.0f : 0.0f;
-    resolved.environment.y = r->environment_max_lod;
-    if( memcmp( &r->material, &resolved, sizeof( resolved ) ) == 0 ) return;
-    r->material = resolved;
-    r->material_dirty = 1;
+    wp_renderer_dx11_publish_material( r, &resolved );
 }
 
 wp_s32 wp_renderer_dx11_get_material_upload_mode( const wp_renderer_dx11 *r )
@@ -5166,7 +5170,16 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
         index_count, base_vertex, instances, instance_count, NULL, NULL);
 }
 
-wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *r,
+static wp_s32 wp_renderer_dx11_valid_geometry_range( const wp_renderer_dx11 *r,
+    const wp_geometry_dx11 *geometry, wp_s32 index_start, wp_s32 index_count )
+{
+    return r && geometry && geometry->device == r->device &&
+        geometry->vertex_stride == sizeof( wp_vertex_pntc ) &&
+        index_start >= 0 && index_count > 0 && index_start <= geometry->index_count &&
+        index_count <= geometry->index_count - index_start;
+}
+
+static wp_s32 wp_renderer_dx11_draw_geometry_pntc_instances(wp_renderer_dx11 *r,
     const wp_geometry_dx11 *geometry, wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
     const wp_instance_pntc_dx11 *instances, wp_s32 instance_count, wp_material_bind_dx11 bind, void *user)
 {
@@ -5175,11 +5188,6 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *r,
     wp_instance_gpu_dx11 *destination;
     UINT stride = (UINT)sizeof( wp_instance_gpu_dx11 ), offset = 0;
     ID3D11Buffer *empty_buffer = NULL;
-    if( !r || !geometry || geometry->device != r->device ||
-        geometry->vertex_stride != sizeof( wp_vertex_pntc ) ||
-        !instances || instance_count <= 0 || index_start < 0 || index_count <= 0 ||
-        index_start > geometry->index_count || index_count > geometry->index_count-index_start ) return 0;
-    if( !wp_renderer_dx11_validate_instances_pntc( instances, instance_count ) ) return 0;
     if( !wp_renderer_dx11_ensure_instances( r ) ) return 0;
     if( !wp_renderer_dx11_bind_geometry_pntc( r, geometry, index_start, index_count, base_vertex ) ) return 0;
     ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_pntc_instanced );
@@ -5215,6 +5223,107 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *r,
      * instance stream binding as well, including after a failed upload. */
     ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &empty_buffer, &stride, &offset );
     ++r->statistics.state_bindings;
+    return submitted;
+}
+
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *r,
+    const wp_geometry_dx11 *geometry, wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
+    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count, wp_material_bind_dx11 bind, void *user)
+{
+    if( !wp_renderer_dx11_valid_geometry_range( r, geometry, index_start, index_count ) ||
+        !wp_renderer_dx11_validate_instances_pntc( instances, instance_count ) || instance_count <= 0 ) return 0;
+    return wp_renderer_dx11_draw_geometry_pntc_instances( r, geometry, index_start, index_count,
+        base_vertex, instances, instance_count, bind, user );
+}
+
+wp_s32 wp_renderer_dx11_begin_mesh_sections( wp_renderer_dx11 *r, wp_mesh_section_state_dx11 *state )
+{
+    if( !r || !state ) return 0;
+    state->blend_mode = r->blend_mode;
+    state->cull_mode = r->cull_mode;
+    state->depth_func = r->depth_func;
+    state->fill_mode = r->fill_mode;
+    state->depth_test = r->depth_test_enabled;
+    state->depth_write = r->depth_write_enabled;
+    wp_renderer_dx11_set_blend_mode( r, WORKPHONE_BLEND_MODE_NONE );
+    return 1;
+}
+
+void wp_renderer_dx11_end_mesh_sections( wp_renderer_dx11 *r, const wp_mesh_section_state_dx11 *state )
+{
+    if( !r || !state ) return;
+    wp_renderer_dx11_set_texture_native( r, NULL );
+    wp_renderer_dx11_set_blend_mode( r, state->blend_mode );
+    wp_renderer_dx11_set_cull_mode( r, state->cull_mode );
+    wp_renderer_dx11_set_depth_write_enabled( r, state->depth_write );
+    wp_renderer_dx11_set_depth_test_enabled( r, state->depth_test );
+    wp_renderer_dx11_set_depth_func( r, state->depth_func );
+    wp_renderer_dx11_set_fill_mode( r, state->fill_mode );
+}
+
+wp_s32 wp_renderer_dx11_submit_mesh_section( wp_renderer_dx11 *r, const wp_mesh_section_dx11 *section )
+{
+    const wp_geometry_dx11 *geometry;
+    wp_material_dx11 material;
+    wp_s32 batch_size, offset, count, submitted = 0;
+    if( !r || !section || section->struct_size < sizeof( *section ) ) return 0;
+    geometry = section->geometry;
+    if( !wp_renderer_dx11_valid_geometry_range( r, geometry, section->index_start, section->index_count ) ||
+        section->index_count % 3 ||
+        ( section->instances ? section->instance_count <= 0 : section->instance_count != 0 ) ||
+        section->instance_batch_size < 0 ||
+        (wp_u32)section->blend_mode > WORKPHONE_BLEND_MODE_PREMULTIPLIED ||
+        (wp_u32)section->cull_mode > WORKPHONE_CULL_MODE_FRONT ||
+        (wp_u32)section->depth_func > WORKPHONE_DEPTH_FUNC_ALWAYS ||
+        (wp_u32)section->fill_mode > WORKPHONE_FILL_MODE_POINT ) return 0;
+    if( section->instances &&
+        !wp_renderer_dx11_validate_instances_pntc( section->instances, section->instance_count ) ) return 0;
+
+    wp_renderer_dx11_set_texture_native( r, section->base_texture );
+    wp_renderer_dx11_set_material_textures( r, section->textures );
+    material = section->material;
+    if( section->reflection_probe )
+    {
+        D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+        ID3D11ShaderResourceView_GetDesc( (ID3D11ShaderResourceView *)section->reflection_probe, &desc );
+        if( desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE )
+        {
+            wp_renderer_dx11_set_environment( r, section->reflection_probe,
+                                                 (wp_f32)( desc.TextureCube.MipLevels - 1 ) );
+            material.environment.z = 1.0f;
+        }
+    }
+    if( r->rtt_active && r->rtt_hazard ) return 0;
+    wp_renderer_dx11_enable_shadow_receiving( r, section->receive_shadows );
+    wp_renderer_dx11_set_material_sampler( r, section->wrap_u, section->wrap_v,
+                                           section->filter, section->anisotropy );
+    material.map_flags.x = section->textures[0] ? 1.0f : 0.0f;
+    material.map_flags.y = section->textures[1] ? 1.0f : 0.0f;
+    material.map_flags.z = section->textures[2] ? 1.0f : 0.0f;
+    material.map_flags.w = section->textures[3] ? 1.0f : 0.0f;
+    material.extra_map_flags.x = section->textures[4] ? 1.0f : 0.0f;
+    material.extra_map_flags.y = section->textures[5] ? 1.0f : 0.0f;
+    wp_renderer_dx11_publish_material( r, &material );
+    wp_renderer_dx11_set_blend_mode( r, section->blend_mode );
+    wp_renderer_dx11_set_depth_write_enabled( r, section->depth_write );
+    wp_renderer_dx11_set_depth_test_enabled( r, section->depth_test );
+    wp_renderer_dx11_set_depth_func( r, section->depth_func );
+    wp_renderer_dx11_set_fill_mode( r, section->fill_mode );
+    wp_renderer_dx11_set_cull_mode( r, section->cull_mode );
+
+    if( !section->instances )
+        return wp_renderer_dx11_draw_geometry_pntc_bound( r, geometry, section->index_start,
+            section->index_count, section->base_vertex, section->bind, section->bind_user );
+
+    batch_size = section->instance_batch_size ? section->instance_batch_size : section->instance_count;
+    for( offset = 0; offset < section->instance_count; offset += count )
+    {
+        count = section->instance_count - offset;
+        if( count > batch_size ) count = batch_size;
+        submitted += wp_renderer_dx11_draw_geometry_pntc_instances( r, geometry, section->index_start,
+            section->index_count, section->base_vertex, section->instances + offset, count,
+            section->bind, section->bind_user );
+    }
     return submitted;
 }
 

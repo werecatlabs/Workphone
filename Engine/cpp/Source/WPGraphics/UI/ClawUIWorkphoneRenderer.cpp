@@ -5,8 +5,12 @@
 #include <workphone.h>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
+#if defined WP_PLATFORM_WIN32
+#    include <workphone_graphics_ui_dx11.h>
+#endif
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace
@@ -200,7 +204,13 @@ namespace workphone::ui
                                           wp_handle fontTexture )
     {
         if( !ctx || !renderer || m_vertexCount == 0 || m_indexCount == 0 ||
-            sizeof( wp_draw_index ) != sizeof( uint16_t ) )
+            m_vertexCount > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
+        {
+            return false;
+        }
+
+        auto *nativeRenderer = wp_renderer_get_dx11( renderer );
+        if( !nativeRenderer && sizeof( wp_draw_index ) != sizeof( uint16_t ) )
         {
             return false;
         }
@@ -257,17 +267,17 @@ namespace workphone::ui
             fontNative = ensureFontTextureNative( renderer, fontPixels, fontWidth, fontHeight );
         }
 
-        // If we still have no native font handle (e.g. fontPixels was null because the
-        // atlas bake failed), fall back to the fontTexture wp_handle pointer.  WorkphoneCore
-        // stores the font atlas SRV as wp_handle_ptr(fontPixels.data()) on the context, so
-        // the font texture's `.ptr` is already the GPU-side handle for our purposes.  This
-        // keeps every draw binding a real (non-null) handle, avoiding the same stale
-        // ptc_external_texture_view leak the previous "fall through to nullptr" path had.
-        if( !fontNative )
+        // The context's font handle is a CPU pixel pointer. Only the software
+        // backend can use it directly if there is no cached native atlas.
+        if( !fontNative && !nativeRenderer )
         {
             fontNative = const_cast<void *>( fontTexture.ptr );
         }
 
+#if defined WP_PLATFORM_WIN32
+        wp_ui_draw_list_dx11 drawList{ vertices.data(), getIndices(), m_vertexCount, m_indexCount,
+                                       sizeof( wp_draw_index ), 0 };
+#endif
         size_t indexOffset = 0;
         const struct wp_draw_command *command = nullptr;
         wp_draw_foreach( command, ctx, &m_commandBuffer )
@@ -276,6 +286,10 @@ namespace workphone::ui
             {
                 continue;
             }
+            if( command->elem_count > m_indexCount - indexOffset )
+            {
+                break;
+            }
 
             wp_viewport_i scissor = {
                 viewport.x + static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.x ) ),
@@ -283,14 +297,12 @@ namespace workphone::ui
                 static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.w ) ),
                 static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.h ) )
             };
-            wp_renderer_set_scissor_rect( renderer, scissor );
-
             // Pick a native handle for every command.  All three branches go through
             // wp_renderer_set_texture_native so the backend's ptc_external_texture_view is
             // always overwritten (the old mixed path let stale ptc_texture_view survive
             // across draws).
             void *textureView = nullptr;
-            if( command->texture.ptr == fontTexture.ptr && fontPixels )
+            if( command->texture.ptr == fontTexture.ptr )
             {
                 textureView = fontNative;
             }
@@ -306,11 +318,24 @@ namespace workphone::ui
                 textureView = fontNative;
             }
 
+#if defined WP_PLATFORM_WIN32
+            if( nativeRenderer )
+            {
+                wp_renderer_dx11_draw_ui_range( nativeRenderer, &drawList, indexOffset,
+                                                command->elem_count, 0, scissor, textureView );
+                indexOffset += command->elem_count;
+                continue;
+            }
+#endif
+            wp_renderer_set_scissor_rect( renderer, scissor );
             wp_renderer_set_texture_native( renderer, textureView );
-
-            wp_renderer_draw_indexed_triangles_ptc(
-                renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ),
-                getIndices() + indexOffset, static_cast<wp_s32>( command->elem_count ) );
+            if( command->elem_count <= static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
+            {
+                wp_renderer_draw_indexed_triangles_ptc(
+                    renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ),
+                    reinterpret_cast<const uint16_t *>( getIndices() + indexOffset ),
+                    static_cast<wp_s32>( command->elem_count ) );
+            }
             indexOffset += command->elem_count;
         }
 

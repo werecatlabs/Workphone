@@ -589,6 +589,50 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *,
     const wp_geometry_dx11 *, wp_s32 start, wp_s32 count, wp_s32 base,
     const wp_instance_pntc_dx11 *, wp_s32 instances, wp_material_bind_dx11, void *);
 
+/* Resolved indexed PNTC section. Geometry, native views, instances and bind
+ * context are borrowed through submission. Set struct_size to sizeof the
+ * descriptor. Texture presence flags come from the supplied views. A cube
+ * reflection_probe overrides the current view environment for this section;
+ * set the view's default environment before the next section when needed. */
+typedef struct wp_mesh_section_dx11
+{
+    wp_u32 struct_size;
+    const wp_geometry_dx11 *geometry;
+    wp_s32 index_start, index_count, base_vertex;
+    wp_material_dx11 material;
+    void *base_texture, *textures[6], *reflection_probe;
+    wp_u32 wrap_u, wrap_v, filter, anisotropy;
+    wp_blend_mode blend_mode;
+    wp_cull_mode cull_mode;
+    wp_depth_func depth_func;
+    wp_fill_mode fill_mode;
+    wp_s32 depth_test, depth_write, receive_shadows;
+    const wp_instance_pntc_dx11 *instances;
+    wp_s32 instance_count, instance_batch_size;
+    wp_material_bind_dx11 bind;
+    void *bind_user;
+} wp_mesh_section_dx11;
+
+/* Saves logical raster/depth/blend state around a sequence of mesh sections.
+ * End restores that state and clears the staged base texture. The owner must
+ * pair successful begin/end calls on the render thread. */
+typedef struct wp_mesh_section_state_dx11
+{
+    wp_blend_mode blend_mode;
+    wp_cull_mode cull_mode;
+    wp_depth_func depth_func;
+    wp_fill_mode fill_mode;
+    wp_s32 depth_test, depth_write;
+} wp_mesh_section_state_dx11;
+wp_s32 wp_renderer_dx11_begin_mesh_sections(wp_renderer_dx11 *, wp_mesh_section_state_dx11 *);
+void wp_renderer_dx11_end_mesh_sections(wp_renderer_dx11 *, const wp_mesh_section_state_dx11 *);
+
+/* Applies section state and submits without restoring the staged state.
+ * Returns one for a scalar draw, the number submitted for instances, or zero
+ * on rejection/failure. A null instance span selects a scalar draw. A zero
+ * instance_batch_size uses the whole span, still split at native capacity. */
+wp_s32 wp_renderer_dx11_submit_mesh_section(wp_renderer_dx11 *, const wp_mesh_section_dx11 *);
+
 /** Foliage stream extends ordinary instances without changing their ABI. Wind
  * and interaction are local horizontal displacements in metres; phase is radians.
  * Atlas rectangles transform all material UVs together. Colour and shadow use the

@@ -70,3 +70,5 @@ install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
     DESTINATION share/WorkphoneGraphicsSDK)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/Tests/GraphicsSDKConsumer/"
     DESTINATION share/WorkphoneGraphicsSDK/sample)
+install(FILES "${CMAKE_SOURCE_DIR}/Tests/c/WorkphoneGraphicsDX11SectionTests.c"
+    DESTINATION share/WorkphoneGraphicsSDK/sample)

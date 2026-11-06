@@ -6,6 +6,7 @@
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_scenenode.h"
+#include "workphone_graphics_texture_mips.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -53,6 +54,25 @@ static int check( int condition, const char *message )
         return 0;
     }
     return 1;
+}
+
+static int test_texture_mip_extents( void )
+{
+    wp_u32 width = 0, height = 0;
+    int ok = 1;
+    ok &= check( wp_graphics_texture_first_mip( 128, 64, 5, 0, 0 ) == 2 &&
+                     wp_graphics_texture_first_mip( 128, 64, 5, 1, 24 ) == 3,
+                 "native mip selection should combine quality and maximum dimensions" );
+    ok &= check( wp_graphics_texture_first_mip( 128, 64, 2, 0, 1 ) == 1 &&
+                     wp_graphics_texture_first_mip( 128, 64, 0, 0, 1 ) == 0,
+                 "native mip selection should stop at the final authored level" );
+    ok &= check( wp_graphics_texture_next_mip_extent( 32, 8, 4, &width, &height ) &&
+                     width == 16 && height == 4,
+                 "native atlas mip extent should preserve an integral tile width" );
+    ok &= check( !wp_graphics_texture_next_mip_extent( 12, 8, 4, &width, &height ) &&
+                     width == 16 && height == 4,
+                 "native atlas mip generation should stop before dividing a tile" );
+    return ok;
 }
 
 static void render_test_triangle( wp_graphics_object *object, wp_renderer *renderer )
@@ -495,6 +515,7 @@ int main( void )
     }
 
     ok &= test_frustum_culling( renderer );
+    ok &= test_texture_mip_extents();
     wp_graphics_system_set_renderer( system, NULL );
     wp_graphics_system_destroy( system );
     wp_renderer_destroy( renderer );

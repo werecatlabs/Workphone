@@ -2153,7 +2153,7 @@ namespace workphone::editor
                         }
                     }
 
-                    if( m_nextRemoveUnusedResourcesTime < t )
+                    /*if( m_nextRemoveUnusedResourcesTime < t )
                     {
                         auto graphicsSystem = applicationManager->getGraphicsSystem();
                         if( graphicsSystem )
@@ -2162,7 +2162,7 @@ namespace workphone::editor
                         }
 
                         m_nextRemoveUnusedResourcesTime = t + 0.25;
-                    }
+                    }*/
                 }
             }
             break;

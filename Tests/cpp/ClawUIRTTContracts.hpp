@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ClawRTTJobContracts.hpp"
+#include <WorkphonePlatformWin32/workphone_graphics_ui_dx11.h>
 #include <WPGraphics/UI/ClawUIManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
@@ -59,6 +60,63 @@ class Graphics : public claw_rtt_contracts::Graphics
 public:
     void render() override { ++draws; }
 };
+
+inline void nativeRanges( wp_renderer_dx11 *renderer )
+{
+    std::unique_ptr<wp_render_texture_dx11, decltype( &wp_renderer_dx11_destroy_render_texture )>
+        target( wp_renderer_dx11_create_render_texture( renderer, 32, 32 ),
+                &wp_renderer_dx11_destroy_render_texture );
+    require( target != nullptr, "native UI range fixture must allocate an output" );
+
+    wp_graphics_rtt_desc desc{};
+    desc.renderer_generation = wp_renderer_dx11_get_rtt_generation( renderer );
+    desc.target_generation = wp_renderer_dx11_get_render_texture_generation( target.get() );
+    desc.width = desc.height = 32;
+    desc.viewport = { 0, 0, 32, 32 };
+    desc.clear_colour = 1;
+    desc.colour[3] = 1;
+    const auto draw = []( void *user, const wp_graphics_rtt_desc * ) {
+        auto *native = static_cast<wp_renderer_dx11 *>( user );
+        wp_mat4f identity{};
+        for( int i = 0; i < 4; ++i )
+            identity.m[i][i] = 1;
+        wp_renderer_dx11_set_world_matrix( native, &identity );
+        wp_renderer_dx11_set_view_matrix( native, &identity );
+        wp_renderer_dx11_set_projection_matrix( native, &identity );
+        wp_renderer_dx11_set_cull_mode( native, WORKPHONE_CULL_MODE_NONE );
+        wp_renderer_dx11_set_blend_mode( native, WORKPHONE_BLEND_MODE_NONE );
+        wp_renderer_dx11_set_depth_test_enabled( native, 0 );
+
+        const wp_vertex_ptc vertices[] = { {},
+            { { -1, -1, .5f }, { 0, 0 }, 0xffffffffu },
+            { { -1, 3, .5f }, { 0, 0 }, 0xffffffffu },
+            { { 3, -1, .5f }, { 0, 0 }, 0xffffffffu } };
+        const uint16_t indices16[] = { 3, 0, 1, 2, 0, 1, 2 };
+        const uint32_t indices32[] = { 0, 1, 2 };
+        wp_ui_draw_list_dx11 list16{ vertices, indices16, 4, 7, sizeof( uint16_t ), 0 };
+        wp_ui_draw_list_dx11 list32{ vertices, indices32, 4, 3, sizeof( uint32_t ), 0 };
+        const wp_viewport_i untouched{ 24, 0, 8, 32 };
+        const bool submitted = wp_renderer_dx11_draw_ui_range( native, &list16, 1, 3, 1,
+                                                               { 0, 0, 8, 32 }, nullptr ) &&
+            !wp_renderer_dx11_draw_ui_range( native, &list16, 0, 3, 1, untouched, nullptr ) &&
+            !wp_renderer_dx11_draw_ui_range( native, &list16, 6, 3, 1, untouched, nullptr ) &&
+            wp_renderer_dx11_draw_ui_range( native, &list16, 4, 3, 1, { 8, 0, 8, 32 }, nullptr ) &&
+            wp_renderer_dx11_draw_ui_range( native, &list32, 0, 3, 1, { 16, 0, 8, 32 }, nullptr );
+        return submitted ? WP_RTT_OK : WP_RTT_BACKEND_FAILED;
+    };
+    wp_render_statistics_dx11 before{}, after{};
+    wp_renderer_dx11_get_statistics_counters( renderer, &before );
+    require( wp_renderer_dx11_execute_rtt_job( renderer, target.get(), &desc, nullptr, nullptr,
+                                              draw, renderer ) == WP_RTT_OK,
+             "native UI must accept valid ranges and reject out-of-bounds ranges and indices" );
+    wp_renderer_dx11_get_statistics_counters( renderer, &after );
+    require( after.draws == before.draws + 3 && after.triangles == before.triangles + 3,
+             "native UI must submit exactly the three valid ranges" );
+    const auto pixels = claw_rtt_contracts::pixels( target.get() );
+    const auto red = [&]( size_t x ) { return pixels[( 16 * 32 + x ) * 4]; };
+    require( red( 4 ) > 240 && red( 12 ) > 240 && red( 20 ) > 240 && red( 28 ) == 0,
+             "native UI must preserve rebased indices and per-range scissor for both index widths" );
+}
 
 inline bool editorPreview( SmartPtr<IGraphicsWindow> window )
 {
@@ -148,6 +206,7 @@ inline bool editorPreview( SmartPtr<IGraphicsWindow> window )
     viewport->setEnableUI( false );
     graphics->frame();
     require( pixels() == background, "disabling viewport UI must remove offscreen UI composition" );
+    nativeRanges( wp_renderer_get_dx11( renderer->getNativeRenderer() ) );
     ui->clear();
     std::puts( "Editor-style RTT UI image/text pixels, canvas visibility and viewport UI gating passed." );
     return true;

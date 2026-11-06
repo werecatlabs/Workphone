@@ -156,6 +156,20 @@ target_link_libraries(WorkphoneGraphicsFrameTests PRIVATE
 set_target_properties(WorkphoneGraphicsFrameTests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
 add_test(NAME WorkphoneGraphics.native_frame COMMAND WorkphoneGraphicsFrameTests)
 
+if(WIN32 AND WP_BUILD_RENDERER_DX11)
+    add_executable(WorkphoneGraphicsDX11SectionTests WorkphoneGraphicsDX11SectionTests.c)
+    target_include_directories(WorkphoneGraphicsDX11SectionTests PRIVATE
+        ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+        ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+        ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
+    target_link_libraries(WorkphoneGraphicsDX11SectionTests PRIVATE
+        WorkphonePlatformWin32 WorkphoneGraphics WorkphoneCore d3d12 user32 gdi32)
+    set_target_properties(WorkphoneGraphicsDX11SectionTests PROPERTIES
+        C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
+    add_test(NAME WorkphoneGraphics.dx11_section COMMAND WorkphoneGraphicsDX11SectionTests)
+    set_tests_properties(WorkphoneGraphics.dx11_section PROPERTIES LABELS "graphics;gpu;rtt" TIMEOUT 30)
+endif()
+
 if(NOT TARGET WorkphoneGraphicsRTTJobTests)
     add_executable(WorkphoneGraphicsRTTJobTests
         ${CMAKE_SOURCE_DIR}/Tests/c/WorkphoneGraphicsRTTJobTests.c

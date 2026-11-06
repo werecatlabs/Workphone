@@ -19,6 +19,7 @@
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
+#include <workphone_graphics_texture_mips.h>
 #include <FreeImage.h>
 #include "ClawAssetBudget.hpp"
 
@@ -115,15 +116,9 @@ namespace
     {
         workphone::u64 bytes = workphone::u64( width ) * height * 4;
         while( settings.filter != workphone::render::TextureMipFilter::None &&
-               ( width > 1 || height > 1 ) )
+               wp_graphics_texture_next_mip_extent( width, height, settings.atlasColumns, &width,
+                                                    &height ) )
         {
-            width = std::max( width / 2, 1u );
-            height = std::max( height / 2, 1u );
-            if( !settings.atlasColumns || width < settings.atlasColumns ||
-                width % settings.atlasColumns )
-            {
-                break;
-            }
             bytes += workphone::u64( width ) * height * 4;
         }
         return bytes + 4096;
@@ -196,11 +191,10 @@ namespace
                 return false;
             }
             totalBytes += bytes;
-            const auto nextWidth = std::max( width / 2, 1u );
-            const auto nextHeight = std::max( height / 2, 1u );
+            workphone::u32 nextWidth = 0, nextHeight = 0;
             const bool last = settings.filter == TextureMipFilter::None ||
-                              ( width == 1 && height == 1 ) || nextWidth < settings.atlasColumns ||
-                              nextWidth % settings.atlasColumns != 0;
+                              !wp_graphics_texture_next_mip_extent(
+                                  width, height, settings.atlasColumns, &nextWidth, &nextHeight );
             if( last != ( index + 1 == levels.size() ) )
             {
                 error = "Cooked texture must contain its exact complete or atlas-limited mip chain";
@@ -229,6 +223,10 @@ namespace
                            const TextureUploadPolicy &policy, bool *budgetDenied = nullptr,
                            bool preserveSingleMip = false, workphone::u32 atlasColumns = 1 )
     {
+        if( levels.empty() )
+        {
+            return nullptr;
+        }
         // Legacy sampled textures commonly disable authored mipmaps. They still
         // need a smaller resident base when the player lowers texture quality.
         // Keep the original CPU pixels and the no-mipmap sampling contract.
@@ -256,14 +254,9 @@ namespace
                 levels[0].bgra.data(), levels[0].width, levels[0].height, settings );
             return uploadMipLevels( renderer, generated, policy, budgetDenied, true, atlasColumns );
         }
-        size_t first = 0;
-        const size_t skip = policy.quality == 0 ? 2u : policy.quality == 1 ? 1u : 0u;
-        while( first + 1 < levels.size() &&
-               ( first < skip || ( policy.maximum > 0 && ( levels[first].width > policy.maximum ||
-                                                           levels[first].height > policy.maximum ) ) ) )
-        {
-            ++first;
-        }
+        const size_t first = wp_graphics_texture_first_mip(
+            levels[0].width, levels[0].height, static_cast<wp_u32>( levels.size() ), policy.quality,
+            policy.maximum );
         const auto last = preserveSingleMip ? first + 1 : levels.size();
         workphone::u64 bytes = 0;
         for( size_t i = first; i < last; ++i )
@@ -298,15 +291,9 @@ namespace
                      const TextureUploadPolicy &policy, bool *budgetDenied = nullptr )
     {
         const auto image = workphone::dds::inspect( bytes );
-        size_t first = 0;
-        const size_t skip = policy.quality == 0 ? 2u : policy.quality == 1 ? 1u : 0u;
-        while(
-            first + 1 < image.mips.size() &&
-            ( first < skip || ( policy.maximum > 0 && ( image.mips[first].width > policy.maximum ||
-                                                        image.mips[first].height > policy.maximum ) ) ) )
-        {
-            ++first;
-        }
+        const size_t first = wp_graphics_texture_first_mip(
+            image.mips[0].width, image.mips[0].height, static_cast<wp_u32>( image.mips.size() ),
+            policy.quality, policy.maximum );
         workphone::u64 residentBytes = 0;
         for( size_t i = first; i < image.mips.size(); ++i )
         {

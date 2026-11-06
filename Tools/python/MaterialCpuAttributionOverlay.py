@@ -29,13 +29,17 @@ def instrument(raw, header, baseline):
     loop='for( s32 submeshIndex = 0; submeshIndex < drawCount; ++submeshIndex )'
     if body.count(loop)!=1:raise ValueError('material section loop changed')
     loop_open=body.index('{',body.index(loop)); loop_end=closing(body,loop_open)
-    start=('            auto pMaterial = resolveMeshMaterial( mesh, submeshIndex );' if baseline else
-           '            const auto record = records->get(*binding, submeshIndex);')
+    start_pattern = r'^            const auto record = records->get\( *\*binding, submeshIndex *\);'
+    if baseline:
+        start_pattern = r'^            auto pMaterial = resolveMeshMaterial\( mesh, submeshIndex \);'
+    starts = list(re.finditer(start_pattern, body, re.M))
     draw='            if( instances )\n            {\n                if( geometry && count > 0 && count % 3u == 0 )'
-    if body.count(start)!=1 or body.count(draw)!=1:raise ValueError('material/draw boundary changed')
+    if 'wp_renderer_dx11_submit_mesh_section( dx11, &section )' in body:
+        draw='            constexpr auto maxIndexCount = static_cast<u32>( std::numeric_limits<wp_s32>::max() );'
+    if len(starts)!=1 or body.count(draw)!=1:raise ValueError('material/draw boundary changed')
     # Material owners are declared after the probe, so their destruction occurs
     # before its final stop. Native draw work is between stop and resume.
-    insertions=[(body.index(start),'            ::material_cpu_attribution::MaterialScope wpMaterialCpuScope;\n'),
+    insertions=[(starts[0].start(),'            ::material_cpu_attribution::MaterialScope wpMaterialCpuScope;\n'),
                 (body.index(draw),'            wpMaterialCpuScope.stop();\n'),
                 (body.rfind('\n',0,loop_end)+1,'            wpMaterialCpuScope.resume();\n')]
     for offset,text in sorted(insertions,reverse=True):body=body[:offset]+text+body[offset:]

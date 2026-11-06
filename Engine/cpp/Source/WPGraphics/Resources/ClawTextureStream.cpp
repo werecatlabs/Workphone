@@ -7,6 +7,7 @@
 #include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <workphone_graphics_renderer_dx11.h>
+#include <workphone_graphics_texture_mips.h>
 #include "../ClawAssetBudget.hpp"
 #include <array>
 #include <algorithm>
@@ -216,18 +217,16 @@ namespace workphone::render
             for( u32 i = 0; i < out.count; ++i )
             {
                 auto &mip = out.mips[i];
-                if( i )
+                u32 nextWidth = 0, nextHeight = 0;
+                const bool last = out.settings.filter == TextureMipFilter::None ||
+                                  !wp_graphics_texture_next_mip_extent( mip.width, mip.height,
+                                      out.settings.atlasColumns, &nextWidth, &nextHeight );
+                require( last == ( i + 1 == out.count ), "Incomplete or excessive streamed mip chain" );
+                if( !last )
                 {
-                    require( mip.width == std::max( out.mips[i - 1].width / 2, 1u ) &&
-                                 mip.height == std::max( out.mips[i - 1].height / 2, 1u ),
+                    require( out.mips[i + 1].width == nextWidth && out.mips[i + 1].height == nextHeight,
                              "Inconsistent streamed mip chain" );
                 }
-                const auto nextWidth = std::max( mip.width / 2, 1u );
-                const bool last = out.settings.filter == TextureMipFilter::None ||
-                                  ( mip.width == 1 && mip.height == 1 ) ||
-                                  nextWidth < out.settings.atlasColumns ||
-                                  nextWidth % out.settings.atlasColumns;
-                require( last == ( i + 1 == out.count ), "Incomplete or excessive streamed mip chain" );
                 mip.hash =
                     resource::hashBytes( reader.bytes + mip.offset, static_cast<size_t>( mip.size ) );
             }
@@ -539,10 +538,11 @@ namespace workphone::render
                          "Cold mip span exceeds captured payload" );
                 total += mip.size;
                 offset += mip.size;
-                const auto nextWidth = std::max( width / 2, 1u );
+                u32 nextWidth = 0, nextHeight = 0;
                 const bool last =
-                    out.settings.filter == TextureMipFilter::None || ( width == 1 && height == 1 ) ||
-                    nextWidth < out.settings.atlasColumns || nextWidth % out.settings.atlasColumns;
+                    out.settings.filter == TextureMipFilter::None ||
+                    !wp_graphics_texture_next_mip_extent( width, height, out.settings.atlasColumns,
+                                                         &nextWidth, &nextHeight );
                 require( last == ( i + 1 == out.count ),
                          "Cold mip chain is incomplete or has extra levels" );
                 if( i + 1 < out.count && !out.format )
@@ -550,7 +550,7 @@ namespace workphone::render
                     offset += 16;
                 }
                 width = nextWidth;
-                height = std::max( height / 2, 1u );
+                height = nextHeight;
             }
             require( offset == logicalSize, "Cold texture has trailing or missing bytes" );
             decodeBytes = logicalSize;
@@ -1290,15 +1290,9 @@ namespace workphone::render
                 m_data->policyKey = key;
                 if( !initialize || !m_data->manual )
                 {
-                    u32 first = 0;
-                    const auto skip = quality == 0 ? 2u : quality == 1 ? 1u : 0u;
-                    while( first + 1 < m_data->plan->count &&
-                           ( first < skip ||
-                             ( maximum && ( m_data->plan->mips[first].width > maximum ||
-                                            m_data->plan->mips[first].height > maximum ) ) ) )
-                    {
-                        ++first;
-                    }
+                    const auto &base = m_data->plan->mips[0];
+                    const auto first = wp_graphics_texture_first_mip(
+                        base.width, base.height, m_data->plan->count, quality, maximum );
                     m_data->desired = std::min( first, m_data->plan->bootstrapFirst );
                     m_data->dirty = true;
                 }

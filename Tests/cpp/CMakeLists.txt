@@ -982,13 +982,15 @@ target_include_directories(WPHierarchicalDepthOcclusionTests PRIVATE "${WP_ROOT}
 set_target_properties(WPHierarchicalDepthOcclusionTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME WPGraphics.hierarchical_depth_occlusion COMMAND WPHierarchicalDepthOcclusionTests)
 if(WIN32)
-    add_executable(WPDepthReadbackDX11Tests GraphicsProduction/DepthReadbackDX11Tests.cpp)
+    add_executable(WPDepthReadbackDX11Tests GraphicsProduction/DepthReadbackDX11Tests.cpp
+        "${WP_ROOT}/Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_depth_readback_dx11.c")
     target_compile_features(WPDepthReadbackDX11Tests PRIVATE cxx_std_17)
     target_compile_definitions(WPDepthReadbackDX11Tests PRIVATE _WP_STATIC_LIB_
         WP_BUILD_RENDERER_DX11=1)
     target_include_directories(WPDepthReadbackDX11Tests PRIVATE "${WP_ROOT}/Engine/cpp/Include"
         "${WP_ROOT}/Engine/c/Include" "${WP_ROOT}/Engine/c/Include/WorkphoneCore"
-        "${WP_ROOT}/Engine/c/Include/WorkphoneGraphics")
+        "${WP_ROOT}/Engine/c/Include/WorkphoneGraphics"
+        "${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32")
     target_link_libraries(WPDepthReadbackDX11Tests PRIVATE d3d11 d3dcompiler)
     set_target_properties(WPDepthReadbackDX11Tests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPGraphics.occlusion_depth_gpu COMMAND WPDepthReadbackDX11Tests)

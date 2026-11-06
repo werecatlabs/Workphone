@@ -38,6 +38,15 @@ foreach(_target graphics_sdk_c90 graphics_sdk_cpp17)
     set_tests_properties(${_target} PROPERTIES TIMEOUT 30)
 endforeach()
 
+add_executable(graphics_sdk_dx11_section
+    "${SDK_ROOT}/share/WorkphoneGraphicsSDK/sample/WorkphoneGraphicsDX11SectionTests.c")
+set_target_properties(graphics_sdk_dx11_section PROPERTIES
+    C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+    MSVC_RUNTIME_LIBRARY "${WorkphoneGraphicsSDK_MSVC_RUNTIME_LIBRARY}")
+target_link_libraries(graphics_sdk_dx11_section PRIVATE WorkphoneGraphics::SDK)
+add_test(NAME graphics_sdk_dx11_section COMMAND graphics_sdk_dx11_section)
+set_tests_properties(graphics_sdk_dx11_section PROPERTIES TIMEOUT 60)
+
 # This application distribution contains no SDK libraries, headers or sources.
 # A release CRT is required; Debug CRT binaries are not part of the runtime ZIP.
 install(TARGETS graphics_sdk_c90 RUNTIME DESTINATION bin CONFIGURATIONS RelWithDebInfo)

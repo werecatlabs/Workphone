@@ -7,6 +7,7 @@
 #include <WorkphoneGraphics/workphone_graphics_renderer_software.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
+#include <d3dcompiler.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -14,8 +15,8 @@
 #include <vector>
 
 // The renderer adapter is a borrowed device/context/depth resource. All shader
-// compilation, multisample resolve, GPU execution and staging map are production
-// ClawDepthReadback code against the actual D3D11 device.
+// compilation, multisample resolve, GPU execution and staging map run in the
+// production C depth reader against the actual D3D11 device.
 struct wp_renderer_dx11 { ID3D11Device *device; ID3D11DeviceContext *context; ID3D11Texture2D *depth; };
 struct wp_renderer { wp_renderer_dx11 *native; };
 extern "C" {
@@ -106,6 +107,11 @@ int main()
                 SUCCEEDED( native.device->CreateDepthStencilView( native.depth, &view, &dsv ) );
             if( !dsv ) break;
             native.context->OMSetRenderTargets( 0, nullptr, dsv );
+            auto *nativeReader = wp_depth_readback_dx11_create();
+            float untouched[4] = { -1.f, -1.f, -1.f, -1.f };
+            ok = nativeReader && !wp_renderer_dx11_read_depth( nativeReader, &native, untouched, 2, 2, 3 ) &&
+                std::all_of( untouched, untouched + 4, []( float z ) { return z == -1.f; } ) && ok;
+            wp_depth_readback_dx11_destroy( nativeReader );
             for( float expected : { .375f, 1.f } )
             {
                 native.context->ClearDepthStencilView( dsv, D3D11_CLEAR_DEPTH, expected, 0 );

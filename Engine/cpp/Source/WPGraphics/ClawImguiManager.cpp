@@ -13,6 +13,7 @@
 #if defined WP_PLATFORM_WIN32
 #    include "backends/imgui_impl_win32.h"
 #    include <WPGraphics/ClawWin32Ime.hpp>
+#    include <workphone_graphics_ui_dx11.h>
 #endif
 
 #include <algorithm>
@@ -643,7 +644,12 @@ namespace workphone
 
             const ImVec2 clipOff = drawData->DisplayPos;
             const ImVec2 clipScale = drawData->FramebufferScale;
+            const float scaleX = getSafeFramebufferScale( clipScale.x );
+            const float scaleY = getSafeFramebufferScale( clipScale.y );
             const ImTextureID fontTexId = ImGui::GetIO().Fonts ? ImGui::GetIO().Fonts->TexID : nullptr;
+#if defined WP_PLATFORM_WIN32
+            auto *dx11 = wp_renderer_get_dx11( m_renderer );
+#endif
 
             std::vector<wp_vertex_ptc> converted;
             converted.reserve( 4096 );
@@ -690,27 +696,10 @@ namespace workphone
                 }
 
                 const ImDrawIdx *idxBuf = drawList->IdxBuffer.Data;
-                const auto dx11 = wp_renderer_get_dx11( m_renderer );
-                bool prepared = false;
-
-                if( dx11 && vertexCount && indexCount &&
-                    vertexCount <= static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) &&
-                    indexCount <= static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
-                {
-                    if constexpr( sizeof( ImDrawIdx ) == sizeof( uint16_t ) )
-                    {
-                        prepared = wp_renderer_dx11_prepare_indexed_triangles_ptc(
-                                       dx11, converted.data(), static_cast<wp_s32>( vertexCount ),
-                                       idxBuf, static_cast<wp_s32>( indexCount ) ) != 0;
-                    }
-                    else
-                    {
-                        prepared = wp_renderer_dx11_prepare_indexed_triangles_ptc_u32(
-                                       dx11, converted.data(), static_cast<wp_s32>( vertexCount ),
-                                       reinterpret_cast<const uint32_t *>( idxBuf ),
-                                       static_cast<wp_s32>( indexCount ) ) != 0;
-                    }
-                }
+#if defined WP_PLATFORM_WIN32
+                wp_ui_draw_list_dx11 nativeList{ converted.data(), idxBuf, vertexCount,
+                                                 indexCount, sizeof( ImDrawIdx ), 0 };
+#endif
 
                 for( int i = 0; i < drawList->CmdBuffer.Size; ++i )
                 {
@@ -725,7 +714,9 @@ namespace workphone
                         {
                             cmd->UserCallback( drawList, cmd );
                             // Callbacks may overwrite the backend's shared vertex/index buffers.
-                            prepared = false;
+#if defined WP_PLATFORM_WIN32
+                            nativeList.upload_state = 0;
+#endif
                         }
                         continue;
                     }
@@ -735,47 +726,9 @@ namespace workphone
                         continue;
                     }
 
-                    const unsigned int indexOffset = cmd->IdxOffset;
-
-                    if( indexOffset >= indexCount || cmd->ElemCount > ( indexCount - indexOffset ) )
-                    {
-                        continue;
-                    }
-
-                    if( cmd->VtxOffset >= vertexCount ||
-                        cmd->ElemCount >
-                            static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
-                    {
-                        continue;
-                    }
-
-                    const unsigned int availableVertices = vertexCount - cmd->VtxOffset;
-                    if( std::any_of( idxBuf + indexOffset, idxBuf + indexOffset + cmd->ElemCount,
-                                     [availableVertices]( ImDrawIdx index ) {
-                                         return index >= availableVertices;
-                                     } ) )
-                    {
-                        continue;
-                    }
-
                     const ImTextureID textureId = cmd->GetTexID();
-                    // Bind whichever texture this draw cmd expects:
-                    //   scene/other texture -> bind it as native SRV
-                    //   font atlas          -> bind the DX11 SRV from createFontTexture()
-                    // The old 'else -> nullptr' branch failed when a prior scene draw
-                    // planted a valid SRV in ptc_external_texture_view (common after
-                    // project load), because nullptr does not clear that field.
-                    if( textureId && textureId != fontTexId )
-                    {
-                        wp_renderer_set_texture_native( m_renderer, textureId );
-                    }
-                    else
-                    {
-                        wp_renderer_set_texture_native( m_renderer, fontTexId );
-                    }
+                    const ImTextureID texture = textureId ? textureId : fontTexId;
 
-                    const float scaleX = getSafeFramebufferScale( clipScale.x );
-                    const float scaleY = getSafeFramebufferScale( clipScale.y );
                     const float clipMinX = ( cmd->ClipRect.x - clipOff.x ) * scaleX;
                     const float clipMinY = ( cmd->ClipRect.y - clipOff.y ) * scaleY;
                     const float clipMaxX = ( cmd->ClipRect.z - clipOff.x ) * scaleX;
@@ -802,39 +755,47 @@ namespace workphone
                     scissor.y = offY + clipT;
                     scissor.width = clipR - clipL;
                     scissor.height = clipB - clipT;
-                    wp_renderer_set_scissor_enabled( m_renderer, 1 );
-                    wp_renderer_set_scissor_rect( m_renderer, scissor );
 
-                    if( prepared )
+#if defined WP_PLATFORM_WIN32
+                    if( dx11 )
                     {
-                        wp_renderer_dx11_draw_prepared_indexed_triangles_ptc(
-                            dx11, static_cast<wp_s32>( indexOffset ),
-                            static_cast<wp_s32>( cmd->ElemCount ),
-                            static_cast<wp_s32>( cmd->VtxOffset ) );
+                        wp_renderer_dx11_draw_ui_range( dx11, &nativeList, cmd->IdxOffset,
+                                                        cmd->ElemCount, cmd->VtxOffset, scissor,
+                                                        texture );
+                        continue;
+                    }
+#endif
+                    if constexpr( sizeof( ImDrawIdx ) == sizeof( uint16_t ) )
+                    {
+                        const auto indexOffset = cmd->IdxOffset;
+                        if( indexOffset >= indexCount || cmd->ElemCount > indexCount - indexOffset ||
+                            cmd->VtxOffset >= vertexCount ||
+                            cmd->ElemCount > static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
+                        {
+                            continue;
+                        }
+
+                        const auto availableVertices = vertexCount - cmd->VtxOffset;
+                        const auto *indices = idxBuf + indexOffset;
+                        if( std::any_of( indices, indices + cmd->ElemCount,
+                                         [availableVertices]( ImDrawIdx index ) {
+                                             return index >= availableVertices;
+                                         } ) )
+                        {
+                            continue;
+                        }
+                        wp_renderer_set_texture_native( m_renderer, texture );
+                        wp_renderer_set_scissor_enabled( m_renderer, 1 );
+                        wp_renderer_set_scissor_rect( m_renderer, scissor );
+                        wp_renderer_draw_indexed_triangles_ptc(
+                            m_renderer, converted.data() + cmd->VtxOffset,
+                            static_cast<wp_s32>( availableVertices ),
+                            reinterpret_cast<const uint16_t *>( indices ),
+                            static_cast<wp_s32>( cmd->ElemCount ) );
                     }
                     else
                     {
-                        const wp_vertex_ptc *vertices = converted.data() + cmd->VtxOffset;
-                        if constexpr( sizeof( ImDrawIdx ) == sizeof( uint16_t ) )
-                        {
-                            const auto indices = idxBuf + indexOffset;
-                            wp_renderer_draw_indexed_triangles_ptc(
-                                m_renderer, vertices, static_cast<wp_s32>( availableVertices ), indices,
-                                static_cast<wp_s32>( cmd->ElemCount ) );
-                        }
-                        else
-                        {
-                            if( !dx11 )
-                            {
-                                WP_LOG_ERROR( "32-bit ImDrawIdx requires DX11 u32 index support." );
-                                continue;
-                            }
-
-                            wp_renderer_dx11_draw_indexed_triangles_ptc_u32(
-                                dx11, vertices, static_cast<wp_s32>( availableVertices ),
-                                reinterpret_cast<const uint32_t *>( idxBuf + indexOffset ),
-                                static_cast<wp_s32>( cmd->ElemCount ) );
-                        }
+                        WP_LOG_ERROR( "32-bit ImDrawIdx requires DX11 u32 index support." );
                     }
                 }
             }
