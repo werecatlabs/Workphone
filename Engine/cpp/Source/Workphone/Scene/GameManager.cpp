@@ -32,11 +32,13 @@
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
 #include <Workphone/Thread/TryLockGuard.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
 #include <crtdbg.h>
 #include <algorithm>
 #include <cmath>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace workphone::scene
@@ -239,6 +241,112 @@ namespace workphone::scene
                 }
             }
         }
+
+        using ActorPose = Transform3<real_Num>;
+
+        template <class SampleParent>
+        bool sampleActorPose( GameManager &manager, IGameActor &actor, ITransform &transform, u32 id,
+                              time_interval time, time_interval dt, ActorPose &worldTransform,
+                              SampleParent sampleParent )
+        {
+            // An attached mesh's application history is not an independent
+            // simulation pose. Follow the sampled parent unless physics owns it.
+            auto parent = actor.getParentPtr();
+            const auto sourceTask = transform.getTask();
+            const bool attached = parent && parent->isSmoothMotion() && sourceTask != TaskId::Physics;
+            if( !attached && manager.getTransformState( id, time, dt, worldTransform, sourceTask ) )
+            {
+                return true;
+            }
+
+            ActorPose parentTransform;
+            if( !sampleParent( parent, parentTransform ) )
+            {
+                return false;
+            }
+            worldTransform.transformFromParent( parentTransform, transform.getLocalTransform() );
+            return true;
+        }
+
+        class ActorTransformSampler
+        {
+        public:
+            ActorTransformSampler( GameManager &manager, time_interval time, time_interval dt ) :
+                m_manager( manager ), m_time( time ), m_dt( dt )
+            {
+                m_samples.swap( scratch() );
+            }
+
+            ~ActorTransformSampler()
+            {
+                m_samples.clear();
+                m_samples.swap( scratch() );
+            }
+
+            bool sample( IGameActor *actor, ActorPose &worldTransform )
+            {
+                if( !actor )
+                {
+                    return false;
+                }
+                if( auto it = m_samples.find( actor ); it != m_samples.end() )
+                {
+                    if( it->second.pose )
+                    {
+                        worldTransform = *it->second.pose;
+                        return true;
+                    }
+                    return false;
+                }
+                if( !actor->isSmoothMotion() )
+                {
+                    return false;
+                }
+
+                // Pin the actor for this pass so recycled actor slots or pool
+                // addresses cannot inherit a sample from a removed actor.
+                Sample entry{ SmartPtr<IGameActor>( actor ), std::nullopt };
+                if( !entry.actor )
+                {
+                    return false;
+                }
+                if( auto transform = actor->getTransform() )
+                {
+                    const auto id = actor->getHandle()->getInstanceId();
+                    if( sampleActorPose( m_manager, *actor, *transform, id, m_time, m_dt, worldTransform,
+                                         [this]( IGameActor *parent, ActorPose &pose ) {
+                                             return sample( parent, pose );
+                                         } ) )
+                    {
+                        entry.pose = worldTransform;
+                    }
+                }
+                const bool sampled = entry.pose.has_value();
+                m_samples.emplace( actor, std::move( entry ) );
+                return sampled;
+            }
+
+        private:
+            struct Sample
+            {
+                SmartPtr<IGameActor> actor;
+                std::optional<ActorPose> pose;
+            };
+            using Samples = boost::unordered_flat_map<IGameActor *, Sample>;
+
+            static Samples &scratch()
+            {
+                // The active pass owns the table, including during callbacks.
+                // A nested pass on the same worker therefore has its own cache.
+                static thread_local Samples samples;
+                return samples;
+            }
+
+            GameManager &m_manager;
+            time_interval m_time;
+            time_interval m_dt;
+            Samples m_samples;
+        };
     }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, GameManager, workphone::scene::IGameManager );
@@ -769,7 +877,7 @@ namespace workphone::scene
                     }
                     else
                     {
-                        UnorderedMap<u32, Transform3<real_Num>> sampledTransforms;
+                        ActorTransformSampler sampler( *this, transformTime, smoothDeltaTime );
                         for( auto component : components )
                         {
                             if( component && component->isLoaded() )
@@ -777,8 +885,7 @@ namespace workphone::scene
                                 if( auto actor = component->getActorPtr() )
                                 {
                                     Transform3<real_Num> renderTransform;
-                                    if( getActorTransformState( actor, transformTime, smoothDeltaTime,
-                                                                renderTransform, sampledTransforms ) )
+                                    if( sampler.sample( actor, renderTransform ) )
                                     {
                                         component->updateTransform( renderTransform );
                                     }
@@ -818,20 +925,12 @@ namespace workphone::scene
             return true;
         }
 
-        // Attached children also acquire application-task history. That history
-        // is not an independent simulation pose: always compose their local pose
-        // with the sampled parent so a stationary body mesh follows its chassis.
-        auto parent = actor->getParentPtr();
-        const bool attached =
-            parent && parent->isSmoothMotion() && transform->getTask() != TaskId::Physics;
-        if( attached || !getTransformState( id, time, dt, worldTransform, transform->getTask() ) )
+        if( !sampleActorPose( *this, *actor, *transform, id, time, dt, worldTransform,
+                              [&]( IGameActor *parent, ActorPose &pose ) {
+                                  return getActorTransformState( parent, time, dt, pose, sampledTransforms );
+                              } ) )
         {
-            Transform3<real_Num> parentTransform;
-            if( !getActorTransformState( parent, time, dt, parentTransform, sampledTransforms ) )
-            {
-                return false;
-            }
-            worldTransform.transformFromParent( parentTransform, transform->getLocalTransform() );
+            return false;
         }
         sampledTransforms.emplace( id, worldTransform );
         return true;

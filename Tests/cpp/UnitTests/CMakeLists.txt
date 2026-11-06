@@ -797,7 +797,7 @@ endif()
 # UnitTests objects can silently mismatch subclass layouts across DLL changes.
 add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
     TypeManagerFixture.cpp GameTestFixture.cpp GraphicsTestFixture.cpp TestGuard.cpp
-    SceneWorldStreamingTests.cpp ActorTransformTests.cpp ComponentTestsMeshRenderer.cpp
+    SceneWorldStreamingTests.cpp ActorTransformTests.cpp ActorSmoothMotionTests.cpp ComponentTestsMeshRenderer.cpp
     GraphicsSceneNodeTests.cpp GameSceneAsyncLoadingTests.cpp GameSceneLoadingTests.cpp MeshTest.cpp
     MeshAssetBudgetTests.cpp
     ProgressiveMeshOptionsTests.cpp
@@ -817,6 +817,10 @@ add_test(NAME Workphone.actor_scene_streaming COMMAND WPActorSceneTests
     --run_test=SceneWorldStreamingTests,MeshAssetBudgetTests,ProgressiveMeshOptionsTests,MeshImportWindingTests,ActorTransformTests,GameSceneAsyncLoadingTests,GameSceneLoadingTests,mesh_queued_*,pool_*)
 set_tests_properties(Workphone.actor_scene_streaming PROPERTIES TIMEOUT 120
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;streaming;headless")
+add_test(NAME Workphone.actor_transform_sampling COMMAND WPActorSceneTests
+    --run_test=ActorSmoothMotionTests/render_tick_reuses_hits_and_misses_then_samples_fresh_history,render_mesh_samples_parent_without_a_parent_renderer,single_executor_hierarchy_update_preserves_sampled_render_pose)
+set_tests_properties(Workphone.actor_transform_sampling PROPERTIES TIMEOUT 120
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;headless")
 add_test(NAME Workphone.mesh_import_streaming COMMAND WPActorSceneTests
     --run_test=MeshImportStreamingTests,MeshImportStreamingIntegrationTests,SceneWorldIdentityTests,SceneWorldStreamingPrefabTests,ResourceDatabaseLifetimeTests)
 set_tests_properties(Workphone.mesh_import_streaming PROPERTIES TIMEOUT 120

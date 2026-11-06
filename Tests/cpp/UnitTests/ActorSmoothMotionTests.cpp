@@ -3,6 +3,8 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
 #include <boost/test/unit_test.hpp>
+#include <array>
+#include <functional>
 #include <thread>
 
 using namespace workphone;
@@ -84,9 +86,14 @@ namespace
         {
             sampled = true;
             pose = value;
+            if( onSample )
+            {
+                onSample();
+            }
         }
         bool sampled = false;
         Transform3<real_Num> pose;
+        std::function<void()> onSample;
     };
 
     class PoseNode : public render::GraphicsSceneNode
@@ -495,6 +502,91 @@ BOOST_AUTO_TEST_CASE( render_mesh_samples_parent_without_a_parent_renderer )
     checkVectorClose( capture->pose.getPosition(), Vector3<real_Num>( 12, 3, 4 ) );
     capture->setActor( nullptr );
     capture->setLoadingState( LoadingState::Unloaded );
+}
+
+BOOST_AUTO_TEST_CASE( render_tick_reuses_hits_and_misses_then_samples_fresh_history )
+{
+    auto missing = createSceneActor( *this, "MissingHistory" );
+    auto ready = createSceneActor( *this, "ReadyHistory" );
+    BOOST_REQUIRE( missing && ready );
+    missing->setSmoothMotion( true );
+    ready->setSmoothMotion( true );
+    missing->getTransform()->setTask( TaskId::Render );
+    ready->getTransform()->setTask( TaskId::Render );
+
+    const auto missingId = missing->getHandle()->getInstanceId();
+    const auto readyId = ready->getHandle()->getInstanceId();
+    const auto original = makeTransform( { 10, 0, 0 } );
+    const auto revised = makeTransform( { 20, 0, 0 } );
+    const auto firstSample = makeTransform( { 30, 0, 0 } );
+    // A query before both timestamps always picks the oldest sample. Publishing
+    // an earlier sample during the callback changes the uncached result exactly.
+    const auto readyTime = timer->getTime( TaskId::Render ) + 10.0;
+    const auto lateTime = readyTime - 5.0;
+    bool published = false;
+
+    std::array captures{ make_ptr<SmoothTransformCapture>(), make_ptr<SmoothTransformCapture>(),
+                         make_ptr<SmoothTransformCapture>(), make_ptr<SmoothTransformCapture>() };
+    struct RestoreRenderUpdates
+    {
+        scene::IGameManager *manager;
+        std::array<SmartPtr<SmoothTransformCapture>, 4> &captures;
+        TaskId previousTask = Thread::getCurrentTask();
+
+        ~RestoreRenderUpdates()
+        {
+            Thread::setCurrentTask( previousTask );
+            for( auto &capture : captures )
+            {
+                manager->unregisterComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,
+                                                    capture );
+                capture->setActor( nullptr );
+                capture->setLoadingState( LoadingState::Unloaded );
+            }
+        }
+    } restore{ sceneManager.get(), captures };
+
+    captures[1]->onSample = [&] {
+        if( !published )
+        {
+            sceneManager->addTransformState( missingId, lateTime, firstSample );
+            sceneManager->addTransformState( readyId, lateTime, revised );
+            published = true;
+        }
+    };
+    for( size_t i = 0; i < captures.size(); ++i )
+    {
+        auto &capture = captures[i];
+        capture->setActor( i % 2 == 0 ? missing : ready );
+        capture->setLoadingState( LoadingState::Loaded );
+        sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,
+                                               capture );
+    }
+
+    Thread::setCurrentTask( TaskId::Render );
+    Transform3<real_Num> pose;
+    BOOST_REQUIRE( !sceneManager->getTransformState( missingId, lateTime, .016, pose, TaskId::Render ) );
+    sceneManager->addTransformState( readyId, readyTime, original );
+    sceneManager->preUpdate();
+    BOOST_REQUIRE( published );
+    for( size_t i = 0; i < captures.size(); ++i )
+    {
+        auto &capture = captures[i];
+        BOOST_CHECK_EQUAL( capture->sampled, i % 2 != 0 );
+        if( i % 2 != 0 )
+        {
+            checkTransformClose( capture->pose, original );
+        }
+        capture->sampled = false;
+    }
+
+    sceneManager->preUpdate();
+    for( size_t i = 0; i < captures.size(); ++i )
+    {
+        auto &capture = captures[i];
+        BOOST_REQUIRE( capture->sampled );
+        checkTransformClose( capture->pose, i % 2 == 0 ? firstSample : revised );
+    }
 }
 
 BOOST_AUTO_TEST_CASE( single_executor_hierarchy_update_preserves_sampled_render_pose )
