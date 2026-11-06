@@ -258,13 +258,7 @@ namespace workphone
         protected:
             struct FramePassContext;
             void prepareFramePasses( f32 deltaTime );
-            static s32 beginFramePass( wp_graphics_system *, f32, void * );
-            static void drawFramePass( wp_graphics_system *, f32, void * );
-            static void effectsFramePass( wp_graphics_system *, f32, void * );
-            static void uiFramePass( wp_graphics_system *, f32, void * );
-            static void overlayFramePass( wp_graphics_system *, f32, void * );
-            static void endFramePass( wp_graphics_system *, f32, void * );
-            static void executeFramePassStage( wp_graphics_system *, f32, void *, unsigned stage );
+            bool renderFramePasses( f32 deltaTime, bool advance );
             std::vector<FramePassContext> m_framePasses;
 
             /**

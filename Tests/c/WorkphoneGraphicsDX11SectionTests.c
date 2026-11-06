@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "workphone_graphics_mesh.h"
 #include "workphone_graphics_renderer_dx11.h"
 
 enum { TARGET_SIZE = 32, TARGET_BYTES = TARGET_SIZE * TARGET_SIZE * 4 };
@@ -48,6 +49,40 @@ static wp_rtt_result draw_section( void *user, const wp_graphics_rtt_desc *desc 
     return fixture->submitted || fixture->feedback ? WP_RTT_OK : WP_RTT_BACKEND_FAILED;
 }
 
+typedef struct mesh_batch_fixture
+{
+    wp_renderer_dx11 *renderer;
+    wp_mesh_batch_dx11 command;
+    wp_mesh_batch_result_dx11 counts;
+    wp_mesh_section_dx11 material;
+    wp_s32 resolved, retired, abort_at, restored;
+} mesh_batch_fixture;
+
+static wp_s32 resolve_batch_section( wp_s32 index, wp_mesh_section_dx11 *section, void *user )
+{
+    mesh_batch_fixture *fixture = (mesh_batch_fixture *)user;
+    if( index != fixture->resolved || index != fixture->retired ) return -1;
+    ++fixture->resolved;
+    *section = fixture->material;
+    return index == fixture->abort_at ? -1 : 1;
+}
+
+static void retire_batch_section( void *user )
+{
+    mesh_batch_fixture *fixture = (mesh_batch_fixture *)user;
+    ++fixture->retired;
+}
+
+static wp_rtt_result draw_mesh_batch( void *user, const wp_graphics_rtt_desc *desc )
+{
+    mesh_batch_fixture *fixture = (mesh_batch_fixture *)user;
+    wp_s32 submitted;
+    (void)desc;
+    submitted = wp_renderer_dx11_submit_mesh_batch( fixture->renderer, &fixture->command, &fixture->counts );
+    fixture->restored = sentinel_state( fixture->renderer );
+    return submitted && fixture->restored ? WP_RTT_OK : WP_RTT_BACKEND_FAILED;
+}
+
 int main( void )
 {
     static const wp_vertex_pntc vertices[] = {
@@ -62,10 +97,12 @@ int main( void )
     wp_renderer_dx11 *renderer = NULL;
     wp_render_texture_dx11 *target = NULL;
     wp_geometry_dx11 *geometry = NULL;
+    wp_graphics_mesh *mesh = NULL;
     void *texture = NULL;
     wp_mat4f identity;
     wp_graphics_rtt_desc desc;
     section_fixture fixture;
+    mesh_batch_fixture batch;
     wp_instance_pntc_dx11 instances[3];
     wp_render_statistics_dx11 before, after;
     unsigned char pixels[TARGET_BYTES], rollback[TARGET_BYTES];
@@ -180,6 +217,41 @@ int main( void )
     if( !check( after.draws == before.draws + 2 && after.instanced_draws == before.instanced_draws + 2 &&
                 after.instances == before.instances + 3 && after.triangles == before.triangles + 6,
                 "batched native section submitted the wrong draw or instance count" ) ) goto done;
+
+    mesh = wp_graphics_mesh_create();
+    if( !check( mesh && wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_PNTC, vertices, 4 ) &&
+                wp_graphics_mesh_set_indices_u16( mesh, indices, 6 ) &&
+                wp_graphics_mesh_add_submesh( mesh, 0, 3, 0 ) == 0 &&
+                wp_graphics_mesh_add_submesh( mesh, 3, 3, 1 ) == 1,
+                "native mesh batch fixtures" ) ) goto done;
+    memset( &batch, 0, sizeof( batch ) );
+    batch.renderer = renderer;
+    batch.material = fixture.section;
+    batch.abort_at = -1;
+    batch.command.mesh = mesh;
+    batch.command.world = batch.command.view = batch.command.projection = &identity;
+    batch.command.resolve = resolve_batch_section;
+    batch.command.retire = retire_batch_section;
+    batch.command.user = &batch;
+    desc.colour[0] = 0.0f;
+    if( !check( wp_renderer_dx11_execute_rtt_job( renderer, target, &desc, NULL, NULL,
+                                                 draw_mesh_batch, &batch ) == WP_RTT_OK &&
+                batch.resolved == 2 && batch.retired == 2 && batch.counts.submissions == 2 &&
+                batch.counts.triangles == 2 && batch.restored && sentinel_state( renderer ) &&
+                wp_renderer_dx11_copy_render_texture_rgba8( target, rollback, TARGET_BYTES ) &&
+                memcmp( pixels, rollback, sizeof( pixels ) ) == 0,
+                "native mesh batch lost section order, state, counts or pixel parity" ) ) goto done;
+
+    batch.abort_at = 1;
+    batch.resolved = batch.retired = batch.restored = 0;
+    desc.colour[0] = 1.0f;
+    if( !check( wp_renderer_dx11_execute_rtt_job( renderer, target, &desc, NULL, NULL,
+                                                 draw_mesh_batch, &batch ) == WP_RTT_BACKEND_FAILED &&
+                batch.resolved == 2 && batch.retired == 2 && batch.counts.submissions == 1 &&
+                batch.counts.triangles == 1 && batch.restored && sentinel_state( renderer ) &&
+                wp_renderer_dx11_copy_render_texture_rgba8( target, rollback, TARGET_BYTES ) &&
+                memcmp( pixels, rollback, sizeof( pixels ) ) == 0,
+                "late section rejection must retire and roll back the full RTT batch" ) ) goto done;
     ok = 1;
 
 done:
@@ -187,6 +259,7 @@ done:
     wp_renderer_dx11_destroy_geometry( geometry );
     wp_renderer_dx11_destroy_render_texture( target );
     wp_renderer_dx11_destroy( renderer );
+    wp_graphics_mesh_destroy( mesh );
     if( window ) DestroyWindow( window );
     return ok ? 0 : 1;
 }

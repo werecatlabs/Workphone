@@ -5261,7 +5261,8 @@ void wp_renderer_dx11_end_mesh_sections( wp_renderer_dx11 *r, const wp_mesh_sect
     wp_renderer_dx11_set_fill_mode( r, state->fill_mode );
 }
 
-wp_s32 wp_renderer_dx11_submit_mesh_section( wp_renderer_dx11 *r, const wp_mesh_section_dx11 *section )
+static wp_s32 wp_renderer_dx11_submit_mesh_section_impl( wp_renderer_dx11 *r,
+    const wp_mesh_section_dx11 *section, wp_s32 validate_instances )
 {
     const wp_geometry_dx11 *geometry;
     wp_material_dx11 material;
@@ -5276,7 +5277,7 @@ wp_s32 wp_renderer_dx11_submit_mesh_section( wp_renderer_dx11 *r, const wp_mesh_
         (wp_u32)section->cull_mode > WORKPHONE_CULL_MODE_FRONT ||
         (wp_u32)section->depth_func > WORKPHONE_DEPTH_FUNC_ALWAYS ||
         (wp_u32)section->fill_mode > WORKPHONE_FILL_MODE_POINT ) return 0;
-    if( section->instances &&
+    if( validate_instances && section->instances &&
         !wp_renderer_dx11_validate_instances_pntc( section->instances, section->instance_count ) ) return 0;
 
     wp_renderer_dx11_set_texture_native( r, section->base_texture );
@@ -5325,6 +5326,106 @@ wp_s32 wp_renderer_dx11_submit_mesh_section( wp_renderer_dx11 *r, const wp_mesh_
             section->bind, section->bind_user );
     }
     return submitted;
+}
+
+wp_s32 wp_renderer_dx11_submit_mesh_section( wp_renderer_dx11 *r, const wp_mesh_section_dx11 *section )
+{
+    return wp_renderer_dx11_submit_mesh_section_impl( r, section, 1 );
+}
+
+wp_s32 wp_renderer_dx11_submit_mesh_batch( wp_renderer_dx11 *r, const wp_mesh_batch_dx11 *batch,
+                                           wp_mesh_batch_result_dx11 *result )
+{
+    wp_graphics_mesh *mesh;
+    const wp_geometry_dx11 *geometry = NULL;
+    wp_mesh_section_state_dx11 state;
+    wp_mesh_batch_result_dx11 counts = { 0, 0 };
+    wp_u64 generation, triangles;
+    wp_u32 elements, vertices, first, count;
+    wp_s32 submeshes, sections, i, resolved, drawn, complete = 1;
+    wp_primitive_type topology;
+
+    if( result ) *result = counts;
+    if( !r || !batch || !batch->mesh || !batch->world || !batch->view || !batch->projection ||
+        !batch->resolve || batch->instance_batch_size < 0 ||
+        ( batch->instances ? batch->instance_count <= 0 : batch->instance_count != 0 ) ) return 0;
+    mesh = batch->mesh;
+    topology = wp_graphics_mesh_get_primitive_type( mesh );
+    if( topology != WORKPHONE_PRIMITIVE_TRIANGLE_LIST &&
+        topology != WORKPHONE_PRIMITIVE_TRIANGLE_STRIP ) return 0;
+    if( batch->instances && ( topology != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ||
+        !wp_renderer_dx11_validate_instances_pntc( batch->instances, batch->instance_count ) ) ) return 0;
+    vertices = wp_graphics_mesh_get_vertex_count( mesh );
+    elements = wp_graphics_mesh_get_index_count( mesh );
+    if( !elements ) elements = vertices;
+    if( !vertices || elements < 3 ) return 0;
+    submeshes = wp_graphics_mesh_get_submesh_count( mesh );
+    sections = submeshes > 0 ? submeshes : 1;
+    generation = wp_graphics_mesh_get_content_generation( mesh );
+
+    wp_renderer_dx11_begin_mesh_sections( r, &state );
+    wp_renderer_dx11_set_world_matrix( r, batch->world );
+    wp_renderer_dx11_set_view_matrix( r, batch->view );
+    wp_renderer_dx11_set_projection_matrix( r, batch->projection );
+    if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST )
+        geometry = wp_renderer_dx11_prepare_mesh_geometry_budgeted( r, mesh, 0, elements, batch->budget );
+
+    for( i = 0; i < sections; ++i )
+    {
+        const wp_submesh *range;
+        wp_mesh_section_dx11 section;
+        if( generation != wp_graphics_mesh_get_content_generation( mesh ) )
+        {
+            complete = 0;
+            break;
+        }
+        range = submeshes > 0 ? wp_graphics_mesh_get_submesh( mesh, i ) : NULL;
+        first = range ? range->index_start : 0;
+        if( first > elements ) first = elements;
+        count = range ? range->index_count : elements;
+        if( count > elements - first ) count = elements - first;
+
+        memset( &section, 0, sizeof( section ) );
+        section.struct_size = sizeof( section );
+        resolved = batch->resolve( i, &section, batch->user );
+        if( generation != wp_graphics_mesh_get_content_generation( mesh ) ) resolved = -1;
+        if( resolved > 0 )
+        {
+            section.base_vertex = 0;
+            section.geometry = NULL;
+            if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP && count >= 3 &&
+                count - 2u <= (wp_u32)INT_MAX / 3u )
+            {
+                section.geometry = wp_renderer_dx11_prepare_mesh_geometry_budgeted(
+                    r, mesh, first, count, batch->budget );
+                section.index_start = 0;
+                section.index_count = (wp_s32)( ( count - 2u ) * 3u );
+            }
+            else if( geometry && first <= (wp_u32)INT_MAX && count <= (wp_u32)INT_MAX )
+            {
+                section.geometry = geometry;
+                section.index_start = (wp_s32)first;
+                section.index_count = (wp_s32)( batch->instances ? count : count - count % 3u );
+            }
+            section.instances = batch->instances;
+            section.instance_count = batch->instance_count;
+            section.instance_batch_size = batch->instance_batch_size;
+            drawn = wp_renderer_dx11_submit_mesh_section_impl( r, &section, 0 );
+            counts.submissions += (wp_u64)drawn;
+            triangles = (wp_u64)( section.index_count / 3 ) * (wp_u64)drawn;
+            counts.triangles = (wp_u64)-1 - counts.triangles < triangles
+                ? (wp_u64)-1 : counts.triangles + triangles;
+        }
+        if( batch->retire ) batch->retire( batch->user );
+        if( resolved < 0 )
+        {
+            complete = 0;
+            break;
+        }
+    }
+    wp_renderer_dx11_end_mesh_sections( r, &state );
+    if( result ) *result = counts;
+    return complete;
 }
 
 wp_s32 wp_renderer_dx11_validate_foliage_instances(

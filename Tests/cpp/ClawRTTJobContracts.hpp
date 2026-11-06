@@ -345,7 +345,7 @@ public:
     void initialise(SmartPtr<ClawRendererDX11> renderer, SmartPtr<Textures> textures) {
         m_sys = wp_graphics_system_create(); m_renderer = renderer; m_textureManager = textures;
     }
-    void frame() { prepareFramePasses(.016f); wp_graphics_system_render(m_sys); publishRenderStatistics(); }
+    void frame() { prepareFramePasses(.016f); renderFramePasses(.016f, false); publishRenderStatistics(); }
     void render() override {
         ++draws;
         auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
@@ -415,6 +415,92 @@ public:
         ClawRendererDX11::setViewport(value);
     }
 };
+
+inline bool orderedFrame( SmartPtr<IGraphicsWindow> window )
+{
+    class OrderedGraphics : public Graphics
+    {
+    public:
+        std::vector<IRenderTarget *> visited;
+        IRenderTarget *failTarget = nullptr;
+
+        void render() override
+        {
+            const auto renderer = getRenderer();
+            auto *target = renderer->getRenderTarget().get();
+            visited.push_back( target );
+            Graphics::render();
+            if( target == failTarget )
+            {
+                throw std::runtime_error( "injected failure in the first target" );
+            }
+        }
+    };
+
+    auto renderer = make_ptr<Renderer>();
+    renderer->load( window );
+    require( renderer->isLoaded(), "ordered frame renderer" );
+    auto *generic = renderer->getNativeRenderer();
+    auto *native = wp_renderer_get_dx11( generic );
+    auto textures = make_ptr<Textures>();
+    SmartPtr<ClawRenderTarget> targets[2];
+    SmartPtr<IViewport> views[2];
+    for( size_t i = 0; i < 2; ++i )
+    {
+        targets[i] = make_ptr<ClawRenderTarget>();
+        targets[i]->setSize( { 32, 32 } );
+        targets[i]->setActive( true );
+        views[i] = targets[i]->addViewport( static_cast<u32>( i + 30 ), make_ptr<ClawCamera>() );
+        require( views[i] != nullptr, "ordered frame RTT viewport" );
+        views[i]->setActive( true );
+        views[i]->setEnableSceneRender( true );
+        views[i]->setEnableUI( false );
+        views[i]->setClearEveryFrame( true, WORKPHONE_CLEAR_FLAG_ALL );
+        views[i]->setBackgroundColour( ColourF( 0.25f, 0.0f, 0.0f, 1.0f ) );
+        auto texture = make_ptr<Texture>();
+        texture->output = targets[i];
+        textures->values.push_back( texture );
+    }
+
+    OrderedGraphics graphics;
+    graphics.initialise( renderer, textures );
+    graphics.setDefaultWindow( window );
+    const std::vector<IRenderTarget *> order{ targets[0].get(), targets[1].get(), window.get() };
+    wp_render_statistics_dx11 before{}, after{};
+    wp_renderer_dx11_get_statistics_counters( native, &before );
+    graphics.frame();
+    wp_renderer_dx11_get_statistics_counters( native, &after );
+    require( graphics.visited == order && after.present_attempts == before.present_attempts + 1,
+             "both native RTT passes must render before one window presentation" );
+    auto *first = targets[0]->getNativeRenderTexture( generic );
+    auto *second = targets[1]->getNativeRenderTexture( generic );
+    require( first && second, "ordered frame RTT outputs" );
+    const auto firstGood = pixels( first );
+    const auto secondGood = pixels( second );
+
+    graphics.failTarget = targets[0].get();
+    graphics.visited.clear();
+    views[0]->setBackgroundColour( ColourF( 1, 0, 0, 1 ) );
+    views[1]->setBackgroundColour( ColourF( 0, 1, 0, 1 ) );
+    before = after;
+    graphics.frame();
+    wp_renderer_dx11_get_statistics_counters( native, &after );
+    require( graphics.visited == order && after.present_attempts == before.present_attempts + 1 &&
+                 renderer->getRenderTarget() == window && pixels( first ) == firstGood &&
+                 pixels( second ) != secondGood,
+             "failed first RTT must roll back, then continue with the second RTT and window" );
+
+    graphics.setDefaultWindow( nullptr );
+    graphics.detach();
+    for( size_t i = 0; i < 2; ++i )
+    {
+        views[i]->setRenderTarget( nullptr );
+        targets[i]->removeAllViewports();
+    }
+    renderer->unload( nullptr );
+    return true;
+}
+
 inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene = false, bool splitMaterials = false) {
     auto renderer = make_ptr<Renderer>(); renderer->load(window);
     require(renderer->isLoaded(), "Claw RTT integration renderer");

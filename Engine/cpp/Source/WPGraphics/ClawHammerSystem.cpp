@@ -39,9 +39,11 @@
 #include <WPGraphics/Vehicle/ClawVehicleVisualEffects.hpp>
 #include <WPImGui/WPImGui.hpp>
 #include <Workphone/Workphone.hpp>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <optional>
 
 #include "workphone_graphics_renderer_dx11.h"
@@ -322,18 +324,22 @@ namespace workphone
             SmartPtr<IRenderer> renderer;
             SmartPtr<IRenderTarget> target;
             SmartPtr<IViewport> viewport;
-            bool window;
-            bool failed = false;
-            bool begun = false;
-            bool pipelineStarted = false;
-            bool nativeRtt = false;
-            bool rttInside = false;
-            bool rttCompleted = false;
+            wp_u32 flags;
+            bool nativeRtt;
             bool rttCaptured = false;
             SmartPtr<IRenderTarget> previousTarget;
             SmartPtr<IViewport> previousViewport;
             SmartPtr<IGraphicsCamera> previousCamera;
             Array<SmartPtr<ClawScene>> preparedScenes;
+
+            static wp_s32 execute( wp_graphics_system *, wp_f32, wp_graphics_system_frame_stage,
+                                   void * );
+            static wp_rtt_result transact( void *, wp_rtt_check_func, void * );
+            static FramePassContext *&activeDrawPass()
+            {
+                static thread_local FramePassContext *pass = nullptr;
+                return pass;
+            }
 
             struct PreparationWork
             {
@@ -713,10 +719,7 @@ namespace workphone
                 snapshot.completedPasses =
                     frame.completed_pass_count > 0 ? frame.completed_pass_count : 0;
                 snapshot.skippedPasses = frame.skipped_pass_count > 0 ? frame.skipped_pass_count : 0;
-            }
-            for( const auto &pass : m_framePasses )
-            {
-                snapshot.failedPasses += pass.failed;
+                snapshot.failedPasses = wp_graphics_system_get_failed_pass_count( m_sys );
             }
             if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
             {
@@ -912,11 +915,7 @@ namespace workphone
             clearObjectQueues();
             m_reloadQueue.clear();
 
-            if( m_sys )
-            {
-                wp_graphics_system_set_render_passes( m_sys, nullptr, 0 );
-                m_framePasses.clear();
-            }
+            m_framePasses.clear();
 
             if( auto debug = getDebug() )
             {
@@ -1147,17 +1146,15 @@ namespace workphone
                     ClawMaterial::processRuntimeShaderReloads( *renderer );
                 }
                 prepareFramePasses( deltaTime );
-                if( !wp_graphics_system_set_delta_time( m_sys, deltaTime ) )
-                {
-                    throw std::runtime_error( "Native graphics frame is already executing." );
-                }
                 preparation.end();
                 const auto nativeStart =
                     m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 // The C89 system owns native update and the complete ordered frame.
                 // Keep the engine's update-only scheduling contract at this boundary.
-                wp_graphics_system_update( m_sys );
-                wp_graphics_system_render( m_sys );
+                if( !renderFramePasses( deltaTime, true ) )
+                {
+                    throw std::runtime_error( "Native graphics frame was rejected." );
+                }
                 const auto nativeEnd =
                     m_sceneProfileFrameActive ? ProfileClock::now() : ProfileClock::time_point{};
                 publishRenderStatistics();
@@ -1200,11 +1197,14 @@ namespace workphone
         void ClawHammerSystem::prepareFramePasses( wp_f32 deltaTime )
         {
             MaterialProgramReloadDX11::CaptureScope shaderCapture;
-            // Publish descriptors and their retained objects together. If allocation or
-            // validation fails, the previous native descriptors still have live contexts.
-            std::vector<FramePassContext> nextFramePasses;
+            m_framePasses.clear();
             auto renderer = getRenderer();
-            if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
+            if( !renderer )
+            {
+                return;
+            }
+            auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer );
+            if( dx11 )
             {
                 wp_renderer_dx11_set_gpu_profiling(
                     wp_renderer_get_dx11( dx11->getNativeRenderer() ),
@@ -1219,19 +1219,23 @@ namespace workphone
                         "Project irradiance upload failed; retaining the previous GPU probe set." );
                 }
             }
-            if( !renderer )
-            {
-                if( !wp_graphics_system_set_render_passes( m_sys, nullptr, 0 ) )
-                {
-                    throw std::runtime_error( "Cannot clear an executing native graphics frame." );
-                }
-                m_framePasses.clear();
-                return;
-            }
             if( auto pipeline = dynamic_pointer_cast<ClawGraphicsPipeline>( m_graphicsPipeline ) )
             {
                 pipeline->setFrameDeltaTime( deltaTime );
             }
+            const auto capture = [&]( SmartPtr<IRenderTarget> target, SmartPtr<IViewport> viewport,
+                                      bool window ) {
+                if( m_framePasses.size() >= WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES )
+                {
+                    throw std::runtime_error( "Graphics frame exceeds native render pass capacity." );
+                }
+                wp_u32 flags = window ? WP_GRAPHICS_FRAME_TARGET_WINDOW : 0u;
+                if( !viewport || viewport->getEnableSceneRender() ) flags |= WP_GRAPHICS_FRAME_TARGET_SCENE;
+                if( !viewport || viewport->getEnableUI() ) flags |= WP_GRAPHICS_FRAME_TARGET_UI;
+                if( viewport && viewport->getClearEveryFrame() ) flags |= WP_GRAPHICS_FRAME_TARGET_CLEAR;
+                const bool nativeRtt = !window && dx11 && dynamic_pointer_cast<ClawRenderTarget>( target );
+                m_framePasses.push_back( { this, renderer, target, viewport, flags, nativeRtt } );
+            };
             if( auto textures = getTextureManager() )
             {
                 for( auto &texture : textures->getTextures() )
@@ -1251,119 +1255,53 @@ namespace workphone
                     {
                         if( viewport && viewport->isActive() && viewport->getEnableSceneRender() )
                         {
-                            nextFramePasses.push_back( { this, renderer, target, viewport, false } );
+                            capture( target, viewport, false );
                         }
                     }
                 }
             }
             auto window = getDefaultWindow();
-            nextFramePasses.push_back(
-                { this, renderer, window, window ? window->getViewport( 0 ) : nullptr, true } );
-            if( nextFramePasses.size() > WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES )
+            capture( window, window ? window->getViewport( 0 ) : nullptr, true );
+        }
+
+        bool ClawHammerSystem::renderFramePasses( wp_f32 deltaTime, bool advance )
+        {
+            std::array<wp_graphics_system_frame_target, WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES> targets;
+            wp_s32 count = 0;
+            for( auto &pass : m_framePasses )
             {
-                throw std::runtime_error( "Graphics frame exceeds native render pass capacity." );
+                targets[count++] = { pass.flags, &pass, pass.nativeRtt ? &FramePassContext::transact : nullptr };
             }
-            std::vector<wp_graphics_system_render_pass> passes;
-            passes.reserve( nextFramePasses.size() );
-            for( auto &context : nextFramePasses )
-            {
-                wp_graphics_system_render_pass pass = {};
-                pass.begin = &ClawHammerSystem::beginFramePass;
-                pass.draw = &ClawHammerSystem::drawFramePass;
-                pass.effects = &ClawHammerSystem::effectsFramePass;
-                pass.ui = &ClawHammerSystem::uiFramePass;
-                pass.overlay = &ClawHammerSystem::overlayFramePass;
-                pass.end = &ClawHammerSystem::endFramePass;
-                pass.user_data = &context;
-                passes.push_back( pass );
-            }
-            if( !wp_graphics_system_set_render_passes( m_sys, passes.data(),
-                                                       static_cast<wp_s32>( passes.size() ) ) )
-            {
-                throw std::runtime_error( "Native graphics frame pass registration failed." );
-            }
-            m_framePasses.swap( nextFramePasses );
+            return wp_graphics_system_render_target_frame( m_sys, deltaTime, advance, targets.data(),
+                                                          count, &FramePassContext::execute ) != 0;
         }
 
-        wp_s32 ClawHammerSystem::beginFramePass( wp_graphics_system *system, wp_f32 dt, void *data )
-        {
-            auto &pass = *static_cast<FramePassContext *>( data );
-            if( pass.owner->m_sys != system )
-            {
-                return 0;
-            }
-            pass.failed = false;
-            pass.work = {};
-            pass.begun = false;
-            pass.pipelineStarted = false;
-            pass.nativeRtt = pass.rttInside = pass.rttCompleted = pass.rttCaptured = false;
-            executeFramePassStage( system, dt, data, 0 );
-            // Restore offscreen adapter state even when binding/preparation failed
-            // before the native frame driver entered this pass.
-            if( pass.failed && !pass.begun )
-            {
-                executeFramePassStage( system, dt, data, 5 );
-            }
-            return pass.begun ? 1 : 0;
-        }
-
-        void ClawHammerSystem::drawFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        {
-            executeFramePassStage( s, dt, d, 1 );
-        }
-
-        void ClawHammerSystem::effectsFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        {
-            executeFramePassStage( s, dt, d, 2 );
-        }
-
-        void ClawHammerSystem::uiFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        {
-            executeFramePassStage( s, dt, d, 3 );
-        }
-
-        void ClawHammerSystem::overlayFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        {
-            executeFramePassStage( s, dt, d, 4 );
-        }
-
-        void ClawHammerSystem::endFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
-        {
-            executeFramePassStage( s, dt, d, 5 );
-        }
-
-        void ClawHammerSystem::executeFramePassStage( wp_graphics_system *system, wp_f32, void *data,
-                                                      unsigned stage )
+        wp_s32 ClawHammerSystem::FramePassContext::execute( wp_graphics_system *system, wp_f32,
+            wp_graphics_system_frame_stage stage, void *data )
         {
             auto &pass = *static_cast<FramePassContext *>( data );
             auto owner = pass.owner;
-            if( owner->m_sys != system || ( pass.failed && stage != 5 ) )
+            if( owner->m_sys != system )
             {
-                return;
+                return WP_GRAPHICS_FRAME_SKIP;
             }
-            if( pass.nativeRtt && pass.rttCompleted && stage >= 2 && stage <= 4 )
-            {
-                return;
-            }
-            auto viewport = pass.viewport;
-            auto renderer = pass.renderer;
+            auto &viewport = pass.viewport;
+            auto &renderer = pass.renderer;
             try
             {
-                const bool sceneEnabled = !viewport || viewport->getEnableSceneRender();
                 switch( stage )
                 {
-                case 0:
+                case WP_GRAPHICS_FRAME_PREPARE_TARGET:
+                    pass.work = {};
                     // Skip detached, inactive and minimized targets before entering
                     // begin/end/present. Keep virtual calls behind this exception barrier.
-                    if( !renderer || !pass.target || ( !pass.window && !pass.target->isActive() ) ||
+                    if( !renderer || !pass.target ||
+                        ( !(pass.flags & WP_GRAPHICS_FRAME_TARGET_WINDOW) && !pass.target->isActive() ) ||
                         pass.target->getSize().x <= 0 || pass.target->getSize().y <= 0 ||
                         ( viewport && !viewport->isActive() ) )
                     {
-                        return;
+                        return WP_GRAPHICS_FRAME_SKIP;
                     }
-                    pass.nativeRtt = !pass.window &&
-                                     dynamic_pointer_cast<ClawRendererDX11>( renderer ) &&
-                                     dynamic_pointer_cast<ClawRenderTarget>( pass.target );
                     if( pass.nativeRtt )
                     {
                         pass.previousTarget = renderer->getRenderTarget();
@@ -1371,7 +1309,7 @@ namespace workphone
                         pass.previousCamera = renderer->getCamera();
                         pass.rttCaptured = true;
                     }
-                    if( sceneEnabled )
+                    if( pass.flags & WP_GRAPHICS_FRAME_TARGET_SCENE )
                     {
                         auto camera = viewport ? viewport->getCamera() : nullptr;
                         // Resolve the pass aspect before capture, without binding its target.
@@ -1529,172 +1467,52 @@ namespace workphone
                     {
                         renderer3->setCamera( viewport ? viewport->getCamera() : nullptr );
                     }
-                    pass.begun = true;
+                    break;
+                case WP_GRAPHICS_FRAME_BEGIN_TARGET:
                     renderer->beginRender();
-                    if( !pass.nativeRtt )
-                    {
-                        if( pass.window || ( viewport && viewport->getClearEveryFrame() ) )
-                        {
-                            renderer->clear( viewport ? viewport->getBackgroundColour()
-                                                      : ColourF::Black );
-                        }
-                        if( sceneEnabled )
-                        {
-                            pass.pipelineStarted = owner->beginGraphicsPipelineFrame( renderer );
-                        }
-                    }
                     break;
-                case 1:
-                    if( pass.nativeRtt && !pass.rttInside )
-                    {
-                        auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer );
-                        auto target = dynamic_pointer_cast<ClawRenderTarget>( pass.target );
-                        auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
-                        auto output =
-                            target->getNativeRenderTexture( dx11Renderer->getNativeRenderer() );
-                        const auto size = target->getSize();
-                        const auto colour = viewport ? viewport->getBackgroundColour() : ColourF::Black;
-                        wp_graphics_rtt_desc desc{};
-                        desc.renderer_generation = wp_renderer_dx11_get_rtt_generation( native );
-                        desc.target_generation =
-                            wp_renderer_dx11_get_render_texture_generation( output );
-                        desc.width = size.x;
-                        desc.height = size.y;
-                        desc.viewport = wp_renderer_dx11_get_viewport( native );
-                        desc.clear_colour = desc.clear_depth =
-                            viewport && viewport->getClearEveryFrame();
-                        desc.colour[0] = colour.r;
-                        desc.colour[1] = colour.g;
-                        desc.colour[2] = colour.b;
-                        desc.colour[3] = colour.a;
-                        desc.depth = 1.0f;
-                        const auto validate =
-                            []( void *data, const wp_graphics_rtt_desc *expected ) -> wp_rtt_result {
-                            try
-                            {
-                                auto &p = *static_cast<FramePassContext *>( data );
-                                const auto actual = p.target->getSize();
-                                for( auto &scene : p.preparedScenes )
-                                {
-                                    if( !scene->validateRenderJobs() )
-                                    {
-                                        return WP_RTT_STALE;
-                                    }
-                                }
-                                return !p.failed && actual.x == expected->width &&
-                                               actual.y == expected->height
-                                           ? WP_RTT_OK
-                                           : WP_RTT_STALE;
-                            }
-                            catch( ... )
-                            {
-                                return WP_RTT_BACKEND_FAILED;
-                            }
-                        };
-                        const auto draw = []( void *data,
-                                              const wp_graphics_rtt_desc * ) -> wp_rtt_result {
-                            auto &p = *static_cast<FramePassContext *>( data );
-                            p.rttInside = true;
-                            try
-                            {
-                                if( !p.viewport || p.viewport->getEnableSceneRender() )
-                                {
-                                    p.pipelineStarted =
-                                        p.owner->beginGraphicsPipelineFrame( p.renderer );
-                                }
-                                executeFramePassStage( p.owner->m_sys, 0.0f, data, 1 );
-                                // Close HDR even when scene submission failed; never publish it.
-                                if( p.pipelineStarted )
-                                {
-                                    p.pipelineStarted = false;
-                                    p.owner->endGraphicsPipelineFrame( p.renderer );
-                                }
-                                executeFramePassStage( p.owner->m_sys, 0.0f, data, 3 );
-                            }
-                            catch( const std::exception &e )
-                            {
-                                p.failed = true;
-                                try
-                                {
-                                    WP_LOG_EXCEPTION( e );
-                                }
-                                catch( ... )
-                                {
-                                }
-                            }
-                            catch( ... )
-                            {
-                                p.failed = true;
-                                try
-                                {
-                                    WP_LOG_ERROR( "RTT draw callback failed." );
-                                }
-                                catch( ... )
-                                {
-                                }
-                            }
-                            p.rttInside = false;
-                            return p.failed ? WP_RTT_BACKEND_FAILED : WP_RTT_OK;
-                        };
-                        const auto result = wp_renderer_dx11_execute_rtt_job(
-                            native, output, &desc,
-                            []( void *data, const wp_graphics_rtt_desc * ) -> wp_rtt_result {
-                                auto &p = *static_cast<FramePassContext *>( data );
-                                for( auto &scene : p.preparedScenes )
-                                {
-                                    if( !scene->validateRenderJobs() )
-                                    {
-                                        return WP_RTT_STALE;
-                                    }
-                                }
-                                return WP_RTT_OK;
-                            },
-                            validate, draw, &pass );
-                        pass.rttCompleted = true;
-                        if( result != WP_RTT_OK )
-                        {
-                            pass.failed = true;
-                            WP_LOG_ERROR( "Native offscreen job failed: " + std::to_string( result ) );
-                        }
-                        break;
-                    }
-                    if( sceneEnabled )
-                    {
-                        RenderPhaseProfile timing( owner->m_sceneProfile, "Scene draw" );
-                        owner->render();
-                    }
+                case WP_GRAPHICS_FRAME_CLEAR_TARGET:
+                    renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
                     break;
-                case 2:
-                    if( pass.pipelineStarted )
+                case WP_GRAPHICS_FRAME_BEGIN_EFFECTS:
+                    return owner->beginGraphicsPipelineFrame( renderer ) ? WP_GRAPHICS_FRAME_OK
+                                                                         : WP_GRAPHICS_FRAME_SKIP;
+                case WP_GRAPHICS_FRAME_DRAW_SCENE:
+                {
+                    auto &active = activeDrawPass();
+                    struct DrawPassScope
                     {
-                        pass.pipelineStarted = false;
-                        owner->endGraphicsPipelineFrame( renderer );
-                    }
+                        FramePassContext *&current;
+                        FramePassContext *previous;
+                        ~DrawPassScope() { current = previous; }
+                    } scope{ active, active };
+                    active = &pass;
+                    RenderPhaseProfile timing( owner->m_sceneProfile, "Scene draw" );
+                    owner->render();
                     break;
-                case 3:
-                    if( sceneEnabled && ( !viewport || viewport->getEnableUI() ) )
+                }
+                case WP_GRAPHICS_FRAME_END_EFFECTS:
+                    owner->endGraphicsPipelineFrame( renderer );
+                    break;
+                case WP_GRAPHICS_FRAME_DRAW_UI:
+                    if( auto app = core::IApplicationManager::instancePtr() )
                     {
-                        if( auto app = core::IApplicationManager::instancePtr() )
+                        if( auto renderUI = app->getRenderUI(); renderUI && renderUI->isLoaded() )
                         {
-                            if( auto renderUI = app->getRenderUI(); renderUI && renderUI->isLoaded() )
+                            if( owner->m_frameSimulationEnabled )
                             {
-                                if( owner->m_frameSimulationEnabled )
-                                {
-                                    renderUI->render();
-                                }
-                                else if( auto nativeUI =
-                                             dynamic_pointer_cast<ui::ClawUIManager>( renderUI ) )
-                                {
-                                    nativeUI->renderReadOnly();
-                                }
-                                // Unknown game UI backends have no read-only
-                                // input contract. Keep them dormant during pause.
+                                renderUI->render();
                             }
+                            else if( auto nativeUI = dynamic_pointer_cast<ui::ClawUIManager>( renderUI ) )
+                            {
+                                nativeUI->renderReadOnly();
+                            }
+                            // Unknown game UI backends have no read-only input contract.
                         }
                     }
                     break;
-                case 4:
-                    if( pass.window && owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
+                case WP_GRAPHICS_FRAME_DRAW_OVERLAY:
+                    if( owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
                     {
                         owner->m_imguiManager->newFrame();
                         try
@@ -1721,49 +1539,39 @@ namespace workphone
                         owner->m_imguiManager->render();
                     }
                     break;
-                case 5:
+                case WP_GRAPHICS_FRAME_RETIRE_SCENES:
                     for( auto &scene : pass.preparedScenes )
                     {
                         scene->discardRenderJobs();
                     }
                     pass.preparedScenes.clear();
-                    if( pass.pipelineStarted )
+                    break;
+                case WP_GRAPHICS_FRAME_END_TARGET:
+                {
+                    RenderPhaseProfile timing( owner->m_presentationProfile, "Presentation" );
+                    renderer->endRender();
+                    break;
+                }
+                case WP_GRAPHICS_FRAME_RESTORE_TARGET:
+                    if( pass.rttCaptured )
                     {
-                        pass.pipelineStarted = false;
-                        try
-                        {
-                            owner->endGraphicsPipelineFrame( renderer );
-                        }
-                        catch( ... )
-                        {
-                            WP_LOG_ERROR( "Failed to close graphics pipeline frame." );
-                        }
-                    }
-                    if( pass.begun )
-                    {
-                        pass.begun = false;
-                        RenderPhaseProfile timing( owner->m_presentationProfile, "Presentation" );
-                        renderer->endRender();
-                    }
-                    if( pass.nativeRtt && pass.rttCaptured )
-                    {
-                        renderer->setRenderTarget( pass.previousTarget );
-                        renderer->setViewport( pass.previousViewport );
+                        pass.rttCaptured = false;
+                        auto previousTarget = std::move( pass.previousTarget );
+                        auto previousViewport = std::move( pass.previousViewport );
+                        auto previousCamera = std::move( pass.previousCamera );
+                        renderer->setRenderTarget( previousTarget );
+                        renderer->setViewport( previousViewport );
                         if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
                         {
-                            renderer3->setCamera( pass.previousCamera );
+                            renderer3->setCamera( previousCamera );
                         }
-                        pass.previousTarget = nullptr;
-                        pass.previousViewport = nullptr;
-                        pass.previousCamera = nullptr;
-                        pass.rttCaptured = false;
                     }
                     break;
                 }
+                return WP_GRAPHICS_FRAME_OK;
             }
             catch( const std::exception &e )
             {
-                pass.failed = true;
                 try
                 {
                     WP_LOG_EXCEPTION( e );
@@ -1774,7 +1582,6 @@ namespace workphone
             }
             catch( ... )
             {
-                pass.failed = true;
                 try
                 {
                     WP_LOG_ERROR( "Unknown exception in graphics frame adapter." );
@@ -1783,11 +1590,123 @@ namespace workphone
                 {
                 }
             }
+            return WP_GRAPHICS_FRAME_FAILED;
+        }
+
+        wp_rtt_result ClawHammerSystem::FramePassContext::transact( void *data,
+            wp_rtt_check_func draw, void *drawData )
+        {
+            auto &pass = *static_cast<FramePassContext *>( data );
+            try
+            {
+                auto renderer = dynamic_pointer_cast<ClawRendererDX11>( pass.renderer );
+                auto target = dynamic_pointer_cast<ClawRenderTarget>( pass.target );
+                auto nativeRenderer = renderer->getNativeRenderer();
+                auto dx11 = wp_renderer_get_dx11( nativeRenderer );
+                auto output = target->getNativeRenderTexture( nativeRenderer );
+                const auto size = target->getSize();
+                const auto colour = pass.viewport ? pass.viewport->getBackgroundColour()
+                                                  : ColourF::Black;
+                wp_graphics_rtt_desc desc{};
+                desc.renderer_generation = wp_renderer_dx11_get_rtt_generation( dx11 );
+                desc.target_generation = wp_renderer_dx11_get_render_texture_generation( output );
+                desc.width = size.x;
+                desc.height = size.y;
+                desc.viewport = wp_renderer_dx11_get_viewport( dx11 );
+                desc.clear_colour = desc.clear_depth = (pass.flags & WP_GRAPHICS_FRAME_TARGET_CLEAR) != 0;
+                desc.colour[0] = colour.r;
+                desc.colour[1] = colour.g;
+                desc.colour[2] = colour.b;
+                desc.colour[3] = colour.a;
+                desc.depth = 1.0f;
+
+                struct RttContext
+                {
+                    FramePassContext &pass;
+                    wp_rtt_check_func draw;
+                    void *drawData;
+                } context{ pass, draw, drawData };
+                const auto validate = []( void *opaque, const wp_graphics_rtt_desc *expected ) {
+                    auto &pass = static_cast<RttContext *>( opaque )->pass;
+                    try
+                    {
+                        const auto actual = pass.target->getSize();
+                        if( actual.x != expected->width || actual.y != expected->height )
+                        {
+                            return WP_RTT_STALE;
+                        }
+                        for( const auto &scene : pass.preparedScenes )
+                        {
+                            if( !scene->validateRenderJobs() )
+                            {
+                                return WP_RTT_STALE;
+                            }
+                        }
+                        return WP_RTT_OK;
+                    }
+                    catch( ... )
+                    {
+                        return WP_RTT_BACKEND_FAILED;
+                    }
+                };
+                const auto result = wp_renderer_dx11_execute_rtt_job(
+                    dx11, output, &desc, nullptr, validate,
+                    []( void *opaque, const wp_graphics_rtt_desc *descriptor ) {
+                        auto &context = *static_cast<RttContext *>( opaque );
+                        return context.draw( context.drawData, descriptor );
+                    }, &context );
+                if( result != WP_RTT_OK )
+                {
+                    WP_LOG_ERROR( "Native offscreen job failed: " + std::to_string( result ) );
+                }
+                return result;
+            }
+            catch( ... )
+            {
+                try
+                {
+                    WP_LOG_ERROR( "Failed to prepare the native offscreen transaction." );
+                }
+                catch( ... )
+                {
+                }
+                return WP_RTT_BACKEND_FAILED;
+            }
         }
 
         void ClawHammerSystem::render()
         {
             GraphicsSystem::render();
+
+            if( auto *pass = FramePassContext::activeDrawPass(); pass && pass->owner == this )
+            {
+                struct Submission
+                {
+                    FramePassContext &pass;
+                    std::exception_ptr error;
+                } submission{ *pass, {} };
+                const auto submit = []( size_t index, void *opaque ) -> wp_s32 {
+                    auto &submission = *static_cast<Submission *>( opaque );
+                    try
+                    {
+                        auto &pass = submission.pass;
+                        pass.preparedScenes[index]->render( pass.renderer.get() );
+                        return 1;
+                    }
+                    catch( ... )
+                    {
+                        submission.error = std::current_exception();
+                        return 0;
+                    }
+                };
+                if( !wp_graphics_system_submit_frame_scenes(
+                        m_sys, pass->preparedScenes.size(), submit, &submission ) )
+                {
+                    if( submission.error ) std::rethrow_exception( submission.error );
+                    throw std::runtime_error( "Native prepared scene submission was rejected." );
+                }
+                return;
+            }
 
             if( auto renderer = getRenderer() )
             {

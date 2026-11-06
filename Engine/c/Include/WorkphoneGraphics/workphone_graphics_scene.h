@@ -178,6 +178,74 @@ wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *, wp_renderer *,
                                              const wp_graphics_cull_result *,
                                              wp_graphics_scene_snapshot_submit_func, void * );
 
+/* Owns the two views of a single frozen scene publication. Zero-initialize
+ * before first use. Both views borrow the scene and camera and must be cleared
+ * before either owner is destroyed. A caller may replace main with an ordered
+ * view derived from the original main, retiring the old view. */
+typedef struct wp_graphics_scene_batch
+{
+    wp_graphics_cull_result *main, *shadow;
+    wp_u64 main_prepare_ns, shadow_derive_ns;
+} wp_graphics_scene_batch;
+
+/* Replaces the output only after both views have been prepared. The shadow
+ * view shares the transform publication and retains offscreen casters. */
+wp_s32 wp_graphics_scene_batch_prepare( wp_graphics_scene *, const wp_camera *,
+    wp_graphics_cull_clock, void *clock_data, wp_graphics_scene_batch * );
+void wp_graphics_scene_batch_clear( wp_graphics_scene_batch * );
+wp_s32 wp_graphics_scene_batch_validate( const wp_graphics_scene *, const wp_graphics_scene_batch * );
+
+/* Visits the union of admitted objects, once each in main-then-shadow order.
+ * The callback returns nonzero on success and must leave scene inputs and the
+ * views intact. Scene and views must remain owned. */
+typedef wp_s32 ( *wp_graphics_scene_batch_visit_func )( wp_graphics_object *, void * );
+wp_s32 wp_graphics_scene_batch_visit( const wp_graphics_scene *, const wp_graphics_scene_batch *,
+    wp_graphics_scene_batch_visit_func, void * );
+
+typedef struct wp_graphics_scene_draw_item
+{
+    const wp_mat4f *world;
+    const wp_mat4f *view, *projection; /* NULL when there is no frozen camera, or in shadows. */
+    wp_s32 pass; /* WP_GRAPHICS_CULL_PASS_* */
+} wp_graphics_scene_draw_item;
+
+typedef enum wp_graphics_scene_draw_action
+{
+    WP_GRAPHICS_SCENE_DRAW_ABORT = -1,
+    WP_GRAPHICS_SCENE_DRAW_DEFAULT = 0,
+    WP_GRAPHICS_SCENE_DRAW_HANDLED = 1
+} wp_graphics_scene_draw_action;
+
+typedef wp_s32 ( *wp_graphics_scene_draw_submit_func )( wp_graphics_object *, wp_renderer *,
+    const wp_graphics_scene_draw_item *, void * );
+
+/* Consumes one view in order and propagates stale or aborted submissions.
+ * The additional mask is ANDed with object visibility flags. A NULL submit
+ * uses native object rendering. All callback inputs are borrowed. */
+wp_s32 wp_graphics_scene_draw_view( wp_graphics_scene *, wp_renderer *,
+    const wp_graphics_cull_result *, wp_u32 visibility_mask, wp_graphics_scene_draw_submit_func, void * );
+
+typedef wp_s32 ( *wp_graphics_scene_stage_func )( void * );
+typedef struct wp_graphics_scene_draw_ops
+{
+    wp_u32 main_visibility_mask, shadow_visibility_mask;
+    wp_graphics_scene_stage_func begin_shadow; /* Positive = entered, zero = unavailable, negative = abort. */
+    wp_s32 ( *prepare )( void *, wp_s32 shadow_active );
+    wp_graphics_scene_stage_func shadow_extras;
+    void ( *end_shadow )( void * );
+    wp_graphics_scene_stage_func colour_before, colour_after;
+    wp_graphics_scene_draw_submit_func submit;
+} wp_graphics_scene_draw_ops;
+
+/* Opens the optional shadow target, prepares extensions, consumes shadow
+ * meshes/extras and then runs colour setup/meshes/effects. A successful
+ * begin_shadow always pairs with end_shadow, including on failure. Stage
+ * callbacks other than begin_shadow return nonzero on success. NULL ops
+ * selects a native main-only draw. Callbacks cannot destroy the scene or change
+ * the batch. The colour_after hook runs after the last view is consumed. */
+wp_s32 wp_graphics_scene_draw_batch( wp_graphics_scene *, wp_renderer *,
+    const wp_graphics_scene_batch *, const wp_graphics_scene_draw_ops *, void * );
+
 /* =========================================================================
  * Lifecycle
  * ====================================================================== */

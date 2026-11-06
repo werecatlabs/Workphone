@@ -2686,6 +2686,162 @@ static void retirement( void )
     wp_graphics_scene_destroy( s );
 }
 
+typedef struct scene_batch_trace
+{
+    char events[32];
+    size_t count;
+    wp_s32 shadow_result;
+    wp_s32 abort_submission;
+    wp_graphics_object *fallback, *offscreen;
+} scene_batch_trace;
+
+static void batch_event( void *data, char event )
+{
+    scene_batch_trace *trace = (scene_batch_trace *)data;
+    if( trace->count < sizeof( trace->events ) - 1 )
+        trace->events[trace->count++] = event;
+    trace->events[trace->count] = '\0';
+}
+
+static wp_s32 batch_visit( wp_graphics_object *object, void *data )
+{
+    (void)data;
+    record( object, NULL );
+    return 1;
+}
+
+static wp_s32 batch_begin_shadow( void *data )
+{
+    batch_event( data, 'B' );
+    return ( (scene_batch_trace *)data )->shadow_result;
+}
+
+static wp_s32 batch_prepare( void *data, wp_s32 shadow_active )
+{
+    batch_event( data, 'P' );
+    CHECK( !!shadow_active == ( ( (scene_batch_trace *)data )->shadow_result > 0 ) );
+    return 1;
+}
+
+static wp_s32 batch_shadow_extras( void *data ) { batch_event( data, 'X' ); return 1; }
+static void batch_end_shadow( void *data ) { batch_event( data, 'E' ); }
+static wp_s32 batch_colour_before( void *data ) { batch_event( data, 'C' ); return 1; }
+static wp_s32 batch_colour_after( void *data ) { batch_event( data, 'A' ); return 1; }
+
+static wp_s32 batch_submit( wp_graphics_object *object, wp_renderer *renderer,
+                            const wp_graphics_scene_draw_item *item, void *data )
+{
+    scene_batch_trace *trace = (scene_batch_trace *)data;
+    (void)renderer;
+    CHECK( item->world != NULL );
+    if( item->pass == WP_GRAPHICS_CULL_PASS_SHADOW )
+    {
+        batch_event( data, 'S' );
+        CHECK( !item->view && !item->projection && object != trace->fallback );
+        if( object == trace->offscreen )
+            CHECK( item->world->m[0][3] == 100.0f );
+    }
+    else
+    {
+        batch_event( data, 'M' );
+        CHECK( item->view && item->projection && object != trace->offscreen );
+    }
+    if( trace->abort_submission ) return WP_GRAPHICS_SCENE_DRAW_ABORT;
+    return object == trace->fallback ? WP_GRAPHICS_SCENE_DRAW_DEFAULT : WP_GRAPHICS_SCENE_DRAW_HANDLED;
+}
+
+static void scene_batch_contract( void )
+{
+    static const wp_graphics_mesh_vertex_p vertices[] = {
+        { { -.2f, -.2f, -2.0f } }, { { .2f, -.2f, -2.0f } }, { { 0, .2f, -2.0f } }
+    };
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_camera *camera = wp_camera_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_object *objects[4];
+    wp_scenenode *node;
+    wp_graphics_scene_batch batch;
+    wp_graphics_scene_draw_ops ops;
+    scene_batch_trace trace;
+    wp_vec3f position = { 100, 0, 0 };
+    int i;
+
+    memset( &batch, 0, sizeof( batch ) );
+    memset( &ops, 0, sizeof( ops ) );
+    memset( &trace, 0, sizeof( trace ) );
+    CHECK( scene && camera && mesh );
+    if( !scene || !camera || !mesh ) goto done;
+    CHECK( wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 3 ) );
+    wp_graphics_mesh_compute_aabb( mesh );
+    for( i = 0; i < 4; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        CHECK( objects[i] != NULL );
+        if( !objects[i] ) goto done;
+        wp_graphics_object_set_render_func( objects[i], record );
+        wp_graphics_object_set_render_queue_group( objects[i], i );
+        wp_graphics_object_set_visibility_flags( objects[i], i == 0 ? 2 : 1 );
+    }
+    trace.fallback = objects[1];
+    trace.offscreen = objects[3];
+    wp_graphics_object_set_cast_shadows( trace.fallback, 0 );
+    wp_graphics_object_set_mesh( trace.offscreen, mesh );
+    node = wp_graphics_scene_create_node( scene );
+    CHECK( node != NULL );
+    if( !node ) goto done;
+    wp_scenenode_set_position( node, position );
+    wp_scenenode_attach_object( node, trace.offscreen );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &batch ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_scene_batch_validate( scene, &batch ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_result_get_transform_dispatch_count( batch.main ) == 1 &&
+           wp_graphics_cull_result_get_transform_dispatch_count( batch.shadow ) == 0 );
+    draws = 0;
+    CHECK( wp_graphics_scene_batch_visit( scene, &batch, batch_visit, NULL ) == WP_GRAPHICS_CULL_OK );
+    CHECK( draws == 4 && order[0] == objects[0] && order[1] == objects[1] &&
+           order[2] == objects[2] && order[3] == objects[3] );
+
+    ops.main_visibility_mask = ops.shadow_visibility_mask = 1;
+    ops.begin_shadow = batch_begin_shadow;
+    ops.prepare = batch_prepare;
+    ops.shadow_extras = batch_shadow_extras;
+    ops.end_shadow = batch_end_shadow;
+    ops.colour_before = batch_colour_before;
+    ops.colour_after = batch_colour_after;
+    ops.submit = batch_submit;
+    trace.shadow_result = 1;
+    draws = 0;
+    CHECK( wp_graphics_scene_draw_batch( scene, (wp_renderer *)scene, &batch, &ops, &trace ) ==
+           WP_GRAPHICS_CULL_OK );
+    CHECK( strcmp( trace.events, "BPSSXECMMA" ) == 0 && draws == 1 && order[0] == trace.fallback );
+
+    trace.count = 0;
+    trace.abort_submission = 1;
+    draws = 0;
+    CHECK( wp_graphics_scene_draw_batch( scene, (wp_renderer *)scene, &batch, &ops, &trace ) ==
+           WP_GRAPHICS_CULL_ERROR );
+    CHECK( strcmp( trace.events, "BPSE" ) == 0 && !draws );
+
+    trace.count = 0;
+    trace.abort_submission = trace.shadow_result = 0;
+    CHECK( wp_graphics_scene_draw_batch( scene, (wp_renderer *)scene, &batch, &ops, &trace ) ==
+           WP_GRAPHICS_CULL_OK );
+    CHECK( strcmp( trace.events, "BPCMMA" ) == 0 && draws == 1 );
+
+    trace.events[0] = '\0';
+    trace.count = 0;
+    wp_graphics_object_set_visibility_flags( objects[0], 1 );
+    CHECK( wp_graphics_scene_draw_batch( scene, (wp_renderer *)scene, &batch, &ops, &trace ) ==
+           WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( trace.count == 0 && draws == 1 );
+
+done:
+    wp_graphics_scene_batch_clear( &batch );
+    CHECK( !batch.main && !batch.shadow );
+    wp_graphics_scene_destroy( scene );
+    wp_camera_destroy( camera );
+    wp_graphics_mesh_destroy( mesh );
+}
+
 static void compact_sat_axes( void )
 {
     wp_camera *camera = wp_camera_create();
@@ -3270,6 +3426,7 @@ int main( int argc, char **argv )
     sat_common_points();
     compact_sat_axes();
     retirement();
+    scene_batch_contract();
     coarse_groups();
     spatial_groups();
     spatial_multiple_axes();

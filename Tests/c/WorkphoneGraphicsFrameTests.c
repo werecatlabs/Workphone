@@ -149,6 +149,109 @@ static int split_frame_contracts(void)
     return 0;
 }
 
+typedef struct target_trace
+{
+    trace_state *trace;
+    char name;
+    wp_s32 prepare;
+    wp_s32 effects;
+    wp_s32 draw;
+    wp_s32 reject_transaction;
+    wp_s32 admitted_reentry;
+    wp_s32 previous_failures;
+} target_trace;
+
+static wp_s32 target_stage(wp_graphics_system *system, wp_f32 delta,
+                          wp_graphics_system_frame_stage stage, void *data)
+{
+    static const char stages[] = "PBCFDEUOTNR";
+    target_trace *target = (target_trace *)data;
+
+    if (stage == WP_GRAPHICS_FRAME_PREPARE_TARGET)
+        record(target->trace, target->name, delta);
+    record(target->trace, stages[stage], delta);
+    switch (stage)
+    {
+    case WP_GRAPHICS_FRAME_PREPARE_TARGET:
+        target->previous_failures = wp_graphics_system_get_failed_pass_count(system);
+        return target->prepare;
+    case WP_GRAPHICS_FRAME_BEGIN_EFFECTS:
+        return target->effects;
+    case WP_GRAPHICS_FRAME_DRAW_SCENE:
+        target->admitted_reentry = wp_graphics_system_render_target_frame(system, delta, 1, NULL, 0,
+                                                                            target_stage);
+        return target->draw;
+    default:
+        return WP_GRAPHICS_FRAME_OK;
+    }
+}
+
+static wp_rtt_result target_transaction(void *data, wp_rtt_check_func draw, void *draw_data)
+{
+    target_trace *target = (target_trace *)data;
+    wp_rtt_result result;
+    record(target->trace, 'X', target->trace->delta);
+    result = target->reject_transaction ? WP_RTT_STALE : draw(draw_data, NULL);
+    record(target->trace, 'Y', target->trace->delta);
+    return result;
+}
+
+static int target_frame_contracts(void)
+{
+    wp_graphics_system *system = wp_graphics_system_create();
+    wp_graphics_system_frame_target targets[5];
+    target_trace traces[5];
+    trace_state trace;
+    wp_graphics_system_frame_stats stats;
+    int i;
+    CHECK(system != NULL);
+    memset(&trace, 0, sizeof(trace));
+    memset(traces, 0, sizeof(traces));
+    memset(targets, 0, sizeof(targets));
+    for (i = 0; i < 5; ++i)
+    {
+        traces[i].trace = &trace;
+        traces[i].name = (char)('a' + i);
+        traces[i].prepare = traces[i].effects = traces[i].draw = WP_GRAPHICS_FRAME_OK;
+        targets[i].flags = WP_GRAPHICS_FRAME_TARGET_SCENE;
+        targets[i].user_data = &traces[i];
+    }
+    targets[0].flags |= WP_GRAPHICS_FRAME_TARGET_WINDOW | WP_GRAPHICS_FRAME_TARGET_UI;
+    targets[1].flags |= WP_GRAPHICS_FRAME_TARGET_CLEAR | WP_GRAPHICS_FRAME_TARGET_UI;
+    targets[1].transact = target_transaction;
+    traces[1].draw = WP_GRAPHICS_FRAME_FAILED;
+    targets[2].flags |= WP_GRAPHICS_FRAME_TARGET_CLEAR;
+    traces[2].effects = WP_GRAPHICS_FRAME_SKIP;
+    traces[3].prepare = WP_GRAPHICS_FRAME_FAILED;
+    traces[4].prepare = WP_GRAPHICS_FRAME_SKIP;
+    wp_graphics_system_set_frame_func(system, legacy_frame, &trace);
+
+    CHECK(!wp_graphics_system_render_target_frame(system, 0.25f, 1, NULL, 1, target_stage));
+    CHECK(!trace.count);
+    CHECK(wp_graphics_system_render_target_frame(system, 0.25f, 1, targets, 5, target_stage));
+    CHECK(strcmp(trace.events, "bPBXFDEYTNRcPBCFDTNRdPTRePaPBCFDEUOTNR") == 0);
+    CHECK(!traces[0].admitted_reentry && !traces[1].admitted_reentry && !traces[2].admitted_reentry);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 1 && stats.render_serial == 1 && stats.delta_time == 0.25f);
+    CHECK(stats.completed_pass_count == 3 && stats.skipped_pass_count == 2);
+    CHECK(wp_graphics_system_get_failed_pass_count(system) == 2);
+    for (i = 0; i < 5; ++i)
+        CHECK(traces[i].previous_failures == 0);
+
+    reset_trace(&trace);
+    traces[1].reject_transaction = 1;
+    CHECK(wp_graphics_system_render_target_frame(system, -1.0f, 0, &targets[1], 1, target_stage));
+    CHECK(strcmp(trace.events, "bPBXYTNR") == 0);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 1 && stats.render_serial == 2 && stats.delta_time == 0.0f);
+    CHECK(traces[1].previous_failures == 2 && wp_graphics_system_get_failed_pass_count(system) == 1);
+    reset_trace(&trace);
+    wp_graphics_system_render(system);
+    CHECK(strcmp(trace.events, "L") == 0);
+    wp_graphics_system_destroy(system);
+    return 0;
+}
+
 int main(void)
 {
     wp_graphics_system *system;
@@ -240,6 +343,7 @@ int main(void)
     wp_graphics_system_render(NULL);
     wp_graphics_system_render_frame(NULL, 0.1f);
     CHECK(split_frame_contracts() == 0);
+    CHECK(target_frame_contracts() == 0);
     puts("native frame contracts passed");
     return 0;
 }

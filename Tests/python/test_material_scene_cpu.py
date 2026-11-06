@@ -132,10 +132,11 @@ class SceneGuards(unittest.TestCase):
     def test_resolved_dx11_section_stays_outside_wrapper_material_timing(self):
         root = Path(__file__).resolve().parents[2]
         renderer = root/'Engine/cpp/Source/WPGraphics/ClawRendererDX11.cpp'
-        output = overlay('ClawRendererDX11', renderer.read_bytes(), Path('probe.hpp')).decode()
-        draw = output.index('wp_renderer_dx11_submit_mesh_section( dx11, &section )')
-        self.assertLess(output.index('wpMaterialCpuScope.stop()'), draw)
-        self.assertLess(draw, output.index('wpMaterialCpuScope.resume()'))
+        output = overlay('ClawRendererDX11', renderer.read_bytes(), Path('probe.hpp')).decode().replace('\r\n', '\n')
+        draw = output.index('wp_renderer_dx11_submit_mesh_batch( dx11, &batch, &result )')
+        callback_end = output.index('        };\n\n        struct SectionCallbacks')
+        self.assertLess(output.index('MaterialScope wpMaterialCpuScope'), callback_end)
+        self.assertLess(callback_end, draw)
 
     def test_native_overlay_preserves_draws_and_excludes_ia_mvp_from_regions(self):
         root=Path(__file__).resolve().parents[2]

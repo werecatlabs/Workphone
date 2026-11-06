@@ -1,4 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
+#include <exception>
 #include <stdexcept>
 #include "workphone_graphics_cull_job.h"
 #include <WPGraphics/ClawScene.hpp>
@@ -100,6 +101,24 @@ namespace workphone
                 HierarchicalDepthOcclusion::Matrix result;
                 std::copy( &matrix.m[0][0], &matrix.m[0][0] + 16, result.begin() );
                 return result;
+            }
+
+            template<class Stage, class... Args>
+            wp_s32 invokeSceneStage( std::exception_ptr &failure, wp_s32 error,
+                                     const Stage &stage, Args... args ) noexcept
+            {
+                try
+                {
+                    return stage( args... );
+                }
+                catch( ... )
+                {
+                    if( !failure )
+                    {
+                        failure = std::current_exception();
+                    }
+                    return error;
+                }
             }
         }  // namespace
 
@@ -1044,8 +1063,7 @@ namespace workphone
 
         struct ClawScene::NativeRenderJobs
         {
-            wp_graphics_cull_result *main = nullptr;
-            wp_graphics_cull_result *shadow = nullptr;
+            wp_graphics_scene_batch batch{};
             SmartPtr<IGraphicsCamera> camera;
             PreparationTiming timing;
 
@@ -1057,7 +1075,7 @@ namespace workphone
             ClawDrawSortStrategy sortStrategy = ClawDrawSortStrategy::QueueOrder;
             double sortBucketSize = 10.0;
 
-            void captureMaterials( ClawRendererDX11 &renderer,
+            void captureMaterials( wp_graphics_scene *scene, ClawRendererDX11 &renderer,
                                    std::unique_ptr<ClawMaterialDrawRecords> &workspace )
             {
                 if( materials )
@@ -1068,22 +1086,40 @@ namespace workphone
                 const auto previousAllocations = workspace ? workspace->getStorageAllocationCount() : 0;
                 auto publication =
                     workspace ? std::move( workspace ) : std::make_unique<ClawMaterialDrawRecords>();
-                // The shadow view includes offscreen casters; the main view can
-                // also include objects that do not cast. Capture their union.
-                for( auto view : { main, shadow } )
+                struct Capture
                 {
-                    for( s32 index = 0; index < wp_graphics_cull_result_get_visible_count( view );
-                         ++index )
-                    {
-                        if( auto object = wp_graphics_cull_result_get_object( view, index ) )
+                    ClawMaterialDrawRecords &records;
+                    std::exception_ptr failure;
+                } capture{ *publication, {} };
+                const auto status = wp_graphics_scene_batch_visit( scene, &batch,
+                    []( wp_graphics_object *object, void *data ) -> wp_s32 {
+                        auto &capture = *static_cast<Capture *>( data );
+                        try
                         {
-                            publication->capture( static_cast<ClawMesh *>(
+                            capture.records.capture( static_cast<ClawMesh *>(
                                 wp_graphics_object_get_submit_data( object ) ) );
+                            return 1;
                         }
-                    }
+                        catch( ... )
+                        {
+                            capture.failure = std::current_exception();
+                            return 0;
+                        }
+                    }, &capture );
+                if( capture.failure )
+                {
+                    std::rethrow_exception( capture.failure );
+                }
+                if( status == WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY )
+                {
+                    throw std::bad_alloc();
+                }
+                if( status != WP_GRAPHICS_CULL_OK )
+                {
+                    throw std::runtime_error( "Stale scene material snapshot." );
                 }
                 renderer.prepareMaterialRecords( *publication );
-                if( !publication->sortView( main, sortStrategy, sortBucketSize ) )
+                if( !publication->sortView( batch.main, sortStrategy, sortBucketSize ) )
                 {
                     throw std::runtime_error( "Could not order captured material draws." );
                 }
@@ -1094,8 +1130,7 @@ namespace workphone
 
             ~NativeRenderJobs()
             {
-                wp_graphics_cull_result_destroy( main );
-                wp_graphics_cull_result_destroy( shadow );
+                wp_graphics_scene_batch_clear( &batch );
             }
         };
 
@@ -1125,7 +1160,8 @@ namespace workphone
 
             if( !camera || jobs->camera != camera ||
                 wp_graphics_cull_result_validate(
-                    jobs->main, m_scene, wp_graphics_cull_result_get_scene_generation( jobs->main ) ) !=
+                    jobs->batch.main, m_scene,
+                    wp_graphics_cull_result_get_scene_generation( jobs->batch.main ) ) !=
                     WP_GRAPHICS_CULL_OK )
             {
                 return;
@@ -1200,13 +1236,13 @@ namespace workphone
                 }
 
                 if( nativeMeshes !=
-                    static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->main ) ) )
+                    static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->batch.main ) ) )
                 {
                     return;
                 }
 
                 wp_mat4f view, projection, matrix;
-                if( !wp_graphics_cull_result_get_camera_matrices( jobs->main, &view, &projection ) )
+                if( !wp_graphics_cull_result_get_camera_matrices( jobs->batch.main, &view, &projection ) )
                 {
                     return;
                 }
@@ -1289,15 +1325,10 @@ namespace workphone
             jobs->camera = camera;
             jobs->sortStrategy = m_drawSortStrategy;
             jobs->sortBucketSize = m_drawSortBucketSize;
-            const auto mainStart = profile ? Clock::now() : Clock::time_point{};
-            jobs->main =
-                wp_graphics_scene_prepare_cull_profiled( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN,
-                                                         profile ? cullProfileClock : nullptr, nullptr );
-            const auto mainEnd = profile ? Clock::now() : Clock::time_point{};
-            jobs->shadow =
-                wp_graphics_cull_result_create_view( jobs->main, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
+            const auto status = wp_graphics_scene_batch_prepare( m_scene, nullptr,
+                profile ? cullProfileClock : nullptr, nullptr, &jobs->batch );
             const auto shadowEnd = profile ? Clock::now() : Clock::time_point{};
-            if( !jobs->main || !jobs->shadow )
+            if( status != WP_GRAPHICS_CULL_OK )
             {
                 return false;
             }
@@ -1305,7 +1336,7 @@ namespace workphone
             {
                 if( materialRenderer )
                 {
-                    jobs->captureMaterials( *materialRenderer, m_materialRecordWorkspace );
+                    jobs->captureMaterials( m_scene, *materialRenderer, m_materialRecordWorkspace );
                 }
             }
             catch( const std::bad_alloc & )
@@ -1319,12 +1350,8 @@ namespace workphone
                 jobs->timing.total_ns = static_cast<u64>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>( materialEnd - start )
                         .count() );
-                jobs->timing.main_prepare_ns = static_cast<u64>(
-                    std::chrono::duration_cast<std::chrono::nanoseconds>( mainEnd - mainStart )
-                        .count() );
-                jobs->timing.shadow_derive_ns = static_cast<u64>(
-                    std::chrono::duration_cast<std::chrono::nanoseconds>( shadowEnd - mainEnd )
-                        .count() );
+                jobs->timing.main_prepare_ns = jobs->batch.main_prepare_ns;
+                jobs->timing.shadow_derive_ns = jobs->batch.shadow_derive_ns;
                 jobs->timing.material_prepare_ns =
                     materialRenderer
                         ? static_cast<u64>( std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1356,28 +1383,22 @@ namespace workphone
         bool ClawScene::getPreparedPhaseTiming( wp_graphics_cull_timing_stats *out ) const
         {
             return wp_graphics_cull_result_get_timing_stats(
-                       m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr, out ) != 0;
+                       m_nativeRenderJobs ? m_nativeRenderJobs->batch.main : nullptr, out ) != 0;
         }
 
         bool ClawScene::validateRenderJobs() const
         {
             return m_scene && m_nativeRenderJobs &&
-                   wp_graphics_cull_result_validate(
-                       m_nativeRenderJobs->main, m_scene,
-                       static_cast<wp_u32>( wp_graphics_scene_get_generation( m_scene ) ) ) ==
-                       WP_GRAPHICS_CULL_OK &&
-                   wp_graphics_cull_result_validate(
-                       m_nativeRenderJobs->shadow, m_scene,
-                       static_cast<wp_u32>( wp_graphics_scene_get_generation( m_scene ) ) ) ==
+                   wp_graphics_scene_batch_validate( m_scene, &m_nativeRenderJobs->batch ) ==
                        WP_GRAPHICS_CULL_OK;
         }
 
         u32 ClawScene::getPreparedTransformDispatchCount() const
         {
             return m_nativeRenderJobs ? wp_graphics_cull_result_get_transform_dispatch_count(
-                                            m_nativeRenderJobs->main ) +
+                                            m_nativeRenderJobs->batch.main ) +
                                             wp_graphics_cull_result_get_transform_dispatch_count(
-                                                m_nativeRenderJobs->shadow )
+                                                m_nativeRenderJobs->batch.shadow )
                                       : 0;
         }
 
@@ -1386,7 +1407,7 @@ namespace workphone
                                                   wp_u32 *candidates, wp_u32 *visible,
                                                   wp_graphics_cull_sort_stats *sort ) const
         {
-            auto main = m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr;
+            auto main = m_nativeRenderJobs ? m_nativeRenderJobs->batch.main : nullptr;
             wp_graphics_cull_result_get_transform_stats( main, transforms );
             wp_graphics_cull_result_get_bounds_stats( main, bounds );
             wp_graphics_cull_result_get_sort_stats( main, sort );
@@ -1406,7 +1427,7 @@ namespace workphone
 
         bool ClawScene::getPreparedStorageStatistics( wp_graphics_cull_storage_stats *out ) const
         {
-            auto main = m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr;
+            auto main = m_nativeRenderJobs ? m_nativeRenderJobs->batch.main : nullptr;
             wp_graphics_cull_result_get_storage_stats( main, out );
             return main != nullptr;
         }
@@ -1517,9 +1538,9 @@ namespace workphone
                                  history.capturedFrame + 1 == m_occlusionFrame &&
                                  history.surface == history.readback.surface( nativeRenderer ) &&
                                  wp_graphics_cull_result_validate(
-                                     history.capturedJobs->main, m_scene,
+                                     history.capturedJobs->batch.main, m_scene,
                                      wp_graphics_cull_result_get_scene_generation(
-                                         history.capturedJobs->main ) ) == WP_GRAPHICS_CULL_OK;
+                                         history.capturedJobs->batch.main ) ) == WP_GRAPHICS_CULL_OK;
                     for( const auto &material : history.materials )
                     {
                         auto current = material.mesh->getMaterial( material.section );
@@ -1537,7 +1558,7 @@ namespace workphone
                     if( valid )
                     {
                         wp_mat4f view, projection, matrix;
-                        if( wp_graphics_cull_result_get_camera_matrices( jobs->main, &view,
+                        if( wp_graphics_cull_result_get_camera_matrices( jobs->batch.main, &view,
                                                                          &projection ) )
                         {
                             wp_mat4f_mul( &matrix, &projection, &view );
@@ -1546,7 +1567,7 @@ namespace workphone
                             {
                                 history.culled =
                                     static_cast<u32>( wp_graphics_cull_result_apply_occlusion(
-                                        jobs->main,
+                                        jobs->batch.main,
                                         []( const wp_aabb3f *bounds, const wp_mat4f *world,
                                             void *context ) {
                                             const auto &previous =
@@ -1580,7 +1601,7 @@ namespace workphone
                     // disabled capture can still switch to DX11 before drawing.
                     try
                     {
-                        jobs->captureMaterials( *dx11Renderer, m_materialRecordWorkspace );
+                        jobs->captureMaterials( m_scene, *dx11Renderer, m_materialRecordWorkspace );
                     }
                     catch( const std::bad_alloc & )
                     {
@@ -1644,18 +1665,6 @@ namespace workphone
                             terrainCameras.push_back( terrainCamera );
                         }
                     }
-                    const bool shadowPass =
-                        shadows && dx11Renderer->beginShadowMap(
-                                       pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
-                    // Publish once before both passes: a worker finishing during
-                    // shadows cannot switch terrain revision for the colour pass.
-                    for( const auto &object : terrainObjects )
-                    {
-                        if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
-                        {
-                            dx11Renderer->prepareTerrain( terrain, terrainCameras );
-                        }
-                    }
                     if( !m_foliageWorlds )
                     {
                         m_foliageWorlds = std::make_unique<FoliageWorldState>();
@@ -1675,174 +1684,153 @@ namespace workphone
                         return success;
                     };
 
-                    for( const auto &object : terrainObjects )
-                    {
-                        if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
+                    ClawFoliageView colourFoliageView, shadowFoliageView;
+                    const auto beginShadow = [&] {
+                        return shadows && dx11Renderer->beginShadowMap(
+                            pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
+                    };
+                    const auto prepareExtensions = [&]( wp_s32 shadowActive ) {
+                        // Both views consume the same published terrain and foliage revisions.
+                        for( const auto &object : terrainObjects )
                         {
-                            const auto snapshot = terrain->getFoliageSnapshot();
+                            if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
+                            {
+                                dx11Renderer->prepareTerrain( terrain, terrainCameras );
+                            }
+                        }
+
+                        for( const auto &object : terrainObjects )
+                        {
+                            if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
+                            {
+                                const auto snapshot = terrain->getFoliageSnapshot();
 
 #if WP_FOLIAGE_SOURCE_RESOURCES
-                            const auto cooked = terrain->getRuntimeFoliageCandidate();
+                                const auto cooked = terrain->getRuntimeFoliageCandidate();
 #endif
-                            if( !snapshot )
-                            {
-                                continue;
-                            }
-                            liveTerrains.insert( terrain.get() );
-                            auto &attached = foliageState.terrains[terrain.get()];
-                            attached.terrain = terrain;
-                            if( !attached.world )
-                            {
-                                attached.world = std::make_shared<ClawFoliageWorld>();
-                            }
-
-                            const auto placement = terrain->getWorldTransform();
-                            // A larger world scale can make a new source's local
-                            // paging range admissible. Retry after source changes
-                            // when the previous source rejected the new scale.
-                            attached.world->setPlacement(
-                                Matrix4F( placement.getTransformationMatrix().ptr() ), foliageError );
-                            if( attached.world->source().get() != snapshot.get() )
-                            {
-                                if( !observeFoliage(
-#if WP_FOLIAGE_SOURCE_RESOURCES
-                                        cooked
-                                            ? attached.world->setSource( cooked->source,
-                                                                         cooked->resolver, foliageError )
-                                            :
-#endif
-                                            attached.world->setSource( snapshot, {}, foliageError ) ) )
+                                if( !snapshot )
                                 {
                                     continue;
                                 }
+                                liveTerrains.insert( terrain.get() );
+                                auto &attached = foliageState.terrains[terrain.get()];
+                                attached.terrain = terrain;
+                                if( !attached.world )
+                                {
+                                    attached.world = std::make_shared<ClawFoliageWorld>();
+                                }
+
+                                const auto placement = terrain->getWorldTransform();
+                                // A larger world scale can make a new source's local
+                                // paging range admissible. Retry after source changes
+                                // when the previous source rejected the new scale.
+                                attached.world->setPlacement(
+                                    Matrix4F( placement.getTransformationMatrix().ptr() ), foliageError );
+                                if( attached.world->source().get() != snapshot.get() )
+                                {
+                                    if( !observeFoliage(
+#if WP_FOLIAGE_SOURCE_RESOURCES
+                                            cooked
+                                                ? attached.world->setSource( cooked->source,
+                                                                             cooked->resolver, foliageError )
+                                                :
+#endif
+                                                attached.world->setSource( snapshot, {}, foliageError ) ) )
+                                    {
+                                        continue;
+                                    }
+                                }
+                                if( !observeFoliage( attached.world->setPlacement(
+                                        Matrix4F( placement.getTransformationMatrix().ptr() ),
+                                        foliageError ) ) )
+                                {
+                                    continue;
+                                }
+                                if( !observeFoliage( attached.world->setPublicationGate(
+                                        [terrain, placement]( FoliageSnapshot source,
+                                                              const std::function<void()> &commit,
+                                                              String &error ) mutable {
+                                            return terrain->publishFoliageSnapshot(
+                                                std::move( source ), placement, commit, error );
+                                        },
+                                        foliageError ) ) )
+                                {
+                                    continue;
+                                }
+                                attached.world->setVisibilityMask( terrain->isVisible() ? ~u32( 0 ) : 0 );
+                                foliageOwners[attached.world.get()] = terrain;
+                                foliageWorlds.push_back( attached.world );
                             }
-                            if( !observeFoliage( attached.world->setPlacement(
-                                    Matrix4F( placement.getTransformationMatrix().ptr() ),
-                                    foliageError ) ) )
+                        }
+                        for( auto i = foliageState.terrains.begin(); i != foliageState.terrains.end(); )
+                        {
+                            if( !liveTerrains.count( i->first ) )
                             {
-                                continue;
+                                i = foliageState.terrains.erase( i );
                             }
-                            if( !observeFoliage( attached.world->setPublicationGate(
-                                    [terrain, placement]( FoliageSnapshot source,
-                                                          const std::function<void()> &commit,
-                                                          String &error ) mutable {
-                                        return terrain->publishFoliageSnapshot(
-                                            std::move( source ), placement, commit, error );
-                                    },
-                                    foliageError ) ) )
+                            else
                             {
-                                continue;
+                                ++i;
                             }
-                            attached.world->setVisibilityMask( terrain->isVisible() ? ~u32( 0 ) : 0 );
-                            foliageOwners[attached.world.get()] = terrain;
-                            foliageWorlds.push_back( attached.world );
                         }
-                    }
-                    for( auto i = foliageState.terrains.begin(); i != foliageState.terrains.end(); )
-                    {
-                        if( !liveTerrains.count( i->first ) )
+                        const auto makeFoliageView = [&]( SmartPtr<IGraphicsCamera> value ) {
+                            ClawFoliageView view;
+                            view.key = u64( reinterpret_cast<uintptr_t>( value.get() ) );
+                            view.visibilityMask = foliageMask;
+                            if( value )
+                            {
+                                const Matrix4F projection( value->getProjectionMatrix().ptr() ),
+                                    cameraView( value->getViewMatrix().ptr() );
+                                const auto pose = cameraView.inverse();
+                                view.position = { pose[0][3], pose[1][3], pose[2][3] };
+                                view.worldToClip = projection * cameraView;
+                                view.orthographic = std::abs( projection[3][3] ) > .5f;
+                                view.projectionScale = std::max( .0001f, std::abs( projection[1][1] ) );
+                            }
+                            return view;
+                        };
+
+                        colourFoliageView = makeFoliageView( rawRenderer->getCamera() );
+                        shadowFoliageView = colourFoliageView;
+                        shadowFoliageView.key ^= u64( 1 ) << 63;
+                        shadowFoliageView.shadow = true;
+                        shadowFoliageView.worldToClip = dx11Renderer->foliageViewProjection( true );
+
+                        Array<ClawFoliageView> foliageViews{ colourFoliageView };
+                        for( const auto &other : terrainCameras )
                         {
-                            i = foliageState.terrains.erase( i );
+                            if( other != rawRenderer->getCamera() && foliageViews.size() < 15 )
+                            {
+                                foliageViews.push_back( makeFoliageView( other ) );
+                            }
                         }
-                        else
+
+                        if( shadowActive )
                         {
-                            ++i;
+                            foliageViews.push_back( shadowFoliageView );
                         }
-                    }
-                    const auto makeFoliageView = [&]( SmartPtr<IGraphicsCamera> value ) {
-                        ClawFoliageView view;
-                        view.key = u64( reinterpret_cast<uintptr_t>( value.get() ) );
-                        view.visibilityMask = foliageMask;
-                        if( value )
+
+                        const auto foliageFrame = dx11Renderer->terrainFrameToken();
+                        if( !foliageFrame || foliageFrame != foliageState.frame )
                         {
-                            const Matrix4F projection( value->getProjectionMatrix().ptr() ),
-                                cameraView( value->getViewMatrix().ptr() );
-                            const auto pose = cameraView.inverse();
-                            view.position = { pose[0][3], pose[1][3], pose[2][3] };
-                            view.worldToClip = projection * cameraView;
-                            view.orthographic = std::abs( projection[3][3] ) > .5f;
-                            view.projectionScale = std::max( .0001f, std::abs( projection[1][1] ) );
+                            foliageState.frame = foliageFrame;
+                            foliageState.seconds = static_cast<f32>( m_foliageSimulationSeconds );
                         }
-                        return view;
+
+                        for( const auto &world : foliageWorlds )
+                        {
+                            observeFoliage(
+                                world->setInteractions( foliageState.interactions, foliageError ) );
+                            if( !observeFoliage( world->prepare( *dx11Renderer, foliageViews,
+                                                                 foliageState.seconds, foliageError ) ) )
+                            {
+                                foliageErrors[world.get()] = foliageError;
+                            }
+                        }
+                        return 1;
                     };
 
-                    const auto colourFoliageView = makeFoliageView( rawRenderer->getCamera() );
-                    auto shadowFoliageView = colourFoliageView;
-                    shadowFoliageView.key ^= u64( 1 ) << 63;
-                    shadowFoliageView.shadow = true;
-                    shadowFoliageView.worldToClip = dx11Renderer->foliageViewProjection( true );
-
-                    Array<ClawFoliageView> foliageViews{ colourFoliageView };
-                    for( const auto &other : terrainCameras )
-                    {
-                        if( other != rawRenderer->getCamera() && foliageViews.size() < 15 )
-                        {
-                            foliageViews.push_back( makeFoliageView( other ) );
-                        }
-                    }
-
-                    if( shadowPass )
-                    {
-                        foliageViews.push_back( shadowFoliageView );
-                    }
-
-                    const auto foliageFrame = dx11Renderer->terrainFrameToken();
-                    if( !foliageFrame || foliageFrame != foliageState.frame )
-                    {
-                        foliageState.frame = foliageFrame;
-                        foliageState.seconds = static_cast<f32>( m_foliageSimulationSeconds );
-                    }
-
-                    for( const auto &world : foliageWorlds )
-                    {
-                        observeFoliage(
-                            world->setInteractions( foliageState.interactions, foliageError ) );
-                        if( !observeFoliage( world->prepare( *dx11Renderer, foliageViews,
-                                                             foliageState.seconds, foliageError ) ) )
-                        {
-                            foliageErrors[world.get()] = foliageError;
-                        }
-                    }
-
-                    if( shadowPass )
-                    {
-                        // Camera culling cannot exclude casters: offscreen objects can shadow visible receivers.
-                        const auto mask =
-                            m_scene->visibility_mask &
-                            ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() )
-                                     : ~u32( 0 ) ) &
-                            ( viewport ? viewport->getVisibilityMask() : ~u32( 0 ) );
-
-                        for( s32 i = 0; i < wp_graphics_cull_result_get_visible_count( jobs->shadow );
-                             ++i )
-                        {
-                            if( wp_graphics_cull_result_validate_object( jobs->shadow, m_scene, i ) !=
-                                WP_GRAPHICS_CULL_OK )
-                            {
-                                throw std::runtime_error( "Stale shadow draw snapshot." );
-                            }
-                            auto object = wp_graphics_cull_result_get_object( jobs->shadow, i );
-                            if( !( wp_graphics_object_get_visibility_flags( object ) & mask ) )
-                            {
-                                continue;
-                            }
-                            auto mesh =
-                                static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
-                            if( !mesh || !mesh->getCastShadows() )
-                            {
-                                continue;
-                            }
-                            wp_mat4f world;
-                            wp_graphics_cull_result_get_world_matrix( jobs->shadow, i, &world );
-                            const auto binding = jobs->materials->find( mesh );
-                            if( !binding ||
-                                !dx11Renderer->renderMeshRecords( mesh, Matrix4F( world.m[0] ),
-                                                                  *jobs->materials, *binding ) )
-                            {
-                                throw std::runtime_error( "Stale shadow material binding." );
-                            }
-                        }
-
+                    const auto renderShadowExtensions = [&] {
                         for( auto &object : terrainObjects )
                         {
                             if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
@@ -1876,205 +1864,249 @@ namespace workphone
                             }
                             foliageShadowStats[world.get()] = world->diagnostics();
                         }
-                        dx11Renderer->endShadowMap();
-                    }
+                        return 1;
+                    };
 
-                    for( auto &sky : m_skies.snapshot() )
-                    {
-                        dx11Renderer->renderSky( sky );
-                    }
-
-                    for( auto &terrainObject : terrainObjects )
-                    {
-                        if( auto terrain = dynamic_pointer_cast<ClawTerrain>( terrainObject ) )
+                    const auto renderBeforeColourMeshes = [&] {
+                        for( auto &sky : m_skies.snapshot() )
                         {
-                            dx11Renderer->renderTerrain( terrain, false );
+                            dx11Renderer->renderSky( sky );
                         }
-                    }
 
-                    // Render one retained population snapshot in both passes.
-                    if( foliage )
-                    {
-                        for( const auto &batch : *foliage )
+                        for( auto &terrainObject : terrainObjects )
                         {
-                            if( batch->visibilityMask() & foliageMask )
+                            if( auto terrain = dynamic_pointer_cast<ClawTerrain>( terrainObject ) )
                             {
-                                batch->render( *dx11Renderer );
+                                dx11Renderer->renderTerrain( terrain, false );
                             }
                         }
-                    }
 
-                    for( const auto &world : foliageWorlds )
-                    {
-                        auto view = colourFoliageView;
-                        const auto owner = foliageOwners.find( world.get() );
-                        if( owner != foliageOwners.end() )
+                        // Render one retained population snapshot in both passes.
+                        if( foliage )
                         {
-                            view.forcedLod = owner->second->getFoliageForcedLod();
-                        }
-
-                        if( !observeFoliage( world->render( *dx11Renderer, view, foliageError ) ) )
-                        {
-                            foliageErrors[world.get()] = foliageError;
-                        }
-
-                        if( owner != foliageOwners.end() )
-                        {
-                            const auto stats = world->diagnostics();
-                            const auto shadow = foliageShadowStats.find( world.get() );
-                            Terrain::FoliageDiagnostics published;
-                            published.currentGenerationReady = stats.currentGenerationReady;
-                            published.sourceRevision = stats.sourceRevision;
-                            published.viewKey = stats.viewKey;
-                            published.residentPages = stats.residentPages;
-                            published.pendingPages = stats.pendingPages;
-                            published.failedPages = stats.failedPages;
-                            published.residentInstances = stats.residentInstances;
-                            published.testedInstances = stats.testedInstances;
-                            published.culledInstances = stats.culledInstances;
-                            published.lodInstances = stats.lodInstances;
-                            published.groups = stats.groups;
-                            published.predictedDraws = stats.predictedDraws;
-                            published.actualDraws = stats.actualDraws;
-                            published.submittedInstances = stats.submittedInstances;
-                            published.speciesSplits = stats.speciesSplits;
-                            published.lodSplits = stats.lodSplits;
-                            published.sectionSplits = stats.sectionSplits;
-                            published.capacitySplits = stats.capacitySplits;
-                            published.policySplits = stats.policySplits;
-                            published.submittedTriangles = stats.submittedTriangles;
-                            published.geometryBytes = stats.geometryBytes;
-                            published.uploadBytes = stats.uploadBytes;
-                            if( shadow != foliageShadowStats.end() )
+                            for( const auto &batch : *foliage )
                             {
-                                published.groups += shadow->second.groups;
-                                published.predictedDraws += shadow->second.predictedDraws;
-                                published.actualDraws += shadow->second.actualDraws;
-                                published.submittedInstances += shadow->second.submittedInstances;
-                                published.speciesSplits += shadow->second.speciesSplits;
-                                published.lodSplits += shadow->second.lodSplits;
-                                published.sectionSplits += shadow->second.sectionSplits;
-                                published.capacitySplits += shadow->second.capacitySplits;
-                                published.policySplits += shadow->second.policySplits;
-                                published.submittedTriangles += shadow->second.submittedTriangles;
-                                published.uploadBytes += shadow->second.uploadBytes;
+                                if( batch->visibilityMask() & foliageMask )
+                                {
+                                    batch->render( *dx11Renderer );
+                                }
                             }
-                            published.error = foliageErrors[world.get()];
-                            owner->second->setFoliageDiagnostics( published );
                         }
-                    }
 
-                    if( foliageFrameError != foliageState.error )
-                    {
-                        foliageState.error = foliageFrameError;
-                        if( !foliageFrameError.empty() )
+                        for( const auto &world : foliageWorlds )
                         {
-                            WP_LOG_ERROR( "ClawScene foliage unavailable: " + foliageFrameError );
-                        }
-                    }
-
-                    // Use the material-aware C++ draw path for native mesh objects while
-                    // retaining the native scene's visibility filtering and queue ordering.
-                    struct MeshSubmission
-                    {
-                        ClawRendererDX11 *renderer;
-                        const ClawMaterialDrawRecords *materials;
-                        bool failed = false;
-                        wp_mat4f view, projection;
-                    } meshSubmission{};
-
-                    meshSubmission.renderer = dx11Renderer;
-                    meshSubmission.materials = jobs->materials.get();
-                    wp_mat4f_identity( &meshSubmission.view );
-                    wp_mat4f_identity( &meshSubmission.projection );
-                    wp_graphics_cull_result_get_camera_matrices( jobs->main, &meshSubmission.view,
-                                                                 &meshSubmission.projection );
-                    const auto submission = wp_graphics_scene_render_cull_result(
-                        m_scene, nativeRenderer, jobs->main,
-                        []( wp_graphics_object *object, wp_renderer *, const wp_mat4f *world,
-                            void *data ) -> wp_s32 {
-                            auto &submission = *static_cast<MeshSubmission *>( data );
-                            auto renderer = submission.renderer;
-                            auto mesh =
-                                static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
-                            if( !mesh )
+                            auto view = colourFoliageView;
+                            const auto owner = foliageOwners.find( world.get() );
+                            if( owner != foliageOwners.end() )
                             {
-                                return 0;
+                                view.forcedLod = owner->second->getFoliageForcedLod();
                             }
 
-                            const auto binding = submission.materials->find( mesh );
-                            if( !binding || !renderer->renderMeshRecords(
-                                                mesh, Matrix4F( world->m[0] ), *submission.materials,
-                                                *binding, &submission.view, &submission.projection ) )
+                            if( !observeFoliage( world->render( *dx11Renderer, view, foliageError ) ) )
                             {
-                                submission.failed = true;
+                                foliageErrors[world.get()] = foliageError;
                             }
 
+                            if( owner != foliageOwners.end() )
+                            {
+                                const auto stats = world->diagnostics();
+                                const auto shadow = foliageShadowStats.find( world.get() );
+                                Terrain::FoliageDiagnostics published;
+                                published.currentGenerationReady = stats.currentGenerationReady;
+                                published.sourceRevision = stats.sourceRevision;
+                                published.viewKey = stats.viewKey;
+                                published.residentPages = stats.residentPages;
+                                published.pendingPages = stats.pendingPages;
+                                published.failedPages = stats.failedPages;
+                                published.residentInstances = stats.residentInstances;
+                                published.testedInstances = stats.testedInstances;
+                                published.culledInstances = stats.culledInstances;
+                                published.lodInstances = stats.lodInstances;
+                                published.groups = stats.groups;
+                                published.predictedDraws = stats.predictedDraws;
+                                published.actualDraws = stats.actualDraws;
+                                published.submittedInstances = stats.submittedInstances;
+                                published.speciesSplits = stats.speciesSplits;
+                                published.lodSplits = stats.lodSplits;
+                                published.sectionSplits = stats.sectionSplits;
+                                published.capacitySplits = stats.capacitySplits;
+                                published.policySplits = stats.policySplits;
+                                published.submittedTriangles = stats.submittedTriangles;
+                                published.geometryBytes = stats.geometryBytes;
+                                published.uploadBytes = stats.uploadBytes;
+                                if( shadow != foliageShadowStats.end() )
+                                {
+                                    published.groups += shadow->second.groups;
+                                    published.predictedDraws += shadow->second.predictedDraws;
+                                    published.actualDraws += shadow->second.actualDraws;
+                                    published.submittedInstances += shadow->second.submittedInstances;
+                                    published.speciesSplits += shadow->second.speciesSplits;
+                                    published.lodSplits += shadow->second.lodSplits;
+                                    published.sectionSplits += shadow->second.sectionSplits;
+                                    published.capacitySplits += shadow->second.capacitySplits;
+                                    published.policySplits += shadow->second.policySplits;
+                                    published.submittedTriangles += shadow->second.submittedTriangles;
+                                    published.uploadBytes += shadow->second.uploadBytes;
+                                }
+                                published.error = foliageErrors[world.get()];
+                                owner->second->setFoliageDiagnostics( published );
+                            }
+                        }
+
+                        if( foliageFrameError != foliageState.error )
+                        {
+                            foliageState.error = foliageFrameError;
+                            if( !foliageFrameError.empty() )
+                            {
+                                WP_LOG_ERROR( "ClawScene foliage unavailable: " + foliageFrameError );
+                            }
+                        }
+                        return 1;
+                    };
+
+                    const auto renderAfterColourMeshes = [&] {
+                        // Particle simulation is updated by GraphicsScene::update, once per
+                        // simulation cycle. Each camera consumes its own immutable draw snapshot.
+                        for( auto &object : m_particleSystems )
+                        {
+                            auto particles = dynamic_pointer_cast<CParticleSystem>( object );
+                            if( !particles || !particles->isVisible() || !particles->isLoaded() )
+                            {
+                                continue;
+                            }
+
+                            auto viewport = rawRenderer->getViewport();
+                            if( viewport &&
+                                !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) )
+                            {
+                                continue;
+                            }
+
+                            auto owner = particles->getOwner();
+                            Matrix4F world =
+                                owner
+                                    ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
+                                    : Matrix4F::identity();
+                            if( auto clawOwner = dynamic_pointer_cast<ClawSceneNode>( owner ) )
+                            {
+                                wp_mat4f nativeWorld{};
+                                wp_scenenode_get_world_matrix( clawOwner->getNativeNode(), &nativeWorld );
+                                world = Matrix4F( nativeWorld.m[0] );
+                            }
+
+                            auto manager = core::IApplicationManager::instancePtr();
+                            auto graphics = manager->getGraphicsSystem();
+                            auto materials = graphics->getMaterialManager();
+                            auto paticlesMaterialName = particles->getMaterialName();
+
+                            SmartPtr<IMaterial> material;
+
+                            if( particles->usesRuntimeResources() )
+                            {
+                                material = particles->getRuntimeMaterial();
+                            }
+                            else if( !StringUtil::isNullOrEmpty( paticlesMaterialName ) )
+                            {
+                                material = dynamic_pointer_cast<IMaterial>(
+                                    materials->getByName( particles->getMaterialName() ) );
+                            }
+
+                            const auto scale = particles->getScale();
+                            dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
+                                                           Vector3F( scale.X(), scale.Y(), scale.Z() ),
+                                                           material );
+                        }
+                        return 1;
+                    };
+
+                    wp_mat4f identity;
+                    wp_mat4f_identity( &identity );
+                    const auto submitMesh = [&]( wp_graphics_object *object,
+                        const wp_graphics_scene_draw_item *item ) -> wp_s32 {
+                        const bool shadow = item->pass == WP_GRAPHICS_CULL_PASS_SHADOW;
+                        const auto mesh = static_cast<ClawMesh *>(
+                            wp_graphics_object_get_submit_data( object ) );
+                        if( !mesh )
+                        {
+                            return shadow ? WP_GRAPHICS_SCENE_DRAW_HANDLED : WP_GRAPHICS_SCENE_DRAW_DEFAULT;
+                        }
+                        const auto binding = jobs->materials->find( mesh );
+                        const auto *view = item->view;
+                        const auto *projection = item->projection;
+                        if( !shadow && !view )
+                        {
+                            view = projection = &identity;
+                        }
+                        return binding && dx11Renderer->renderMeshRecords( mesh,
+                            Matrix4F( item->world->m[0] ), *jobs->materials, *binding, view, projection )
+                            ? WP_GRAPHICS_SCENE_DRAW_HANDLED : WP_GRAPHICS_SCENE_DRAW_ABORT;
+                    };
+
+                    struct SceneDrawContext
+                    {
+                        decltype( beginShadow ) &begin;
+                        decltype( prepareExtensions ) &prepare;
+                        decltype( renderShadowExtensions ) &shadow;
+                        decltype( renderBeforeColourMeshes ) &beforeColour;
+                        decltype( renderAfterColourMeshes ) &afterColour;
+                        decltype( submitMesh ) &submit;
+                        ClawRendererDX11 &renderer;
+                        std::exception_ptr failure;
+                    } drawContext{ beginShadow, prepareExtensions, renderShadowExtensions,
+                                   renderBeforeColourMeshes, renderAfterColourMeshes, submitMesh,
+                                   *dx11Renderer, {} };
+
+                    wp_graphics_scene_draw_ops ops{};
+                    ops.main_visibility_mask = ~wp_u32( 0 );
+                    ops.shadow_visibility_mask = foliageMask;
+                    ops.begin_shadow = []( void *data ) -> wp_s32 {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        return invokeSceneStage( ctx.failure, -1, ctx.begin );
+                    };
+                    ops.prepare = []( void *data, wp_s32 shadowActive ) -> wp_s32 {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        return invokeSceneStage( ctx.failure, 0, ctx.prepare, shadowActive );
+                    };
+                    ops.shadow_extras = []( void *data ) -> wp_s32 {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        return invokeSceneStage( ctx.failure, 0, ctx.shadow );
+                    };
+                    ops.end_shadow = []( void *data ) {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        invokeSceneStage( ctx.failure, 0, [&] {
+                            ctx.renderer.endShadowMap();
                             return 1;
-                        },
-                        &meshSubmission );
-
-                    if( submission != WP_GRAPHICS_CULL_OK || meshSubmission.failed )
+                        } );
+                    };
+                    ops.colour_before = []( void *data ) -> wp_s32 {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        return !ctx.failure && invokeSceneStage( ctx.failure, 0, ctx.beforeColour );
+                    };
+                    ops.colour_after = []( void *data ) -> wp_s32 {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        return invokeSceneStage( ctx.failure, 0, ctx.afterColour );
+                    };
+                    ops.submit = []( wp_graphics_object *object, wp_renderer *,
+                        const wp_graphics_scene_draw_item *item, void *data ) -> wp_s32 {
+                        auto &ctx = *static_cast<SceneDrawContext *>( data );
+                        return invokeSceneStage( ctx.failure, WP_GRAPHICS_SCENE_DRAW_ABORT, ctx.submit,
+                                                 object, item );
+                    };
+                    const auto result = wp_graphics_scene_draw_batch( m_scene, nativeRenderer,
+                        &jobs->batch, &ops, &drawContext );
+                    if( drawContext.failure )
                     {
-                        throw std::runtime_error( "Stale colour draw snapshot." );
+                        std::rethrow_exception( drawContext.failure );
                     }
-
-                    // Particle simulation is updated by GraphicsScene::update, once per
-                    // simulation cycle. Each camera consumes its own immutable draw snapshot.
-                    for( auto &object : m_particleSystems )
+                    if( result != WP_GRAPHICS_CULL_OK )
                     {
-                        auto particles = dynamic_pointer_cast<CParticleSystem>( object );
-                        if( !particles || !particles->isVisible() || !particles->isLoaded() )
-                        {
-                            continue;
-                        }
-
-                        auto viewport = rawRenderer->getViewport();
-                        if( viewport &&
-                            !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) )
-                        {
-                            continue;
-                        }
-
-                        auto owner = particles->getOwner();
-                        Matrix4F world =
-                            owner
-                                ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
-                                : Matrix4F::identity();
-                        if( auto clawOwner = dynamic_pointer_cast<ClawSceneNode>( owner ) )
-                        {
-                            wp_mat4f nativeWorld{};
-                            wp_scenenode_get_world_matrix( clawOwner->getNativeNode(), &nativeWorld );
-                            world = Matrix4F( nativeWorld.m[0] );
-                        }
-
-                        auto manager = core::IApplicationManager::instancePtr();
-                        auto graphics = manager->getGraphicsSystem();
-                        auto materials = graphics->getMaterialManager();
-                        auto paticlesMaterialName = particles->getMaterialName();
-
-                        SmartPtr<IMaterial> material;
-
-                        if( particles->usesRuntimeResources() )
-                        {
-                            material = particles->getRuntimeMaterial();
-                        }
-                        else if( !StringUtil::isNullOrEmpty( paticlesMaterialName ) )
-                        {
-                            material = dynamic_pointer_cast<IMaterial>(
-                                materials->getByName( particles->getMaterialName() ) );
-                        }
-
-                        const auto scale = particles->getScale();
-                        dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
-                                                       Vector3F( scale.X(), scale.Y(), scale.Z() ),
-                                                       material );
+                        throw std::runtime_error( "Stale scene draw snapshot." );
                     }
                 }
                 else
                 {
-                    if( wp_graphics_scene_render_cull_result( m_scene, nativeRenderer, jobs->main,
-                                                              nullptr, nullptr ) != WP_GRAPHICS_CULL_OK )
+                    if( wp_graphics_scene_draw_batch( m_scene, nativeRenderer, &jobs->batch,
+                                                      nullptr, nullptr ) != WP_GRAPHICS_CULL_OK )
                     {
                         throw std::runtime_error( "Stale software draw snapshot." );
                     }

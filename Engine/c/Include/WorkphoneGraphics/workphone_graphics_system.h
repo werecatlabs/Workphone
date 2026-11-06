@@ -14,11 +14,13 @@
 #ifndef WORKPHONE_GRAPHICS_SYSTEM_H
 #define WORKPHONE_GRAPHICS_SYSTEM_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "workphone_graphics_renderer.h"
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_scenenode.h"
 #include "workphone_graphics_scene.h"
+#include "workphone_graphics_rtt_job.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +49,10 @@ typedef struct wp_graphics_system_frame_stats
 /** Copies diagnostics without allocating. Returns zero for invalid arguments. */
 wp_s32 wp_graphics_system_get_frame_stats( const wp_graphics_system *system,
                                           wp_graphics_system_frame_stats *stats );
+
+/* Number of failed targets in the last completed target frame. Failures can
+ * overlap admitted or rejected targets. Legacy render paths report zero. */
+wp_s32 wp_graphics_system_get_failed_pass_count( const wp_graphics_system *system );
 
 /**
  * @brief Callback used by the single-entry frame driver.
@@ -86,6 +92,74 @@ typedef struct wp_graphics_system_render_pass
 wp_s32 wp_graphics_system_set_render_passes( wp_graphics_system *system,
                                             const wp_graphics_system_render_pass *passes,
                                             wp_s32 count );
+
+enum
+{
+    WP_GRAPHICS_FRAME_TARGET_WINDOW = 1,
+    WP_GRAPHICS_FRAME_TARGET_SCENE = 2,
+    WP_GRAPHICS_FRAME_TARGET_UI = 4,
+    WP_GRAPHICS_FRAME_TARGET_CLEAR = 8
+};
+
+typedef enum wp_graphics_system_frame_stage
+{
+    WP_GRAPHICS_FRAME_PREPARE_TARGET,
+    WP_GRAPHICS_FRAME_BEGIN_TARGET,
+    WP_GRAPHICS_FRAME_CLEAR_TARGET,
+    WP_GRAPHICS_FRAME_BEGIN_EFFECTS,
+    WP_GRAPHICS_FRAME_DRAW_SCENE,
+    WP_GRAPHICS_FRAME_END_EFFECTS,
+    WP_GRAPHICS_FRAME_DRAW_UI,
+    WP_GRAPHICS_FRAME_DRAW_OVERLAY,
+    WP_GRAPHICS_FRAME_RETIRE_SCENES,
+    WP_GRAPHICS_FRAME_END_TARGET,
+    WP_GRAPHICS_FRAME_RESTORE_TARGET
+} wp_graphics_system_frame_stage;
+
+enum
+{
+    WP_GRAPHICS_FRAME_FAILED = -1,
+    WP_GRAPHICS_FRAME_SKIP = 0,
+    WP_GRAPHICS_FRAME_OK = 1
+};
+
+/* PREPARE_TARGET resolves and binds the target without beginning its frame.
+ * SKIP means no resources were acquired. FAILED still retires and restores.
+ * END_TARGET follows any BEGIN_TARGET call, including a partial failure.
+ * BEGIN_EFFECTS returns SKIP to draw directly, or OK to acquire an effects
+ * frame that the driver must close even when drawing fails. Other drawing
+ * steps return OK on success. Cleanup is attempted regardless of failure. */
+typedef wp_s32 ( *wp_graphics_system_frame_stage_func )( wp_graphics_system *system,
+    wp_f32 delta_time, wp_graphics_system_frame_stage stage, void *user_data );
+
+/* Optional offscreen transaction. Its backend invokes draw at most once,
+ * synchronously, on the staged destination and propagates its status before
+ * publishing. On success it must call draw. It may decline to draw on failure. */
+typedef wp_rtt_result ( *wp_graphics_system_frame_transaction_func )( void *user_data,
+    wp_rtt_check_func draw, void *draw_data );
+
+typedef struct wp_graphics_system_frame_target
+{
+    wp_u32 flags;
+    void *user_data;
+    wp_graphics_system_frame_transaction_func transact;
+} wp_graphics_system_frame_target;
+
+/* Synchronous target frame. Executes offscreen targets first and windows last,
+ * in input order within each group. Native update runs once when advance is
+ * nonzero. Input targets and contexts are borrowed and immutable until return.
+ * Returns 1 for an admitted frame, 0 for invalid input or reentry. This path
+ * uses only the supplied target list and does not mutate registered passes. */
+wp_s32 wp_graphics_system_render_target_frame( wp_graphics_system *system, wp_f32 delta_time,
+    wp_s32 advance, const wp_graphics_system_frame_target *targets, wp_s32 count,
+    wp_graphics_system_frame_stage_func stage );
+
+/* Visits a prepared target's retained scene roster in order. The adapter owns
+ * its scene references. A rejected submission stops the roster without replay.
+ * Only valid while rendering; recursive scene submission is rejected. */
+typedef wp_s32 ( *wp_graphics_system_submit_frame_scene_func )( size_t index, void *user_data );
+wp_s32 wp_graphics_system_submit_frame_scenes( wp_graphics_system *system, size_t count,
+    wp_graphics_system_submit_frame_scene_func submit, void *user_data );
 
 /* =========================================================================
  * Graphics system

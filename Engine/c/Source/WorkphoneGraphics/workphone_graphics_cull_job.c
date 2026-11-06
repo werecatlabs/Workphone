@@ -1428,6 +1428,70 @@ wp_s32 wp_graphics_cull_result_validate( const wp_graphics_cull_result *r,
     return WP_GRAPHICS_CULL_OK;
 }
 
+static wp_s32 cull_batch_views_match( const wp_graphics_scene_batch *batch )
+{
+    const wp_graphics_cull_result *main, *shadow;
+    if( !batch || !( main = batch->main ) || !( shadow = batch->shadow ) ) return 0;
+    return main->pass == WP_GRAPHICS_CULL_PASS_MAIN && shadow->pass == WP_GRAPHICS_CULL_PASS_SHADOW &&
+           main->snapshot == shadow->snapshot && main->scene == shadow->scene &&
+           main->native_generation == shadow->native_generation &&
+           main->scene_generation == shadow->scene_generation && main->scene_mask == shadow->scene_mask &&
+           main->camera == shadow->camera && main->camera_mask == shadow->camera_mask &&
+           ( !main->camera || ( memcmp( &main->view, &shadow->view, sizeof( main->view ) ) == 0 &&
+             memcmp( &main->projection, &shadow->projection, sizeof( main->projection ) ) == 0 ) );
+}
+
+wp_s32 wp_graphics_scene_batch_validate( const wp_graphics_scene *scene,
+                                        const wp_graphics_scene_batch *batch )
+{
+    if( !scene || !cull_batch_views_match( batch ) ) return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    /* Both views share the candidate publication and camera. Validate once. */
+    return wp_graphics_cull_result_validate( batch->main, scene, batch->main->scene_generation );
+}
+
+wp_s32 wp_graphics_scene_batch_visit( const wp_graphics_scene *scene, const wp_graphics_scene_batch *batch,
+    wp_graphics_scene_batch_visit_func visit, void *data )
+{
+    const wp_graphics_cull_result *views[2], *view;
+    unsigned char *seen = NULL;
+    wp_s32 pass, i, index, status = WP_GRAPHICS_CULL_OK;
+    unsigned char bit;
+    if( !scene || !visit || !cull_batch_views_match( batch ) )
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    views[0] = batch->main;
+    views[1] = batch->shadow;
+    if( !cull_membership_valid( views[0], scene, views[0]->scene_generation ) )
+        return WP_GRAPHICS_CULL_ERROR_STALE;
+    if( views[0]->visible_count && views[1]->visible_count )
+    {
+        seen = (unsigned char *)calloc( ( (size_t)views[0]->candidate_count + 7u ) / 8u, 1 );
+        if( !seen ) return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
+    }
+    for( pass = 0; pass < 2; ++pass )
+    {
+        view = views[pass];
+        for( i = 0; i < view->visible_count; ++i )
+        {
+            index = view->indices[i];
+            bit = (unsigned char)( 1u << ( index % 8 ) );
+            if( seen && ( seen[index / 8] & bit ) ) continue;
+            status = wp_graphics_cull_result_validate_object( view, scene, i );
+            if( status != WP_GRAPHICS_CULL_OK ) goto done;
+            if( !visit( view->entries[index].object, data ) )
+            {
+                status = WP_GRAPHICS_CULL_ERROR;
+                goto done;
+            }
+            if( seen ) seen[index / 8] |= bit;
+        }
+    }
+    if( !cull_membership_valid( views[0], scene, views[0]->scene_generation ) )
+        status = WP_GRAPHICS_CULL_ERROR_STALE;
+done:
+    free( seen );
+    return status;
+}
+
 void wp_graphics_cull_result_get_transform_stats( const wp_graphics_cull_result *result,
                                                   wp_transform_job_stats *out )
 {
@@ -1602,4 +1666,191 @@ void wp_graphics_cull_result_get_storage_stats( const wp_graphics_cull_result *r
             memset( out, 0, sizeof( *out ) );
         }
     }
+}
+
+wp_s32 wp_graphics_draw_sort_valid( wp_u32 strategy, double bucket_size )
+{
+    return strategy <= WP_GRAPHICS_DRAW_DEPTH_BUCKETS && bucket_size > 0 && bucket_size <= DBL_MAX;
+}
+
+static wp_s32 draw_key_is_barrier( const wp_graphics_draw_key *key )
+{
+    return key->barrier || !( key->depth >= -DBL_MAX && key->depth <= DBL_MAX );
+}
+
+static wp_s32 draw_key_less( const wp_graphics_draw_key *a, const wp_graphics_draw_key *b,
+                             wp_u32 strategy )
+{
+    if( (a->transparent != 0) != (b->transparent != 0) ) return !a->transparent;
+    if( a->transparent )
+    {
+        if( a->depth != b->depth ) return a->depth > b->depth;
+    }
+    else
+    {
+        if( strategy == WP_GRAPHICS_DRAW_FRONT_TO_BACK && a->depth != b->depth )
+            return a->depth < b->depth;
+        if( strategy == WP_GRAPHICS_DRAW_DEPTH_BUCKETS && a->bucket != b->bucket )
+            return a->bucket < b->bucket;
+        if( a->material != b->material ) return a->material < b->material;
+        if( a->depth != b->depth ) return a->depth < b->depth;
+    }
+    return a->index < b->index;
+}
+
+static void swap_draw_keys( wp_graphics_draw_key *a, wp_graphics_draw_key *b )
+{
+    wp_graphics_draw_key key = *a;
+    *a = *b;
+    *b = key;
+}
+
+static void sift_draw_key( wp_graphics_draw_key *keys, size_t root, size_t count, wp_u32 strategy )
+{
+    wp_graphics_draw_key key = keys[root];
+    size_t child;
+    while( root < count / 2 )
+    {
+        child = root * 2 + 1;
+        if( child + 1 < count && draw_key_less( &keys[child], &keys[child + 1], strategy ) ) ++child;
+        if( !draw_key_less( &key, &keys[child], strategy ) ) break;
+        keys[root] = keys[child];
+        root = child;
+    }
+    keys[root] = key;
+}
+
+/* Sort the smaller partition recursively and tail-iterate the larger one.
+ * Heap fallback bounds adversarial input. Index tie-breaking keeps the order
+ * stable for equal material/depth keys without allocating sort scratch. */
+static void sort_draw_run( wp_graphics_draw_key *keys, size_t count, wp_u32 strategy, size_t depth )
+{
+    wp_graphics_draw_key pivot, key, *middle, *last;
+    size_t left, right, split, i, hole;
+    while( count > 24 )
+    {
+        if( !depth )
+        {
+            for( i = count / 2; i > 0; --i ) sift_draw_key( keys, i - 1, count, strategy );
+            for( i = count - 1; i > 0; --i )
+            {
+                swap_draw_keys( keys, &keys[i] );
+                sift_draw_key( keys, 0, i, strategy );
+            }
+            return;
+        }
+        --depth;
+        middle = &keys[count / 2];
+        last = &keys[count - 1];
+        if( draw_key_less( middle, keys, strategy ) ) swap_draw_keys( middle, keys );
+        if( draw_key_less( last, middle, strategy ) ) swap_draw_keys( last, middle );
+        if( draw_key_less( middle, keys, strategy ) ) swap_draw_keys( middle, keys );
+        pivot = *middle;
+        left = 0;
+        right = count - 1;
+        for( ;; )
+        {
+            while( draw_key_less( &keys[left], &pivot, strategy ) ) ++left;
+            while( draw_key_less( &pivot, &keys[right], strategy ) ) --right;
+            if( left >= right ) break;
+            swap_draw_keys( &keys[left], &keys[right] );
+            ++left;
+            --right;
+        }
+        split = right + 1;
+        if( split < count - split )
+        {
+            sort_draw_run( keys, split, strategy, depth );
+            keys += split;
+            count -= split;
+        }
+        else
+        {
+            sort_draw_run( keys + split, count - split, strategy, depth );
+            count = split;
+        }
+    }
+    for( i = 1; i < count; ++i )
+    {
+        key = keys[i];
+        for( hole = i; hole && draw_key_less( &key, &keys[hole - 1], strategy ); --hole )
+            keys[hole] = keys[hole - 1];
+        keys[hole] = key;
+    }
+}
+
+void wp_graphics_draw_sort_keys( wp_graphics_draw_key *keys, size_t count,
+                                 wp_u32 strategy, double bucket_size )
+{
+    size_t i, first, end, depth;
+    if( !keys || !wp_graphics_draw_sort_valid( strategy, bucket_size ) ||
+        strategy == WP_GRAPHICS_DRAW_QUEUE_ORDER ) return;
+    if( strategy == WP_GRAPHICS_DRAW_DEPTH_BUCKETS )
+    {
+        for( i = 0; i < count; ++i )
+        {
+            if( !draw_key_is_barrier( &keys[i] ) ) keys[i].bucket = floor( keys[i].depth / bucket_size );
+        }
+    }
+    for( first = 0; first < count; first = end )
+    {
+        end = first + 1;
+        if( draw_key_is_barrier( &keys[first] ) ) continue;
+        while( end < count && !draw_key_is_barrier( &keys[end] ) &&
+               keys[end].queue == keys[first].queue && keys[end].zOrder == keys[first].zOrder ) ++end;
+        if( end - first > 1 )
+        {
+            depth = 0;
+            for( i = end - first; i > 1; i /= 2 ) depth += 2;
+            sort_draw_run( keys + first, end - first, strategy, depth );
+        }
+    }
+}
+
+wp_s32 wp_graphics_cull_result_sort_draws( wp_graphics_cull_result **view,
+    wp_u32 strategy, double bucket_size, wp_graphics_draw_key *keys,
+    wp_s32 *order, wp_s32 capacity, wp_graphics_draw_classify_func classify, void *user )
+{
+    wp_graphics_cull_result *source, *ordered;
+    wp_s32 i, count, transparent, changed = 0;
+    const wp_f32 *camera;
+    if( !view || !(source = *view) || !wp_graphics_draw_sort_valid( strategy, bucket_size ) )
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    count = source->visible_count;
+    if( strategy == WP_GRAPHICS_DRAW_QUEUE_ORDER || !source->has_camera || count < 2 ) return WP_GRAPHICS_CULL_OK;
+    if( !keys || !order || !classify || capacity < count ) return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    if( !cull_membership_valid( source, source->scene, source->scene_generation ) )
+        return WP_GRAPHICS_CULL_ERROR_STALE;
+    camera = source->view.m[2];
+    for( i = 0; i < count; ++i )
+    {
+        const cull_entry *entry = &source->entries[source->indices[i]];
+        wp_graphics_draw_key *key = &keys[i];
+        memset( key, 0, sizeof( *key ) );
+        key->index = (wp_u32)i;
+        key->barrier = 1;
+        if( wp_graphics_object_get_flags( entry->object ) &
+            ( WORKPHONE_GRAPHICS_OBJECT_FLAG_OVERLAY | WORKPHONE_GRAPHICS_OBJECT_FLAG_UI ) ) continue;
+        transparent = 0;
+        if( !classify( entry->object, &key->material, &transparent, user ) ) continue;
+        key->queue = entry->queue_group;
+        key->zOrder = entry->z_order;
+        key->transparent = transparent != 0;
+        key->depth = -( (double)camera[0] * entry->world.m[0][3] +
+                        (double)camera[1] * entry->world.m[1][3] +
+                        (double)camera[2] * entry->world.m[2][3] + camera[3] );
+        key->barrier = 0;
+    }
+    wp_graphics_draw_sort_keys( keys, (size_t)count, strategy, bucket_size );
+    for( i = 0; i < count; ++i )
+    {
+        order[i] = (wp_s32)keys[i].index;
+        if( order[i] != i ) changed = 1;
+    }
+    if( !changed ) return WP_GRAPHICS_CULL_OK;
+    ordered = wp_graphics_cull_result_create_ordered( source, order, count );
+    if( !ordered ) return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
+    wp_graphics_cull_result_destroy( source );
+    *view = ordered;
+    return WP_GRAPHICS_CULL_OK;
 }

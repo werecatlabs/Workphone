@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <typeinfo>
@@ -1034,8 +1035,7 @@ namespace workphone::render
     u64 ClawRendererDX11::renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances,
                                                u32 count )
     {
-        if( !mesh || !count || count > 65536 ||
-            !wp_renderer_dx11_validate_instances_pntc( instances, static_cast<wp_s32>( count ) ) )
+        if( !mesh || !instances || !count || count > 65536 )
         {
             return 0;
         }
@@ -1102,14 +1102,6 @@ namespace workphone::render
     {
         auto nativeMesh = mesh ? mesh->getNativeMesh() : nullptr;
         if( !m_renderer || !mesh || !mesh->isVisible() || !nativeMesh )
-        {
-            return 0;
-        }
-
-        const auto vertexCount = wp_graphics_mesh_get_vertex_count( nativeMesh );
-        const auto indexCount = wp_graphics_mesh_get_index_count( nativeMesh );
-        const auto elementCount = indexCount > 0 ? indexCount : vertexCount;
-        if( vertexCount == 0 || elementCount == 0 )
         {
             return 0;
         }
@@ -1193,28 +1185,6 @@ namespace workphone::render
         }
 
         auto dx11 = wp_renderer_get_dx11( m_renderer );
-        wp_mesh_section_state_dx11 meshState{};
-        if( !wp_renderer_dx11_begin_mesh_sections( dx11, &meshState ) )
-        {
-            return 0;
-        }
-        struct RestoreMeshState
-        {
-            wp_renderer_dx11 *renderer;
-            const wp_mesh_section_state_dx11 &state;
-            ~RestoreMeshState() { wp_renderer_dx11_end_mesh_sections( renderer, &state ); }
-        } restoreMeshState{ dx11, meshState };
-
-        u64 submitted = 0;
-        setTransforms( transform, snapshotView, snapshotProjection );
-        const auto topology = wp_graphics_mesh_get_primitive_type( nativeMesh );
-        const auto submeshCount = wp_graphics_mesh_get_submesh_count( nativeMesh );
-        const auto drawCount = std::max<s32>( submeshCount, 1 );
-
-        const auto geometry = topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST
-                                  ? asset_budget::prepareMesh( dx11, nativeMesh, 0, elementCount )
-                                  : nullptr;
-
         std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
         const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
         const auto texturePolicy = settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
@@ -1226,30 +1196,24 @@ namespace workphone::render
         const bool reflectionProbes = !settings || settings->getReflectionProbes();
         const bool dynamicBatching = !settings || settings->getDynamicBatching();
 
-        for( s32 submeshIndex = 0; submeshIndex < drawCount; ++submeshIndex )
+        struct Activation
         {
-            u32 start = 0;
-            u32 count = elementCount;
-            if( submeshCount > 0 )
-            {
-                if( const auto submesh = wp_graphics_mesh_get_submesh( nativeMesh, submeshIndex ) )
-                {
-                    start = std::min( submesh->index_start, elementCount );
-                    count = std::min( submesh->index_count, elementCount - start );
-                }
-            }
+            const MaterialProgramDX11::Publication *publication = nullptr;
+            bool attempted = false;
+        } activation;
+        static constexpr size_t sectionTextureCount = 8;  // Base, six material maps, reflection probe.
+        // Legacy providers may return temporary owners. Hold them until C has
+        // finished submitting this section and has retired its custom bindings.
+        std::optional<std::array<SmartPtr<ITexture>, sectionTextureCount>> fallbackTextures;
 
+        auto resolve = [&]( s32 submeshIndex, wp_mesh_section_dx11 &section ) -> wp_s32 {
             const auto record = records->get( *binding, submeshIndex );
             if( !record )
             {
-                continue;
+                return 0;
             }
             auto material = record->material;
             const auto state = record->state;
-            constexpr size_t sectionTextureCount = 8;  // Base, six material maps, reflection probe.
-            // Captured state owns its textures. Legacy providers may return a
-            // temporary owner per slot, so keep each alive through submission.
-            std::optional<std::array<SmartPtr<ITexture>, sectionTextureCount>> fallbackTextures;
             size_t fallbackCount = 0;
             const auto getTexture = [&]( u32 slot ) -> ITexture * {
                 if( state )
@@ -1302,13 +1266,11 @@ namespace workphone::render
 
             if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
             {
-                continue;
+                return 0;
             }
 
             const auto prepared = record->prepared;
 
-            wp_mesh_section_dx11 section{};
-            section.struct_size = sizeof( section );
             if( material )
             {
                 if( auto texture = getTexture( 0 ) )
@@ -1418,15 +1380,10 @@ namespace workphone::render
             const auto runtime = m_shadowPass ? nullptr : record->runtime;
             if( !m_shadowPass && record->runtimeRequested && !runtime )
             {
-                continue;
+                return 0;
             }
 
-            struct Activation
-            {
-                const MaterialProgramDX11::Publication *publication;
-                bool attempted = false;
-            } activation{ runtime };
-
+            activation.publication = runtime;
             section.bind =
                 runtime ? +[]( wp_renderer_dx11 *r, wp_s32 instanced, void *user ) -> wp_s32 {
                 auto &active = *static_cast<Activation *>( user );
@@ -1442,54 +1399,75 @@ namespace workphone::render
             }
             : nullptr;
             section.bind_user = &activation;
+            return 1;
+        };
 
-            struct RetireBindings
+        struct SectionCallbacks
+        {
+            decltype( resolve ) &resolveSection;
+            Activation &activation;
+            decltype( fallbackTextures ) &retainedTextures;
+            wp_renderer_dx11 *renderer;
+            std::exception_ptr error;
+        } callbacks{ resolve, activation, fallbackTextures, dx11, {} };
+
+        const auto world = toCMatrix( transform );
+        wp_mat4f view, projection;
+        resolveDrawMatrices( snapshotView, snapshotProjection, view, projection );
+        const wp_gpu_allocation_callbacks budget{ nullptr, asset_budget::reserveGpu,
+                                                   asset_budget::retainGpu, asset_budget::releaseGpu };
+        wp_mesh_batch_dx11 batch{};
+        batch.mesh = nativeMesh;
+        batch.world = &world;
+        batch.view = &view;
+        batch.projection = &projection;
+        batch.instances = instances;
+        batch.instance_count = static_cast<wp_s32>( instanceCount );
+        batch.instance_batch_size = dynamicBatching ? 0 : 1;
+        batch.budget = &budget;
+        batch.user = &callbacks;
+        batch.resolve = []( wp_s32 index, wp_mesh_section_dx11 *section, void *user ) -> wp_s32 {
+            auto &callback = *static_cast<SectionCallbacks *>( user );
+            if( callback.error )
             {
-                const Activation &active;
-                wp_renderer_dx11 *renderer;
-
-                ~RetireBindings()
+                return -1;
+            }
+            try
+            {
+                return callback.resolveSection( index, *section );
+            }
+            catch( ... )
+            {
+                callback.error = std::current_exception();
+                return -1;
+            }
+        };
+        batch.retire = []( void *user ) {
+            auto &callback = *static_cast<SectionCallbacks *>( user );
+            if( callback.activation.attempted )
+            {
+                try
                 {
-                    if( active.attempted )
-                    {
-                        active.publication->Unbind( renderer );
-                    }
+                    callback.activation.publication->Unbind( callback.renderer );
                 }
-            } retireBindings{ activation, dx11 };
+                catch( ... )
+                {
+                    callback.error = std::current_exception();
+                }
+            }
+            callback.activation = {};
+            callback.retainedTextures.reset();
+        };
 
-            constexpr auto maxIndexCount = static_cast<u32>( std::numeric_limits<wp_s32>::max() );
-            if( !instances && topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP && count >= 3 &&
-                count - 2u <= maxIndexCount / 3u )
-            {
-                section.geometry = asset_budget::prepareMesh( dx11, nativeMesh, start, count );
-                section.index_count = static_cast<wp_s32>( ( count - 2u ) * 3u );
-            }
-            else if( geometry && start <= maxIndexCount && count <= maxIndexCount &&
-                     instanceCount <= maxIndexCount )
-            {
-                section.geometry = geometry;
-                section.index_start = static_cast<wp_s32>( start );
-                section.index_count = static_cast<wp_s32>( instances ? count : count - count % 3u );
-                section.instances = instances;
-                section.instance_count = static_cast<wp_s32>( instanceCount );
-                section.instance_batch_size = dynamicBatching ? 0 : 1;
-            }
-
-            const auto drawn = wp_renderer_dx11_submit_mesh_section( dx11, &section );
-            if( drawn > 0 && instances )
-            {
-                submitted += drawn;
-                m_primitiveCount = static_cast<u32>(
-                    std::min<u64>( std::numeric_limits<u32>::max(),
-                                   u64( m_primitiveCount ) + u64( section.index_count / 3 ) * drawn ) );
-            }
-            else if( drawn > 0 )
-            {
-                m_primitiveCount += static_cast<u32>( section.index_count / 3 );
-            }
+        wp_mesh_batch_result_dx11 result;
+        wp_renderer_dx11_submit_mesh_batch( dx11, &batch, &result );
+        m_primitiveCount += static_cast<u32>( std::min<u64>(
+            std::numeric_limits<u32>::max() - m_primitiveCount, result.triangles ) );
+        if( callbacks.error )
+        {
+            std::rethrow_exception( callbacks.error );
         }
-
-        return submitted;
+        return instances ? result.submissions : 0;
     }
 
     bool ClawRendererDX11::prepareTerrainGeometry( const wp_graphics_mesh *mesh )
@@ -1799,15 +1777,24 @@ namespace workphone::render
         wp_renderer_set_depth_write_enabled( m_renderer, oldDepthWrite );
     }
 
-    void ClawRendererDX11::setTransforms( const Matrix4F &world, const wp_mat4f *snapshotView,
-                                          const wp_mat4f *snapshotProjection )
+    void ClawRendererDX11::setTransforms( const Matrix4F &world )
     {
         const auto nativeWorld = toCMatrix( world );
+        wp_mat4f nativeView, nativeProjection;
+        resolveDrawMatrices( nullptr, nullptr, nativeView, nativeProjection );
+        wp_renderer_set_world_matrix( m_renderer, &nativeWorld );
+        wp_renderer_set_view_matrix( m_renderer, &nativeView );
+        wp_renderer_set_projection_matrix( m_renderer, &nativeProjection );
+    }
+
+    void ClawRendererDX11::resolveDrawMatrices( const wp_mat4f *snapshotView,
+                                               const wp_mat4f *snapshotProjection,
+                                               wp_mat4f &nativeView, wp_mat4f &nativeProjection )
+    {
         if( !m_shadowPass && snapshotView && snapshotProjection )
         {
-            wp_renderer_set_world_matrix( m_renderer, &nativeWorld );
-            wp_renderer_set_view_matrix( m_renderer, snapshotView );
-            wp_renderer_set_projection_matrix( m_renderer, snapshotProjection );
+            nativeView = *snapshotView;
+            nativeProjection = *snapshotProjection;
             return;
         }
         auto camera = getCamera();
@@ -1816,12 +1803,8 @@ namespace workphone::render
         const auto projection = m_shadowPass ? m_shadowMatrix
                                 : camera     ? Matrix4F( camera->getProjectionMatrix().ptr() )
                                              : Matrix4F::identity();
-        const auto nativeView = toCMatrix( view );
-        const auto nativeProjection = toCMatrix( projection );
-
-        wp_renderer_set_world_matrix( m_renderer, &nativeWorld );
-        wp_renderer_set_view_matrix( m_renderer, &nativeView );
-        wp_renderer_set_projection_matrix( m_renderer, &nativeProjection );
+        nativeView = toCMatrix( view );
+        nativeProjection = toCMatrix( projection );
     }
 
     wp_mat4f ClawRendererDX11::toCMatrix( const Matrix4F &matrix )

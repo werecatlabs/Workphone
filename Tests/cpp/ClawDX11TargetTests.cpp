@@ -1217,6 +1217,8 @@ int main()
                      "window readback must copy complete RGBA8 pixels within capacity" );
         try { ok &= claw_rtt_contracts::integration(window); }
         catch(const std::exception &e) { ok &= check(false, e.what()); }
+        try { ok &= claw_rtt_contracts::orderedFrame(window); }
+        catch(const std::exception &e) { ok &= check(false, e.what()); }
         try { ok &= claw_ui_rtt_contracts::editorPreview(window); }
         catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.unload( nullptr );

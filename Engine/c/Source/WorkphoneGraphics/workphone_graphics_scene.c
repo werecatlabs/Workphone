@@ -1096,13 +1096,52 @@ wp_graphics_cull_result *wp_graphics_scene_prepare_cull_profiled(
     return result;
 }
 
-wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_renderer *renderer,
-                                             const wp_graphics_cull_result *result,
-                                             wp_graphics_scene_snapshot_submit_func submit, void *data )
+void wp_graphics_scene_batch_clear( wp_graphics_scene_batch *batch )
 {
-    wp_s32 i;
+    if( !batch ) return;
+    wp_graphics_cull_result_destroy( batch->main );
+    wp_graphics_cull_result_destroy( batch->shadow );
+    memset( batch, 0, sizeof( *batch ) );
+}
+
+wp_s32 wp_graphics_scene_batch_prepare( wp_graphics_scene *scene, const wp_camera *camera,
+    wp_graphics_cull_clock clock, void *clock_data, wp_graphics_scene_batch *batch )
+{
+    wp_graphics_scene_batch candidate;
+    wp_u64 start, main_end, shadow_end;
+    if( !scene || !batch ) return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    memset( &candidate, 0, sizeof( candidate ) );
+    start = clock ? clock( clock_data ) : 0;
+    candidate.main = wp_graphics_scene_prepare_cull_profiled( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN,
+                                                            clock, clock_data );
+    if( !candidate.main ) return WP_GRAPHICS_CULL_ERROR;
+    main_end = clock ? clock( clock_data ) : 0;
+    candidate.shadow = wp_graphics_cull_result_create_view( candidate.main, camera,
+                                                            WP_GRAPHICS_CULL_PASS_SHADOW );
+    if( !candidate.shadow )
+    {
+        wp_graphics_scene_batch_clear( &candidate );
+        return WP_GRAPHICS_CULL_ERROR;
+    }
+    shadow_end = clock ? clock( clock_data ) : 0;
+    if( start <= main_end && main_end <= shadow_end )
+    {
+        candidate.main_prepare_ns = main_end - start;
+        candidate.shadow_derive_ns = shadow_end - main_end;
+    }
+    wp_graphics_scene_batch_clear( batch );
+    *batch = candidate;
+    return WP_GRAPHICS_CULL_OK;
+}
+
+wp_s32 wp_graphics_scene_draw_view( wp_graphics_scene *scene, wp_renderer *renderer,
+    const wp_graphics_cull_result *result, wp_u32 visibility_mask,
+    wp_graphics_scene_draw_submit_func submit, void *data )
+{
+    wp_s32 i, count, action;
     wp_mat4f world, view, projection;
     wp_graphics_object *object;
+    wp_graphics_scene_draw_item item;
     if( !scene || !renderer || !result )
     {
         return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
@@ -1113,13 +1152,19 @@ wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_render
     {
         return WP_GRAPHICS_CULL_ERROR_STALE;
     }
-    if( wp_graphics_cull_result_get_pass( result ) == WP_GRAPHICS_CULL_PASS_MAIN &&
+    item.pass = wp_graphics_cull_result_get_pass( result );
+    item.world = &world;
+    item.view = item.projection = NULL;
+    if( item.pass == WP_GRAPHICS_CULL_PASS_MAIN &&
         wp_graphics_cull_result_get_camera_matrices( result, &view, &projection ) )
     {
+        item.view = &view;
+        item.projection = &projection;
         wp_renderer_set_view_matrix( renderer, &view );
         wp_renderer_set_projection_matrix( renderer, &projection );
     }
-    for( i = 0; i < wp_graphics_cull_result_get_visible_count( result ); ++i )
+    count = wp_graphics_cull_result_get_visible_count( result );
+    for( i = 0; i < count; ++i )
     {
         /* Callbacks may mutate membership; never dereference a retired entry. */
         if( wp_graphics_cull_result_validate_object( result, scene, i ) != WP_GRAPHICS_CULL_OK )
@@ -1127,11 +1172,14 @@ wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_render
             return WP_GRAPHICS_CULL_ERROR_STALE;
         }
         object = wp_graphics_cull_result_get_object( result, i );
+        if( !( wp_graphics_object_get_visibility_flags( object ) & visibility_mask ) ) continue;
         wp_graphics_cull_result_get_world_matrix( result, i, &world );
         wp_renderer_set_world_matrix( renderer, &world );
-        if( !submit || !submit( object, renderer, &world, data ) )
+        action = submit ? submit( object, renderer, &item, data ) : WP_GRAPHICS_SCENE_DRAW_DEFAULT;
+        if( action < 0 ) return WP_GRAPHICS_CULL_ERROR;
+        if( action == WP_GRAPHICS_SCENE_DRAW_DEFAULT )
         {
-            if( wp_graphics_cull_result_validate_object( result, scene, i ) != WP_GRAPHICS_CULL_OK )
+            if( submit && wp_graphics_cull_result_validate_object( result, scene, i ) != WP_GRAPHICS_CULL_OK )
             {
                 return WP_GRAPHICS_CULL_ERROR_STALE;
             }
@@ -1140,4 +1188,60 @@ wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_render
     }
     return wp_graphics_cull_result_validate( result, scene,
                                              wp_graphics_cull_result_get_scene_generation( result ) );
+}
+
+wp_s32 wp_graphics_scene_draw_batch( wp_graphics_scene *scene, wp_renderer *renderer,
+    const wp_graphics_scene_batch *batch, const wp_graphics_scene_draw_ops *ops, void *data )
+{
+    wp_s32 status, shadow_active = 0;
+    if( !renderer || ( ops && ops->begin_shadow && !ops->end_shadow ) )
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    status = wp_graphics_scene_batch_validate( scene, batch );
+    if( status != WP_GRAPHICS_CULL_OK ) return status;
+    if( !ops ) return wp_graphics_scene_draw_view( scene, renderer, batch->main,
+                                                   ~(wp_u32)0, NULL, NULL );
+
+    if( ops->begin_shadow ) shadow_active = ops->begin_shadow( data );
+    if( shadow_active < 0 ) return WP_GRAPHICS_CULL_ERROR;
+    if( ops->prepare && !ops->prepare( data, shadow_active ) ) status = WP_GRAPHICS_CULL_ERROR;
+    if( shadow_active )
+    {
+        if( status == WP_GRAPHICS_CULL_OK )
+            status = wp_graphics_scene_draw_view( scene, renderer, batch->shadow,
+                ops->shadow_visibility_mask, ops->submit, data );
+        if( status == WP_GRAPHICS_CULL_OK && ops->shadow_extras && !ops->shadow_extras( data ) )
+            status = WP_GRAPHICS_CULL_ERROR;
+        ops->end_shadow( data );
+    }
+    if( status != WP_GRAPHICS_CULL_OK ) return status;
+    if( ops->colour_before && !ops->colour_before( data ) ) return WP_GRAPHICS_CULL_ERROR;
+    status = wp_graphics_scene_draw_view( scene, renderer, batch->main,
+        ops->main_visibility_mask, ops->submit, data );
+    if( status != WP_GRAPHICS_CULL_OK ) return status;
+    if( ops->colour_after && !ops->colour_after( data ) ) return WP_GRAPHICS_CULL_ERROR;
+    return WP_GRAPHICS_CULL_OK;
+}
+
+typedef struct scene_snapshot_submit_adapter
+{
+    wp_graphics_scene_snapshot_submit_func submit;
+    void *data;
+} scene_snapshot_submit_adapter;
+
+static wp_s32 scene_snapshot_submit( wp_graphics_object *object, wp_renderer *renderer,
+    const wp_graphics_scene_draw_item *item, void *data )
+{
+    const scene_snapshot_submit_adapter *adapter = (const scene_snapshot_submit_adapter *)data;
+    return adapter->submit( object, renderer, item->world, adapter->data ) ?
+        WP_GRAPHICS_SCENE_DRAW_HANDLED : WP_GRAPHICS_SCENE_DRAW_DEFAULT;
+}
+
+wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_renderer *renderer,
+    const wp_graphics_cull_result *result, wp_graphics_scene_snapshot_submit_func submit, void *data )
+{
+    scene_snapshot_submit_adapter adapter;
+    adapter.submit = submit;
+    adapter.data = data;
+    return wp_graphics_scene_draw_view( scene, renderer, result, ~(wp_u32)0,
+        submit ? scene_snapshot_submit : NULL, &adapter );
 }

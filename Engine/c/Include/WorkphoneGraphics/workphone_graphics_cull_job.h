@@ -24,6 +24,7 @@
 #ifndef WORKPHONE_GRAPHICS_CULL_JOB_H
 #define WORKPHONE_GRAPHICS_CULL_JOB_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "workphone_graphics_scene.h"
 #include "workphone_graphics_object.h"
@@ -42,6 +43,45 @@ typedef struct wp_graphics_cull_result wp_graphics_cull_result;
  * of the source; this operation is an additional submission ordering stage. */
 wp_graphics_cull_result *wp_graphics_cull_result_create_ordered(
     const wp_graphics_cull_result *source, const wp_s32 *order, wp_s32 count );
+
+typedef enum wp_graphics_draw_sort
+{
+    WP_GRAPHICS_DRAW_QUEUE_ORDER,
+    WP_GRAPHICS_DRAW_FRONT_TO_BACK,
+    WP_GRAPHICS_DRAW_MATERIAL_FIRST,
+    WP_GRAPHICS_DRAW_DEPTH_BUCKETS
+} wp_graphics_draw_sort;
+
+/* Numeric keys sorted within queue/z-order runs. Barriers and nonfinite depths
+ * stay in place. The original index breaks ties. C++ defaults match the
+ * existing wrapper key; C callers initialize their keys explicitly. */
+typedef struct wp_graphics_draw_key
+{
+#ifdef __cplusplus
+    wp_u32 index = 0, queue = 0, zOrder = 0, material = 0;
+    double depth = 0, bucket = 0;
+    wp_u8 transparent = 0, barrier = 1;
+#else
+    wp_u32 index, queue, zOrder, material;
+    double depth, bucket;
+    wp_u8 transparent, barrier;
+#endif
+} wp_graphics_draw_key;
+
+wp_s32 wp_graphics_draw_sort_valid( wp_u32 strategy, double bucket_size );
+void wp_graphics_draw_sort_keys( wp_graphics_draw_key *keys, size_t count,
+                                 wp_u32 strategy, double bucket_size );
+
+/* Classify an eligible object's material and alpha order. Return zero to make
+ * it a barrier. The callback must not mutate the scene or view. The driver
+ * derives depths from frozen matrices and replaces the view only on success.
+ * The caller supplies reusable key/order arrays of at least visible_count. */
+typedef wp_s32 ( *wp_graphics_draw_classify_func )( const wp_graphics_object *, wp_u32 *material,
+                                                    wp_s32 *transparent, void * );
+wp_s32 wp_graphics_cull_result_sort_draws( wp_graphics_cull_result **view,
+    wp_u32 strategy, double bucket_size, wp_graphics_draw_key *keys,
+    wp_s32 *order, wp_s32 capacity, wp_graphics_draw_classify_func classify, void *user );
+
 typedef struct wp_transform_job_stats wp_transform_job_stats;
 /* Disjoint elapsed owner intervals, not worker CPU/GPU time. Transform includes
  * dispatch/wait and node-array setup; visibility includes execute allocations.

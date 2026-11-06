@@ -633,6 +633,38 @@ void wp_renderer_dx11_end_mesh_sections(wp_renderer_dx11 *, const wp_mesh_sectio
  * instance_batch_size uses the whole span, still split at native capacity. */
 wp_s32 wp_renderer_dx11_submit_mesh_section(wp_renderer_dx11 *, const wp_mesh_section_dx11 *);
 
+/* Fills the material, texture, raster and custom binding fields for one section.
+ * Return a positive value to draw, zero to skip, or a negative value to stop.
+ * The driver owns geometry, index ranges, matrices and instancing. The mesh
+ * and its GPU cache must remain live and stable until this call completes.
+ * Retire is called after each resolve, including on skips and early stop. */
+typedef wp_s32 ( *wp_mesh_batch_resolve_dx11 )( wp_s32 section_index, wp_mesh_section_dx11 *section,
+                                               void *user );
+typedef void ( *wp_mesh_batch_retire_dx11 )( void *user );
+
+typedef struct wp_mesh_batch_dx11
+{
+    struct wp_graphics_mesh *mesh;
+    const wp_mat4f *world, *view, *projection;
+    const wp_instance_pntc_dx11 *instances;
+    wp_s32 instance_count, instance_batch_size;
+    const wp_gpu_allocation_callbacks *budget;
+    wp_mesh_batch_resolve_dx11 resolve;
+    wp_mesh_batch_retire_dx11 retire;
+    void *user;
+} wp_mesh_batch_dx11;
+
+typedef struct wp_mesh_batch_result_dx11
+{
+    wp_u64 submissions, triangles;
+} wp_mesh_batch_result_dx11;
+
+/* Synchronously executes the mesh sections in authored order and restores
+ * raster/depth/blend state. Returns zero for invalid input or early stop.
+ * Result counts report submitted work even on early stop and may be omitted. */
+wp_s32 wp_renderer_dx11_submit_mesh_batch( wp_renderer_dx11 *renderer, const wp_mesh_batch_dx11 *batch,
+                                           wp_mesh_batch_result_dx11 *result );
+
 /** Foliage stream extends ordinary instances without changing their ABI. Wind
  * and interaction are local horizontal displacements in metres; phase is radians.
  * Atlas rectangles transform all material UVs together. Colour and shadow use the

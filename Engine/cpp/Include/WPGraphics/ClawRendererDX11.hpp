@@ -274,8 +274,9 @@ namespace workphone
              * @brief Apply world transform to the native rendering pipeline.
              * @param world World transformation matrix.
              */
-            void setTransforms( const Matrix4F &world, const wp_mat4f *view = nullptr,
-                                const wp_mat4f *projection = nullptr );
+            void setTransforms( const Matrix4F &world );
+            void resolveDrawMatrices( const wp_mat4f *snapshotView, const wp_mat4f *snapshotProjection,
+                                      wp_mat4f &view, wp_mat4f &projection );
 
             /**
              * @brief Convert a Matrix4F to the C‑style wp_mat4f structure.
