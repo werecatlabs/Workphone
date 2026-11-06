@@ -8,6 +8,7 @@
 #include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <WPGraphics/ClawCubemap.hpp>
 #include <WPGraphics/ClawMaterialDrawRecords.hpp>
+#include <memory>
 
 struct wp_renderer;
 struct wp_mat4f;
@@ -29,6 +30,7 @@ namespace workphone
         class ClawTerrain;
         class ClawFoliageWorld;
         class ClawMaterialRenderCache;
+        class GraphicsSettings;
         struct FoliageMaterial;
 
         /**
@@ -248,6 +250,8 @@ namespace workphone
 
         private:
             friend class ClawFoliageWorld;
+            const GraphicsSettings *getDrawGraphicsSettings(
+                std::shared_ptr<const GraphicsSettings> &outsideFrameSettings ) const;
             bool isFoliageBatchingEnabled() const;
             u32 renderFoliageGeometry( const wp_geometry_dx11 *, u32 firstIndex, u32 indexCount,
                                        const wp_foliage_instance_dx11 *, u32 count,
@@ -290,6 +294,7 @@ namespace workphone
             std::unique_ptr<ClawMaterialRenderCache> m_materialRenderCache;
             std::unique_ptr<ClawMaterialDrawRecords> m_directMaterialRecords;
             std::shared_ptr<StreamBudgetLease> m_foliageStreamBudget;
+            std::shared_ptr<const GraphicsSettings> m_frameGraphicsSettings;
             ClawCubemap m_environment;
             mutable ClawCubemap m_previewEnvironment;
             bool m_hasSkyEnvironment = false;

@@ -37,9 +37,15 @@ freely, subject to the following restrictions:
 #include <Workphone/Core/Parameter.hpp>
 #include <Workphone/Core/StringPool.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <memory>
 
 namespace workphone
 {
+    namespace render
+    {
+        class GraphicsSettings;
+    }
+
     namespace core
     {
         /**
@@ -1155,6 +1161,9 @@ namespace workphone
              * @param instance The new application manager instance to set.
              */
             static void setInstancePtr( IApplicationManager *instance );
+
+            /** Gets the typed graphics settings for the published player profile. */
+            virtual std::shared_ptr<const render::GraphicsSettings> getGraphicsSettings() const = 0;
 
             WP_CLASS_REGISTER_DECL;
 

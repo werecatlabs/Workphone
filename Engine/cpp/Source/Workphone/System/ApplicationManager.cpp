@@ -5,6 +5,7 @@
 #include <Workphone/Core/DebugTrace.hpp>
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/Graphics/GraphicsSettings.hpp>
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/Memory/MemoryTracker.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
@@ -563,12 +564,23 @@ namespace workphone::core
 
     auto ApplicationManager::getPlayerSettings() const -> SmartPtr<Properties>
     {
-        return m_playerSettings;
+        const auto settings = getGraphicsSettings();
+        return settings ? settings->getPlayerProfile() : nullptr;
     }
 
     void ApplicationManager::setPlayerSettings( SmartPtr<Properties> properties )
     {
-        m_playerSettings = properties;
+        std::shared_ptr<const render::GraphicsSettings> settings;
+        if( properties )
+        {
+            settings = std::make_shared<render::GraphicsSettings>( std::move( properties ) );
+        }
+        std::atomic_store( &m_graphicsSettings, std::move( settings ) );
+    }
+
+    std::shared_ptr<const render::GraphicsSettings> ApplicationManager::getGraphicsSettings() const
+    {
+        return std::atomic_load( &m_graphicsSettings );
     }
 
     auto ApplicationManager::getLogManager() const -> SmartPtr<ILogManager>

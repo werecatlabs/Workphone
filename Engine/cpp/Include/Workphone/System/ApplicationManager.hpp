@@ -231,6 +231,9 @@ namespace workphone
             /** @copydoc IApplicationManager::setPlayerSettings */
             void setPlayerSettings( SmartPtr<Properties> properties ) override;
 
+            /** @copydoc IApplicationManager::getGraphicsSettings */
+            std::shared_ptr<const render::GraphicsSettings> getGraphicsSettings() const override;
+
             /** @copydoc IApplicationManager::getAiManager */
             SmartPtr<IAiManager> getAiManager() const override;
 
@@ -831,8 +834,7 @@ namespace workphone
                 m_aiManager;  ///< AI system manager for artificial intelligence features
             AtomicSmartPtr<Properties>
                 m_editorSettings;  ///< Configuration settings specific to editor mode
-            AtomicSmartPtr<Properties>
-                m_playerSettings;  ///< Configuration settings specific to player/game mode
+            std::shared_ptr<const render::GraphicsSettings> m_graphicsSettings;
             AtomicSmartPtr<IEditorManager>
                 m_editorManager;  ///< Manager for editor-specific functionality
 

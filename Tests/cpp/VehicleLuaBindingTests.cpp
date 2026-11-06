@@ -6,6 +6,7 @@
 #include <Workphone/Memory/TypeManager.hpp>
 #include <WPLuabind/Helpers/GraphicsSystemHelper.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/Graphics/GraphicsSettings.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/GraphicsPipeline.hpp>
@@ -80,6 +81,10 @@ namespace
         auto controller=make_ptr<Properties>(); controller->setName("Vehicle Controller");
         controller->setProperty("Enabled",true); original->addChild(controller);
         app->setPlayerSettings(original);
+        const auto defaultGraphicsSettings = app->getGraphicsSettings();
+        check( defaultGraphicsSettings && !defaultGraphicsSettings->getTextureFilteringOverride() &&
+                   !defaultGraphicsSettings->getAnisotropyOverride() && !defaultGraphicsSettings->getLightingMode(),
+               "missing project overrides must preserve material settings" );
         auto before=GraphicsSystemHelper::getRuntimeSettings(graphics.get());
         check(before->getPropertyAsInt("graphics.customWidth")==1600,"runtime width must start at the real output size");
         check(before->getPropertyAsInt("graphics.customHeight")==900,"runtime height must start at the real output size");
@@ -115,6 +120,10 @@ namespace
         applied=GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request);
         check(applied->getPropertyAsBool("success") && app->getPlayerSettings()->getPropertyAsInt("quality.maxTextureSize")==1024,"low texture preset must limit texture residency");
         check(app->getPlayerSettings()->getPropertyAsInt("graphics.textureFiltering")==1 && app->getPlayerSettings()->getPropertyAsInt("graphics.anisotropy")==1,"low texture preset filtering");
+        const auto textureSettings = app->getGraphicsSettings();
+        check( textureSettings && textureSettings->getTextureFilteringOverride() == 1u &&
+                   textureSettings->getAnisotropyOverride() == 1u,
+               "applying a texture preset must publish typed sampler overrides" );
         request->setProperty("quality.maxTextureSize",777);
         check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success"),"explicit texture cap must apply");
         request=make_ptr<Properties>(); request->setProperty("graphics.bloom",false);
@@ -131,8 +140,13 @@ namespace
         request=make_ptr<Properties>(); request->setProperty("graphics.fullscreen",String("yes")); reject(request);
         request=make_ptr<Properties>(); request->setProperty("graphics.customWidth",0); reject(request);
         auto prior=app->getPlayerSettings();
-        request=make_ptr<Properties>(); request->setProperty("graphics.bloom",true); graphics->failApply=true;
+        request=make_ptr<Properties>(); request->setProperty("quality.texture",2); graphics->failApply=true;
         check(!GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()==prior,"backend failure must retain the published player snapshot");
+        const auto recoveredSettings = app->getGraphicsSettings();
+        check( recoveredSettings && recoveredSettings->getPlayerProfile() == prior &&
+                   recoveredSettings->getTextureFilteringOverride() == 1u &&
+                   recoveredSettings->getAnisotropyOverride() == 1u,
+               "backend failure must retain the previous typed sampler overrides" );
         request=make_ptr<Properties>(); request->setProperty("graphics.customWidth",1280); window->failResize=true;
         check(!GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()==prior && window->size==Vector2I(1920,1080),"failed display changes must restore the native window");
         auto modes=GraphicsSystemHelper::getDisplayModes(graphics.get());

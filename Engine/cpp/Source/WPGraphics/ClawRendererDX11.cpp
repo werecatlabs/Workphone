@@ -11,6 +11,7 @@
 #include <WPGraphics/ClawWindow.hpp>
 #include <WPGraphics/ClawUtil.hpp>
 #include <Workphone/Graphics/FoliageData.hpp>
+#include <Workphone/Graphics/GraphicsSettings.hpp>
 #include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Graphics/ProjectGraphicsProviders.hpp>
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <typeinfo>
 #include <unordered_map>
 
@@ -41,25 +43,29 @@ namespace workphone::render
 
     namespace
     {
+        std::shared_ptr<const GraphicsSettings> activeGraphicsSettings()
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            return app ? app->getGraphicsSettings() : nullptr;
+        }
+
         wp_s32 compileProjectShader( void *, const wp_c8 *source, const wp_c8 *entry,
                                      const wp_c8 *target, void **nativeBlob )
         {
-            auto app = core::IApplicationManager::instancePtr();
-            auto settings = app ? app->getPlayerSettings() : nullptr;
+            auto settings = activeGraphicsSettings();
             if( !settings )
             {
                 return 0;
             }
-            auto provider = getProjectShaderCompilerProvider(
-                settings->getPropertyAsInt( "graphics.shaderLanguage" ),
-                settings->getPropertyAsInt( "graphics.shaderModel" ) );
+            auto provider = getProjectShaderCompilerProvider( settings->getShaderLanguage(),
+                                                              settings->getShaderModel() );
             if( !provider )
             {
                 return 0;
             }
             Array<u8> bytes;
             String error;
-            if( !provider->compile( settings, projectRendererApi( settings ),
+            if( !provider->compile( settings->getPlayerProfile(), settings->getRendererApi(),
                                     String( reinterpret_cast<const char *>( source ) ),
                                     String( reinterpret_cast<const char *>( entry ) ),
                                     String( reinterpret_cast<const char *>( target ) ), bytes, error ) ||
@@ -184,25 +190,16 @@ namespace workphone::render
         }
         if( auto app = core::IApplicationManager::instancePtr() )
         {
-            if( auto settings = app->getPlayerSettings() )
+            const auto settings = app->getGraphicsSettings();
+            if( settings )
             {
                 wp_renderer_dx11_set_startup_options(
-                    settings->getPropertyAsInt( "graphics.renderer.mode" ),
-                    settings->getPropertyAsInt( "graphics.shaderModel" ),
-                    settings->getPropertyAsBool( "graphics.validationLayers" ),
-                    !settings->hasProperty( "graphics.allowRendererFallback" ) ||
-                        settings->getPropertyAsBool( "graphics.allowRendererFallback" ) );
+                    settings->getRendererMode(), settings->getShaderModel(),
+                    settings->getValidationLayers(), settings->getAllowRendererFallback() );
             }
-        }
-        if( auto app = core::IApplicationManager::instancePtr() )
-        {
             wp_renderer_dx11_set_d3d12_execution(
-                m_executeD3D12 || ( app->getPlayerSettings() &&
-                                    projectRendererApi( app->getPlayerSettings() ) == "DX12" ) );
-            wp_renderer_dx11_set_present_mode(
-                nullptr, app->getPlayerSettings()
-                             ? app->getPlayerSettings()->getPropertyAsInt( "graphics.presentMode" )
-                             : 0 );
+                m_executeD3D12 || ( settings && settings->getRendererApi() == "DX12" ) );
+            wp_renderer_dx11_set_present_mode( nullptr, settings ? settings->getPresentMode() : 0 );
         }
         else
         {
@@ -257,6 +254,7 @@ namespace workphone::render
 
     void ClawRendererDX11::destroyRenderer()
     {
+        m_frameGraphicsSettings.reset();
         m_materialRenderCache.reset();
         m_directMaterialRecords.reset();
         g_skyEnvironmentCaches.erase( this );
@@ -268,6 +266,18 @@ namespace workphone::render
             m_renderer = nullptr;
         }
         m_foliageStreamBudget.reset();
+    }
+
+    const GraphicsSettings *ClawRendererDX11::getDrawGraphicsSettings(
+        std::shared_ptr<const GraphicsSettings> &outsideFrameSettings ) const
+    {
+        if( m_inFrame )
+        {
+            return m_frameGraphicsSettings.get();
+        }
+
+        outsideFrameSettings = activeGraphicsSettings();
+        return outsideFrameSettings.get();
     }
 
     void ClawRendererDX11::beginRender()
@@ -299,6 +309,8 @@ namespace workphone::render
                 }
             }
         }
+        // Keep one settings revision for all draws in this frame.
+        m_frameGraphicsSettings = activeGraphicsSettings();
         m_inFrame = true;
         ++m_terrainFrame;
         wp_renderer_begin_frame( m_renderer );
@@ -328,10 +340,10 @@ namespace workphone::render
                     app ? dynamic_cast<ClawHammerSystem *>( app->getGraphicsSystemPtr() ) : nullptr;
                 void *handle = nullptr;
                 window->getWindowHandle( &handle );
-                if( auto settings = app ? app->getPlayerSettings() : nullptr )
+                if( m_frameGraphicsSettings )
                 {
                     wp_renderer_dx11_set_present_mode(
-                        dx11, settings->getPropertyAsInt( "graphics.presentMode" ) );
+                        dx11, m_frameGraphicsSettings->getPresentMode() );
                 }
                 const auto result = wp_renderer_dx11_try_present(
                     dx11, handle, graphics && graphics->getVSync() ? 1 : 0 );
@@ -346,6 +358,7 @@ namespace workphone::render
         }
 
         m_inFrame = false;
+        m_frameGraphicsSettings.reset();
     }
 
     void ClawRendererDX11::flush()
@@ -598,14 +611,11 @@ namespace workphone::render
         Array<DrawParticle> draw;
         draw.reserve( particles.size() );
         size_t particleStride = 1;
-        if( auto app = core::IApplicationManager::instancePtr() )
+        std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
+        if( const auto *settings = getDrawGraphicsSettings( outsideFrameSettings ) )
         {
-            if( auto settings = app->getPlayerSettings() )
-            {
-                const auto quality =
-                    std::clamp( settings->getPropertyAsInt( "quality.particles" ), 0, 3 );
-                particleStride = quality == 0 ? 4u : quality == 1 ? 2u : 1u;
-            }
+            const auto quality = settings->getParticleQuality();
+            particleStride = quality == 0 ? 4u : quality == 1 ? 2u : 1u;
         }
         for( size_t particleIndex = 0; particleIndex < particles.size();
              particleIndex += particleStride )
@@ -780,22 +790,18 @@ namespace workphone::render
         }
         mapSize = std::clamp( mapSize, 64, 8192 );
         f32 shadowDistance = 200.0f;
-        if( auto app = core::IApplicationManager::instancePtr() )
+        std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
+        if( const auto *settings = getDrawGraphicsSettings( outsideFrameSettings ) )
         {
-            if( auto settings = app->getPlayerSettings() )
+            const auto quality = settings->getShadowQuality();
+            shadowDistance = settings->getShadowDistance();
+            if( quality == 0 || shadowDistance <= 0 )
             {
-                s32 quality = 2, resolution = 2;
-                settings->getPropertyValue( "graphics.shadowQuality", quality );
-                settings->getPropertyValue( "graphics.shadowResolution", resolution );
-                settings->getPropertyValue( "graphics.shadowDistance", shadowDistance );
-                if( quality == 0 || shadowDistance <= 0 )
-                {
-                    return false;
-                }
-                wp_renderer_dx11_set_shadow_filter_quality( dx11, quality );
-                constexpr s32 sizes[] = { 512, 1024, 2048, 4096 };
-                mapSize = sizes[std::clamp( resolution, 0, 3 )];
+                return false;
             }
+            wp_renderer_dx11_set_shadow_filter_quality( dx11, quality );
+            constexpr s32 sizes[] = { 512, 1024, 2048, 4096 };
+            mapSize = sizes[std::clamp( settings->getShadowResolution(), 0, 3 )];
         }
         const auto direction = m_lightDirection.normaliseCopy();
         const Vector3F up =
@@ -919,15 +925,9 @@ namespace workphone::render
 
     bool ClawRendererDX11::isFoliageBatchingEnabled() const
     {
-        bool batch = true;
-        if( auto app = core::IApplicationManager::instancePtr() )
-        {
-            if( auto settings = app->getPlayerSettings() )
-            {
-                settings->getPropertyValue( "performance.staticBatching", batch );
-            }
-        }
-        return batch;
+        std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
+        const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
+        return !settings || settings->getStaticBatching();
     }
 
     u32 ClawRendererDX11::renderFoliageGeometry( const wp_geometry_dx11 *geometry, u32 first,
@@ -1192,6 +1192,16 @@ namespace workphone::render
                                   ? asset_budget::prepareMesh( dx11, nativeMesh, 0, elementCount )
                                   : nullptr;
 
+        std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
+        const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
+        const auto textureFiltering =
+            settings ? settings->getTextureFilteringOverride() : std::nullopt;
+        const auto anisotropy = settings ? settings->getAnisotropyOverride() : std::nullopt;
+        const auto lighting = settings ? settings->getLightingMode() : std::nullopt;
+        const bool lightingDisabled = settings && settings->getLightingDisabled();
+        const bool reflectionProbes = !settings || settings->getReflectionProbes();
+        const bool dynamicBatching = !settings || settings->getDynamicBatching();
+
         for( s32 submeshIndex = 0; submeshIndex < drawCount; ++submeshIndex )
         {
             u32 start = 0;
@@ -1280,23 +1290,8 @@ namespace workphone::render
             }
 
             wp_renderer_dx11_set_material_textures( dx11, textureViews );
-            u32 projectFilter = prepared ? prepared->filter : 1u;
-            u32 projectAnisotropy = prepared ? prepared->anisotropy : 1u;
-            if( auto app = core::IApplicationManager::instancePtr() )
-            {
-                if( auto settings = app->getPlayerSettings() )
-                {
-                    s32 value;
-                    if( settings->getPropertyValue( "graphics.textureFiltering", value ) )
-                    {
-                        projectFilter = static_cast<u32>( std::clamp( value, 0, 2 ) );
-                    }
-                    if( settings->getPropertyValue( "graphics.anisotropy", value ) )
-                    {
-                        projectAnisotropy = static_cast<u32>( std::clamp( value, 1, 16 ) );
-                    }
-                }
-            }
+            auto projectFilter = textureFiltering.value_or( prepared ? prepared->filter : 1u );
+            const auto projectAnisotropy = anisotropy.value_or( prepared ? prepared->anisotropy : 1u );
             if( projectFilter == 2 && projectAnisotropy > 1 )
             {
                 projectFilter = 3;
@@ -1321,23 +1316,13 @@ namespace workphone::render
                 nativeMaterial.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
             }
             applySceneLighting( nativeMaterial );
-            bool reflectionProbes = true;
-            if( auto app = core::IApplicationManager::instancePtr() )
+            if( lighting )
             {
-                if( auto settings = app->getPlayerSettings() )
-                {
-                    settings->getPropertyValue( "graphics.reflectionProbes", reflectionProbes );
-                    s32 lighting = 2;
-                    if( settings->getPropertyValue( "graphics.lightingMode", lighting ) )
-                    {
-                        nativeMaterial.projection.z = static_cast<f32>( lighting );
-                    }
-                    if( settings->hasProperty( "graphics.lightingMode" ) &&
-                        settings->getPropertyAsInt( "graphics.lightingMode" ) == 0 )
-                    {
-                        nativeMaterial.uv_transform.z = 0.0f;
-                    }
-                }
+                nativeMaterial.projection.z = static_cast<f32>( *lighting );
+            }
+            if( lightingDisabled )
+            {
+                nativeMaterial.uv_transform.z = 0.0f;
             }
 
             // A material's reflection probe overrides the sky environment for this draw.
@@ -1457,16 +1442,8 @@ namespace workphone::render
             {
                 if( geometry && count > 0 && count % 3u == 0 )
                 {
-                    bool batch = true;
-                    if( auto app = core::IApplicationManager::instancePtr() )
-                    {
-                        if( auto settings = app->getPlayerSettings() )
-                        {
-                            settings->getPropertyValue( "performance.dynamicBatching", batch );
-                        }
-                    }
                     u32 drawn = 0;
-                    const u32 chunk = batch ? instanceCount : 1u;
+                    const u32 chunk = dynamicBatching ? instanceCount : 1u;
                     for( u32 offset = 0; offset < instanceCount; offset += chunk )
                     {
                         drawn += wp_renderer_dx11_draw_geometry_pntc_instanced_bound(
