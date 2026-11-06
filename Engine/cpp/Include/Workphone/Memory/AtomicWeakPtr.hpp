@@ -247,16 +247,8 @@ namespace workphone
         {
             return WeakPtr<T>();
         }
-        // Safety: wrap WeakPtr construction in case object is being destroyed
-        try
-        {
-            return WeakPtr<T>( ptr );
-        }
-        catch( ... )
-        {
-            // Object is being destroyed, return empty WeakPtr
-            return WeakPtr<T>();
-        }
+
+        return WeakPtr<T>( ptr );
     }
 
     template <class T>
