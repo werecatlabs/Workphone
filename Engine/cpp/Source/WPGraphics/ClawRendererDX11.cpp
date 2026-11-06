@@ -311,6 +311,7 @@ namespace workphone::render
         }
         // Keep one settings revision for all draws in this frame.
         m_frameGraphicsSettings = activeGraphicsSettings();
+        m_passCameraPosition.reset();
         m_inFrame = true;
         ++m_terrainFrame;
         wp_renderer_begin_frame( m_renderer );
@@ -543,6 +544,7 @@ namespace workphone::render
     void ClawRendererDX11::setCamera( SmartPtr<IGraphicsCamera> camera )
     {
         m_camera = camera;
+        m_passCameraPosition.reset();
         if( m_camera && m_viewport )
         {
             const auto size = m_viewport->getActualSize();
@@ -668,7 +670,11 @@ namespace workphone::render
             }
             if( auto nativeTexture = dynamic_pointer_cast<ClawTexture>( particleTexture ) )
             {
-                texture = nativeTexture->getNativeTextureView( wp_renderer_get_dx11( m_renderer ) );
+                std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
+                const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
+                const auto policy = settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
+                texture = nativeTexture->getNativeTextureView( wp_renderer_get_dx11( m_renderer ),
+                                                              policy );
             }
             else if( particleTexture )
             {
@@ -734,15 +740,26 @@ namespace workphone::render
                         std::max( start, 0.f ), std::max( end, start + .001f ) };
     }
 
-    void ClawRendererDX11::applySceneLighting( wp_material_dx11 &material ) const
+    void ClawRendererDX11::applySceneLighting( wp_material_dx11 &material )
     {
         Vector3F cameraPosition = Vector3F::zero();
-        if( m_camera )
+        if( m_inFrame && m_passCameraPosition )
         {
-            if( auto cameraOwner = m_camera->getOwner() )
+            cameraPosition = *m_passCameraPosition;
+        }
+        else
+        {
+            if( auto camera = m_camera.load() )
             {
-                const auto position = cameraOwner->getWorldPosition();
-                cameraPosition = Vector3F( position.X(), position.Y(), position.Z() );
+                if( auto cameraOwner = camera->getOwner() )
+                {
+                    const auto position = cameraOwner->getWorldPosition();
+                    cameraPosition = Vector3F( position.X(), position.Y(), position.Z() );
+                }
+            }
+            if( m_inFrame )
+            {
+                m_passCameraPosition = cameraPosition;
             }
         }
         const float ambient = std::max( { m_ambientLight.r, m_ambientLight.g, m_ambientLight.b, 0.0f } );
@@ -1194,6 +1211,7 @@ namespace workphone::render
 
         std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
         const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
+        const auto texturePolicy = settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
         const auto textureFiltering =
             settings ? settings->getTextureFilteringOverride() : std::nullopt;
         const auto anisotropy = settings ? settings->getAnisotropyOverride() : std::nullopt;
@@ -1241,7 +1259,8 @@ namespace workphone::render
             const auto resolveTexture = [&]( ITexture *texture ) -> void * {
                 if( typeid( *texture ) == typeid( ClawTexture ) )
                 {
-                    if( auto view = static_cast<ClawTexture *>( texture )->getNativeTextureView( dx11 ) )
+                    if( auto view = static_cast<ClawTexture *>( texture )->getNativeTextureView(
+                            dx11, texturePolicy ) )
                     {
                         return view;
                     }

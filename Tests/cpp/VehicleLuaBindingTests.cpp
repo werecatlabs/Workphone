@@ -85,6 +85,19 @@ namespace
         check( defaultGraphicsSettings && !defaultGraphicsSettings->getTextureFilteringOverride() &&
                    !defaultGraphicsSettings->getAnisotropyOverride() && !defaultGraphicsSettings->getLightingMode(),
                "missing project overrides must preserve material settings" );
+        const auto defaultUpload = defaultGraphicsSettings->getTextureUploadPolicy();
+        check( defaultUpload.quality == 2 && defaultUpload.maximum == 0,
+               "missing texture policy must default to high quality without a size cap" );
+        auto legacyProfile = make_ptr<Properties>();
+        legacyProfile->setProperty( "quality.texture", -1 );
+        legacyProfile->setProperty( "quality.maxTextureSize", 20000 );
+        const auto cappedUpload = render::GraphicsSettings( legacyProfile ).getTextureUploadPolicy();
+        legacyProfile->setProperty( "quality.texture", 4 );
+        legacyProfile->setProperty( "quality.maxTextureSize", -1 );
+        const auto uncappedUpload = render::GraphicsSettings( legacyProfile ).getTextureUploadPolicy();
+        check( cappedUpload.quality == 0 && cappedUpload.maximum == 16384 &&
+                   uncappedUpload.quality == 3 && uncappedUpload.maximum == 0,
+               "typed texture policy must clamp legacy quality levels and size caps" );
         auto before=GraphicsSystemHelper::getRuntimeSettings(graphics.get());
         check(before->getPropertyAsInt("graphics.customWidth")==1600,"runtime width must start at the real output size");
         check(before->getPropertyAsInt("graphics.customHeight")==900,"runtime height must start at the real output size");
@@ -124,10 +137,16 @@ namespace
         check( textureSettings && textureSettings->getTextureFilteringOverride() == 1u &&
                    textureSettings->getAnisotropyOverride() == 1u,
                "applying a texture preset must publish typed sampler overrides" );
+        const auto lowUpload = textureSettings->getTextureUploadPolicy();
+        check( lowUpload.quality == 0 && lowUpload.maximum == 1024,
+               "applying a texture preset must publish the typed upload policy" );
         request->setProperty("quality.maxTextureSize",777);
         check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success"),"explicit texture cap must apply");
         request=make_ptr<Properties>(); request->setProperty("graphics.bloom",false);
         check(GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()->getPropertyAsInt("quality.maxTextureSize")==777,"unchanged texture quality must retain advanced texture policy");
+        check( app->getGraphicsSettings()->getTextureUploadPolicy().maximum == 777 &&
+                   textureSettings->getTextureUploadPolicy().maximum == 1024,
+               "applying a texture cap must preserve the old snapshot and survive unrelated settings changes" );
         const auto reject=[&](SmartPtr<Properties> bad)
         {
             auto prior=app->getPlayerSettings(); const auto calls=graphics->applies;
@@ -147,6 +166,9 @@ namespace
                    recoveredSettings->getTextureFilteringOverride() == 1u &&
                    recoveredSettings->getAnisotropyOverride() == 1u,
                "backend failure must retain the previous typed sampler overrides" );
+        const auto recoveredUpload = recoveredSettings->getTextureUploadPolicy();
+        check( recoveredUpload.quality == 0 && recoveredUpload.maximum == 777,
+               "backend failure must retain the previous typed upload policy" );
         request=make_ptr<Properties>(); request->setProperty("graphics.customWidth",1280); window->failResize=true;
         check(!GraphicsSystemHelper::applyRuntimeSettings(graphics.get(),request)->getPropertyAsBool("success") && app->getPlayerSettings()==prior && window->size==Vector2I(1920,1080),"failed display changes must restore the native window");
         auto modes=GraphicsSystemHelper::getDisplayModes(graphics.get());

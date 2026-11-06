@@ -9,6 +9,7 @@
 #include <WPGraphics/ClawCubemap.hpp>
 #include <WPGraphics/ClawMaterialDrawRecords.hpp>
 #include <memory>
+#include <optional>
 
 struct wp_renderer;
 struct wp_mat4f;
@@ -262,7 +263,7 @@ namespace workphone
                                  const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr,
                                  const ClawMaterialDrawRecords *records = nullptr,
                                  const ClawMaterialDrawRecords::Binding *binding = nullptr );
-            void applySceneLighting( wp_material_dx11 &material ) const;
+            void applySceneLighting( wp_material_dx11 &material );
 
             /**
              * @brief Destroy the underlying native renderer and release resources.
@@ -300,6 +301,7 @@ namespace workphone
             bool m_hasSkyEnvironment = false;
 
             AtomicSmartPtr<IGraphicsCamera> m_camera;
+            std::optional<Vector3F> m_passCameraPosition;
             AtomicSmartPtr<IRenderTarget> m_renderTarget;
             AtomicSmartPtr<IViewport> m_viewport;
 

@@ -28,6 +28,11 @@ namespace workphone::render
         m_shaderModel = profile.getPropertyAsInt( "graphics.shaderModel" );
         m_presentMode = profile.getPropertyAsInt( "graphics.presentMode" );
         m_particleQuality = std::clamp( profile.getPropertyAsInt( "quality.particles" ), 0, 3 );
+        s32 maximumTextureSize = 0;
+        profile.getPropertyValue( "quality.texture", m_textureUploadPolicy.quality );
+        profile.getPropertyValue( "quality.maxTextureSize", maximumTextureSize );
+        m_textureUploadPolicy.quality = std::clamp( m_textureUploadPolicy.quality, 0, 3 );
+        m_textureUploadPolicy.maximum = static_cast<u32>( std::clamp( maximumTextureSize, 0, 16384 ) );
         m_validationLayers = profile.getPropertyAsBool( "graphics.validationLayers" );
         m_allowRendererFallback = !profile.hasProperty( "graphics.allowRendererFallback" ) ||
                                   profile.getPropertyAsBool( "graphics.allowRendererFallback" );
@@ -187,6 +192,11 @@ namespace workphone::render
     s32 GraphicsSettings::getParticleQuality() const
     {
         return m_particleQuality;
+    }
+
+    TextureUploadPolicy GraphicsSettings::getTextureUploadPolicy() const
+    {
+        return m_textureUploadPolicy;
     }
 
     s32 GraphicsSettings::getPresentMode() const

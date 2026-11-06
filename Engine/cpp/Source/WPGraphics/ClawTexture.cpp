@@ -5,6 +5,7 @@
 #include <WPGraphics/ClawTexture.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <Workphone/Graphics/DdsTexture.hpp>
+#include <Workphone/Graphics/GraphicsSettings.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/JsonParser.hpp>
@@ -31,6 +32,8 @@
 
 namespace
 {
+    using workphone::render::TextureUploadPolicy;
+
     struct ClawTextureData
     {
         // Declared before arrays so their storage is freed before the lease.
@@ -209,32 +212,16 @@ namespace
         return true;
     }
 
-    struct TextureUploadPolicy
+    inline workphone::u32 textureUploadPolicyKey( TextureUploadPolicy policy )
     {
-        workphone::s32 quality = 2;
-        workphone::u32 maximum = 0;
+        return static_cast<workphone::u32>( policy.quality + 1 ) * 65536u + policy.maximum;
+    }
 
-        workphone::u32 key() const
-        {
-            return static_cast<workphone::u32>( quality + 1 ) * 65536u + maximum;
-        }
-    };
-
-    TextureUploadPolicy textureUploadPolicy()
+    TextureUploadPolicy currentTextureUploadPolicy()
     {
-        TextureUploadPolicy policy;
-        if( auto app = workphone::core::IApplicationManager::instancePtr() )
-        {
-            if( auto settings = app->getPlayerSettings() )
-            {
-                workphone::s32 maximum = 0;
-                settings->getPropertyValue( "quality.texture", policy.quality );
-                settings->getPropertyValue( "quality.maxTextureSize", maximum );
-                policy.quality = std::clamp( policy.quality, 0, 3 );
-                policy.maximum = static_cast<workphone::u32>( std::clamp( maximum, 0, 16384 ) );
-            }
-        }
-        return policy;
+        const auto app = workphone::core::IApplicationManager::instancePtr();
+        const auto settings = app ? app->getGraphicsSettings() : nullptr;
+        return settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
     }
 
     template <class Levels>
@@ -710,7 +697,7 @@ namespace
         return decodeTexture( texture );
     }
 
-    void *ensureTextureView( const workphone::render::ClawTexture *texture,
+    void *ensureTextureView( const workphone::render::ClawTexture *texture, TextureUploadPolicy policy,
                              wp_renderer_dx11 *explicitRenderer = nullptr )
     {
         using namespace workphone;
@@ -733,9 +720,6 @@ namespace
         }
         auto device = dx11 ? wp_renderer_dx11_get_device( dx11 ) : nullptr;
 
-        // One immutable player-settings snapshot governs both invalidation and
-        // upload. Apply may publish another snapshot while this draw is running.
-        const auto policy = textureUploadPolicy();
         std::scoped_lock lock( g_textureMutex );
         auto found = g_textureData.find( texture );
         if( found == g_textureData.end() || !device )
@@ -744,9 +728,10 @@ namespace
         }
 
         auto &data = found->second;
-        if( data.projectMipPolicy != policy.key() )
+        const auto policyKey = textureUploadPolicyKey( policy );
+        if( data.projectMipPolicy != policyKey )
         {
-            data.projectMipPolicy = policy.key();
+            data.projectMipPolicy = policyKey;
             data.uploadPending = true;
         }
         const auto previousView = data.device == device ? data.textureView : nullptr;
@@ -1270,7 +1255,7 @@ namespace workphone
                     return false;
                 }
                 auto retainedLevels = levels;
-                const auto policy = textureUploadPolicy();
+                const auto policy = currentTextureUploadPolicy();
                 {
                     std::scoped_lock lock( g_textureMutex );
                     auto &data = g_textureData[this];
@@ -1301,7 +1286,7 @@ namespace workphone
                     data.attemptedRenderer = renderer;
                     data.attemptedDevice = device;
                     data.uploadPending = false;
-                    data.projectMipPolicy = policy.key();
+                    data.projectMipPolicy = textureUploadPolicyKey( policy );
                     m_size = data.pixelSize;
                 }
                 setLoadingState( LoadingState::Loaded );
@@ -1345,7 +1330,7 @@ namespace workphone
                 auto retained = input.ddsBytes;
                 SourceBudgetString profile( input.target );
                 const auto image = dds::inspect( retained );
-                const auto policy = textureUploadPolicy();
+                const auto policy = currentTextureUploadPolicy();
                 std::scoped_lock lock( g_textureMutex );
                 auto &data = g_textureData[texture];
                 auto view = uploadDds( renderer, retained, policy );
@@ -1373,7 +1358,7 @@ namespace workphone
                 data.attemptedRenderer = renderer;
                 data.attemptedDevice = device;
                 data.uploadPending = false;
-                data.projectMipPolicy = policy.key();
+                data.projectMipPolicy = textureUploadPolicyKey( policy );
                 texture->setSize( data.pixelSize );
             }
             catch( const std::exception &e )
@@ -1426,7 +1411,7 @@ namespace workphone
                 else
                 {
                     ensureTextureDecoded( const_cast<ClawTexture *>( this ) );
-                    *ppTexture = ensureTextureView( this );
+                    *ppTexture = ensureTextureView( this, currentTextureUploadPolicy() );
                 }
             }
         }
@@ -1457,16 +1442,21 @@ namespace workphone
                 else
                 {
                     ensureTextureDecoded( const_cast<ClawTexture *>( this ) );
-                    *ppTexture = ensureTextureView( this );
+                    *ppTexture = ensureTextureView( this, currentTextureUploadPolicy() );
                 }
             }
         }
 
         void *ClawTexture::getNativeTextureView( wp_renderer_dx11 *renderer ) const
         {
+            return getNativeTextureView( renderer, currentTextureUploadPolicy() );
+        }
+
+        void *ClawTexture::getNativeTextureView( wp_renderer_dx11 *renderer,
+                                                 TextureUploadPolicy policy ) const
+        {
             if( m_runtimeStream )
             {
-                const auto policy = textureUploadPolicy();
                 String error;
                 return m_runtimeStream->view( renderer, policy.quality, policy.maximum, error );
             }
@@ -1479,7 +1469,7 @@ namespace workphone
             {
                 return nullptr;
             }
-            return ensureTextureView( this, renderer );
+            return ensureTextureView( this, policy, renderer );
         }
 
         bool ClawTexture::loadRuntimeStream( std::shared_ptr<const resource::RuntimeResource> resource,

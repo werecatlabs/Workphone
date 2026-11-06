@@ -1213,6 +1213,9 @@ namespace claw_texture_mip_contracts
         ComPtr<ID3D11ShaderResourceView> fullResolution = view( cooked );
         require( description( fullResolution.Get() ).Width == 8,
                  "high texture quality must start at authored resolution" );
+        publish( 2 );
+        require( view( cooked ) == fullResolution.Get(),
+                 "republishing the same texture policy must reuse the resident GPU view" );
         const s32 qualities[] = { 0, 1, 2, 3 };
         const UINT widths[] = { 2, 4, 8, 8 };
         const UINT mipCounts[] = { 2, 3, 4, 4 };

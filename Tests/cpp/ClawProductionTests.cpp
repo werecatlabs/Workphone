@@ -22,6 +22,7 @@
 #include <WPGraphics/ClawLight.hpp>
 #include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/ClawSky.hpp>
+#include <WPGraphics/ClawTexture.hpp>
 #include <WPGraphics/Particle/CParticleSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
@@ -855,6 +856,46 @@ namespace
             }
         }
         {
+            auto texture = make_ptr<ClawTexture>();
+            std::array<u8, 8 * 8 * 4> pixels{};
+            pixels.fill( 255 );
+            texture->copyData( pixels.data(), { 8, 8 } );
+            {
+                auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>( pass->getId() );
+                data->setTextureBinding( 0u, texture );
+            }
+            auto app = fixture.services.application;
+            const auto previous = app->getPlayerSettings();
+            const auto publish = [&]( s32 quality ) {
+                auto settings = make_ptr<Properties>();
+                settings->setProperty( "quality.texture", quality );
+                app->setPlayerSettings( settings );
+            };
+            const auto drawAndReadWidth = [&] {
+                renderer.renderMesh( &mesh, Matrix4F::identity() );
+                auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+                context->PSGetShaderResources( 0, 1, view.GetAddressOf() );
+                Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+                if( view ) view->GetResource( resource.GetAddressOf() );
+                Microsoft::WRL::ComPtr<ID3D11Texture2D> surface;
+                D3D11_TEXTURE2D_DESC desc{};
+                if( resource && SUCCEEDED( resource.As( &surface ) ) ) surface->GetDesc( &desc );
+                return desc.Width;
+            };
+
+            publish( 2 );
+            renderer.beginRender();
+            ok &= check( drawAndReadWidth() == 8, "mesh draws must use the published texture quality" );
+            publish( 0 );
+            ok &= check( drawAndReadWidth() == 8, "texture quality must stay stable within a pass" );
+            renderer.endRender();
+            renderer.beginRender();
+            ok &= check( drawAndReadWidth() == 2, "the next pass must refresh the resident texture" );
+            renderer.endRender();
+            app->setPlayerSettings( previous );
+        }
+        {
             auto streamed = make_ptr<MaterialRoutingTexture>();
             const u32 redPixel = 0xff0000ffu, greenPixel = 0xff00ff00u;
             auto redView = claw_terrain_material_contracts::texture(native, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, &redPixel, 4);
@@ -1442,6 +1483,60 @@ namespace
         return ok;
     }
 
+    bool testPassCameraPosition( ClawRendererDX11 &renderer )
+    {
+        class CountingCameraOwner : public GraphicsSceneNode
+        {
+        public:
+            mutable u32 positionReads = 0;
+
+            Vector3<real_Num> getWorldPosition() const override
+            {
+                ++positionReads;
+                return { 0, 0, 3 };
+            }
+        };
+
+        auto target = make_ptr<ClawRenderTarget>();
+        target->setSize( { 64, 64 } );
+        auto firstOwner = make_ptr<CountingCameraOwner>();
+        auto secondOwner = make_ptr<CountingCameraOwner>();
+        auto firstCamera = make_ptr<ClawCamera>();
+        auto secondCamera = make_ptr<ClawCamera>();
+        firstCamera->setOwner( firstOwner );
+        secondCamera->setOwner( secondOwner );
+
+        renderer.setRenderTarget( target );
+        renderer.setViewport( nullptr );
+        renderer.setCamera( firstCamera );
+        TestMesh mesh;
+        const auto draw = [&] { renderer.renderMesh( &mesh, Matrix4F::identity() ); };
+
+        renderer.beginRender();
+        draw();
+        draw();
+        bool ok = check( firstOwner->positionReads == 1, "draws in one pass reuse the camera position" );
+        renderer.endRender();
+
+        renderer.beginRender();
+        draw();
+        ok &= check( firstOwner->positionReads == 2, "a new pass samples the same camera again" );
+        renderer.setCamera( secondCamera );
+        draw();
+        draw();
+        ok &= check( firstOwner->positionReads == 2 && secondOwner->positionReads == 1,
+                     "switching cameras during a pass samples the new owner once" );
+        renderer.endRender();
+
+        draw();
+        draw();
+        ok &= check( secondOwner->positionReads == 3, "direct draws outside a pass sample live position" );
+
+        renderer.setCamera( nullptr );
+        renderer.setRenderTarget( nullptr );
+        return ok;
+    }
+
     bool testRenderedFeatures( ClawRendererDX11 &renderer )
     {
         auto target = make_ptr<ClawRenderTarget>(); target->setSize({64,64});
@@ -1619,6 +1714,7 @@ int main( int argc, char **argv )
             ok &= testIdleMaterialRetirement(renderer);
             ok &= testSortedTransparency(renderer);
             ok &= testMeshShadows(renderer);
+            ok &= testPassCameraPosition(renderer);
             ok &= claw_terrain_contracts::run(renderer);
             ok &= claw_terrain_material_contracts::run(renderer);
             ok &= claw_terrain_streaming_contracts::run(renderer);

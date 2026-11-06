@@ -8,6 +8,12 @@ namespace workphone
 {
     namespace render
     {
+        struct TextureUploadPolicy
+        {
+            s32 quality = 2;
+            u32 maximum = 0;  // Zero leaves the maximum size unrestricted.
+        };
+
         /** Interface for graphics settings. */
         class WPCore_API GraphicsSettings : public Director
         {
@@ -59,6 +65,7 @@ namespace workphone
             s32 getShaderModel() const;
             s32 getPresentMode() const;
             s32 getParticleQuality() const;
+            TextureUploadPolicy getTextureUploadPolicy() const;
             s32 getShadowQuality() const;
             s32 getShadowResolution() const;
             f32 getShadowDistance() const;
@@ -79,6 +86,7 @@ namespace workphone
             String m_rendererApi = "DX11";
             std::optional<u32> m_textureFilteringOverride;
             std::optional<u32> m_anisotropyOverride;
+            TextureUploadPolicy m_textureUploadPolicy;
             s32 m_rendererMode = 0;
             s32 m_shaderLanguage = 0;
             s32 m_shaderModel = 0;
