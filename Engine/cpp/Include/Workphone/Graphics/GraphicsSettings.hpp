@@ -39,13 +39,25 @@ namespace workphone
             /** Sets whether presentation waits for vertical synchronization. */
             void setVSync( bool enabled );
 
+            s32 getTextureFiltering() const;
+
+            void setTextureFiltering( s32 textureFiltering );
+
+            s32 getAnisotropy() const;
+
+            void setAnisotropy( s32 anisotropy );
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            s32 m_lightingMode = 0;
+            s32 m_textureFiltering = 0;
+            s32 m_anisotropy = 0;
             bool m_showDialog = false;
             bool m_createWindow = true;
             bool m_createRenderUI = false;
             bool m_vsync = false;
+            bool m_reflectionProbes = false;
         };
     }  // namespace render
 }  // namespace workphone

@@ -50,4 +50,24 @@ namespace workphone::render
         m_vsync = enabled;
     }
 
+    void GraphicsSettings::setAnisotropy( s32 anisotropy )
+    {
+        m_anisotropy = anisotropy;
+    }
+
+    s32 GraphicsSettings::getAnisotropy() const
+    {
+        return m_anisotropy;
+    }
+
+    void GraphicsSettings::setTextureFiltering( s32 textureFiltering )
+    {
+        m_textureFiltering = textureFiltering;
+    }
+
+    s32 GraphicsSettings::getTextureFiltering() const
+    {
+        return m_textureFiltering;
+    }
+
 }  // namespace workphone::render
