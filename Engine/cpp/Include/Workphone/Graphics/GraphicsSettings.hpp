@@ -53,44 +53,28 @@ namespace workphone
 
             SmartPtr<Properties> getPlayerProfile() const;
 
-            const String &getRendererApi() const { return m_rendererApi; }
-            s32 getRendererMode() const { return m_rendererMode; }
-            s32 getShaderLanguage() const { return m_shaderLanguage; }
-            s32 getShaderModel() const { return m_shaderModel; }
-            s32 getPresentMode() const { return m_presentMode; }
-            s32 getParticleQuality() const { return m_particleQuality; }
-            s32 getShadowQuality() const { return m_shadowQuality; }
-            s32 getShadowResolution() const { return m_shadowResolution; }
-            f32 getShadowDistance() const { return m_shadowDistance; }
-            bool getValidationLayers() const { return m_validationLayers; }
-            bool getAllowRendererFallback() const { return m_allowRendererFallback; }
-            bool getStaticBatching() const { return m_staticBatching; }
-            bool getDynamicBatching() const { return m_dynamicBatching; }
-            bool getReflectionProbes() const { return m_reflectionProbes; }
-            bool getLightingDisabled() const { return m_lightingDisabled; }
-            std::optional<s32> getLightingMode() const
-            {
-                return m_hasLightingMode ? std::optional{ m_lightingMode } : std::nullopt;
-            }
-            std::optional<u32> getTextureFilteringOverride() const
-            {
-                return m_textureFilteringOverride;
-            }
-            std::optional<u32> getAnisotropyOverride() const { return m_anisotropyOverride; }
+            const String &getRendererApi() const;
+            s32 getRendererMode() const;
+            s32 getShaderLanguage() const;
+            s32 getShaderModel() const;
+            s32 getPresentMode() const;
+            s32 getParticleQuality() const;
+            s32 getShadowQuality() const;
+            s32 getShadowResolution() const;
+            f32 getShadowDistance() const;
+            bool getValidationLayers() const;
+            bool getAllowRendererFallback() const;
+            bool getStaticBatching() const;
+            bool getDynamicBatching() const;
+            bool getReflectionProbes() const;
+            bool getLightingDisabled() const;
+            std::optional<s32> getLightingMode() const;
+            std::optional<u32> getTextureFilteringOverride() const;
+            std::optional<u32> getAnisotropyOverride() const;
 
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            s32 m_lightingMode = 0;
-            s32 m_textureFiltering = 0;
-            s32 m_anisotropy = 0;
-            bool m_showDialog = false;
-            bool m_createWindow = true;
-            bool m_createRenderUI = false;
-            bool m_vsync = false;
-            bool m_reflectionProbes = false;
-
-        private:
             SmartPtr<Properties> m_playerProfile;
             String m_rendererApi = "DX11";
             std::optional<u32> m_textureFilteringOverride;
@@ -103,6 +87,14 @@ namespace workphone
             s32 m_shadowQuality = 2;
             s32 m_shadowResolution = 2;
             f32 m_shadowDistance = 200.0f;
+            s32 m_lightingMode = 0;
+            s32 m_textureFiltering = 0;
+            s32 m_anisotropy = 0;
+            bool m_showDialog = false;
+            bool m_createWindow = true;
+            bool m_createRenderUI = false;
+            bool m_vsync = false;
+            bool m_reflectionProbes = false;
             bool m_validationLayers = false;
             bool m_allowRendererFallback = true;
             bool m_staticBatching = true;

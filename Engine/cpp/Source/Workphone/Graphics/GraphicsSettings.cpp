@@ -124,4 +124,94 @@ namespace workphone::render
         return m_playerProfile;
     }
 
+    std::optional<u32> GraphicsSettings::getAnisotropyOverride() const
+    {
+        return m_anisotropyOverride;
+    }
+
+    std::optional<u32> GraphicsSettings::getTextureFilteringOverride() const
+    {
+        return m_textureFilteringOverride;
+    }
+
+    std::optional<s32> GraphicsSettings::getLightingMode() const
+    {
+        return m_hasLightingMode ? std::optional{ m_lightingMode } : std::nullopt;
+    }
+
+    bool GraphicsSettings::getLightingDisabled() const
+    {
+        return m_lightingDisabled;
+    }
+
+    bool GraphicsSettings::getReflectionProbes() const
+    {
+        return m_reflectionProbes;
+    }
+
+    bool GraphicsSettings::getDynamicBatching() const
+    {
+        return m_dynamicBatching;
+    }
+
+    bool GraphicsSettings::getStaticBatching() const
+    {
+        return m_staticBatching;
+    }
+
+    bool GraphicsSettings::getAllowRendererFallback() const
+    {
+        return m_allowRendererFallback;
+    }
+
+    bool GraphicsSettings::getValidationLayers() const
+    {
+        return m_validationLayers;
+    }
+
+    f32 GraphicsSettings::getShadowDistance() const
+    {
+        return m_shadowDistance;
+    }
+
+    s32 GraphicsSettings::getShadowResolution() const
+    {
+        return m_shadowResolution;
+    }
+
+    s32 GraphicsSettings::getShadowQuality() const
+    {
+        return m_shadowQuality;
+    }
+
+    s32 GraphicsSettings::getParticleQuality() const
+    {
+        return m_particleQuality;
+    }
+
+    s32 GraphicsSettings::getPresentMode() const
+    {
+        return m_presentMode;
+    }
+
+    s32 GraphicsSettings::getShaderModel() const
+    {
+        return m_shaderModel;
+    }
+
+    s32 GraphicsSettings::getShaderLanguage() const
+    {
+        return m_shaderLanguage;
+    }
+
+    s32 GraphicsSettings::getRendererMode() const
+    {
+        return m_rendererMode;
+    }
+
+    const String &GraphicsSettings::getRendererApi() const
+    {
+        return m_rendererApi;
+    }
+
 }  // namespace workphone::render
