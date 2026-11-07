@@ -2,6 +2,7 @@
 #include <WPGraphics/ClawImguiManager.hpp>
 #include "ClawImGuiFrameRecovery.hpp"
 #include <WPGraphics/ClawUiSettings.hpp>
+#include <WPImGui/ImGuiRuntimeFont.hpp>
 #include <WPImGui/WPImGui.hpp>
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
@@ -14,6 +15,7 @@
 #    include "backends/imgui_impl_win32.h"
 #    include <WPGraphics/ClawWin32Ime.hpp>
 #    include <workphone_graphics_ui_dx11.h>
+#    include <d3d11.h>
 #endif
 
 #include <algorithm>
@@ -23,7 +25,9 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <new>
+#include <utility>
 #include <vector>
 
 namespace workphone
@@ -101,8 +105,7 @@ namespace workphone
                 viewport->DrawDataP.Clear();
                 viewport->DrawDataBuilder.Clear();
             }
-            // This setter only resets frame accounting for the same renderer;
-            // it does not swap devices, recreate a context or release pins.
+            // Reset frame accounting and retire any retained native texture views.
             backend.setRenderer( backend.getRenderer() );
         }
 
@@ -336,6 +339,7 @@ namespace workphone
             }
 
             m_shuttingDown = true;
+            discardPreparedFrame();
 
             if( ImGui::GetCurrentContext() )
             {
@@ -368,7 +372,6 @@ namespace workphone
             m_vpWidth = 0;
             m_vpHeight = 0;
             m_frameEnded = true;
-            m_lastRenderedFrame = -1;
             m_contextOwner = false;
             m_shuttingDown = false;
         }
@@ -495,19 +498,21 @@ namespace workphone
 
         void ClawImguiManager::setRenderer( wp_renderer *renderer )
         {
-            m_renderer = renderer;
+            if( !hasPreparedFrame() && isInitialised() )
+            {
+                ui::releaseImGuiDx11FrameTextures();
+            }
+            discardPreparedFrame();
 
-            // Reset frame accounting to prevent skipping the next ImGui frame due
-            // to stale m_lastRenderedFrame / m_frameEnded from the old context.
+            m_renderer = renderer;
             m_frameEnded = true;
-            m_lastRenderedFrame = -1;
         }
 
         void ClawImguiManager::newFrame()
         {
             ScopedLock lock( this, true );
 
-            if( !isInitialised() || !m_frameEnded )
+            if( !isInitialised() || !m_frameEnded || hasPreparedFrame() )
             {
                 return;
             }
@@ -560,7 +565,7 @@ namespace workphone
             }
         }
 
-        void ClawImguiManager::render()
+        void ClawImguiManager::finishFrame()
         {
             ScopedLock lock( this, true );
 
@@ -570,17 +575,70 @@ namespace workphone
             }
 
             m_frameEnded = true;
+            ImGui::Render();
+            m_preparedDrawData = ImGui::GetDrawData();
+            if( !m_preparedDrawData )
+            {
+                ui::releaseImGuiDx11FrameTextures();
+                return;
+            }
 
-            const int currentFrame = ImGui::GetFrameCount();
-            if( currentFrame == m_lastRenderedFrame )
+            const auto *fonts = ImGui::GetIO().Fonts;
+            m_preparedFontTexId = fonts ? fonts->TexID : nullptr;
+#if defined WP_PLATFORM_WIN32
+            if( m_fontTexture )
+            {
+                static_cast<ID3D11ShaderResourceView *>( m_fontTexture )->AddRef();
+                m_preparedFontTexture = m_fontTexture;
+            }
+#endif
+        }
+
+        bool ClawImguiManager::hasPreparedFrame() const
+        {
+            return m_preparedDrawData != nullptr;
+        }
+
+        void ClawImguiManager::discardPreparedFrame()
+        {
+            if( hasPreparedFrame() && isInitialised() )
+            {
+                ui::releaseImGuiDx11FrameTextures();
+            }
+            m_preparedDrawData = nullptr;
+            m_preparedFontTexId = nullptr;
+            wp_renderer_dx11_destroy_texture_native( std::exchange( m_preparedFontTexture, nullptr ) );
+        }
+
+        void ClawImguiManager::render()
+        {
+            ScopedLock lock( this, true );
+
+            if( !isInitialised() )
+            {
+                discardPreparedFrame();
+                return;
+            }
+
+            if( !m_frameEnded )
+            {
+                finishFrame();
+            }
+            auto *drawData = std::exchange( m_preparedDrawData, nullptr );
+            if( !drawData )
             {
                 return;
             }
-            m_lastRenderedFrame = currentFrame;
 
-            ImGui::Render();
-            ImDrawData *drawData = ImGui::GetDrawData();
-            if( !drawData || drawData->CmdListsCount <= 0 || drawData->CmdListsCount > 0x10000 )
+            const ImTextureID fontTexId = std::exchange( m_preparedFontTexId, nullptr );
+            const std::unique_ptr<void, decltype( &wp_renderer_dx11_destroy_texture_native )> fontPin(
+                std::exchange( m_preparedFontTexture, nullptr ), wp_renderer_dx11_destroy_texture_native );
+            struct TexturePins
+            {
+                ~TexturePins() { ui::releaseImGuiDx11FrameTextures(); }
+            } texturePins;
+
+            if( drawData->CmdListsCount <= 0 || drawData->CmdListsCount > 0x10000 )
             {
                 return;
             }
@@ -619,12 +677,30 @@ namespace workphone
             wp_mat4f identity;
             makeIdentity( identity );
 
-            const wp_blend_mode savedBlend = wp_renderer_get_blend_mode( m_renderer );
-            const wp_cull_mode savedCull = wp_renderer_get_cull_mode( m_renderer );
-            const wp_fill_mode savedFill = wp_renderer_get_fill_mode( m_renderer );
-            const wp_s32 savedDepthTest = wp_renderer_get_depth_test_enabled( m_renderer );
-            const wp_s32 savedDepthWrite = wp_renderer_get_depth_write_enabled( m_renderer );
-            const wp_depth_func savedDepthFunc = wp_renderer_get_depth_func( m_renderer );
+            struct RenderState
+            {
+                wp_renderer *renderer;
+                wp_viewport_i viewport;
+                wp_blend_mode blend = wp_renderer_get_blend_mode( renderer );
+                wp_cull_mode cull = wp_renderer_get_cull_mode( renderer );
+                wp_fill_mode fill = wp_renderer_get_fill_mode( renderer );
+                wp_s32 depthTest = wp_renderer_get_depth_test_enabled( renderer );
+                wp_s32 depthWrite = wp_renderer_get_depth_write_enabled( renderer );
+                wp_depth_func depthFunc = wp_renderer_get_depth_func( renderer );
+
+                ~RenderState()
+                {
+                    wp_renderer_set_texture_native( renderer, nullptr );
+                    wp_renderer_set_scissor_enabled( renderer, 0 );
+                    wp_renderer_set_blend_mode( renderer, blend );
+                    wp_renderer_set_cull_mode( renderer, cull );
+                    wp_renderer_set_fill_mode( renderer, fill );
+                    wp_renderer_set_depth_test_enabled( renderer, depthTest );
+                    wp_renderer_set_depth_write_enabled( renderer, depthWrite );
+                    wp_renderer_set_depth_func( renderer, depthFunc );
+                    wp_renderer_set_viewport( renderer, viewport );
+                }
+            } savedState{ m_renderer, vp };
 
             const auto setupRenderState = [&]() {
                 wp_renderer_set_blend_mode( m_renderer, WORKPHONE_BLEND_MODE_ALPHA );
@@ -646,7 +722,6 @@ namespace workphone
             const ImVec2 clipScale = drawData->FramebufferScale;
             const float scaleX = getSafeFramebufferScale( clipScale.x );
             const float scaleY = getSafeFramebufferScale( clipScale.y );
-            const ImTextureID fontTexId = ImGui::GetIO().Fonts ? ImGui::GetIO().Fonts->TexID : nullptr;
 #if defined WP_PLATFORM_WIN32
             auto *dx11 = wp_renderer_get_dx11( m_renderer );
 #endif
@@ -799,16 +874,6 @@ namespace workphone
                     }
                 }
             }
-
-            wp_renderer_set_texture_native( m_renderer, nullptr );
-            wp_renderer_set_scissor_enabled( m_renderer, 0 );
-            wp_renderer_set_blend_mode( m_renderer, savedBlend );
-            wp_renderer_set_cull_mode( m_renderer, savedCull );
-            wp_renderer_set_fill_mode( m_renderer, savedFill );
-            wp_renderer_set_depth_test_enabled( m_renderer, savedDepthTest );
-            wp_renderer_set_depth_write_enabled( m_renderer, savedDepthWrite );
-            wp_renderer_set_depth_func( m_renderer, savedDepthFunc );
-            wp_renderer_set_viewport( m_renderer, vp );
         }
 
         void ClawImguiManager::createFontTexture()

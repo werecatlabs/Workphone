@@ -2,6 +2,7 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/ImGuiDropJob.hpp>
+#include <WPImGui/ImGuiRuntimeFont.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
 #include <WPImGui/ImGuiMenuItem.hpp>
 #include <WPImGui/ImGuiMenuBar.hpp>
@@ -2736,6 +2737,7 @@ namespace workphone::ui
 
                 if( pTexture )
                 {
+                    retainImGuiDx11FrameTexture( pTexture );
                     // Submit the render texture directly to the window draw list. ImGui::Image
                     // creates a hovered item, which makes ImGuizmo's activation guard reject
                     // mouse presses over the scene.

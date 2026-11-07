@@ -21,6 +21,11 @@ namespace workphone::ui
     /** Per-context pins survive widget removal/retarget until the next frame or
      * context shutdown. They retain actual old texture/font snapshots. */
     WPImGui_API void retainImGuiFrameResource(SmartPtr<ISharedObject>,std::shared_ptr<const void> snapshot={});
+
+    // Registers a valid, borrowed ID3D11ShaderResourceView from an engine texture
+    // or native producer. An opaque ImTextureID alone is not proof of its type.
+    WPImGui_API void retainImGuiDx11FrameTexture( void *view );
+    WPImGui_API void releaseImGuiDx11FrameTextures() noexcept;
     class WPImGui_API ImGuiRuntimeFontScope
     {
     public:

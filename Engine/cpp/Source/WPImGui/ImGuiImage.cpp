@@ -32,6 +32,7 @@ namespace workphone::ui
 
             if( iTexture != nullptr )
             {
+                retainImGuiDx11FrameTexture( iTexture );
                 retainImGuiFrameResource(texture);
                 ImGui::Image( iTexture, ImVec2( size.x, size.y ) );
 

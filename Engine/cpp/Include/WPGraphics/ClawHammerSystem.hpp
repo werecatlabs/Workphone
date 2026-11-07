@@ -251,6 +251,14 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
+            class ImGuiFrameJob;
+            void queueImGuiFrame();
+            void prepareImGuiFrame();
+            void drawImGuiOverlay();
+            void cancelImGuiFrame();
+            SmartPtr<IJob> m_imguiFrameJob;
+            bool m_imguiBuildAttempted = false;
+
             bool updateFrame( bool simulationEnabled );
             bool m_frameUpdateActive = false;
             bool m_frameSimulationEnabled = true;

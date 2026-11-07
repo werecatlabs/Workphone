@@ -38,6 +38,10 @@
 #include <WPGraphics/UI/ClawUIManager.hpp>
 #include <WPGraphics/Vehicle/ClawVehicleVisualEffects.hpp>
 #include <WPImGui/WPImGui.hpp>
+#include <Workphone/Interface/System/IJobQueue.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
+#include <Workphone/System/Job.hpp>
 #include <Workphone/Workphone.hpp>
 #include <array>
 #include <chrono>
@@ -317,6 +321,57 @@ namespace workphone
         }  // namespace
 
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawHammerSystem, GraphicsSystem );
+
+        class ClawHammerSystem::ImGuiFrameJob final : public Job
+        {
+        public:
+            explicit ImGuiFrameJob( ClawHammerSystem *owner ) : m_owner( owner ) {}
+
+            void execute() override
+            {
+                try
+                {
+                    if( auto owner = m_owner.lock() )
+                    {
+                        ScopedLock lock( owner.get() );
+                        if( isInterrupted() || owner->m_imguiFrameJob.get() != this ||
+                            !owner->isLoaded() || owner->m_frameUpdateActive )
+                        {
+                            return;
+                        }
+                        auto app = core::IApplicationManager::instancePtr();
+                        auto window = owner->getDefaultWindow();
+                        if( !app || !app->isRunning() || app->getQuit() || !window ||
+                            window->isClosed() )
+                        {
+                            return;
+                        }
+
+                        // A widget callback must not enter a paused redraw while
+                        // ImGui is still building this frame.
+                        struct BuildScope
+                        {
+                            bool &active;
+                            explicit BuildScope( bool &value ) : active( value ) { active = true; }
+                            ~BuildScope() { active = false; }
+                        } buildScope( owner->m_frameUpdateActive );
+                        owner->m_imguiBuildAttempted = true;
+                        owner->prepareImGuiFrame();
+                    }
+                }
+                catch( const std::exception &e )
+                {
+                    WP_LOG_EXCEPTION( e );
+                }
+                catch( ... )
+                {
+                    WP_LOG_ERROR( "Unknown exception while preparing an ImGui frame." );
+                }
+            }
+
+        private:
+            WeakPtr<ClawHammerSystem> m_owner;
+        };
 
         struct ClawHammerSystem::FramePassContext
         {
@@ -903,6 +958,7 @@ namespace workphone
             ScopedLock lock( this );
             m_sceneProfileFrameActive = false;
             setLoadingState( LoadingState::Unloading );
+            cancelImGuiFrame();
 
             m_preparationProfile = nullptr;
             m_sceneProfile = nullptr;
@@ -1023,6 +1079,101 @@ namespace workphone
             return updateFrame( false );
         }
 
+        void ClawHammerSystem::queueImGuiFrame()
+        {
+            const auto renderTask = getRenderTask();
+            if( !m_frameSimulationEnabled || Thread::getCurrentTask() != renderTask ||
+                ( m_imguiFrameJob && !m_imguiFrameJob->isFinished() ) )
+            {
+                return;
+            }
+
+            auto app = core::IApplicationManager::instancePtr();
+            auto queue = app ? app->getJobQueue() : nullptr;
+            auto taskManager = app ? app->getTaskManager() : nullptr;
+            auto task = taskManager ? taskManager->getTask( renderTask ) : nullptr;
+            if( !queue || !queue->isRunning() || !task || !task->isExecuting() )
+            {
+                return;
+            }
+
+            // Editor callbacks use render-task affinity to defer Lua work. The
+            // task runs this job at its next tick, before it enters a native pass.
+            if( !m_imguiFrameJob )
+            {
+                m_imguiFrameJob = workphone::make_ptr<ImGuiFrameJob>( this );
+            }
+            queue->addJob( m_imguiFrameJob, renderTask );
+        }
+
+        void ClawHammerSystem::prepareImGuiFrame()
+        {
+            auto manager = m_imguiManager;
+            if( !manager || !manager->isInitialised() )
+            {
+                return;
+            }
+
+            RenderPhaseProfile timing( m_uiBuildProfile, "Editor UI build" );
+            try
+            {
+                manager->newFrame();
+                if( auto app = core::IApplicationManager::instancePtr() )
+                {
+                    if( auto ui = app->getUI() )
+                    {
+                        if( auto application = ui->getApplication() )
+                        {
+                            application->update();
+                        }
+                    }
+                }
+                manager->finishFrame();
+            }
+            catch( ... )
+            {
+                detail::discardInterruptedImGuiFrame( *manager );
+                throw;
+            }
+        }
+
+        void ClawHammerSystem::drawImGuiOverlay()
+        {
+            if( !m_imguiManager || !m_imguiManager->isInitialised() )
+            {
+                return;
+            }
+
+            // First frame, paused redraws, and callers without a running render
+            // task prepare immediately. Never retry a partially executed build.
+            if( !m_imguiManager->hasPreparedFrame() && !m_imguiBuildAttempted )
+            {
+                m_imguiBuildAttempted = true;
+                prepareImGuiFrame();
+            }
+            if( m_imguiManager->hasPreparedFrame() )
+            {
+                RenderPhaseProfile timing( m_uiSubmitProfile, "UI submission" );
+                m_imguiManager->render();
+                m_imguiBuildAttempted = false;
+            }
+            queueImGuiFrame();
+        }
+
+        void ClawHammerSystem::cancelImGuiFrame()
+        {
+            if( m_imguiFrameJob )
+            {
+                m_imguiFrameJob->stop();
+                m_imguiFrameJob = nullptr;
+            }
+            m_imguiBuildAttempted = false;
+            if( m_imguiManager )
+            {
+                m_imguiManager->discardPreparedFrame();
+            }
+        }
+
         bool ClawHammerSystem::updateFrame( bool simulationEnabled )
         {
             if( !isLoaded() || !m_sys )
@@ -1044,6 +1195,12 @@ namespace workphone
                     return false;
                 }
 
+                if( !simulationEnabled )
+                {
+                    // The debugger's direct redraw does not pump render-task jobs.
+                    cancelImGuiFrame();
+                }
+
                 struct FrameMode
                 {
                     ClawHammerSystem &owner;
@@ -1059,6 +1216,12 @@ namespace workphone
 
                     ~FrameMode()
                     {
+                        // A skipped window pass must not leave draw data queued.
+                        if( owner.m_imguiManager && owner.m_imguiManager->hasPreparedFrame() )
+                        {
+                            owner.m_imguiManager->discardPreparedFrame();
+                        }
+                        owner.m_imguiBuildAttempted = false;
                         owner.m_frameSimulationEnabled = previousSimulation;
                         owner.m_frameUpdateActive = false;
                     }
@@ -1512,32 +1675,7 @@ namespace workphone
                     }
                     break;
                 case WP_GRAPHICS_FRAME_DRAW_OVERLAY:
-                    if( owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
-                    {
-                        owner->m_imguiManager->newFrame();
-                        try
-                        {
-                            if( auto app = core::IApplicationManager::instancePtr() )
-                            {
-                                if( auto ui = app->getUI() )
-                                {
-                                    if( auto application = ui->getApplication() )
-                                    {
-                                        RenderPhaseProfile timing( owner->m_uiBuildProfile,
-                                                                   "Editor UI build" );
-                                        application->update();
-                                    }
-                                }
-                            }
-                        }
-                        catch( ... )
-                        {
-                            detail::discardInterruptedImGuiFrame( *owner->m_imguiManager );
-                            throw;
-                        }
-                        RenderPhaseProfile timing( owner->m_uiSubmitProfile, "UI submission" );
-                        owner->m_imguiManager->render();
-                    }
+                    owner->drawImGuiOverlay();
                     break;
                 case WP_GRAPHICS_FRAME_RETIRE_SCENES:
                     for( auto &scene : pass.preparedScenes )

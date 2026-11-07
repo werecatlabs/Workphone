@@ -6,6 +6,7 @@
 #if defined WP_TEST_IMGUI
 #include <WPGraphics/ClawImguiManager.hpp>
 #include <WPImGui/ImGuiManager.hpp>
+#include <WPImGui/ImGuiRuntimeFont.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/IO/FileSystem.hpp>
 #include <Workphone/System/FactoryManager.hpp>
@@ -225,18 +226,32 @@ namespace
         auto texture = io.Fonts->TexID;
         manager.createFontTexture();
         ok &= check( texture == io.Fonts->TexID, "locked atlas must not be replaced" );
+        const auto countCallback = []( const ImDrawList *, const ImDrawCmd *cmd ) {
+            ++*static_cast<int *>( cmd->UserCallbackData );
+        };
         int callbacks = 0;
         auto *draw = ImGui::GetForegroundDrawList();
-        draw->AddCallback( []( const ImDrawList *, const ImDrawCmd *cmd ) {
-            ++*static_cast<int *>( cmd->UserCallbackData );
-        }, &callbacks );
+        draw->AddCallback( countCallback, &callbacks );
         draw->AddCallback( ImDrawCallback_ResetRenderState, nullptr );
         draw->PushClipRect( ImVec2( -1e30f, -1e30f ), ImVec2( 1e30f, 1e30f ) );
         draw->AddRectFilled( ImVec2( 5, 5 ), ImVec2( 20, 20 ), IM_COL32_WHITE );
         draw->PopClipRect();
+        manager.finishFrame();
+        ok &= check( manager.hasPreparedFrame() && callbacks == 0,
+                     "finalizing ImGui draw data must not submit draw callbacks" );
         manager.render();
+        ok &= check( !manager.hasPreparedFrame(), "render must consume the prepared ImGui frame" );
         manager.render();
         ok &= check( callbacks == 1, "zero-element callback must run exactly once" );
+
+        manager.newFrame();
+        ImGui::GetForegroundDrawList()->AddCallback( countCallback, &callbacks );
+        manager.finishFrame();
+        ok &= check( manager.hasPreparedFrame(), "a new frame must be ready to submit" );
+        manager.discardPreparedFrame();
+        manager.render();
+        ok &= check( !manager.hasPreparedFrame() && callbacks == 1,
+                     "discarded draw data must not replay its callbacks" );
 
         // Exercise the actual ImGui submission after a scene resolve. Mid-tone
         // colours, alpha, glyphs and image sampling must stay in display space.
@@ -282,8 +297,22 @@ namespace
                 pixels->AddRectFilled( { 0, 0 }, { width, height }, IM_COL32( 24, 32, 40, 255 ) );
                 pixels->AddRectFilled( { 4, 4 }, { 36, 30 }, IM_COL32( 96, 128, 160, 255 ) );
                 pixels->AddRectFilled( { 40, 4 }, { 72, 30 }, IM_COL32( 192, 64, 32, 128 ) );
-                pixels->AddImage( image, { 80, 4 }, { 112, 30 } );
+                auto *frameImage = image;
+                if( mode == 3 )
+                {
+                    // Use a fresh view that has never been bound by an earlier draw.
+                    frameImage = wp_renderer_dx11_create_texture_native(
+                        native, imagePixel, 1, 1, WORKPHONE_PIXEL_FORMAT_RGBA8 );
+                    ok &= check( frameImage != nullptr, "retained ImGui image fixture must allocate" );
+                    if( frameImage ) workphone::ui::retainImGuiDx11FrameTexture( frameImage );
+                }
+                if( frameImage ) pixels->AddImage( frameImage, { 80, 4 }, { 112, 30 } );
                 pixels->AddText( { 4, 40 }, IM_COL32( 176, 192, 208, 255 ), "ImGui HDR" );
+                if( mode == 3 )
+                {
+                    manager.finishFrame();
+                    wp_renderer_dx11_destroy_texture_native( frameImage );
+                }
                 manager.render();
                 std::vector<unsigned char> rendered( width * height * 4 );
                 ok &= check( wp_renderer_dx11_copy_render_texture_rgba8(
@@ -305,6 +334,13 @@ namespace
                 }
                 else ok &= check( rendered == reference,
                     "HDR, deferred, temporal and MSAA scene passes must preserve all ImGui pixels" );
+                if( mode == 3 )
+                {
+                    const auto picture = ( 12 * width + 90 ) * 4;
+                    ok &= check( rendered[picture] == 48 && rendered[picture + 1] == 140 &&
+                                     rendered[picture + 2] == 208,
+                                 "prepared ImGui image must survive releasing the caller's DX11 view" );
+                }
                 wp_renderer_dx11_end_frame( native );
             }
             std::puts( "ImGui display-space panel, alpha, glyph and image pixels match after HDR/deferred/MSAA." );

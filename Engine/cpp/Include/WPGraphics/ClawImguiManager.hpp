@@ -8,7 +8,7 @@
 // renderer types are only needed by the .cpp; consumers of the manager do not
 // pay for them.
 struct wp_renderer;
-struct ImGuiContext;  // documented for readers; the .cpp uses ImGui::GetCurrentContext()
+struct ImDrawData;
 
 namespace workphone
 {
@@ -43,12 +43,18 @@ namespace workphone
             /// Idempotent and re-entrancy-safe.
             void shutdown();
 
-            /// Begins a new ImGui frame. Must be called between the host
-            /// beginRender/endRender and before render().
+            /// Begins building an ImGui frame after the preceding frame has been consumed.
             void newFrame();
 
-            /// Renders the queued ImGui draw data into the bound renderer.
-            /// No-op if no frame is in progress or the context is gone.
+            /// Finalizes ImGui draw data without issuing renderer commands.
+            /// Custom texture IDs must stay valid until submission or discard.
+            void finishFrame();
+
+            bool hasPreparedFrame() const;
+            void discardPreparedFrame();
+
+            /// Submits the prepared draw data once. Legacy callers can also submit
+            /// immediately after newFrame() without calling finishFrame().
             void render();
 
             /// Bakes the font atlas and uploads it to the renderer. Called
@@ -93,10 +99,11 @@ namespace workphone
             s32 m_vpWidth = 0;
             s32 m_vpHeight = 0;
 
-            s32 m_lastRenderedFrame = -1;
-
-            // Frame accounting: prevents double Render() within a single frame
-            // and skips a re-render of the same ImGui frame.
+            // ImGui owns the draw data until the next NewFrame. Hold the font
+            // view separately because a font rebuild can replace it before submission.
+            ImDrawData *m_preparedDrawData = nullptr;
+            void *m_preparedFontTexId = nullptr;
+            void *m_preparedFontTexture = nullptr;
             bool m_frameEnded = true;
 
             // Guards shutdown() against re-entrancy (destructor + unload +

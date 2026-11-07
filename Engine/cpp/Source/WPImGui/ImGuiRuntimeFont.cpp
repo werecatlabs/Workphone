@@ -5,7 +5,14 @@
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <algorithm>
 #include <cmath>
+#include <cstring>
+
+#if defined WP_PLATFORM_WIN32
+#    include <d3d11.h>
+#    include <wrl/client.h>
+#endif
 
 namespace workphone::ui
 {
@@ -16,17 +23,35 @@ namespace workphone::ui
             StreamBudget admission;
             Array<SmartPtr<ISharedObject>> resources=makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
             Array<std::shared_ptr<const void>> snapshots=makeSourceBudgetSnapshot<std::shared_ptr<const void>>();
+#if defined WP_PLATFORM_WIN32
+            using TextureView = Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>;
+            Array<TextureView> dx11Textures = makeSourceBudgetSnapshot<TextureView>();
+#endif
         };
         void frameHook(ImGuiContext *,ImGuiContextHook *hook)
         {
             auto *pins=static_cast<FramePins *>(hook->UserData);
             if(hook->Type==ImGuiContextHookType_Shutdown){delete pins;return;}
             pins->resources.clear();pins->snapshots.clear();
+#if defined WP_PLATFORM_WIN32
+            pins->dx11Textures.clear();
+#endif
+        }
+        FramePins *findPins( ImGuiContext &context ) noexcept
+        {
+            for( const auto &hook : context.Hooks )
+            {
+                if( hook.Type == ImGuiContextHookType_NewFramePre && hook.Callback == frameHook )
+                {
+                    return static_cast<FramePins *>( hook.UserData );
+                }
+            }
+            return nullptr;
         }
         FramePins *pins()
         {
             auto *context=ImGui::GetCurrentContext();if(!context)return nullptr;
-            for(const auto &hook:context->Hooks)if(hook.Type==ImGuiContextHookType_NewFramePre&&hook.Callback==frameHook)return static_cast<FramePins *>(hook.UserData);
+            if( auto *existing = findPins( *context ) ) return existing;
             String error;auto admission=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,4096,error);if(!admission)throw std::runtime_error(error.c_str());
             auto owner=std::make_unique<FramePins>();owner->admission=std::move(admission);
             // Reserve both hook slots before publishing a userdata pointer.
@@ -73,11 +98,44 @@ namespace workphone::ui
         }catch(const std::exception &failure){try{error=failure.what();}catch(...){error.clear();}return {};}
     }
     bool ImGuiRuntimeFont::bind() const
-    {void *view=nullptr;m_data->texture->getTextureFinal(&view);if(!view)return false;m_data->atlas->SetTexID(view);return true;}
+    {
+        void *view = nullptr;
+        m_data->texture->getTextureFinal( &view );
+        if( !view ) return false;
+        retainImGuiDx11FrameTexture( view );
+        m_data->atlas->SetTexID( view );
+        return true;
+    }
     ImFont *ImGuiRuntimeFont::native() const{return m_data->font;}
     SmartPtr<render::IFont> ImGuiRuntimeFont::source() const{return m_data->source;}
     void retainImGuiFrameResource(SmartPtr<ISharedObject> resource,std::shared_ptr<const void> snapshot)
     {if(auto *frame=pins()){if(resource)frame->resources.push_back(std::move(resource));if(snapshot)frame->snapshots.push_back(std::move(snapshot));}}
+
+    void retainImGuiDx11FrameTexture( void *view )
+    {
+#if defined WP_PLATFORM_WIN32
+        if( !view || !ImGui::GetCurrentContext() ) return;
+        const auto *backendName = ImGui::GetIO().BackendRendererName;
+        if( !backendName || std::strcmp( backendName, "imgui_impl_claw_dx11" ) != 0 ) return;
+
+        auto &textures = pins()->dx11Textures;
+        auto *native = static_cast<ID3D11ShaderResourceView *>( view );
+        const auto existing = std::find_if( textures.begin(), textures.end(),
+                                          [native]( const auto &texture ) { return texture.Get() == native; } );
+        if( existing == textures.end() ) textures.emplace_back( native );
+#endif
+    }
+
+    void releaseImGuiDx11FrameTextures() noexcept
+    {
+#if defined WP_PLATFORM_WIN32
+        if( auto *context = ImGui::GetCurrentContext() )
+        {
+            if( auto *frame = findPins( *context ) ) frame->dx11Textures.clear();
+        }
+#endif
+    }
+
     ImGuiRuntimeFontScope::ImGuiRuntimeFontScope(const std::shared_ptr<ImGuiRuntimeFont> &font,f32 pixelSize)
     {if(!font)return;m_valid=font->bind();if(!m_valid)return;retainImGuiFrameResource(font->source(),font);m_owner=font;m_previousScale=font->native()->Scale;
         auto *draw=ImGui::GetWindowDrawList();m_previousDrawFlags=draw->Flags;
