@@ -472,7 +472,8 @@ namespace workphone::ui
         // so retain every frame member through conversion and wp_clear, even
         // after its manager/layout ownership has been removed.
         const auto frameRoot = getRoot();
-        const auto frameElements = getElements();
+        const auto &frameElements = m_elements;
+
         // A widget published after the inventory snapshot can still join this
         // draw. Font emitters retain their actual owners in the same frame.
         auto drawnFontOwners = makeSourceBudgetSnapshot<SmartPtr<ISharedObject>>();
