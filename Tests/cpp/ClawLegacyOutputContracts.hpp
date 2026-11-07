@@ -49,7 +49,7 @@ namespace claw_legacy_output_contracts
         renderer->setRenderTarget( target );
         renderer->beginRender();
         auto *native = wp_renderer_get_dx11( renderer->getNativeRenderer() );
-        require( !graphics.beginGraphicsPipelineFrame( renderer ) &&
+        require( !graphics.beginGraphicsPipelineFrame( renderer, false ) &&
                      !wp_renderer_dx11_is_hdr_scene_active( native ),
                  "legacy scene viewport must preserve direct display-space rendering" );
         renderer->clear( ColourF( .25f, .5f, .75f, 1.f ) );
@@ -65,7 +65,7 @@ namespace claw_legacy_output_contracts
         hdr.m_enableAgxToneMapping = false;
         pipeline->setHdrSettings( hdr );
         renderer->setRenderTarget( window );
-        require( !graphics.beginGraphicsPipelineFrame( renderer ),
+        require( !graphics.beginGraphicsPipelineFrame( renderer, false ),
                  "legacy default window must honour its disabled tone mapping gate" );
 
         // Selecting only the backend is not an implicit output-colour change.
@@ -73,7 +73,7 @@ namespace claw_legacy_output_contracts
         backendOnly->setProperty( "graphics.renderer.pc", 1 );
         pipeline->setProperties( backendOnly );
         renderer->setRenderTarget( target );
-        require( !graphics.beginGraphicsPipelineFrame( renderer ),
+        require( !graphics.beginGraphicsPipelineFrame( renderer, false ),
                  "backend selection alone must preserve legacy viewport colours" );
 
         // An explicit project output policy must still run on scene textures,
@@ -83,7 +83,7 @@ namespace claw_legacy_output_contracts
         selected->setProperty( "graphics.colorSpace", 1 );
         selected->setProperty( "graphics.tonemapping", 0 );
         pipeline->setProperties( selected );
-        require( graphics.beginGraphicsPipelineFrame( renderer ) &&
+        require( graphics.beginGraphicsPipelineFrame( renderer, false ) &&
                      wp_renderer_dx11_is_hdr_scene_active( native ),
                  "explicit project output policy must activate the scene viewport resolve" );
         renderer->clear( ColourF( .25f, .5f, .75f, 1.f ) );
@@ -100,7 +100,7 @@ namespace claw_legacy_output_contracts
         auto replacement = make_ptr<GraphicsPipeline>()->getProperties();
         replacement->setProperty( "Replace project settings", true );
         pipeline->setProperties( replacement );
-        require( !graphics.beginGraphicsPipelineFrame( renderer ),
+        require( !graphics.beginGraphicsPipelineFrame( renderer, false ),
                  "replacement legacy profile must bypass scene resolve" );
         wp_mat4f identity{};
         for( unsigned axis = 0; axis < 4; ++axis ) identity.m[axis][axis] = 1;
@@ -143,7 +143,7 @@ namespace claw_legacy_output_contracts
                  "previous project light grid must upload" );
         wp_renderer_dx11_set_pipeline_mode( native, 3, 1 );
         require( drawPixels() != unlitGrid, "previous project lights must visibly affect the fixture" );
-        require( !graphics.beginGraphicsPipelineFrame( renderer ) && drawPixels() == unlitGrid,
+        require( !graphics.beginGraphicsPipelineFrame( renderer, false ) && drawPixels() == unlitGrid,
                  "legacy project pixels must discard the previous project's GPU lights and pipeline" );
         geometry.reset();
         renderer->setRenderTarget( nullptr );
