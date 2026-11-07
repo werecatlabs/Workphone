@@ -1610,7 +1610,7 @@ namespace workphone
                     }
 
                     const auto foliage = getFoliageBatches();
-                    const auto foliageMask =
+                    const auto visibilityMask =
                         m_scene->visibility_mask &
                         ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() )
                                  : ~u32( 0 ) ) &
@@ -1776,7 +1776,7 @@ namespace workphone
                         const auto makeFoliageView = [&]( SmartPtr<IGraphicsCamera> value ) {
                             ClawFoliageView view;
                             view.key = u64( reinterpret_cast<uintptr_t>( value.get() ) );
-                            view.visibilityMask = foliageMask;
+                            view.visibilityMask = visibilityMask;
                             if( value )
                             {
                                 const Matrix4F projection( value->getProjectionMatrix().ptr() ),
@@ -1843,7 +1843,7 @@ namespace workphone
                         {
                             for( const auto &batch : *foliage )
                             {
-                                if( batch->castsShadows() && ( batch->visibilityMask() & foliageMask ) )
+                                if( batch->castsShadows() && ( batch->visibilityMask() & visibilityMask ) )
                                 {
                                     batch->render( *dx11Renderer );
                                 }
@@ -1886,7 +1886,7 @@ namespace workphone
                         {
                             for( const auto &batch : *foliage )
                             {
-                                if( batch->visibilityMask() & foliageMask )
+                                if( batch->visibilityMask() & visibilityMask )
                                 {
                                     batch->render( *dx11Renderer );
                                 }
@@ -2057,8 +2057,8 @@ namespace workphone
                                    *dx11Renderer, {} };
 
                     wp_graphics_scene_draw_ops ops{};
-                    ops.main_visibility_mask = ~wp_u32( 0 );
-                    ops.shadow_visibility_mask = foliageMask;
+                    ops.main_visibility_mask = visibilityMask;
+                    ops.shadow_visibility_mask = visibilityMask;
                     ops.begin_shadow = []( void *data ) -> wp_s32 {
                         auto &ctx = *static_cast<SceneDrawContext *>( data );
                         return invokeSceneStage( ctx.failure, -1, ctx.begin );

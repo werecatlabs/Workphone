@@ -273,7 +273,7 @@ namespace workphone
              * @brief Prepare the graphics pipeline for the renderer's current viewport.
              * @return True when a pipeline frame was started and must be completed.
              */
-            bool beginGraphicsPipelineFrame( SmartPtr<IRenderer> renderer );
+            bool beginGraphicsPipelineFrame( SmartPtr<IRenderer> renderer, bool preserveContents );
 
             /**
              * @brief Process and present the current renderer frame through the pipeline.

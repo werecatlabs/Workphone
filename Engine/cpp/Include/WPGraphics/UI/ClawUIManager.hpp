@@ -110,6 +110,8 @@ namespace workphone
             /// invoking input-driven native callbacks. Editor ImGui is separate.
             void renderReadOnly();
 
+            void renderViewport( bool readOnly, bool drawUI, bool drawOverlay );
+
             /** @copydoc IUIManager::addApplication */
             SmartPtr<IUIApplication> addApplication() override;
 
@@ -312,7 +314,6 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
-            void renderFrame( bool readOnly );
             /**
              * @brief Sets the root UI element of the hierarchy.
              * @param root Smart pointer to the root element.

@@ -1488,9 +1488,6 @@ namespace workphone::scene
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
-        auto prefabManager = applicationManager->getPrefabManager();
-        WP_ASSERT( prefabManager );
-
         auto lightingDirector = getLightingDirector();
         properties->getPropertyAsType( ApplicationUtil::lightingStr, lightingDirector );
 
@@ -1501,6 +1498,8 @@ namespace workphone::scene
         auto cameraManager = applicationManager->getCameraManager();
         auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
         auto editorCameraData = properties->getChild( "editorCamera" );
+        Array<SmartPtr<Properties>> sceneActors;
+        sceneActors.reserve( actorsData.size() );
         for( auto actorData : actorsData )
         {
             // Older scenes saved the editor camera among the game actors. Restore
@@ -1514,7 +1513,12 @@ namespace workphone::scene
                 }
                 continue;
             }
-            auto actor = prefabManager->loadActor( actorData, nullptr );
+            sceneActors.push_back( actorData );
+        }
+        // Resolve cross-actor component references before publishing any actors,
+        // including when returning to a scene captured before Play.
+        for( auto &actor : GameActorUtil::loadSceneActors( sceneActors, this ) )
+        {
             addActor( actor );
         }
 

@@ -414,16 +414,22 @@ namespace workphone::ui
 
     void ClawUIManager::render()
     {
-        renderFrame( false );
+        renderViewport( false, true, true );
     }
 
     void ClawUIManager::renderReadOnly()
     {
-        renderFrame( true );
+        renderViewport( true, true, true );
     }
 
-    void ClawUIManager::renderFrame( bool readOnly )
+    void ClawUIManager::renderViewport( bool readOnly, bool drawUI, bool drawOverlay )
     {
+        const auto frameOverlay = getOverlay();
+        if( !drawUI && ( !drawOverlay || !frameOverlay ) )
+        {
+            return;
+        }
+
         if( !m_workphoneContext || !m_workphoneContext->isValid() )
         {
             return;
@@ -473,7 +479,6 @@ namespace workphone::ui
         // so retain every frame member through conversion and wp_clear, even
         // after its manager/layout ownership has been removed.
         const auto frameRoot = getRoot();
-        const auto frameOverlay = getOverlay();
         const auto &frameElements = m_elements;
 
         // A widget published after the inventory snapshot can still join this
@@ -580,7 +585,7 @@ namespace workphone::ui
             }
             wp_layout_space_begin( ctx, WORKPHONE_STATIC, rootBounds.h, 1024 );
 
-            if( frameRoot )
+            if( drawUI && frameRoot )
             {
                 if( auto guiRoot = dynamic_cast<IWorkphoneWidget *>( frameRoot.get() );
                     guiRoot && frameRoot.get() != frameOverlay.get() )
@@ -588,7 +593,7 @@ namespace workphone::ui
                     guiRoot->draw( ctx );
                 }
             }
-            else
+            else if( drawUI )
             {
                 for( auto &element : frameElements )
                 {
@@ -602,7 +607,8 @@ namespace workphone::ui
                 }
             }
 
-            if( auto overlay = dynamic_cast<IWorkphoneWidget *>( frameOverlay.get() ) )
+            if( auto overlay = dynamic_cast<IWorkphoneWidget *>( frameOverlay.get() );
+                drawOverlay && overlay )
             {
                 overlay->draw( ctx );
             }

@@ -147,6 +147,10 @@ namespace workphone
              */
             virtual void setFOVy( f32 fov ) = 0;
 
+            /** Set orthographic width and height in world units. Zero derives an axis from the
+             * viewport aspect ratio. Two zero extents select perspective projection. */
+            virtual void setOrthoWindow( f32 width, f32 height ) {}
+
             /**
              * @brief Sets whether the aspect ratio should be automatically calculated by a viewport that
              * owns this frustum whenever the frustum is resized.

@@ -111,6 +111,13 @@ namespace workphone::render
 
         // Step 4: Convert from view space to world space (inverse view)
         Matrix4<real_Num> invView = viewMatrix.inverse();
+        if( projectionMatrix[3][3] != 0 )
+        {
+            const auto origin = invView * viewSpacePos;
+            const auto direction = invView * Vector4<real_Num>( 0, 0, -1, 0 );
+            return Ray3<real_Num>( Vector3<real_Num>( origin.x, origin.y, origin.z ),
+                                  Vector3<real_Num>( direction.x, direction.y, direction.z ).normaliseCopy() );
+        }
         Vector4<real_Num> worldSpacePos =
             invView * Vector4<real_Num>( viewSpacePos.x, viewSpacePos.y, viewSpacePos.z, 0.0f );
 

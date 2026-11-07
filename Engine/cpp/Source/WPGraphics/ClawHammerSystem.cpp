@@ -13,6 +13,7 @@
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_transform_job.h"
 #include <WPGraphics/ClawDebug.hpp>
+#include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/ClawFontManager.hpp>
 #include <WPGraphics/ClawGraphicsPipeline.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
@@ -43,6 +44,7 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/Job.hpp>
 #include <Workphone/Workphone.hpp>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -381,6 +383,9 @@ namespace workphone
             SmartPtr<IViewport> viewport;
             wp_u32 flags;
             bool nativeRtt;
+            IGraphicsCamera::PostProcessSettings postProcess;
+            Array<IGraphicsCamera::CompositeLayer> compositeLayers;
+            bool manualUpdate = false;
             bool rttCaptured = false;
             SmartPtr<IRenderTarget> previousTarget;
             SmartPtr<IViewport> previousViewport;
@@ -1386,8 +1391,13 @@ namespace workphone
             {
                 pipeline->setFrameDeltaTime( deltaTime );
             }
-            const auto capture = [&]( SmartPtr<IRenderTarget> target, SmartPtr<IViewport> viewport,
-                                      bool window ) {
+            const auto activeLayer = []( const IGraphicsCamera::CompositeLayer &layer ) {
+                return layer.enabled && layer.texture &&
+                       std::isfinite( layer.opacity ) && layer.opacity > 0.0f;
+            };
+            const auto capture = [&]( const SmartPtr<IRenderTarget> &target,
+                                      const SmartPtr<IViewport> &viewport, bool window,
+                                      bool manualUpdate = false ) {
                 if( m_framePasses.size() >= WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES )
                 {
                     throw std::runtime_error( "Graphics frame exceeds native render pass capacity." );
@@ -1395,10 +1405,37 @@ namespace workphone
                 wp_u32 flags = window ? WP_GRAPHICS_FRAME_TARGET_WINDOW : 0u;
                 if( !viewport || viewport->getEnableSceneRender() ) flags |= WP_GRAPHICS_FRAME_TARGET_SCENE;
                 if( !viewport || viewport->getEnableUI() ) flags |= WP_GRAPHICS_FRAME_TARGET_UI;
-                if( viewport && viewport->getClearEveryFrame() ) flags |= WP_GRAPHICS_FRAME_TARGET_CLEAR;
+                if( !viewport || viewport->getOverlaysEnabled() ) flags |= WP_GRAPHICS_FRAME_TARGET_OVERLAY;
+                if( viewport )
+                {
+                    flags |= viewport->getClearEveryFrame() ? WP_GRAPHICS_FRAME_TARGET_CLEAR
+                                                           : WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW;
+                }
                 const bool nativeRtt = !window && dx11 && dynamic_pointer_cast<ClawRenderTarget>( target );
-                m_framePasses.push_back( { this, renderer, target, viewport, flags, nativeRtt } );
+                FramePassContext pass{ this, renderer, target, viewport, flags, nativeRtt };
+                pass.manualUpdate = manualUpdate;
+                if( auto camera = dx11 && viewport ? viewport->getCamera() : nullptr )
+                {
+                    const auto clawCamera = dynamic_pointer_cast<ClawCamera>( camera );
+                    pass.postProcess = clawCamera ? clawCamera->getRenderPostProcessSettings()
+                                                 : camera->getPostProcessSettings();
+                    pass.compositeLayers = camera->getCompositeLayers();
+                    if( pass.postProcess.enabled ||
+                        std::any_of( pass.compositeLayers.begin(), pass.compositeLayers.end(), activeLayer ) )
+                    {
+                        pass.flags |= WP_GRAPHICS_FRAME_TARGET_CAMERA_EFFECTS;
+                    }
+                }
+                m_framePasses.push_back( std::move( pass ) );
             };
+            struct TargetGroup
+            {
+                IRenderTarget *target;
+                size_t begin;
+                size_t end;
+                bool visited = false;
+            };
+            std::vector<TargetGroup> groups;
             if( auto textures = getTextureManager() )
             {
                 for( auto &texture : textures->getTextures() )
@@ -1414,17 +1451,83 @@ namespace workphone
                     {
                         continue;
                     }
-                    for( auto &viewport : target->getViewports() )
+                    auto clawTarget = dynamic_pointer_cast<ClawRenderTarget>( target );
+                    const bool manualUpdate = clawTarget && clawTarget->takeUpdateRequest();
+                    if( !manualUpdate && !target->isAutoUpdated() )
                     {
-                        if( viewport && viewport->isActive() && viewport->getEnableSceneRender() )
+                        continue;
+                    }
+                    std::vector<std::pair<s32, SmartPtr<IViewport>>> ordered;
+                    for( const auto &viewport : target->getViewports() )
+                    {
+                        if( viewport && viewport->isActive() &&
+                            ( manualUpdate || viewport->isAutoUpdated() ) )
                         {
-                            capture( target, viewport, false );
+                            ordered.emplace_back( viewport->getZOrder(), viewport );
                         }
                     }
+                    if( ordered.empty() )
+                    {
+                        if( manualUpdate ) clawTarget->update();
+                        continue;
+                    }
+                    std::stable_sort( ordered.begin(), ordered.end(),
+                                      []( const auto &a, const auto &b ) { return a.first < b.first; } );
+                    const auto begin = m_framePasses.size();
+                    for( const auto &[order, viewport] : ordered )
+                    {
+                        capture( target, viewport, false, manualUpdate );
+                    }
+                    groups.push_back( { target.get(), begin, m_framePasses.size() } );
                 }
             }
+            if( groups.size() > 1 )
+            {
+                // A dependency that closes a cycle reads its last published frame.
+                // Visit in capture order to keep that choice stable across frames.
+                std::vector<FramePassContext> ordered;
+                ordered.reserve( m_framePasses.size() + 1 );
+                const auto visit = [&]( auto &&visit, TargetGroup &group ) -> void {
+                    if( group.visited ) return;
+                    group.visited = true;
+                    for( size_t i = group.begin; i < group.end; ++i )
+                    {
+                        for( const auto &layer : m_framePasses[i].compositeLayers )
+                        {
+                            if( !activeLayer( layer ) ) continue;
+                            const auto source = layer.texture->getRenderTarget();
+                            const auto producer = std::find_if( groups.begin(), groups.end(),
+                                [&]( const auto &candidate ) { return candidate.target == source.get(); } );
+                            if( producer != groups.end() ) visit( visit, *producer );
+                        }
+                    }
+                    for( size_t i = group.begin; i < group.end; ++i )
+                    {
+                        ordered.push_back( std::move( m_framePasses[i] ) );
+                    }
+                };
+                for( auto &group : groups ) visit( visit, group );
+                m_framePasses.swap( ordered );
+            }
             auto window = getDefaultWindow();
-            capture( window, window ? window->getViewport( 0 ) : nullptr, true );
+            if( window )
+            {
+                SmartPtr<IViewport> foreground;
+                const auto viewports = window->getViewports();
+                for( const auto &viewport : viewports )
+                {
+                    if( viewport && viewport->isActive() && viewport->isAutoUpdated() &&
+                        ( !foreground || viewport->getZOrder() > foreground->getZOrder() ) )
+                    {
+                        foreground = viewport;
+                    }
+                }
+                const auto app = core::IApplicationManager::instancePtr();
+                if( foreground || viewports.empty() || ( app && app->isEditor() ) )
+                {
+                    capture( window, foreground, true );
+                }
+            }
         }
 
         bool ClawHammerSystem::renderFramePasses( wp_f32 deltaTime, bool advance )
@@ -1633,13 +1736,34 @@ namespace workphone
                     break;
                 case WP_GRAPHICS_FRAME_BEGIN_TARGET:
                     renderer->beginRender();
+                    if( (pass.flags & WP_GRAPHICS_FRAME_TARGET_WINDOW) != 0 )
+                    {
+                        if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
+                        {
+                            auto native = wp_renderer_get_dx11( dx11->getNativeRenderer() );
+                            if( pass.flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW )
+                            {
+                                const auto colour = viewport->getBackgroundColour();
+                                const wp_vec4f background{ colour.r, colour.g, colour.b, colour.a };
+                                const auto camera = viewport->getCamera();
+                                const auto key = static_cast<wp_u64>( reinterpret_cast<uintptr_t>( camera.get() ) );
+                                if( !wp_renderer_dx11_restore_window_history( native, key, &background ) )
+                                    return WP_GRAPHICS_FRAME_FAILED;
+                            }
+                            else
+                            {
+                                wp_renderer_dx11_discard_window_history( native );
+                            }
+                        }
+                    }
                     break;
                 case WP_GRAPHICS_FRAME_CLEAR_TARGET:
                     renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
                     break;
                 case WP_GRAPHICS_FRAME_BEGIN_EFFECTS:
-                    return owner->beginGraphicsPipelineFrame( renderer ) ? WP_GRAPHICS_FRAME_OK
-                                                                         : WP_GRAPHICS_FRAME_SKIP;
+                    return owner->beginGraphicsPipelineFrame(
+                               renderer, (pass.flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW) != 0 ) ?
+                               WP_GRAPHICS_FRAME_OK : WP_GRAPHICS_FRAME_SKIP;
                 case WP_GRAPHICS_FRAME_DRAW_SCENE:
                 {
                     auto &active = activeDrawPass();
@@ -1657,24 +1781,40 @@ namespace workphone
                 case WP_GRAPHICS_FRAME_END_EFFECTS:
                     owner->endGraphicsPipelineFrame( renderer );
                     break;
+                case WP_GRAPHICS_FRAME_DRAW_CAMERA_EFFECTS:
+                    if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer );
+                        dx11 && !dx11->applyCameraEffects( pass.postProcess, pass.compositeLayers ) )
+                    {
+                        return WP_GRAPHICS_FRAME_FAILED;
+                    }
+                    break;
                 case WP_GRAPHICS_FRAME_DRAW_UI:
                     if( auto app = core::IApplicationManager::instancePtr() )
                     {
                         if( auto renderUI = app->getRenderUI(); renderUI && renderUI->isLoaded() )
                         {
-                            if( owner->m_frameSimulationEnabled )
+                            if( auto nativeUI = dynamic_pointer_cast<ui::ClawUIManager>( renderUI ) )
+                            {
+                                nativeUI->renderViewport(
+                                    !owner->m_frameSimulationEnabled,
+                                    ( pass.flags & WP_GRAPHICS_FRAME_TARGET_UI ) != 0,
+                                    ( pass.flags & WP_GRAPHICS_FRAME_TARGET_OVERLAY ) != 0 );
+                            }
+                            else if( owner->m_frameSimulationEnabled &&
+                                     ( pass.flags & WP_GRAPHICS_FRAME_TARGET_UI ) )
                             {
                                 renderUI->render();
-                            }
-                            else if( auto nativeUI = dynamic_pointer_cast<ui::ClawUIManager>( renderUI ) )
-                            {
-                                nativeUI->renderReadOnly();
                             }
                             // Unknown game UI backends have no read-only input contract.
                         }
                     }
                     break;
                 case WP_GRAPHICS_FRAME_DRAW_OVERLAY:
+                    if( pass.flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW )
+                    {
+                        if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
+                            wp_renderer_dx11_save_window_history( wp_renderer_get_dx11( dx11->getNativeRenderer() ) );
+                    }
                     owner->drawImGuiOverlay();
                     break;
                 case WP_GRAPHICS_FRAME_RETIRE_SCENES:
@@ -1795,6 +1935,7 @@ namespace workphone
                     }, &context );
                 if( result != WP_RTT_OK )
                 {
+                    if( pass.manualUpdate ) target->update();
                     WP_LOG_ERROR( "Native offscreen job failed: " + std::to_string( result ) );
                 }
                 return result;
@@ -1866,7 +2007,7 @@ namespace workphone
             }
         }
 
-        bool ClawHammerSystem::beginGraphicsPipelineFrame( SmartPtr<IRenderer> renderer )
+        bool ClawHammerSystem::beginGraphicsPipelineFrame( SmartPtr<IRenderer> renderer, bool preserveContents )
         {
             if( !renderer || !m_graphicsPipeline )
             {
@@ -1906,8 +2047,11 @@ namespace workphone
                 {
                     explicitOutput |= options->hasProperty( key );
                 }
-                if( !explicitOutput && ( renderer->getRenderTarget() != getDefaultWindow() ||
-                                         !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) )
+                // HDR staging clears its own colour and depth. Accumulation needs
+                // the viewport's retained colour/depth, so draw directly in that case.
+                if( preserveContents ||
+                    ( !explicitOutput && ( renderer->getRenderTarget() != getDefaultWindow() ||
+                                           !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) ) )
                 {
                     // A legacy project may follow one with an explicit GPU profile.
                     // Its direct draw path must not inherit that project's light grid

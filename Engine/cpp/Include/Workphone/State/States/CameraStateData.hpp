@@ -19,6 +19,7 @@ namespace workphone
         SmartPtr<render::ITexture> targetTexture;
         WeakPtr<render::IViewport> viewport;
         render::IGraphicsCamera::PostProcessSettings postProcessSettings;
+        render::IGraphicsCamera::PostProcessSettings renderPostProcessSettings;
         Array<render::IGraphicsCamera::CompositeLayer> compositeLayers;
 
         f32 lodBias = 1.0f;

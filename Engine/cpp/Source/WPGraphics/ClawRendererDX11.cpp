@@ -24,6 +24,7 @@
 #include <d3dcompiler.h>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <limits>
@@ -39,6 +40,39 @@ namespace workphone::render
                wp_renderer_dx11_set_material_upload_mode(
                    wp_renderer_get_dx11( m_renderer ),
                    enabled ? WP_DX11_MATERIAL_UPLOAD_SPLIT : WP_DX11_MATERIAL_UPLOAD_COMBINED );
+    }
+
+    bool ClawRendererDX11::applyCameraEffects( const IGraphicsCamera::PostProcessSettings &settings,
+                                                const Array<IGraphicsCamera::CompositeLayer> &layers )
+    {
+        const auto finiteRange = []( f32 value, f32 minimum, f32 maximum, f32 fallback ) {
+            return std::isfinite( value ) ? std::clamp( value, minimum, maximum ) : fallback;
+        };
+        const wp_dx11_camera_effects effects{
+            settings.enabled, settings.fxaa, settings.bloom,
+            finiteRange( settings.exposure, -32.f, 32.f, 0.f ),
+            finiteRange( settings.gamma, 0.01f, 16.f, 2.2f ),
+            finiteRange( settings.contrast, 0.f, 16.f, 1.f ),
+            finiteRange( settings.saturation, 0.f, 16.f, 1.f ),
+            finiteRange( settings.bloomIntensity, 0.f, 64.f, 0.f ),
+            finiteRange( settings.bloomThreshold, 0.f, 64.f, 1.f ),
+            finiteRange( settings.vignette, 0.f, 1.f, 0.f )
+        };
+        std::array<wp_dx11_camera_layer, 4> nativeLayers{};
+        wp_u32 count = 0;
+        for( const auto &layer : layers )
+        {
+            const auto opacity = finiteRange( layer.opacity, 0.f, 1.f, 0.f );
+            if( !layer.enabled || !layer.texture || opacity == 0.f ) continue;
+            void *view = nullptr;
+            layer.texture->getTextureFinal( &view );
+            if( !view ) continue;
+            nativeLayers[count++] = { view, opacity, static_cast<wp_s32>( layer.blendMode ) };
+            if( count == nativeLayers.size() ) break;
+        }
+        if( !settings.enabled && count == 0 ) return true;
+        return wp_renderer_dx11_apply_camera_effects( wp_renderer_get_dx11( m_renderer ),
+                                                      &effects, nativeLayers.data(), count ) != 0;
     }
 
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawRendererDX11, IRenderer3 );

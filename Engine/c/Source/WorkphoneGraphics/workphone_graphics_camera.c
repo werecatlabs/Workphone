@@ -20,6 +20,7 @@ typedef struct wp_camera
     wp_f32 near_dist;
     wp_f32 far_dist;
     wp_f32 ortho_width;
+    wp_f32 ortho_height;
     wp_vec3f position;
     wp_quatf orientation;
     wp_viewport viewport;
@@ -290,6 +291,19 @@ wp_f32 wp_camera_get_ortho_width( const wp_camera *camera )
     return camera->ortho_width;
 }
 
+void wp_camera_set_ortho_height( wp_camera *camera, wp_f32 half_height )
+{
+    if( camera )
+    {
+        camera->ortho_height = half_height;
+    }
+}
+
+wp_f32 wp_camera_get_ortho_height( const wp_camera *camera )
+{
+    return camera ? camera->ortho_height : 0.0f;
+}
+
 /* =========================================================================
  * Transform
  * ====================================================================== */
@@ -431,8 +445,9 @@ void wp_camera_get_projection_matrix( const wp_camera *camera, wp_mat4f *matrix 
     far_dist = camera->far_dist > near_dist ? camera->far_dist : near_dist + 1.0f;
     if( camera->projection_type == WORKPHONE_PROJECTION_ORTHOGRAPHIC )
     {
-        half_width = camera->ortho_width > 0.000001f ? camera->ortho_width : 1.0f;
-        half_height = half_width / aspect;
+        half_width = camera->ortho_width > 0.0f ? camera->ortho_width :
+                     camera->ortho_height > 0.0f ? camera->ortho_height * aspect : 1.0f;
+        half_height = camera->ortho_height > 0.0f ? camera->ortho_height : half_width / aspect;
         wp_mat4f_ortho( matrix, -half_width, half_width, -half_height, half_height, near_dist,
                         far_dist );
     }

@@ -842,15 +842,7 @@ namespace workphone::scene
                 auto names = StringUtil::split( name, "::" );
                 if( !names.empty() && names.back() == typeNames.back() )
                 {
-                    auto camera = workphone::dynamic_pointer_cast<Camera>( component );
-                    auto targetTexture = camera ? camera->getTargetTexture() : nullptr;
                     component->setProperties( componentData );
-                    if( camera )
-                    {
-                        // Output render textures are serialized separately from
-                        // the editor-owned viewport target. Keep the latter bound.
-                        camera->setTargetTexture( targetTexture );
-                    }
                     break;
                 }
             }

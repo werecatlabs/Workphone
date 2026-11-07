@@ -359,16 +359,22 @@ static wp_rtt_result wp_system_draw_target_contents( void *data, const wp_graphi
 
     if( execution->entered ) return WP_RTT_INVALID;
     execution->entered = 1;
-    if( !(flags & WP_GRAPHICS_FRAME_TARGET_SCENE) ) return WP_RTT_OK;
-
-    effects = wp_system_target_step( execution, WP_GRAPHICS_FRAME_BEGIN_EFFECTS );
-    if( effects != WP_GRAPHICS_FRAME_OK && effects != WP_GRAPHICS_FRAME_SKIP ) return WP_RTT_BACKEND_FAILED;
-    drawn = wp_system_target_step( execution, WP_GRAPHICS_FRAME_DRAW_SCENE );
-    ended = effects == WP_GRAPHICS_FRAME_OK
-                ? wp_system_target_step( execution, WP_GRAPHICS_FRAME_END_EFFECTS )
-                : WP_GRAPHICS_FRAME_OK;
-    if( drawn != WP_GRAPHICS_FRAME_OK || ended != WP_GRAPHICS_FRAME_OK ) return WP_RTT_BACKEND_FAILED;
-    if( (flags & WP_GRAPHICS_FRAME_TARGET_UI) &&
+    if( flags & WP_GRAPHICS_FRAME_TARGET_SCENE )
+    {
+        effects = wp_system_target_step( execution, WP_GRAPHICS_FRAME_BEGIN_EFFECTS );
+        if( effects != WP_GRAPHICS_FRAME_OK && effects != WP_GRAPHICS_FRAME_SKIP ) return WP_RTT_BACKEND_FAILED;
+        drawn = wp_system_target_step( execution, WP_GRAPHICS_FRAME_DRAW_SCENE );
+        ended = effects == WP_GRAPHICS_FRAME_OK
+                    ? wp_system_target_step( execution, WP_GRAPHICS_FRAME_END_EFFECTS )
+                    : WP_GRAPHICS_FRAME_OK;
+        if( drawn != WP_GRAPHICS_FRAME_OK || ended != WP_GRAPHICS_FRAME_OK ) return WP_RTT_BACKEND_FAILED;
+    }
+    if( (flags & WP_GRAPHICS_FRAME_TARGET_CAMERA_EFFECTS) &&
+        wp_system_target_step( execution, WP_GRAPHICS_FRAME_DRAW_CAMERA_EFFECTS ) != WP_GRAPHICS_FRAME_OK )
+    {
+        return WP_RTT_BACKEND_FAILED;
+    }
+    if( (flags & (WP_GRAPHICS_FRAME_TARGET_UI | WP_GRAPHICS_FRAME_TARGET_OVERLAY)) &&
         wp_system_target_step( execution, WP_GRAPHICS_FRAME_DRAW_UI ) != WP_GRAPHICS_FRAME_OK )
     {
         return WP_RTT_BACKEND_FAILED;
@@ -387,7 +393,9 @@ static wp_s32 wp_system_render_target( wp_system_target_execution *execution )
         return target->transact( target->user_data, wp_system_draw_target_contents, execution ) == WP_RTT_OK &&
                execution->entered;
     }
-    if( (flags & (WP_GRAPHICS_FRAME_TARGET_WINDOW | WP_GRAPHICS_FRAME_TARGET_CLEAR)) &&
+    if( ( (flags & WP_GRAPHICS_FRAME_TARGET_CLEAR) ||
+          ( (flags & WP_GRAPHICS_FRAME_TARGET_WINDOW) &&
+            !(flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW) ) ) &&
         wp_system_target_step( execution, WP_GRAPHICS_FRAME_CLEAR_TARGET ) != WP_GRAPHICS_FRAME_OK )
         return 0;
     if( wp_system_draw_target_contents( execution, NULL ) != WP_RTT_OK ) return 0;

@@ -294,6 +294,31 @@ BOOST_AUTO_TEST_CASE( camera_output_render_texture_binds_immediately_and_can_be_
     texture = nullptr;
 }
 
+BOOST_AUTO_TEST_CASE( camera_output_edits_preserve_the_default_preview_target )
+{
+    TestGuard guard;
+    auto camera = make_ptr<Camera>();
+    auto preview = make_ptr<render::Texture>();
+    auto output = make_ptr<scene::RenderTexture>();
+    auto outputTexture = make_ptr<render::Texture>();
+    output->setTexture( outputTexture );
+
+    camera->setTargetTexture( preview );
+    auto properties = camera->getProperties();
+    properties->setProperty( Camera::s_fovStr, 62.0f );
+    camera->setProperties( properties );
+    BOOST_CHECK( camera->getTargetTexture() == preview );
+
+    camera->setOutputRenderTexture( output );
+    BOOST_CHECK( camera->getTargetTexture() == outputTexture );
+    camera->setTargetTexture( preview );
+    BOOST_CHECK( camera->getTargetTexture() == outputTexture );
+
+    camera->setOutputRenderTexture( nullptr );
+    BOOST_CHECK( camera->getTargetTexture() == preview );
+    camera->unload( nullptr );
+}
+
 BOOST_AUTO_TEST_CASE( camera_output_target_is_resynchronized_after_deferred_texture_creation )
 {
     TestGuard guard;

@@ -9,7 +9,9 @@
 #include <ui/ResourceDatabaseDialog.hpp>
 #include <ui/ActorWindow.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/Components/Camera.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
+#include <Workphone/Scene/Components/RenderTexture.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCubemap.hpp>
 
 namespace workphone::editor
@@ -38,6 +40,70 @@ namespace workphone::editor
             if( ApplicationUtil::isSupportedSound( path ) )
                 return resources->loadDirectorFromResourcePath( path, scene::SoundResourceDirector::typeInfo() );
             return resources->loadResource( path );
+        }
+
+        SmartPtr<scene::RenderTexture> findRenderTexture( const String &uuid, bool matchActor )
+        {
+            if( uuid.empty() ) return nullptr;
+            auto app = core::IApplicationManager::instancePtr();
+            auto manager = app ? app->getGameManagerPtr() : nullptr;
+            auto currentScene = manager ? manager->getCurrentScene() : nullptr;
+            if( !currentScene ) return nullptr;
+
+            SmartPtr<scene::RenderTexture> match;
+            for( const auto &texture : currentScene->getComponents<scene::RenderTexture>() )
+            {
+                auto actor = texture->getActor();
+                if( !actor ) continue;
+                auto handle = matchActor ? actor->getHandle() : texture->getHandle();
+                if( handle && handle->getUUIDAsString() == uuid )
+                {
+                    // The picker can distinguish multiple targets on one actor.
+                    if( match && match != texture ) return nullptr;
+                    match = texture;
+                }
+            }
+            return match;
+        }
+
+        SmartPtr<Properties> inspectorComponentProperties( const SmartPtr<scene::IComponent> &component )
+        {
+            auto properties = component->getProperties();
+            if( !properties || !component->isDerived<scene::Camera>() ) return properties;
+
+            auto actor = component->getActor();
+            auto scene = actor ? actor->getScene() : nullptr;
+            if( !scene ) return properties;
+
+            auto displayedProperties = properties->getPropertiesAsArray();
+            const auto isAssignedRenderTexture = []( const Property &property ) {
+                return property.getAttribute( Properties::resourceTypeStr ) == "RenderTexture" &&
+                       !property.getValue().empty();
+            };
+            if( std::none_of( displayedProperties.begin(), displayedProperties.end(),
+                              isAssignedRenderTexture ) )
+                return properties;
+
+            const auto textures = scene->getComponents<workphone::scene::RenderTexture>();
+            for( const auto &property : displayedProperties )
+            {
+                if( !isAssignedRenderTexture( property ) ) continue;
+                const auto uuid = property.getValue();
+                const auto match = std::find_if( textures.begin(), textures.end(), [&]( const auto &texture ) {
+                    auto handle = texture->getHandle();
+                    return handle && handle->getUUIDAsString() == uuid;
+                } );
+                if( match != textures.end() )
+                {
+                    if( auto target = ( *match )->getActor() )
+                    {
+                        auto label = target->getName();
+                        properties->getPropertyObject( property.getName() )
+                            .setAttribute( "referenceLabel", label.empty() ? String( "Untitled" ) : label );
+                    }
+                }
+            }
+            return properties;
         }
     }
 
@@ -476,7 +542,7 @@ namespace workphone::editor
             {
                 auto derived = workphone::dynamic_pointer_cast<scene::IComponent>( object );
 
-                if( auto properties = derived->getProperties() )
+                if( auto properties = inspectorComponentProperties( derived ) )
                 {
                     m_propertyGrid->setProperties( properties );
                 }
@@ -756,7 +822,7 @@ namespace workphone::editor
                 {
                     auto derived = workphone::dynamic_pointer_cast<scene::IComponent>( object );
 
-                    if( auto properties = derived->getProperties() )
+                    if( auto properties = inspectorComponentProperties( derived ) )
                     {
                         propertyGrid->setProperties( properties );
                     }
@@ -1067,7 +1133,11 @@ namespace workphone::editor
         if( !group || !group->hasProperty( name ) ) return 0;
         const auto &descriptor = group->getPropertyObject( name );
         if( descriptor.isReadOnly() ) return 0;
-        const auto resourceType = AssetReferenceChange::referenceType( descriptor.getAttribute( "resourceType" ) );
+        const auto reference = descriptor.getAttribute( Properties::resourceTypeStr );
+        const auto renderTextureReference = reference == "RenderTexture";
+        if( renderTextureReference && ( isButton || ( !value.empty() && !findRenderTexture( value, false ) ) ) )
+            return 0;
+        const auto resourceType = AssetReferenceChange::referenceType( reference );
         if( isButton && resourceType != 0 ) return resourceType;
 
         // Never replace a target with the displayed group's snapshot: another
@@ -1077,8 +1147,18 @@ namespace workphone::editor
         auto edited = resolvePropertyGroup( replacement, path );
         auto &property = edited->getPropertyObject( name );
         if( isButton ) property.setValueAsButton( true );
-        else property.setValue( value );
+        else
+        {
+            property.setValue( value );
+            if( name == scene::Camera::s_isActiveStr && target->isDerived<scene::Camera>() )
+                property.setAttribute( "manualActivation", "true" );
+        }
         target->setProperties( replacement );
+        if( renderTextureReference )
+        {
+            if( auto component = dynamic_pointer_cast<scene::IComponent>( target ) )
+                if( auto actor = component->getActor() ) actor->setDirty( true );
+        }
         // A director's Save action is dispatched by setProperties itself.
         const bool dispatchedSave = isButton && path.empty() && name == scene::ResourceDirector::saveStr &&
                                     dynamic_pointer_cast<scene::ResourceDirector>( target );
@@ -1215,6 +1295,16 @@ namespace workphone::editor
                 auto dataStr = arguments[0].getStr();
                 auto name = arguments[1].getStr();
                 DataUtil::parse( dataStr, dragData.get() );
+
+                if( properties->hasProperty( name ) &&
+                    properties->getPropertyObject( name ).getAttribute( Properties::resourceTypeStr ) ==
+                        "RenderTexture" )
+                {
+                    auto texture = findRenderTexture( dragData->getProperty( "actorUUID" ), true );
+                    if( texture && texture->getHandle() )
+                        owner->propertyChange( properties, name, texture->getHandle()->getUUIDAsString(), false );
+                    return {};
+                }
 
                 auto filePath = dragData->getProperty( "filePath" );
                 if( !StringUtil::isNullOrEmpty( filePath ) )

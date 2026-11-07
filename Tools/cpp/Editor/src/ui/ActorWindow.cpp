@@ -1027,6 +1027,15 @@ namespace workphone::editor
     void ActorWindow::clearInspector( const String &message )
     {
         setActorControlsEnabled( false );
+        if( m_propertiesWindow )
+        {
+            m_propertiesWindow->setSelected( nullptr );
+            m_propertiesWindow->setSelection( {} );
+            if( auto grid = m_propertiesWindow->getPropertyGrid() )
+            {
+                grid->setProperties( nullptr );
+            }
+        }
 
         if( m_transformWindow )
         {

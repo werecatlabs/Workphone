@@ -82,6 +82,31 @@ void *wp_renderer_dx11_get_hdr_scene_view( const wp_renderer_dx11 *renderer );
 /* Lifetime successful GPU resolves; independent of resettable frame statistics. */
 wp_u64 wp_renderer_dx11_get_hdr_completed_frames( const wp_renderer_dx11 *renderer );
 
+/* Camera output effects run after the scene resolve and before scene UI. Layers
+ * are borrowed native 2D shader views, in bottom-to-top order. */
+typedef struct wp_dx11_camera_effects
+{
+    wp_s32 enabled, fxaa, bloom;
+    wp_f32 exposure, gamma, contrast, saturation, bloom_intensity, bloom_threshold, vignette;
+} wp_dx11_camera_effects;
+
+typedef struct wp_dx11_camera_layer
+{
+    void *view;
+    wp_f32 opacity;
+    wp_s32 blend_mode; /* 0 Replace, 1 Alpha, 2 Add, 3 Multiply, 4 Screen */
+} wp_dx11_camera_layer;
+
+wp_s32 wp_renderer_dx11_apply_camera_effects( wp_renderer_dx11 *renderer,
+    const wp_dx11_camera_effects *effects, const wp_dx11_camera_layer *layers, wp_u32 count );
+
+/* Explicit opt-in history for a window viewport that does not clear each
+ * frame. The swap chain may discard its back buffer after Present. */
+wp_s32 wp_renderer_dx11_restore_window_history( wp_renderer_dx11 *renderer,
+                                                wp_u64 owner, const wp_vec4f *background );
+void wp_renderer_dx11_save_window_history( wp_renderer_dx11 *renderer );
+void wp_renderer_dx11_discard_window_history( wp_renderer_dx11 *renderer );
+
 /* Renderer-owned immutable mesh geometry. Triangle lists cache the complete
  * mesh; apply first/count when drawing the returned geometry. Strip ranges are
  * converted to lists starting at zero with submesh-relative winding. Geometry is

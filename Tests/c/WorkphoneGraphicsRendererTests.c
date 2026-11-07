@@ -214,6 +214,13 @@ static int test_frustum_culling( wp_renderer *renderer )
         wp_scenenode_set_position( node, position );
         ok &= expect_mesh_submission( scene, renderer, 0, "box outside ortho frustum must be culled" );
         position.x = 0;
+        position.y = 0.8f;
+        wp_scenenode_set_position( node, position );
+        wp_camera_set_ortho_height( camera, 0.4f );
+        ok &= expect_mesh_submission( scene, renderer, 0, "an explicit ortho height must bound vertical culling" );
+        wp_camera_set_ortho_height( camera, 0.0f );
+        ok &= expect_mesh_submission( scene, renderer, 1, "zero ortho height must derive it from the aspect ratio" );
+        position.y = 0;
         wp_scenenode_set_position( parent, position );
         position.z = 0;
         wp_scenenode_set_position( node, position );

@@ -12,6 +12,7 @@
 #include <Workphone/Interface/System/ITask.hpp>
 #include <Workphone/Interface/Scene/ICameraManager.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
+#include <Workphone/Interface/Scene/IGameScene.hpp>
 #include <Workphone/Interface/Scene/ITransform.hpp>
 #include <Workphone/Scene/Components/RenderTexture.hpp>
 #include <Workphone/Core/BitUtil.hpp>
@@ -23,6 +24,66 @@
 
 namespace workphone::scene
 {
+    namespace
+    {
+        const String manualActivation = "manualActivation";
+
+        SmartPtr<RenderTexture> resolveRenderTexture( const Properties &properties, const String &key,
+                                                       const SmartPtr<IGameActor> &owner,
+                                                       const SmartPtr<RenderTexture> &previous )
+        {
+            const auto value = properties.getPropertyObject( key ).getValue();
+            if( value.empty() )
+            {
+                return nullptr;
+            }
+
+            const auto uuid = StringUtil::parseUUID( value );
+            if( uuid == UUID() )
+            {
+                return nullptr;
+            }
+
+            const auto scene = owner ? owner->getScene() : nullptr;
+            const auto belongsToScene = [&]( const SmartPtr<RenderTexture> &texture ) {
+                if( !scene ) return true;
+                const auto textureOwner = texture->getActor();
+                return textureOwner && textureOwner->getScene() == scene;
+            };
+
+            // The deferred component-loaded event can reapply the same properties
+            // after the scoped loader has resolved them but before scene publication.
+            if( previous && previous->getHandle()->getUUID() == uuid && belongsToScene( previous ) )
+            {
+                return previous;
+            }
+
+            SmartPtr<RenderTexture> texture;
+            properties.getPropertyAsType( key, texture );
+            if( texture && belongsToScene( texture ) )
+            {
+                return texture;
+            }
+
+            // Newly added components can be live in the scene before the catalog
+            // sees them. Scoped deserialization has first chance to resolve them.
+            if( scene )
+            {
+                for( const auto &candidate : scene->getComponents<RenderTexture>() )
+                {
+                    if( auto handle = candidate->getHandle() )
+                    {
+                        if( handle->getUUID() == uuid )
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+            return nullptr;
+        }
+    }
+
     const String Camera::s_zOrderStr = "zOrder";
     const String Camera::s_isActiveStr = "isActive";
     const String Camera::s_enableShadowsStr = "enableShadows";
@@ -136,7 +197,7 @@ namespace workphone::scene
             // Resource catalogs can retain an already-detached component beyond
             // scene-manager teardown. Releasing it again needs no manager access.
             if( getLoadingState() == LoadingState::Unloaded && !getActor() && !m_camera && !m_node &&
-                !m_viewport && !m_targetTexture && !m_outputRenderTexture &&
+                !m_viewport && !m_targetTexture && !m_defaultTargetTexture && !m_outputRenderTexture &&
                 m_compositeRenderTextures.empty() && m_compositeBlendModes.empty() &&
                 m_compositeOpacities.empty() && m_compositeEnabled.empty() )
             {
@@ -157,6 +218,7 @@ namespace workphone::scene
             sceneManager->unregisterAllComponent( this );
 
             m_targetTexture = nullptr;
+            m_defaultTargetTexture = nullptr;
             m_viewport = nullptr;
             m_camera = nullptr;
             m_node = nullptr;
@@ -180,8 +242,21 @@ namespace workphone::scene
 
     void Camera::setTargetTexture( SmartPtr<render::ITexture> targetTexture )
     {
-        if( m_targetTexture == targetTexture )
+        m_defaultTargetTexture = targetTexture;
+        refreshTargetTexture();
+    }
+
+    void Camera::refreshTargetTexture()
+    {
+        auto targetTexture = m_outputRenderTexture ? m_outputRenderTexture->getTexture()
+                                                   : m_defaultTargetTexture;
+        if( m_targetTexture == targetTexture &&
+            ( !m_viewport || !m_camera || m_viewport->getRenderTarget() == getRenderTarget() ) )
         {
+            if( !m_viewport && m_camera && getActorPtr() )
+            {
+                createViewport();
+            }
             return;
         }
 
@@ -205,8 +280,7 @@ namespace workphone::scene
             createViewport();
         }
 
-        auto active = isActive();
-        updateActiveState( active );
+        updateActiveState( isActive() );
     }
 
     auto Camera::getProperties() const -> SmartPtr<Properties>
@@ -214,7 +288,10 @@ namespace workphone::scene
         if( auto properties = Component::getProperties() )
         {
             properties->setProperty( s_zOrderStr, m_zOrder );
-            properties->setProperty( s_isActiveStr, m_isActive );
+            properties->setProperty( s_isActiveStr, m_activationOverride.value_or( m_isActive ) );
+            auto &activation = properties->getPropertyObject( s_isActiveStr );
+            activation.setAttribute( manualActivation, m_activationOverride ? "true" : "false" );
+            activation.setAttribute( "description", "Controls participation when using scene cameras." );
             properties->setProperty( s_enableShadowsStr, m_enableShadows );
             properties->setProperty( s_visibilityMaskStr, m_visibilityMask );
             properties->setProperty( s_viewportBackgroundColourStr, m_viewportBackgroundColour );
@@ -228,6 +305,11 @@ namespace workphone::scene
             properties->setProperty( s_farClipStr, m_farClip );
             properties->setProperty( s_orthoWidthStr, m_orthoWidth );
             properties->setProperty( s_orthoHeightStr, m_orthoHeight );
+            for( const auto &extent : { s_orthoWidthStr, s_orthoHeightStr } )
+            {
+                properties->getPropertyObject( extent ).setAttribute(
+                    "description", "World units. Zero derives this axis from the other. Two zeros use perspective." );
+            }
             properties->setProperty(
                 s_outputRenderTextureStr,
                 workphone::static_pointer_cast<IComponent>( getOutputRenderTexture() ) );
@@ -235,6 +317,8 @@ namespace workphone::scene
                 .setAttribute( "resourceType", "RenderTexture" );
             properties->setProperty( s_postProcessEnabledStr, m_postProcessSettings.enabled );
             properties->setProperty( s_postProcessWorkspaceStr, m_postProcessSettings.workspace );
+            properties->getPropertyObject( s_postProcessWorkspaceStr ).setAttribute(
+                "description", "Optional project-relative JSON preset overriding the camera's post-processing values." );
             properties->setProperty( s_fxaaStr, m_postProcessSettings.fxaa );
             properties->setProperty( s_bloomStr, m_postProcessSettings.bloom );
             properties->setProperty( s_exposureStr, m_postProcessSettings.exposure );
@@ -285,7 +369,8 @@ namespace workphone::scene
             properties->getPropertyValue(s_fovStr,fov);properties->getPropertyValue(s_nearClipStr,nearClip);
             properties->getPropertyValue(s_farClipStr,farClip);properties->getPropertyValue(s_orthoWidthStr,width);properties->getPropertyValue(s_orthoHeightStr,height);
             if(!std::isfinite(fov)||fov<=0||fov>=180||!std::isfinite(nearClip)||nearClip<=0||!std::isfinite(farClip)||farClip<=nearClip||
-               !std::isfinite(width)||!std::isfinite(height)||width!=0||height!=0)
+               !std::isfinite(width)||!std::isfinite(height)||width<0||height<0||
+               width>10000000||height>10000000)
                 throw std::runtime_error("Runtime camera projection values are invalid");
             auto colour=m_viewportBackgroundColour;properties->getPropertyValue(s_viewportBackgroundColourStr,colour);
             if(!std::isfinite(colour.r)||!std::isfinite(colour.g)||!std::isfinite(colour.b)||!std::isfinite(colour.a)||
@@ -304,11 +389,36 @@ namespace workphone::scene
 
         const auto wasEnabled = isEnabled();
 
-        properties->getPropertyValue( s_zOrderStr, m_zOrder );
-        setZOrder( m_zOrder );
+        u32 zOrder = m_zOrder;
+        if( properties->getPropertyValue( s_zOrderStr, zOrder ) )
+        {
+            setZOrder( zOrder );
+        }
 
-        auto active = isActive();
-        properties->getPropertyValue( s_isActiveStr, active );
+        auto active = m_isActive;
+        bool activationChanged = false;
+        if( properties->getPropertyValue( s_isActiveStr, active ) )
+        {
+            const auto previousOverride = m_activationOverride;
+            const auto mode = properties->getPropertyObject( s_isActiveStr ).getAttribute(
+                manualActivation );
+            if( mode == "true" )
+            {
+                m_activationOverride = active;
+            }
+            else
+            {
+                m_activationOverride.reset();
+            }
+            activationChanged = previousOverride != m_activationOverride;
+            if( mode.empty() && m_isActive != active )
+            {
+                // Older scene files stored the effective state. The manager
+                // still automatically chooses eligible cameras in those scenes.
+                m_isActive = active;
+                activationChanged = true;
+            }
+        }
         properties->getPropertyValue( s_enableShadowsStr, m_enableShadows );
         properties->getPropertyValue( s_visibilityMaskStr, m_visibilityMask );
         properties->getPropertyValue( s_viewportBackgroundColourStr, m_viewportBackgroundColour );
@@ -318,11 +428,12 @@ namespace workphone::scene
         properties->getPropertyValue( s_overlaysEnabledStr, m_overlaysEnabled );
         properties->getPropertyValue( s_autoUpdatedStr, m_autoUpdated );
 
-        SmartPtr<IComponent> outputComponent;
+        const auto actor = getActor();
+        const auto previousOutput = m_outputRenderTexture;
         if( properties->hasProperty( s_outputRenderTextureStr ) )
         {
-            properties->getPropertyValue( s_outputRenderTextureStr, outputComponent );
-            setOutputRenderTexture( workphone::dynamic_pointer_cast<RenderTexture>( outputComponent ) );
+            setOutputRenderTexture(
+                resolveRenderTexture( *properties, s_outputRenderTextureStr, actor, previousOutput ) );
         }
 
         properties->getPropertyValue( s_postProcessEnabledStr, m_postProcessSettings.enabled );
@@ -340,10 +451,11 @@ namespace workphone::scene
         for( u32 i = 0; i < m_compositeRenderTextures.size(); ++i )
         {
             const auto prefix = s_compositeLayerPrefix + StringUtil::toString( i );
-            SmartPtr<IComponent> component;
-            if( properties->hasProperty( prefix + ".renderTexture" ) )
+            const auto textureKey = prefix + ".renderTexture";
+            auto component = m_compositeRenderTextures[i];
+            if( properties->hasProperty( textureKey ) )
             {
-                properties->getPropertyValue( prefix + ".renderTexture", component );
+                component = resolveRenderTexture( *properties, textureKey, actor, component );
             }
 
             s32 blendMode = static_cast<s32>( m_compositeBlendModes[i] );
@@ -352,7 +464,7 @@ namespace workphone::scene
             properties->getPropertyValue( prefix + ".opacity", m_compositeOpacities[i] );
             properties->getPropertyValue( prefix + ".enabled", layerEnabled );
             setCompositeRenderTexture(
-                i, workphone::dynamic_pointer_cast<RenderTexture>( component ),
+                i, component,
                 static_cast<render::IGraphicsCamera::CompositeBlendMode>( blendMode ),
                 m_compositeOpacities[i], layerEnabled );
         }
@@ -389,41 +501,23 @@ namespace workphone::scene
             setOrthoWindowHeight( orthoHeight );
         }
 
-        if( properties->isButtonPressed( s_resetStr ) )
-        {
-            cameraManager->reset();
-        }
-
-        if( properties->isButtonPressed( s_updateActiveStateStr ) )
-        {
-            m_isActive = true;
-            updateActiveState( m_isActive );
-        }
-
         Component::setProperties( properties );
 
         const auto enabled = isEnabled();
+        const auto reset = properties->isButtonPressed( s_resetStr );
         // Staged package actors are not published yet. Resetting the shared
         // camera manager here would change last-good camera flags/targets even
         // if a later component constructor rejects this append.
-        const auto actor=getActor();
         const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(actor);
 
-        if( wasEnabled != enabled&&mayResetManager )
+        if( cameraManager && mayResetManager &&
+            ( reset || activationChanged || wasEnabled != enabled || previousOutput != m_outputRenderTexture ) )
         {
             cameraManager->reset();
-        }
-
-        if( m_isActive != active )
-        {
-            m_isActive = active;
-            if(mayResetManager)cameraManager->reset();
         }
 
         if( m_camera )
         {
-            m_camera->setVisible( m_isActive&&(!m_runtimeAssetsMode||
-                (isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor))) );
             m_camera->setAutoAspectRatio( true );
         }
 
@@ -437,10 +531,20 @@ namespace workphone::scene
             vp->setAutoUpdated( m_autoUpdated );
             vp->setShadowsEnabled( m_enableShadows );
             vp->setVisibilityMask( m_visibilityMask );
-            vp->setActive( m_isActive&&(!m_runtimeAssetsMode||
-                (isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor))) );
         }
 
+        updateActiveState( isActive() );
+        if( reset || properties->isButtonPressed( s_updateActiveStateStr ) )
+        {
+            setActive( m_isActive );
+            if( auto viewport = getViewport() )
+            {
+                if( auto target = viewport->getRenderTarget() )
+                {
+                    target->update();
+                }
+            }
+        }
         updateSmoothTransformState();
     }
 
@@ -490,34 +594,19 @@ namespace workphone::scene
 
     auto Camera::isActive() const -> bool
     {
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        WP_ASSERT( applicationManager );
-
-        auto actor = getActorPtr();
-        if( actor )
-        {
-            if( applicationManager->isEditorCamera() )
-            {
-                if( actor->getFlag( IGameActor::ActorFlagIsEditor ) )
-                {
-                    return true;
-                }
-            }
-
-            auto enabled = isEnabled() && actor->isEnabledInScene();
-            return enabled && m_isActive;
-        }
-
-        return false;
+        const auto actor = getActorPtr();
+        return m_isActive && isEnabled() && actor && actor->isEnabledInScene() &&
+               ( !m_runtimeAssetsMode || detail::runtimeActorPublished( getActor() ) );
     }
 
     void Camera::setActive( bool active )
     {
         m_isActive = active;
 
-        updateActiveState( m_isActive );
+        const auto effective = isActive();
+        updateActiveState( effective );
 
-        if( m_isActive )
+        if( effective )
         {
             if( auto actor = getActor() )
             {
@@ -526,17 +615,23 @@ namespace workphone::scene
         }
     }
 
+    bool Camera::allowsActivation() const
+    {
+        return m_activationOverride.value_or( true );
+    }
+
+    void Camera::updateVisibility()
+    {
+        updateActiveState( isActive() );
+    }
+
     void Camera::updateTransform()
     {
         if( m_camera )
         {
-            if( auto output = getOutputRenderTexture() )
+            if( m_outputRenderTexture )
             {
-                auto texture = output->getTexture();
-                if( texture && texture != getTargetTexture() )
-                {
-                    setTargetTexture( texture );
-                }
+                refreshTargetTexture();
             }
 
             const auto layers = getCompositeLayers();
@@ -666,6 +761,11 @@ namespace workphone::scene
 
     void Camera::updateOrder()
     {
+        if( m_hasZOrder )
+        {
+            return;
+        }
+
         if( auto actor = getActorPtr() )
         {
             if( actor->getFlag( IGameActor::ActorFlagIsEditor ) )
@@ -747,6 +847,7 @@ namespace workphone::scene
     void Camera::setZOrder( u32 zOrder )
     {
         m_zOrder = zOrder;
+        m_hasZOrder = true;
 
         if( m_viewport )
         {
@@ -762,10 +863,7 @@ namespace workphone::scene
             {
                 if( auto renderTarget = getRenderTarget() )
                 {
-                    if( m_zOrder == 0u )
-                    {
-                        updateOrder();
-                    }
+                    updateOrder();
 
                     auto zOrder = getZOrder();
                     auto vp = renderTarget->addViewport( m_vpExt++, camera, zOrder );
@@ -779,9 +877,7 @@ namespace workphone::scene
                     vp->setAutoUpdated( m_autoUpdated );
                     vp->setShadowsEnabled( m_enableShadows );
                     vp->setVisibilityMask( m_visibilityMask );
-                    auto actor=getActor();
-                    vp->setActive( m_isActive&&(!m_runtimeAssetsMode||
-                        (isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor))) );
+                    vp->setActive( isActive() );
 
                     m_viewport = vp;
                 }
@@ -868,13 +964,11 @@ namespace workphone::scene
             m_camera->setFOVy( m_fov );
             m_camera->setNearClipDistance( m_nearClip );
             m_camera->setFarClipDistance( m_farClip );
+            m_camera->setOrthoWindow( m_orthoWidth, m_orthoHeight );
             m_camera->setPostProcessSettings( m_postProcessSettings );
             m_camera->setCompositeLayers( getCompositeLayers() );
 
-            if( auto outputRenderTexture = getOutputRenderTexture() )
-            {
-                setTargetTexture( outputRenderTexture->getTexture() );
-            }
+            m_camera->setTargetTexture( m_targetTexture );
         }
     }
 
@@ -893,15 +987,12 @@ namespace workphone::scene
 
             if( m_viewport )
             {
+                auto renderTarget = m_viewport->getRenderTarget();
                 m_viewport->setRenderTarget( nullptr );
 
-                if( auto renderTarget = getRenderTarget() )
+                if( renderTarget )
                 {
                     renderTarget->removeViewport( m_viewport );
-                }
-                else
-                {
-                    if(window)window->removeViewport( m_viewport );
                 }
 
                 m_viewport = nullptr;
@@ -958,6 +1049,11 @@ namespace workphone::scene
         if( auto t = getTargetTexture() )
         {
             return t->getRenderTarget();
+        }
+
+        if( m_outputRenderTexture )
+        {
+            return nullptr;
         }
 
         return applicationManager->getWindow();
@@ -1128,81 +1224,11 @@ namespace workphone::scene
 
     void Camera::updateActiveState( bool active )
     {
-        if(m_runtimeAssetsMode){auto actor=getActor();active=active&&isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor);}
-#if 0
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        WP_ASSERT( applicationManager );
-
-        if( applicationManager->isEditorCamera() )
-        {
-            if( auto actor = getActor() )
-            {
-                if( !actor->getFlag( scene::IGameActor::ActorFlagIsEditor ) )
-                {
-                    if( m_camera )
-                    {
-                        m_camera->setRenderUI( false );
-                    }
-
-                    if( m_viewport )
-                    {
-                        m_viewport->setEnableUI( false );
-                        m_viewport->setActive( false );
-                    }
-
-                    if( m_camera )
-                    {
-                        m_camera->setVisible( false );
-                    }
-                }
-                else
-                {
-                    if( m_camera )
-                    {
-                        m_camera->setRenderUI( false );
-                    }
-
-                    if( m_viewport )
-                    {
-                        m_viewport->setEnableUI( false );
-                        m_viewport->setActive( active );
-                    }
-
-                    if( m_camera )
-                    {
-                        m_camera->setVisible( active );
-                    }
-                }
-            }
-        }
-        else
-        {
-            if( m_camera )
-            {
-                m_camera->setRenderUI( false );
-            }
-
-            if( m_viewport )
-            {
-                m_viewport->setEnableUI( false );
-                m_viewport->setActive( active );
-            }
-
-            if( m_camera )
-            {
-                m_camera->setVisible( active );
-            }
-        }
-#else
         auto state = getState();
-        switch( state )
-        {
-        case State::Edit:
-        case State::Play:
+        if( state == State::Edit || state == State::Play )
         {
             if( m_camera )
             {
-                m_camera->setTargetTexture( m_targetTexture );
                 m_camera->setVisible( active );
             }
 
@@ -1211,12 +1237,6 @@ namespace workphone::scene
                 m_viewport->setActive( active );
             }
         }
-        break;
-        default:
-        {
-        }
-        };
-#endif
     }
 
     auto Camera::getViewport() const -> SmartPtr<render::IViewport>
@@ -1279,6 +1299,10 @@ namespace workphone::scene
         }
 
         m_orthoHeight = height;
+        if( m_camera )
+        {
+            m_camera->setOrthoWindow( m_orthoWidth, m_orthoHeight );
+        }
     }
 
     f32 Camera::getOrthoWindowHeight() const
@@ -1294,6 +1318,10 @@ namespace workphone::scene
         }
 
         m_orthoWidth = width;
+        if( m_camera )
+        {
+            m_camera->setOrthoWindow( m_orthoWidth, m_orthoHeight );
+        }
     }
 
     f32 Camera::getOrthoWindowWidth() const
@@ -1459,7 +1487,7 @@ namespace workphone::scene
     void Camera::setOutputRenderTexture( SmartPtr<RenderTexture> renderTexture )
     {
         m_outputRenderTexture = renderTexture;
-        setTargetTexture( renderTexture ? renderTexture->getTexture() : nullptr );
+        refreshTargetTexture();
     }
 
     auto Camera::getPostProcessSettings() const -> render::IGraphicsCamera::PostProcessSettings
@@ -1529,7 +1557,11 @@ namespace workphone::scene
                 graphicsNode->setStatic( isstatic );
             }
 
-            if( !isstatic )
+            // Render-target resources may be replaced independently of a static transform.
+            const auto hasComposite = std::any_of(
+                m_compositeRenderTextures.begin(), m_compositeRenderTextures.end(),
+                []( const auto &layer ) { return static_cast<bool>( layer ); } );
+            if( !isstatic || m_outputRenderTexture || hasComposite )
             {
                 sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,
                                                        this );

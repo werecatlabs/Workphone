@@ -3,6 +3,7 @@
 #include <WPImGui/ImGuiDropJob.hpp>
 #include <WPImGui/ImGuiUtil.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/Components/RenderTexture.hpp>
 #include <imgui.h>
 #include <utility>
 
@@ -466,7 +467,55 @@ namespace workphone::ui
         }
         else if( StringUtil::isEqual( type, Util::resourceStr, true ) )
         {
-            if( ImGui::Button( StringUtil::isNullOrEmpty( value ) ? "None" : value.c_str() ) )
+            if( property.getAttribute( Properties::resourceTypeStr ) == "RenderTexture" )
+            {
+                auto preview = property.getAttribute( "referenceLabel" );
+                if( preview.empty() ) preview = value.empty() ? "None" : "Assigned";
+                if( ImGui::BeginCombo( widgetId, preview.c_str() ) )
+                {
+                    const auto choose = [&]( const String &uuid, const String &label ) {
+                        if( uuid == value ) return;
+                        auto &entry = properties->getPropertyObject( name );
+                        entry.setValue( uuid );
+                        entry.setAttribute( "referenceLabel", label );
+                        handlePropertyChanged( propertyGrid, properties, name, uuid );
+                    };
+                    if( ImGui::Selectable( "None", value.empty() ) )
+                    {
+                        choose( {}, {} );
+                    }
+
+                    auto app = core::IApplicationManager::instancePtr();
+                    auto manager = app ? app->getGameManagerPtr() : nullptr;
+                    auto currentScene = manager ? manager->getCurrentScene() : nullptr;
+                    if( currentScene )
+                    {
+                        for( const auto &texture : currentScene->getComponents<scene::RenderTexture>() )
+                        {
+                            auto actor = texture->getActor();
+                            auto handle = texture->getHandle();
+                            if( !actor || !handle ) continue;
+                            const auto uuid = handle->getUUIDAsString();
+                            if( uuid.empty() ) continue;
+                            auto label = actor->getName();
+                            if( label.empty() ) label = "Untitled";
+                            ImGui::PushID( uuid.c_str() );
+                            if( ImGui::Selectable( label.c_str(), uuid == value ) )
+                            {
+                                choose( uuid, label );
+                            }
+                            if( ImGui::IsItemHovered() )
+                            {
+                                ImGui::SetTooltip( "%s\n%s", texture->getTextureName().c_str(),
+                                                   uuid.c_str() );
+                            }
+                            ImGui::PopID();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            else if( ImGui::Button( StringUtil::isNullOrEmpty( value ) ? "None" : value.c_str() ) )
             {
                 handlePropertyButtonClicked( propertyGrid, properties, name, value );
             }

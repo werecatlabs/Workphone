@@ -42,6 +42,8 @@ namespace workphone
              */
             f32 getFOVy() const override;
             void setFOVy( f32 fov ) override;
+
+            void setOrthoWindow( f32 width, f32 height ) override;
             f32 getNearClipDistance() const override;
             void setNearClipDistance( f32 nearDist ) override;
             f32 getFarClipDistance() const override;
@@ -132,6 +134,9 @@ namespace workphone
              * @param name Optional name for the cloned camera; defaults to empty string.
              * @return A SmartPtr to the cloned IGraphicsObject.
              */
+            void setPostProcessSettings( const PostProcessSettings &settings ) override;
+            PostProcessSettings getRenderPostProcessSettings() const;
+
             SmartPtr<IGraphicsObject> clone(
                 const String &name = StringUtil::EmptyString ) const override;
 

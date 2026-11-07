@@ -209,62 +209,43 @@ namespace workphone::scene
             return;
         }
 
-        auto cameras = scene->getComponents<Camera>();
-
-        if( applicationManager->isEditorCamera() )
+        const auto useEditorCamera = applicationManager->isEditorCamera();
+        const auto editorTarget = getEditorRTT();
+        for( auto &camera : scene->getComponents<Camera>() )
         {
-            for( auto &camera : cameras )
+            auto actor = camera->getActor();
+            if( !actor || actor->getFlag( IGameActor::ActorFlagIsEditor ) )
             {
                 camera->setActive( false );
+                continue;
             }
 
-            if( auto editorCamera = getEditorCamera() )
+            if( editorTarget )
             {
-                auto editorCameras = editorCamera->getAllComponentsAndInChildren<Camera>();
-                for( auto &camera : editorCameras )
-                {
-                    camera->setActive( camera == editorCameras.front() );
-                }
-
-                if( applicationManager->isEditor() )
-                {
-                    auto state = applicationManager->isPlaying() ? IGameActor::State::Play
-                                                                 : IGameActor::State::Edit;
-                    editorCamera->setState( state );
-                }
+                camera->setTargetTexture( editorTarget );
             }
+
+            // Authored offscreen cameras can feed the preview in Edit too.
+            const auto active = camera->allowsActivation() && camera->isEnabled() &&
+                                actor->isEnabledInScene() &&
+                                ( !useEditorCamera || camera->getOutputRenderTexture() );
+            camera->setActive( active );
         }
-        else
+
+        if( auto editorCamera = getEditorCamera() )
         {
-            if( auto editorCamera = getEditorCamera() )
+            auto components = editorCamera->getAllComponentsAndInChildren<Camera>();
+            for( auto &camera : components )
             {
-                // Older scene restoration could leave multiple camera components
-                // on the editor actor. None may remain visible during game play.
-                for( auto &camera : editorCamera->getAllComponentsAndInChildren<Camera>() )
-                {
-                    camera->setActive( false );
-                }
+                camera->setActive( useEditorCamera && camera == components.front() &&
+                                   camera->allowsActivation() );
             }
 
-            if( !cameras.empty() )
+            if( useEditorCamera && applicationManager->isEditor() )
             {
-                for( auto &camera : cameras )
-                {
-                    camera->setActive( false );
-                }
-
-                for( auto &camera : cameras )
-                {
-                    auto cameraActor = camera->getActor();
-                    if( !cameraActor->getFlag( IGameActor::ActorFlagIsEditor ) )
-                    {
-                        auto enable = camera->isEnabled() && cameraActor->isEnabledInScene();
-                        camera->setActive( enable );
-
-                        auto rtt = getEditorRTT();
-                        camera->setTargetTexture( rtt );
-                    }
-                }
+                const auto state = applicationManager->isPlaying() ? IGameActor::State::Play
+                                                                   : IGameActor::State::Edit;
+                editorCamera->setState( state );
             }
         }
 

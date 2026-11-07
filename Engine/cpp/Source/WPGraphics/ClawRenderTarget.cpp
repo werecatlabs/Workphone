@@ -9,7 +9,7 @@ namespace workphone
 {
     namespace render
     {
-        WP_CLASS_REGISTER_DERIVED( workphone::render, ClawRenderTarget, IRenderTarget );
+        WP_CLASS_REGISTER_DERIVED( workphone::render, ClawRenderTarget, IRenderTexture );
 
         const String ClawRenderTarget::sizeStr = "size";
         const String ClawRenderTarget::colourDepthStr = "colourDepth";
@@ -65,12 +65,32 @@ namespace workphone
 
         void ClawRenderTarget::setAutoUpdated( bool autoupdate )
         {
-            m_autoUpdated = autoupdate;
+            m_autoUpdated.store( autoupdate, std::memory_order_relaxed );
         }
 
         bool ClawRenderTarget::isAutoUpdated() const
         {
-            return m_autoUpdated;
+            return m_autoUpdated.load( std::memory_order_relaxed );
+        }
+
+        void ClawRenderTarget::update()
+        {
+            m_updateRequested.store( true, std::memory_order_relaxed );
+        }
+
+        bool ClawRenderTarget::takeUpdateRequest()
+        {
+            return m_updateRequested.exchange( false, std::memory_order_relaxed );
+        }
+
+        SmartPtr<ITexture> ClawRenderTarget::getTexture() const
+        {
+            return m_texture.lock();
+        }
+
+        void ClawRenderTarget::setTexture( SmartPtr<ITexture> texture )
+        {
+            m_texture = texture.get();
         }
 
         void ClawRenderTarget::copyContentsToMemory( void *buffer, u32 size, FrameBuffer bufferId )

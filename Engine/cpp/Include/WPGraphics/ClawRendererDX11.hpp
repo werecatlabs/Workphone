@@ -3,6 +3,7 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <workphone_graphics_particle_simulation.h>
+#include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/Graphics/IRenderer3.hpp>
 #include <Workphone/Math/Matrix4.hpp>
 #include <Workphone/Memory/AtomicSmartPtr.hpp>
@@ -69,6 +70,9 @@ namespace workphone
              * @param data Shared object containing teardown data.
              */
             void unload( SmartPtr<ISharedObject> data ) override;
+
+            bool applyCameraEffects( const IGraphicsCamera::PostProcessSettings &settings,
+                                     const Array<IGraphicsCamera::CompositeLayer> &layers );
 
             /** Begin a new rendering frame. */
             void beginRender() override;

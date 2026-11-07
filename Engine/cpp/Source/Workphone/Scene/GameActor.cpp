@@ -7,6 +7,7 @@
 #include <Workphone/Scene/Components/CharacterController.hpp>
 #include <Workphone/Scene/Components/Collision.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
+#include <Workphone/Scene/Components/RenderTexture.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
 #include <Workphone/Interface/Physics/IRigidDynamic3.hpp>
@@ -625,7 +626,8 @@ namespace workphone::scene
         auto components = snapshotComponents();
         for( auto &component : components )
         {
-            if( component->getActorPtr() == this )
+            // RenderTexture::update is an explicit refresh, not a scene tick.
+            if( component->getActorPtr() == this && !component->isDerived<RenderTexture>() )
             {
                 component->update();
             }

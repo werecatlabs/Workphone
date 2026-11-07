@@ -2,7 +2,9 @@
 #define ClawRenderTarget_h__
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
-#include <Workphone/Interface/Graphics/IRenderTarget.hpp>
+#include <Workphone/Interface/Graphics/IRenderTexture.hpp>
+#include <Workphone/Memory/WeakPtr.hpp>
+#include <atomic>
 
 struct wp_renderer;
 struct wp_render_texture_dx11;
@@ -27,7 +29,7 @@ namespace workphone
          * @see IRenderTarget
          * @see ClawViewport
          */
-        class WPGraphics_API ClawRenderTarget : public IRenderTarget
+        class WPGraphics_API ClawRenderTarget : public IRenderTexture
         {
         public:
             /** @brief Property name for the render target size. */
@@ -76,6 +78,11 @@ namespace workphone
             void setAutoUpdated( bool autoupdate ) override;
             /** @brief Returns whether the target auto-updates. */
             bool isAutoUpdated() const override;
+            void update() override;
+            bool takeUpdateRequest();
+
+            SmartPtr<ITexture> getTexture() const override;
+            void setTexture( SmartPtr<ITexture> texture ) override;
 
             /** @brief Copies top-down, tightly packed RGBA8 pixels into a buffer of at least width * height * 4 bytes. */
             void copyContentsToMemory( void *buffer, u32 size,
@@ -154,7 +161,9 @@ namespace workphone
             u32 m_colourDepth = 32;                  ///< Colour depth in bits per pixel.
             u8 m_priority = 0;                       ///< Priority (0–255).
             bool m_active = true;                    ///< Whether the target is active.
-            bool m_autoUpdated = true;               ///< Whether the target auto-updates.
+            std::atomic<bool> m_autoUpdated{ true };
+            std::atomic<bool> m_updateRequested{ false };
+            WeakPtr<ITexture> m_texture;
             RenderTargetStats m_stats;               ///< Cached rendering statistics.
             Array<SmartPtr<IViewport>> m_viewports;  ///< Attached viewports.
             wp_render_texture_dx11 *m_nativeRenderTexture = nullptr;

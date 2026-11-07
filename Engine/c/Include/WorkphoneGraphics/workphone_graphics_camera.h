@@ -189,6 +189,10 @@ void wp_camera_set_ortho_width( wp_camera *camera, wp_f32 ortho_width );
  */
 wp_f32 wp_camera_get_ortho_width( const wp_camera *camera );
 
+/* A positive half-height overrides the automatic height derived from the aspect ratio. */
+void wp_camera_set_ortho_height( wp_camera *camera, wp_f32 half_height );
+wp_f32 wp_camera_get_ortho_height( const wp_camera *camera );
+
 /* -------------------------------------------------------------------------
  * Transform
  * ---------------------------------------------------------------------- */

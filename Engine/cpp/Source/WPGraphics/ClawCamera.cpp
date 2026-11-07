@@ -2,11 +2,77 @@
 #include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/ClawSceneNode.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/State/States/CameraStateData.hpp>
+#include <boost/json.hpp>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
 
 namespace workphone
 {
     namespace render
     {
+        namespace
+        {
+            auto resolvePostProcessWorkspace( const IGraphicsCamera::PostProcessSettings &settings )
+                -> IGraphicsCamera::PostProcessSettings
+            {
+                if( !settings.enabled || settings.workspace.empty() )
+                    return settings;
+
+                try
+                {
+                    auto app = core::IApplicationManager::instancePtr();
+                    const auto projectPath = app ? app->getProjectPath() : String();
+                    const auto relative = std::filesystem::u8path( settings.workspace.c_str() );
+                    if( projectPath.empty() || relative.has_root_path() || relative.extension() != ".json" )
+                        throw std::runtime_error( "Expected a project-relative JSON preset path." );
+
+                    const auto root = std::filesystem::canonical(
+                        std::filesystem::u8path( projectPath.c_str() ) );
+                    const auto file = std::filesystem::canonical( root / relative );
+                    const auto inProject = file.lexically_relative( root );
+                    if( inProject.empty() || *inProject.begin() == ".." ||
+                        !std::filesystem::is_regular_file( file ) )
+                        throw std::runtime_error( "The preset must be a file in the project." );
+
+                    const auto size = std::filesystem::file_size( file );
+                    if( size > 64 * 1024 )
+                        throw std::runtime_error( "The preset exceeds 64 KiB." );
+
+                    std::string source( static_cast<size_t>( size ), '\0' );
+                    std::ifstream input( file, std::ios::binary );
+                    if( !input.read( source.data(), static_cast<std::streamsize>( size ) ) )
+                        throw std::runtime_error( "Could not read the preset." );
+                    const auto document = boost::json::parse( source );
+                    const auto &values = document.as_object();
+                    auto resolved = settings;
+                    const auto readNumber = [&]( const char *key, f32 &destination ) {
+                        if( const auto *value = values.if_contains( key ) )
+                            destination = boost::json::value_to<f32>( *value );
+                    };
+                    if( const auto *value = values.if_contains( "fxaa" ) )
+                        resolved.fxaa = value->as_bool();
+                    if( const auto *value = values.if_contains( "bloom" ) )
+                        resolved.bloom = value->as_bool();
+                    readNumber( "exposure", resolved.exposure );
+                    readNumber( "gamma", resolved.gamma );
+                    readNumber( "contrast", resolved.contrast );
+                    readNumber( "saturation", resolved.saturation );
+                    readNumber( "bloomIntensity", resolved.bloomIntensity );
+                    readNumber( "bloomThreshold", resolved.bloomThreshold );
+                    readNumber( "vignette", resolved.vignette );
+                    return resolved;
+                }
+                catch( const std::exception &error )
+                {
+                    WP_LOG_ERROR( String( "Camera post-processing preset " ) + settings.workspace +
+                                  ": " + error.what() );
+                    return settings;
+                }
+            }
+        }
+
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawCamera, GraphicsCamera );
 
         ClawCamera::ClawCamera() : m_camera( wp_camera_create() )
@@ -36,6 +102,16 @@ namespace workphone
         {
             // The public graphics camera API uses degrees; the C renderer uses radians.
             wp_camera_set_fov_y( m_camera, MathF::DegToRad( fov ) );
+        }
+
+        void ClawCamera::setOrthoWindow( f32 width, f32 height )
+        {
+            const auto halfWidth = std::isfinite( width ) && width > 0.0f ? width * 0.5f : 0.0f;
+            const auto halfHeight = std::isfinite( height ) && height > 0.0f ? height * 0.5f : 0.0f;
+            wp_camera_set_ortho_width( m_camera, halfWidth );
+            wp_camera_set_ortho_height( m_camera, halfHeight );
+            wp_camera_set_projection_type( m_camera, halfWidth > 0.0f || halfHeight > 0.0f ?
+                    WORKPHONE_PROJECTION_ORTHOGRAPHIC : WORKPHONE_PROJECTION_PERSPECTIVE );
         }
 
         f32 ClawCamera::getNearClipDistance() const
@@ -90,11 +166,17 @@ namespace workphone
 
         Matrix4<real_Num> ClawCamera::getProjectionMatrix() const
         {
-            const auto nearClip = std::max( getNearClipDistance(), MathF::epsilon() );
-            const auto farClip = std::max( getFarClipDistance(), nearClip + 1.0f );
-            const auto aspect = std::max( getAspectRatio(), MathF::epsilon() );
+            // Match the native matrix used by scene culling.
+            wp_mat4f nativeProjection;
+            wp_camera_get_projection_matrix( m_camera, &nativeProjection );
             Matrix4<real_Num> projection;
-            projection.makePerspective( MathF::DegToRad( getFOVy() ), aspect, nearClip, farClip );
+            for( u32 row = 0; row < 4; ++row )
+            {
+                for( u32 column = 0; column < 4; ++column )
+                {
+                    projection[row][column] = nativeProjection.m[row][column];
+                }
+            }
             return projection;
         }
 
@@ -124,6 +206,29 @@ namespace workphone
             }
         }
 
+        void ClawCamera::setPostProcessSettings( const PostProcessSettings &settings )
+        {
+            const auto resolved = resolvePostProcessWorkspace( settings );
+            if( auto context = getStateContextPtr() )
+            {
+                if( auto state = context->invalidateStateDataById<CameraStateData>( getId() ) )
+                {
+                    state->postProcessSettings = settings;
+                    state->renderPostProcessSettings = resolved;
+                }
+            }
+        }
+
+        auto ClawCamera::getRenderPostProcessSettings() const -> PostProcessSettings
+        {
+            if( auto context = getStateContextPtr() )
+            {
+                if( auto state = context->getStateDataById<CameraStateData>( getId() ) )
+                    return state->renderPostProcessSettings;
+            }
+            return {};
+        }
+
         SmartPtr<IGraphicsObject> ClawCamera::clone( const String &name ) const
         {
             auto creator = getCreator();
@@ -146,6 +251,11 @@ namespace workphone
                     camera->setName( name );
                 }
                 camera->setFOVy( getFOVy() );
+                if( wp_camera_get_projection_type( m_camera ) == WORKPHONE_PROJECTION_ORTHOGRAPHIC )
+                {
+                    camera->setOrthoWindow( 2.0f * wp_camera_get_ortho_width( m_camera ),
+                                            2.0f * wp_camera_get_ortho_height( m_camera ) );
+                }
                 camera->setNearClipDistance( getNearClipDistance() );
                 camera->setFarClipDistance( getFarClipDistance() );
                 camera->setAspectRatio( getAspectRatio() );

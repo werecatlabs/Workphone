@@ -164,7 +164,7 @@ typedef struct target_trace
 static wp_s32 target_stage(wp_graphics_system *system, wp_f32 delta,
                           wp_graphics_system_frame_stage stage, void *data)
 {
-    static const char stages[] = "PBCFDEUOTNR";
+    static const char stages[] = "PBCFDEUOTNRA";
     target_trace *target = (target_trace *)data;
 
     if (stage == WP_GRAPHICS_FRAME_PREPARE_TARGET)
@@ -248,6 +248,20 @@ static int target_frame_contracts(void)
     reset_trace(&trace);
     wp_graphics_system_render(system);
     CHECK(strcmp(trace.events, "L") == 0);
+
+    reset_trace(&trace);
+    traces[1].reject_transaction = 0;
+    targets[1].flags = WP_GRAPHICS_FRAME_TARGET_CLEAR | WP_GRAPHICS_FRAME_TARGET_UI |
+                       WP_GRAPHICS_FRAME_TARGET_CAMERA_EFFECTS;
+    CHECK(wp_graphics_system_render_target_frame(system, 0.0f, 0, &targets[1], 1, target_stage));
+    CHECK(strcmp(trace.events, "bPBXAUYTNR") == 0);
+    CHECK(wp_graphics_system_get_failed_pass_count(system) == 0);
+
+    reset_trace(&trace);
+    targets[0].flags = WP_GRAPHICS_FRAME_TARGET_WINDOW | WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW |
+                       WP_GRAPHICS_FRAME_TARGET_OVERLAY;
+    CHECK(wp_graphics_system_render_target_frame(system, 0.0f, 0, &targets[0], 1, target_stage));
+    CHECK(strcmp(trace.events, "aPBUOTNR") == 0);
     wp_graphics_system_destroy(system);
     return 0;
 }

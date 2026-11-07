@@ -573,6 +573,20 @@ typedef char wp_material_surface_size_check[sizeof(wp_material_surface_constants
 typedef char wp_material_view_size_check[sizeof(wp_material_view_constants_dx11) == 112 ? 1 : -1];
 typedef char wp_material_binding_size_check[sizeof(wp_material_binding_constants_dx11) == 32 ? 1 : -1];
 
+typedef struct wp_dx11_camera_pass
+{
+    ID3DDeviceContextState *state;
+    ID3D11VertexShader *vs;
+    ID3D11PixelShader *ps;
+    ID3D11Buffer *constants;
+    ID3D11RasterizerState *raster;
+    ID3D11SamplerState *sampler;
+    ID3D11Texture2D *source;
+    ID3D11ShaderResourceView *source_view;
+    UINT width, height;
+    DXGI_FORMAT format;
+} wp_dx11_camera_pass;
+
 struct wp_renderer_dx11
 {
     wp_u64 rtt_generation;
@@ -654,6 +668,10 @@ struct wp_renderer_dx11
     wp_u64 hdr_completed_frames;
     wp_vec4f hdr_output_values;
     wp_s32 hdr_output_valid;
+    wp_dx11_camera_pass camera_pass;
+    ID3D11Texture2D *window_history;
+    wp_u64 window_history_owner;
+    wp_s32 window_history_valid;
     /* Render targets */
     ID3D11RenderTargetView *rt_view;
     ID3D11RenderTargetView *active_rt_view;
@@ -1230,6 +1248,7 @@ static wp_s32 wp_renderer_dx11_create_depth_stencil( wp_renderer_dx11 *r )
 
 static void wp_renderer_dx11_release_targets( wp_renderer_dx11 *r )
 {
+    wp_renderer_dx11_discard_window_history( r );
     wp_renderer_dx11_release_wrapped(r);
     r->active_rt_view = NULL;
     r->active_ds_view = NULL;
@@ -2315,6 +2334,140 @@ static const char wp_hdr_composite_ps[] =
     " c=lerp(12.92*c,1.055*pow(c,1.0/2.4)-0.055,step(0.0031308,c));"
     " return float4(c,1); }";
 
+static const char wp_camera_effects_ps[] =
+    "cbuffer CameraEffects : register(b0) { float4 region; float4 grade; float4 effects;"
+    " float4 layerOpacity; float4 layerMode; };"
+    "Texture2D scene : register(t0); Texture2D layer0 : register(t1);"
+    "Texture2D layer1 : register(t2); Texture2D layer2 : register(t3);"
+    "Texture2D layer3 : register(t4); SamplerState linearClamp : register(s0);"
+    "static const float3 luma = float3(.2126,.7152,.0722);"
+    "float3 sceneAt(int2 pixel) { int2 lo = int2(region.xy);"
+    " int2 hi = int2(region.xy + region.zw) - 1;"
+    " return scene.Load(int3(clamp(pixel,lo,hi),0)).rgb; }"
+    "float4 blendLayer(float4 base, float4 layer, float opacity, float mode) {"
+    " if(mode < .5) return lerp(base,layer,opacity);"
+    " float alpha = saturate(layer.a * opacity); float3 rgb = layer.rgb;"
+    " if(mode > 3.5) rgb = 1-(1-base.rgb)*(1-layer.rgb);"
+    " else if(mode > 2.5) rgb = base.rgb*layer.rgb;"
+    " else if(mode > 1.5) rgb = base.rgb+layer.rgb;"
+    " return float4(lerp(base.rgb,rgb,alpha), alpha+base.a*(1-alpha)); }"
+    "float4 main(float4 position : SV_Position) : SV_Target {"
+    " int2 pixel = int2(position.xy); float4 colour = scene.Load(int3(pixel,0));"
+    " float2 uv = (position.xy-region.xy)/region.zw;"
+    " if(effects.x > .5) { float3 n = sceneAt(pixel+int2(0,-1));"
+    "  float3 s = sceneAt(pixel+int2(0,1)); float3 e = sceneAt(pixel+int2(1,0));"
+    "  float3 w = sceneAt(pixel+int2(-1,0)); float4 around = float4(dot(n,luma),dot(s,luma),dot(e,luma),dot(w,luma));"
+    "  float center = dot(colour.rgb,luma); float lo = min(center,min(min(around.x,around.y),min(around.z,around.w)));"
+    "  float hi = max(center,max(max(around.x,around.y),max(around.z,around.w)));"
+    "  if(hi-lo > max(.04,hi*.125)) colour.rgb = lerp(colour.rgb,(n+s+e+w)*.25,.5); }"
+    " colour.rgb *= grade.x;"
+    " if(effects.y > 0) { float3 glow = 0;"
+    "  [unroll] for(int y=-2;y<=2;++y) [unroll] for(int x=-2;x<=2;++x)"
+    "   glow += max(sceneAt(pixel+int2(x,y)*2)*grade.x-effects.z,0);"
+    "  colour.rgb += glow*(effects.y/25); }"
+    " colour.rgb = pow(max((colour.rgb-.5)*grade.z+.5,0),grade.y);"
+    " colour.rgb = lerp(dot(colour.rgb,luma).xxx,colour.rgb,grade.w);"
+    " colour.rgb *= 1-effects.w*smoothstep(.15,.7,length(uv-.5));"
+    " if(layerOpacity.x > 0) colour = blendLayer(colour,layer0.SampleLevel(linearClamp,uv,0),layerOpacity.x,layerMode.x);"
+    " if(layerOpacity.y > 0) colour = blendLayer(colour,layer1.SampleLevel(linearClamp,uv,0),layerOpacity.y,layerMode.y);"
+    " if(layerOpacity.z > 0) colour = blendLayer(colour,layer2.SampleLevel(linearClamp,uv,0),layerOpacity.z,layerMode.z);"
+    " if(layerOpacity.w > 0) colour = blendLayer(colour,layer3.SampleLevel(linearClamp,uv,0),layerOpacity.w,layerMode.w);"
+    " return colour; }";
+
+static void wp_dx11_release_camera_pass( wp_dx11_camera_pass *pass )
+{
+    if( pass->source_view ) ID3D11ShaderResourceView_Release( pass->source_view );
+    if( pass->source ) ID3D11Texture2D_Release( pass->source );
+    if( pass->sampler ) ID3D11SamplerState_Release( pass->sampler );
+    if( pass->raster ) ID3D11RasterizerState_Release( pass->raster );
+    if( pass->constants ) ID3D11Buffer_Release( pass->constants );
+    if( pass->ps ) ID3D11PixelShader_Release( pass->ps );
+    if( pass->vs ) ID3D11VertexShader_Release( pass->vs );
+    if( pass->state ) ID3DDeviceContextState_Release( pass->state );
+}
+
+static wp_s32 wp_dx11_prepare_camera_pass( wp_renderer_dx11 *r )
+{
+    wp_dx11_camera_pass pass;
+    ID3D11Device1 *device = NULL;
+    ID3DBlob *blob = NULL;
+    D3D_FEATURE_LEVEL level;
+    D3D11_BUFFER_DESC buffer;
+    D3D11_RASTERIZER_DESC raster;
+    D3D11_SAMPLER_DESC sampler;
+    HRESULT result;
+    if( r->camera_pass.state ) return 1;
+    memset( &pass, 0, sizeof(pass) );
+    if( FAILED( ID3D11Device_QueryInterface( r->device, &IID_ID3D11Device1, (void **)&device ) ) )
+        return 0;
+    level = ID3D11Device_GetFeatureLevel( r->device );
+    result = ID3D11Device1_CreateDeviceContextState( device, 0, &level, 1, D3D11_SDK_VERSION,
+                                                     &IID_ID3D11Device, NULL, &pass.state );
+    ID3D11Device1_Release( device );
+    if( FAILED( result ) ) return 0;
+    if( FAILED( wp_renderer_dx11_compile_shader( wp_hdr_composite_vs, "main", "vs_4_0", &blob ) ) ||
+        FAILED( ID3D11Device_CreateVertexShader( r->device, ID3D10Blob_GetBufferPointer(blob),
+                     ID3D10Blob_GetBufferSize(blob), NULL, &pass.vs ) ) ) goto fail;
+    ID3D10Blob_Release( blob ); blob = NULL;
+    if( FAILED( wp_renderer_dx11_compile_shader( wp_camera_effects_ps, "main", "ps_4_0", &blob ) ) ||
+        FAILED( ID3D11Device_CreatePixelShader( r->device, ID3D10Blob_GetBufferPointer(blob),
+                     ID3D10Blob_GetBufferSize(blob), NULL, &pass.ps ) ) ) goto fail;
+    ID3D10Blob_Release( blob ); blob = NULL;
+    memset( &buffer, 0, sizeof(buffer) );
+    buffer.ByteWidth = 5 * sizeof(wp_vec4f);
+    buffer.Usage = D3D11_USAGE_DEFAULT;
+    buffer.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    if( FAILED( ID3D11Device_CreateBuffer( r->device, &buffer, NULL, &pass.constants ) ) ) goto fail;
+    memset( &raster, 0, sizeof(raster) );
+    raster.FillMode = D3D11_FILL_SOLID;
+    raster.CullMode = D3D11_CULL_NONE;
+    raster.DepthClipEnable = TRUE;
+    if( FAILED( ID3D11Device_CreateRasterizerState( r->device, &raster, &pass.raster ) ) ) goto fail;
+    memset( &sampler, 0, sizeof(sampler) );
+    sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+    sampler.MaxLOD = D3D11_FLOAT32_MAX;
+    if( FAILED( ID3D11Device_CreateSamplerState( r->device, &sampler, &pass.sampler ) ) ) goto fail;
+    r->camera_pass = pass;
+    return 1;
+fail:
+    if( blob ) ID3D10Blob_Release( blob );
+    wp_dx11_release_camera_pass( &pass );
+    return 0;
+}
+
+static wp_s32 wp_dx11_prepare_camera_source( wp_renderer_dx11 *r, UINT width, UINT height, DXGI_FORMAT format )
+{
+    wp_dx11_camera_pass *pass = &r->camera_pass;
+    ID3D11Texture2D *texture = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    D3D11_TEXTURE2D_DESC desc;
+    if( pass->source && pass->width == width && pass->height == height && pass->format == format )
+        return 1;
+    memset( &desc, 0, sizeof(desc) );
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+    desc.Format = format;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    if( FAILED( ID3D11Device_CreateTexture2D( r->device, &desc, NULL, &texture ) ) ) return 0;
+    if( FAILED( ID3D11Device_CreateShaderResourceView( r->device, (ID3D11Resource *)texture, NULL, &view ) ) )
+    {
+        ID3D11Texture2D_Release( texture );
+        return 0;
+    }
+    if( pass->source_view ) ID3D11ShaderResourceView_Release( pass->source_view );
+    if( pass->source ) ID3D11Texture2D_Release( pass->source );
+    pass->source = texture;
+    pass->source_view = view;
+    pass->width = width;
+    pass->height = height;
+    pass->format = format;
+    return 1;
+}
+
 static wp_s32 wp_renderer_dx11_prepare_hdr( wp_renderer_dx11 *r, UINT width, UINT height )
 {
     ID3D11Texture2D *texture = NULL;
@@ -2641,7 +2794,7 @@ wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *r, wp_f32 exposure )
     ID3D11Resource *bound_resource = NULL;
     UINT i;
     wp_s32 valid = 1;
-    const float black[4] = { 0, 0, 0, 0 };
+    float background[4];
     if( !r || r->hdr_active || r->shadow_pass || !_finite( exposure ) || exposure <= 0.0f ) return 0;
     memset( targets, 0, sizeof( targets ) );
     ID3D11DeviceContext_OMGetRenderTargets( r->context, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, targets, &depth );
@@ -2733,7 +2886,11 @@ wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *r, wp_f32 exposure )
     r->viewport.width=(wp_s32)((double)r->viewport.width*r->hdr_width/r->hdr_output_width);
     r->viewport.height=(wp_s32)((double)r->viewport.height*r->hdr_height/r->hdr_output_height);
     ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view, r->active_ds_view );
-    ID3D11DeviceContext_ClearRenderTargetView( r->context, r->active_rt_view, black );
+    background[0] = r->clear_r;
+    background[1] = r->clear_g;
+    background[2] = r->clear_b;
+    background[3] = r->clear_a;
+    ID3D11DeviceContext_ClearRenderTargetView( r->context, r->active_rt_view, background );
     ID3D11DeviceContext_ClearDepthStencilView(r->context,r->active_ds_view,D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL,1.0f,0);
     if(r->project_pipeline==2)
     {
@@ -2929,6 +3086,8 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
     if( r->hdr_view ) ID3D11ShaderResourceView_Release( r->hdr_view );
     if( r->hdr_target ) ID3D11RenderTargetView_Release( r->hdr_target );
     if( r->hdr_texture ) ID3D11Texture2D_Release( r->hdr_texture );
+    wp_dx11_release_camera_pass( &r->camera_pass );
+    wp_renderer_dx11_discard_window_history( r );
     if( r->hdr_vs ) ID3D11VertexShader_Release( r->hdr_vs );
     wp_renderer_dx11_release_gbuffer(r);
     if(r->gbuffer_ps) ID3D11PixelShader_Release(r->gbuffer_ps);if(r->gbuffer_split_ps) ID3D11PixelShader_Release(r->gbuffer_split_ps);if(r->deferred_ps) ID3D11PixelShader_Release(r->deferred_ps);if(r->deferred_cb) ID3D11Buffer_Release(r->deferred_cb);
@@ -3314,6 +3473,72 @@ void wp_renderer_dx11_begin_frame( wp_renderer_dx11 *r )
 
     wp_renderer_dx11_apply_viewport( r );
     wp_renderer_dx11_apply_state( r );
+}
+
+void wp_renderer_dx11_discard_window_history( wp_renderer_dx11 *r )
+{
+    if( !r || !r->window_history ) return;
+    ID3D11Texture2D_Release( r->window_history );
+    r->window_history = NULL;
+    r->window_history_valid = 0;
+}
+
+wp_s32 wp_renderer_dx11_restore_window_history( wp_renderer_dx11 *r,
+                                                wp_u64 owner, const wp_vec4f *background )
+{
+    ID3D11Resource *buffer = NULL;
+    if( !r || !r->rt_view || r->active_rt_view != r->rt_view || !background ) return 0;
+    ID3D11RenderTargetView_GetResource( r->rt_view, &buffer );
+    if( !buffer ) return 0;
+    if( !r->window_history )
+    {
+        ID3D11Texture2D *texture = NULL;
+        D3D11_TEXTURE2D_DESC desc;
+        HRESULT result = ID3D11Resource_QueryInterface( buffer, &IID_ID3D11Texture2D,
+                                                       (void **)&texture );
+        if( SUCCEEDED( result ) )
+        {
+            ID3D11Texture2D_GetDesc( texture, &desc );
+            ID3D11Texture2D_Release( texture );
+            desc.Usage = D3D11_USAGE_DEFAULT;
+            desc.BindFlags = desc.CPUAccessFlags = desc.MiscFlags = 0;
+            result = ID3D11Device_CreateTexture2D( r->device, &desc, NULL, &r->window_history );
+        }
+        if( FAILED( result ) )
+        {
+            ID3D11Resource_Release( buffer );
+            return 0;
+        }
+    }
+    if( r->window_history_valid && r->window_history_owner == owner )
+    {
+        ID3D11DeviceContext_OMSetRenderTargets( r->context, 0, NULL, NULL );
+        ID3D11DeviceContext_CopyResource( r->context, buffer, (ID3D11Resource *)r->window_history );
+        ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->rt_view, r->active_ds_view );
+    }
+    else
+    {
+        wp_renderer_dx11_set_clear_color( r, background->x, background->y, background->z, background->w );
+        wp_renderer_dx11_set_clear_depth( r, 1.0f );
+        wp_renderer_dx11_clear( r, WORKPHONE_CLEAR_FLAG_ALL );
+        r->window_history_owner = owner;
+        r->window_history_valid = 0;
+    }
+    ID3D11Resource_Release( buffer );
+    return 1;
+}
+
+void wp_renderer_dx11_save_window_history( wp_renderer_dx11 *r )
+{
+    ID3D11Resource *buffer = NULL;
+    if( !r || !r->window_history || !r->rt_view || r->active_rt_view != r->rt_view ) return;
+    ID3D11RenderTargetView_GetResource( r->rt_view, &buffer );
+    if( !buffer ) return;
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 0, NULL, NULL );
+    ID3D11DeviceContext_CopyResource( r->context, (ID3D11Resource *)r->window_history, buffer );
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->rt_view, r->active_ds_view );
+    ID3D11Resource_Release( buffer );
+    r->window_history_valid = 1;
 }
 
 void wp_renderer_dx11_end_frame( wp_renderer_dx11 *r )
@@ -6291,6 +6516,116 @@ static wp_s32 wp_rtt_dx11_view_matches(ID3D11ShaderResourceView *view,
             resource == (ID3D11Resource *)target->ds_texture;
     if(resource) ID3D11Resource_Release(resource);
     return match;
+}
+
+wp_s32 wp_renderer_dx11_apply_camera_effects( wp_renderer_dx11 *r,
+    const wp_dx11_camera_effects *effects, const wp_dx11_camera_layer *layers, wp_u32 count )
+{
+    ID3D11DeviceContext1 *context = NULL;
+    ID3DDeviceContextState *previous = NULL;
+    ID3D11Resource *output = NULL;
+    ID3D11Texture2D *texture = NULL;
+    ID3D11ShaderResourceView *views[5] = { NULL, NULL, NULL, NULL, NULL };
+    D3D11_RENDER_TARGET_VIEW_DESC target;
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_VIEWPORT viewport;
+    wp_dx11_camera_pass *pass;
+    float constants[5][4];
+    UINT width, height, mip;
+    wp_u32 i;
+    wp_s32 active, result = 0;
+    if( !r || !effects || !r->active_rt_view || r->hdr_active || r->shadow_pass ||
+        count > 4 || (count && !layers) ) return 0;
+    memset( constants, 0, sizeof(constants) );
+    active = effects->enabled;
+    ID3D11RenderTargetView_GetResource( r->active_rt_view, &output );
+    if( !output ) return 0;
+    for( i = 0; i < count; ++i )
+    {
+        ID3D11Resource *layer = NULL;
+        ID3D11ShaderResourceView *view = (ID3D11ShaderResourceView *)layers[i].view;
+        if( !view || !(layers[i].opacity > 0) ) continue;
+        /* An authored self-reference must not sample the transaction's destination. */
+        if( r->rtt_view_cache && wp_rtt_dx11_view_matches( view, r->rtt_view_cache->destination ) )
+            continue;
+        ID3D11ShaderResourceView_GetResource( view, &layer );
+        if( !layer ) continue;
+        if( layer != output )
+        {
+            views[i+1] = view;
+            constants[3][i] = layers[i].opacity;
+            constants[4][i] = (float)layers[i].blend_mode;
+            active = 1;
+        }
+        ID3D11Resource_Release( layer );
+    }
+    if( !active ) { result = 1; goto done; }
+    ID3D11RenderTargetView_GetDesc( r->active_rt_view, &target );
+    if( target.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D &&
+        target.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2DMS ) goto done;
+    if( FAILED( ID3D11Resource_QueryInterface( output, &IID_ID3D11Texture2D, (void **)&texture ) ) )
+        goto done;
+    ID3D11Texture2D_GetDesc( texture, &desc );
+    mip = target.ViewDimension == D3D11_RTV_DIMENSION_TEXTURE2D ? target.Texture2D.MipSlice : 0;
+    width = desc.Width >> mip;
+    height = desc.Height >> mip;
+    if( !width ) width = 1;
+    if( !height ) height = 1;
+    if( r->viewport.x < 0 || r->viewport.y < 0 || r->viewport.width <= 0 || r->viewport.height <= 0 ||
+        (UINT)r->viewport.x >= width || (UINT)r->viewport.y >= height ) goto done;
+    if( !wp_dx11_prepare_camera_pass( r ) ||
+        !wp_dx11_prepare_camera_source( r, width, height, target.Format ) ||
+        FAILED( ID3D11DeviceContext_QueryInterface( r->context, &IID_ID3D11DeviceContext1, (void **)&context ) ) )
+        goto done;
+    pass = &r->camera_pass;
+    viewport.TopLeftX = (float)r->viewport.x;
+    viewport.TopLeftY = (float)r->viewport.y;
+    width -= (UINT)r->viewport.x;
+    height -= (UINT)r->viewport.y;
+    viewport.Width = (float)((UINT)r->viewport.width < width ? (UINT)r->viewport.width : width);
+    viewport.Height = (float)((UINT)r->viewport.height < height ? (UINT)r->viewport.height : height);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    constants[0][0] = viewport.TopLeftX; constants[0][1] = viewport.TopLeftY;
+    constants[0][2] = viewport.Width; constants[0][3] = viewport.Height;
+    constants[1][0] = effects->enabled ? (float)pow( 2.0, effects->exposure ) : 1.0f;
+    constants[1][1] = effects->enabled ? 2.2f / effects->gamma : 1.0f;
+    constants[1][2] = effects->enabled ? effects->contrast : 1.0f;
+    constants[1][3] = effects->enabled ? effects->saturation : 1.0f;
+    constants[2][0] = effects->enabled && effects->fxaa ? 1.0f : 0.0f;
+    constants[2][1] = effects->enabled && effects->bloom ? effects->bloom_intensity : 0.0f;
+    constants[2][2] = effects->bloom_threshold;
+    constants[2][3] = effects->enabled ? effects->vignette : 0.0f;
+    views[0] = pass->source_view;
+    /* Isolate bindings from the enclosing window or RTT render pass. */
+    ID3D11DeviceContext1_SwapDeviceContextState( context, pass->state, &previous );
+    if( desc.SampleDesc.Count > 1 )
+        ID3D11DeviceContext_ResolveSubresource( r->context, (ID3D11Resource *)pass->source, 0,
+                                               output, mip, target.Format );
+    else
+        ID3D11DeviceContext_CopySubresourceRegion( r->context, (ID3D11Resource *)pass->source, 0, 0, 0, 0,
+                                                  output, mip, NULL );
+    ID3D11DeviceContext_UpdateSubresource( r->context, (ID3D11Resource *)pass->constants,
+                                           0, NULL, constants, 0, 0 );
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view, NULL );
+    ID3D11DeviceContext_RSSetState( r->context, pass->raster );
+    ID3D11DeviceContext_RSSetViewports( r->context, 1, &viewport );
+    ID3D11DeviceContext_IASetPrimitiveTopology( r->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+    ID3D11DeviceContext_VSSetShader( r->context, pass->vs, NULL, 0 );
+    ID3D11DeviceContext_PSSetShader( r->context, pass->ps, NULL, 0 );
+    ID3D11DeviceContext_PSSetConstantBuffers( r->context, 0, 1, &pass->constants );
+    ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 5, views );
+    ID3D11DeviceContext_PSSetSamplers( r->context, 0, 1, &pass->sampler );
+    ID3D11DeviceContext_Draw( r->context, 3, 0 );
+    ID3D11DeviceContext_ClearState( r->context );
+    ID3D11DeviceContext1_SwapDeviceContextState( context, previous, NULL );
+    ID3DDeviceContextState_Release( previous );
+    result = 1;
+done:
+    if( context ) ID3D11DeviceContext1_Release( context );
+    if( texture ) ID3D11Texture2D_Release( texture );
+    ID3D11Resource_Release( output );
+    return result;
 }
 
 static ID3D11ShaderResourceView **wp_rtt_dx11_view_cache_slot(wp_rtt_dx11_view_cache *cache,

@@ -242,7 +242,9 @@ namespace workphone
             auto texture = workphone::make_ptr<ClawTexture>();
             texture->setName( "ClawRenderTexture_" + StringUtil::toString( m_renderTargets.size() ) );
             texture->setUsageFlags( static_cast<u32>( TextureUsage::TU_RENDERTARGET ) );
-            texture->setRenderTarget( workphone::make_ptr<ClawRenderTarget>() );
+            auto target = workphone::make_ptr<ClawRenderTarget>();
+            target->setTexture( texture );
+            texture->setRenderTarget( target );
             texture->load( nullptr );
 
             m_textures.push_back( texture );

@@ -183,7 +183,7 @@ namespace workphone::resource
                 if(oneOf({"isActive","enableShadows","enableSceneRender","enableUI","clearEveryFrame","overlaysEnabled","autoUpdated","postProcessing.enabled","postProcessing.fxaa","postProcessing.bloom"})){boolean(value);return;}
                 if(key=="fov"){bounded(.001,179.999);return;}
                 if(key=="nearClip"||key=="farClip"){bounded(.000001,100000000);return;}
-                if(key=="orthoWidth"||key=="orthoHeight"){bounded(0,0);return;}
+                if(key=="orthoWidth"||key=="orthoHeight"){bounded(0,10000000);return;}
                 if(key=="outputRenderTexture"||key=="postProcessing.workspace"){require(value.empty(),"Cooked Camera cannot resolve an undeclared render target/workspace");return;}
                 if(key=="reset"||key=="updateActiveState"){disabled();return;}
                 if(key=="postProcessing.exposure"){bounded(-32,32);return;}

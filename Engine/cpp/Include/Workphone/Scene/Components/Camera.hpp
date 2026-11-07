@@ -6,6 +6,7 @@
 #include <Workphone/Core/ColourF.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <memory>
+#include <optional>
 
 namespace workphone
 {
@@ -288,6 +289,9 @@ namespace workphone
              */
             void setActive( bool active );
 
+            /** Whether the camera may be selected automatically by the camera manager. */
+            bool allowsActivation() const;
+
             /**
              * @brief Compute z-order relative to another actor
              *
@@ -478,6 +482,7 @@ namespace workphone
                                             f32 opacity, bool enabled = true );
 
             void updateStatic() override;
+            void updateVisibility() override;
 
             WP_CLASS_REGISTER_DECL;
 
@@ -492,6 +497,8 @@ namespace workphone
              * @param active New active state.
              */
             void updateActiveState( bool active );
+
+            void refreshTargetTexture();
 
             /**
              * @brief Create and configure a viewport for this camera
@@ -540,8 +547,9 @@ namespace workphone
                                    const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
                                    SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
 
-            /// Editor preview texture (rendered when showing camera in editor)
+            /// Effective target. An authored output overrides the preview/default target.
             SmartPtr<render::ITexture> m_targetTexture;
+            SmartPtr<render::ITexture> m_defaultTargetTexture;
 
             /// Viewport used by this camera for on-screen or off-screen rendering
             SmartPtr<render::IViewport> m_viewport;
@@ -557,6 +565,7 @@ namespace workphone
 
             /** The component's z order used to sort cameras for rendering. */
             u32 m_zOrder = 0;
+            bool m_hasZOrder = false;
 
             /** Scene visibility flags rendered by this camera. */
             u32 m_visibilityMask = std::numeric_limits<u32>::max();
@@ -578,6 +587,7 @@ namespace workphone
 
             /** Whether the camera is currently active (participates in rendering). */
             bool m_isActive = false;
+            std::optional<bool> m_activationOverride;
 
             /** Whether shadows should be enabled when rendering with this camera. */
             bool m_enableShadows = false;

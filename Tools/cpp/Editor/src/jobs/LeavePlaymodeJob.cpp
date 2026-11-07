@@ -96,6 +96,7 @@ namespace workphone::editor
             if( auto uiManager = editorManager->getUI() )
             {
                 uiManager->rebuildSceneTree();
+                uiManager->rebuildActorTree();
             }
         }
         catch( std::exception &e )
